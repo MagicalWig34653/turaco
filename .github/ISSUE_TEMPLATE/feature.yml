@@ -1,0 +1,28 @@
+name: Feature design
+about: Propose a capability before implementation
+labels: [feature]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the operational problem, not the preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: reuse
+    attributes:
+      label: Existing concepts to reuse
+      description: Domain objects and Platform Services that should be reused.
+    validations:
+      required: true
+  - type: textarea
+    id: new
+    attributes:
+      label: Genuinely new concepts
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Security, data, API, events and documentation impact

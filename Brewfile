@@ -1,0 +1,8 @@
+brew "colima"
+brew "docker"
+brew "docker-compose"
+brew "go"
+brew "node@24"
+brew "jq"
+brew "gh"
+brew "shellcheck"

@@ -1,0 +1,64 @@
+# Documentation Map
+
+Documentation is part of the product contract. Do not duplicate authoritative facts across files.
+
+## Product
+- [Vision](product/vision.md)
+- [Roadmap](product/roadmap.md)
+- [Implementation Plan](product/implementation-plan.md)
+- [Current Implementation Status](product/current-status.md)
+- [Brand Direction](product/branding.md)
+- [Name Clearance](product/name-clearance.md)
+- [Open-Source Strategy](product/open-source-strategy.md)
+
+## Architecture
+- [Constitution](architecture/constitution.md)
+- [System Architecture](architecture/system-architecture.md)
+- [Module Boundaries](architecture/module-boundaries.md)
+- [API and Event Conventions](architecture/api-events-conventions.md)
+
+## Domain
+- [Glossary](domain/glossary.md)
+- [Core Data Model](domain/core-data-model.md)
+- [State Machines](domain/state-machines.md)
+
+## Workflows
+- [Workflow index](workflows/README.md)
+
+## Development
+- [Definition of Done](development/definition-of-done.md)
+- [Claude Code](development/claude-code.md)
+- [AI Orchestration](development/ai-orchestration.md)
+- [Context Management](development/context-management.md)
+- [Optional Codex Review](development/codex-review.md)
+- [Local Development](development/local-development.md)
+- [Repository Bootstrap](development/repository-bootstrap.md)
+- [Domain Module Template](development/module-template.md)
+- [JetBrains and Air](development/jetbrains.md)
+
+## Security
+- [Security Architecture](security/security-architecture.md)
+- [Encryption](security/encryption.md)
+- [Agent Boundaries](security/agent-boundaries.md)
+- [Software Supply Chain](security/supply-chain.md)
+
+## Operations
+- [Deployment](operations/deployment.md)
+- [Backup and Restore](operations/backup-restore.md)
+- [Release](operations/release.md)
+- [Colima on Apple Silicon](operations/local-colima.md)
+
+## Integrations
+- [LDAP/AD](integrations/ldap-ad.md)
+- [Intune](integrations/intune.md)
+- [Intune Assignment Intelligence](integrations/intune-assignment-intelligence.md)
+- [Autotask](integrations/autotask.md)
+- [Teams and Email](integrations/teams-email.md)
+
+## Decisions
+- [ADR index](decisions/README.md)
+
+## Generated reference
+- [Permissions](reference/permissions.md)
+- [Events](reference/events.md)
+- [Configuration](reference/configuration.md)

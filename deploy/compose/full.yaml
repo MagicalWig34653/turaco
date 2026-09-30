@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: turaco
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: turaco
+    volumes:
+      - postgres:/var/lib/postgresql
+    networks: [backend]
+
+  s3mock:
+    image: adobe/s3mock:5.1.0
+    environment:
+      initialBuckets: turaco
+    networks: [backend]
+
+  turaco-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/turaco-api.Dockerfile
+    environment:
+      APP_ENV: local-compose
+      HTTP_ADDR: :8080
+      DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
+      S3_ENDPOINT: http://s3mock:9090
+      S3_BUCKET: turaco
+    depends_on: [postgres]
+    networks: [backend]
+
+  turaco-worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/turaco-worker.Dockerfile
+    environment:
+      APP_ENV: local-compose
+      DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
+      S3_ENDPOINT: http://s3mock:9090
+      S3_BUCKET: turaco
+    depends_on: [postgres]
+    networks: [backend]
+
+  turaco-web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/turaco-web.Dockerfile
+    ports:
+      - "8088:8080"
+    depends_on: [turaco-api]
+    networks: [backend]
+
+networks:
+  backend:
+
+volumes:
+  postgres:

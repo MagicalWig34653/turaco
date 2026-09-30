@@ -1,0 +1,48 @@
+# Example only. Production secrets, database HA, object storage, TLS, backups,
+# placement constraints, update policy, and monitoring are environment-specific.
+version: "3.9"
+services:
+  turaco-api:
+    image: ghcr.io/OWNER/REPOSITORY/turaco-api@sha256:REPLACE_ME
+    networks: [platform]
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        parallelism: 1
+        failure_action: rollback
+      restart_policy:
+        condition: on-failure
+    secrets:
+      - database_url
+
+  turaco-worker:
+    image: ghcr.io/OWNER/REPOSITORY/turaco-worker@sha256:REPLACE_ME
+    networks: [platform]
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+    secrets:
+      - database_url
+
+  turaco-web:
+    image: ghcr.io/OWNER/REPOSITORY/turaco-web@sha256:REPLACE_ME
+    ports:
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: ingress
+    networks: [platform]
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+
+networks:
+  platform:
+    driver: overlay
+
+secrets:
+  database_url:
+    external: true

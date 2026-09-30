@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: turaco
+      POSTGRES_PASSWORD: turaco-dev
+      POSTGRES_DB: turaco
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-dev:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U turaco -d turaco"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  s3mock:
+    image: adobe/s3mock:5.1.0
+    environment:
+      initialBuckets: turaco-dev
+      retainFilesOnExit: "true"
+    ports:
+      - "9090:9090"
+    volumes:
+      - s3mock-dev:/tmp/s3mock
+
+volumes:
+  postgres-dev:
+  s3mock-dev:

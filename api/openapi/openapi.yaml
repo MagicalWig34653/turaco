@@ -1,0 +1,516 @@
+openapi: 3.1.0
+info:
+  title: Turaco API
+  version: 0.1.0
+  description: Bootstrap API contract. The implementation and OpenAPI contract must evolve together.
+servers:
+  - url: /api/v1
+paths:
+  /meta:
+    get:
+      operationId: getMeta
+      summary: Return platform build/runtime metadata.
+      responses:
+        '200':
+          description: Metadata response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meta'
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Query'
+        - $ref: '#/components/parameters/UserStatus'
+      responses:
+        '200':
+          description: One page of results, ordered by id ascending (UUIDv7, roughly creation order).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}:
+    get:
+      operationId: getUser
+      summary: Get a user.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams:
+    get:
+      operationId: listTeams
+      summary: List teams.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: One page of results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}:
+    get:
+      operationId: getTeam
+      summary: Get a team.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/members:
+    get:
+      operationId: listTeamMembers
+      summary: List current members of a team.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamMemberList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations:
+    get:
+      operationId: listLocations
+      summary: List locations.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: One page of results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/{id}:
+    get:
+      operationId: getLocation
+      summary: Get a location.
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-groups:
+    get:
+      operationId: listDirectoryGroups
+      summary: List observed directory groups.
+      description: "Requires authentication and the `organization.directory.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: One page of results, ordered by id ascending. Includes groups no longer observed (`deletedObservedAt` set).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryGroupList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-groups/{id}:
+    get:
+      operationId: getDirectoryGroup
+      summary: Get an observed directory group.
+      description: "Requires authentication and the `organization.directory.view` permission. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryGroup'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-groups/{id}/members:
+    get:
+      operationId: listDirectoryGroupMembers
+      summary: List observed members of a directory group.
+      description: "Requires authentication and both `organization.directory.view` and `organization.view` (members are user identities). Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of observed members, ordered by user id. Stale or removed memberships are not distinguished yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectoryGroupMemberList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+components:
+  securitySchemes:
+    sessionAuth:
+      type: http
+      scheme: bearer
+      description: Placeholder until the F1 slice 2 authentication provider lands; until then every request is rejected with 401.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    Limit:
+      name: limit
+      in: query
+      description: Page size, default 50; values above 200 are clamped to 200. Non-numeric or below 1 yields 400 organization.invalid_limit.
+      schema: {type: integer, minimum: 1}
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from a previous response's nextCursor. Invalid values yield 400 organization.invalid_cursor.
+      schema: {type: string}
+    Query:
+      name: q
+      in: query
+      description: Case-insensitive name prefix, at most 100 characters (else 400 organization.invalid_query).
+      schema: {type: string, maxLength: 100}
+    UserStatus:
+      name: status
+      in: query
+      description: Exact status filter (else 400 organization.invalid_status).
+      schema: {type: string, enum: [active, inactive, departed, external, unknown]}
+  responses:
+    InvalidRequest:
+      description: Invalid limit, cursor, query or status (organization.invalid_limit, organization.invalid_cursor, organization.invalid_query, organization.invalid_status).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthenticated:
+      description: Authentication is required (platform.unauthenticated).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Missing permission (platform.forbidden).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found (organization.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal error (platform.internal_error); the message never contains internal details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Meta:
+      type: object
+      additionalProperties: false
+      required: [name, version, environment]
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        environment:
+          type: string
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, status, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        givenName:
+          type: [string, "null"]
+        familyName:
+          type: [string, "null"]
+        primaryEmail:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, inactive, departed, external, unknown]
+        departmentId:
+          type: [string, "null"]
+          format: uuid
+        primaryLocationId:
+          type: [string, "null"]
+          format: uuid
+        managerUserId:
+          type: [string, "null"]
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, active, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        active:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    TeamMember:
+      type: object
+      additionalProperties: false
+      required: [userId, displayName, source, validFrom]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        role:
+          type: [string, "null"]
+        source:
+          type: string
+        validFrom:
+          type: string
+          format: date-time
+    Location:
+      type: object
+      additionalProperties: false
+      required: [id, name, active, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        externalKey:
+          type: [string, "null"]
+        active:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    DirectoryGroup:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, externalId, displayName, firstObservedAt, lastObservedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerKey:
+          type: string
+        externalId:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: [string, "null"]
+        firstObservedAt:
+          type: string
+          format: date-time
+        lastObservedAt:
+          type: string
+          format: date-time
+        deletedObservedAt:
+          type: [string, "null"]
+          format: date-time
+    DirectoryGroupMember:
+      type: object
+      additionalProperties: false
+      required: [userId, displayName, lastObservedAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        lastObservedAt:
+          type: string
+          format: date-time
+    UserList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    TeamList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Team'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    TeamMemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    LocationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Location'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    DirectoryGroupList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryGroup'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    DirectoryGroupMemberList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryGroupMember'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code, for example organization.not_found.
+            message:
+              type: string
+            requestId:
+              type: string
