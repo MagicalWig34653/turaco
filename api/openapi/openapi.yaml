@@ -232,12 +232,44 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      summary: Return the current authentication session.
+      description: "Requires a valid `turaco_session` cookie. Responses are `Cache-Control: no-store`. `permissions` is empty until F1 slice 5 evaluates real permissions."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The current session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSession'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: End the current session.
+      description: "Revokes the session in the `turaco_session` cookie and clears the cookie. Idempotent: without a valid session the cookie is still cleared and 204 is returned. Requests must be same-origin (`Sec-Fetch-Site` / `Origin`); otherwise 403 `platform.csrf_rejected`."
+      responses:
+        '204':
+          description: Logged out; the session cookie is cleared.
+        '403':
+          description: Cross-origin request rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
-      type: http
-      scheme: bearer
-      description: Placeholder until the F1 slice 2 authentication provider lands; until then every request is rejected with 401.
+      type: apiKey
+      in: cookie
+      name: turaco_session
+      description: Opaque server-side session token in an HttpOnly, SameSite=Lax cookie. The token is accepted from the cookie only.
   parameters:
     Id:
       name: id
@@ -296,6 +328,21 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    AuthSession:
+      type: object
+      additionalProperties: false
+      required: [userId, authMethod, expiresAt, permissions]
+      properties:
+        userId: {type: string}
+        authMethod: {type: string}
+        expiresAt:
+          type: string
+          format: date-time
+          description: Earlier of the idle and absolute expiry.
+        permissions:
+          type: array
+          items: {type: string}
+          description: Sorted effective permission names.
     Meta:
       type: object
       additionalProperties: false

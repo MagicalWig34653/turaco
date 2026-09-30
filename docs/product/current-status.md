@@ -12,7 +12,8 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Initial PostgreSQL schemas plus foundation tables for platform audit/outbox/jobs, organization, products and tasks.
 - Health endpoints and `/api/v1/meta`.
 - Organization read APIs (F1 slice 1): paginated, read-only `GET` endpoints for Users, Teams (with current members), Locations and observed Directory Groups (with observed User memberships). Data is only present if written by other means; no synchronization or write API exists yet.
-- Platform `authorization` package: request `Principal`, `Authenticator` interface and `Require(permission)` middleware. The API is wired with a default-deny authenticator, so every Organization endpoint currently returns `401` until authentication sessions (F1 slice 2) exist. There is deliberately no development bypass.
+- Platform `authorization` package: request `Principal`, `Authenticator` interface and `Require(permission)` middleware; default-deny `DenyAll` remains the fallback. There is deliberately no development bypass.
+- Platform `authentication` package (F1 slice 2): server-side sessions (`platform.sessions`, only a SHA-256 hash of the opaque token is stored), idle and absolute expiry, explicit `Create`/`Authenticate`/`Revoke` operations (creation and revocation are audited in the same transaction), `turaco_session` cookie (HttpOnly, SameSite=Lax, Secure by configuration), same-origin CSRF guard for unsafe methods, `GET /api/v1/auth/session` and `POST /api/v1/auth/logout`. A session is valid only while the Organization User is `active`.
 - Permission, event and configuration registries with generated reference documentation.
 - Architecture boundary checker and Markdown-link checker.
 - Local Colima/Docker Compose dependencies: PostgreSQL and S3Mock.
@@ -25,8 +26,9 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 - Connector Agent transport and LDAP/AD operations.
 - Endpoint Agent enrollment/transport/inventory/deployment operations beyond capability placeholder.
-- Authentication/session/Kerberos/OIDC behavior (only the default-deny `Authenticator` seam exists).
-- Scope evaluation and role administration (permission checks exist; scopes do not).
+- Login: no identity provider can create a session yet (LDAP/AD bind in F1 slice 3, Kerberos/SPNEGO in slice 4, OIDC later). `Service.Create` exists for them; without a provider no session can be established outside tests.
+- Session cleanup job for expired/revoked sessions (needs an index on `absolute_expires_at`), revoking sessions when a user leaves `active`, and session listing/administration.
+- Scope evaluation, role administration and permission assignment (permission checks exist; sessions currently carry **no permissions**, so authenticated calls to permission-protected routes return `403` until F1 slice 5).
 - Real object-store client and envelope encryption implementation.
 - Background outbox/job processing beyond worker process/DB health bootstrap.
 - Organization write APIs, LDAP/AD synchronization, Departments/Cost Centers APIs, Directory Group *Device* memberships and membership history.

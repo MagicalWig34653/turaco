@@ -14,3 +14,6 @@
 | `S3_PATH_STYLE` | bool | false | false | `true` | Use path-style S3 addressing. |
 | `S3_REGION` | string | false | false | `us-east-1` | S3 region. |
 | `S3_SECRET_ACCESS_KEY` | string | false | true | `` | S3 secret key when required. |
+| `SESSION_ABSOLUTE_TIMEOUT` | duration | false | false | `24h` | Maximum session lifetime regardless of activity; must be positive. |
+| `SESSION_COOKIE_SECURE` | bool | false | false | `true` | Set the Secure attribute on the session cookie; disable only for local plain-HTTP development. |
+| `SESSION_IDLE_TIMEOUT` | duration | false | false | `8h` | Session idle timeout; must be positive and not exceed SESSION_ABSOLUTE_TIMEOUT. |

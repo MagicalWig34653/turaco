@@ -12,7 +12,11 @@
 
 ## Authorization
 
-Backend authorization uses Permission + Scope. Frontend hiding is never authorization. Implementation status: the `authorization` platform package enforces Permission checks per route and is default-deny while no `Authenticator` is configured; Scope evaluation is not implemented yet, so current permissions are global. Listing Directory Group members requires both `organization.directory.view` and `organization.view` because members are user identities. High-impact actions (wipe, broad deployment, remote support, privileged config) require dedicated permissions and policy gates.
+Backend authorization uses Permission + Scope. Frontend hiding is never authorization. Implementation status: the `authorization` platform package enforces Permission checks per route and is default-deny when no valid session exists (`DenyAll` remains the fallback); Scope evaluation is not implemented yet, so current permissions are global. Listing Directory Group members requires both `organization.directory.view` and `organization.view` because members are user identities. High-impact actions (wipe, broad deployment, remote support, privileged config) require dedicated permissions and policy gates.
+
+## Sessions
+
+Browser sessions are server-side. The cookie carries a 256-bit random opaque token; only its SHA-256 hash is stored, so database access alone does not yield usable sessions. The cookie is HttpOnly, SameSite=Lax and Secure unless explicitly disabled for local HTTP development (`SESSION_COOKIE_SECURE`); secure deployments use the `__Host-` cookie name prefix and requests carrying several session cookies are treated as unauthenticated (cookie tossing). Sessions expire after an idle and an absolute timeout, are always issued with a fresh token (no fixation), and are revoked explicitly on logout; creation and revocation are audited without token material. Every unsafe request (anything except GET/HEAD/OPTIONS) passes a same-origin guard on the whole API server (`Sec-Fetch-Site`/`Origin` host check) and fails closed when neither header is present; the origin check compares hosts only, not scheme. Request/correlation IDs are generated server-side unless a short, plain client value is supplied. Known limitation: a session becomes valid again if its user leaves and re-enters `active` before it expires; directory sync (slice 3) must revoke a user's sessions when they leave `active`. A session is only honoured while the Organization User is `active`. Session permissions are empty until F1 slice 5.
 
 ## Identity
 

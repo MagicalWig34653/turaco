@@ -10,9 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
@@ -55,12 +56,19 @@ func main() {
 		httpx.JSON(w, http.StatusOK, map[string]string{"name": "Turaco", "version": version, "environment": cfg.Environment})
 	})
 
-	// DenyAll rejects every request until the F1 slice 2 authentication provider replaces it.
-	orgtransport.Register(mux, orgrepository.New(pool), authorization.DenyAll{}, logger)
+	// Browser sessions authenticate requests. Until F1 slice 5 evaluates real
+	// permissions, NoPermissions gives sessions none, so permission-guarded
+	// routes such as Organization still answer 403.
+	orgReader := orgrepository.New(pool)
+	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
+	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), authentication.NoPermissions{}, cfg.SessionCookieSecure)
+	authentication.Register(mux, sessions, sessionAuth, cfg.SessionCookieSecure, logger)
+	orgtransport.Register(mux, orgReader, sessionAuth, logger)
 
 	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           httpx.Middleware(logger, mux),
+		Addr: cfg.HTTPAddr,
+		// Every unsafe request must be same-origin, whatever route it reaches.
+		Handler:           httpx.Middleware(logger, authentication.RequireSameOrigin(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
