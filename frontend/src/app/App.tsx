@@ -1,51 +1,95 @@
-import { useState } from 'react';
-import { type Locale, translate, type MessageKey } from '../platform/i18n/i18n';
+import { useEffect } from 'react';
+import type { ReactNode } from 'react';
+import { AuditScreen } from '../modules/audit/AuditScreen';
+import { LoginScreen } from '../modules/auth/LoginScreen';
+import { MeScreen } from '../modules/access/MeScreen';
+import { RoleAssignmentsScreen } from '../modules/access/RoleAssignmentsScreen';
+import { RoleCreateScreen } from '../modules/access/RoleCreateScreen';
+import { RoleDetailScreen } from '../modules/access/RoleDetailScreen';
+import { RolesScreen } from '../modules/access/RolesScreen';
+import { DirectorySyncRunScreen } from '../modules/directory/DirectorySyncRunScreen';
+import { DirectorySyncScreen } from '../modules/directory/DirectorySyncScreen';
+import { I18nProvider, useI18n } from '../platform/i18n/I18nProvider';
+import { matchRoute } from '../platform/router/routing';
+import { navigate, useLocation } from '../platform/router/Router';
+import { canAll } from '../platform/session/permissions';
+import { SessionProvider, useSession } from '../platform/session/SessionProvider';
+import { Home } from './Home';
+import { appRoutes, type RouteId } from './routes';
+import { Shell } from './Shell';
+import { ForbiddenView, NotFoundView } from './StatusViews';
 
-const cards: Array<{ title: MessageKey; body: MessageKey }> = [
-  { title: 'card.today.title', body: 'card.today.body' },
-  { title: 'card.briefing.title', body: 'card.briefing.body' },
-  { title: 'card.context.title', body: 'card.context.body' },
-];
+function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
+  switch (id) {
+    case 'home':
+      return <Home />;
+    case 'me':
+      return <MeScreen />;
+    case 'roles':
+      return <RolesScreen />;
+    case 'roleNew':
+      return <RoleCreateScreen />;
+    case 'roleDetail':
+      return <RoleDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'roleAssignments':
+      return <RoleAssignmentsScreen />;
+    case 'directorySync':
+      return <DirectorySyncScreen />;
+    case 'directorySyncRun':
+      return <DirectorySyncRunScreen key={params.id} id={params.id ?? ''} />;
+    case 'audit':
+      return <AuditScreen />;
+  }
+}
+
+function AuthenticatedApp() {
+  const { t } = useI18n();
+  const { can } = useSession();
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (pathname === '/login') navigate('/', { replace: true });
+  }, [pathname]);
+
+  const match = matchRoute(appRoutes, pathname);
+  if (!match) {
+    return (
+      <Shell title={t('notFound.title')}>
+        <NotFoundView />
+      </Shell>
+    );
+  }
+  const allowed = canAll(can, match.route.requires);
+  return (
+    <Shell title={allowed ? t(match.route.titleKey) : t('forbidden.title')}>
+      {allowed ? renderScreen(match.route.id, match.params) : <ForbiddenView />}
+    </Shell>
+  );
+}
+
+function Gate() {
+  const { t } = useI18n();
+  const { state } = useSession();
+  useEffect(() => {
+    if (state.status === 'anonymous') document.title = `${t('login.title')} – ${t('app.name')}`;
+  }, [state.status, t]);
+  if (state.status === 'loading') {
+    return (
+      <p className="boot" role="status">
+        {t('state.loading')}
+      </p>
+    );
+  }
+  if (state.status === 'anonymous') return <LoginScreen />;
+  return <AuthenticatedApp />;
+}
 
 export function App() {
-  const [locale, setLocale] = useState<Locale>('de');
-  const t = (key: MessageKey) => translate(locale, key);
-
   return (
-    <div className="shell">
-      <aside className="sidebar" aria-label="Primary navigation">
-        <div className="brand">{t('app.name')}</div>
-        <nav>
-          <a href="#today">{t('nav.myWork')}</a>
-          <a href="#briefing">{t('nav.briefing')}</a>
-          <a href="#service-desk">{t('nav.serviceDesk')}</a>
-          <a href="#assets">{t('nav.assets')}</a>
-        </nav>
-      </aside>
-      <main className="content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{t('status.foundation')}</p>
-            <h1>{t('app.name')}</h1>
-            <p className="subtitle">{t('app.subtitle')}</p>
-          </div>
-          <label className="language">
-            {t('language')}
-            <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>
-              <option value="de">Deutsch</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-        </header>
-        <section className="grid" aria-label="Platform foundations">
-          {cards.map((card) => (
-            <article className="card" key={card.title}>
-              <h2>{t(card.title)}</h2>
-              <p>{t(card.body)}</p>
-            </article>
-          ))}
-        </section>
-      </main>
-    </div>
+    <I18nProvider>
+      <SessionProvider>
+        <Gate />
+      </SessionProvider>
+    </I18nProvider>
   );
 }
