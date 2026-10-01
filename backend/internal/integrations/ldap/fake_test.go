@@ -118,6 +118,7 @@ type recordedSearch struct {
 	attrs     []string
 	pageSize  uint32 // 0 for non-paged searches
 	hasPaging bool
+	timeLimit int
 }
 
 // fakeDirectory is an in-memory directory behind the directoryConn interface.
@@ -142,6 +143,11 @@ type fakeDirectory struct {
 	blockUsers bool
 	// dialBlock makes dial block until released; used for context tests.
 	dialBlock chan struct{}
+	// pageLen > 0 overrides the number of entries per page; 0 uses the page
+	// size requested by the client.
+	pageLen int
+	// endlessCookie makes every page return a cookie, as a hostile server could.
+	endlessCookie bool
 	// mutateRange lets a test corrupt range responses.
 	mutateRange func(attr *goldap.EntryAttribute)
 
@@ -225,11 +231,46 @@ func (c *fakeConn) record(req *goldap.SearchRequest, paged bool, size uint32) {
 	c.dir.searches = append(c.dir.searches, recordedSearch{
 		baseDN: req.BaseDN, scope: req.Scope, filter: req.Filter,
 		attrs: append([]string(nil), req.Attributes...), pageSize: size, hasPaging: paged,
+		timeLimit: req.TimeLimit,
 	})
 }
 
-func (c *fakeConn) SearchWithPaging(req *goldap.SearchRequest, size uint32) (*goldap.SearchResult, error) {
-	c.record(req, true, size)
+// pagingOf returns the paging control of a request.
+func pagingOf(req *goldap.SearchRequest) (*goldap.ControlPaging, bool) {
+	p, ok := goldap.FindControl(req.Controls, goldap.ControlTypePaging).(*goldap.ControlPaging)
+	return p, ok && p != nil
+}
+
+// page slices entries according to the paging control of the request and
+// attaches the response control with the cookie of the next page.
+func (c *fakeConn) page(req *goldap.SearchRequest, paging *goldap.ControlPaging, entries []*goldap.Entry) *goldap.SearchResult {
+	size := int(paging.PagingSize)
+	if c.dir.pageLen > 0 {
+		size = c.dir.pageLen
+	}
+	start := 0
+	if len(paging.Cookie) > 0 {
+		start, _ = strconv.Atoi(string(paging.Cookie))
+	}
+	if start > len(entries) {
+		start = len(entries)
+	}
+	end := start + size
+	if end > len(entries) {
+		end = len(entries)
+	}
+	var cookie []byte
+	if end < len(entries) || c.dir.endlessCookie {
+		cookie = []byte(strconv.Itoa(end))
+	}
+	return &goldap.SearchResult{
+		Entries:  entries[start:end],
+		Controls: []goldap.Control{&goldap.ControlPaging{PagingSize: paging.PagingSize, Cookie: cookie}},
+	}
+}
+
+// searchPagedBase serves the user and group searches.
+func (c *fakeConn) searchPagedBase(req *goldap.SearchRequest, paging *goldap.ControlPaging) (*goldap.SearchResult, error) {
 	d := c.dir
 	switch req.BaseDN {
 	case testUserBaseDN:
@@ -240,7 +281,7 @@ func (c *fakeConn) SearchWithPaging(req *goldap.SearchRequest, size uint32) (*go
 		if d.userSearchErr != nil {
 			return &goldap.SearchResult{Entries: d.userSearchPartial}, d.userSearchErr
 		}
-		return &goldap.SearchResult{Entries: d.users}, nil
+		return c.page(req, paging, d.users), nil
 	case testGroupBaseDN:
 		if d.groupSearchEr != nil {
 			return nil, d.groupSearchEr
@@ -249,7 +290,7 @@ func (c *fakeConn) SearchWithPaging(req *goldap.SearchRequest, size uint32) (*go
 		for _, g := range d.groups {
 			entries = append(entries, d.groupWithMembers(g))
 		}
-		return &goldap.SearchResult{Entries: entries}, nil
+		return c.page(req, paging, entries), nil
 	}
 	return nil, goldap.NewError(goldap.LDAPResultNoSuchObject, errors.New("no such base"))
 }
@@ -268,6 +309,10 @@ func (f *fakeDirectory) groupWithMembers(g *goldap.Entry) *goldap.Entry {
 }
 
 func (c *fakeConn) Search(req *goldap.SearchRequest) (*goldap.SearchResult, error) {
+	if paging, ok := pagingOf(req); ok {
+		c.record(req, true, paging.PagingSize)
+		return c.searchPagedBase(req, paging)
+	}
 	c.record(req, false, 0)
 	d := c.dir
 	if d.rangeSearchEr != nil {

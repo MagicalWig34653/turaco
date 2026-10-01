@@ -75,7 +75,7 @@ func TestMapActiveDirectoryUserFields(t *testing.T) {
 		attrEmployeeNum: {"N-200"},
 		attrAccountCtl:  {"512"},
 	})
-	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil)
+	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestMapUserAccountControl(t *testing.T) {
 			if tt.uac != nil {
 				attrs[attrAccountCtl] = tt.uac
 			}
-			snap, err := mapSnapshot(sch, []*goldap.Entry{adUserEntry(t, "CN=u,DC=x", testID(1), attrs)}, nil)
+			snap, err := mapSnapshot(sch, []*goldap.Entry{adUserEntry(t, "CN=u,DC=x", testID(1), attrs)}, nil, nil)
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), attrAccountCtl) || !strings.Contains(err.Error(), "1 entries") {
 					t.Fatalf("err = %v, want userAccountControl count error", err)
@@ -144,7 +144,7 @@ func TestMapOpenLDAPUser(t *testing.T) {
 		attrEmployeeID:  {"ignored"}, // not an OpenLDAP source
 		attrAccountCtl:  {"514"},     // ignored: OpenLDAP is always enabled
 	})
-	snap, err := mapSnapshot(sch, []*goldap.Entry{e}, nil)
+	snap, err := mapSnapshot(sch, []*goldap.Entry{e}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,11 +167,11 @@ func TestMapOptionalAttributesAreNilWhenEmpty(t *testing.T) {
 	e := ldapUser("uid=eve,dc=x", testID(1), "eve", map[string][]string{
 		attrGivenName:   {""},
 		attrSurname:     {"   "},
-		attrMail:        {" \t"},
+		attrMail:        {"  "},
 		attrEmployeeNum: {""},
 		attrManager:     {"  "},
 	})
-	snap, err := mapSnapshot(sch, []*goldap.Entry{e}, nil)
+	snap, err := mapSnapshot(sch, []*goldap.Entry{e}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestMapDisplayNameFallbacks(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			snap, err := mapSnapshot(sch, []*goldap.Entry{ldapUser("uid=user1,dc=x", testID(1), "user1", tt.attrs)}, nil)
+			snap, err := mapSnapshot(sch, []*goldap.Entry{ldapUser("uid=user1,dc=x", testID(1), "user1", tt.attrs)}, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -209,7 +209,7 @@ func TestMapEmployeeNumberFallbackToEmployeeNumberAttribute(t *testing.T) {
 	e := adUserEntry(t, "CN=u,DC=x", testID(1), map[string][]string{
 		attrSAMAccount: {"u"}, attrAccountCtl: {"512"}, attrEmployeeID: {" "}, attrEmployeeNum: {"N-7"},
 	})
-	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil)
+	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestMapAttributeNamesAreCaseInsensitive(t *testing.T) {
 		"SAMACCOUNTNAME":     {"u"},
 		"useraccountcontrol": {"514"},
 	})
-	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil)
+	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), []*goldap.Entry{e}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestMapManagerResolution(t *testing.T) {
 		mk("garbage", 8, "not a dn"),
 	}
 	groups := []rawGroup{{entry: adGroup(t, groupDN, testID(100), "Staff")}}
-	snap, err := mapSnapshot(sch, users, groups)
+	snap, err := mapSnapshot(sch, users, groups, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestMapGroupMembers(t *testing.T) {
 	}
 	empty := rawGroup{entry: adGroup(t, "CN=Empty,OU=Groups,DC=example,DC=test", testID(102), "Empty")}
 
-	snap, err := mapSnapshot(sch, users, []rawGroup{parent, child, empty})
+	snap, err := mapSnapshot(sch, users, []rawGroup{parent, child, empty}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +348,7 @@ func TestMapGroupFields(t *testing.T) {
 	})
 	named := goldap.NewEntry("cn=n,ou=groups,dc=x", map[string][]string{attrEntryUUID: {testID(6)}, attrDisplayName: {"Only Display"}})
 	anonymous := goldap.NewEntry("cn=a,ou=groups,dc=x", map[string][]string{attrEntryUUID: {testID(7)}})
-	snap, err := mapSnapshot(sch, nil, []rawGroup{{entry: g}, {entry: named}, {entry: anonymous}})
+	snap, err := mapSnapshot(sch, nil, []rawGroup{{entry: g}, {entry: named}, {entry: anonymous}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestMapSortsByExternalID(t *testing.T) {
 		ldapUser("uid=a,dc=x", testID(1), "a", nil),
 		ldapUser("uid=b,dc=x", testID(2), "b", nil),
 	}
-	snap, err := mapSnapshot(sch, users, nil)
+	snap, err := mapSnapshot(sch, users, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestMapSortsByExternalID(t *testing.T) {
 }
 
 func TestMapEmptyDirectoryIsAValidSnapshot(t *testing.T) {
-	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), nil, nil)
+	snap, err := mapSnapshot(mustSchema(t, config.DirectoryTypeActiveDirectory), nil, nil, nil)
 	if err != nil || len(snap.Users) != 0 || len(snap.Groups) != 0 {
 		t.Fatalf("snapshot = %+v, err = %v", snap, err)
 	}
@@ -421,7 +421,7 @@ func TestMapInvalidIDsFailTheWholeSnapshot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			snap, err := mapSnapshot(tt.sch, tt.users, tt.groups)
+			snap, err := mapSnapshot(tt.sch, tt.users, tt.groups, nil)
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -439,32 +439,6 @@ func TestMapInvalidIDsFailTheWholeSnapshot(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestNormalizeDN(t *testing.T) {
-	same := [][2]string{
-		{"CN=Ann,OU=Users,DC=Example,DC=Test", "cn=ann,ou=users,dc=example,dc=test"},
-		{"CN=Ann , OU=Users ,DC=Example, DC=Test", "CN=Ann,OU=Users,DC=Example,DC=Test"},
-		{"CN=Ann   Lee,DC=x", "cn=ann lee,dc=x"},
-		{"CN=Lee\\, Ann,DC=x", "cn=lee\\, ann,dc=x"},
-		{"cn=a+sn=b,dc=x", "SN=B+CN=A,DC=X"},
-		{"not a dn", "NOT  A DN"},
-	}
-	for _, p := range same {
-		if normalizeDN(p[0]) != normalizeDN(p[1]) {
-			t.Errorf("normalizeDN(%q) != normalizeDN(%q)", p[0], p[1])
-		}
-	}
-	different := [][2]string{
-		{"CN=Ann,DC=x", "CN=Ann,DC=y"},
-		{"CN=Lee\\, Ann,DC=x", "CN=Lee,CN=Ann,DC=x"},
-		{"CN=Ann,OU=A,DC=x", "CN=Ann,DC=x"},
-	}
-	for _, p := range different {
-		if normalizeDN(p[0]) == normalizeDN(p[1]) {
-			t.Errorf("normalizeDN(%q) == normalizeDN(%q)", p[0], p[1])
-		}
 	}
 }
 

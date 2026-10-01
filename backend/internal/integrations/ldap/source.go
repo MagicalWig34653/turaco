@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/url"
 	"strconv"
@@ -40,7 +41,6 @@ type directoryConn interface {
 	Bind(username, password string) error
 	SetTimeout(time.Duration)
 	Search(*goldap.SearchRequest) (*goldap.SearchResult, error)
-	SearchWithPaging(*goldap.SearchRequest, uint32) (*goldap.SearchResult, error)
 	Close() error
 }
 
@@ -64,7 +64,7 @@ func dialLDAP(rawURL string, tlsConfig *tls.Config) (directoryConn, error) {
 // every Fetch opens its own connection.
 type Source struct {
 	cfg       config.LDAPConfig
-	password  string
+	password  secret
 	schema    schema
 	tlsConfig *tls.Config
 	dial      dialFunc
@@ -75,7 +75,8 @@ var _ public.DirectorySource = (*Source)(nil)
 
 // NewSource validates the configuration and prepares the TLS configuration.
 // It performs no network access. bindPassword comes from ReadPasswordFile; it
-// is kept in memory only and never logged or included in errors.
+// is kept in memory only, in a type that redacts itself when formatted or
+// logged, and never included in errors.
 func NewSource(cfg config.LDAPConfig, bindPassword string, logger *slog.Logger) (*Source, error) {
 	if !cfg.Enabled() {
 		return nil, errors.New("ldap: directory synchronization is not configured")
@@ -113,6 +114,12 @@ func NewSource(cfg config.LDAPConfig, bindPassword string, logger *slog.Logger) 
 		}
 	case "ldap":
 		if !cfg.StartTLS {
+			// Defence in depth: configuration validation already restricts
+			// this to development, but the adapter must not send the bind
+			// password in clear text on its own authority.
+			if !cfg.AllowPlaintext {
+				return nil, errors.New("ldap: plain ldap:// without StartTLS is not allowed (requires explicit plaintext opt-in)")
+			}
 			logger.Warn("ldap: connection to the directory is not encrypted", "providerKey", cfg.ProviderKey)
 		}
 	default:
@@ -124,7 +131,7 @@ func NewSource(cfg config.LDAPConfig, bindPassword string, logger *slog.Logger) 
 	}
 	return &Source{
 		cfg:       cfg,
-		password:  bindPassword,
+		password:  newSecret(bindPassword),
 		schema:    sch,
 		tlsConfig: tlsConfig,
 		dial:      dialLDAP,
@@ -144,7 +151,7 @@ func (s *Source) Fetch(ctx context.Context) (public.DirectorySnapshot, error) {
 	if err != nil {
 		return public.DirectorySnapshot{}, err
 	}
-	snapshot, err := mapSnapshot(s.schema, users, groups)
+	snapshot, err := mapSnapshot(s.schema, users, groups, s.logger)
 	if err != nil {
 		return public.DirectorySnapshot{}, err
 	}
@@ -172,7 +179,7 @@ func (s *Source) fetchRaw(ctx context.Context) ([]*goldap.Entry, []rawGroup, err
 	stop := context.AfterFunc(ctx, closeConn)
 	defer stop()
 
-	if err := s.setTimeout(ctx, conn); err != nil {
+	if _, err := s.setTimeout(ctx, conn); err != nil {
 		return nil, nil, err
 	}
 	if s.cfg.StartTLS {
@@ -180,18 +187,18 @@ func (s *Source) fetchRaw(ctx context.Context) ([]*goldap.Entry, []rawGroup, err
 			return nil, nil, opError(ctx, "starttls", err)
 		}
 	}
-	if err := s.setTimeout(ctx, conn); err != nil {
+	if _, err := s.setTimeout(ctx, conn); err != nil {
 		return nil, nil, err
 	}
-	if err := conn.Bind(s.cfg.BindDN, s.password); err != nil {
+	if err := conn.Bind(s.cfg.BindDN, s.password.reveal()); err != nil {
 		return nil, nil, opError(ctx, "bind", err)
 	}
 
-	users, err := s.searchPaged(ctx, conn, "search users", s.cfg.UserBaseDN, s.cfg.UserFilter, s.schema.userAttrs)
+	users, err := s.searchPaged(ctx, conn, "search users", s.cfg.UserBaseDN, s.cfg.UserFilter, s.schema.userAttrs, maxUserEntries)
 	if err != nil {
 		return nil, nil, err
 	}
-	groupEntries, err := s.searchPaged(ctx, conn, "search groups", s.cfg.GroupBaseDN, s.cfg.GroupFilter, s.schema.groupAttrs)
+	groupEntries, err := s.searchPaged(ctx, conn, "search groups", s.cfg.GroupBaseDN, s.cfg.GroupFilter, s.schema.groupAttrs, maxGroupEntries)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -235,34 +242,85 @@ func (s *Source) connect(ctx context.Context) (directoryConn, error) {
 }
 
 // setTimeout derives the per-request timeout of the connection from the
-// context deadline.
-func (s *Source) setTimeout(ctx context.Context, conn directoryConn) error {
+// context deadline and returns it, so the caller can also pass it to the
+// server as the search time limit.
+func (s *Source) setTimeout(ctx context.Context, conn directoryConn) (time.Duration, error) {
 	if err := ctx.Err(); err != nil {
-		return opError(ctx, "request", err)
+		return 0, opError(ctx, "request", err)
 	}
 	timeout := defaultRequestTimeout
 	if deadline, ok := ctx.Deadline(); ok {
 		timeout = time.Until(deadline)
 		if timeout <= 0 {
-			return opError(ctx, "request", context.DeadlineExceeded)
+			return 0, opError(ctx, "request", context.DeadlineExceeded)
 		}
 	}
 	conn.SetTimeout(timeout)
-	return nil
+	return timeout, nil
 }
 
-func (s *Source) searchPaged(ctx context.Context, conn directoryConn, op, baseDN, filter string, attrs []string) ([]*goldap.Entry, error) {
-	if err := s.setTimeout(ctx, conn); err != nil {
-		return nil, err
+// serverTimeLimit converts a request timeout to the whole seconds of the LDAP
+// search time limit (rounded up, at least 1: 0 would mean "no limit"). The
+// server then stops working for a client that has already given up.
+func serverTimeLimit(timeout time.Duration) int {
+	seconds := int64((timeout + time.Second - 1) / time.Second)
+	if seconds < 1 {
+		seconds = 1
 	}
-	req := goldap.NewSearchRequest(baseDN, goldap.ScopeWholeSubtree, goldap.NeverDerefAliases, 0, 0, false, filter, attrs, nil)
-	result, err := conn.SearchWithPaging(req, pageSize)
-	if err != nil {
-		// go-ldap returns the entries received so far together with the error;
-		// they are discarded: a partial snapshot must never be used.
-		return nil, opError(ctx, op, err)
+	if seconds > math.MaxInt32 {
+		seconds = math.MaxInt32
 	}
-	return nonNilEntries(result), nil
+	return int(seconds)
+}
+
+// searchPaged runs an RFC 2696 paged search and returns all entries. It pages
+// by hand instead of using go-ldap's SearchWithPaging so that the number of
+// entries and pages is bounded while results arrive: more than limit entries
+// is an error, never a truncated result.
+func (s *Source) searchPaged(ctx context.Context, conn directoryConn, op, baseDN, filter string, attrs []string, limit int) ([]*goldap.Entry, error) {
+	paging := goldap.NewControlPaging(pageSize)
+	// Allow for pages that are shorter than requested, but not for a server
+	// that keeps returning cookies without making progress.
+	maxPages := 2*(limit/pageSize) + 10
+	var all []*goldap.Entry
+	for page := 0; ; page++ {
+		if page >= maxPages {
+			return nil, fmt.Errorf("ldap: %s: too many result pages", op)
+		}
+		timeout, err := s.setTimeout(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+		req := goldap.NewSearchRequest(baseDN, goldap.ScopeWholeSubtree, goldap.NeverDerefAliases, 0, serverTimeLimit(timeout), false,
+			filter, attrs, []goldap.Control{paging})
+		result, err := conn.Search(req)
+		if err != nil {
+			// Entries received so far are discarded: a partial snapshot must
+			// never be used.
+			return nil, opError(ctx, op, err)
+		}
+		entries := nonNilEntries(result)
+		if len(entries) > limit-len(all) {
+			return nil, fmt.Errorf("ldap: %s: more than %d entries", op, limit)
+		}
+		all = append(all, entries...)
+
+		cookie := pagingCookie(result)
+		if len(cookie) == 0 {
+			return all, nil
+		}
+		paging.SetCookie(cookie)
+	}
+}
+
+func pagingCookie(result *goldap.SearchResult) []byte {
+	if result == nil {
+		return nil
+	}
+	if p, ok := goldap.FindControl(result.Controls, goldap.ControlTypePaging).(*goldap.ControlPaging); ok && p != nil {
+		return p.Cookie
+	}
+	return nil
 }
 
 func nonNilEntries(result *goldap.SearchResult) []*goldap.Entry {
@@ -320,10 +378,11 @@ func (s *Source) groupMembers(ctx context.Context, conn directoryConn, e *goldap
 		if len(current.values) == 0 || next <= current.low {
 			return nil, errors.New("ldap: search groups: member range made no progress")
 		}
-		if err := s.setTimeout(ctx, conn); err != nil {
+		timeout, err := s.setTimeout(ctx, conn)
+		if err != nil {
 			return nil, err
 		}
-		req := goldap.NewSearchRequest(e.DN, goldap.ScopeBaseObject, goldap.NeverDerefAliases, 0, 0, false,
+		req := goldap.NewSearchRequest(e.DN, goldap.ScopeBaseObject, goldap.NeverDerefAliases, 0, serverTimeLimit(timeout), false,
 			"(objectClass=*)", []string{attrMember + ";range=" + strconv.Itoa(next) + "-*"}, nil)
 		result, err := conn.Search(req)
 		if err != nil {

@@ -13,5 +13,11 @@
 //   - errors and logs never contain the bind password, distinguished names,
 //     filter values, attribute values or server diagnostic messages;
 //   - a snapshot is complete or the fetch fails: partial results are never
-//     returned, because absence from a snapshot marks objects as not observed.
+//     returned, because absence from a snapshot marks objects as not observed;
+//   - resource limits (packet size, entry counts, value length, server time
+//     limit) bound what a misconfigured directory can make the adapter do;
+//   - DN references resolve only to a unique entry (exact match first, then
+//     directory equality semantics without Unicode or whitespace folding);
+//   - plain ldap:// needs an explicit opt-in, and the bind password is held in
+//     a type that redacts itself when formatted or logged.
 package ldap

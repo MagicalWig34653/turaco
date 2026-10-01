@@ -4,9 +4,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	goldap "github.com/go-ldap/ldap/v3"
 
@@ -101,6 +104,50 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// maxValueBytes bounds the length of every text value (attribute value or DN)
+// the adapter accepts. Real names, mail addresses and DNs are far shorter; a
+// longer value is a misconfigured or hostile directory. A variable so tests
+// can inject a small limit.
+var maxValueBytes = 4096
+
+// invalidText reports whether a text value must be rejected: too long, not
+// valid UTF-8, or containing a control character (NUL and the other C0
+// controls, DEL and the C1 controls). Names and DNs never legitimately contain
+// them, and they are the usual carriers of log, header and terminal injection.
+func invalidText(s string) (tooLong, invalid bool) {
+	if len(s) > maxValueBytes {
+		return true, false
+	}
+	if !utf8.ValidString(s) {
+		return false, true
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return false, true
+		}
+	}
+	return false, false
+}
+
+// entryTextProblems checks the DN and all attribute values of an entry except
+// the attributes skip selects (binary attributes, member lists that are
+// checked separately). It reports only whether a problem exists, never which
+// value.
+func entryTextProblems(e *goldap.Entry, skip func(lowerName string) bool) (tooLong, invalid bool) {
+	tooLong, invalid = invalidText(e.DN)
+	for _, a := range e.Attributes {
+		if skip != nil && skip(strings.ToLower(a.Name)) {
+			continue
+		}
+		for _, v := range a.Values {
+			tl, inv := invalidText(v)
+			tooLong = tooLong || tl
+			invalid = invalid || inv
+		}
+	}
+	return tooLong, invalid
+}
+
 // problems counts entries that make the snapshot unusable. Only counts and
 // attribute names are reported, never DNs or values.
 type problems struct {
@@ -122,7 +169,6 @@ func (p *problems) err() error {
 
 type mappedUser struct {
 	user       public.DirectoryUser
-	dnKey      string
 	managerDN  string
 	hasManager bool
 }
@@ -131,12 +177,35 @@ type mappedUser struct {
 // all-or-nothing: an entry without a usable stable ID (or, for users, without
 // username or account state) fails the whole snapshot, because omitting it
 // would make the consumer treat the object as no longer observed.
-func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (public.DirectorySnapshot, error) {
+//
+// DN references (manager, member) resolve only to a unique entry; ambiguous
+// references stay unresolved and only their number is logged.
+func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, logger *slog.Logger) (public.DirectorySnapshot, error) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	var probs problems
 	var badUserID, badUsername, badAccountControl, badGroupID int
+	var userTextInvalid, userTextTooLong, groupTextInvalid, groupTextTooLong, badMembers int
+
+	skipBinaryID := func(name string) bool {
+		return sch.idIsBinaryGUID && name == strings.ToLower(sch.idAttr)
+	}
+	skipMembers := func(name string) bool {
+		return name == strings.ToLower(attrMember) || strings.HasPrefix(name, rangePrefix)
+	}
 
 	users := make([]mappedUser, 0, len(userEntries))
 	for _, e := range userEntries {
+		if tooLong, invalid := entryTextProblems(e, skipBinaryID); tooLong || invalid {
+			if tooLong {
+				userTextTooLong++
+			}
+			if invalid {
+				userTextInvalid++
+			}
+			continue
+		}
 		id, ok := sch.objectID(e)
 		if !ok {
 			badUserID++
@@ -162,7 +231,9 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 				break
 			}
 		}
-		managerDN := value(e, attrManager)
+		// Not trimmed: a trailing space may be an escaped, significant part of
+		// the DN. The DN parser ignores insignificant surrounding spaces.
+		managerDN := e.GetEqualFoldAttributeValue(attrManager)
 		users = append(users, mappedUser{
 			user: public.DirectoryUser{
 				ExternalID:        id,
@@ -175,22 +246,39 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 				EmployeeNumber:    optional(employee),
 				Enabled:           enabled,
 			},
-			dnKey:      normalizeDN(e.DN),
 			managerDN:  managerDN,
-			hasManager: managerDN != "",
+			hasManager: strings.TrimSpace(managerDN) != "",
 		})
 	}
+	probs.add("users", userTextInvalid, "entries with an attribute value that is not valid text (invalid UTF-8 or control character)")
+	probs.add("users", userTextTooLong, "entries with an attribute value longer than "+strconv.Itoa(maxValueBytes)+" bytes")
 	probs.add("users", badUserID, "entries with missing or invalid "+sch.idAttr)
 	probs.add("users", badUsername, "entries with missing "+sch.usernameAttr)
 	probs.add("users", badAccountControl, "entries with missing or invalid "+attrAccountCtl)
 
 	type mappedGroup struct {
 		group   public.DirectoryGroup
-		dnKey   string
+		dn      string
 		members []string
 	}
 	mappedGroups := make([]mappedGroup, 0, len(groups))
 	for _, g := range groups {
+		tooLong, invalid := entryTextProblems(g.entry, func(name string) bool { return skipBinaryID(name) || skipMembers(name) })
+		for _, m := range g.members {
+			if tl, inv := invalidText(m); tl || inv {
+				badMembers++
+				break
+			}
+		}
+		if tooLong || invalid {
+			if tooLong {
+				groupTextTooLong++
+			}
+			if invalid {
+				groupTextInvalid++
+			}
+			continue
+		}
 		id, ok := sch.objectID(g.entry)
 		if !ok {
 			badGroupID++
@@ -204,10 +292,13 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 				DisplayName: firstNonEmpty(value(g.entry, attrCN), value(g.entry, attrDisplayName), id),
 				Description: optional(value(g.entry, attrDescription)),
 			},
-			dnKey:   normalizeDN(g.entry.DN),
+			dn:      g.entry.DN,
 			members: g.members,
 		})
 	}
+	probs.add("groups", groupTextInvalid, "entries with an attribute value that is not valid text (invalid UTF-8 or control character)")
+	probs.add("groups", groupTextTooLong, "entries with an attribute value longer than "+strconv.Itoa(maxValueBytes)+" bytes")
+	probs.add("groups", badMembers, "entries with a member value that is not valid text or longer than "+strconv.Itoa(maxValueBytes)+" bytes")
 	probs.add("groups", badGroupID, "entries with missing or invalid "+sch.idAttr)
 
 	// IDs are unique across users and groups: an object matching both filters
@@ -231,13 +322,16 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 		return public.DirectorySnapshot{}, err
 	}
 
-	userByDN := make(map[string]string, len(users))
+	index := newDNIndex(len(users) + len(mappedGroups))
 	for _, u := range users {
-		userByDN[u.dnKey] = u.user.ExternalID
+		index.add(u.user.DistinguishedName, dnTarget{id: u.user.ExternalID})
 	}
-	groupByDN := make(map[string]string, len(mappedGroups))
 	for _, g := range mappedGroups {
-		groupByDN[g.dnKey] = g.group.ExternalID
+		index.add(g.dn, dnTarget{id: g.group.ExternalID, isGroup: true})
+	}
+	if n := index.ambiguousKeys(); n > 0 {
+		logger.Warn("ldap: directory contains distinguished names that cannot be told apart; references to them stay unresolved",
+			"ambiguousKeys", n)
 	}
 
 	snapshot := public.DirectorySnapshot{
@@ -247,7 +341,10 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 	for _, u := range users {
 		user := u.user
 		if u.hasManager {
-			if id, ok := userByDN[normalizeDN(u.managerDN)]; ok {
+			// A manager is always a user; a reference that resolves to a group
+			// or is ambiguous is unresolved.
+			if t, ok := index.resolve(u.managerDN); ok && !t.isGroup {
+				id := t.id
 				user.ManagerExternalID = &id
 			} else {
 				user.ManagerUnresolved = true
@@ -261,19 +358,17 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup) (pu
 		groupIDs := map[string]struct{}{}
 		unresolved := map[string]struct{}{}
 		for _, memberDN := range g.members {
-			memberDN = strings.TrimSpace(memberDN)
-			if memberDN == "" {
+			if strings.TrimSpace(memberDN) == "" {
 				continue
 			}
-			key := normalizeDN(memberDN)
-			if id, ok := userByDN[key]; ok {
-				userIDs[id] = struct{}{}
-			} else if id, ok := groupByDN[key]; ok {
-				if id != group.ExternalID {
-					groupIDs[id] = struct{}{}
-				}
-			} else {
-				unresolved[key] = struct{}{}
+			t, ok := index.resolve(memberDN)
+			switch {
+			case !ok:
+				unresolved[referenceKey(memberDN)] = struct{}{}
+			case !t.isGroup:
+				userIDs[t.id] = struct{}{}
+			case t.id != group.ExternalID:
+				groupIDs[t.id] = struct{}{}
 			}
 		}
 		group.MemberUserIDs = sortedKeys(userIDs)

@@ -87,9 +87,9 @@ func TestFetchActiveDirectorySnapshot(t *testing.T) {
 		t.Fatalf("searches = %+v", searches)
 	}
 	wantUsers := recordedSearch{baseDN: cfg.UserBaseDN, scope: goldap.ScopeWholeSubtree, filter: cfg.UserFilter,
-		attrs: mustSchema(t, config.DirectoryTypeActiveDirectory).userAttrs, pageSize: 500, hasPaging: true}
+		attrs: mustSchema(t, config.DirectoryTypeActiveDirectory).userAttrs, pageSize: 500, hasPaging: true, timeLimit: int(defaultRequestTimeout / time.Second)}
 	wantGroups := recordedSearch{baseDN: cfg.GroupBaseDN, scope: goldap.ScopeWholeSubtree, filter: cfg.GroupFilter,
-		attrs: mustSchema(t, config.DirectoryTypeActiveDirectory).groupAttrs, pageSize: 500, hasPaging: true}
+		attrs: mustSchema(t, config.DirectoryTypeActiveDirectory).groupAttrs, pageSize: 500, hasPaging: true, timeLimit: int(defaultRequestTimeout / time.Second)}
 	if !reflect.DeepEqual(searches[0], wantUsers) {
 		t.Errorf("user search = %+v\nwant        %+v", searches[0], wantUsers)
 	}
@@ -503,6 +503,16 @@ func TestFetchSetsRequestTimeoutFromDeadline(t *testing.T) {
 			t.Errorf("timeout %v outside (0, 1m]", d)
 		}
 	}
+	// Every search carries a server-side time limit derived from the deadline.
+	searches := dir.snapshotSearches()
+	if len(searches) == 0 {
+		t.Fatal("no searches recorded")
+	}
+	for _, r := range searches {
+		if r.timeLimit < 59 || r.timeLimit > 60 {
+			t.Errorf("search time limit = %d, want 59..60 seconds for a one-minute deadline", r.timeLimit)
+		}
+	}
 
 	// Without a deadline a bounded default applies.
 	dir2 := basicDirectory(t)
@@ -573,6 +583,7 @@ func TestNewSourceValidation(t *testing.T) {
 		{"starttls with ldaps", func(c *config.LDAPConfig) { c.StartTLS = true }, testBindPassword},
 		{"unsupported scheme", func(c *config.LDAPConfig) { c.URL = "http://dc.example.test" }, testBindPassword},
 		{"url without host", func(c *config.LDAPConfig) { c.URL = "ldaps://" }, testBindPassword},
+		{"plaintext without opt-in", func(c *config.LDAPConfig) { c.URL = "ldap://dc.example.test:389" }, testBindPassword},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -592,9 +603,45 @@ func TestNewSourceValidation(t *testing.T) {
 	}
 }
 
+func TestNewSourcePlaintextRules(t *testing.T) {
+	plain := adConfig()
+	plain.URL = "ldap://dc.example.test:389"
+
+	if _, err := NewSource(plain, testBindPassword, nil); err == nil {
+		t.Error("ldap:// without StartTLS and without AllowPlaintext was accepted")
+	} else if strings.Contains(err.Error(), testBindPassword) || strings.Contains(err.Error(), "dc.example.test") {
+		t.Errorf("error leaks configuration: %v", err)
+	}
+
+	startTLS := plain
+	startTLS.StartTLS = true
+	if _, err := NewSource(startTLS, testBindPassword, nil); err != nil {
+		t.Errorf("ldap:// with StartTLS rejected: %v", err)
+	}
+
+	var logs bytes.Buffer
+	allowed := plain
+	allowed.AllowPlaintext = true
+	if _, err := NewSource(allowed, testBindPassword, slog.New(slog.NewTextHandler(&logs, nil))); err != nil {
+		t.Errorf("ldap:// with AllowPlaintext rejected: %v", err)
+	}
+	if !strings.Contains(logs.String(), "level=WARN") {
+		t.Errorf("allowed plaintext must still warn, log = %q", logs.String())
+	}
+
+	// AllowPlaintext never relaxes ldaps:// or the StartTLS conflict check.
+	ldaps := adConfig()
+	ldaps.AllowPlaintext = true
+	ldaps.StartTLS = true
+	if _, err := NewSource(ldaps, testBindPassword, nil); err == nil {
+		t.Error("ldaps:// with StartTLS accepted")
+	}
+}
+
 func TestNewSourceWarnsAboutUnencryptedConnection(t *testing.T) {
 	cfg := adConfig()
 	cfg.URL = "ldap://dc.example.test:389"
+	cfg.AllowPlaintext = true
 	var logs bytes.Buffer
 	if _, err := NewSource(cfg, testBindPassword, slog.New(slog.NewTextHandler(&logs, nil))); err != nil {
 		t.Fatal(err)
