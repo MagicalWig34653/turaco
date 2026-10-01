@@ -32,6 +32,8 @@ var (
 type DirectoryAccount struct {
 	UserID            string
 	DistinguishedName string
+	// Username is the synced directory username as stored.
+	Username string
 }
 
 // AccountDirectory resolves a login identifier (username, DOMAIN\user or

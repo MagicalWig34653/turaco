@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
@@ -38,7 +39,7 @@ func (h *loginHandler) kerberos(w http.ResponseWriter, r *http.Request) {
 	// (login CSRF): browsers attach Negotiate credentials to cross-site
 	// requests to intranet hosts. Requests without Fetch Metadata (curl, old
 	// browsers) are accepted; they cannot be forged cross-site with a ticket.
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+	if !kerberosSameSite(r) {
 		httpx.WriteError(w, http.StatusForbidden, "platform.csrf_rejected", "The request origin is not allowed.")
 		return
 	}
@@ -54,15 +55,27 @@ func (h *loginHandler) kerberos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	raw, decodeErr := base64.StdEncoding.DecodeString(token)
+	// Browsers on machines without a usable Kerberos ticket (not domain
+	// joined, wrong host name) fall back to NTLM inside Negotiate. That is
+	// not an attack and not a Kerberos failure: answer the challenge without
+	// counting or auditing, so the UI falls back to the password form.
+	if decodeErr == nil && isNTLMToken(raw) {
+		h.negotiateChallenge(w)
+		return
+	}
+
 	a := h.begin(r)
-	// Only the client budget: an account key would let anyone with a forged
-	// token lock a user out. Reserved before any validation work.
+	// Kerberos has its own client budget so that broken Kerberos (stale
+	// keytab, unjoined devices behind one NAT) cannot exhaust the budget the
+	// password fallback needs. No account key: a forged token must not lock a
+	// user out. Reserved before any validation work.
+	a.ipKey = "ip:krb/" + strings.TrimPrefix(a.ipKey, "ip:")
 	if !h.reserve(w, r, a, a.ipKey, true) {
 		return
 	}
 
-	raw, err := base64.StdEncoding.DecodeString(token)
-	if err != nil {
+	if decodeErr != nil {
 		h.kerberosFailure(w, r, a, "", "invalid_ticket")
 		return
 	}
@@ -89,7 +102,13 @@ func (h *loginHandler) kerberos(w http.ResponseWriter, r *http.Request) {
 		writeInternal(h.logger, w, r, err)
 		return
 	}
-	if !found {
+	// For Kerberos the lookup is the identity decision (no bind proves it),
+	// so the folded SQL match is not enough: require the principal name to
+	// equal the synced username exactly, ignoring ASCII case only (AD keeps
+	// the case the user typed). Non-ASCII names must match byte for byte, so
+	// Unicode folding (Kelvin sign, dotted I) never maps a different
+	// principal onto an account.
+	if !found || !kerberosNameMatches(principal.Username, acct.Username) {
 		h.kerberosFailure(w, r, a, "", "unknown_account")
 		return
 	}
@@ -166,4 +185,60 @@ func parseNegotiate(values []string) (string, negotiateOutcome) {
 // e-mail form, no instance part, no surrounding space).
 func plainKerberosUsername(s string) bool {
 	return validLoginField(s, maxIdentifierBytes) && strings.TrimSpace(s) == s && !strings.ContainsAny(s, `@\/`)
+}
+
+// kerberosSameSite rejects cross-site requests to the session-creating GET:
+// Fetch Metadata when present, and otherwise an Origin header naming another
+// host. Requests with neither (curl, very old browsers) are accepted; they
+// cannot be forged cross-site with the victim's ticket by a modern browser.
+func kerberosSameSite(r *http.Request) bool {
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+			return false
+		}
+	}
+	return true
+}
+
+// isNTLMToken reports whether a Negotiate token is a raw NTLMSSP message.
+func isNTLMToken(raw []byte) bool {
+	return len(raw) >= 8 && string(raw[:8]) == "NTLMSSP\x00"
+}
+
+// kerberosNameMatches compares a Kerberos principal name with the synced
+// directory username: ASCII case-insensitive for ASCII names, byte-exact
+// otherwise. strings.EqualFold is deliberately not used (it folds Unicode).
+func kerberosNameMatches(principal, synced string) bool {
+	if principal == synced {
+		return principal != ""
+	}
+	if len(principal) != len(synced) || !isASCII(principal) || !isASCII(synced) {
+		return false
+	}
+	for i := 0; i < len(principal); i++ {
+		if asciiLower(principal[i]) != asciiLower(synced[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiLower(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }

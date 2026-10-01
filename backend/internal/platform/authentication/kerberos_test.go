@@ -49,6 +49,7 @@ func newKerberosFixture(t *testing.T, opts ...fixtureOption) (*loginFixture, *fa
 	t.Helper()
 	k := &fakeKerberos{}
 	f := newLoginFixture(t, append([]fixtureOption{withKerberos(k)}, opts...)...)
+	f.trackKey(kerberosClientKey(f.ip))
 	k.tickets = map[string]KerberosPrincipal{
 		"ticket-alice": {Username: f.ident, Realm: krbRealm},
 	}
@@ -81,7 +82,7 @@ func TestKerberosNotConfigured(t *testing.T) {
 	if rec.Code != http.StatusNotFound || rec.errCode() != "auth.method_unavailable" || rec.Header().Get("WWW-Authenticate") != "" {
 		t.Fatalf("status=%d code=%s www=%q", rec.Code, rec.errCode(), rec.Header().Get("WWW-Authenticate"))
 	}
-	if f.throttleFailures(ClientKey(f.ip)) != 0 {
+	if f.throttleFailures(kerberosClientKey(f.ip)) != 0 {
 		t.Fatal("unconfigured Kerberos touched the throttle")
 	}
 
@@ -148,8 +149,8 @@ func TestKerberosChallengeWithoutCredentials(t *testing.T) {
 	}
 	// The challenge is the normal first round trip: no validation, no
 	// throttle attempt, no audit, no delay.
-	if k.callCount() != 0 || f.throttleFailures(ClientKey(f.ip)) != 0 || len(f.sleepsSnapshot()) != 0 {
-		t.Fatalf("challenge did work: validator=%d attempts=%d sleeps=%v", k.callCount(), f.throttleFailures(ClientKey(f.ip)), f.sleepsSnapshot())
+	if k.callCount() != 0 || f.throttleFailures(kerberosClientKey(f.ip)) != 0 || len(f.sleepsSnapshot()) != 0 {
+		t.Fatalf("challenge did work: validator=%d attempts=%d sleeps=%v", k.callCount(), f.throttleFailures(kerberosClientKey(f.ip)), f.sleepsSnapshot())
 	}
 	if rows := f.unknownFailureAudits(f.ip); len(rows) != 0 {
 		t.Fatalf("challenge was audited: %v", rows)
@@ -185,7 +186,7 @@ func TestKerberosSuccessCreatesSession(t *testing.T) {
 	if got := f.auditRows(`action = 'auth.session.created' AND target_id = $1`, sess.ID); len(got) != 1 || !strings.Contains(got[0], `"authMethod": "kerberos"`) {
 		t.Fatalf("session audit = %v", got)
 	}
-	if n := f.throttleFailures(ClientKey(f.ip)); n != 1 {
+	if n := f.throttleFailures(kerberosClientKey(f.ip)); n != 1 {
 		t.Fatalf("client attempts = %d, want 1 (the failure only)", n)
 	}
 	if len(f.sleepsSnapshot()) != 1 { // only the failure was delayed
@@ -254,7 +255,7 @@ func TestKerberosFailuresAreUniformAndAudited(t *testing.T) {
 	if inactiveID == f.userID {
 		inactiveID = f.userID[:len(f.userID)-1] + "e"
 	}
-	f.dir.accounts["ad|inactive"+suffix] = DirectoryAccount{UserID: inactiveID, DistinguishedName: loginDN + suffix}
+	f.dir.accounts["ad|inactive"+suffix] = DirectoryAccount{UserID: inactiveID, DistinguishedName: loginDN + suffix, Username: "inactive" + suffix}
 	f.trackKey(AccountKey(inactiveID))
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.audit_events WHERE target_id = $1`, inactiveID)
@@ -332,7 +333,7 @@ func TestKerberosFailuresAreUniformAndAudited(t *testing.T) {
 	if f.sessionCount() != 0 {
 		t.Fatal("sessions created by failed logins")
 	}
-	if n := f.throttleFailures(ClientKey(f.ip)); n != len(cases) {
+	if n := f.throttleFailures(kerberosClientKey(f.ip)); n != len(cases) {
 		t.Fatalf("client attempts = %d, want %d", n, len(cases))
 	}
 	// Failures never create an account budget.
@@ -415,7 +416,7 @@ func TestKerberosHeaderBounds(t *testing.T) {
 	if rec.Code != http.StatusBadRequest || rec.errCode() != "auth.invalid_request" {
 		t.Fatalf("two headers: status=%d code=%s", rec.Code, rec.errCode())
 	}
-	if k.callCount() != 0 || f.throttleFailures(ClientKey(f.ip)) != 0 || f.sessionCount() != 0 {
+	if k.callCount() != 0 || f.throttleFailures(kerberosClientKey(f.ip)) != 0 || f.sessionCount() != 0 {
 		t.Fatal("rejected headers must not reach the validator or the throttle")
 	}
 	// A header at the bound is processed (and fails as an invalid ticket).
@@ -433,7 +434,7 @@ func TestKerberosRejectsCrossSiteRequests(t *testing.T) {
 			t.Fatalf("%s: status=%d code=%s", site, rec.Code, rec.errCode())
 		}
 	}
-	if k.callCount() != 0 || f.throttleFailures(ClientKey(f.ip)) != 0 {
+	if k.callCount() != 0 || f.throttleFailures(kerberosClientKey(f.ip)) != 0 {
 		t.Fatal("cross-site request reached the validator or the throttle")
 	}
 	for _, site := range []string{"same-origin", "none"} {
@@ -470,9 +471,10 @@ func TestKerberosThrottlesTheClientBeforeValidation(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("other client status = %d", rec.Code)
 	}
-	// Password login shares the same client budget.
-	if rec := f.login(f.ident, loginPassword); rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("password login from the locked client: status = %d", rec.Code)
+	// Kerberos has its own client budget: broken Kerberos must not lock the
+	// password fallback.
+	if rec := f.login(f.ident, loginPassword); rec.Code != http.StatusNoContent {
+		t.Fatalf("password login from a Kerberos-locked client: status = %d", rec.Code)
 	}
 }
 
@@ -483,7 +485,7 @@ func TestKerberosSuccessIsRefundedSoSingleSignOnNeverLocksAClient(t *testing.T) 
 			t.Fatalf("login %d: status = %d", i+1, rec.Code)
 		}
 	}
-	if n := f.throttleFailures(ClientKey(f.ip)); n != 0 {
+	if n := f.throttleFailures(kerberosClientKey(f.ip)); n != 0 {
 		t.Fatalf("client attempts = %d, want 0", n)
 	}
 }
@@ -529,5 +531,71 @@ func TestPlainKerberosUsername(t *testing.T) {
 		if got := plainKerberosUsername(s); got != want {
 			t.Errorf("plainKerberosUsername(%q) = %v, want %v", s, got, want)
 		}
+	}
+}
+
+func kerberosClientKey(ip string) string {
+	return "ip:krb/" + strings.TrimPrefix(ClientKey(ip), "ip:")
+}
+
+// Security regression: Unicode case folding (Kelvin sign, dotted I) in the
+// directory lookup must not map a different Kerberos principal onto an
+// account; only an exact or ASCII-case-insensitive match is accepted.
+func TestKerberosRequiresExactUsernameMatch(t *testing.T) {
+	f, k := newKerberosFixture(t)
+	f.trackKey(kerberosClientKey(f.ip))
+	// The fake directory folds like PostgreSQL lower() would for these names.
+	kelvin := strings.Replace(f.ident, "a", "\u212a", 1) // not ASCII
+	f.dir.accounts["ad|"+NormalizeIdentifier(kelvin)] = f.dir.accounts["ad|"+f.ident]
+	k.tickets["ticket-kelvin"] = KerberosPrincipal{Username: kelvin, Realm: krbRealm}
+	if rec := f.kerberosGet(negotiate("ticket-kelvin")); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("folded non-ASCII principal: status = %d, want 401", rec.Code)
+	}
+	if f.sessionCount() != 0 {
+		t.Fatal("a session was created for a folded principal")
+	}
+	for _, tc := range []struct {
+		principal, synced string
+		want              bool
+	}{
+		{"alice", "alice", true},
+		{"ALICE", "alice", true},
+		{"Alice", "aLiCe", true},
+		{"\u212aate", "kate", false},
+		{"kate", "\u212aate", false},
+		{"İvan", "ivan", false},
+		{"élodie", "élodie", true},
+		{"Élodie", "élodie", false},
+		{"", "", false},
+		{"alice", "alice2", false},
+	} {
+		if got := kerberosNameMatches(tc.principal, tc.synced); got != tc.want {
+			t.Errorf("kerberosNameMatches(%q, %q) = %v, want %v", tc.principal, tc.synced, got, tc.want)
+		}
+	}
+}
+
+// NTLM fallback tokens (non-domain-joined devices) are answered with the
+// challenge: not validated, not counted, not audited.
+func TestKerberosNTLMTokenIsAChallenge(t *testing.T) {
+	f, k := newKerberosFixture(t)
+	rec := f.kerberosGet("Negotiate " + base64.StdEncoding.EncodeToString([]byte("NTLMSSP\x00\x01\x00\x00\x00rest")))
+	if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != "Negotiate" {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	if k.callCount() != 0 || f.throttleFailures(kerberosClientKey(f.ip)) != 0 || len(f.failureAudits()) != 0 {
+		t.Fatal("an NTLM token was validated, counted or audited")
+	}
+}
+
+func TestKerberosRejectsForeignOrigin(t *testing.T) {
+	f, k := newKerberosFixture(t)
+	rec := f.kerberosGet(negotiate("ticket-alice"), func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") })
+	if rec.Code != http.StatusForbidden || k.callCount() != 0 {
+		t.Fatalf("foreign origin: status=%d calls=%d", rec.Code, k.callCount())
+	}
+	rec = f.kerberosGet(negotiate("ticket-alice"), func(r *http.Request) { r.Header.Set("Origin", "http://"+r.Host) })
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("same origin: status=%d", rec.Code)
 	}
 }

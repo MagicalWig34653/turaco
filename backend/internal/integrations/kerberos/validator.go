@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -45,7 +46,17 @@ type Validator struct {
 	settings *service.Settings
 	realm    string
 	logger   *slog.Logger
+	// verifyMu serializes ticket verification: gokrb5's replay cache checks
+	// and records an authenticator in two unlocked steps, so concurrent
+	// presentations of one captured token could otherwise both pass.
+	// Verification is fast symmetric crypto, so serializing is cheap.
+	verifyMu sync.Mutex
 }
+
+// acceptedKeyTypes are the AES encryption types accepted from the keytab
+// (aes128/256-cts-hmac-sha1-96 and -sha256/384). RC4-HMAC, DES and DES3 keys
+// are ignored even if present.
+var acceptedKeyTypes = map[int32]bool{17: true, 18: true, 19: true, 20: true}
 
 var _ authentication.KerberosValidator = (*Validator)(nil)
 
@@ -62,8 +73,8 @@ func NewValidator(cfg config.KerberosConfig, logger *slog.Logger) (*Validator, e
 		return nil, errors.New("kerberos: realm must be set and upper case")
 	}
 	components := strings.Split(cfg.ServicePrincipal, "/")
-	if len(components) != 2 || components[0] == "" || components[1] == "" || strings.Contains(cfg.ServicePrincipal, "@") {
-		return nil, errors.New("kerberos: service principal must be service/host without a realm")
+	if len(components) != 2 || components[0] != "HTTP" || components[1] == "" || strings.Contains(cfg.ServicePrincipal, "@") {
+		return nil, errors.New("kerberos: service principal must be HTTP/<host name> without a realm")
 	}
 	skew := cfg.MaxClockSkew
 	switch {
@@ -73,18 +84,28 @@ func NewValidator(cfg config.KerberosConfig, logger *slog.Logger) (*Validator, e
 		return nil, fmt.Errorf("kerberos: clock skew must be positive and at most %s", config.MaxKerberosClockSkew)
 	}
 
-	kt, err := loadKeytab(cfg.KeytabFile)
+	all, err := loadKeytab(cfg.KeytabFile)
 	if err != nil {
 		return nil, err
 	}
-	keys := 0
-	for _, e := range kt.Entries {
-		if e.Principal.Realm == cfg.Realm && equalStrings(e.Principal.Components, components) {
-			keys++
+	if info, err := os.Stat(cfg.KeytabFile); err == nil && info.Mode().Perm()&0o077 != 0 {
+		// Docker/Swarm secrets are often mounted world-readable inside the
+		// container; warn rather than refuse.
+		logger.Warn("kerberos keytab file is readable by group or others; restrict it to the API process", "mode", info.Mode().Perm().String())
+	}
+	// Keep only AES keys of the configured service principal in the
+	// configured realm: gokrb5 selects the key by the ticket's unencrypted
+	// realm, so a key of another realm in the same keytab would let that
+	// realm's KDC mint tickets for our users.
+	kt := keytab.New()
+	for _, e := range all.Entries {
+		if e.Principal.Realm == cfg.Realm && equalStrings(e.Principal.Components, components) && acceptedKeyTypes[e.Key.KeyType] {
+			kt.Entries = append(kt.Entries, e)
 		}
 	}
+	keys := len(kt.Entries)
 	if keys == 0 {
-		return nil, errors.New("kerberos: keytab has no key for the service principal in the configured realm")
+		return nil, errors.New("kerberos: keytab has no AES key for the service principal in the configured realm")
 	}
 	logger.Info("kerberos login configured", "servicePrincipal", cfg.ServicePrincipal, "realm", cfg.Realm, "keys", keys, "maxClockSkew", skew.String())
 
@@ -176,20 +197,40 @@ func (v *Validator) validate(token []byte) (Principal, error) {
 	if !mech.IsAPReq() {
 		return Principal{}, invalid("not an AP-REQ")
 	}
-	ok, creds, err := service.VerifyAPREQ(&mech.APReq, v.settings)
-	if err != nil || !ok || creds == nil {
+	// The outer ticket realm is unauthenticated but selects the decryption
+	// key; only our realm is accepted.
+	if mech.APReq.Ticket.Realm != v.realm {
+		return Principal{}, invalid("ticket realm not accepted")
+	}
+	ok, err := v.verify(&mech.APReq)
+	if err != nil || !ok {
 		return Principal{}, invalid(describe(err))
 	}
-	if creds.Domain() != v.realm {
+	// Identity comes from the KDC-encrypted ticket part, never from the
+	// authenticator: the client encrypts the authenticator itself and gokrb5
+	// compares only the names, not the realms. A user of a trusted realm
+	// could otherwise claim our realm.
+	enc := mech.APReq.Ticket.DecryptedEncPart
+	if enc.CRealm != v.realm || mech.APReq.Authenticator.CRealm != v.realm {
 		return Principal{}, invalid("client realm not accepted")
 	}
 	// A single component: user/admin or host/name principals are service or
 	// instance identities, never a person's login.
-	name := creds.CName().NameString
+	name := enc.CName.NameString
 	if len(name) != 1 || !validUsername(name[0]) {
 		return Principal{}, invalid("client principal name not accepted")
 	}
-	return Principal{Username: name[0], Realm: creds.Domain()}, nil
+	return Principal{Username: name[0], Realm: enc.CRealm}, nil
+}
+
+// verify runs gokrb5's AP-REQ verification under verifyMu. The deferred
+// unlock matters: gokrb5 can panic on malformed input, and Validate recovers
+// the panic further up.
+func (v *Validator) verify(apReq *messages.APReq) (bool, error) {
+	v.verifyMu.Lock()
+	defer v.verifyMu.Unlock()
+	ok, _, err := service.VerifyAPREQ(apReq, v.settings)
+	return ok, err
 }
 
 // parseMechToken extracts the KRB5 mechanism token: from a SPNEGO

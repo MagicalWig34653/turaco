@@ -149,8 +149,8 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	f.ident = "alice" + suffix
 	f.ip = fmt.Sprintf("10.%d.%d.%d", randByte(), randByte(), randByte())
 	f.dir = &fakeDirectory{accounts: map[string]DirectoryAccount{
-		"ad|" + f.ident:                   {UserID: f.userID, DistinguishedName: loginDN + suffix},
-		"ad|" + f.ident + "@example.test": {UserID: f.userID, DistinguishedName: loginDN + suffix},
+		"ad|" + f.ident:                   {UserID: f.userID, DistinguishedName: loginDN + suffix, Username: f.ident},
+		"ad|" + f.ident + "@example.test": {UserID: f.userID, DistinguishedName: loginDN + suffix, Username: f.ident},
 	}}
 	f.ver = &fakeVerifier{passwords: map[string]string{loginDN + suffix: loginPassword}}
 	f.locker = &fakeLocker{active: map[string]bool{f.userID: true}}
@@ -369,7 +369,7 @@ func TestLoginCredentialFailuresAreUniform(t *testing.T) {
 	if inactiveID == f.userID {
 		inactiveID = f.userID[:len(f.userID)-1] + "e"
 	}
-	f.dir.accounts["ad|inactive"+suffix] = DirectoryAccount{UserID: inactiveID, DistinguishedName: loginDN + suffix}
+	f.dir.accounts["ad|inactive"+suffix] = DirectoryAccount{UserID: inactiveID, DistinguishedName: loginDN + suffix, Username: "inactive" + suffix}
 	f.trackKey(AccountKey(inactiveID))
 	t.Cleanup(func() {
 		ctx := context.Background()

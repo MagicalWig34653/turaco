@@ -24,11 +24,18 @@ Browsers reach `turaco-api` through `turaco-web` (nginx) or another reverse prox
 
 ## Kerberos single sign-on
 
-1. Create a service account in AD for Turaco and register the SPN `HTTP/<turaco host name>` (the name users type in the browser), for example `setspn -S HTTP/turaco.example.local svc-turaco-http`.
+1. Create a dedicated service account in AD for Turaco (no delegation rights, not used for anything else) and register the SPN `HTTP/<turaco host name>` (the name users type in the browser), for example `setspn -S HTTP/turaco.example.local svc-turaco-http`.
 2. Export a keytab for that principal with AES encryption types (`ktpass ... -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL`), store it as a secret and mount it **only into turaco-api**.
 3. Set `KERBEROS_KEYTAB_FILE`, `KERBEROS_SERVICE_PRINCIPAL=HTTP/turaco.example.local` and `KERBEROS_REALM=EXAMPLE.LOCAL` on the API (directory sync and `LDAP_URL` must be configured: principals map to synced accounts).
 4. Add the Turaco URL to the browsers' intranet/trusted zone (group policy); otherwise browsers do not send Negotiate and users see the password form.
-5. Keep API and domain controller clocks synchronized (default allowed skew 5 minutes). Proxies must pass `Authorization` and `WWW-Authenticate` unchanged.
+5. Keep API and domain controller clocks synchronized (default allowed skew 5 minutes). Proxies must pass `Authorization` and `WWW-Authenticate` unchanged and accept large request headers: tickets with big group memberships exceed nginx defaults (`turaco-web` sets `large_client_header_buffers 4 64k`).
+
+Security notes:
+
+- The keytab is equivalent to the service account's password: whoever holds it can mint tickets for any user of the realm towards Turaco. Keep it readable only by the API process and rotate it (new key version, new keytab) if it may have leaked.
+- Mark administrator accounts "Account is sensitive and cannot be delegated" in AD; Turaco needs no delegated credentials.
+- The service principal must be `HTTP/<host>`; only AES keys for it in `KERBEROS_REALM` are used, and tickets from trusted foreign realms are refused.
+- The Windows PAC is not evaluated: a user disabled in AD can still sign in by Kerberos until the next directory sync marks the User inactive. Shorten the sync interval or run a manual sync when access must end immediately.
 
 ## First administrator and emergency access
 

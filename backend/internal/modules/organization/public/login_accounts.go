@@ -40,7 +40,7 @@ func (l *LoginAccounts) FindDirectoryAccount(ctx context.Context, providerKey, i
 	if err != nil || !ok {
 		return authentication.DirectoryAccount{}, false, err
 	}
-	return authentication.DirectoryAccount{UserID: a.UserID, DistinguishedName: a.DistinguishedName}, true, nil
+	return authentication.DirectoryAccount{UserID: a.UserID, DistinguishedName: a.DistinguishedName, Username: a.Username}, true, nil
 }
 
 // LockActiveUser implements authentication.UserLocker.

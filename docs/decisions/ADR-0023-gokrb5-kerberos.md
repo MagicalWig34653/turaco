@@ -17,5 +17,6 @@ Use `github.com/jcmturner/gokrb5/v8` (pure Go, Apache-2.0, already in the module
 ## Consequences
 
 - One more direct dependency subject to `docs/security/supply-chain.md`.
-- gokrb5's replay cache and clock-skew checks apply per API instance; replays across instances within the skew window are bounded by the short token lifetime and TLS.
-- An end-to-end test runs against an MIT KDC in the development/CI environment.
+- gokrb5's replay cache and clock-skew checks apply per API instance. Its cache checks and records an authenticator in two unlocked steps, so Turaco serializes verification per process; replays across instances within the skew window remain possible and are bounded by the short token lifetime and TLS.
+- gokrb5 selects the decryption key by the ticket's unencrypted realm and checks only client names, not realms, between ticket and authenticator. Turaco therefore loads only AES keys of the configured principal and realm and takes the identity from the KDC-encrypted ticket part, checking all realms itself (regression tests in `integrations/kerberos`).
+- End-to-end behaviour was verified against an MIT KDC in the development environment; that run is manual and not yet part of CI.
