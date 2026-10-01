@@ -9,7 +9,8 @@
 //
 // A processing job whose lock is older than the runner's lock timeout is
 // considered abandoned (crashed worker) and may be claimed again. Handlers must
-// therefore be idempotent.
+// therefore be idempotent. A job interrupted by worker shutdown returns to
+// pending without consuming the attempt.
 package jobs
 
 import (
