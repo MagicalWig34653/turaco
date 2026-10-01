@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 fail=0
+version_of() {
+  case "$1" in
+    go) go version 2>/dev/null || true ;;
+    *) "$1" --version 2>/dev/null | head -1 || true ;;
+  esac
+}
 check_required() {
   local command_name="$1"
   local hint="$2"
   if command -v "$command_name" >/dev/null 2>&1; then
-    printf '✓ %-12s %s\n' "$command_name" "$($command_name --version 2>/dev/null | head -1 || true)"
+    printf '✓ %-12s %s\n' "$command_name" "$(version_of "$command_name")"
   else
     printf '✗ %-12s missing (%s)\n' "$command_name" "$hint"
     fail=1
@@ -15,7 +21,7 @@ check_optional() {
   local command_name="$1"
   local hint="$2"
   if command -v "$command_name" >/dev/null 2>&1; then
-    printf '✓ %-12s %s\n' "$command_name" "$($command_name --version 2>/dev/null | head -1 || true)"
+    printf '✓ %-12s %s\n' "$command_name" "$(version_of "$command_name")"
   else
     printf '· %-12s optional (%s)\n' "$command_name" "$hint"
   fi
@@ -27,7 +33,13 @@ check_required go 'brew install go'
 check_required node 'brew install node@24'
 check_required npm 'installed with Node.js'
 check_required docker 'brew install docker colima'
-check_required colima 'brew install colima'
+# Colima is the Docker runtime chosen for macOS (ADR-0010). Elsewhere (Linux,
+# Claude Code cloud) any reachable Docker daemon satisfies the check below.
+if [[ "$(uname -s)" == 'Darwin' ]]; then
+  check_required colima 'brew install colima'
+else
+  check_optional colima 'macOS only; Linux uses the native Docker daemon'
+fi
 check_required jq 'brew install jq'
 check_optional gh 'brew install gh'
 check_optional shellcheck 'brew install shellcheck'

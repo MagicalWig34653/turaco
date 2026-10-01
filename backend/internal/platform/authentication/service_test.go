@@ -3,12 +3,13 @@ package authentication
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
 type fakeClock struct{ t time.Time }
@@ -20,23 +21,11 @@ const testUser = "0190a000-0000-7000-8000-000000000001"
 
 func newTestService(t *testing.T) (*Service, *fakeClock, *pgxpool.Pool) {
 	t.Helper()
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		t.Skip("DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Skipf("database unreachable: %v", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Skipf("database unreachable: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform.sessions') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-		t.Skip("platform.sessions missing; run make migrate")
+		dbtest.Unavailable(t, "platform.sessions missing; run make migrate")
 	}
 	clk := &fakeClock{t: time.Now().UTC().Truncate(time.Microsecond)}
 	svc := NewService(pool, Config{IdleTimeout: 30 * time.Minute, AbsoluteTimeout: time.Hour, TouchInterval: time.Minute}, clk.now)

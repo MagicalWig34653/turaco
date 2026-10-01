@@ -76,6 +76,8 @@ make docs-check      # generated references + documentation links
 make check           # full local quality gate
 ```
 
+In Claude Code cloud sessions a SessionStart hook bootstraps toolchain, Docker, infrastructure and migrations automatically; see `docs/development/cloud-development.md`.
+
 Before declaring work complete, run `make check` unless the task cannot reasonably require it. If a check cannot run, report exactly why.
 
 ## Architecture map

@@ -14,6 +14,8 @@ func TestLoadRequiresDatabaseURL(t *testing.T) {
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("HTTP_ADDR", "")
+	t.Setenv("S3_PATH_STYLE", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -28,6 +30,10 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadSessionDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
+	// Empty means unset for Load; isolates the test from a sourced .env.
+	for _, name := range []string{"SESSION_IDLE_TIMEOUT", "SESSION_ABSOLUTE_TIMEOUT", "SESSION_COOKIE_SECURE"} {
+		t.Setenv(name, "")
+	}
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)

@@ -79,6 +79,10 @@ The frontend proxies `/api` to the API.
 make check
 ```
 
+`make test` loads `.env`, so PostgreSQL-backed tests run whenever the local database is up and skip otherwise. Set `TURACO_REQUIRE_DB_TESTS=true` to make an unavailable database a test failure, as CI and Claude Code cloud sessions do.
+
+Claude Code cloud sessions use this same environment through an automatic adapter; see [Claude Code Cloud Development](cloud-development.md).
+
 ## Environment
 
 `.env` is ignored. `.env.example` contains non-secret examples only. Never place real customer/production credentials into the repository.

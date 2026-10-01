@@ -1,6 +1,6 @@
 # Current Implementation Status
 
-**Status date:** 2026-09-30
+**Status date:** 2026-10-01
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
@@ -17,6 +17,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Permission, event and configuration registries with generated reference documentation.
 - Architecture boundary checker and Markdown-link checker.
 - Local Colima/Docker Compose dependencies: PostgreSQL and S3Mock.
+- Claude Code cloud session bootstrap (SessionStart hook reusing `make bootstrap`); `make check` and `make build` run fully in cloud sessions, with database tests required there and in CI (`TURACO_REQUIRE_DB_TESTS`).
 - Production-oriented Dockerfiles for API, worker and web shell.
 - GitHub Actions scaffolding for CI, security analysis and GHCR container publication.
 - Claude Code project instructions, model-routed Opus/Sonnet skills/subagents, reviewer agents, context policy and deterministic hooks.

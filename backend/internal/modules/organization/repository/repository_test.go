@@ -5,13 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
 const missingID = "00000000-0000-7000-8000-000000000000"
@@ -25,20 +25,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		t.Skip("DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Skipf("database unavailable: %v", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Skipf("database unreachable: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return &fixture{t: t, pool: pool, repo: New(pool), pfx: "zt" + hex.EncodeToString(b)}
