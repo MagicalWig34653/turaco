@@ -39,6 +39,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 
 ## Security
 - [Security Architecture](security/security-architecture.md)
+- [Identity and Access Design (F1 completion)](security/identity-access-design.md)
 - [Encryption](security/encryption.md)
 - [Agent Boundaries](security/agent-boundaries.md)
 - [Software Supply Chain](security/supply-chain.md)

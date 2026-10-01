@@ -8,6 +8,9 @@ type Permission struct {
 
 var Registry = []Permission{
 	{Name: "platform.admin", Description: "Administer platform-wide configuration.", Risk: "high"},
+	{Name: "platform.roles.view", Description: "View roles, permissions and role assignments.", Risk: "normal"},
+	{Name: "platform.roles.manage", Description: "Create, change and delete roles and assign or revoke them; equivalent to administrator access.", Risk: "high"},
+	{Name: "platform.audit.view", Description: "Query the audit log.", Risk: "elevated"},
 	{Name: "organization.view", Description: "View organization users, teams and locations.", Risk: "normal"},
 	{Name: "organization.directory.view", Description: "View observed Directory Groups and their memberships.", Risk: "normal"},
 	{Name: "organization.directory.sync", Description: "Request an immediate directory synchronization run.", Risk: "elevated"},

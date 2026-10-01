@@ -49,13 +49,22 @@ if ! docker info >/dev/null 2>&1; then
     echo 'cloud-bootstrap: Docker daemon unavailable and dockerd not installed' >&2
     exit 1
   fi
-  nohup dockerd >/tmp/turaco-dockerd.log 2>&1 &
-  for _ in {1..60}; do
+  # A container restored from a snapshot can carry a stale PID file, which
+  # makes dockerd refuse to start.
+  if [[ -f /var/run/docker.pid ]] && ! kill -0 "$(cat /var/run/docker.pid)" 2>/dev/null; then
+    rm -f /var/run/docker.pid
+  fi
+  if ! pgrep -x dockerd >/dev/null 2>&1; then
+    echo "--- $(date -u +%FT%TZ) starting dockerd" >>/tmp/turaco-dockerd.log
+    nohup dockerd >>/tmp/turaco-dockerd.log 2>&1 &
+  fi
+  for _ in {1..120}; do
     docker info >/dev/null 2>&1 && break
     sleep 1
   done
   docker info >/dev/null 2>&1 || {
-    echo 'cloud-bootstrap: dockerd did not start; see /tmp/turaco-dockerd.log' >&2
+    echo 'cloud-bootstrap: dockerd did not start; last log lines:' >&2
+    tail -n 20 /tmp/turaco-dockerd.log >&2
     exit 1
   }
 fi
