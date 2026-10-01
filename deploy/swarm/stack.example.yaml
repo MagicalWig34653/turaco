@@ -7,8 +7,13 @@ services:
     networks: [platform]
     environment:
       APP_ENV: production
+      # Network of the reverse proxy in front of the API (turaco-web/ingress);
+      # without it login throttling sees only the proxy's address.
+      # HTTP_TRUSTED_PROXIES: 10.0.0.0/24
+      # AUTH_EMERGENCY_LOGIN_ENABLED: "false"
       # Directory sync: API and worker must use the same LDAP_URL/LDAP_PROVIDER_KEY.
-      # The API only enqueues manual runs and never receives the bind secret.
+      # The API binds as the user for password login and never receives the
+      # sync bind secret; it needs LDAP_URL, TLS settings and LDAP_PROVIDER_KEY.
       # LDAP_URL: ldaps://dc.example.internal:636
       # LDAP_PROVIDER_KEY: ad
     deploy:

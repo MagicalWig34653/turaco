@@ -13,11 +13,17 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Health endpoints and `/api/v1/meta`.
 - Organization read APIs (F1 slice 1): paginated, read-only `GET` endpoints for Users, Teams (with current members), Locations and observed Directory Groups (with observed User memberships). Data is written by directory synchronization (below); there is no write API.
 - Platform `authorization` package: request `Principal`, `Authenticator` interface and `Require(permission)` middleware; default-deny `DenyAll` remains the fallback. There is deliberately no development bypass.
+- Roles and permissions (F1 slice 5; [design](../security/identity-access-design.md)): custom roles (registry-validated permission sets) plus the immutable built-in `platform-administrator`, assigned to Users or Directory Groups with `global` scope; session permissions are evaluated per request from direct and transitive Directory Group assignments; last-administrator guard; soft-deleted roles keep assignment history; API `GET /permissions`, `/roles*`, `/role-assignments*`.
+- Audit query (F1 slice 6): `GET /api/v1/audit-events` with filters and keyset paging (`platform.audit.view`); all privileged identity/configuration changes listed in the design are audited.
+- Login (F1 slice 3b): `POST /api/v1/auth/login` verifies the password by binding to the directory as the synced account (no service account in the API), uniform failures with a 400 ms floor, DB-backed throttling per identifier and client (trusted proxies via `HTTP_TRUSTED_PROXIES`), session creation serialized with User status changes; `GET /api/v1/auth/methods`.
+- Emergency (break-glass) account: argon2id local credential for a dedicated User, created and enabled only with `turaco-admin`, login at `POST /api/v1/auth/emergency-login` only when `AUTH_EMERGENCY_LOGIN_ENABLED=true`, sessions capped at one hour, every use audited and logged at error level.
+- `turaco-admin` operator CLI (shipped in the worker image): `role list|grant|revoke`, `emergency create|set-password|enable|disable`.
+- Web UI (F1): login (Kerberos attempt when configured, password, emergency), app shell with permission-filtered navigation, current user, roles, role assignments, directory sync runs and audit events; English and German.
 - Platform `authentication` package (F1 slice 2): server-side sessions (`platform.sessions`, only a SHA-256 hash of the opaque token is stored), idle and absolute expiry, explicit `Create`/`Authenticate`/`Revoke` operations (creation and revocation are audited in the same transaction), `turaco_session` cookie (HttpOnly, SameSite=Lax, Secure by configuration), same-origin CSRF guard for unsafe methods, `GET /api/v1/auth/session` and `POST /api/v1/auth/logout`. A session is valid only while the Organization User is `active`.
 - LDAP/AD directory synchronization (F1 slice 3; [design](../integrations/ldap-ad-sync-design.md), [operation](../integrations/ldap-ad.md)): one directory per deployment configured with `LDAP_*` (bind password from a deployment secret file, LDAPS/StartTLS with verification). `turaco-worker` syncs every `LDAP_SYNC_INTERVAL` and on manual request: Users and External Identities (matched only by objectGUID/entryUUID, never linked by email), directory-owned User fields, Directory Groups, membership and direct group nesting as interval history, the User status rule with `status_source`, session revocation when a User leaves `active`, mass-removal safeguard (`sweep_withheld`), per-entry handling of malformed data, run records with counts and conflicts, audit and `UserSynchronized` outbox events (written to the outbox only; nothing dispatches them yet).
-- Directory sync API: `GET /api/v1/directory-sync-runs[/{id}]`, `POST /api/v1/directory-sync-runs` (permission `organization.directory.sync`; returns 403 for everyone until slice 5 grants permissions, 409 when sync is not configured); `GET /api/v1/users/{id}` returns `externalIdentities`; group members list only currently observed members with `observedFrom`.
+- Directory sync API: `GET /api/v1/directory-sync-runs[/{id}]`, `POST /api/v1/directory-sync-runs` (permission `organization.directory.sync`, 409 when sync is not configured); `GET /api/v1/users/{id}` returns `externalIdentities`; group members list only currently observed members with `observedFrom`.
 - Platform job runner (`backend/internal/platform/jobs`): PostgreSQL queue with dedupe keys, retry with backoff, permanent failure, stale-lock reclaim and interval schedules (ADR-0006). Outbox dispatch is not implemented.
-- Claude Code cloud sessions bootstrap automatically and run the full `make check`/`make build` (ADR-0021); database tests are required in CI and cloud (`TURACO_REQUIRE_DB_TESTS`).
+- Claude Code cloud sessions bootstrap automatically and run the full `make check`/`make build` (ADR-0021); database tests are required in CI and cloud (`TURACO_REQUIRE_DB_TESTS`) and run against a separate migrated test database locally and in the cloud (`TEST_DATABASE_URL`).
 - Permission, event and configuration registries with generated reference documentation.
 - Architecture boundary checker and Markdown-link checker.
 - Local Colima/Docker Compose dependencies: PostgreSQL and S3Mock.
@@ -30,15 +36,15 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 - Connector Agent transport and LDAP/AD operations.
 - Endpoint Agent enrollment/transport/inventory/deployment operations beyond capability placeholder.
-- Login: no identity provider can create a session yet (LDAP bind in F1 slice 3b, Kerberos/SPNEGO in slice 4, OIDC later). `Service.Create` exists for them; without a provider no session can be established outside tests. The future login must serialize session creation with User status changes, otherwise a session created while sync deactivates the User could revive on reactivation.
+- Kerberos/SPNEGO login (F1 slice 4): `GET /api/v1/auth/kerberos` answers 404 until implemented; OIDC/Entra later.
 - Session cleanup job for expired/revoked sessions (needs an index on `absolute_expires_at`) and session listing/administration.
-- Scope evaluation, role administration and permission assignment (permission checks exist; sessions currently carry **no permissions**, so authenticated calls to permission-protected routes return `403` until F1 slice 5).
+- Scoped role assignments (only `global` exists until the first scoped module).
 - Real object-store client and envelope encryption implementation.
 - Outbox dispatch/consumers (events are written but not delivered).
-- Organization write APIs, Departments/Cost Centers APIs and directory mapping of department/location/cost center, Directory Group *Device* memberships, group-to-role mapping (slice 5).
+- Organization write APIs, Departments/Cost Centers APIs and directory mapping of department/location/cost center, Directory Group *Device* memberships.
 - Connector Agent `ldap.*` capabilities (hosted deployments), DB-managed/multi-directory configuration (waits for ADR-0014 key management).
 - Automated tests against a real directory: the adapter is tested with fakes; Active Directory specifics (objectGUID, userAccountControl, range retrieval) must be verified against a real AD before production use. OpenLDAP was verified manually end to end.
-- Frontend for Organization data.
+- Frontend screens for Organization data beyond user/group pickers.
 
 ## Known limitations of the Organization read slice
 

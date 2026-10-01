@@ -10,7 +10,7 @@ Claude Code cloud sessions use the same development environment as local machine
 | Infrastructure | `deploy/compose/dev.yaml` | `deploy/compose/dev.yaml` | PostgreSQL service |
 | Bootstrap | `make bootstrap` | `make bootstrap` via SessionStart hook | `scripts/ci-install.sh` |
 | Quality gate | `make check` | `make check` | `make check` |
-| Database tests | run when `DATABASE_URL` reachable, else skipped | required | required |
+| Database tests | `turaco_test` database, skipped when unreachable | `turaco_test` database, required | fresh CI database, required |
 
 ## Automatic bootstrap
 

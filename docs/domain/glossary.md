@@ -111,6 +111,9 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Event** — business fact that happened; past-tense name.
 - **Audit Event** — immutable security/compliance record of action/state transition.
 - **Saved View** — reusable query/filter/presentation.
+- **Role** — named set of permissions; custom, or the built-in immutable `platform-administrator` holding all permissions. Not a Team and not an Assignment of work.
+- **Role Assignment** — grant of a Role to a User or a Directory Group within a scope (currently only `global`); revoked assignments are kept as history.
+- **Emergency Account** — local break-glass login for a dedicated User when directory login is unavailable; disabled by default and managed only by the operator CLI.
 
 ## Canonical distinctions
 
@@ -121,6 +124,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - Management Assignment != Management Applicability != Management Observation: configured targeting vs Turaco's expected evaluation vs provider-reported result.
 - Desired State != Observed State: what should be true vs what was last seen.
 - Ticket != Task: support record vs concrete work.
+- Role Assignment != Assignment: access grant vs responsibility for work.
 - Incident != Problem: something broke vs underlying/repeating cause.
 - Service Request != Procurement Request: user/business request to IT vs IT acquisition need.
 - Location != Site: organizational/support concept vs physical topology.

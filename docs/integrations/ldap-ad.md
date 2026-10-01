@@ -47,3 +47,7 @@ Use `ldaps://` (port 636) or `ldap://` with `LDAP_START_TLS=true`. Certificate v
 ### Testing against a real directory
 
 Automated tests use fake directory connections. Before enabling sync in an environment, run it once against a test AD/OpenLDAP with a deliberately small `LDAP_USER_BASE_DN` and check the first run's counts and conflicts.
+
+## Password login (F1 slice 3b)
+
+`turaco-api` verifies directory passwords by binding as the synced account's distinguished name over the same LDAPS/StartTLS connection settings as synchronization (`LDAP_URL`, `LDAP_START_TLS`, `LDAP_CA_FILE`, `LDAP_DIRECTORY_TYPE`, `LDAP_PROVIDER_KEY`); it never needs the sync bind secret. Users sign in with their directory username, `DOMAIN\username` or primary email. Only synced, enabled accounts of `active` Users can log in, so a newly created directory account can sign in after the next sync. A moved or renamed account signs in again after the next sync updates its DN. Turaco throttles failed attempts before contacting the directory (see [security architecture](../security/security-architecture.md#login)). Design: [identity and access design](../security/identity-access-design.md).
