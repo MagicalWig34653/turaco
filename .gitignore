@@ -16,3 +16,4 @@ tmp/
 .DockerDesktop/
 .claude/settings.local.json
 *.tsbuildinfo
+.claude/worktrees/
