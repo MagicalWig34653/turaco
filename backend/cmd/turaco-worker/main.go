@@ -40,21 +40,26 @@ func main() {
 	}
 	defer pool.Close()
 
+	ldapCfg, err := config.LoadLDAP(cfg.Environment)
+	if err != nil {
+		logger.Error("load directory configuration", "error", err)
+		os.Exit(1)
+	}
 	opts := jobs.RunnerOptions{}
-	if cfg.LDAP.Enabled() {
+	if ldapCfg.Enabled() {
 		// A job must not outlive its lock, or another worker would reclaim it.
-		if minLock := cfg.LDAP.SyncTimeout + directorySyncMargin + 5*time.Minute; minLock > 30*time.Minute {
+		if minLock := ldapCfg.SyncTimeout + directorySyncMargin + 5*time.Minute; minLock > 30*time.Minute {
 			opts.LockTimeout = minLock
 		}
 	}
 	runner := jobs.NewRunner(pool, opts, logger)
 
-	if cfg.LDAP.Enabled() {
-		if err := registerDirectorySync(runner, pool, cfg.LDAP, logger); err != nil {
+	if ldapCfg.Enabled() {
+		if err := registerDirectorySync(runner, pool, ldapCfg, logger); err != nil {
 			logger.Error("configure directory sync", "error", err)
 			os.Exit(1)
 		}
-		logger.Info("directory sync enabled", "provider_key", cfg.LDAP.ProviderKey, "interval", cfg.LDAP.SyncInterval.String())
+		logger.Info("directory sync enabled", "provider_key", ldapCfg.ProviderKey, "interval", ldapCfg.SyncInterval.String())
 	}
 
 	logger.Info("turaco-worker started", "version", version)

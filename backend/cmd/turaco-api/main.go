@@ -64,12 +64,9 @@ func main() {
 	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), authentication.NoPermissions{}, cfg.SessionCookieSecure)
 	authentication.Register(mux, sessions, sessionAuth, cfg.SessionCookieSecure, logger)
 	// Manual directory sync requests need a configured provider; the worker
-	// performs the sync itself, the API only enqueues it.
-	syncProviderKey := ""
-	if cfg.LDAP.Enabled() {
-		syncProviderKey = cfg.LDAP.ProviderKey
-	}
-	orgtransport.Register(mux, orgReader, orgReader, syncProviderKey, sessionAuth, logger)
+	// performs the sync itself, the API only enqueues it and never needs the
+	// directory credentials.
+	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,

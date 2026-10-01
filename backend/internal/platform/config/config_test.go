@@ -86,7 +86,7 @@ func setLDAPEnv(t *testing.T, overrides map[string]string) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("APP_ENV", "production")
 	values := map[string]string{
-		"LDAP_URL": "ldaps://dc.example.test", "LDAP_PROVIDER_KEY": "", "LDAP_START_TLS": "",
+		"LDAP_URL": "ldaps://dc.example.test", "LDAP_PROVIDER_KEY": "", "LDAP_START_TLS": "", "LDAP_ALLOW_PLAINTEXT": "",
 		"LDAP_BIND_DN": "CN=svc,DC=example,DC=test", "LDAP_BIND_PASSWORD_FILE": "/run/secrets/ldap",
 		"LDAP_DIRECTORY_TYPE": "", "LDAP_USER_BASE_DN": "OU=Users,DC=example,DC=test",
 		"LDAP_GROUP_BASE_DN": "OU=Groups,DC=example,DC=test", "LDAP_USER_FILTER": "", "LDAP_GROUP_FILTER": "",
@@ -102,22 +102,39 @@ func setLDAPEnv(t *testing.T, overrides map[string]string) {
 
 func TestLoadLDAPDisabledByDefault(t *testing.T) {
 	setLDAPEnv(t, map[string]string{"LDAP_URL": ""})
-	cfg, err := Load()
+	l, err := LoadLDAP("production")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LDAP.Enabled() {
+	if l.Enabled() {
 		t.Fatal("LDAP must be disabled without LDAP_URL")
+	}
+	cfg, err := Load()
+	if err != nil || cfg.DirectoryProviderKey != "" {
+		t.Fatalf("DirectoryProviderKey = %q, %v; want empty", cfg.DirectoryProviderKey, err)
+	}
+}
+
+// The API only needs the provider key; worker-only settings such as the bind
+// password file must not be required by Load.
+func TestLoadDirectoryProviderKeyWithoutWorkerSettings(t *testing.T) {
+	setLDAPEnv(t, map[string]string{"LDAP_BIND_DN": "", "LDAP_BIND_PASSWORD_FILE": "", "LDAP_USER_BASE_DN": "", "LDAP_GROUP_BASE_DN": "", "LDAP_PROVIDER_KEY": "corp"})
+	cfg, err := Load()
+	if err != nil || cfg.DirectoryProviderKey != "corp" {
+		t.Fatalf("DirectoryProviderKey = %q, %v; want corp", cfg.DirectoryProviderKey, err)
+	}
+	setLDAPEnv(t, map[string]string{"LDAP_PROVIDER_KEY": "Not Valid"})
+	if _, err := Load(); err == nil {
+		t.Fatal("expected invalid provider key error")
 	}
 }
 
 func TestLoadLDAPDefaults(t *testing.T) {
 	setLDAPEnv(t, nil)
-	cfg, err := Load()
+	l, err := LoadLDAP("production")
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := cfg.LDAP
 	if l.ProviderKey != "ad" || l.DirectoryType != DirectoryTypeActiveDirectory || l.SyncInterval != time.Hour ||
 		l.SyncTimeout != 15*time.Minute || l.MaxDeactivationPercent != 10 ||
 		l.UserFilter != "(&(objectCategory=person)(objectClass=user))" || l.GroupFilter != "(objectClass=group)" {
@@ -127,12 +144,12 @@ func TestLoadLDAPDefaults(t *testing.T) {
 
 func TestLoadLDAPOpenLDAPFilters(t *testing.T) {
 	setLDAPEnv(t, map[string]string{"LDAP_DIRECTORY_TYPE": "openldap"})
-	cfg, err := Load()
+	l, err := LoadLDAP("production")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LDAP.UserFilter != "(objectClass=inetOrgPerson)" || cfg.LDAP.GroupFilter != "(objectClass=groupOfNames)" {
-		t.Fatalf("unexpected filters %+v", cfg.LDAP)
+	if l.UserFilter != "(objectClass=inetOrgPerson)" || l.GroupFilter != "(objectClass=groupOfNames)" {
+		t.Fatalf("unexpected filters %+v", l)
 	}
 }
 
@@ -142,6 +159,9 @@ func TestLoadLDAPValidation(t *testing.T) {
 		env  map[string]string
 	}{
 		{"plain ldap in production", map[string]string{"LDAP_URL": "ldap://dc.example.test"}},
+		{"plain ldap opt-in outside development", map[string]string{"LDAP_URL": "ldap://dc.example.test", "LDAP_ALLOW_PLAINTEXT": "true"}},
+		{"starttls not a boolean", map[string]string{"LDAP_URL": "ldap://dc.example.test", "LDAP_START_TLS": "yes"}},
+		{"allow plaintext not a boolean", map[string]string{"LDAP_ALLOW_PLAINTEXT": "sure"}},
 		{"starttls with ldaps", map[string]string{"LDAP_START_TLS": "true"}},
 		{"unknown scheme", map[string]string{"LDAP_URL": "https://dc.example.test"}},
 		{"missing host", map[string]string{"LDAP_URL": "ldaps://"}},
@@ -158,7 +178,7 @@ func TestLoadLDAPValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setLDAPEnv(t, tt.env)
-			if _, err := Load(); err == nil {
+			if _, err := LoadLDAP("production"); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -167,8 +187,15 @@ func TestLoadLDAPValidation(t *testing.T) {
 
 func TestLoadLDAPPlainAllowedInDevelopment(t *testing.T) {
 	setLDAPEnv(t, map[string]string{"LDAP_URL": "ldap://localhost:389"})
-	t.Setenv("APP_ENV", "development")
-	if _, err := Load(); err != nil {
-		t.Fatalf("plain LDAP must be allowed in development: %v", err)
+	if _, err := LoadLDAP("development"); err == nil {
+		t.Fatal("plain LDAP must need LDAP_ALLOW_PLAINTEXT even in development")
+	}
+	t.Setenv("LDAP_ALLOW_PLAINTEXT", "true")
+	if l, err := LoadLDAP("development"); err != nil || !l.AllowPlaintext {
+		t.Fatalf("plain LDAP with opt-in must be allowed in development: %+v, %v", l, err)
+	}
+	t.Setenv("LDAP_START_TLS", "1")
+	if l, err := LoadLDAP("production"); err != nil || !l.StartTLS {
+		t.Fatalf("LDAP_START_TLS=1 must enable StartTLS: %+v, %v", l, err)
 	}
 }
