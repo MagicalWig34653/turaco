@@ -35,7 +35,7 @@ infra-down:
 	@./scripts/compose.sh -f deploy/compose/dev.yaml down
 
 migrate:
-	@./scripts/with-env.sh go run ./backend/cmd/turaco-migrate
+	@./scripts/with-env.sh ./scripts/migrate.sh
 
 api:
 	@./scripts/with-env.sh go run ./backend/cmd/turaco-api

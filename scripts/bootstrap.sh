@@ -21,7 +21,7 @@ fi
 
 ./scripts/compose.sh -f deploy/compose/dev.yaml up -d
 ./scripts/wait-for-postgres.sh
-./scripts/with-env.sh go run ./backend/cmd/turaco-migrate
+./scripts/with-env.sh ./scripts/migrate.sh
 go run ./backend/cmd/turaco-docgen
 
 echo

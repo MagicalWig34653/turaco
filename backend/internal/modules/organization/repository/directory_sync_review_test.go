@@ -149,7 +149,16 @@ func (f *syncFixture) holdEmail(email string) (commit func()) {
 		f.t.Fatal(err)
 	}
 	f.extra = append(f.extra, id)
+	// If the test fails before commit, roll back so the held connection is
+	// released and the pool can close instead of hanging.
+	committed := false
+	f.t.Cleanup(func() {
+		if !committed {
+			_ = tx.Rollback(context.Background())
+		}
+	})
 	return func() {
+		committed = true
 		if err := tx.Commit(ctx); err != nil {
 			f.t.Fatal(err)
 		}

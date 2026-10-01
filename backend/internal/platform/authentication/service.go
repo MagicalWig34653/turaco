@@ -62,18 +62,57 @@ func (s *Service) clock() time.Time { return s.now().UTC().Truncate(time.Microse
 // Create issues a new session with a fresh token and audits it atomically.
 // The raw token is returned only here and is never persisted or logged.
 func (s *Service) Create(ctx context.Context, userID, authMethod, correlationID string) (string, Session, error) {
+	return s.create(ctx, LoginSession{UserID: userID, AuthMethod: authMethod, CorrelationID: correlationID})
+}
+
+// LoginSession describes a session created by a login.
+type LoginSession struct {
+	UserID        string
+	AuthMethod    string
+	CorrelationID string
+	// MaxLifetime caps the absolute lifetime below the configured one when
+	// positive (the emergency account uses one hour).
+	MaxLifetime time.Duration
+	// Locker, when set, locks the user row and requires the user to be
+	// active inside the creating transaction; otherwise CreateLogin returns
+	// ErrUserInactive and nothing is written.
+	Locker UserLocker
+	// ReplaceSessionID, when set, is revoked in the same transaction
+	// (session fixation defence: a login never keeps the previous session).
+	ReplaceSessionID string
+	// AfterCreate runs in the same transaction after the session exists; an
+	// error rolls everything back.
+	AfterCreate func(ctx context.Context, tx pgx.Tx, s Session) error
+}
+
+// CreateLogin creates the session of a successful login in one transaction:
+// lock and check the user, revoke the replaced session, insert the session and
+// audit it (auth.session.created).
+func (s *Service) CreateLogin(ctx context.Context, p LoginSession) (string, Session, error) {
+	return s.create(ctx, p)
+}
+
+func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, error) {
+	userID, authMethod := p.UserID, p.AuthMethod
 	if !uuidPattern.MatchString(userID) {
 		return "", Session{}, errors.New("create session: user id must be a UUID")
 	}
 	if authMethod == "" {
 		return "", Session{}, errors.New("create session: auth method is required")
 	}
+	if p.ReplaceSessionID != "" && !uuidPattern.MatchString(p.ReplaceSessionID) {
+		return "", Session{}, errors.New("create session: replaced session id must be a UUID")
+	}
 	token, err := newToken()
 	if err != nil {
 		return "", Session{}, err
 	}
 	now := s.clock()
-	absExp := now.Add(s.cfg.AbsoluteTimeout)
+	lifetime := s.cfg.AbsoluteTimeout
+	if p.MaxLifetime > 0 && p.MaxLifetime < lifetime {
+		lifetime = p.MaxLifetime
+	}
+	absExp := now.Add(lifetime)
 	idleExp := now.Add(s.cfg.IdleTimeout)
 	if idleExp.After(absExp) {
 		idleExp = absExp
@@ -85,13 +124,46 @@ func (s *Service) Create(ctx context.Context, userID, authMethod, correlationID 
 
 	var sess Session
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		if p.Locker != nil {
+			active, err := p.Locker.LockActiveUser(ctx, tx, userID)
+			if err != nil {
+				return fmt.Errorf("lock user: %w", err)
+			}
+			if !active {
+				return ErrUserInactive
+			}
+		}
+		if p.ReplaceSessionID != "" {
+			owner, method, changed, err := revokeSession(ctx, tx, p.ReplaceSessionID, now)
+			if err != nil {
+				return err
+			}
+			if changed {
+				meta, err := json.Marshal(map[string]string{"userId": owner, "authMethod": method, "reason": "replaced_by_login"})
+				if err != nil {
+					return fmt.Errorf("marshal audit metadata: %w", err)
+				}
+				if err := s.audit(ctx, tx, "auth.session.revoked", p.ReplaceSessionID, &userID, p.CorrelationID, meta, now); err != nil {
+					return err
+				}
+			}
+		}
 		var err error
 		sess, err = insertSession(ctx, tx, HashToken(token), userID, authMethod, now, idleExp, absExp)
 		if err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, "auth.session.created", sess.ID, &userID, correlationID, metadata, now)
+		if err := s.audit(ctx, tx, "auth.session.created", sess.ID, &userID, p.CorrelationID, metadata, now); err != nil {
+			return err
+		}
+		if p.AfterCreate != nil {
+			return p.AfterCreate(ctx, tx, sess)
+		}
+		return nil
 	})
+	if errors.Is(err, ErrUserInactive) {
+		return "", Session{}, err
+	}
 	if err != nil {
 		return "", Session{}, fmt.Errorf("create session: %w", err)
 	}
