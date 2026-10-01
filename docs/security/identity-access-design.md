@@ -32,34 +32,35 @@ Glossary additions: Role, Role Assignment, Emergency Account.
 
 | Area | Owner | Notes |
 | --- | --- | --- |
-| roles, role_permissions, role_assignments | `platform/authorization` (schema `platform`) | no FKs into business schemas (same rule as sessions) |
-| permission evaluation | `platform/authorization` | needs a User's Directory Groups → injected `GroupResolver` implemented by `organization/public` (platform must not import modules) |
+| request contract (`Principal`, `Require`) | `platform/authorization` | small package every transport imports |
+| roles, role_permissions, role_assignments | `platform/authorization/roles` (+ `roles/transport`), schema `platform` | no FKs into business schemas (same rule as sessions) |
+| permission evaluation | `platform/authorization/roles.Evaluator` | needs a User's Directory Groups → injected `GroupResolver`/`SubjectDirectory` implemented by `organization/public.AuthorizationSubjects` (platform must not import modules) |
 | login, local credentials, throttle, Kerberos | `platform/authentication` | account lookup and user locking through injected interfaces implemented by `organization/public` |
 | LDAP password verification | `integrations/ldap` (`PasswordVerifier`) | no service account needed |
 | Kerberos ticket validation | `integrations/kerberos` (gokrb5) | returns principal name only |
 | emergency User creation | `organization/application` operation exposed via `organization/public` | |
-| audit query | `platform/audit` | |
+| audit writing and query | `platform/audit` (`Record`, `Actor`; query + `audit/transport`) | one actor format for all audited changes |
 | CLI | `backend/cmd/turaco-admin` | composition root like the other binaries |
 
 ## 5. Slice 5 — Roles, permissions, scope
 
 **Data (migration `000010_authorization`):**
-- `platform.roles(id uuid pk, key text unique CHECK ^[a-z0-9][a-z0-9-]{1,62}$, name text, description text, built_in bool, created_at, updated_at)`; seed `platform-administrator` (built_in).
+- `platform.roles(id uuid pk, key text CHECK ^[a-z0-9][a-z0-9-]{1,62}$, name text, description text, built_in bool, created_at, updated_at, deleted_at)`; partial unique index on `key` among non-deleted roles; the built-in role can never be deleted; seed `platform-administrator` (built_in).
 - `platform.role_permissions(role_id → roles, permission text, PK(role_id, permission))`; never rows for the built-in role.
 - `platform.role_assignments(id uuid pk, role_id → roles, subject_type CHECK in ('user','directory_group'), subject_id uuid, scope text CHECK = 'global', created_at, created_by jsonb, revoked_at, revoked_by jsonb)`; partial unique `(role_id, subject_type, subject_id, scope) WHERE revoked_at IS NULL`; index `(subject_type, subject_id) WHERE revoked_at IS NULL`.
 
 **Evaluation** (`authorization.PermissionLoader` used by `SessionAuthenticator`, per request, no cache):
-1. Groups of the User = currently observed Directory Group memberships of non-deleted groups, expanded transitively over currently observed nesting edges (cycle-safe recursive CTE) — `organization/public.GroupResolver.GroupIDsOfUser`.
+1. Groups of the User = currently observed Directory Group memberships of non-deleted groups, expanded transitively over currently observed nesting edges (cycle-safe recursive CTE) — `organization/public.AuthorizationSubjects.GroupIDsOfUser`.
 2. Active assignments for the User and for those groups.
 3. `platform-administrator` → every registered permission; other roles → their stored permissions ∩ registry (unknown stored permissions are ignored).
 Permissions therefore change immediately when roles, assignments or directory memberships change.
 
 **Operations** (all in one transaction with their audit entry; `platform.roles.manage` unless noted):
-- `CreateRole(key, name, description, permissions)`; `UpdateRole(name, description)`; `SetRolePermissions(permissions)` (full replacement, validated against the registry); `DeleteRole` only when it has no active assignments. The built-in role cannot be changed or deleted.
+- `CreateRole(key, name, description, permissions)`; `UpdateRole(name, description)`; `SetRolePermissions(permissions)` (full replacement, validated against the registry); `DeleteRole` only when it has no active assignments — a soft delete that keeps the role and its revoked assignments as history and frees the key. The built-in role cannot be changed or deleted. Each operation locks the role row in its own statement before reading it, so concurrent assignment and deletion serialize correctly.
 - `AssignRole(role, subject)` — subject must exist (User via organization, Directory Group not deleted); duplicate active assignment → 409. `RevokeAssignment(id)`.
-- Last-administrator guard: revoking the last active `platform-administrator` assignment whose subject is a User is refused (409) unless done through the CLI. (Group assignments are not counted: group membership can change outside Turaco.)
+- Last-administrator guard: revoking the last active `platform-administrator` assignment of an **active** User is refused (409) unless done through the CLI. Group assignments and inactive Users are not counted (group membership can change outside Turaco; inactive Users cannot sign in).
 
-**Audit actions:** `authorization.role.created|updated|permissions_changed|deleted`, `authorization.role.assigned|assignment_revoked` (before/after; actor = session user or CLI marker).
+**Audit actions:** `authorization.role.created|updated|permissions_changed|deleted`, `authorization.role.assigned|assignment_revoked` (before/after; actor = session user or CLI, see §9).
 
 **Permissions (registry):** `platform.roles.view` (normal), `platform.roles.manage` (high), `platform.audit.view` (elevated). Existing `platform.admin` stays for future platform configuration.
 
@@ -69,22 +70,23 @@ Permissions therefore change immediately when roles, assignments or directory me
 
 `POST /api/v1/auth/login {identifier, password}`:
 1. Validate input (identifier ≤ 256 bytes, password 1–1024 bytes; an **empty password is rejected before any LDAP call** — an empty simple bind is an unauthenticated bind and would succeed).
-2. Throttle check (below) → `429 auth.too_many_attempts` with `Retry-After`.
-3. Resolve the account via `organization/public.LoginAccounts.FindDirectoryAccount(providerKey, identifier)`: identifier `DOMAIN\user` → `user`; containing `@` → match `primary_email` (lower()); otherwise `username` (lower()). The identity must be enabled, not deleted, have a non-empty DN, and its User must be `active`; exactly one match.
+2. Reserve a client attempt (throttle, below) → `429 auth.too_many_attempts` with `Retry-After`.
+3. Resolve the account via `organization/public.LoginAccounts.FindDirectoryAccount(providerKey, identifier)`: identifier `DOMAIN\user` → `user`; containing `@` → match `primary_email` (lower()); otherwise `username` (lower()). The identity must be enabled, not deleted, have a non-empty DN, and its User must be `active`; exactly one match. Then reserve an account attempt (or, for an unknown account, an attempt on the normalized identifier) → 429.
 4. Verify the password by binding **as the stored DN** over LDAPS/StartTLS (`integrations/ldap.PasswordVerifier`): no service account, same TLS policy as sync. Result code 49 → invalid credentials; connection/TLS failure → `503 auth.provider_unavailable`.
-5. On success create the session in one transaction that first locks the User row (`FOR SHARE` through `organization/public` `UserGate.LockActive`), so creation serializes with a concurrent status change (directory sync locks the row `FOR UPDATE`); revoke the previous session if the request carried one; set the cookie; `204`.
-6. Every failure answers `401 auth.invalid_credentials` with the same body after a minimum response time of 400 ms (unknown account, disabled, wrong password are indistinguishable); audit `auth.login.failed` with `{method, identifier (truncated to 128), reason, clientIp}`; success is audited by session creation (`auth.session.created`, authMethod `ldap`).
+5. On success create the session in one transaction (`lock_timeout` 5 s → `503 auth.temporarily_unavailable`) that first locks the User row (`FOR SHARE` through `authentication.UserLocker.LockActiveUser`, implemented by `organization/public.LoginAccounts`), so creation serializes with a concurrent status change (directory sync locks the row `FOR UPDATE`); revoke the previous session if the request carried one (actor `login`, metadata `replacedByUserId`); set the cookie; `204`. Release the reserved attempts (account key cleared, client key decremented).
+6. Every failure answers `401 auth.invalid_credentials` with the same body after a minimum response time of 400 ms (unknown account, disabled, wrong password are indistinguishable); audit `auth.login.failed` with target User (or `login`/`unknown`) and `{method, reason, clientIp}` — never the typed identifier, which may contain a mistyped password; success is audited by session creation (`auth.session.created`, authMethod `ldap`). Known limitation: a directory bind slower than 400 ms, or a directory outage (503 only for known accounts), can reveal that an account exists.
 
 The API therefore needs the directory **connection** settings (`LDAP_URL`, StartTLS, CA, directory type, provider key) but still never the bind secret: `config.LoadLDAPConnection` for the API, `config.LoadLDAP` (adds bind/search settings) for the worker.
 
-**Throttle** (`platform.auth_throttle(key text pk, failures int, window_started_at, locked_until)`): keys `id:<sha256(lower(identifier))>` and `ip:<client ip>`. 5 failures per identifier or 30 per IP within 15 minutes lock that key for 15 minutes; success resets the identifier key. Locked requests do not reach LDAP (protects AD lockout policies against attackers). Client IP = `RemoteAddr`, or the last untrusted hop of `X-Forwarded-For` when `RemoteAddr` is inside `HTTP_TRUSTED_PROXIES` (CIDR list, default empty; set to the web container network in deployments).
+**Throttle** (`platform.auth_throttle(key text pk, failures int, window_started_at, locked_until, updated_at)`, database clock): attempts are **reserved atomically before** any directory or hash work (one upsert that increments and returns the state), so concurrent requests cannot exceed the budget. Keys: client `ip:<address>` (IPv4 address, IPv6 /64) limit 30; account `acct:<user id>` limit 5, or `id:<sha256 of the normalized identifier>` for unknown accounts, so `alice`, `DOMAIN\alice` and `ALICE` share one budget. Exceeding a limit locks the key for 15 minutes (attempts during a lock do not extend it). Locked requests never reach LDAP, which keeps Turaco from triggering AD lockout policies. Old rows are pruned with bounded work. Client address = `RemoteAddr`, or, when `RemoteAddr` is a trusted proxy (`HTTP_TRUSTED_PROXIES`), the right-most untrusted entry among the last 32 `X-Forwarded-For` entries. Without real client addresses the client limit becomes global (see deployment docs).
 
 ## 7. Emergency account (break-glass)
 
 - `platform.local_credentials(user_id uuid pk, login_name text unique CHECK pattern, password_hash text, enabled bool, created_at, updated_at, password_changed_at, last_used_at)`.
 - Hash: argon2id (`golang.org/x/crypto/argon2`, already in the module graph), m=64 MiB, t=3, p=2, 16-byte salt, PHC string; verification in constant time; minimum password length 16.
 - Created only by CLI: `turaco-admin emergency create --login <name> --display-name <text>` creates an Organization User (no directory identity, `status_source = platform`) via `organization/public`, stores the hash, prints a generated password once (or reads `--password-stdin`). Also `emergency set-password|disable|enable`. The CLI can then grant it a role.
-- Login: `POST /api/v1/auth/emergency-login {login, password}` exists only when `AUTH_EMERGENCY_LOGIN_ENABLED=true` (otherwise 404). Same throttle, same generic errors. Session `auth_method = emergency` with absolute lifetime capped at 1 hour. Audit `auth.emergency_login.succeeded|failed`; success also logs at ERROR level ("emergency account used") for alerting.
+- Lifecycle operations live in `platform/authentication.EmergencyAccounts` (the CLI only parses arguments): create (Organization User + disabled credential in one transaction), change password and disable (both revoke the account's sessions), enable. Audit `auth.emergency_account.created|password_changed|enabled|disabled` and `organization.user.created_local`.
+- Login: `POST /api/v1/auth/emergency-login {login, password}` exists only when `AUTH_EMERGENCY_LOGIN_ENABLED=true` (otherwise 404). Only the client throttle applies (an account lock would let strangers block the break-glass path; the generated password has about 140 bits). Hash verification waits at most 1 s for one of four slots, else `429` with a short `Retry-After`. Session `auth_method = emergency` with absolute lifetime capped at 1 hour; the session is only created if the credential is still enabled with the verified hash at commit time, so a concurrent disable or password change wins. Audit `auth.emergency_login.succeeded|failed`; success also logs at ERROR level ("emergency account used") for alerting.
 
 ## 8. Slice 4 — Kerberos/SPNEGO (PR after slices 3b/5/6)
 
@@ -95,9 +97,9 @@ The API therefore needs the directory **connection** settings (`LDAP_URL`, Start
 
 ## 9. Slice 6 — Audit of privileged changes
 
-- Audited privileged identity/config changes (complete list, enforced by tests per operation): role create/update/permissions/delete, role assign/revoke, emergency account create/password/enable/disable/use, login failures, session create/revoke, user created/status/email changed by directory, directory sync requested/sweep withheld.
-- `GET /api/v1/audit-events?targetType=&targetId=&action=&actionPrefix=&actorId=&correlationId=&from=&to=&limit=&cursor=` newest first (keyset on id), permission `platform.audit.view`. Returns id, occurredAt, actorId, action, targetType, targetId, correlationId, before, after, metadata. Index `(occurred_at DESC)` and `(actor_id, occurred_at DESC)` added in 000010.
-- CLI actions use actor `null` with metadata `{"actor":"cli","osUser":…}`.
+- Audited privileged identity/config changes (complete list, enforced by tests per operation): role create/update/permissions/delete, role assign/revoke, emergency account create/password/enable/disable/use (`auth.emergency_account.*`, `auth.emergency_login.*`, `organization.user.created_local`), login failures, session create/revoke, user created/status/email changed by directory, directory sync requested/sweep withheld.
+- Every audited change is written with `audit.Record` in the same transaction. Actor: a signed-in User (`actor_id`), or a system actor (`actor_id` NULL, metadata `{"actor": "cli"|"directory-sync"|"login", "osUser": …}` — `osUser` only for the CLI). Correlation ID = the server-generated request ID (client `X-Request-ID` values are only logged), the sync run ID, or a CLI-generated ID.
+- `GET /api/v1/audit-events?targetType=&targetId=&action=&actionPrefix=&actorId=&correlationId=&from=&to=&limit=&cursor=` newest first by `(occurred_at, id)` with an opaque keyset cursor, permission `platform.audit.view`; `actionPrefix` is a literal prefix evaluated as an index range; `targetId` requires `targetType`. Indexes `(occurred_at DESC, id DESC)`, `(actor_id, occurred_at DESC, id DESC)`, `(action text_pattern_ops, occurred_at DESC, id DESC)`. Broad prefixes without a time range sort all matches.
 
 ## 10. API summary
 
@@ -128,7 +130,7 @@ No new runtime dependencies (no router/query/component libraries): a small histo
 
 ## 13. Tests and documentation
 
-Unit + PostgreSQL tests per operation (incl. audit rows), throttle and timing behaviour, empty-password guard, group-transitive evaluation, last-admin guard, CLI commands, OpenLDAP end-to-end login, MIT KDC end-to-end Kerberos, frontend unit tests (router, api client, i18n completeness) and a Playwright smoke run against the stack. Docs: this design, security architecture, LDAP/AD operation, configuration/permissions/events references, OpenAPI, state machines (Role Assignment), glossary, current status, deployment examples.
+Automated: unit + PostgreSQL tests per operation (incl. audit rows), concurrency regressions (parallel login attempts vs. throttle, emergency disable vs. login, delete vs. assign role, last-admin guard), timing behaviour, empty-password guard, group-transitive evaluation, CLI commands, frontend unit tests (router, api client, i18n parity). Manual before each release (not automated yet, recorded in current status): OpenLDAP end-to-end login and sync, MIT KDC end-to-end Kerberos, and a Playwright smoke run through login and all admin screens against a running stack. Docs: this design, security architecture, LDAP/AD operation, configuration/permissions/events references, OpenAPI, state machines (Role Assignment), glossary, current status, deployment examples.
 
 ## 14. Delivery
 

@@ -374,7 +374,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '429':
-          description: Too many failed attempts for this identifier or client (auth.too_many_attempts); see Retry-After.
+          description: Too many attempts for this account or client (auth.too_many_attempts); attempts are counted before verification, so concurrent attempts count too. See Retry-After.
           headers:
             Retry-After:
               schema: {type: integer}
@@ -383,7 +383,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '503':
-          description: The directory cannot be reached (auth.provider_unavailable).
+          description: The directory cannot be reached (auth.provider_unavailable), or the account is being changed concurrently and sign-in timed out (auth.temporarily_unavailable).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -423,7 +423,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '429':
-          description: Too many failed attempts (auth.too_many_attempts); see Retry-After.
+          description: Too many attempts from this client, or password verification is busy (auth.too_many_attempts); see Retry-After (short when busy).
           headers:
             Retry-After:
               schema: {type: integer}
@@ -668,7 +668,7 @@ paths:
     get:
       operationId: listAuditEvents
       summary: Query the audit log.
-      description: "Requires `platform.audit.view`. Newest first (descending id). `action` is exact, `actionPrefix` matches the beginning (e.g. `authorization.`); time bounds are RFC 3339 and half-open [from, to). Invalid filters yield 400 audit.invalid_filter."
+      description: "Requires `platform.audit.view`. Newest first by occurredAt, then id. `cursor` is opaque (pass `nextCursor` back unchanged). `action` is exact; `actionPrefix` is a literal, valid UTF-8 prefix (e.g. `authorization.`); `targetId` requires `targetType`; time bounds are RFC 3339 and half-open [from, to). Combine broad prefixes with a time range for speed. Invalid filters yield 400 audit.invalid_filter."
       security:
         - sessionAuth: []
       parameters:
@@ -712,12 +712,12 @@ components:
     Limit:
       name: limit
       in: query
-      description: Page size, default 50; values above 200 are clamped to 200. Non-numeric or below 1 yields 400 organization.invalid_limit.
+      description: Page size, default 50; values above 200 are clamped to 200. Non-numeric or below 1 yields 400 `<module>.invalid_limit` (e.g. organization.invalid_limit, authorization.invalid_limit, audit.invalid_limit).
       schema: {type: integer, minimum: 1}
     Cursor:
       name: cursor
       in: query
-      description: Opaque cursor from a previous response's nextCursor. Invalid values yield 400 organization.invalid_cursor.
+      description: Opaque cursor from a previous response's nextCursor; pass it back unchanged. Invalid values yield 400 `<module>.invalid_cursor`.
       schema: {type: string}
     Query:
       name: q
