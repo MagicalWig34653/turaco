@@ -4,19 +4,23 @@
 
 CREATE TABLE IF NOT EXISTS platform.roles (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
-    key text NOT NULL UNIQUE CHECK (key ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
+    key text NOT NULL CHECK (key ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
     name text NOT NULL CHECK (name <> '' AND length(name) <= 200),
     description text NOT NULL DEFAULT '' CHECK (length(description) <= 2000),
     built_in boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    -- Roles are soft-deleted so assignment history keeps its role.
+    deleted_at timestamptz,
+    CHECK (NOT (built_in AND deleted_at IS NOT NULL))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS roles_key_active_unique ON platform.roles(key) WHERE deleted_at IS NULL;
 
 -- The built-in administrator role implicitly holds every registered
 -- permission; it never has role_permissions rows and cannot be changed.
 INSERT INTO platform.roles (key, name, description, built_in)
 VALUES ('platform-administrator', 'Platform administrator', 'All permissions. Built-in and immutable.', true)
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) WHERE deleted_at IS NULL DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS platform.role_permissions (
     role_id uuid NOT NULL REFERENCES platform.roles(id) ON DELETE CASCADE,

@@ -41,7 +41,7 @@ func (e *RolePermissions) Permissions(ctx context.Context, userID string) (map[s
 		SELECT r.built_in,
 		       COALESCE((SELECT array_agg(rp.permission) FROM platform.role_permissions rp WHERE rp.role_id = r.id), '{}'::text[])
 		FROM platform.roles r
-		WHERE r.id IN (
+		WHERE r.deleted_at IS NULL AND r.id IN (
 			SELECT a.role_id FROM platform.role_assignments a
 			WHERE a.revoked_at IS NULL AND a.scope = 'global' AND (
 				(a.subject_type = 'user' AND a.subject_id = $1::uuid)

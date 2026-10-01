@@ -125,7 +125,8 @@ func intersectRegistry(perms []string) ([]string, error) {
 }
 
 func loadRole(ctx context.Context, q querier, where string, arg any, lock string) (Role, error) {
-	r, err := scanRole(q.QueryRow(ctx, roleSelect+" WHERE "+where+lock, arg))
+	// Deleted roles are kept for assignment history but are invisible here.
+	r, err := scanRole(q.QueryRow(ctx, roleSelect+" WHERE r.deleted_at IS NULL AND "+where+lock, arg))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Role{}, ErrNotFound
 	}
@@ -137,7 +138,7 @@ func loadRole(ctx context.Context, q querier, where string, arg any, lock string
 
 // ListRoles returns all roles sorted by name.
 func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
-	rows, err := s.pool.Query(ctx, roleSelect+` ORDER BY lower(r.name), r.id`)
+	rows, err := s.pool.Query(ctx, roleSelect+` WHERE r.deleted_at IS NULL ORDER BY lower(r.name), r.id`)
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
 	}
@@ -343,10 +344,9 @@ func (s *Service) DeleteRole(ctx context.Context, actor Actor, id string) error 
 		if before.ActiveAssignments > 0 {
 			return ErrRoleInUse
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM platform.role_assignments WHERE role_id = $1`, id); err != nil {
-			return fmt.Errorf("delete revoked assignments: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM platform.roles WHERE id = $1`, id); err != nil {
+		// Soft delete: the role and its revoked assignments stay as history;
+		// the key becomes free for a new role.
+		if _, err := tx.Exec(ctx, `UPDATE platform.roles SET deleted_at = now(), updated_at = now() WHERE id = $1`, id); err != nil {
 			return fmt.Errorf("delete role: %w", err)
 		}
 		return s.audit(ctx, tx, actor, "authorization.role.deleted", "role", id, roleState(before), nil, nil)

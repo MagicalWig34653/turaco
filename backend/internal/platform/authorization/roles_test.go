@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -256,6 +257,17 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 	}
 	if err := f.svc.DeleteRole(ctx, actor, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete twice err = %v", err)
+	}
+	// Soft delete keeps the role row and its assignment history.
+	var deletedAt *time.Time
+	var historic int
+	if err := f.pool.QueryRow(ctx, `SELECT deleted_at, (SELECT count(*) FROM platform.role_assignments WHERE role_id = r.id)
+		FROM platform.roles r WHERE r.id = $1`, created.ID).Scan(&deletedAt, &historic); err != nil || deletedAt == nil || historic != 1 {
+		t.Fatalf("deleted role row: deleted_at=%v history=%d err=%v", deletedAt, historic, err)
+	}
+	// The key is free again for a new role.
+	if again, err := f.svc.CreateRole(ctx, actor, CreateRoleInput{Key: created.Key, Name: "Again"}); err != nil || again.ID == created.ID {
+		t.Fatalf("recreate with released key = %+v, %v", again, err)
 	}
 	if _, err := f.svc.GetRole(ctx, "not-a-uuid"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get malformed err = %v", err)
