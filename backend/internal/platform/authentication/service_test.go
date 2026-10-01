@@ -272,7 +272,7 @@ func TestRevokeUserSessions(t *testing.T) {
 	var n int
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var err error
-		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "corr-revoke-all", clk.now())
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all", clk.now())
 		return err
 	})
 	if err != nil || n != 2 {
@@ -286,13 +286,13 @@ func TestRevokeUserSessions(t *testing.T) {
 	var audited int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events
 		WHERE action = 'auth.session.revoked' AND correlation_id = 'corr-revoke-all'
-		  AND actor_id IS NULL AND metadata->>'reason' = 'user_deactivated'`).Scan(&audited); err != nil || audited != 2 {
+		  AND actor_id IS NULL AND metadata->>'reason' = 'user_deactivated' AND metadata->>'actor' = 'directory-sync'`).Scan(&audited); err != nil || audited != 2 {
 		t.Fatalf("audited = %d, %v; want 2", audited, err)
 	}
 	// Idempotent: nothing left to revoke, nothing audited.
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var err error
-		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "corr-revoke-all-2", clk.now())
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all-2", clk.now())
 		return err
 	})
 	if err != nil || n != 0 {
@@ -304,10 +304,10 @@ func TestRevokeUserSessionsValidation(t *testing.T) {
 	_, clk, pool := newTestService(t)
 	ctx := context.Background()
 	_ = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if _, err := RevokeUserSessions(ctx, tx, "nope", "r", "c", clk.now()); err == nil {
+		if _, err := RevokeUserSessions(ctx, tx, "nope", "r", "s", "c", clk.now()); err == nil {
 			t.Error("expected error for bad user id")
 		}
-		if _, err := RevokeUserSessions(ctx, tx, testUser, "", "c", clk.now()); err == nil {
+		if _, err := RevokeUserSessions(ctx, tx, testUser, "", "s", "c", clk.now()); err == nil {
 			t.Error("expected error for empty reason")
 		}
 		return nil

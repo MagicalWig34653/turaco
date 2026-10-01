@@ -679,7 +679,7 @@ func (a *syncApply) applyStatus(ctx context.Context) error {
 			state{"active", f.prevSource}, state{"inactive", "directory"}); err != nil {
 			return err
 		}
-		n, err := authentication.RevokeUserSessions(ctx, a.tx, f.id, "user_deactivated", a.in.RunID, a.in.ObservedAt)
+		n, err := authentication.RevokeUserSessions(ctx, a.tx, f.id, "user_deactivated", "directory-sync", a.in.RunID, a.in.ObservedAt)
 		if err != nil {
 			return fmt.Errorf("apply sync: revoke sessions: %w", err)
 		}

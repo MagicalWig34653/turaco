@@ -165,16 +165,16 @@ func insertAudit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor
 }
 
 // RevokeUserSessions revokes every unrevoked session of userID inside tx and
-// audits each revocation with reason (for example "user_deactivated") and no
-// human actor. It lets an operation that ends a user's `active` status (such as
+// audits each revocation with reason (for example "user_deactivated"), no
+// human actor and actor marker system (for example "directory-sync"). It lets an operation that ends a user's `active` status (such as
 // directory sync) revoke sessions atomically with the status change, so a later
 // reactivation does not revive old sessions. It returns the number revoked.
-func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, correlationID string, now time.Time) (int, error) {
+func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, system, correlationID string, now time.Time) (int, error) {
 	if !uuidPattern.MatchString(userID) {
 		return 0, errors.New("revoke user sessions: user id must be a UUID")
 	}
-	if reason == "" {
-		return 0, errors.New("revoke user sessions: reason is required")
+	if reason == "" || system == "" {
+		return 0, errors.New("revoke user sessions: reason and system are required")
 	}
 	now = now.UTC().Truncate(time.Microsecond)
 	rows, err := tx.Query(ctx, `
@@ -199,7 +199,7 @@ func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, correlat
 		return 0, fmt.Errorf("revoke user sessions: %w", err)
 	}
 	for _, r := range sessions {
-		meta, err := json.Marshal(map[string]string{"userId": userID, "authMethod": r.method, "reason": reason})
+		meta, err := json.Marshal(map[string]string{"userId": userID, "authMethod": r.method, "reason": reason, "actor": system})
 		if err != nil {
 			return 0, fmt.Errorf("marshal audit metadata: %w", err)
 		}
