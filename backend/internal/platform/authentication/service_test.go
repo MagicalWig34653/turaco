@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
@@ -272,7 +273,7 @@ func TestRevokeUserSessions(t *testing.T) {
 	var n int
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var err error
-		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all", clk.now())
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", audit.SystemActor("directory-sync"), "corr-revoke-all", clk.now())
 		return err
 	})
 	if err != nil || n != 2 {
@@ -292,7 +293,7 @@ func TestRevokeUserSessions(t *testing.T) {
 	// Idempotent: nothing left to revoke, nothing audited.
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		var err error
-		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all-2", clk.now())
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", audit.SystemActor("directory-sync"), "corr-revoke-all-2", clk.now())
 		return err
 	})
 	if err != nil || n != 0 {
@@ -304,11 +305,14 @@ func TestRevokeUserSessionsValidation(t *testing.T) {
 	_, clk, pool := newTestService(t)
 	ctx := context.Background()
 	_ = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		if _, err := RevokeUserSessions(ctx, tx, "nope", "r", "s", "c", clk.now()); err == nil {
+		if _, err := RevokeUserSessions(ctx, tx, "nope", "r", audit.SystemActor("s"), "c", clk.now()); err == nil {
 			t.Error("expected error for bad user id")
 		}
-		if _, err := RevokeUserSessions(ctx, tx, testUser, "", "s", "c", clk.now()); err == nil {
+		if _, err := RevokeUserSessions(ctx, tx, testUser, "", audit.SystemActor("s"), "c", clk.now()); err == nil {
 			t.Error("expected error for empty reason")
+		}
+		if _, err := RevokeUserSessions(ctx, tx, testUser, "r", audit.Actor{}, "c", clk.now()); err == nil {
+			t.Error("expected error for a missing actor")
 		}
 		return nil
 	})

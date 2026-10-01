@@ -2,10 +2,12 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,10 +32,18 @@ type Config struct {
 	// the worker loads and validates the full LDAPConfig with LoadLDAP, so
 	// bind credentials are only required where they are used.
 	DirectoryProviderKey string
+
+	// AuthEmergencyLoginEnabled exposes POST /auth/emergency-login.
+	AuthEmergencyLoginEnabled bool
+	// TrustedProxies are the networks whose X-Forwarded-For header is
+	// trusted when determining the client address (login throttling, audit).
+	TrustedProxies []netip.Prefix
 }
 
-// LDAPConfig configures one directory provider for synchronization (F1 slice
-// 3), loaded by turaco-worker with LoadLDAP. It is enabled when URL is set. The bind password is never part of the
+// LDAPConfig configures one directory provider. turaco-worker loads it fully
+// with LoadLDAP for synchronization; turaco-api loads only the connection
+// settings with LoadLDAPConnection for password login. It is enabled when URL
+// is set. The bind password is never part of the
 // configuration values: only the path of a file holding it (a deployment
 // secret such as a Docker secret) is configured.
 type LDAPConfig struct {
@@ -92,7 +102,9 @@ var Registry = []Descriptor{
 	{Name: "SESSION_IDLE_TIMEOUT", Type: "duration", Default: "8h", Description: "Session idle timeout; must be positive and not exceed SESSION_ABSOLUTE_TIMEOUT."},
 	{Name: "SESSION_ABSOLUTE_TIMEOUT", Type: "duration", Default: "24h", Description: "Maximum session lifetime regardless of activity; must be positive."},
 	{Name: "SESSION_COOKIE_SECURE", Type: "bool", Default: "true", Description: "Set the Secure attribute on the session cookie; disable only for local plain-HTTP development."},
-	{Name: "LDAP_URL", Type: "string", Description: "Directory server URL (`ldaps://host:636`, or `ldap://` with LDAP_START_TLS). Empty disables directory synchronization."},
+	{Name: "AUTH_EMERGENCY_LOGIN_ENABLED", Type: "bool", Default: "false", Description: "Expose POST /api/v1/auth/emergency-login for the local break-glass account (created with turaco-admin). Every use is audited and logged at error level."},
+	{Name: "HTTP_TRUSTED_PROXIES", Type: "string", Description: "Comma-separated CIDR prefixes of reverse proxies (for example the turaco-web container network) whose X-Forwarded-For header is trusted for the client address used by login throttling and audit. Empty trusts no proxy."},
+	{Name: "LDAP_URL", Type: "string", Description: "Directory server URL (`ldaps://host:636`, or `ldap://` with LDAP_START_TLS). Empty disables directory synchronization and password login."},
 	{Name: "LDAP_PROVIDER_KEY", Type: "string", Default: "ad", Description: "Stable key identifying this directory in external identities and directory groups; lowercase letters, digits and hyphens. Changing it makes all existing observations stale."},
 	{Name: "LDAP_START_TLS", Type: "bool", Default: "false", Description: "Upgrade an `ldap://` connection with StartTLS. Invalid boolean values are rejected."},
 	{Name: "LDAP_ALLOW_PLAINTEXT", Type: "bool", Default: "false", Description: "Allow `ldap://` without StartTLS (credentials in clear text). Accepted only together with APP_ENV=development, for local test directories."},
@@ -146,23 +158,47 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("LDAP_PROVIDER_KEY must match %s", providerKeyPattern)
 		}
 	}
+	if cfg.AuthEmergencyLoginEnabled, err = getBool("AUTH_EMERGENCY_LOGIN_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.TrustedProxies, err = getPrefixes("HTTP_TRUSTED_PROXIES"); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
 }
 
-// LoadLDAP loads and validates the complete directory configuration for the
-// process that connects to the directory (turaco-worker). environment is
-// APP_ENV, which decides whether plain LDAP is allowed.
-func LoadLDAP(environment string) (LDAPConfig, error) {
-	c := LDAPConfig{
-		ProviderKey: getenv("LDAP_PROVIDER_KEY", "ad"),
-		URL:         os.Getenv("LDAP_URL"),
+// getPrefixes parses a comma-separated list of CIDR prefixes or addresses.
+func getPrefixes(name string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(getenv(name, ""), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(part); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: invalid prefix or address %q", name, part)
+		}
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
+}
 
-		CAFile:           os.Getenv("LDAP_CA_FILE"),
-		BindDN:           os.Getenv("LDAP_BIND_DN"),
-		BindPasswordFile: os.Getenv("LDAP_BIND_PASSWORD_FILE"),
-		DirectoryType:    getenv("LDAP_DIRECTORY_TYPE", DirectoryTypeActiveDirectory),
-		UserBaseDN:       os.Getenv("LDAP_USER_BASE_DN"),
-		GroupBaseDN:      os.Getenv("LDAP_GROUP_BASE_DN"),
+// LoadLDAPConnection loads and validates only the settings needed to talk to
+// the directory (provider key, URL, TLS, directory type). turaco-api uses it
+// for password login, which binds as the user and therefore needs no bind
+// credentials. environment is APP_ENV, which decides whether plain LDAP is
+// allowed.
+func LoadLDAPConnection(environment string) (LDAPConfig, error) {
+	c := LDAPConfig{
+		ProviderKey:   getenv("LDAP_PROVIDER_KEY", "ad"),
+		URL:           os.Getenv("LDAP_URL"),
+		CAFile:        os.Getenv("LDAP_CA_FILE"),
+		DirectoryType: getenv("LDAP_DIRECTORY_TYPE", DirectoryTypeActiveDirectory),
 	}
 	if !c.Enabled() {
 		return c, nil
@@ -174,12 +210,9 @@ func LoadLDAP(environment string) (LDAPConfig, error) {
 	if c.AllowPlaintext, err = getBool("LDAP_ALLOW_PLAINTEXT", false); err != nil {
 		return LDAPConfig{}, err
 	}
-	filters, ok := defaultLDAPFilters[c.DirectoryType]
-	if !ok {
+	if _, ok := defaultLDAPFilters[c.DirectoryType]; !ok {
 		return LDAPConfig{}, fmt.Errorf("LDAP_DIRECTORY_TYPE must be %q or %q", DirectoryTypeActiveDirectory, DirectoryTypeOpenLDAP)
 	}
-	c.UserFilter = getenv("LDAP_USER_FILTER", filters[0])
-	c.GroupFilter = getenv("LDAP_GROUP_FILTER", filters[1])
 	if !providerKeyPattern.MatchString(c.ProviderKey) {
 		return LDAPConfig{}, fmt.Errorf("LDAP_PROVIDER_KEY must match %s", providerKeyPattern)
 	}
@@ -201,6 +234,24 @@ func LoadLDAP(environment string) (LDAPConfig, error) {
 	default:
 		return LDAPConfig{}, fmt.Errorf("LDAP_URL must use ldaps:// or ldap://")
 	}
+	return c, nil
+}
+
+// LoadLDAP loads and validates the complete directory configuration for the
+// process that synchronizes the directory (turaco-worker): the connection
+// settings plus bind credentials, search bases/filters and sync policy.
+func LoadLDAP(environment string) (LDAPConfig, error) {
+	c, err := LoadLDAPConnection(environment)
+	if err != nil || !c.Enabled() {
+		return c, err
+	}
+	c.BindDN = os.Getenv("LDAP_BIND_DN")
+	c.BindPasswordFile = os.Getenv("LDAP_BIND_PASSWORD_FILE")
+	c.UserBaseDN = os.Getenv("LDAP_USER_BASE_DN")
+	c.GroupBaseDN = os.Getenv("LDAP_GROUP_BASE_DN")
+	filters := defaultLDAPFilters[c.DirectoryType]
+	c.UserFilter = getenv("LDAP_USER_FILTER", filters[0])
+	c.GroupFilter = getenv("LDAP_GROUP_FILTER", filters[1])
 	// Only emptiness flows into the error, never a configured value.
 	for _, required := range []struct {
 		name    string

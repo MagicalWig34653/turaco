@@ -18,6 +18,28 @@ For two-site deployments, prefer clear primary + DR semantics for state rather t
 
 Managed-service environments use isolated customer DB/object/key data planes. Compute may be shared or dedicated by tier, but authorization and data storage cannot depend solely on a forgotten `tenant_id` filter.
 
+## Reverse proxy and client addresses
+
+Browsers reach `turaco-api` through `turaco-web` (nginx) or another reverse proxy. Set `HTTP_TRUSTED_PROXIES` on the API to the proxy network so login throttling and audit see the real client address from `X-Forwarded-For`; untrusted senders of that header are ignored. Trust only the proxy's own address(es), not whole networks containing gateways or other containers. Without real client addresses every client appears as the proxy and shares one throttle counter, so 30 failed attempts from anyone would block password and emergency login for everyone for 15 minutes. In Docker Swarm the default `mode: ingress` replaces client addresses with the ingress network's; publish the proxy with `mode: host` (or use PROXY protocol on an external load balancer) when login throttling must see clients. Proxies must preserve the `Host` header (the same-origin CSRF guard compares it with `Origin`) and pass `Authorization`/`WWW-Authenticate` unchanged for Kerberos.
+
+## First administrator and emergency access
+
+After the first directory sync, grant the first administrator from the worker container (it ships `turaco-admin` and uses the worker's `DATABASE_URL`):
+
+```bash
+docker exec <worker> turaco-admin role grant --role platform-administrator --user <username>
+```
+
+Further roles are managed in the web UI. For directory outages, create an emergency account once, store its password in the organization's vault, and enable it only when needed:
+
+```bash
+docker exec -i <worker> turaco-admin emergency create --login breakglass --display-name "Emergency administrator"
+docker exec <worker> turaco-admin role grant --role platform-administrator --user <emergency user id printed above>
+docker exec <worker> turaco-admin emergency enable --login breakglass   # during an outage
+```
+
+Emergency login additionally requires `AUTH_EMERGENCY_LOGIN_ENABLED=true` on the API. Every use is audited and logged at error level; alert on it. Disable the account and rotate its password after use (`emergency disable`, `emergency set-password`).
+
 ## Releases
 
 GHCR images are built by GitHub Actions. Production records immutable digests. `latest` may exist for convenience but is not deployment state.

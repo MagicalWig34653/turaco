@@ -63,6 +63,15 @@ Forbidden examples:
 - an integration writing domain tables with raw SQL;
 - frontend module A reaching into private state of module B.
 
+## Transactions across owners
+
+A public contract may take a caller-owned `pgx.Tx` only when an invariant spans owners and must commit atomically, for example session creation that locks the Organization User row (`UserLocker.LockActiveUser`), session revocation inside a status change (`authentication.RevokeUserSessions`) or creating an emergency User together with its credential. Rules:
+
+- the caller owns the transaction (begin, commit, rollback); the callee never commits or keeps it;
+- the callee touches only its own tables through it;
+- lock order is fixed: Organization User row before platform sessions/credentials;
+- such methods are named for the invariant, not generic data access, and are documented on the interface.
+
 ## Database ownership
 
 One PostgreSQL database is acceptable, using schemas such as `platform`, `organization`, `products`, `assets`, `inventory`, `service_desk`, etc. Database co-location does **not** remove logical ownership. Cross-module foreign keys are deliberate, not automatic.

@@ -19,6 +19,9 @@ Invariants every current and future status operation must keep:
 
 In the Organization repository all status changes go through one operation that applies these rules.
 
+## Role Assignment
+`active → revoked` (terminal; re-granting creates a new assignment). At most one active assignment per role, subject and scope. A Role is `active → deleted` (soft) only without active assignments; the built-in role is never deleted. Assignments, revocations and role changes are audited.
+
 ## Platform job
 `pending → processing → completed`; `processing → pending` (retryable error, with backoff); `processing → failed` (permanent error or attempts exhausted; terminal); `pending → cancelled`. A `processing` job whose lock is older than the runner's lock timeout is reclaimed by another worker. A job interrupted by worker shutdown returns to `pending` without consuming its attempt. Handlers must be idempotent. At most one `pending`/`processing` job exists per dedupe key. See `backend/internal/platform/jobs` and ADR-0006.
 

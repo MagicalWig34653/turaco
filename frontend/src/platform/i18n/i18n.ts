@@ -1,44 +1,49 @@
+import { de } from './messages.de';
+import { en, type MessageKey } from './messages.en';
+
 export type Locale = 'en' | 'de';
+export type { MessageKey };
+export type MessageParams = Record<string, string | number>;
 
-const messages = {
-  en: {
-    'app.name': 'Turaco',
-    'app.subtitle': 'One workspace for service, assets, infrastructure and operations.',
-    'nav.myWork': 'My Work',
-    'nav.briefing': 'IT Briefing',
-    'nav.serviceDesk': 'Service Desk',
-    'nav.assets': 'Assets',
-    'status.foundation': 'Foundation repository ready',
-    'card.today.title': 'Today',
-    'card.today.body': 'Tasks, tickets, approvals and changes will converge here.',
-    'card.briefing.title': 'IT Briefing',
-    'card.briefing.body': 'Security advisories, incidents, planned work and internal news.',
-    'card.context.title': 'Shared context',
-    'card.context.body':
-      'Users, devices, services and infrastructure are connected instead of duplicated.',
-    language: 'Language',
-  },
-  de: {
-    'app.name': 'Turaco',
-    'app.subtitle': 'Ein Arbeitsbereich für Service, Assets, Infrastruktur und Betrieb.',
-    'nav.myWork': 'Meine Arbeit',
-    'nav.briefing': 'IT-Briefing',
-    'nav.serviceDesk': 'Service Desk',
-    'nav.assets': 'Assets',
-    'status.foundation': 'Grundstruktur ist bereit',
-    'card.today.title': 'Heute',
-    'card.today.body': 'Aufgaben, Tickets, Genehmigungen und Changes laufen hier zusammen.',
-    'card.briefing.title': 'IT-Briefing',
-    'card.briefing.body': 'Security-Meldungen, Störungen, geplante Arbeiten und interne News.',
-    'card.context.title': 'Gemeinsamer Kontext',
-    'card.context.body':
-      'Benutzer, Geräte, Services und Infrastruktur werden verbunden statt dupliziert.',
-    language: 'Sprache',
-  },
-} as const;
+export const locales: readonly Locale[] = ['de', 'en'];
+export const messages: Record<Locale, Record<MessageKey, string>> = { en, de };
+export const LOCALE_STORAGE_KEY = 'turaco.locale';
 
-export type MessageKey = keyof (typeof messages)['en'];
+export function isLocale(value: unknown): value is Locale {
+  return value === 'en' || value === 'de';
+}
 
-export function translate(locale: Locale, key: MessageKey): string {
-  return messages[locale][key] ?? messages.en[key];
+/** Replaces {name} placeholders; unknown placeholders are left untouched. */
+export function interpolate(template: string, params?: MessageParams): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = params[name];
+    return value === undefined ? match : String(value);
+  });
+}
+
+export function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
+  return interpolate(messages[locale][key] ?? messages.en[key], params);
+}
+
+/** Stored choice wins; otherwise the browser language; English is the fallback locale. */
+export function resolveInitialLocale(stored: string | null, browserLanguage: string): Locale {
+  if (isLocale(stored)) return stored;
+  return browserLanguage.toLowerCase().startsWith('de') ? 'de' : 'en';
+}
+
+export function readStoredLocale(): string | null {
+  try {
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function storeLocale(locale: Locale): void {
+  try {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // Storage can be unavailable (private mode, blocked); the choice then lasts for the session.
+  }
 }

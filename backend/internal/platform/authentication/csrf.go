@@ -19,7 +19,7 @@ func RequireSameOrigin(next http.Handler) http.Handler {
 			return
 		}
 		if !sameOrigin(r) {
-			httpx.JSON(w, http.StatusForbidden, httpx.ErrorEnvelope{Error: httpx.APIError{Code: "platform.csrf_rejected", Message: "The request origin is not allowed.", RequestID: w.Header().Get("X-Request-ID")}})
+			httpx.WriteError(w, http.StatusForbidden, "platform.csrf_rejected", "The request origin is not allowed.")
 			return
 		}
 		next.ServeHTTP(w, r)

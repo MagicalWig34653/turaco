@@ -199,3 +199,46 @@ func TestLoadLDAPPlainAllowedInDevelopment(t *testing.T) {
 		t.Fatalf("LDAP_START_TLS=1 must enable StartTLS: %+v, %v", l, err)
 	}
 }
+
+func TestLoadLDAPConnectionNeedsNoBindSettings(t *testing.T) {
+	setLDAPEnv(t, map[string]string{"LDAP_BIND_DN": "", "LDAP_BIND_PASSWORD_FILE": "", "LDAP_USER_BASE_DN": "", "LDAP_GROUP_BASE_DN": ""})
+	c, err := LoadLDAPConnection("production")
+	if err != nil || !c.Enabled() || c.BindDN != "" || c.BindPasswordFile != "" {
+		t.Fatalf("LoadLDAPConnection = %+v, %v", c, err)
+	}
+	if _, err := LoadLDAP("production"); err == nil {
+		t.Fatal("LoadLDAP must still require bind settings")
+	}
+	setLDAPEnv(t, map[string]string{"LDAP_URL": "ldap://dc.example.test"})
+	if _, err := LoadLDAPConnection("production"); err == nil {
+		t.Fatal("connection loading must enforce the TLS policy too")
+	}
+}
+
+func TestLoadAuthSettings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("AUTH_EMERGENCY_LOGIN_ENABLED", "")
+	t.Setenv("HTTP_TRUSTED_PROXIES", "")
+	cfg, err := Load()
+	if err != nil || cfg.AuthEmergencyLoginEnabled || len(cfg.TrustedProxies) != 0 {
+		t.Fatalf("defaults = %+v, %v", cfg, err)
+	}
+	t.Setenv("AUTH_EMERGENCY_LOGIN_ENABLED", "true")
+	t.Setenv("HTTP_TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.7 ,fd00::/8")
+	cfg, err = Load()
+	if err != nil || !cfg.AuthEmergencyLoginEnabled || len(cfg.TrustedProxies) != 3 ||
+		cfg.TrustedProxies[1].String() != "192.168.1.7/32" {
+		t.Fatalf("parsed = %+v, %v", cfg.TrustedProxies, err)
+	}
+	for _, bad := range []string{"10.0.0.0/33", "not-an-ip"} {
+		t.Setenv("HTTP_TRUSTED_PROXIES", bad)
+		if _, err := Load(); err == nil {
+			t.Fatalf("HTTP_TRUSTED_PROXIES=%q must be rejected", bad)
+		}
+	}
+	t.Setenv("HTTP_TRUSTED_PROXIES", "")
+	t.Setenv("AUTH_EMERGENCY_LOGIN_ENABLED", "maybe")
+	if _, err := Load(); err == nil {
+		t.Fatal("invalid boolean must be rejected")
+	}
+}

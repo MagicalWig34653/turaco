@@ -300,7 +300,7 @@ paths:
     get:
       operationId: getAuthSession
       summary: Return the current authentication session.
-      description: "Requires a valid `turaco_session` cookie. Responses are `Cache-Control: no-store`. `permissions` is empty until F1 slice 5 evaluates real permissions."
+      description: "Requires a valid `turaco_session` cookie. Responses are `Cache-Control: no-store`. `permissions` are the effective permissions from the user's role assignments (directly and through Directory Groups)."
       security:
         - sessionAuth: []
       responses:
@@ -327,6 +327,375 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '500': {$ref: '#/components/responses/InternalError'}
+  /auth/methods:
+    get:
+      operationId: getAuthMethods
+      summary: Report which login methods are configured.
+      description: "Unauthenticated. The UI uses it to offer only configured methods. Responses are `Cache-Control: no-store`."
+      responses:
+        '200':
+          description: Configured login methods.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMethods'
+  /auth/login:
+    post:
+      operationId: login
+      summary: Log in with a directory username or email and password.
+      description: "Verifies the password by binding to the directory as the synced account (LDAPS/StartTLS). On success a new session cookie is set and any session carried by the request is revoked. Every credential failure answers the same 401 after a minimum response time. Requests must be same-origin. See docs/security/identity-access-design.md §6."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '204':
+          description: Logged in; the session cookie is set.
+        '400':
+          description: Malformed request (auth.invalid_request), e.g. empty identifier or password.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401':
+          description: Invalid credentials (auth.invalid_credentials). Unknown, disabled and wrong-password accounts are indistinguishable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Cross-origin request rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Password login is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts for this account or client (auth.too_many_attempts); attempts are counted before verification, so concurrent attempts count too. See Retry-After.
+          headers:
+            Retry-After:
+              schema: {type: integer}
+              description: Seconds until the lock expires.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503':
+          description: The directory cannot be reached (auth.provider_unavailable), or the account is being changed concurrently and sign-in timed out (auth.temporarily_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/emergency-login:
+    post:
+      operationId: emergencyLogin
+      summary: Log in with the local emergency (break-glass) account.
+      description: "Exists only when AUTH_EMERGENCY_LOGIN_ENABLED=true; otherwise 404 auth.method_unavailable. Same throttling and generic errors as /auth/login. Sessions are capped at one hour. Every use is audited and logged at error level."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmergencyLoginRequest'
+      responses:
+        '204':
+          description: Logged in; the session cookie is set.
+        '400':
+          description: Malformed request (auth.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401':
+          description: Invalid credentials (auth.invalid_credentials).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Cross-origin request rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Emergency login is disabled (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts from this client, or password verification is busy (auth.too_many_attempts); see Retry-After (short when busy).
+          headers:
+            Retry-After:
+              schema: {type: integer}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/kerberos:
+    get:
+      operationId: kerberosLogin
+      summary: Log in with Kerberos/SPNEGO (Windows integrated authentication).
+      description: "404 auth.method_unavailable when Kerberos is not configured. Without an `Authorization: Negotiate` header the response is 401 with `WWW-Authenticate: Negotiate`; with a valid ticket for a synced, active account a session cookie is set (204). Implemented in F1 slice 4."
+      responses:
+        '204':
+          description: Logged in; the session cookie is set.
+        '401':
+          description: Negotiation required or ticket rejected (auth.invalid_credentials).
+          headers:
+            WWW-Authenticate:
+              schema: {type: string}
+              description: "`Negotiate` when no ticket was sent."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Kerberos is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /permissions:
+    get:
+      operationId: listPermissions
+      summary: List all registered permissions.
+      description: "Requires `platform.roles.view`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: All permissions, sorted by name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionList'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List roles.
+      description: "Requires `platform.roles.view`. Not paginated (roles are few); sorted by name."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: All roles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleList'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRole
+      summary: Create a custom role.
+      description: "Requires `platform.roles.manage`. Audited (authorization.role.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreate'
+      responses:
+        '201':
+          description: The created role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '400': {$ref: '#/components/responses/AuthorizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /roles/{id}:
+    get:
+      operationId: getRole
+      summary: Get a role.
+      description: "Requires `platform.roles.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRole
+      summary: Rename or redescribe a custom role.
+      description: "Requires `platform.roles.manage`. The built-in role cannot be changed (409 authorization.built_in_role). Audited (authorization.role.updated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleUpdate'}
+      responses:
+        '200':
+          description: The updated role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '400': {$ref: '#/components/responses/AuthorizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteRole
+      summary: Delete a custom role without active assignments.
+      description: "Requires `platform.roles.manage`. 409 authorization.role_in_use while active assignments exist, 409 authorization.built_in_role for the built-in role. Audited (authorization.role.deleted)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Deleted.
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /roles/{id}/permissions:
+    put:
+      operationId: setRolePermissions
+      summary: Replace the permissions of a custom role.
+      description: "Requires `platform.roles.manage`. Every name must be registered (400 authorization.unknown_permission). Audited (authorization.role.permissions_changed) with before/after."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RolePermissionsUpdate'}
+      responses:
+        '200':
+          description: The updated role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+        '400': {$ref: '#/components/responses/AuthorizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /role-assignments:
+    get:
+      operationId: listRoleAssignments
+      summary: List role assignments.
+      description: "Requires `platform.roles.view`. Newest first (descending id). Active only unless includeRevoked=true."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: roleId, in: query, schema: {type: string}}
+        - {name: subjectType, in: query, schema: {type: string, enum: [user, directory_group]}}
+        - {name: subjectId, in: query, schema: {type: string}}
+        - {name: includeRevoked, in: query, schema: {type: boolean}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of assignments.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleAssignmentList'}
+        '400': {$ref: '#/components/responses/AuthorizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: assignRole
+      summary: Assign a role to a User or Directory Group (global scope).
+      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment. Audited (authorization.role.assigned)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoleAssignmentCreate'}
+      responses:
+        '201':
+          description: The created assignment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleAssignment'}
+        '400': {$ref: '#/components/responses/AuthorizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /role-assignments/{id}/revoke:
+    post:
+      operationId: revokeRoleAssignment
+      summary: Revoke a role assignment.
+      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Audited (authorization.role.assignment_revoked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The revoked assignment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleAssignment'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AuthorizationNotFound'}
+        '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /audit-events:
+    get:
+      operationId: listAuditEvents
+      summary: Query the audit log.
+      description: "Requires `platform.audit.view`. Newest first by occurredAt, then id. `cursor` is opaque (pass `nextCursor` back unchanged). `action` is exact; `actionPrefix` is a literal, valid UTF-8 prefix (e.g. `authorization.`); `targetId` requires `targetType`; time bounds are RFC 3339 and half-open [from, to). Combine broad prefixes with a time range for speed. Invalid filters yield 400 audit.invalid_filter."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: targetType, in: query, schema: {type: string, maxLength: 100}}
+        - {name: targetId, in: query, schema: {type: string, maxLength: 200}}
+        - {name: action, in: query, schema: {type: string, maxLength: 200}}
+        - {name: actionPrefix, in: query, schema: {type: string, maxLength: 200}}
+        - {name: actorId, in: query, schema: {type: string}}
+        - {name: correlationId, in: query, schema: {type: string, maxLength: 200}}
+        - {name: from, in: query, schema: {type: string, format: date-time}}
+        - {name: to, in: query, schema: {type: string, format: date-time}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of audit events.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditEventList'}
+        '400':
+          description: Invalid filter or paging (audit.invalid_filter, audit.invalid_cursor, audit.invalid_limit).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -343,12 +712,12 @@ components:
     Limit:
       name: limit
       in: query
-      description: Page size, default 50; values above 200 are clamped to 200. Non-numeric or below 1 yields 400 organization.invalid_limit.
+      description: Page size, default 50; values above 200 are clamped to 200. Non-numeric or below 1 yields 400 `<module>.invalid_limit` (e.g. organization.invalid_limit, authorization.invalid_limit, audit.invalid_limit).
       schema: {type: integer, minimum: 1}
     Cursor:
       name: cursor
       in: query
-      description: Opaque cursor from a previous response's nextCursor. Invalid values yield 400 organization.invalid_cursor.
+      description: Opaque cursor from a previous response's nextCursor; pass it back unchanged. Invalid values yield 400 `<module>.invalid_cursor`.
       schema: {type: string}
     Query:
       name: q
@@ -392,6 +761,24 @@ components:
             $ref: '#/components/schemas/Error'
     InternalError:
       description: Internal error (platform.internal_error); the message never contains internal details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AuthorizationInvalid:
+      description: Invalid input (authorization.invalid_request, authorization.unknown_permission, authorization.invalid_cursor, authorization.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AuthorizationNotFound:
+      description: Role, assignment or subject not found (authorization.not_found, authorization.subject_not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AuthorizationConflict:
+      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator).
       content:
         application/json:
           schema:
@@ -752,6 +1139,151 @@ components:
         nextCursor:
           type: string
           description: Opaque cursor for the next page; omitted on the last page.
+    AuthMethods:
+      type: object
+      additionalProperties: false
+      required: [password, kerberos, emergency]
+      properties:
+        password: {type: boolean, description: Directory password login is configured.}
+        kerberos: {type: boolean, description: Kerberos/SPNEGO is configured.}
+        emergency: {type: boolean, description: Emergency login is enabled.}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier, password]
+      properties:
+        identifier: {type: string, minLength: 1, maxLength: 256, description: "Directory username, DOMAIN\\username or primary email."}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    EmergencyLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [login, password]
+      properties:
+        login: {type: string, minLength: 1, maxLength: 64}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    Permission:
+      type: object
+      additionalProperties: false
+      required: [name, description, risk]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        risk: {type: string, enum: [normal, elevated, high]}
+    PermissionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Permission'}
+    Role:
+      type: object
+      additionalProperties: false
+      required: [id, key, name, description, builtIn, permissions, activeAssignments, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        key: {type: string, description: "Stable slug, ^[a-z0-9][a-z0-9-]{1,62}$."}
+        name: {type: string}
+        description: {type: string}
+        builtIn: {type: boolean}
+        permissions:
+          type: array
+          items: {type: string}
+          description: Sorted effective permissions; for the built-in platform-administrator role every registered permission.
+        activeAssignments: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RoleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+    RoleCreate:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key: {type: string, pattern: '^[a-z0-9][a-z0-9-]{1,62}$'}
+        name: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        permissions:
+          type: array
+          items: {type: string}
+    RoleUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+    RolePermissionsUpdate:
+      type: object
+      additionalProperties: false
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          items: {type: string}
+    RoleAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, roleId, roleKey, subjectType, subjectId, subjectDisplayName, scope, createdAt]
+      properties:
+        id: {type: string}
+        roleId: {type: string}
+        roleKey: {type: string}
+        subjectType: {type: string, enum: [user, directory_group]}
+        subjectId: {type: string}
+        subjectDisplayName: {type: string, description: Current display name of the User or Directory Group; empty if unknown.}
+        scope: {type: string, enum: [global]}
+        createdAt: {type: string, format: date-time}
+        createdBy: {type: string, description: User id of the creator; omitted for CLI-created assignments.}
+        revokedAt: {type: string, format: date-time}
+        revokedBy: {type: string}
+    RoleAssignmentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RoleAssignment'}
+        nextCursor: {type: string}
+    RoleAssignmentCreate:
+      type: object
+      additionalProperties: false
+      required: [roleId, subjectType, subjectId]
+      properties:
+        roleId: {type: string}
+        subjectType: {type: string, enum: [user, directory_group]}
+        subjectId: {type: string}
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, action, targetType, targetId, correlationId, metadata]
+      properties:
+        id: {type: string}
+        occurredAt: {type: string, format: date-time}
+        actorId: {type: string, description: Acting User; omitted for system/CLI actions (see metadata.actor).}
+        action: {type: string}
+        targetType: {type: string}
+        targetId: {type: string}
+        correlationId: {type: string}
+        before: {description: State before the change, when recorded.}
+        after: {description: State after the change, when recorded.}
+        metadata: {type: object}
+    AuditEventList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AuditEvent'}
+        nextCursor: {type: string}
     Error:
       type: object
       additionalProperties: false

@@ -1,7 +1,9 @@
-// Package authorization provides the request principal and permission checks.
+// Package authorization provides the request contract: the authenticated
+// Principal, the Authenticator that resolves it and the Require middleware.
+// Roles, assignments and the evaluation of effective permissions live in
+// authorization/roles; this package must not depend on them.
 //
-// Authentication providers are wired in by later F1 slices. Until an
-// Authenticator is configured, DenyAll rejects every request (default deny).
+// Until an Authenticator is configured, DenyAll rejects every request (default deny).
 package authorization
 
 import (
@@ -61,16 +63,16 @@ func Require(auth Authenticator, permission string) func(http.Handler) http.Hand
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			principal, ok, err := auth.Authenticate(r)
 			if err != nil {
-				slog.ErrorContext(r.Context(), "authentication failed", "request_id", w.Header().Get("X-Request-ID"), "error", err)
-				httpx.JSON(w, http.StatusInternalServerError, httpx.ErrorEnvelope{Error: httpx.APIError{Code: "platform.internal_error", Message: "An internal error occurred.", RequestID: w.Header().Get("X-Request-ID")}})
+				slog.ErrorContext(r.Context(), "authentication failed", "request_id", httpx.RequestID(w), "error", err)
+				httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
 				return
 			}
 			if !ok {
-				httpx.JSON(w, http.StatusUnauthorized, httpx.ErrorEnvelope{Error: httpx.APIError{Code: "platform.unauthenticated", Message: "Authentication is required.", RequestID: w.Header().Get("X-Request-ID")}})
+				httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
 				return
 			}
 			if !principal.Has(permission) {
-				httpx.JSON(w, http.StatusForbidden, httpx.ErrorEnvelope{Error: httpx.APIError{Code: "platform.forbidden", Message: "You do not have permission to perform this action.", RequestID: w.Header().Get("X-Request-ID")}})
+				httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))

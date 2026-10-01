@@ -15,6 +15,9 @@
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.view` | normal | View organization users, teams and locations. |
 | `platform.admin` | high | Administer platform-wide configuration. |
+| `platform.audit.view` | elevated | Query the audit log. |
+| `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
+| `platform.roles.view` | normal | View roles, permissions and role assignments. |
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
 | `tasks.manage` | normal | Create and update tasks within authorized scope. |
 | `tasks.view` | normal | View tasks within authorized scope. |

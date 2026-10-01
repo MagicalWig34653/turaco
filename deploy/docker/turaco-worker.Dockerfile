@@ -6,9 +6,12 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/turaco-worker ./backend/cmd/turaco-worker
+# Operator CLI (first administrator, emergency account); run with docker exec.
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/turaco-admin ./backend/cmd/turaco-admin
 
 FROM alpine:3.22
 RUN addgroup -S app && adduser -S -G app app
 COPY --from=build /out/turaco-worker /usr/local/bin/turaco-worker
+COPY --from=build /out/turaco-admin /usr/local/bin/turaco-admin
 USER app
 ENTRYPOINT ["/usr/local/bin/turaco-worker"]

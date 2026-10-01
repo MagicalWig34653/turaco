@@ -10,10 +10,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
+	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
@@ -56,17 +61,48 @@ func main() {
 		httpx.JSON(w, http.StatusOK, map[string]string{"name": "Turaco", "version": version, "environment": cfg.Environment})
 	})
 
-	// Browser sessions authenticate requests. Until F1 slice 5 evaluates real
-	// permissions, NoPermissions gives sessions none, so permission-guarded
-	// routes such as Organization still answer 403.
+	// Browser sessions authenticate requests; their permissions come from
+	// role assignments to the User and its (transitive) Directory Groups.
 	orgReader := orgrepository.New(pool)
+	subjects := orgpublic.NewAuthorizationSubjects(orgReader)
 	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
-	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), authentication.NoPermissions{}, cfg.SessionCookieSecure)
+	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure)
 	authentication.Register(mux, sessions, sessionAuth, cfg.SessionCookieSecure, logger)
+
+	// Login. Password login binds as the synced account, so the API needs the
+	// directory connection settings but never the sync bind secret.
+	loginAccounts := orgpublic.NewLoginAccounts(orgReader, nil)
+	loginDeps := authentication.LoginDeps{
+		Pool: pool, Sessions: sessions,
+		Throttle: authentication.NewThrottle(pool, authentication.ThrottleConfig{}, nil),
+		Users:    loginAccounts, Logger: logger,
+	}
+	loginCfg := authentication.LoginConfig{
+		EmergencyEnabled: cfg.AuthEmergencyLoginEnabled,
+		SecureCookie:     cfg.SessionCookieSecure,
+		TrustedProxies:   cfg.TrustedProxies,
+	}
+	ldapConn, err := config.LoadLDAPConnection(cfg.Environment)
+	if err != nil {
+		logger.Error("load directory connection", "error", err)
+		os.Exit(1)
+	}
+	if ldapConn.Enabled() {
+		verifier, err := ldap.NewPasswordVerifier(ldapConn, logger)
+		if err != nil {
+			logger.Error("configure directory password login", "error", err)
+			os.Exit(1)
+		}
+		loginDeps.Directory, loginDeps.Verifier = loginAccounts, verifier
+		loginCfg.ProviderKey = ldapConn.ProviderKey
+	}
+	authentication.RegisterLogin(mux, loginDeps, loginCfg)
+
 	// Manual directory sync requests need a configured provider; the worker
-	// performs the sync itself, the API only enqueues it and never needs the
-	// directory credentials.
+	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
+	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
+	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,

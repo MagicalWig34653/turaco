@@ -28,9 +28,9 @@ type PermissionLoader interface {
 	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
 }
 
-// NoPermissions grants nothing. Real permission evaluation arrives in F1
-// slice 5, so authenticated sessions currently hold no permissions and
-// permission-guarded routes (such as Organization) answer 403.
+// NoPermissions grants nothing. Production wiring uses
+// authorization.RolePermissions; NoPermissions is for tests and tools that
+// need authenticated sessions without any permission.
 type NoPermissions struct{}
 
 func (NoPermissions) Permissions(context.Context, string) (map[string]struct{}, error) {

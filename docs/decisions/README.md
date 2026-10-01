@@ -24,3 +24,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - ADR-0020 Provider-Agnostic Management Assignment Intelligence
 - ADR-0021 Claude Code Cloud Sessions Reuse the Local Development Environment
 - ADR-0022 go-ldap as LDAP Client Library
+- ADR-0023 gokrb5 for Kerberos/SPNEGO Authentication

@@ -25,6 +25,9 @@ services:
       DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
       S3_ENDPOINT: http://s3mock:9090
       S3_BUCKET: turaco
+      # Clients reach the API through turaco-web (nginx); trust only nginx's
+      # fixed address so login throttling sees real client addresses.
+      HTTP_TRUSTED_PROXIES: 172.30.240.10
     depends_on: [postgres]
     networks: [backend]
 
@@ -47,10 +50,15 @@ services:
     ports:
       - "8088:8080"
     depends_on: [turaco-api]
-    networks: [backend]
+    networks:
+      backend:
+        ipv4_address: 172.30.240.10
 
 networks:
   backend:
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
 
 volumes:
   postgres:

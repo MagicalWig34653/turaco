@@ -15,14 +15,19 @@ import (
 // pass while silently skipping database tests.
 const RequireEnv = "TURACO_REQUIRE_DB_TESTS"
 
-// Pool connects to DATABASE_URL and closes the pool when the test ends.
+// Pool connects to TEST_DATABASE_URL (a separate, migrated test database in
+// local and cloud development), else DATABASE_URL (CI's fresh database), and
+// closes the pool when the test ends.
 // Without a reachable database the test is skipped, or fails when
 // TURACO_REQUIRE_DB_TESTS=true.
 func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("DATABASE_URL")
+	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
-		Unavailable(t, "DATABASE_URL not set")
+		url = os.Getenv("DATABASE_URL")
+	}
+	if url == "" {
+		Unavailable(t, "neither TEST_DATABASE_URL nor DATABASE_URL is set")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url)

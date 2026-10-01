@@ -208,8 +208,11 @@ type syncApply struct {
 	conflicts     []syncConflict
 	conflictCount int
 	skippedNew    int
-	audits        []audit.Entry
-	revocations   []string // users that left active; revoked at the end of the transaction
+	audits        []audit.Change // written with audit.Record at the end of the transaction
+	// statusAudits are the status-change events built by changeUserStatus
+	// (user_status.go); they are inserted with pre-generated ids.
+	statusAudits []audit.Entry
+	revocations  []string // users that left active; revoked at the end of the transaction
 
 	userSweepWithheld  bool
 	groupSweepWithheld bool
@@ -233,32 +236,18 @@ func (a *syncApply) conflict(kind, externalID, username string) {
 	}
 }
 
-func (a *syncApply) auditEntry(action, targetType, targetID string, before, after any) error {
-	meta, err := json.Marshal(syncMetadata(a.in.ProviderKey, a.in.RunID))
-	if err != nil {
-		return fmt.Errorf("marshal audit metadata: %w", err)
-	}
-	return a.queueAudit(action, targetType, targetID, before, after, meta)
+func (a *syncApply) auditEntry(action, targetType, targetID string, before, after any) {
+	a.queueAudit(action, targetType, targetID, before, after, syncMetadata(a.in.ProviderKey, a.in.RunID))
 }
 
-func (a *syncApply) queueAudit(action, targetType, targetID string, before, after any, meta json.RawMessage) error {
-	e := audit.Entry{
-		OccurredAt: a.observed, Action: action, TargetType: targetType, TargetID: targetID,
-		CorrelationID: a.in.RunID, Metadata: meta,
-	}
-	var err error
-	if before != nil {
-		if e.Before, err = json.Marshal(before); err != nil {
-			return fmt.Errorf("marshal audit before: %w", err)
-		}
-	}
-	if after != nil {
-		if e.After, err = json.Marshal(after); err != nil {
-			return fmt.Errorf("marshal audit after: %w", err)
-		}
-	}
-	a.audits = append(a.audits, e)
-	return nil
+// queueAudit collects an audit event attributed to the directory-sync system
+// actor; it is written by audit.Record in writeAuditAndEvents.
+func (a *syncApply) queueAudit(action, targetType, targetID string, before, after any, meta map[string]any) {
+	a.audits = append(a.audits, audit.Change{
+		Action: action, TargetType: targetType, TargetID: targetID,
+		Actor: audit.SystemActor(syncActor), CorrelationID: a.in.RunID,
+		Before: before, After: after, Metadata: meta, OccurredAt: a.observed,
+	})
 }
 
 func (a *syncApply) run(ctx context.Context) (application.SyncApplyOutput, error) {
@@ -694,10 +683,8 @@ func (a *syncApply) applyUsers(ctx context.Context) error {
 	}
 	for _, up := range updates {
 		if _, changed := up.change.fields["primaryEmail"]; changed {
-			if err := a.auditEntry("organization.user.primary_email_changed", "user", up.userID,
-				map[string]*string{"primaryEmail": up.curEmail}, map[string]*string{"primaryEmail": up.desiredEmail}); err != nil {
-				return err
-			}
+			a.auditEntry("organization.user.primary_email_changed", "user", up.userID,
+				map[string]*string{"primaryEmail": up.curEmail}, map[string]*string{"primaryEmail": up.desiredEmail})
 		}
 	}
 
@@ -780,10 +767,8 @@ func (a *syncApply) applyUsers(ctx context.Context) error {
 		if u.Enabled {
 			status = statusActive
 		}
-		if err := a.auditEntry("organization.user.created_from_directory", "user", newIDs[n], nil,
-			statusState{status, statusSourceDirectory}); err != nil {
-			return err
-		}
+		a.auditEntry("organization.user.created_from_directory", "user", newIDs[n], nil,
+			statusState{status, statusSourceDirectory})
 	}
 	a.counts["usersCreated"] = created
 	a.counts["usersUpdated"] = len(updates) + len(invalidChanged)
@@ -870,7 +855,7 @@ func (a *syncApply) applyStatus(ctx context.Context) error {
 		c := a.change(f.UserID)
 		c.statusChanged = true
 		c.field("status")
-		a.audits = append(a.audits, f.Audit)
+		a.statusAudits = append(a.statusAudits, f.Audit)
 		if f.LeftActive {
 			a.revocations = append(a.revocations, f.UserID)
 		}
@@ -1171,11 +1156,8 @@ func (a *syncApply) auditSweepWithheld(context.Context) error {
 	for k, v := range a.sweepFacts {
 		meta[k] = v
 	}
-	raw, err := json.Marshal(meta)
-	if err != nil {
-		return fmt.Errorf("apply sync: marshal audit metadata: %w", err)
-	}
-	return a.queueAudit("organization.directory_sync.sweep_withheld", "directory_sync_run", a.in.RunID, nil, nil, raw)
+	a.queueAudit("organization.directory_sync.sweep_withheld", "directory_sync_run", a.in.RunID, nil, nil, meta)
+	return nil
 }
 
 // writeAuditAndEvents inserts the collected audit entries and one
@@ -1189,8 +1171,8 @@ func (a *syncApply) writeAuditAndEvents(ctx context.Context) error {
 		}
 	}
 	sort.Strings(eventUsers)
-	total := len(a.audits) + len(eventUsers)
-	if total == 0 {
+	total := len(a.statusAudits) + len(eventUsers)
+	if total == 0 && len(a.audits) == 0 {
 		return nil
 	}
 	rows, err := a.tx.Query(ctx, `SELECT uuidv7()::text FROM generate_series(1, $1::int)`, total)
@@ -1211,7 +1193,12 @@ func (a *syncApply) writeAuditAndEvents(ctx context.Context) error {
 		return fmt.Errorf("apply sync: generate ids: %w", err)
 	}
 	next := 0
-	for _, e := range a.audits {
+	for _, c := range a.audits {
+		if err := audit.Record(ctx, a.tx, c); err != nil {
+			return err
+		}
+	}
+	for _, e := range a.statusAudits {
 		e.ID = ids[next]
 		next++
 		if err := audit.Insert(ctx, a.tx, e); err != nil {
