@@ -32,6 +32,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 - [Context Management](development/context-management.md)
 - [Optional Codex Review](development/codex-review.md)
 - [Local Development](development/local-development.md)
+- [Claude Code Cloud Development](development/cloud-development.md)
 - [Repository Bootstrap](development/repository-bootstrap.md)
 - [Domain Module Template](development/module-template.md)
 - [JetBrains and Air](development/jetbrains.md)
@@ -50,6 +51,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 
 ## Integrations
 - [LDAP/AD](integrations/ldap-ad.md)
+- [LDAP/AD Directory Sync Design](integrations/ldap-ad-sync-design.md)
 - [Intune](integrations/intune.md)
 - [Intune Assignment Intelligence](integrations/intune-assignment-intelligence.md)
 - [Autotask](integrations/autotask.md)

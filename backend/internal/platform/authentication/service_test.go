@@ -3,12 +3,14 @@ package authentication
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
 type fakeClock struct{ t time.Time }
@@ -20,23 +22,11 @@ const testUser = "0190a000-0000-7000-8000-000000000001"
 
 func newTestService(t *testing.T) (*Service, *fakeClock, *pgxpool.Pool) {
 	t.Helper()
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		t.Skip("DATABASE_URL not set")
-	}
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Skipf("database unreachable: %v", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Skipf("database unreachable: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform.sessions') IS NOT NULL`).Scan(&exists); err != nil || !exists {
-		t.Skip("platform.sessions missing; run make migrate")
+		dbtest.Unavailable(t, "platform.sessions missing; run make migrate")
 	}
 	clk := &fakeClock{t: time.Now().UTC().Truncate(time.Microsecond)}
 	svc := NewService(pool, Config{IdleTimeout: 30 * time.Minute, AbsoluteTimeout: time.Hour, TouchInterval: time.Minute}, clk.now)
@@ -272,4 +262,54 @@ func TestRevokeAuditIdentifiesOwner(t *testing.T) {
 	if owner != sess.UserID || method != sess.AuthMethod {
 		t.Fatalf("metadata userId=%q authMethod=%q", owner, method)
 	}
+}
+
+func TestRevokeUserSessions(t *testing.T) {
+	s, clk, pool := newTestService(t)
+	ctx := context.Background()
+	tok1, _ := mustCreate(t, s)
+	tok2, _ := mustCreate(t, s)
+	var n int
+	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		var err error
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all", clk.now())
+		return err
+	})
+	if err != nil || n != 2 {
+		t.Fatalf("RevokeUserSessions = %d, %v; want 2", n, err)
+	}
+	for _, tok := range []string{tok1, tok2} {
+		if _, err := s.Authenticate(ctx, tok); !errors.Is(err, ErrInvalidSession) {
+			t.Fatalf("revoked session still valid: %v", err)
+		}
+	}
+	var audited int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events
+		WHERE action = 'auth.session.revoked' AND correlation_id = 'corr-revoke-all'
+		  AND actor_id IS NULL AND metadata->>'reason' = 'user_deactivated' AND metadata->>'actor' = 'directory-sync'`).Scan(&audited); err != nil || audited != 2 {
+		t.Fatalf("audited = %d, %v; want 2", audited, err)
+	}
+	// Idempotent: nothing left to revoke, nothing audited.
+	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		var err error
+		n, err = RevokeUserSessions(ctx, tx, testUser, "user_deactivated", "directory-sync", "corr-revoke-all-2", clk.now())
+		return err
+	})
+	if err != nil || n != 0 {
+		t.Fatalf("second RevokeUserSessions = %d, %v; want 0", n, err)
+	}
+}
+
+func TestRevokeUserSessionsValidation(t *testing.T) {
+	_, clk, pool := newTestService(t)
+	ctx := context.Background()
+	_ = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if _, err := RevokeUserSessions(ctx, tx, "nope", "r", "s", "c", clk.now()); err == nil {
+			t.Error("expected error for bad user id")
+		}
+		if _, err := RevokeUserSessions(ctx, tx, testUser, "", "s", "c", clk.now()); err == nil {
+			t.Error("expected error for empty reason")
+		}
+		return nil
+	})
 }

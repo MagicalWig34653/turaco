@@ -5,13 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
 const missingID = "00000000-0000-7000-8000-000000000000"
@@ -25,20 +25,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		t.Skip("DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, url)
-	if err != nil {
-		t.Skipf("database unavailable: %v", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		t.Skipf("database unreachable: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return &fixture{t: t, pool: pool, repo: New(pool), pfx: "zt" + hex.EncodeToString(b)}
@@ -75,7 +62,7 @@ func (f *fixture) location(name string) string {
 }
 
 func (f *fixture) group(name string, deleted *time.Time) string {
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	now := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond) // before any deleted_observed_at the tests use
 	return f.insert(`INSERT INTO organization.directory_groups(provider_key, external_id, display_name, description, first_observed_at, last_observed_at, deleted_observed_at)
 VALUES ('test', $1, $1, 'desc', $2, $2, $3) RETURNING id::text`,
 		`DELETE FROM organization.directory_groups WHERE id = $1`, name, now, deleted)
@@ -342,8 +329,14 @@ func TestDirectoryGroupsAndMembers(t *testing.T) {
 	g2 := f.group(f.pfx+"-gone", &deletedAt)
 	u1 := f.user(f.pfx+"-u1", "active")
 	u2 := f.user(f.pfx+"-u2", "active")
-	f.exec(`INSERT INTO organization.directory_group_memberships(group_id,user_id,last_observed_at) VALUES ($1,$2,now()),($1,$3,now())`,
+	u3 := f.user(f.pfx+"-u3", "active")
+	f.exec(`INSERT INTO organization.directory_group_memberships(group_id,user_id,observed_from,last_observed_at) VALUES ($1,$2,now(),now()),($1,$3,now(),now())`,
 		`DELETE FROM organization.directory_group_memberships WHERE group_id = $1`, g1, u1, u2)
+	// A closed interval (an earlier membership of u3) must not be listed.
+	if _, err := f.pool.Exec(ctx, `INSERT INTO organization.directory_group_memberships(group_id,user_id,observed_from,last_observed_at,observed_until)
+		VALUES ($1,$2,now() - interval '2 hours',now() - interval '1 hour',now() - interval '1 hour')`, g1, u3); err != nil {
+		t.Fatal(err)
+	}
 
 	res, err := f.repo.ListDirectoryGroups(ctx, application.NameFilter{Query: f.pfx})
 	if err != nil || len(res.Items) != 2 || res.Items[0].ID != g1 || res.Items[1].ID != g2 {
@@ -364,7 +357,7 @@ func TestDirectoryGroupsAndMembers(t *testing.T) {
 	}
 	m2, err := f.repo.ListDirectoryGroupMembers(ctx, g1, application.Page{Limit: 1, Cursor: m1.NextCursor})
 	if err != nil || len(m2.Items) != 1 || m2.NextCursor != "" || m2.Items[0].UserID != u2 ||
-		m2.Items[0].DisplayName != f.pfx+"-u2" || m2.Items[0].LastObservedAt.IsZero() {
+		m2.Items[0].DisplayName != f.pfx+"-u2" || m2.Items[0].LastObservedAt.IsZero() || m2.Items[0].ObservedFrom.IsZero() {
 		t.Fatalf("members page2: %v %+v", err, m2)
 	}
 	empty, err := f.repo.ListDirectoryGroupMembers(ctx, g2, application.Page{})

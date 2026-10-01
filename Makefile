@@ -1,5 +1,9 @@
 SHELL := /bin/bash
 
+# Explicit Go package roots: `./...` would also enter frontend/node_modules,
+# which can contain Go packages (and tests) shipped by npm dependencies.
+GO_PACKAGES := ./backend/... ./agents/... ./tools/...
+
 .PHONY: help doctor bootstrap dev infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean
 
 help:
@@ -55,13 +59,13 @@ dev:
 test: test-go test-frontend
 
 test-go:
-	@go test ./...
+	@./scripts/with-env.sh go test $(GO_PACKAGES)
 
 test-frontend:
 	@cd frontend && npm test
 
 lint:
-	@go vet ./...
+	@go vet $(GO_PACKAGES)
 	@cd frontend && npm run lint
 
 fmt:

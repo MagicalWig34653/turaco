@@ -150,6 +150,10 @@ func (s *Service) Revoke(ctx context.Context, sessionID, actorID, correlationID 
 }
 
 func (s *Service) audit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor *string, correlationID string, metadata json.RawMessage, now time.Time) error {
+	return insertAudit(ctx, tx, action, sessionID, actor, correlationID, metadata, now)
+}
+
+func insertAudit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor *string, correlationID string, metadata json.RawMessage, now time.Time) error {
 	var id string
 	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&id); err != nil {
 		return fmt.Errorf("generate audit id: %w", err)
@@ -158,4 +162,50 @@ func (s *Service) audit(ctx context.Context, tx pgx.Tx, action, sessionID string
 		ID: id, OccurredAt: now, ActorID: actor, Action: action,
 		TargetType: "session", TargetID: sessionID, CorrelationID: correlationID, Metadata: metadata,
 	})
+}
+
+// RevokeUserSessions revokes every unrevoked session of userID inside tx and
+// audits each revocation with reason (for example "user_deactivated"), no
+// human actor and actor marker system (for example "directory-sync"). It lets an operation that ends a user's `active` status (such as
+// directory sync) revoke sessions atomically with the status change, so a later
+// reactivation does not revive old sessions. It returns the number revoked.
+func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, system, correlationID string, now time.Time) (int, error) {
+	if !uuidPattern.MatchString(userID) {
+		return 0, errors.New("revoke user sessions: user id must be a UUID")
+	}
+	if reason == "" || system == "" {
+		return 0, errors.New("revoke user sessions: reason and system are required")
+	}
+	now = now.UTC().Truncate(time.Microsecond)
+	rows, err := tx.Query(ctx, `
+		UPDATE platform.sessions SET revoked_at = $2
+		WHERE user_id = $1 AND revoked_at IS NULL
+		RETURNING id::text, auth_method`, userID, now)
+	if err != nil {
+		return 0, fmt.Errorf("revoke user sessions: %w", err)
+	}
+	type revoked struct{ id, method string }
+	var sessions []revoked
+	for rows.Next() {
+		var r revoked
+		if err := rows.Scan(&r.id, &r.method); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("revoke user sessions: scan: %w", err)
+		}
+		sessions = append(sessions, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("revoke user sessions: %w", err)
+	}
+	for _, r := range sessions {
+		meta, err := json.Marshal(map[string]string{"userId": userID, "authMethod": r.method, "reason": reason, "actor": system})
+		if err != nil {
+			return 0, fmt.Errorf("marshal audit metadata: %w", err)
+		}
+		if err := insertAudit(ctx, tx, "auth.session.revoked", r.id, nil, correlationID, meta, now); err != nil {
+			return 0, err
+		}
+	}
+	return len(sessions), nil
 }

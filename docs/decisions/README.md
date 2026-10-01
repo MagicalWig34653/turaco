@@ -22,3 +22,5 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - ADR-0018 Claude Code Model Routing
 - ADR-0019 Open-Source-First Product Direction
 - ADR-0020 Provider-Agnostic Management Assignment Intelligence
+- ADR-0021 Claude Code Cloud Sessions Reuse the Local Development Environment
+- ADR-0022 go-ldap as LDAP Client Library

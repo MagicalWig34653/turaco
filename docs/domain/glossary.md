@@ -10,7 +10,9 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Employee** — business classification of a User; not a parallel identity model.
 - **Team** — operational responsibility group.
 - **Directory Group** — group observed from an external directory/identity provider (for example Entra/AD) and used for access/management targeting; not the same as Team.
-- **Directory Group Membership** — observed User/Device membership in a Directory Group with source/freshness; dynamic-group rule evaluation stays with the provider unless explicitly supported.
+- **Directory Group Membership** — observed User/Device membership in a Directory Group with source/freshness, kept as interval history; dynamic-group rule evaluation stays with the provider unless explicitly supported.
+- **Directory Group Nesting** — observed direct membership of one Directory Group in another, kept as interval history; transitive membership is derived, not stored.
+- **Directory Sync Run** — one execution of directory synchronization for one provider, with outcome, counts and conflicts; the provenance record for directory observations.
 - **Department** — organizational business unit.
 - **Location** — organizational/support/inventory location, distinct from physical infrastructure Site.
 - **Cost Center** — accounting/organizational allocation.

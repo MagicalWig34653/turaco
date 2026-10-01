@@ -16,4 +16,4 @@
 | `ServiceRequestSubmitted` | 1 | requests | A service request was submitted. |
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. |
 | `TicketCreated` | 1 | service-desk | A ticket was created. |
-| `UserSynchronized` | 1 | organization | An external directory observation updated a canonical user. |
+| `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |

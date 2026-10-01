@@ -1,4 +1,5 @@
-// Package transport exposes the read-only Organization HTTP API under /api/v1.
+// Package transport exposes the Organization HTTP API under /api/v1: read
+// routes plus the request of a manual directory synchronization.
 package transport
 
 import (
@@ -17,6 +18,7 @@ import (
 const (
 	permView          = "organization.view"
 	permDirectoryView = "organization.directory.view"
+	permDirectorySync = "organization.directory.sync"
 	maxQueryLen       = 100
 )
 
@@ -24,13 +26,19 @@ var userStatuses = map[string]struct{}{"active": {}, "inactive": {}, "departed":
 
 type handler struct {
 	reader application.Reader
-	logger *slog.Logger
+	syncer application.DirectorySyncRequester
+	// syncProviderKey is the configured directory provider; empty when
+	// directory synchronization is disabled on this API instance.
+	syncProviderKey string
+	logger          *slog.Logger
 }
 
-// Register mounts the Organization read routes on mux. Every route requires
+// Register mounts the Organization routes on mux. Every route requires
 // authentication and the named permission; other methods yield 405.
-func Register(mux *http.ServeMux, reader application.Reader, auth authorization.Authenticator, logger *slog.Logger) {
-	h := &handler{reader: reader, logger: logger}
+// syncProviderKey is the configured directory provider key, or empty when
+// directory synchronization is not configured (manual requests then yield 409).
+func Register(mux *http.ServeMux, reader application.Reader, syncer application.DirectorySyncRequester, syncProviderKey string, auth authorization.Authenticator, logger *slog.Logger) {
+	h := &handler{reader: reader, syncer: syncer, syncProviderKey: syncProviderKey, logger: logger}
 	org := authorization.Require(auth, permView)
 	dir := authorization.Require(auth, permDirectoryView)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
@@ -47,6 +55,11 @@ func Register(mux *http.ServeMux, reader application.Reader, auth authorization.
 	route("/api/v1/directory-groups/{id}", dir, h.getDirectoryGroup)
 	// Members expose user identities, so both permissions are required.
 	route("/api/v1/directory-groups/{id}/members", func(next http.Handler) http.Handler { return org(dir(next)) }, h.listDirectoryGroupMembers)
+	// Run conflicts carry directory usernames, so both permissions are required.
+	both := func(next http.Handler) http.Handler { return org(dir(next)) }
+	route("/api/v1/directory-sync-runs", both, h.listDirectorySyncRuns)
+	route("/api/v1/directory-sync-runs/{id}", both, h.getDirectorySyncRun)
+	mux.Handle("POST /api/v1/directory-sync-runs", noStore(authorization.Require(auth, permDirectorySync)(http.HandlerFunc(h.requestDirectorySync))))
 }
 
 func noStore(next http.Handler) http.Handler {
@@ -135,7 +148,12 @@ func (h *handler) getUser(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	ok(w, toUser(u))
+	identities, err := h.reader.ListUserExternalIdentities(r.Context(), u.ID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	ok(w, toUserDetail(u, identities))
 }
 
 func (h *handler) listTeams(w http.ResponseWriter, r *http.Request) {
@@ -228,4 +246,51 @@ func (h *handler) listDirectoryGroupMembers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ok(w, toList(res, toDirectoryGroupMember))
+}
+
+func (h *handler) listDirectorySyncRuns(w http.ResponseWriter, r *http.Request) {
+	p, valid := parsePage(w, r)
+	if !valid {
+		return
+	}
+	key := r.URL.Query().Get("providerKey")
+	if utf8.RuneCountInString(key) > maxQueryLen || !utf8.ValidString(key) || strings.ContainsRune(key, 0) {
+		writeError(w, http.StatusBadRequest, "organization.invalid_provider_key", "The provider key is invalid.")
+		return
+	}
+	res, err := h.reader.ListDirectorySyncRuns(r.Context(), application.RunFilter{ProviderKey: key, Page: p})
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	ok(w, toList(res, toSyncRun))
+}
+
+func (h *handler) getDirectorySyncRun(w http.ResponseWriter, r *http.Request) {
+	run, err := h.reader.GetDirectorySyncRun(r.Context(), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	ok(w, toSyncRun(run))
+}
+
+// requestDirectorySync enqueues a manual sync. The worker, not this process,
+// talks to the directory.
+func (h *handler) requestDirectorySync(w http.ResponseWriter, r *http.Request) {
+	if h.syncProviderKey == "" {
+		writeError(w, http.StatusConflict, "organization.directory_sync_not_configured", "Directory synchronization is not configured.")
+		return
+	}
+	principal, found := authorization.PrincipalFrom(r.Context())
+	if !found {
+		writeError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+		return
+	}
+	jobID, created, err := h.syncer.RequestDirectorySync(r.Context(), principal.UserID, h.syncProviderKey, w.Header().Get("X-Request-ID"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusAccepted, syncRequestDTO{JobID: jobID, Created: created})
 }

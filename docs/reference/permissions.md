@@ -11,6 +11,7 @@
 | `endpoint.management.view` | normal | View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope. |
 | `integrations.intune.manage` | high | Administer Intune integration configuration, credentials and synchronization controls. |
 | `inventory.manage` | elevated | Receive, reserve, transfer and correct inventory. |
+| `organization.directory.sync` | elevated | Request an immediate directory synchronization run. |
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.view` | normal | View organization users, teams and locations. |
 | `platform.admin` | high | Administer platform-wide configuration. |

@@ -5,6 +5,12 @@ services:
   turaco-api:
     image: ghcr.io/OWNER/REPOSITORY/turaco-api@sha256:REPLACE_ME
     networks: [platform]
+    environment:
+      APP_ENV: production
+      # Directory sync: API and worker must use the same LDAP_URL/LDAP_PROVIDER_KEY.
+      # The API only enqueues manual runs and never receives the bind secret.
+      # LDAP_URL: ldaps://dc.example.internal:636
+      # LDAP_PROVIDER_KEY: ad
     deploy:
       replicas: 2
       update_config:
@@ -19,12 +25,21 @@ services:
   turaco-worker:
     image: ghcr.io/OWNER/REPOSITORY/turaco-worker@sha256:REPLACE_ME
     networks: [platform]
+    environment:
+      APP_ENV: production
+      # LDAP_URL: ldaps://dc.example.internal:636
+      # LDAP_PROVIDER_KEY: ad
+      # LDAP_BIND_DN: CN=svc-turaco,OU=Service Accounts,DC=example,DC=internal
+      # LDAP_BIND_PASSWORD_FILE: /run/secrets/ldap_bind_password
+      # LDAP_USER_BASE_DN: OU=Users,DC=example,DC=internal
+      # LDAP_GROUP_BASE_DN: OU=Groups,DC=example,DC=internal
     deploy:
       replicas: 2
       restart_policy:
         condition: on-failure
     secrets:
       - database_url
+      # - ldap_bind_password
 
   turaco-web:
     image: ghcr.io/OWNER/REPOSITORY/turaco-web@sha256:REPLACE_ME
@@ -46,3 +61,5 @@ networks:
 secrets:
   database_url:
     external: true
+  # ldap_bind_password:
+  #   external: true
