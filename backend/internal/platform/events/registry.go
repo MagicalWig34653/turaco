@@ -8,7 +8,7 @@ type Definition struct {
 }
 
 var Registry = []Definition{
-	{Name: "UserSynchronized", Version: 1, Owner: "organization", Description: "An external directory observation updated a canonical user."},
+	{Name: "UserSynchronized", Version: 1, Owner: "organization", Description: "Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md."},
 	{Name: "AssetCreated", Version: 1, Owner: "assets", Description: "A new asset was registered."},
 	{Name: "AssetAssigned", Version: 1, Owner: "assets", Description: "An asset assignment became active."},
 	{Name: "StockReserved", Version: 1, Owner: "inventory", Description: "Stock or a serialized asset was reserved."},

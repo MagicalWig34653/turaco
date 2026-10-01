@@ -56,6 +56,8 @@ The employee can always override the affected device when reporting another devi
 
 Business mutation + outbox event commit atomically. Worker processes outbox/jobs idempotently with retries and observable failure state. PostgreSQL is the initial queue; no broker is required.
 
+Implemented job runner (`backend/internal/platform/jobs`): jobs are claimed with `FOR UPDATE SKIP LOCKED`; retryable failures return to `pending` with exponential backoff, permanent failures or exhausted attempts end in terminal `failed`; jobs whose lock outlives the lock timeout are reclaimed; a dedupe key allows at most one pending/processing job per unit of work; interval schedules enqueue through the same dedupe key. Handlers must be idempotent. Lifecycle: [state machines](../domain/state-machines.md#platform-job). Outbox dispatch is not implemented yet; when it is, it reuses these claim/retry semantics (or runs as jobs) instead of a second loop — note that `platform.outbox_events` currently still treats `failed` as claimable, unlike jobs.
+
 Domain events are business facts in past tense and carry stable ID, type/version, time, actor and correlation ID. External Integration Events may be narrower/different from internal domain events.
 
 ## Realtime

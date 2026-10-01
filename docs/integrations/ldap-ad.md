@@ -16,7 +16,7 @@ AD/LDAP account maps to ExternalIdentity; User is the stable platform identity. 
 
 ## Passwords
 
-LDAP user passwords are never stored. Bind credentials, if needed, are encrypted secrets. Interactive agent authentication must be explicitly capability-scoped and audited without recording user passwords.
+LDAP user passwords are never stored. The synchronization bind password is a deployment secret file read only by `turaco-worker` (decision D1 of the [sync design](ldap-ad-sync-design.md)); it is never stored in PostgreSQL. Storing directory credentials in the database requires the application-level encryption of ADR-0014 first. Interactive agent authentication must be explicitly capability-scoped and audited without recording user passwords.
 
 ## Transparent Windows experience
 
