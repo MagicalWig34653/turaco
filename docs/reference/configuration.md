@@ -9,6 +9,10 @@
 | `DATABASE_URL` | string | true | true | `` | PostgreSQL connection URL. |
 | `HTTP_ADDR` | string | false | false | `:8080` | HTTP listen address for turaco-api. |
 | `HTTP_TRUSTED_PROXIES` | string | false | false | `` | Comma-separated CIDR prefixes of reverse proxies (for example the turaco-web container network) whose X-Forwarded-For header is trusted for the client address used by login throttling and audit. Empty trusts no proxy. |
+| `KERBEROS_KEYTAB_FILE` | string | false | true | `` | Path to the keytab file (a deployment secret, mounted only into turaco-api) holding the key of KERBEROS_SERVICE_PRINCIPAL. Setting it enables Kerberos/SPNEGO login (GET /api/v1/auth/kerberos) and requires LDAP_URL: tickets are mapped to synced directory accounts. Empty disables Kerberos. |
+| `KERBEROS_MAX_CLOCK_SKEW` | duration | false | false | `5m` | Maximum clock difference between client and server accepted for Kerberos tickets, which also sets the replay-cache window; at most 15m. |
+| `KERBEROS_REALM` | string | false | false | `` | The only accepted Kerberos realm, upper case (for example `EXAMPLE.LOCAL`); tickets of other realms are refused. Required when KERBEROS_KEYTAB_FILE is set. |
+| `KERBEROS_SERVICE_PRINCIPAL` | string | false | false | `` | Service principal of turaco-api without realm, for example `HTTP/turaco.example.local`; its key must be in the keytab. Required when KERBEROS_KEYTAB_FILE is set. |
 | `LDAP_ALLOW_PLAINTEXT` | bool | false | false | `false` | Allow `ldap://` without StartTLS (credentials in clear text). Accepted only together with APP_ENV=development, for local test directories. |
 | `LDAP_BIND_DN` | string | false | false | `` | DN of the read-only service account used for synchronization. Required when LDAP_URL is set. |
 | `LDAP_BIND_PASSWORD_FILE` | string | false | true | `` | Path to a file containing the bind password (for example a Docker secret). Required when LDAP_URL is set. The password is never stored in the database or logged. |

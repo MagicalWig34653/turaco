@@ -96,6 +96,7 @@ type loginFixture struct {
 	svc      *Service
 	dir      *fakeDirectory
 	ver      *fakeVerifier
+	krb      *fakeKerberos
 	locker   *fakeLocker
 	logs     *bytes.Buffer
 	userID   string
@@ -113,8 +114,9 @@ type loginFixture struct {
 
 type fixtureOption func(*loginFixture)
 
-func withoutPasswordLogin() fixtureOption { return func(f *loginFixture) { f.withPass = false } }
-func withEmergency() fixtureOption        { return func(f *loginFixture) { f.cfg.EmergencyEnabled = true } }
+func withoutPasswordLogin() fixtureOption        { return func(f *loginFixture) { f.withPass = false } }
+func withKerberos(k *fakeKerberos) fixtureOption { return func(f *loginFixture) { f.krb = k } }
+func withEmergency() fixtureOption               { return func(f *loginFixture) { f.cfg.EmergencyEnabled = true } }
 func withClientLimit(n int) fixtureOption {
 	return func(f *loginFixture) { f.throttle.ClientLimit = n }
 }
@@ -168,6 +170,12 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	} else {
 		f.deps.Users = f.locker // emergency login still needs the user gate
 		f.cfg.ProviderKey = ""
+		if f.krb != nil { // Kerberos maps principals through the directory too
+			f.deps.Directory, f.cfg.ProviderKey = f.dir, "ad"
+		}
+	}
+	if f.krb != nil {
+		f.deps.Kerberos = f.krb
 	}
 	mux := http.NewServeMux()
 	RegisterLogin(mux, f.deps, f.cfg)

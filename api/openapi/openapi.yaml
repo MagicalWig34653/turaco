@@ -435,21 +435,44 @@ paths:
     get:
       operationId: kerberosLogin
       summary: Log in with Kerberos/SPNEGO (Windows integrated authentication).
-      description: "404 auth.method_unavailable when Kerberos is not configured. Without an `Authorization: Negotiate` header the response is 401 with `WWW-Authenticate: Negotiate`; with a valid ticket for a synced, active account a session cookie is set (204). Implemented in F1 slice 4."
+      description: "404 auth.method_unavailable when Kerberos is not configured. Without an `Authorization: Negotiate <token>` header the response is 401 with `WWW-Authenticate: Negotiate` (not throttled or audited). With a token, the client attempt is reserved, the ticket is validated with the service keytab (realm, single-component principal, clock skew, replay cache) and the principal's username is mapped to a synced, enabled directory account of an active User; then a session cookie is set (204) and any session carried by the request is replaced. Cross-site requests (`Sec-Fetch-Site` other than same-origin/none) are rejected with 403 because this GET creates a session. Failures are uniform 401s after the same minimum time as password login and are audited without ticket contents."
       responses:
         '204':
           description: Logged in; the session cookie is set.
+        '400':
+          description: Several or oversized (over 64 KiB) Authorization headers (auth.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '401':
-          description: Negotiation required or ticket rejected (auth.invalid_credentials).
+          description: Negotiation required, or the ticket or account was rejected (auth.invalid_credentials).
           headers:
             WWW-Authenticate:
               schema: {type: string}
-              description: "`Negotiate` when no ticket was sent."
+              description: "`Negotiate` on every 401 of this endpoint."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Cross-site request rejected (platform.csrf_rejected).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '404':
           description: Kerberos is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts from this client (auth.too_many_attempts); see Retry-After.
+          headers:
+            Retry-After:
+              schema: {type: integer}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503':
+          description: Sign-in timed out waiting for a concurrent account change (auth.temporarily_unavailable).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -790,7 +813,7 @@ components:
       required: [userId, authMethod, expiresAt, permissions]
       properties:
         userId: {type: string}
-        authMethod: {type: string}
+        authMethod: {type: string, description: "ldap, kerberos or emergency."}
         expiresAt:
           type: string
           format: date-time

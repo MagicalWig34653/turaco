@@ -20,7 +20,7 @@ LDAP user passwords are never stored. The synchronization bind password is a dep
 
 ## Transparent Windows experience
 
-Kerberos/SPNEGO may provide browser SSO in suitable domain environments, either directly or through a dedicated identity layer. The platform consumes a trusted authenticated identity; it does not make anonymous identity guesses.
+Kerberos/SPNEGO provides browser SSO in domain environments: `turaco-api` validates Negotiate tickets itself with a keytab (ADR-0023) and maps the principal to the synced directory account; it never creates Users from tickets and does not make anonymous identity guesses. Setup: [deployment](../operations/deployment.md#kerberos-single-sign-on); design: [identity and access design](../security/identity-access-design.md#8-slice-4--kerberosspnego).
 
 ## Directory synchronization (F1 slice 3)
 

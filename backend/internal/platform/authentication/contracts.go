@@ -21,6 +21,11 @@ var (
 	// ErrUserInactive means the user is unknown or not active at the moment a
 	// login session would be created.
 	ErrUserInactive = errors.New("authentication: user is not active")
+	// ErrInvalidTicket means a Kerberos ticket was malformed, expired,
+	// replayed, for another realm or service, or otherwise not acceptable. It
+	// is the only ticket error callers distinguish; details never leave the
+	// validator.
+	ErrInvalidTicket = errors.New("authentication: invalid kerberos ticket")
 )
 
 // DirectoryAccount is the synced account a login identifier resolves to.
@@ -49,4 +54,21 @@ type UserLocker interface {
 // refused before any network access.
 type PasswordVerifier interface {
 	VerifyPassword(ctx context.Context, dn, password string) error
+}
+
+// KerberosPrincipal is the authenticated client of a validated Kerberos
+// ticket: the single-component user name (no realm, no instance) and the
+// realm, already checked against the configured realm.
+type KerberosPrincipal struct {
+	Username string
+	Realm    string
+}
+
+// KerberosValidator validates the raw SPNEGO/Kerberos token of a
+// `Authorization: Negotiate` header against the service keytab. It returns
+// ErrInvalidTicket (possibly wrapped) for every problem with the ticket and
+// any other error for failures of the validator itself. Implementations must
+// not include ticket contents in errors.
+type KerberosValidator interface {
+	Validate(ctx context.Context, token []byte) (KerberosPrincipal, error)
 }
