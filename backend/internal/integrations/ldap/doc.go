@@ -16,6 +16,10 @@
 //     returned, because absence from a snapshot marks objects as not observed;
 //   - resource limits (packet size, entry counts, value length, server time
 //     limit) bound what a misconfigured directory can make the adapter do;
+//   - bad text in one entry never stops a synchronization: display text is
+//     sanitized, a user with unusable identity attributes is marked Invalid,
+//     and unusable DNs are not indexed; only a missing object ID or account
+//     state fails the fetch;
 //   - DN references resolve only to a unique entry (exact match first, then
 //     directory equality semantics without Unicode or whitespace folding);
 //   - plain ldap:// needs an explicit opt-in, and the bind password is held in

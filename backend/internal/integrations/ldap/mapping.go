@@ -82,9 +82,89 @@ func (s schema) objectID(e *goldap.Entry) (string, bool) {
 	return parseUUID(e.GetEqualFoldAttributeValue(s.idAttr))
 }
 
-// value returns the trimmed first value of an attribute, or "".
-func value(e *goldap.Entry, attr string) string {
-	return strings.TrimSpace(e.GetEqualFoldAttributeValue(attr))
+// maxValueBytes bounds the length of every text value (attribute value or DN)
+// the adapter passes on. Real names, mail addresses and DNs are far shorter; a
+// longer value is a misconfigured or hostile directory. A variable so tests
+// can inject a small limit.
+var maxValueBytes = 4096
+
+// replacementRune stands in for invalid UTF-8 in sanitized display text.
+const replacementRune = "\uFFFD"
+
+// invalidText reports whether a text value is unusable as is: longer than
+// maxValueBytes, not valid UTF-8, or containing a control character (NUL and
+// the other C0 controls, DEL and the C1 controls). Names and DNs never
+// legitimately contain them, and they are the usual carriers of log, header
+// and terminal injection.
+func invalidText(s string) bool {
+	if len(s) > maxValueBytes || !utf8.ValidString(s) {
+		return true
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// truncateRunes cuts s to at most max bytes at a rune boundary.
+func truncateRunes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// sanitizeText turns a free-text display value into safe text: invalid UTF-8
+// becomes U+FFFD, control characters become a space, the result is truncated
+// to maxValueBytes at a rune boundary and trimmed. changed reports whether
+// anything beyond trimming was altered.
+func sanitizeText(s string) (out string, changed bool) {
+	if !invalidText(s) {
+		return strings.TrimSpace(s), false
+	}
+	// Bound the work first; invalid bytes can expand to three bytes each.
+	s = truncateRunes(s, maxValueBytes)
+	s = strings.ToValidUTF8(s, replacementRune)
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+	return strings.TrimSpace(truncateRunes(s, maxValueBytes)), true
+}
+
+// textReader reads attributes of entries and counts how often values had to
+// be sanitized. The counts, never the values, are logged.
+type textReader struct {
+	sanitized int
+}
+
+// display returns the sanitized, trimmed first value of a free-text display
+// attribute, or "".
+func (r *textReader) display(e *goldap.Entry, attr string) string {
+	out, changed := sanitizeText(e.GetEqualFoldAttributeValue(attr))
+	if changed {
+		r.sanitized++
+	}
+	return out
+}
+
+// identity returns the trimmed first value of an identity-relevant attribute.
+// bad is true when the value is not valid text; the value is then "" so bad
+// bytes are never passed on.
+func identity(e *goldap.Entry, attr string) (v string, bad bool) {
+	raw := e.GetEqualFoldAttributeValue(attr)
+	if invalidText(raw) {
+		return "", true
+	}
+	return strings.TrimSpace(raw), false
 }
 
 // optional returns nil for an empty value.
@@ -104,48 +184,9 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// maxValueBytes bounds the length of every text value (attribute value or DN)
-// the adapter accepts. Real names, mail addresses and DNs are far shorter; a
-// longer value is a misconfigured or hostile directory. A variable so tests
-// can inject a small limit.
-var maxValueBytes = 4096
-
-// invalidText reports whether a text value must be rejected: too long, not
-// valid UTF-8, or containing a control character (NUL and the other C0
-// controls, DEL and the C1 controls). Names and DNs never legitimately contain
-// them, and they are the usual carriers of log, header and terminal injection.
-func invalidText(s string) (tooLong, invalid bool) {
-	if len(s) > maxValueBytes {
-		return true, false
-	}
-	if !utf8.ValidString(s) {
-		return false, true
-	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return false, true
-		}
-	}
-	return false, false
-}
-
-// entryTextProblems checks the DN and all attribute values of an entry except
-// the attributes skip selects (binary attributes, member lists that are
-// checked separately). It reports only whether a problem exists, never which
-// value.
-func entryTextProblems(e *goldap.Entry, skip func(lowerName string) bool) (tooLong, invalid bool) {
-	tooLong, invalid = invalidText(e.DN)
-	for _, a := range e.Attributes {
-		if skip != nil && skip(strings.ToLower(a.Name)) {
-			continue
-		}
-		for _, v := range a.Values {
-			tl, inv := invalidText(v)
-			tooLong = tooLong || tl
-			invalid = invalid || inv
-		}
-	}
-	return tooLong, invalid
+// value returns the trimmed first value of an attribute, or "".
+func value(e *goldap.Entry, attr string) string {
+	return strings.TrimSpace(e.GetEqualFoldAttributeValue(attr))
 }
 
 // problems counts entries that make the snapshot unusable. Only counts and
@@ -173,47 +214,36 @@ type mappedUser struct {
 	hasManager bool
 }
 
-// mapSnapshot converts raw directory entries into a DirectorySnapshot. It is
-// all-or-nothing: an entry without a usable stable ID (or, for users, without
-// username or account state) fails the whole snapshot, because omitting it
-// would make the consumer treat the object as no longer observed.
+// mapSnapshot converts raw directory entries into a DirectorySnapshot.
+//
+// An entry without a usable stable ID, or a user without a parseable account
+// state, fails the whole snapshot: omitting it would make the consumer treat
+// the object as no longer observed, and these values cannot be repaired.
+// Everything else degrades per entry so that one bad entry cannot stop every
+// synchronization (and with it deactivations):
+//
+//   - free-text display attributes are sanitized;
+//   - a user whose username, mail or employee number is not valid text (or
+//     whose username is missing) is marked Invalid and stays in the snapshot;
+//   - a DN that is not valid text is not indexed, and references that are not
+//     valid text stay unresolved.
 //
 // DN references (manager, member) resolve only to a unique entry; ambiguous
-// references stay unresolved and only their number is logged.
+// references stay unresolved. Only counts are logged, never values or DNs.
 func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, logger *slog.Logger) (public.DirectorySnapshot, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	var probs problems
-	var badUserID, badUsername, badAccountControl, badGroupID int
-	var userTextInvalid, userTextTooLong, groupTextInvalid, groupTextTooLong, badMembers int
-
-	skipBinaryID := func(name string) bool {
-		return sch.idIsBinaryGUID && name == strings.ToLower(sch.idAttr)
-	}
-	skipMembers := func(name string) bool {
-		return name == strings.ToLower(attrMember) || strings.HasPrefix(name, rangePrefix)
-	}
+	var badUserID, badAccountControl, badGroupID int
+	var invalidUsers, unindexableDNs, invalidReferences int
+	text := &textReader{}
 
 	users := make([]mappedUser, 0, len(userEntries))
 	for _, e := range userEntries {
-		if tooLong, invalid := entryTextProblems(e, skipBinaryID); tooLong || invalid {
-			if tooLong {
-				userTextTooLong++
-			}
-			if invalid {
-				userTextInvalid++
-			}
-			continue
-		}
 		id, ok := sch.objectID(e)
 		if !ok {
 			badUserID++
-			continue
-		}
-		username := value(e, sch.usernameAttr)
-		if username == "" {
-			badUsername++
 			continue
 		}
 		enabled := true
@@ -225,11 +255,31 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 			}
 			enabled = uac&uacAccountDisable == 0
 		}
+		invalid := false
+		username, bad := identity(e, sch.usernameAttr)
+		if bad || username == "" {
+			invalid = true
+		}
+		email, bad := identity(e, attrMail)
+		invalid = invalid || bad
 		var employee string
 		for _, attr := range sch.employeeAttrs {
-			if employee = value(e, attr); employee != "" {
+			v, bad := identity(e, attr)
+			if bad {
+				invalid = true
 				break
 			}
+			if employee = v; employee != "" {
+				break
+			}
+		}
+		if invalid {
+			invalidUsers++
+		}
+		dn := e.DN
+		if invalidText(dn) {
+			dn = ""
+			unindexableDNs++
 		}
 		// Not trimmed: a trailing space may be an escaped, significant part of
 		// the DN. The DN parser ignores insignificant surrounding spaces.
@@ -238,22 +288,20 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 			user: public.DirectoryUser{
 				ExternalID:        id,
 				Username:          username,
-				DistinguishedName: e.DN,
-				DisplayName:       firstNonEmpty(value(e, attrDisplayName), value(e, attrCN), username),
-				GivenName:         optional(value(e, attrGivenName)),
-				FamilyName:        optional(value(e, attrSurname)),
-				Email:             optional(value(e, attrMail)),
+				DistinguishedName: dn,
+				DisplayName:       firstNonEmpty(text.display(e, attrDisplayName), text.display(e, attrCN), username),
+				GivenName:         optional(text.display(e, attrGivenName)),
+				FamilyName:        optional(text.display(e, attrSurname)),
+				Email:             optional(email),
 				EmployeeNumber:    optional(employee),
 				Enabled:           enabled,
+				Invalid:           invalid,
 			},
 			managerDN:  managerDN,
 			hasManager: strings.TrimSpace(managerDN) != "",
 		})
 	}
-	probs.add("users", userTextInvalid, "entries with an attribute value that is not valid text (invalid UTF-8 or control character)")
-	probs.add("users", userTextTooLong, "entries with an attribute value longer than "+strconv.Itoa(maxValueBytes)+" bytes")
 	probs.add("users", badUserID, "entries with missing or invalid "+sch.idAttr)
-	probs.add("users", badUsername, "entries with missing "+sch.usernameAttr)
 	probs.add("users", badAccountControl, "entries with missing or invalid "+attrAccountCtl)
 
 	type mappedGroup struct {
@@ -263,42 +311,28 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 	}
 	mappedGroups := make([]mappedGroup, 0, len(groups))
 	for _, g := range groups {
-		tooLong, invalid := entryTextProblems(g.entry, func(name string) bool { return skipBinaryID(name) || skipMembers(name) })
-		for _, m := range g.members {
-			if tl, inv := invalidText(m); tl || inv {
-				badMembers++
-				break
-			}
-		}
-		if tooLong || invalid {
-			if tooLong {
-				groupTextTooLong++
-			}
-			if invalid {
-				groupTextInvalid++
-			}
-			continue
-		}
 		id, ok := sch.objectID(g.entry)
 		if !ok {
 			badGroupID++
 			continue
+		}
+		dn := g.entry.DN
+		if invalidText(dn) {
+			dn = ""
+			unindexableDNs++
 		}
 		mappedGroups = append(mappedGroups, mappedGroup{
 			group: public.DirectoryGroup{
 				ExternalID: id,
 				// A group without any name is still observable; its stable ID
 				// is the only non-empty identifier it has.
-				DisplayName: firstNonEmpty(value(g.entry, attrCN), value(g.entry, attrDisplayName), id),
-				Description: optional(value(g.entry, attrDescription)),
+				DisplayName: firstNonEmpty(text.display(g.entry, attrCN), text.display(g.entry, attrDisplayName), id),
+				Description: optional(text.display(g.entry, attrDescription)),
 			},
-			dn:      g.entry.DN,
+			dn:      dn,
 			members: g.members,
 		})
 	}
-	probs.add("groups", groupTextInvalid, "entries with an attribute value that is not valid text (invalid UTF-8 or control character)")
-	probs.add("groups", groupTextTooLong, "entries with an attribute value longer than "+strconv.Itoa(maxValueBytes)+" bytes")
-	probs.add("groups", badMembers, "entries with a member value that is not valid text or longer than "+strconv.Itoa(maxValueBytes)+" bytes")
 	probs.add("groups", badGroupID, "entries with missing or invalid "+sch.idAttr)
 
 	// IDs are unique across users and groups: an object matching both filters
@@ -324,15 +358,16 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 
 	index := newDNIndex(len(users) + len(mappedGroups))
 	for _, u := range users {
-		index.add(u.user.DistinguishedName, dnTarget{id: u.user.ExternalID})
+		if u.user.DistinguishedName != "" {
+			index.add(u.user.DistinguishedName, dnTarget{id: u.user.ExternalID})
+		}
 	}
 	for _, g := range mappedGroups {
-		index.add(g.dn, dnTarget{id: g.group.ExternalID, isGroup: true})
+		if g.dn != "" {
+			index.add(g.dn, dnTarget{id: g.group.ExternalID, isGroup: true})
+		}
 	}
-	if n := index.ambiguousKeys(); n > 0 {
-		logger.Warn("ldap: directory contains distinguished names that cannot be told apart; references to them stay unresolved",
-			"ambiguousKeys", n)
-	}
+	ambiguous := index.ambiguousKeys()
 
 	snapshot := public.DirectorySnapshot{
 		Users:  make([]public.DirectoryUser, 0, len(users)),
@@ -348,6 +383,9 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 				user.ManagerExternalID = &id
 			} else {
 				user.ManagerUnresolved = true
+				if invalidText(u.managerDN) {
+					invalidReferences++
+				}
 			}
 		}
 		snapshot.Users = append(snapshot.Users, user)
@@ -365,6 +403,9 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 			switch {
 			case !ok:
 				unresolved[referenceKey(memberDN)] = struct{}{}
+				if invalidText(memberDN) {
+					invalidReferences++
+				}
 			case !t.isGroup:
 				userIDs[t.id] = struct{}{}
 			case t.id != group.ExternalID:
@@ -375,6 +416,15 @@ func mapSnapshot(sch schema, userEntries []*goldap.Entry, groups []rawGroup, log
 		group.MemberGroupIDs = sortedKeys(groupIDs)
 		group.UnresolvedMembers = len(unresolved)
 		snapshot.Groups = append(snapshot.Groups, group)
+	}
+
+	if text.sanitized+invalidUsers+unindexableDNs+invalidReferences+ambiguous > 0 {
+		logger.Warn("ldap: directory data was degraded instead of failing the fetch",
+			"sanitizedValues", text.sanitized,
+			"invalidUsers", invalidUsers,
+			"unindexableDNs", unindexableDNs,
+			"invalidReferences", invalidReferences,
+			"ambiguousKeys", ambiguous)
 	}
 
 	sort.Slice(snapshot.Users, func(i, j int) bool { return snapshot.Users[i].ExternalID < snapshot.Users[j].ExternalID })

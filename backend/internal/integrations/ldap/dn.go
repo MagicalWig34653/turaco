@@ -125,6 +125,9 @@ func (x *dnIndex) ambiguousKeys() int {
 // resolve returns the unique entry a reference names. It reports false for an
 // unknown, unparseable or ambiguous reference.
 func (x *dnIndex) resolve(ref string) (dnTarget, bool) {
+	if invalidText(ref) {
+		return dnTarget{}, false
+	}
 	if targets, found := x.exact[ref]; found {
 		if len(targets) == 1 {
 			return targets[0], true
@@ -144,6 +147,9 @@ func (x *dnIndex) resolve(ref string) (dnTarget, bool) {
 // referenceKey identifies a reference for counting distinct unresolved
 // values: the normalized key, or the raw string when it is not a DN.
 func referenceKey(ref string) string {
+	if invalidText(ref) {
+		return "raw:" + ref
+	}
 	if key, ok := normalizeDN(ref); ok {
 		return "dn:" + key
 	}

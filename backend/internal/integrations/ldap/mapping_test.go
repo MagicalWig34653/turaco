@@ -397,7 +397,6 @@ func TestMapInvalidIDsFailTheWholeSnapshot(t *testing.T) {
 	good := adUser(t, "CN=Good,DC=x", testID(1), "good", "512")
 	noGUID := goldap.NewEntry(secretDN, map[string][]string{attrSAMAccount: {secretName}, attrAccountCtl: {"512"}})
 	shortGUID := goldap.NewEntry(secretDN, map[string][]string{attrObjectGUID: {"\x01\x02"}, attrSAMAccount: {secretName}, attrAccountCtl: {"512"}})
-	noUsername := adUserEntry(t, secretDN, testID(9), map[string][]string{attrAccountCtl: {"512"}})
 	dupA := adUser(t, "CN=A,DC=x", testID(4), "a", "512")
 	dupB := adUser(t, "CN=B,DC=x", testID(4), "b", "512")
 	groupSameIDAsUser := adGroup(t, "CN=G,DC=x", testID(1), "g")
@@ -412,12 +411,11 @@ func TestMapInvalidIDsFailTheWholeSnapshot(t *testing.T) {
 	}{
 		{"missing guid", ad, []*goldap.Entry{good, noGUID}, nil, []string{"users: 1 entries with missing or invalid objectGUID"}},
 		{"short guid", ad, []*goldap.Entry{good, shortGUID, noGUID}, nil, []string{"users: 2 entries with missing or invalid objectGUID"}},
-		{"missing username", ad, []*goldap.Entry{good, noUsername}, nil, []string{"users: 1 entries with missing sAMAccountName"}},
 		{"duplicate user id", ad, []*goldap.Entry{dupA, dupB}, nil, []string{"1 entries with a duplicate objectGUID"}},
 		{"user and group share id", ad, []*goldap.Entry{good}, []rawGroup{{entry: groupSameIDAsUser}}, []string{"1 entries with a duplicate objectGUID"}},
 		{"group without id", ad, []*goldap.Entry{good}, []rawGroup{{entry: badGroup}}, []string{"groups: 1 entries with missing or invalid objectGUID"}},
 		{"invalid entryUUID", ol, []*goldap.Entry{ldapUser("uid=x,dc=x", "not-a-uuid", secretName, nil)}, nil, []string{"users: 1 entries with missing or invalid entryUUID"}},
-		{"several problems", ad, []*goldap.Entry{good, noGUID, noUsername}, []rawGroup{{entry: badGroup}}, []string{"users: 1 entries with missing or invalid objectGUID", "groups: 1 entries"}},
+		{"several problems", ad, []*goldap.Entry{good, noGUID}, []rawGroup{{entry: badGroup}}, []string{"users: 1 entries with missing or invalid objectGUID", "groups: 1 entries"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
