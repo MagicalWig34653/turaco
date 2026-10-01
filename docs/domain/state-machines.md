@@ -4,6 +4,27 @@
 
 State represents business meaning. Independent concerns have independent state dimensions. Important transitions are explicit operations and are audited; do not expose generic `UpdateStatus` for core entities.
 
+## User status
+`active | inactive | departed | external | unknown`, with `status_source` (`platform` | `directory`) recording which side last set the status.
+
+Implemented transitions (F1 slice 3, directory sync only; see the [sync design](../integrations/ldap-ad-sync-design.md#5-sync-algorithm)):
+- `active → inactive` when the User has no enabled, still-observed directory identity; sets `status_source = directory`.
+- `inactive → active` only when `status_source = directory` and a directory identity is enabled again.
+- Sync never sets or leaves `departed`, `external` or `unknown`, and never reactivates an `inactive` User whose `status_source` is `platform`.
+
+Invariants every current and future status operation must keep:
+- A platform-side status change sets `status_source = platform`, so directory sync does not undo it.
+- Leaving `active` revokes all of the User's sessions in the same transaction (`authentication.RevokeUserSessions`). Sessions are honoured only while the User is `active`.
+- Each transition is audited (`organization.user.status_changed`).
+
+In the Organization repository all status changes go through one operation that applies these rules.
+
+## Platform job
+`pending → processing → completed`; `processing → pending` (retryable error, with backoff); `processing → failed` (permanent error or attempts exhausted; terminal); `pending → cancelled`. A `processing` job whose lock is older than the runner's lock timeout is reclaimed by another worker. A job interrupted by worker shutdown returns to `pending` without consuming its attempt. Handlers must be idempotent. At most one `pending`/`processing` job exists per dedupe key. See `backend/internal/platform/jobs` and ADR-0006.
+
+## Directory sync run
+`running → succeeded | failed | sweep_withheld`. At most one `running` run per provider. A `running` run older than `LDAP_SYNC_TIMEOUT` is marked `failed` (abandoned) by the next run and can no longer commit. A retried job starts a new run.
+
 ## Asset lifecycle
 `ordered → received → available → reserved → assigned → returned → available`
 
