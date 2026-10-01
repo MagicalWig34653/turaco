@@ -4,6 +4,8 @@
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
+**Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". Next milestone: F2 (Work Foundation).
+
 ## Implemented in the bootstrap repository
 
 - Go module and Turaco binaries (`turaco-api`, `turaco-worker`, `turaco-migrate`, `turaco-docgen`, `turaco-admin`) plus Connector Agent and Endpoint Agent stubs.
