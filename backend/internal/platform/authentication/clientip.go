@@ -10,11 +10,16 @@ import (
 const maxForwardedEntries = 32
 
 // ClientIP returns the address used for per-client throttling. It is the host
-// of RemoteAddr, unless RemoteAddr lies inside trusted: then it is the
-// right-most X-Forwarded-For entry that is not itself trusted (every proxy
-// appends the address it received the request from, so entries left of the
-// first untrusted one may be forged by the client). A malformed or oversized
-// header falls back to RemoteAddr so it cannot be used to pick a fresh key.
+// of RemoteAddr, unless RemoteAddr lies inside trusted: then it is taken from
+// X-Forwarded-For. Every proxy appends the address it received the request
+// from, so only the right-most entries are trustworthy: at most the right-most
+// maxForwardedEntries entries are considered and walked from the right,
+// skipping trusted proxies and unparseable entries; the first untrusted
+// address is the client. If every considered entry is trusted, the left-most
+// parsed one is used. A trusted RemoteAddr is never used as the client when an
+// X-Forwarded-For header is present (an oversized or garbled header must not
+// select a fresh, shared key); without any parseable entry the client is
+// "unknown" for an oversized header and RemoteAddr otherwise.
 func ClientIP(r *http.Request, trusted []netip.Prefix) string {
 	remote, ok := parseHostAddr(r.RemoteAddr)
 	if !ok {
@@ -27,20 +32,32 @@ func ClientIP(r *http.Request, trusted []netip.Prefix) string {
 	for _, h := range r.Header.Values("X-Forwarded-For") {
 		entries = append(entries, strings.Split(h, ",")...)
 	}
-	if len(entries) == 0 || len(entries) > maxForwardedEntries {
+	if len(entries) == 0 {
 		return remote.String()
 	}
+	oversized := len(entries) > maxForwardedEntries
+	if oversized {
+		entries = entries[len(entries)-maxForwardedEntries:]
+	}
+	var leftmost netip.Addr
 	for i := len(entries) - 1; i >= 0; i-- {
 		addr, err := netip.ParseAddr(strings.TrimSpace(entries[i]))
 		if err != nil {
-			return remote.String()
+			continue
 		}
 		addr = normalizeAddr(addr)
 		if !inPrefixes(addr, trusted) {
 			return addr.String()
 		}
+		leftmost = addr
 	}
-	// Every hop is a trusted proxy: the client is not distinguishable.
+	if leftmost.IsValid() {
+		// Every hop is a trusted proxy: the left-most is the best guess.
+		return leftmost.String()
+	}
+	if oversized {
+		return "unknown"
+	}
 	return remote.String()
 }
 

@@ -2,7 +2,6 @@ package authentication
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,8 +15,8 @@ import (
 
 // Local credentials belong to the emergency (break-glass) account only: an
 // ordinary Organization User without a directory identity. Only the argon2id
-// hash is stored. Lifecycle operations are used by turaco-admin; each runs in
-// the caller's transaction together with its audit entry.
+// hash is stored. The lifecycle is EmergencyAccounts (used by turaco-admin);
+// each operation runs in one transaction together with its audit entry.
 
 var loginNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,62}$`)
 
@@ -30,10 +29,10 @@ var (
 
 // Audit actions of the emergency account lifecycle.
 const (
-	ActionEmergencyAccountCreated         = "authentication.emergency_account.created"
-	ActionEmergencyAccountPasswordChanged = "authentication.emergency_account.password_changed"
-	ActionEmergencyAccountEnabled         = "authentication.emergency_account.enabled"
-	ActionEmergencyAccountDisabled        = "authentication.emergency_account.disabled"
+	ActionEmergencyAccountCreated         = "auth.emergency_account.created"
+	ActionEmergencyAccountPasswordChanged = "auth.emergency_account.password_changed"
+	ActionEmergencyAccountEnabled         = "auth.emergency_account.enabled"
+	ActionEmergencyAccountDisabled        = "auth.emergency_account.disabled"
 )
 
 // ValidLoginName reports whether name is an acceptable emergency login name.
@@ -64,18 +63,16 @@ func FindLocalCredential(ctx context.Context, pool *pgxpool.Pool, loginName stri
 	return c, true, nil
 }
 
-// LocalCredentialAudit carries who performs a lifecycle operation. Actor is
-// the audit metadata (the CLI passes {"actor":"cli","osUser":...}); lifecycle
-// operations never have a human session actor.
-type LocalCredentialAudit struct {
-	Actor         json.RawMessage
+// credentialAudit carries who performs a lifecycle operation.
+type credentialAudit struct {
+	Actor         audit.Actor
 	CorrelationID string
 	At            time.Time
 }
 
-// CreateLocalCredential stores a new, disabled credential for userID and
-// audits authentication.emergency_account.created. hash comes from HashPassword.
-func CreateLocalCredential(ctx context.Context, tx pgx.Tx, userID, loginName, hash string, a LocalCredentialAudit) error {
+// createLocalCredential stores a new, disabled credential for userID and
+// audits auth.emergency_account.created. hash comes from HashPassword.
+func createLocalCredential(ctx context.Context, tx pgx.Tx, userID, loginName, hash string, a credentialAudit) error {
 	if !uuidPattern.MatchString(userID) {
 		return errors.New("create local credential: user id must be a UUID")
 	}
@@ -97,9 +94,9 @@ func CreateLocalCredential(ctx context.Context, tx pgx.Tx, userID, loginName, ha
 		nil, map[string]any{"enabled": false})
 }
 
-// SetLocalPassword replaces the hash of the account and audits
-// authentication.emergency_account.password_changed. It returns the user id.
-func SetLocalPassword(ctx context.Context, tx pgx.Tx, loginName, hash string, a LocalCredentialAudit) (string, error) {
+// setLocalPassword replaces the hash of the account and audits
+// auth.emergency_account.password_changed. It returns the user id.
+func setLocalPassword(ctx context.Context, tx pgx.Tx, loginName, hash string, a credentialAudit) (string, error) {
 	at := a.At.UTC().Truncate(time.Microsecond)
 	var userID string
 	err := tx.QueryRow(ctx, `
@@ -115,10 +112,12 @@ func SetLocalPassword(ctx context.Context, tx pgx.Tx, loginName, hash string, a 
 	return userID, auditLocalCredential(ctx, tx, ActionEmergencyAccountPasswordChanged, userID, loginName, a, nil, nil)
 }
 
-// SetLocalEnabled enables or disables the account and audits
-// authentication.emergency_account.enabled|disabled. It returns the user id and
-// whether the state changed (an unchanged state is not audited).
-func SetLocalEnabled(ctx context.Context, tx pgx.Tx, loginName string, enabled bool, a LocalCredentialAudit) (string, bool, error) {
+// setLocalEnabled enables or disables the account and audits
+// auth.emergency_account.enabled|disabled. It returns the user id and
+// whether the state changed (an unchanged state is not audited). The
+// credential row stays locked until tx ends, which serializes the change with
+// a login creating its session (see loginHandler.emergencyLogin).
+func setLocalEnabled(ctx context.Context, tx pgx.Tx, loginName string, enabled bool, a credentialAudit) (string, bool, error) {
 	at := a.At.UTC().Truncate(time.Microsecond)
 	var userID string
 	var before bool
@@ -144,36 +143,16 @@ func SetLocalEnabled(ctx context.Context, tx pgx.Tx, loginName string, enabled b
 		map[string]any{"enabled": before}, map[string]any{"enabled": enabled})
 }
 
-func auditLocalCredential(ctx context.Context, tx pgx.Tx, action, userID, loginName string, a LocalCredentialAudit, before, after map[string]any) error {
-	meta := map[string]any{"loginName": loginName}
-	if len(a.Actor) > 0 {
-		var actor map[string]any
-		if err := json.Unmarshal(a.Actor, &actor); err != nil {
-			return fmt.Errorf("audit actor must be a JSON object: %w", err)
-		}
-		for k, v := range actor {
-			if k != "loginName" {
-				meta[k] = v
-			}
-		}
-	}
-	e := audit.Entry{OccurredAt: a.At.UTC().Truncate(time.Microsecond), Action: action, TargetType: "emergency_account", TargetID: userID, CorrelationID: a.CorrelationID}
-	var err error
-	if e.Metadata, err = json.Marshal(meta); err != nil {
-		return fmt.Errorf("marshal audit metadata: %w", err)
+func auditLocalCredential(ctx context.Context, tx pgx.Tx, action, userID, loginName string, a credentialAudit, before, after map[string]any) error {
+	e := audit.Change{
+		Action: action, TargetType: "emergency_account", TargetID: userID, Actor: a.Actor,
+		CorrelationID: a.CorrelationID, Metadata: map[string]any{"loginName": loginName}, OccurredAt: a.At,
 	}
 	if before != nil {
-		if e.Before, err = json.Marshal(before); err != nil {
-			return fmt.Errorf("marshal audit before: %w", err)
-		}
+		e.Before = before
 	}
 	if after != nil {
-		if e.After, err = json.Marshal(after); err != nil {
-			return fmt.Errorf("marshal audit after: %w", err)
-		}
+		e.After = after
 	}
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&e.ID); err != nil {
-		return fmt.Errorf("generate audit id: %w", err)
-	}
-	return audit.Insert(ctx, tx, e)
+	return audit.Record(ctx, tx, e)
 }

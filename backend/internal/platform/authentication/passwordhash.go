@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -49,10 +50,30 @@ var b64 = base64.RawStdEncoding
 // attempts from many addresses cannot exhaust memory.
 var hashSlots = make(chan struct{}, 4)
 
-func acquireHashSlot(ctx context.Context) (func(), error) {
+// ErrHashBusy means no hash slot became free within the allowed wait; nothing
+// was hashed.
+var ErrHashBusy = errors.New("authentication: password hashing is busy")
+
+// acquireHashSlot waits for a slot until ctx ends or, when wait is positive,
+// for at most wait (then ErrHashBusy).
+func acquireHashSlot(ctx context.Context, wait time.Duration) (func(), error) {
+	release := func() { <-hashSlots }
 	select {
 	case hashSlots <- struct{}{}:
-		return func() { <-hashSlots }, nil
+		return release, nil
+	default:
+	}
+	var timeout <-chan time.Time
+	if wait > 0 {
+		t := time.NewTimer(wait)
+		defer t.Stop()
+		timeout = t.C
+	}
+	select {
+	case hashSlots <- struct{}{}:
+		return release, nil
+	case <-timeout:
+		return nil, ErrHashBusy
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -79,7 +100,7 @@ func HashPassword(ctx context.Context, password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate password salt: %w", err)
 	}
-	release, err := acquireHashSlot(ctx)
+	release, err := acquireHashSlot(ctx, 0)
 	if err != nil {
 		return "", fmt.Errorf("hash password: %w", err)
 	}
@@ -139,6 +160,13 @@ func parseArgonHash(phc string) (argonHash, error) {
 // comparison is constant-time. A malformed hash is an error, a mismatch is
 // (false, nil).
 func VerifyPasswordHash(ctx context.Context, phc, password string) (bool, error) {
+	return VerifyPasswordHashWithin(ctx, phc, password, 0)
+}
+
+// VerifyPasswordHashWithin is VerifyPasswordHash that waits at most wait for a
+// hash slot (wait <= 0: until ctx ends) and returns ErrHashBusy, without
+// hashing, when none became free.
+func VerifyPasswordHashWithin(ctx context.Context, phc, password string, wait time.Duration) (bool, error) {
 	h, err := parseArgonHash(phc)
 	if err != nil {
 		return false, err
@@ -146,7 +174,7 @@ func VerifyPasswordHash(ctx context.Context, phc, password string) (bool, error)
 	if len(password) > MaxPasswordLength {
 		return false, nil
 	}
-	release, err := acquireHashSlot(ctx)
+	release, err := acquireHashSlot(ctx, wait)
 	if err != nil {
 		return false, fmt.Errorf("verify password: %w", err)
 	}

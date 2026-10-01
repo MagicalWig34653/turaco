@@ -132,6 +132,8 @@ func TestAuditEventsValidation(t *testing.T) {
 		"?to=2026-01-01":                      "audit.invalid_filter",
 		"?actorId=nope":                       "audit.invalid_filter",
 		"?action=" + strings.Repeat("a", 201): "audit.invalid_filter",
+		"?targetId=x":                         "audit.invalid_filter",
+		"?actionPrefix=a%FF":                  "audit.invalid_filter",
 		"?cursor=nope":                        "audit.invalid_cursor",
 		"?limit=0":                            "audit.invalid_limit",
 		"?limit=abc":                          "audit.invalid_limit",

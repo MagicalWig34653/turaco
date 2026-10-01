@@ -49,7 +49,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS role_assignments_active_unique
 CREATE INDEX IF NOT EXISTS role_assignments_subject_active_idx
     ON platform.role_assignments(subject_type, subject_id) WHERE revoked_at IS NULL;
 
--- Audit query (GET /api/v1/audit-events): newest first, optionally per actor.
-CREATE INDEX IF NOT EXISTS audit_events_occurred_idx ON platform.audit_events(occurred_at DESC);
-CREATE INDEX IF NOT EXISTS audit_events_actor_idx ON platform.audit_events(actor_id, occurred_at DESC) WHERE actor_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS audit_events_action_idx ON platform.audit_events(action text_pattern_ops, occurred_at DESC);
+-- Audit query (GET /api/v1/audit-events): newest first, keyset-paged by
+-- (occurred_at DESC, id DESC). Every index ends in the sort key so each filter
+-- shape reads rows already ordered; (target_type, target_id, occurred_at DESC)
+-- from 000002 and correlation_id serve the target and correlation filters.
+-- action uses text_pattern_ops for the range-predicate prefix filter.
+CREATE INDEX IF NOT EXISTS audit_events_occurred_idx ON platform.audit_events(occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS audit_events_actor_idx ON platform.audit_events(actor_id, occurred_at DESC, id DESC) WHERE actor_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS audit_events_action_idx ON platform.audit_events(action text_pattern_ops, occurred_at DESC, id DESC);

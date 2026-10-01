@@ -1,4 +1,4 @@
-package authorization
+package transport
 
 import (
 	"bytes"
@@ -10,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 )
 
 type httpFixture struct {
@@ -27,7 +30,7 @@ func newHTTPFixture(t *testing.T, perms ...string) *httpFixture {
 		set[p] = struct{}{}
 	}
 	mux := http.NewServeMux()
-	Register(mux, f.svc, fixed{p: Principal{UserID: admin, Permissions: set}, ok: true}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	Register(mux, f.svc, fixed{p: authorization.Principal{UserID: admin, Permissions: set}, ok: true}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return &httpFixture{fixture: f, mux: mux, admin: admin}
 }
 
@@ -64,18 +67,18 @@ func TestHTTPAuthentication(t *testing.T) {
 	f := newFixture(t)
 	for _, tc := range []struct {
 		name   string
-		auth   Authenticator
+		auth   authorization.Authenticator
 		method string
 		path   string
 		want   int
 	}{
-		{"unauthenticated view", DenyAll{}, "GET", "/api/v1/roles", 401},
-		{"unauthenticated manage", DenyAll{}, "POST", "/api/v1/roles", 401},
-		{"view without permission", fixed{p: Principal{UserID: "u"}, ok: true}, "GET", "/api/v1/permissions", 403},
-		{"manage with view only", fixed{p: Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "POST", "/api/v1/role-assignments", 403},
-		{"revoke with view only", fixed{p: Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "POST", "/api/v1/role-assignments/x/revoke", 403},
-		{"delete with view only", fixed{p: Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "DELETE", "/api/v1/roles/x", 403},
-		{"manage cannot view", fixed{p: Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.manage": {}}}, ok: true}, "GET", "/api/v1/roles", 403},
+		{"unauthenticated view", authorization.DenyAll{}, "GET", "/api/v1/roles", 401},
+		{"unauthenticated manage", authorization.DenyAll{}, "POST", "/api/v1/roles", 401},
+		{"view without permission", fixed{p: authorization.Principal{UserID: "u"}, ok: true}, "GET", "/api/v1/permissions", 403},
+		{"manage with view only", fixed{p: authorization.Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "POST", "/api/v1/role-assignments", 403},
+		{"revoke with view only", fixed{p: authorization.Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "POST", "/api/v1/role-assignments/x/revoke", 403},
+		{"delete with view only", fixed{p: authorization.Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.view": {}}}, ok: true}, "DELETE", "/api/v1/roles/x", 403},
+		{"manage cannot view", fixed{p: authorization.Principal{UserID: "u", Permissions: map[string]struct{}{"platform.roles.manage": {}}}, ok: true}, "GET", "/api/v1/roles", 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mux := http.NewServeMux()
@@ -137,7 +140,7 @@ func TestHTTPRoleFlow(t *testing.T) {
 	if rec = h.do("GET", "/api/v1/roles/"+h.newID(), ""); rec.Code != 404 || errCode(t, rec) != "authorization.not_found" {
 		t.Fatalf("get missing = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec = h.do("GET", "/api/v1/roles", ""); rec.Code != 200 || !bytes.Contains(rec.Body.Bytes(), []byte(key)) || !bytes.Contains(rec.Body.Bytes(), []byte(AdministratorRoleKey)) {
+	if rec = h.do("GET", "/api/v1/roles", ""); rec.Code != 200 || !bytes.Contains(rec.Body.Bytes(), []byte(key)) || !bytes.Contains(rec.Body.Bytes(), []byte(roles.AdministratorRoleKey)) {
 		t.Fatalf("list = %d", rec.Code)
 	}
 
@@ -161,7 +164,7 @@ func TestHTTPRoleFlow(t *testing.T) {
 		t.Fatalf("put = %d %s", rec.Code, rec.Body.String())
 	}
 
-	builtIn, _ := h.svc.GetRoleByKey(context.Background(), AdministratorRoleKey)
+	builtIn, _ := h.svc.GetRoleByKey(context.Background(), roles.AdministratorRoleKey)
 	if rec = h.do("PATCH", "/api/v1/roles/"+builtIn.ID, `{"name":"x"}`); rec.Code != 409 || errCode(t, rec) != "authorization.built_in_role" {
 		t.Fatalf("built-in patch = %d %s", rec.Code, rec.Body.String())
 	}

@@ -28,6 +28,14 @@ func (f *fakeSubjectStore) DisplayNames(context.Context, []string, []string) (ma
 	f.calls++
 	return map[string]string{"x": "y"}, nil
 }
+func (f *fakeSubjectStore) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	f.calls++
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
 func (f *fakeSubjectStore) UsersByUsername(_ context.Context, u string) ([]string, error) {
 	f.calls++
 	return f.usernames[u], nil
@@ -54,7 +62,14 @@ func TestAuthorizationSubjectsMalformedIDsNeverReachStorage(t *testing.T) {
 	if n, err := s.DisplayNames(ctx, []string{"nope"}, nil); err != nil || len(n) != 0 {
 		t.Fatalf("names = %v, %v", n, err)
 	}
-	if st.calls != 0 {
+	if a, err := s.ActiveUsers(ctx, []string{"nope"}); err != nil || len(a) != 0 {
+		t.Fatalf("active = %v, %v", a, err)
+	}
+	const valid = "00000000-0000-7000-8000-000000000001"
+	if a, err := s.ActiveUsers(ctx, []string{"nope", valid}); err != nil || len(a) != 1 || !a[valid] {
+		t.Fatalf("active = %v, %v", a, err)
+	}
+	if st.calls != 1 { // only the valid id reached storage
 		t.Fatalf("storage calls = %d", st.calls)
 	}
 }

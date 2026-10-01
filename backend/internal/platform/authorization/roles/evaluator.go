@@ -1,4 +1,4 @@
-package authorization
+package roles
 
 import (
 	"context"
@@ -9,23 +9,23 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/permissions"
 )
 
-// RolePermissions evaluates the effective permissions of a User per request
+// Evaluator evaluates the effective permissions of a User per request
 // (no cache): active role assignments of the User and of the User's Directory
 // Groups (transitive, via GroupResolver). The built-in administrator role
 // yields every registered permission; other roles their stored permissions
 // intersected with the registry. It satisfies authentication.PermissionLoader.
-type RolePermissions struct {
+type Evaluator struct {
 	pool   *pgxpool.Pool
 	groups GroupResolver
 }
 
-// NewRolePermissions creates the evaluator.
-func NewRolePermissions(pool *pgxpool.Pool, groups GroupResolver) *RolePermissions {
-	return &RolePermissions{pool: pool, groups: groups}
+// NewEvaluator creates the evaluator.
+func NewEvaluator(pool *pgxpool.Pool, groups GroupResolver) *Evaluator {
+	return &Evaluator{pool: pool, groups: groups}
 }
 
 // Permissions returns the effective permission set of userID.
-func (e *RolePermissions) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
+func (e *Evaluator) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	if !uuidPattern.MatchString(userID) {
 		return out, nil

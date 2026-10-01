@@ -132,6 +132,14 @@ func TestAuthorizationSubjectLookups(t *testing.T) {
 			t.Fatalf("DirectoryGroupObserved(%s) = %v, %v", id, got, err)
 		}
 	}
+	inactive := f.user(f.pfx+"-inactive", "inactive")
+	active, err := f.repo.ActiveUsers(ctx, []string{u, inactive, g, missing})
+	if err != nil || len(active) != 1 || !active[u] {
+		t.Fatalf("ActiveUsers = %v, %v", active, err)
+	}
+	if active, err = f.repo.ActiveUsers(ctx, nil); err != nil || len(active) != 0 {
+		t.Fatalf("empty ActiveUsers = %v, %v", active, err)
+	}
 	names, err := f.repo.DisplayNames(ctx, []string{u, missing}, []string{g})
 	if err != nil || len(names) != 2 || names[u] != f.pfx+"-user" || names[g] != f.pfx+"-group" {
 		t.Fatalf("names = %v, %v", names, err)
@@ -162,6 +170,11 @@ func TestFindUser(t *testing.T) {
 	f.insert(`INSERT INTO organization.external_identities(user_id, provider_key, external_subject, username) VALUES ($1,'p5',$2,$3) RETURNING id::text`,
 		`DELETE FROM organization.external_identities WHERE id = $1`, other, f.pfx+"-s5", f.pfx+"-twice")
 
+	// An identity that disappeared from the directory no longer resolves.
+	gone := f.user(f.pfx+"-gone", "active")
+	f.insert(`INSERT INTO organization.external_identities(user_id, provider_key, external_subject, username, deleted_observed_at) VALUES ($1,'p6',$2,$3, now()) RETURNING id::text`,
+		`DELETE FROM organization.external_identities WHERE id = $1`, gone, f.pfx+"-s6", f.pfx+"-removed")
+
 	for _, tc := range []struct {
 		ref   string
 		want  string
@@ -176,6 +189,7 @@ func TestFindUser(t *testing.T) {
 		{f.pfx + "-twice", other, true},
 		{strings.ToLower(f.pfx) + "-mail@example.test", byEmail, true},
 		{strings.ToUpper(f.pfx) + "-MAIL@EXAMPLE.TEST", byEmail, true},
+		{f.pfx + "-removed", "", false},
 		{f.pfx + "-nobody", "", false},
 		{"", "", false},
 		{"nobody@example.test", "", false},

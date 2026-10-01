@@ -1,11 +1,14 @@
 -- F1 slice 3b: password login throttling and the local emergency account.
 -- See docs/security/identity-access-design.md §6 and §7.
 
--- Failed-login counters. key is "id:<sha256 hex of lower(identifier)>" or
--- "ip:<client ip>"; neither the identifier nor a password is stored.
+-- Login attempt counters. key is "acct:<user id>", "id:<sha256 hex of the
+-- normalized identifier>" or "ip:<client address, IPv6 as /64 prefix>"; neither
+-- the identifier nor a password is stored. attempts counts reservations made
+-- inside the window (see platform/authentication Throttle.Reserve); all times
+-- are database times.
 CREATE TABLE IF NOT EXISTS platform.auth_throttle (
-    key text PRIMARY KEY CHECK (key ~ '^(id|ip):'),
-    failures integer NOT NULL CHECK (failures >= 0),
+    key text PRIMARY KEY CHECK (key ~ '^(acct|id|ip):'),
+    attempts integer NOT NULL CHECK (attempts >= 0),
     window_started_at timestamptz NOT NULL,
     locked_until timestamptz,
     updated_at timestamptz NOT NULL DEFAULT now()

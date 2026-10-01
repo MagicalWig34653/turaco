@@ -4,40 +4,47 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 const emergencyPassword = "break-glass-passphrase-2026"
 
-var testActor = json.RawMessage(`{"actor":"cli","osUser":"tester"}`)
+var testActor = audit.CLIActor("tester")
+
+// fixedUserCreator stands in for organization.LoginAccounts: the user of the
+// emergency account is a fixture user id (platform has no FK to users).
+type fixedUserCreator struct{ id string }
+
+func (c fixedUserCreator) CreateEmergencyUser(context.Context, pgx.Tx, string, string, audit.Actor) (string, error) {
+	return c.id, nil
+}
+
+func (f *loginFixture) emergencyAccounts(userID string) *EmergencyAccounts {
+	return NewEmergencyAccounts(f.pool, fixedUserCreator{userID}, nil)
+}
 
 // newEmergencyAccount stores a credential for the fixture's user.
 func (f *loginFixture) newEmergencyAccount(enabled bool) string {
 	f.t.Helper()
 	ctx := context.Background()
 	name := "zt" + randHex(6)
-	hash, err := HashPassword(ctx, emergencyPassword)
-	if err != nil {
+	accounts := f.emergencyAccounts(f.userID)
+	if _, err := accounts.CreateAccount(ctx, testActor, name, "Break Glass", emergencyPassword); err != nil {
 		f.t.Fatal(err)
 	}
-	f.trackKey(IdentifierKey(methodEmergency + ":" + name))
-	err = pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
-		if err := CreateLocalCredential(ctx, tx, f.userID, name, hash, LocalCredentialAudit{Actor: testActor, CorrelationID: "t", At: time.Now()}); err != nil {
-			return err
+	if enabled {
+		if _, err := accounts.Enable(ctx, testActor, name); err != nil {
+			f.t.Fatal(err)
 		}
-		if enabled {
-			_, _, err := SetLocalEnabled(ctx, tx, name, true, LocalCredentialAudit{Actor: testActor, CorrelationID: "t", At: time.Now()})
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		f.t.Fatal(err)
 	}
 	return name
 }
@@ -123,28 +130,21 @@ func TestEmergencyLoginFailuresAreUniform(t *testing.T) {
 		otherUser = f.userID[:len(f.userID)-1] + "c"
 	}
 	disabled := "zt" + randHex(6)
-	hash, _ := HashPassword(context.Background(), emergencyPassword)
-	err := pgx.BeginFunc(context.Background(), f.pool, func(tx pgx.Tx) error {
-		return CreateLocalCredential(context.Background(), tx, otherUser, disabled, hash, LocalCredentialAudit{Actor: testActor, At: time.Now()})
-	})
-	if err != nil {
+	if _, err := f.emergencyAccounts(otherUser).CreateAccount(context.Background(), testActor, disabled, "Other", emergencyPassword); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.local_credentials WHERE user_id = $1`, otherUser)
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.audit_events WHERE target_id = $1::text`, otherUser)
 	})
-	f.trackKey(IdentifierKey(methodEmergency + ":" + disabled))
 	unknown := "zt" + randHex(6)
-	f.trackKey(IdentifierKey(methodEmergency + ":" + unknown))
 	dummy := "zt" + randHex(6)
-	f.trackKey(IdentifierKey(methodEmergency + ":" + dummy))
 
-	cases := []struct{ name, login, password, reason string }{
-		{"wrong password", enabled, "wrong-wrong-wrong-wrong", "wrong_password"},
-		{"unknown login", unknown, emergencyPassword, "unknown_account"},
-		{"unknown login, dummy password", dummy, "turaco-dummy-password", "unknown_account"},
-		{"disabled account, right password", disabled, emergencyPassword, "disabled"},
+	cases := []struct{ name, login, password, reason, target string }{
+		{"wrong password", enabled, "wrong-wrong-wrong-wrong", "wrong_password", f.userID},
+		{"unknown login", unknown, emergencyPassword, "unknown_account", "unknown"},
+		{"unknown login, dummy password", dummy, "turaco-dummy-password", "unknown_account", "unknown"},
+		{"disabled account, right password", disabled, emergencyPassword, "disabled", otherUser},
 	}
 	var bodies []string
 	for _, c := range cases {
@@ -153,13 +153,16 @@ func TestEmergencyLoginFailuresAreUniform(t *testing.T) {
 			t.Fatalf("%s: status=%d code=%s", c.name, rec.Code, rec.errCode())
 		}
 		bodies = append(bodies, rec.uniformBody())
-		rows := f.auditRows(`action = 'auth.emergency_login.failed' AND target_id = $1`, IdentifierKey(methodEmergency+":"+c.login))
-		if len(rows) != 1 || !strings.Contains(rows[0], `"reason": "`+c.reason+`"`) || !strings.Contains(rows[0], `"method": "emergency"`) {
+		rows := f.auditRows(`action = 'auth.emergency_login.failed' AND target_id = $1 AND metadata->>'reason' = $2 AND metadata->>'clientIp' = $3`, c.target, c.reason, f.ip)
+		if len(rows) == 0 || !strings.Contains(rows[0], `"method": "emergency"`) {
 			t.Fatalf("%s: audit = %v", c.name, rows)
 		}
-		if strings.Contains(strings.Join(rows, ""), c.password) {
-			t.Fatalf("%s: password in audit", c.name)
+		if strings.Contains(strings.Join(rows, ""), c.password) || strings.Contains(strings.Join(rows, ""), c.login) {
+			t.Fatalf("%s: password or raw login in audit", c.name)
 		}
+	}
+	if all := f.auditRows(`action = 'auth.emergency_login.failed' AND metadata->>'clientIp' = $1`, f.ip); len(all) != len(cases) {
+		t.Fatalf("failure audits = %d, want %d", len(all), len(cases))
 	}
 	for _, b := range bodies[1:] {
 		if b != bodies[0] {
@@ -187,7 +190,7 @@ func TestEmergencyLoginInactiveUser(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized || rec.errCode() != "auth.invalid_credentials" {
 		t.Fatalf("status=%d code=%s", rec.Code, rec.errCode())
 	}
-	rows := f.auditRows(`action = 'auth.emergency_login.failed' AND target_id = $1`, IdentifierKey(methodEmergency+":"+name))
+	rows := f.auditRows(`action = 'auth.emergency_login.failed' AND target_id = $1`, f.userID)
 	if len(rows) != 1 || !strings.Contains(rows[0], `"reason": "user_inactive"`) {
 		t.Fatalf("audit = %v", rows)
 	}
@@ -204,24 +207,152 @@ func TestEmergencyLoginInactiveUser(t *testing.T) {
 	}
 }
 
-func TestEmergencyLoginThrottle(t *testing.T) {
-	f := newLoginFixture(t, withEmergency())
+// Strangers must not be able to lock the break-glass account: only the
+// client budget applies, reserved before any hashing.
+func TestEmergencyLoginHasNoAccountLockButAClientBudget(t *testing.T) {
+	f := newLoginFixture(t, withEmergency(), withClientLimit(4))
 	name := f.newEmergencyAccount(true)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 3; i++ {
 		if rec := f.emergency(name, "wrong-wrong-wrong-wrong"); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d: %d", i+1, rec.Code)
 		}
 	}
+	// Wrong attempts from other clients do not affect this client or the account.
+	for i := 0; i < 8; i++ {
+		ip := fmt.Sprintf("203.0.113.%d", i+1)
+		f.trackIP(ip)
+		rec := f.emergency(name, "wrong-wrong-wrong-wrong", func(r *http.Request) { r.RemoteAddr = ip + ":1" })
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("other client %s: %d", ip, rec.Code)
+		}
+	}
+	if n := f.throttleFailures("acct:" + f.userID); n != 0 {
+		t.Fatal("the emergency account must have no per-account counter")
+	}
 	rec := f.emergency(name, emergencyPassword)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("correct password after wrong ones: %d", rec.Code)
+	}
+	// The success was refunded: 3 failures only count.
+	if n := f.throttleFailures(ClientKey(f.ip)); n != 3 {
+		t.Fatalf("client attempts = %d, want 3", n)
+	}
+	// Now exhaust this client's budget (limit 4): the 4th attempt is allowed, the 5th is refused.
+	if rec := f.emergency(name, "wrong-wrong-wrong-wrong"); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("4th attempt: %d", rec.Code)
+	}
+	sleeps := len(f.sleepsSnapshot())
+	rec = f.emergency(name, emergencyPassword)
 	if rec.Code != http.StatusTooManyRequests || rec.errCode() != "auth.too_many_attempts" || rec.Header().Get("Retry-After") == "" {
 		t.Fatalf("status=%d code=%s retry=%q", rec.Code, rec.errCode(), rec.Header().Get("Retry-After"))
 	}
-	if f.sessionCount() != 0 {
-		t.Fatal("session created while locked")
+	if len(f.sleepsSnapshot()) != sleeps {
+		t.Fatal("a throttled request is not a credential failure")
 	}
-	// A directory identifier with the same name has its own counter.
-	if rec := f.login(name, "wrong"); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("directory login shares the emergency lock: %d", rec.Code)
+}
+
+// holdHashSlots occupies every argon2 slot until the returned release is called.
+func holdHashSlots(t *testing.T) (release func()) {
+	t.Helper()
+	n := cap(hashSlots)
+	for i := 0; i < n; i++ {
+		hashSlots <- struct{}{}
+	}
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			for i := 0; i < n; i++ {
+				<-hashSlots
+			}
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+func TestEmergencyLoginHashSlotTimeoutAnswers429WithoutHashing(t *testing.T) {
+	f := newLoginFixture(t, withEmergency(), withHashWait(150*time.Millisecond))
+	name := f.newEmergencyAccount(true)
+	release := holdHashSlots(t)
+	defer release()
+	started := time.Now()
+	rec := f.emergency(name, emergencyPassword)
+	if d := time.Since(started); d < 100*time.Millisecond || d > 5*time.Second {
+		t.Fatalf("answered after %v, want about the hash wait", d)
+	}
+	if rec.Code != http.StatusTooManyRequests || rec.errCode() != "auth.too_many_attempts" || rec.Header().Get("Retry-After") != "5" {
+		t.Fatalf("status=%d code=%s retry=%q", rec.Code, rec.errCode(), rec.Header().Get("Retry-After"))
+	}
+	if f.sessionCount() != 0 || len(f.failureAudits()) != 0 {
+		t.Fatal("a busy answer must create no session and no failure audit")
+	}
+	release()
+	// Capacity back: the same login now works.
+	if rec := f.emergency(name, emergencyPassword); rec.Code != http.StatusNoContent {
+		t.Fatalf("after release: %d", rec.Code)
+	}
+}
+
+func TestVerifyPasswordHashWithinBusy(t *testing.T) {
+	hash, err := HashPassword(context.Background(), emergencyPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := holdHashSlots(t)
+	defer release()
+	if _, err := VerifyPasswordHashWithin(context.Background(), hash, emergencyPassword, 50*time.Millisecond); !errors.Is(err, ErrHashBusy) {
+		t.Fatalf("err = %v, want ErrHashBusy", err)
+	}
+	release()
+	if ok, err := VerifyPasswordHashWithin(context.Background(), hash, emergencyPassword, time.Second); err != nil || !ok {
+		t.Fatalf("verify after release: %v %v", ok, err)
+	}
+}
+
+// Regression: a disable that commits between the credential lookup and the
+// session creation must stop the login (no session, uniform 401).
+func TestEmergencyLoginRacingDisableCreatesNoSession(t *testing.T) {
+	f := newLoginFixture(t, withEmergency(), withHashWait(30*time.Second))
+	name := f.newEmergencyAccount(true)
+	release := holdHashSlots(t)
+	defer release()
+
+	done := make(chan loginResponse, 1)
+	go func() { done <- f.emergency(name, emergencyPassword) }()
+	// The login has reserved its client attempt and read the (still
+	// enabled) credential, and now waits for a hash slot.
+	deadline := time.Now().Add(5 * time.Second)
+	for f.throttleFailures(ClientKey(f.ip)) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("login did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	changed, _, err := f.emergencyAccounts(f.userID).Disable(context.Background(), testActor, name)
+	if err != nil || !changed {
+		t.Fatalf("disable: changed=%v err=%v", changed, err)
+	}
+	release()
+
+	rec := <-done
+	if rec.Code != http.StatusUnauthorized || rec.errCode() != "auth.invalid_credentials" || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("status=%d code=%s", rec.Code, rec.errCode())
+	}
+	if f.sessionCount() != 0 {
+		t.Fatal("a session exists although the account was disabled before it was created")
+	}
+	var lastUsed *time.Time
+	_ = f.pool.QueryRow(context.Background(), `SELECT last_used_at FROM platform.local_credentials WHERE login_name = $1`, name).Scan(&lastUsed)
+	if lastUsed != nil {
+		t.Fatal("last_used_at set by a refused login")
+	}
+	if rows := f.auditRows(`action = 'auth.emergency_login.succeeded' AND target_id = $1`, f.userID); len(rows) != 0 {
+		t.Fatalf("success audited: %v", rows)
+	}
+	if rows := f.auditRows(`action = 'auth.emergency_login.failed' AND target_id = $1 AND metadata->>'reason' = 'credential_changed'`, f.userID); len(rows) != 1 {
+		t.Fatalf("failure audit = %v", rows)
 	}
 }
 
@@ -242,54 +373,88 @@ func TestEmergencyLoginRequestValidation(t *testing.T) {
 	}
 }
 
-func TestLocalCredentialLifecycle(t *testing.T) {
+func TestEmergencyAccountsLifecycle(t *testing.T) {
 	f := newLoginFixture(t)
 	ctx := context.Background()
 	name := "zt" + randHex(6)
-	at := LocalCredentialAudit{Actor: testActor, CorrelationID: "corr", At: time.Now()}
-	hash, _ := HashPassword(ctx, emergencyPassword)
-	run := func(fn func(tx pgx.Tx) error) error { return pgx.BeginFunc(ctx, f.pool, fn) }
+	accounts := f.emergencyAccounts(f.userID)
 
-	if err := run(func(tx pgx.Tx) error { return CreateLocalCredential(ctx, tx, f.userID, "Bad Name", hash, at) }); !errors.Is(err, ErrInvalidLoginName) {
+	if _, err := accounts.CreateAccount(ctx, testActor, "Bad Name", "x", emergencyPassword); !errors.Is(err, ErrInvalidLoginName) {
 		t.Fatalf("invalid login name: %v", err)
 	}
-	if err := run(func(tx pgx.Tx) error { return CreateLocalCredential(ctx, tx, f.userID, name, hash, at) }); err != nil {
-		t.Fatal(err)
+	if _, err := accounts.CreateAccount(ctx, testActor, name, "x", "short"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("short password: %v", err)
 	}
-	if err := run(func(tx pgx.Tx) error { return CreateLocalCredential(ctx, tx, f.userID, name, hash, at) }); !errors.Is(err, ErrLocalCredentialExist) {
+	if _, err := accounts.CreateAccount(ctx, audit.Actor{}, name, "x", emergencyPassword); err == nil {
+		t.Fatal("an actor is required")
+	}
+	if userID, err := accounts.CreateAccount(ctx, testActor, name, "x", emergencyPassword); err != nil || userID != f.userID {
+		t.Fatalf("create: %q %v", userID, err)
+	}
+	if _, err := accounts.CreateAccount(ctx, testActor, name, "x", emergencyPassword); !errors.Is(err, ErrLocalCredentialExist) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	cred, ok, err := FindLocalCredential(ctx, f.pool, name)
-	if err != nil || !ok || cred.Enabled || cred.UserID != f.userID || cred.PasswordHash != hash {
+	if err != nil || !ok || cred.Enabled || cred.UserID != f.userID {
 		t.Fatalf("created credential = %+v ok=%v err=%v (must start disabled)", cred, ok, err)
 	}
+	oldHash := cred.PasswordHash
 
-	newHash, _ := HashPassword(ctx, "another-long-passphrase-1")
-	var userID string
-	if err := run(func(tx pgx.Tx) (err error) { userID, err = SetLocalPassword(ctx, tx, name, newHash, at); return }); err != nil || userID != f.userID {
-		t.Fatalf("set password: %q %v", userID, err)
+	// Sessions of the account end with a password change.
+	_, sess1, err := f.svc.Create(ctx, f.userID, "emergency", "t")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := run(func(tx pgx.Tx) error { _, err := SetLocalPassword(ctx, tx, "zt-missing", newHash, at); return err }); !errors.Is(err, ErrLocalCredentialNone) {
-		t.Fatalf("set password of unknown account: %v", err)
+	const newPassword = "another-long-passphrase-1"
+	revoked, err := accounts.ChangePassword(ctx, testActor, name, newPassword)
+	if err != nil || revoked != 1 {
+		t.Fatalf("change password: revoked=%d err=%v", revoked, err)
 	}
-	var changed bool
+	if _, err := accounts.ChangePassword(ctx, testActor, "zt-missing", newPassword); !errors.Is(err, ErrLocalCredentialNone) {
+		t.Fatalf("change password of unknown account: %v", err)
+	}
+	if _, err := accounts.ChangePassword(ctx, testActor, name, "short"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Fatalf("change to a short password: %v", err)
+	}
+	cred, _, _ = FindLocalCredential(ctx, f.pool, name)
+	if cred.PasswordHash == oldHash {
+		t.Fatal("hash unchanged")
+	}
+	if got := f.auditRows(`action = 'auth.session.revoked' AND target_id = $1`, sess1.ID); len(got) != 1 ||
+		!strings.Contains(got[0], "emergency_password_changed") || !strings.Contains(got[0], `"actor": "cli"`) {
+		t.Fatalf("session revocation audit = %v", got)
+	}
+
 	for i, want := range []bool{true, false} { // enabling twice audits once
-		if err := run(func(tx pgx.Tx) (err error) { _, changed, err = SetLocalEnabled(ctx, tx, name, true, at); return }); err != nil || changed != want {
+		if changed, err := accounts.Enable(ctx, testActor, name); err != nil || changed != want {
 			t.Fatalf("enable #%d: changed=%v err=%v", i, changed, err)
 		}
 	}
-	if err := run(func(tx pgx.Tx) (err error) { _, changed, err = SetLocalEnabled(ctx, tx, name, false, at); return }); err != nil || !changed {
-		t.Fatalf("disable: changed=%v err=%v", changed, err)
+	_, sess2, _ := f.svc.Create(ctx, f.userID, "emergency", "t")
+	changed, revoked, err := accounts.Disable(ctx, testActor, name)
+	if err != nil || !changed || revoked != 1 {
+		t.Fatalf("disable: changed=%v revoked=%d err=%v", changed, revoked, err)
 	}
-	if err := run(func(tx pgx.Tx) error { _, _, err := SetLocalEnabled(ctx, tx, "zt-missing", true, at); return err }); !errors.Is(err, ErrLocalCredentialNone) {
+	if got := f.auditRows(`action = 'auth.session.revoked' AND target_id = $1`, sess2.ID); len(got) != 1 || !strings.Contains(got[0], "emergency_account_disabled") {
+		t.Fatalf("disable revocation audit = %v", got)
+	}
+	// Disabling again changes nothing but still revokes.
+	if changed, _, err := accounts.Disable(ctx, testActor, name); err != nil || changed {
+		t.Fatalf("second disable: changed=%v err=%v", changed, err)
+	}
+	if _, err := accounts.Enable(ctx, testActor, "zt-missing"); !errors.Is(err, ErrLocalCredentialNone) {
 		t.Fatalf("enable unknown: %v", err)
+	}
+	if _, _, err := accounts.Disable(ctx, testActor, "zt-missing"); !errors.Is(err, ErrLocalCredentialNone) {
+		t.Fatalf("disable unknown: %v", err)
 	}
 
 	rows := f.auditRows(`target_type = 'emergency_account' AND target_id = $1::text`, f.userID)
 	var actions []string
 	for _, r := range rows {
 		actions = append(actions, strings.Fields(r)[0])
-		if strings.Contains(r, hash) || strings.Contains(r, newHash) || strings.Contains(r, emergencyPassword) || !strings.Contains(r, `"osUser": "tester"`) || !strings.Contains(r, `"loginName": "`+name+`"`) {
+		if strings.Contains(r, cred.PasswordHash) || strings.Contains(r, oldHash) || strings.Contains(r, emergencyPassword) || strings.Contains(r, newPassword) ||
+			!strings.Contains(r, `"osUser": "tester"`) || !strings.Contains(r, `"actor": "cli"`) || !strings.Contains(r, `"loginName": "`+name+`"`) {
 			t.Fatalf("audit row %s", r)
 		}
 	}
@@ -297,19 +462,10 @@ func TestLocalCredentialLifecycle(t *testing.T) {
 	if strings.Join(actions, ",") != strings.Join(want, ",") {
 		t.Fatalf("actions = %v, want %v", actions, want)
 	}
-	// A rolled-back transaction leaves neither credential nor audit.
-	name2 := "zt" + randHex(6)
-	otherUser := f.userID[:len(f.userID)-1] + "b"
-	if otherUser == f.userID {
-		otherUser = f.userID[:len(f.userID)-1] + "a"
-	}
-	tx, _ := f.pool.Begin(ctx)
-	if err := CreateLocalCredential(ctx, tx, otherUser, name2, hash, at); err != nil {
-		t.Fatal(err)
-	}
-	_ = tx.Rollback(ctx)
-	if _, ok, _ := FindLocalCredential(ctx, f.pool, name2); ok {
-		t.Fatal("rolled back credential persisted")
+	for i, w := range []string{"auth.emergency_account.created", "auth.emergency_account.password_changed", "auth.emergency_account.enabled", "auth.emergency_account.disabled"} {
+		if want[i] != w {
+			t.Fatalf("action %d = %q, want %q", i, want[i], w)
+		}
 	}
 }
 

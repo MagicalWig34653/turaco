@@ -42,7 +42,8 @@ func (d *fakeDirectory) FindDirectoryAccount(_ context.Context, providerKey, ide
 	if d.err != nil {
 		return DirectoryAccount{}, false, d.err
 	}
-	a, ok := d.accounts[providerKey+"|"+strings.ToLower(identifier)]
+	// Resolves like organization.LoginAccounts: DOMAIN\ stripped, trimmed, lower-cased.
+	a, ok := d.accounts[providerKey+"|"+NormalizeIdentifier(identifier)]
 	return a, ok, nil
 }
 
@@ -72,12 +73,20 @@ type fakeLocker struct {
 	mu     sync.Mutex
 	active map[string]bool
 	err    error
+	// hook, when set, runs inside the session transaction before the answer.
+	hook func(ctx context.Context, tx pgx.Tx) error
 }
 
-func (l *fakeLocker) LockActiveUser(_ context.Context, _ pgx.Tx, userID string) (bool, error) {
+func (l *fakeLocker) LockActiveUser(ctx context.Context, tx pgx.Tx, userID string) (bool, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.active[userID], l.err
+	active, err, hook := l.active[userID], l.err, l.hook
+	l.mu.Unlock()
+	if hook != nil {
+		if err := hook(ctx, tx); err != nil {
+			return false, err
+		}
+	}
+	return active, err
 }
 
 type loginFixture struct {
@@ -97,13 +106,21 @@ type loginFixture struct {
 	deps     LoginDeps
 	cfg      LoginConfig
 	keys     []string
+	ips      []string
 	withPass bool
+	throttle ThrottleConfig
 }
 
 type fixtureOption func(*loginFixture)
 
 func withoutPasswordLogin() fixtureOption { return func(f *loginFixture) { f.withPass = false } }
 func withEmergency() fixtureOption        { return func(f *loginFixture) { f.cfg.EmergencyEnabled = true } }
+func withClientLimit(n int) fixtureOption {
+	return func(f *loginFixture) { f.throttle.ClientLimit = n }
+}
+func withHashWait(d time.Duration) fixtureOption {
+	return func(f *loginFixture) { f.cfg.EmergencyHashWait = d }
+}
 func withTrustedProxies(cidrs ...string) fixtureOption {
 	return func(f *loginFixture) {
 		for _, c := range cidrs {
@@ -130,7 +147,8 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	f.ident = "alice" + suffix
 	f.ip = fmt.Sprintf("10.%d.%d.%d", randByte(), randByte(), randByte())
 	f.dir = &fakeDirectory{accounts: map[string]DirectoryAccount{
-		"ad|" + f.ident: {UserID: f.userID, DistinguishedName: loginDN + suffix},
+		"ad|" + f.ident:                   {UserID: f.userID, DistinguishedName: loginDN + suffix},
+		"ad|" + f.ident + "@example.test": {UserID: f.userID, DistinguishedName: loginDN + suffix},
 	}}
 	f.ver = &fakeVerifier{passwords: map[string]string{loginDN + suffix: loginPassword}}
 	f.locker = &fakeLocker{active: map[string]bool{f.userID: true}}
@@ -141,7 +159,7 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	logger := slog.New(slog.NewJSONHandler(f.logs, nil))
 	f.svc = NewService(pool, Config{IdleTimeout: 30 * time.Minute, AbsoluteTimeout: 8 * time.Hour}, nil)
 	f.deps = LoginDeps{
-		Pool: pool, Sessions: f.svc, Throttle: NewThrottle(pool, ThrottleConfig{}, nil), Logger: logger,
+		Pool: pool, Sessions: f.svc, Throttle: NewThrottle(pool, f.throttle, nil), Logger: logger,
 		Now:   func() time.Time { return time.Unix(1_000_000, 0) }, // frozen: every failure "took" 0 ms
 		Sleep: func(_ context.Context, d time.Duration) { f.mu.Lock(); f.sleeps = append(f.sleeps, d); f.mu.Unlock() },
 	}
@@ -155,7 +173,9 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	RegisterLogin(mux, f.deps, f.cfg)
 	f.handler = httpx.Middleware(logger, mux)
 	f.trackKey(IdentifierKey(f.ident))
+	f.trackKey(AccountKey(f.userID))
 	f.trackKey(ClientKey(f.ip))
+	f.trackIP(f.ip)
 	t.Cleanup(f.cleanup)
 	return f
 }
@@ -164,9 +184,17 @@ func randByte() int { b := make([]byte, 1); _, _ = rand.Read(b); return int(b[0]
 
 func (f *loginFixture) trackKey(k string) { f.keys = append(f.keys, k) }
 
+// trackIP registers a client address whose audit rows the test removes.
+func (f *loginFixture) trackIP(ip string) {
+	f.mu.Lock()
+	f.ips = append(f.ips, ip)
+	f.mu.Unlock()
+	f.trackKey(ClientKey(ip))
+}
+
 func (f *loginFixture) cleanup() {
 	ctx := context.Background()
-	_, _ = f.pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE target_id = ANY($1) OR target_id = $2::text OR target_id IN (SELECT id::text FROM platform.sessions WHERE user_id = $2::uuid)`, f.keys, f.userID)
+	_, _ = f.pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE target_id = ANY($1) OR target_id = $2::text OR target_id IN (SELECT id::text FROM platform.sessions WHERE user_id = $2::uuid) OR metadata->>'clientIp' = ANY($3)`, f.keys, f.userID, f.ips)
 	_, _ = f.pool.Exec(ctx, `DELETE FROM platform.sessions WHERE user_id = $1`, f.userID)
 	_, _ = f.pool.Exec(ctx, `DELETE FROM platform.auth_throttle WHERE key = ANY($1)`, f.keys)
 	_, _ = f.pool.Exec(ctx, `DELETE FROM platform.local_credentials WHERE user_id = $1`, f.userID)
@@ -222,6 +250,9 @@ func (f *loginFixture) post(path, body string, mod ...func(*http.Request)) login
 
 func (f *loginFixture) login(identifier, password string, mod ...func(*http.Request)) loginResponse {
 	f.t.Helper()
+	f.mu.Lock()
+	f.keys = append(f.keys, IdentifierKey(identifier))
+	f.mu.Unlock()
 	b, _ := json.Marshal(map[string]string{"identifier": identifier, "password": password})
 	return f.post("/api/v1/auth/login", string(b), mod...)
 }
@@ -245,8 +276,15 @@ func (f *loginFixture) auditRows(where string, args ...any) []string {
 	return out
 }
 
+// failureAudits are the failed-login audits of the fixture's user.
 func (f *loginFixture) failureAudits() []string {
-	return f.auditRows(`target_id = $1 AND action LIKE '%.failed'`, IdentifierKey(f.ident))
+	return f.auditRows(`target_type = 'user' AND target_id = $1 AND action LIKE '%.failed'`, f.userID)
+}
+
+// unknownFailureAudits are the failed-login audits of unresolved logins from
+// the given client address.
+func (f *loginFixture) unknownFailureAudits(ip string) []string {
+	return f.auditRows(`target_type = 'login' AND target_id = 'unknown' AND action LIKE '%.failed' AND metadata->>'clientIp' = $1`, ip)
 }
 
 func (f *loginFixture) sessionCount() int {
@@ -257,6 +295,7 @@ func (f *loginFixture) sessionCount() int {
 	return n
 }
 
+// throttleFailures is the attempts counter of key.
 func (f *loginFixture) throttleFailures(key string) int {
 	n, _ := failures(f.t, f.pool, key)
 	return n
@@ -272,8 +311,8 @@ func TestLoginSuccess(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		f.login(f.ident, "wrong")
 	}
-	if n := f.throttleFailures(IdentifierKey(f.ident)); n != 2 {
-		t.Fatalf("setup: failures = %d", n)
+	if n := f.throttleFailures(AccountKey(f.userID)); n != 2 {
+		t.Fatalf("setup: attempts = %d", n)
 	}
 	rec := f.login(strings.ToUpper(f.ident), loginPassword)
 	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
@@ -297,8 +336,12 @@ func TestLoginSuccess(t *testing.T) {
 	if f.ver.lastDN == "" || !strings.HasPrefix(f.ver.lastDN, loginDN) {
 		t.Fatalf("verified DN = %q", f.ver.lastDN)
 	}
-	if n := f.throttleFailures(IdentifierKey(f.ident)); n != 0 {
-		t.Fatalf("identifier failures not cleared: %d", n)
+	if n := f.throttleFailures(AccountKey(f.userID)); n != 0 {
+		t.Fatalf("account counter not cleared: %d", n)
+	}
+	// The successful attempt is given back to the client budget.
+	if n := f.throttleFailures(ClientKey(f.ip)); n != 2 {
+		t.Fatalf("client attempts = %d, want 2 (the two failures only)", n)
 	}
 	if got := f.auditRows(`action = 'auth.session.created' AND target_id = $1`, sess.ID); len(got) != 1 || !strings.Contains(got[0], `"ldap"`) {
 		t.Fatalf("session audit = %v", got)
@@ -319,11 +362,11 @@ func TestLoginCredentialFailuresAreUniform(t *testing.T) {
 		inactiveID = f.userID[:len(f.userID)-1] + "e"
 	}
 	f.dir.accounts["ad|inactive"+suffix] = DirectoryAccount{UserID: inactiveID, DistinguishedName: loginDN + suffix}
-	f.trackKey(IdentifierKey("inactive" + suffix))
-	f.trackKey(IdentifierKey("nobody" + suffix))
-	f.trackKey(IdentifierKey(f.ident))
+	f.trackKey(AccountKey(inactiveID))
 	t.Cleanup(func() {
-		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.sessions WHERE user_id = $1`, inactiveID)
+		ctx := context.Background()
+		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.sessions WHERE user_id = $1`, inactiveID)
+		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE target_id = $1`, inactiveID)
 	})
 
 	cases := []struct {
@@ -331,11 +374,12 @@ func TestLoginCredentialFailuresAreUniform(t *testing.T) {
 		identifier string
 		password   string
 		reason     string
+		userID     string // "" = unresolved
 		wantVerify bool
 	}{
-		{"wrong password", f.ident, "not-the-password", "invalid_password", true},
-		{"unknown account", "nobody" + suffix, loginPassword, "unknown_account", false},
-		{"inactive user", "inactive" + suffix, loginPassword, "user_inactive", true},
+		{"wrong password", f.ident, "not-the-password", "invalid_password", f.userID, true},
+		{"unknown account", "nobody" + suffix, loginPassword, "unknown_account", "", false},
+		{"inactive user", "inactive" + suffix, loginPassword, "user_inactive", inactiveID, true},
 	}
 	var bodies []string
 	for _, c := range cases {
@@ -351,9 +395,18 @@ func TestLoginCredentialFailuresAreUniform(t *testing.T) {
 			t.Fatalf("%s: verifier called = %v", c.name, f.ver.calls > before)
 		}
 		bodies = append(bodies, rec.uniformBody())
-		rows := f.auditRows(`target_id = $1 AND action = 'auth.login.failed'`, IdentifierKey(c.identifier))
-		if len(rows) != 1 || !strings.Contains(rows[0], `"reason": "`+c.reason+`"`) || !strings.Contains(rows[0], `"method": "ldap"`) || !strings.Contains(rows[0], f.ip) {
+		var rows []string
+		if c.userID != "" {
+			rows = f.auditRows(`target_type = 'user' AND target_id = $1 AND action = 'auth.login.failed'`, c.userID)
+		} else {
+			rows = f.unknownFailureAudits(f.ip)
+		}
+		if len(rows) != 1 || !strings.Contains(rows[0], `"reason": "`+c.reason+`"`) || !strings.Contains(rows[0], `"method": "ldap"`) ||
+			!strings.Contains(rows[0], `"clientIp": "`+f.ip+`"`) || !strings.Contains(rows[0], `"actor": "login"`) {
 			t.Fatalf("%s: audit = %v", c.name, rows)
+		}
+		if strings.Contains(rows[0], c.identifier) || strings.Contains(rows[0], c.password) {
+			t.Fatalf("%s: raw identifier or password in audit: %s", c.name, rows[0])
 		}
 	}
 	for _, b := range bodies[1:] {
@@ -364,9 +417,9 @@ func TestLoginCredentialFailuresAreUniform(t *testing.T) {
 	if f.sessionCount() != 0 {
 		t.Fatal("sessions created by failed logins")
 	}
-	// The failed attempts are counted for the client as well.
+	// Every attempt is counted for the client.
 	if n := f.throttleFailures(ClientKey(f.ip)); n != 3 {
-		t.Fatalf("client failures = %d, want 3", n)
+		t.Fatalf("client attempts = %d, want 3", n)
 	}
 }
 
@@ -488,15 +541,15 @@ func TestLoginRequiresSameOrigin(t *testing.T) {
 	}
 }
 
-func TestLoginThrottleLocksIdentifierBeforeDirectoryAccess(t *testing.T) {
+func TestLoginThrottleLocksAccountBeforeVerification(t *testing.T) {
 	f := newLoginFixture(t)
 	for i := 0; i < 5; i++ {
 		if rec := f.login(f.ident, "wrong"); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d: status = %d", i+1, rec.Code)
 		}
 	}
-	dirCalls, verCalls := f.dir.calls, f.ver.calls
-	// The correct password is refused while locked, without touching the directory.
+	verCalls := f.ver.calls
+	// The correct password is refused while locked, without verification.
 	rec := f.login(f.ident, loginPassword)
 	if rec.Code != http.StatusTooManyRequests || rec.errCode() != "auth.too_many_attempts" {
 		t.Fatalf("status=%d code=%s", rec.Code, rec.errCode())
@@ -506,19 +559,24 @@ func TestLoginThrottleLocksIdentifierBeforeDirectoryAccess(t *testing.T) {
 	if _, err := fmt.Sscan(ra, &secs); err != nil || secs < 890 || secs > 900 {
 		t.Fatalf("Retry-After = %q, want about 900", ra)
 	}
-	if f.dir.calls != dirCalls || f.ver.calls != verCalls {
-		t.Fatal("locked request reached the directory")
+	if f.ver.calls != verCalls {
+		t.Fatal("locked request reached the verifier")
 	}
 	if rec.cookieToken(false) != "" {
 		t.Fatal("cookie set while locked")
 	}
-	// The same identifier in another case is the same key.
+	if len(f.failureAudits()) != 5 {
+		t.Fatalf("throttled requests must not be audited: %d audits, want 5", len(f.failureAudits()))
+	}
+	if !strings.Contains(f.logs.String(), "login throttled") {
+		t.Fatal("throttled request not logged")
+	}
+	// The same identifier in another case is the same account.
 	if rec := f.login(strings.ToUpper(f.ident), loginPassword); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("case variant status = %d", rec.Code)
 	}
 	// Unknown identifiers are throttled too, so locking does not reveal accounts.
 	unknown := "ghost" + f.ident
-	f.trackKey(IdentifierKey(unknown))
 	for i := 0; i < 5; i++ {
 		f.login(unknown, "wrong")
 	}
@@ -531,35 +589,136 @@ func TestLoginThrottleLocksIdentifierBeforeDirectoryAccess(t *testing.T) {
 	}
 }
 
+// Every spelling of an identifier shares one budget: a resolved account has
+// one account key, an unresolved identifier one normalized identifier key.
+func TestLoginIdentifierVariantsShareOneBudget(t *testing.T) {
+	f := newLoginFixture(t)
+	variants := []string{f.ident, `X\` + f.ident, `x\ ` + f.ident, strings.ToUpper(f.ident), f.ident + "@example.test"}
+	for i, v := range variants {
+		if rec := f.login(v, "wrong"); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("variant %d %q: status = %d", i, v, rec.Code)
+		}
+	}
+	if f.ver.calls != 5 {
+		t.Fatalf("verifier calls = %d, want 5", f.ver.calls)
+	}
+	for _, v := range variants {
+		if rec := f.login(v, loginPassword); rec.Code != http.StatusTooManyRequests {
+			t.Errorf("variant %q after the budget: status = %d, want 429", v, rec.Code)
+		}
+	}
+	if f.ver.calls != 5 || f.sessionCount() != 0 {
+		t.Fatalf("verifier calls = %d sessions = %d after lock", f.ver.calls, f.sessionCount())
+	}
+
+	// Unresolved spellings share the normalized identifier key.
+	ghost := "ghost" + f.ident
+	ghostVariants := []string{ghost, `X\` + ghost, `x\ ` + ghost, strings.ToUpper(ghost), "  " + ghost}
+	for _, v := range ghostVariants {
+		if rec := f.login(v, "wrong"); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("unknown variant %q: status = %d", v, rec.Code)
+		}
+	}
+	for _, v := range ghostVariants {
+		if rec := f.login(v, "wrong"); rec.Code != http.StatusTooManyRequests {
+			t.Errorf("unknown variant %q after the budget: status = %d, want 429", v, rec.Code)
+		}
+	}
+}
+
+// 60 simultaneous wrong passwords from 60 different clients reach the
+// verifier at most five times: the reservation is atomic.
+func TestLoginParallelWrongPasswordsAreBoundedByTheAccountBudget(t *testing.T) {
+	f := newLoginFixture(t)
+	const n = 60
+	codes := make([]int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		ip := fmt.Sprintf("198.51.100.%d", i+1)
+		f.trackIP(ip)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b, _ := json.Marshal(map[string]string{"identifier": f.ident, "password": "wrong"})
+			r := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(b)))
+			r.RemoteAddr = ip + ":4711"
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+			rec := httptest.NewRecorder()
+			f.handler.ServeHTTP(rec, r)
+			codes[i] = rec.Code
+		}()
+	}
+	wg.Wait()
+	if f.ver.calls > 5 {
+		t.Fatalf("verifier called %d times, want at most 5", f.ver.calls)
+	}
+	unauthorized, limited := 0, 0
+	for _, c := range codes {
+		switch c {
+		case http.StatusUnauthorized:
+			unauthorized++
+		case http.StatusTooManyRequests:
+			limited++
+		default:
+			t.Fatalf("unexpected status %d", c)
+		}
+	}
+	if unauthorized != 5 || limited != n-5 {
+		t.Fatalf("401=%d 429=%d, want 5 and %d", unauthorized, limited, n-5)
+	}
+}
+
 func TestLoginThrottleLocksClient(t *testing.T) {
 	f := newLoginFixture(t)
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("spray%d-%s", i, f.ident)
-		f.trackKey(IdentifierKey(id))
 		if rec := f.login(id, "wrong"); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d: status = %d", i+1, rec.Code)
 		}
 	}
-	verCalls := f.ver.calls
+	dirCalls, verCalls := f.dir.calls, f.ver.calls
 	rec := f.login(f.ident, loginPassword)
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
 		t.Fatalf("status=%d retry-after=%q", rec.Code, rec.Header().Get("Retry-After"))
 	}
-	if f.ver.calls != verCalls {
-		t.Fatal("locked client reached the verifier")
+	if f.ver.calls != verCalls || f.dir.calls != dirCalls {
+		t.Fatal("a locked client reached the directory lookup or the verifier")
 	}
 	// Another client is unaffected.
+	f.trackIP("192.0.2.77")
 	rec = f.login(f.ident, loginPassword, func(r *http.Request) { r.RemoteAddr = "192.0.2.77:1" })
-	f.trackKey(ClientKey("192.0.2.77"))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("other client status = %d", rec.Code)
+	}
+}
+
+// The client budget is per IPv4 address but per /64 for IPv6.
+func TestLoginClientBudgetBucketsIPv6By64(t *testing.T) {
+	f := newLoginFixture(t, withClientLimit(4))
+	from := func(addr string) func(*http.Request) {
+		f.trackIP(addr)
+		return func(r *http.Request) { r.RemoteAddr = "[" + addr + "]:1" }
+	}
+	prefix := fmt.Sprintf("2001:db8:%x:%x", randByte(), randByte())
+	addrs := []string{prefix + "::1", prefix + "::2", prefix + ":1:2:3:4", prefix + ":ffff:ffff:ffff:ffff"}
+	for i, a := range addrs {
+		if rec := f.login(fmt.Sprintf("v6-%d-%s", i, f.ident), "wrong", from(a)); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d from %s: status = %d", i, a, rec.Code)
+		}
+	}
+	if rec := f.login("v6-last-"+f.ident, "wrong", from(prefix+":9::9")); rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("a fifth address of the same /64: status = %d, want 429", rec.Code)
+	}
+	other := fmt.Sprintf("2001:db8:%x:%x::1", randByte()+256, randByte())
+	if rec := f.login("v6-other-"+f.ident, "wrong", from(other)); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("another /64: status = %d", rec.Code)
 	}
 }
 
 func TestLoginClientIPBehindTrustedProxy(t *testing.T) {
 	f := newLoginFixture(t, withTrustedProxies("10.0.0.0/8"))
 	real := "198.51.100." + fmt.Sprint(randByte())
-	f.trackKey(ClientKey(real))
+	f.trackIP(real)
 	f.login(f.ident, "wrong", func(r *http.Request) {
 		r.Header.Set("X-Forwarded-For", "6.6.6.6, "+real)
 	})
@@ -582,8 +741,20 @@ func TestLoginProviderUnavailable(t *testing.T) {
 	if rec.Code != http.StatusServiceUnavailable || rec.errCode() != "auth.provider_unavailable" {
 		t.Fatalf("status=%d code=%s", rec.Code, rec.errCode())
 	}
-	if f.throttleFailures(IdentifierKey(f.ident)) != 0 || f.throttleFailures(ClientKey(f.ip)) != 0 || len(f.failureAudits()) != 0 {
-		t.Fatal("an outage must not count as a failed login")
+	if len(f.failureAudits()) != 0 {
+		t.Fatal("an outage must not be audited as a failed login")
+	}
+	// The password was never checked: the reserved attempts are refunded so
+	// retries during an outage cannot lock the account afterwards.
+	if f.throttleFailures(AccountKey(f.userID)) != 0 || f.throttleFailures(ClientKey(f.ip)) != 0 {
+		t.Fatal("reserved attempts must be refunded on an outage")
+	}
+	for i := 0; i < 8; i++ {
+		f.login(f.ident, loginPassword)
+	}
+	f.ver.err = nil
+	if rec := f.login(f.ident, loginPassword); rec.Code != http.StatusNoContent {
+		t.Fatalf("login after outage status=%d code=%s; outage retries must not lock", rec.Code, rec.errCode())
 	}
 	if strings.Contains(f.logs.String(), loginPassword) {
 		t.Fatal("password logged")
@@ -628,7 +799,8 @@ func TestLoginRevokesExistingSession(t *testing.T) {
 		t.Fatalf("new session invalid: %v", err)
 	}
 	rows := f.auditRows(`action = 'auth.session.revoked' AND target_id IN (SELECT id::text FROM platform.sessions WHERE user_id = $1)`, f.userID)
-	if len(rows) != 1 || !strings.Contains(rows[0], "replaced_by_login") {
+	if len(rows) != 1 || !strings.Contains(rows[0], "replaced_by_login") || !strings.Contains(rows[0], `"replacedByUserId": "`+f.userID+`"`) ||
+		!strings.Contains(rows[0], `"actor": "login"`) {
 		t.Fatalf("revocation audit = %v", rows)
 	}
 	// A stale or foreign cookie does not break login.
@@ -649,39 +821,70 @@ func TestLoginFailureKeepsExistingSession(t *testing.T) {
 	}
 }
 
-func TestLoginAuditNeverContainsSecrets(t *testing.T) {
+func TestLoginAuditNeverContainsSecretsOrRawIdentifiers(t *testing.T) {
 	f := newLoginFixture(t)
-	long := f.ident + strings.Repeat("x", 200)
-	f.trackKey(IdentifierKey(long))
+	long := "nobody-" + f.ident + strings.Repeat("x", 200)
 	f.login(f.ident, loginPassword+"-wrong")
 	f.login(long, loginPassword+"-wrong")
 	f.login(f.ident, loginPassword)
 
-	rows := f.auditRows(`target_id = ANY($1) OR target_id = $2::text OR target_id IN (SELECT id::text FROM platform.sessions WHERE user_id = $2::uuid)`, f.keys, f.userID)
-	if len(rows) < 3 {
+	rows := f.auditRows(`target_id = $1 OR target_id = 'unknown' AND metadata->>'clientIp' = $2 OR target_id IN (SELECT id::text FROM platform.sessions WHERE user_id = $1::uuid)`, f.userID, f.ip)
+	if len(rows) != 3 {
 		t.Fatalf("audit rows = %v", rows)
 	}
 	for _, r := range rows {
-		if strings.Contains(r, loginPassword) || strings.Contains(strings.ToLower(r), "password") && strings.Contains(r, `"password"`) {
-			t.Fatalf("audit row contains a secret: %s", r)
+		if strings.Contains(r, loginPassword) || strings.Contains(r, f.ident) || strings.Contains(r, long[:20]) || strings.Contains(r, `"password"`) || strings.Contains(r, `"identifier"`) {
+			t.Fatalf("audit row contains a secret or raw identifier: %s", r)
 		}
 	}
-	// Identifiers are truncated to 128 bytes.
-	longRows := f.auditRows(`target_id = $1`, IdentifierKey(long))
-	if len(longRows) != 1 || strings.Contains(longRows[0], long[:129]) || !strings.Contains(longRows[0], long[:128]) {
-		t.Fatalf("long identifier audit = %v", longRows)
+	if len(f.unknownFailureAudits(f.ip)) != 1 {
+		t.Fatalf("unresolved failure must target login/unknown: %v", f.unknownFailureAudits(f.ip))
 	}
 	if strings.Contains(f.logs.String(), loginPassword) {
 		t.Fatal("password in logs")
 	}
 }
 
-func TestTruncateIdentifier(t *testing.T) {
-	if got := truncateIdentifier(strings.Repeat("é", 100)); len(got) > 128 || got != strings.Repeat("é", 64) {
-		t.Fatalf("len=%d", len(got))
+func TestRegisterLoginRequiresUsers(t *testing.T) {
+	f := newLoginFixture(t)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("RegisterLogin without Users must panic")
+		}
+	}()
+	d := f.deps
+	d.Users = nil
+	RegisterLogin(http.NewServeMux(), d, f.cfg)
+}
+
+// A user row locked by a status change must not hang the login: the session
+// transaction gives up after the lock timeout and answers 503.
+func TestLoginLockTimeoutAnswers503(t *testing.T) {
+	f := newLoginFixture(t)
+	ctx := context.Background()
+	const lockKey = 7_245_001
+	holder, err := f.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if truncateIdentifier("abc") != "abc" {
-		t.Fatal("short identifier changed")
+	defer func() { _ = holder.Rollback(ctx) }()
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	f.locker.hook = func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey)
+		return err
+	}
+	started := time.Now()
+	rec := f.login(f.ident, loginPassword)
+	if rec.Code != http.StatusServiceUnavailable || rec.errCode() != "auth.temporarily_unavailable" {
+		t.Fatalf("status=%d code=%s", rec.Code, rec.errCode())
+	}
+	if d := time.Since(started); d < 4*time.Second || d > 15*time.Second {
+		t.Fatalf("answered after %v, want about the 5s lock timeout", d)
+	}
+	if f.sessionCount() != 0 || rec.cookieToken(false) != "" {
+		t.Fatal("session created despite the lock timeout")
 	}
 }
 

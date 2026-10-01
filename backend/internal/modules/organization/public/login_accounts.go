@@ -2,12 +2,12 @@ package public
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 )
 
@@ -17,14 +17,15 @@ var ErrInvalidLocalUser = application.ErrInvalidLocalUser
 
 // LoginAccounts is the Organization contract of authentication. It implements
 // authentication.AccountDirectory and authentication.UserLocker and creates
-// the User of the emergency account.
+// the User of the emergency account (authentication.EmergencyUserCreator).
 type LoginAccounts struct {
 	app *application.LoginAccounts
 }
 
 var (
-	_ authentication.AccountDirectory = (*LoginAccounts)(nil)
-	_ authentication.UserLocker       = (*LoginAccounts)(nil)
+	_ authentication.AccountDirectory     = (*LoginAccounts)(nil)
+	_ authentication.UserLocker           = (*LoginAccounts)(nil)
+	_ authentication.EmergencyUserCreator = (*LoginAccounts)(nil)
 )
 
 // NewLoginAccounts creates the contract on top of the Organization
@@ -48,8 +49,8 @@ func (l *LoginAccounts) LockActiveUser(ctx context.Context, tx pgx.Tx, userID st
 }
 
 // CreateEmergencyUser creates the User of an emergency account inside tx and
-// returns its id. It is audited as organization.user.created_local with actor
-// (a JSON object such as {"actor":"cli","osUser":"..."}) as metadata.
-func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, displayName, correlationID string, actor json.RawMessage) (string, error) {
+// returns its id. It is audited as organization.user.created_local with actor.
+// It implements authentication.EmergencyUserCreator.
+func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, displayName, correlationID string, actor audit.Actor) (string, error) {
 	return l.app.CreateEmergencyUser(ctx, tx, displayName, correlationID, actor)
 }

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -24,18 +23,7 @@ type handler struct {
 // Register mounts GET /api/v1/audit-events; it requires platform.audit.view.
 func Register(mux *http.ServeMux, reader *audit.Reader, auth authorization.Authenticator, logger *slog.Logger) {
 	h := &handler{reader: reader, logger: logger}
-	mux.Handle("GET /api/v1/audit-events", noStore(authorization.Require(auth, permAuditView)(http.HandlerFunc(h.list))))
-}
-
-func noStore(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	httpx.JSON(w, status, httpx.ErrorEnvelope{Error: httpx.APIError{Code: code, Message: message, RequestID: w.Header().Get("X-Request-ID")}})
+	mux.Handle("GET /api/v1/audit-events", httpx.NoStore(authorization.Require(auth, permAuditView)(http.HandlerFunc(h.list))))
 }
 
 type eventDTO struct {
@@ -64,35 +52,33 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		if raw := q.Get(name); raw != "" {
 			t, err := time.Parse(time.RFC3339, raw)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "audit.invalid_filter", "The "+name+" filter must be an RFC 3339 timestamp.")
+				httpx.WriteError(w, http.StatusBadRequest, "audit.invalid_filter", "The "+name+" filter must be an RFC 3339 timestamp.")
 				return
 			}
 			*dst = &t
 		}
 	}
 	p := audit.Page{Cursor: q.Get("cursor")}
-	if raw := q.Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 {
-			writeError(w, http.StatusBadRequest, "audit.invalid_limit", "The limit must be a positive integer.")
-			return
-		}
-		p.Limit = n
+	limit, err := httpx.ParseLimit(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "audit.invalid_limit", "The limit must be a positive integer.")
+		return
 	}
+	p.Limit = limit
 	res, err := h.reader.List(r.Context(), f, p)
 	switch {
 	case errors.Is(err, audit.ErrInvalidFilter):
-		writeError(w, http.StatusBadRequest, "audit.invalid_filter", "A filter value is invalid.")
+		httpx.WriteError(w, http.StatusBadRequest, "audit.invalid_filter", "A filter value is invalid.")
 		return
 	case errors.Is(err, audit.ErrInvalidCursor):
-		writeError(w, http.StatusBadRequest, "audit.invalid_cursor", "The cursor is invalid.")
+		httpx.WriteError(w, http.StatusBadRequest, "audit.invalid_cursor", "The cursor is invalid.")
 		return
 	case errors.Is(err, audit.ErrInvalidLimit):
-		writeError(w, http.StatusBadRequest, "audit.invalid_limit", "The limit must be a positive integer.")
+		httpx.WriteError(w, http.StatusBadRequest, "audit.invalid_limit", "The limit must be a positive integer.")
 		return
 	case err != nil:
-		h.logger.ErrorContext(r.Context(), "audit query failed", "request_id", w.Header().Get("X-Request-ID"), "error", err)
-		writeError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
+		h.logger.ErrorContext(r.Context(), "audit query failed", "request_id", httpx.RequestID(w), "error", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
 		return
 	}
 	items := make([]eventDTO, 0, len(res.Items))

@@ -17,8 +17,12 @@ type AuthorizationSubjectStore interface {
 	UserExists(ctx context.Context, id string) (bool, error)
 	DirectoryGroupObserved(ctx context.Context, id string) (bool, error)
 	DisplayNames(ctx context.Context, userIDs, groupIDs []string) (map[string]string, error)
-	// UsersByUsername returns the distinct ids of Users whose external
-	// identity has the (case-insensitive) username.
+	// ActiveUsers returns id -> true for each given id that is a User with
+	// status "active"; every other id is absent.
+	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
+	// UsersByUsername returns the distinct ids of Users whose currently
+	// observed (not deleted) external identity has the (case-insensitive)
+	// username.
 	UsersByUsername(ctx context.Context, username string) ([]string, error)
 	// UserByEmail returns the User with the (case-insensitive) primary email.
 	UserByEmail(ctx context.Context, email string) (id string, found bool, err error)
@@ -72,6 +76,21 @@ func (s *AuthorizationSubjects) DisplayNames(ctx context.Context, userIDs, group
 		return map[string]string{}, nil
 	}
 	return s.store.DisplayNames(ctx, u, g)
+}
+
+// ActiveUsers returns id -> true for each id that is a User with status
+// "active". Malformed ids are inactive.
+func (s *AuthorizationSubjects) ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error) {
+	var valid []string
+	for _, id := range ids {
+		if subjectUUID.MatchString(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return map[string]bool{}, nil
+	}
+	return s.store.ActiveUsers(ctx, valid)
 }
 
 // FindUser resolves a user reference: a UUID, a username that is unique across

@@ -12,7 +12,7 @@ import (
 
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepo "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
@@ -100,8 +100,8 @@ func TestRoleListGrantRevoke(t *testing.T) {
 		VALUES ('test',$1,$1,$2,$2) RETURNING id::text`, pfx+"-group", now).Scan(&groupID); err != nil {
 		t.Fatal(err)
 	}
-	svc := authorization.NewService(pool, orgpublic.NewAuthorizationSubjects(orgrepo.New(pool)))
-	role, err := svc.CreateRole(ctx, authorization.CLIActor(e.actor), authorization.CreateRoleInput{Key: pfx + "-ops", Name: "Ops", Permissions: []string{"tasks.view"}})
+	svc := roles.NewService(pool, orgpublic.NewAuthorizationSubjects(orgrepo.New(pool)))
+	role, err := svc.CreateRole(ctx, e.auditActor(), e.correlationID(), roles.CreateRoleInput{Key: pfx + "-ops", Name: "Ops", Permissions: []string{"tasks.view"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestRoleListGrantRevoke(t *testing.T) {
 	if err := run("list"); err != nil {
 		t.Fatal(err)
 	}
-	if s := out.String(); !strings.Contains(s, "KEY") || !strings.Contains(s, authorization.AdministratorRoleKey) || !strings.Contains(s, pfx+"-ops") {
+	if s := out.String(); !strings.Contains(s, "KEY") || !strings.Contains(s, roles.AdministratorRoleKey) || !strings.Contains(s, pfx+"-ops") {
 		t.Fatalf("list output = %q", s)
 	}
 
@@ -141,7 +141,7 @@ func TestRoleListGrantRevoke(t *testing.T) {
 		t.Fatal("unknown group must fail")
 	}
 
-	page, err := svc.ListAssignments(ctx, authorization.AssignmentFilter{RoleID: role.ID})
+	page, err := svc.ListAssignments(ctx, roles.AssignmentFilter{RoleID: role.ID})
 	if err != nil || len(page.Items) != 2 {
 		t.Fatalf("assignments = %+v, %v", page, err)
 	}

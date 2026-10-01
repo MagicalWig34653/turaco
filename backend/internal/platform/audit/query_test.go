@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"testing"
@@ -100,6 +101,9 @@ func TestListFilters(t *testing.T) {
 	if n := len(list(Filter{ActionPrefix: s.pfx + "_b."}, Page{}).Items); n != 0 { // _ is literal
 		t.Fatalf("escaped prefix = %d", n)
 	}
+	if n := len(list(Filter{ActionPrefix: s.pfx + "%"}, Page{}).Items); n != 0 { // % is literal
+		t.Fatalf("percent prefix = %d", n)
+	}
 	if n := len(list(Filter{ActorID: s.actor, CorrelationID: s.pfx + "-c"}, Page{}).Items); n != 3 {
 		t.Fatalf("actor = %d", n)
 	}
@@ -112,7 +116,7 @@ func TestListFilters(t *testing.T) {
 	}
 
 	p1 := list(Filter{CorrelationID: s.pfx + "-c"}, Page{Limit: 2})
-	if len(p1.Items) != 2 || p1.NextCursor != s.ids[3] {
+	if len(p1.Items) != 2 || p1.NextCursor != encodeCursor(p1.Items[1]) || p1.NextCursor == s.ids[3] {
 		t.Fatalf("page1 = %d %q", len(p1.Items), p1.NextCursor)
 	}
 	p3 := list(Filter{CorrelationID: s.pfx + "-c"}, Page{Limit: 2, Cursor: list(Filter{CorrelationID: s.pfx + "-c"}, Page{Limit: 2, Cursor: p1.NextCursor}).NextCursor})
@@ -129,13 +133,16 @@ func TestListRejectsInvalidInput(t *testing.T) {
 		long[i] = 'a'
 	}
 	t0 := time.Now()
-	for _, f := range []Filter{{ActorID: "nope"}, {Action: string(long)}, {TargetType: string(make([]byte, 101))}, {Action: "a\x00"}, {From: &t0, To: &t0}} {
+	for _, f := range []Filter{{ActorID: "nope"}, {Action: string(long)}, {TargetType: string(make([]byte, 101))}, {Action: "a\x00"}, {From: &t0, To: &t0}, {TargetID: "x"}, {ActionPrefix: "a\xff"}} {
 		if _, err := s.reader.List(ctx, f, Page{}); !errors.Is(err, ErrInvalidFilter) {
 			t.Fatalf("filter %+v err = %v", f, err)
 		}
 	}
-	if _, err := s.reader.List(ctx, Filter{}, Page{Cursor: "x"}); !errors.Is(err, ErrInvalidCursor) {
-		t.Fatalf("cursor err = %v", err)
+	for _, c := range []string{"x", "!!!", base64.RawURLEncoding.EncodeToString([]byte("1.nope")), base64.RawURLEncoding.EncodeToString([]byte("abc.00000000-0000-7000-8000-000000000001")),
+		base64.RawURLEncoding.EncodeToString([]byte("99999999999999999999999.00000000-0000-7000-8000-000000000001")), "00000000-0000-7000-8000-000000000001"} {
+		if _, err := s.reader.List(ctx, Filter{}, Page{Cursor: c}); !errors.Is(err, ErrInvalidCursor) {
+			t.Fatalf("cursor %q err = %v", c, err)
+		}
 	}
 	if _, err := s.reader.List(ctx, Filter{}, Page{Limit: -1}); !errors.Is(err, ErrInvalidLimit) {
 		t.Fatalf("limit err = %v", err)
@@ -143,5 +150,79 @@ func TestListRejectsInvalidInput(t *testing.T) {
 	r, err := s.reader.List(ctx, Filter{}, Page{Limit: 100000})
 	if err != nil || len(r.Items) > MaxLimit {
 		t.Fatalf("clamp: %d, %v", len(r.Items), err)
+	}
+}
+
+// Events that share occurred_at are ordered and paged by id, and an event
+// whose id order disagrees with its occurred_at order is still paged correctly.
+func TestListKeysetOrdersByOccurredAtThenID(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	b := make([]byte, 5)
+	_, _ = rand.Read(b)
+	pfx := "zt" + hex.EncodeToString(b)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id LIKE $1 || '%'`, pfx)
+	})
+	base := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Hour)
+	// Insertion (id) order: same, same, older-by-time-but-newer-id, same.
+	times := []time.Time{base, base, base.Add(-time.Minute), base}
+	var ids []string
+	for _, at := range times {
+		err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			var id string
+			if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+			return Insert(ctx, tx, Entry{ID: id, OccurredAt: at, Action: pfx + ".x", TargetType: "thing", TargetID: "t", CorrelationID: pfx + "-c", Metadata: []byte(`{}`)})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{ids[3], ids[1], ids[0], ids[2]} // time DESC, then id DESC
+	r := NewReader(pool)
+	var got []string
+	cursor := ""
+	for pages := 0; pages < 10; pages++ {
+		res, err := r.List(ctx, Filter{CorrelationID: pfx + "-c"}, Page{Limit: 1, Cursor: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range res.Items {
+			got = append(got, e.ID)
+		}
+		if cursor = res.NextCursor; cursor == "" {
+			break
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}
+
+func TestPrefixUpperBound(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+		ok       bool
+	}{
+		{"abc", "abd", true},
+		{"organization.", "organization/", true},
+		{"a\u00e9", "a\u00ea", true},
+		{"a\U0010FFFF", "b", true},
+		{"\uD7FF", "\uE000", true},
+		{"\U0010FFFF", "", false},
+		{"", "", false},
+	} {
+		got, ok := prefixUpperBound(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("prefixUpperBound(%q) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
 }

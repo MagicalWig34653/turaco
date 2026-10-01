@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -42,7 +41,7 @@ func Register(mux *http.ServeMux, reader application.Reader, syncer application.
 	org := authorization.Require(auth, permView)
 	dir := authorization.Require(auth, permDirectoryView)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
-		mux.Handle("GET "+pattern, noStore(mw(fn)))
+		mux.Handle("GET "+pattern, httpx.NoStore(mw(fn)))
 	}
 	route("/api/v1/users", org, h.listUsers)
 	route("/api/v1/users/{id}", org, h.getUser)
@@ -59,50 +58,37 @@ func Register(mux *http.ServeMux, reader application.Reader, syncer application.
 	both := func(next http.Handler) http.Handler { return org(dir(next)) }
 	route("/api/v1/directory-sync-runs", both, h.listDirectorySyncRuns)
 	route("/api/v1/directory-sync-runs/{id}", both, h.getDirectorySyncRun)
-	mux.Handle("POST /api/v1/directory-sync-runs", noStore(authorization.Require(auth, permDirectorySync)(http.HandlerFunc(h.requestDirectorySync))))
-}
-
-func noStore(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	httpx.JSON(w, status, httpx.ErrorEnvelope{Error: httpx.APIError{Code: code, Message: message, RequestID: w.Header().Get("X-Request-ID")}})
+	mux.Handle("POST /api/v1/directory-sync-runs", httpx.NoStore(authorization.Require(auth, permDirectorySync)(http.HandlerFunc(h.requestDirectorySync))))
 }
 
 // fail maps application errors to HTTP responses without leaking error text.
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, application.ErrNotFound):
-		writeError(w, http.StatusNotFound, "organization.not_found", "The requested resource was not found.")
+		httpx.WriteError(w, http.StatusNotFound, "organization.not_found", "The requested resource was not found.")
 	case errors.Is(err, application.ErrInvalidCursor):
-		writeError(w, http.StatusBadRequest, "organization.invalid_cursor", "The cursor is invalid.")
+		httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_cursor", "The cursor is invalid.")
 	default:
-		h.logger.ErrorContext(r.Context(), "organization request failed", "request_id", w.Header().Get("X-Request-ID"), "method", r.Method, "path", r.URL.Path, "error", err)
-		writeError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
+		h.logger.ErrorContext(r.Context(), "organization request failed", "request_id", httpx.RequestID(w), "method", r.Method, "path", r.URL.Path, "error", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
 	}
 }
 
 func parsePage(w http.ResponseWriter, r *http.Request) (application.Page, bool) {
 	p := application.Page{Cursor: r.URL.Query().Get("cursor")}
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 {
-			writeError(w, http.StatusBadRequest, "organization.invalid_limit", "The limit must be a positive integer.")
-			return p, false
-		}
-		p.Limit = n
+	limit, err := httpx.ParseLimit(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_limit", "The limit must be a positive integer.")
+		return p, false
 	}
+	p.Limit = limit
 	return p.Normalize(), true
 }
 
 func parseQuery(w http.ResponseWriter, r *http.Request) (string, bool) {
 	q := r.URL.Query().Get("q")
 	if utf8.RuneCountInString(q) > maxQueryLen || !utf8.ValidString(q) || strings.ContainsRune(q, 0) {
-		writeError(w, http.StatusBadRequest, "organization.invalid_query", "The search query is invalid.")
+		httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_query", "The search query is invalid.")
 		return "", false
 	}
 	return q, true
@@ -130,7 +116,7 @@ func (h *handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	if status != "" {
 		if _, known := userStatuses[status]; !known {
-			writeError(w, http.StatusBadRequest, "organization.invalid_status", "The status filter is invalid.")
+			httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_status", "The status filter is invalid.")
 			return
 		}
 	}
@@ -255,7 +241,7 @@ func (h *handler) listDirectorySyncRuns(w http.ResponseWriter, r *http.Request) 
 	}
 	key := r.URL.Query().Get("providerKey")
 	if utf8.RuneCountInString(key) > maxQueryLen || !utf8.ValidString(key) || strings.ContainsRune(key, 0) {
-		writeError(w, http.StatusBadRequest, "organization.invalid_provider_key", "The provider key is invalid.")
+		httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_provider_key", "The provider key is invalid.")
 		return
 	}
 	res, err := h.reader.ListDirectorySyncRuns(r.Context(), application.RunFilter{ProviderKey: key, Page: p})
@@ -279,15 +265,15 @@ func (h *handler) getDirectorySyncRun(w http.ResponseWriter, r *http.Request) {
 // talks to the directory.
 func (h *handler) requestDirectorySync(w http.ResponseWriter, r *http.Request) {
 	if h.syncProviderKey == "" {
-		writeError(w, http.StatusConflict, "organization.directory_sync_not_configured", "Directory synchronization is not configured.")
+		httpx.WriteError(w, http.StatusConflict, "organization.directory_sync_not_configured", "Directory synchronization is not configured.")
 		return
 	}
 	principal, found := authorization.PrincipalFrom(r.Context())
 	if !found {
-		writeError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+		httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
 		return
 	}
-	jobID, created, err := h.syncer.RequestDirectorySync(r.Context(), principal.UserID, h.syncProviderKey, w.Header().Get("X-Request-ID"))
+	jobID, created, err := h.syncer.RequestDirectorySync(r.Context(), principal.UserID, h.syncProviderKey, httpx.RequestID(w))
 	if err != nil {
 		h.fail(w, r, err)
 		return

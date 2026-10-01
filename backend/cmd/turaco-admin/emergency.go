@@ -10,9 +10,6 @@ import (
 	"io"
 	"math/big"
 	"strings"
-	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
@@ -118,8 +115,8 @@ func (e env) correlationID() string {
 	return fmt.Sprintf("cli-%x", b)
 }
 
-func (e env) credentialAudit() authentication.LocalCredentialAudit {
-	return authentication.LocalCredentialAudit{Actor: e.actor, CorrelationID: e.correlationID(), At: time.Now()}
+func (e env) emergencyAccounts() *authentication.EmergencyAccounts {
+	return authentication.NewEmergencyAccounts(e.pool, public.NewLoginAccounts(repository.New(e.pool), nil), nil)
 }
 
 func emergencyCreate(ctx context.Context, e env, args []string) error {
@@ -131,25 +128,14 @@ func emergencyCreate(ctx context.Context, e env, args []string) error {
 	if err != nil {
 		return err
 	}
-	hash, err := authentication.HashPassword(ctx, password)
-	if err != nil {
-		return err
-	}
-	accounts := public.NewLoginAccounts(repository.New(e.pool), nil)
-	audit := e.credentialAudit()
-	var userID string
-	err = pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
-		var err error
-		if userID, err = accounts.CreateEmergencyUser(ctx, tx, f.displayName, audit.CorrelationID, e.actor); err != nil {
-			return err
-		}
-		return authentication.CreateLocalCredential(ctx, tx, userID, f.login, hash, audit)
-	})
+	userID, err := e.emergencyAccounts().CreateAccount(ctx, e.auditActor(), f.login, f.displayName, password)
 	switch {
 	case errors.Is(err, authentication.ErrLocalCredentialExist):
 		return fmt.Errorf("an emergency account with login %q already exists", f.login)
 	case errors.Is(err, public.ErrInvalidLocalUser):
 		return fmt.Errorf("%w: %v", errUsage, err)
+	case errors.Is(err, authentication.ErrPasswordTooShort), errors.Is(err, authentication.ErrPasswordTooLong):
+		return err
 	case err != nil:
 		return fmt.Errorf("create emergency account: %w", err)
 	}
@@ -167,25 +153,13 @@ func emergencySetPassword(ctx context.Context, e env, args []string) error {
 	if err != nil {
 		return err
 	}
-	hash, err := authentication.HashPassword(ctx, password)
-	if err != nil {
-		return err
-	}
-	audit := e.credentialAudit()
-	revoked := 0
-	err = pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
-		userID, err := authentication.SetLocalPassword(ctx, tx, f.login, hash, audit)
-		if err != nil {
-			return err
-		}
-		// Sessions opened with the old password end with it.
-		revoked, err = authentication.RevokeUserSessions(ctx, tx, userID, "emergency_password_changed", "cli", audit.CorrelationID, audit.At)
-		return err
-	})
-	if errors.Is(err, authentication.ErrLocalCredentialNone) {
+	revoked, err := e.emergencyAccounts().ChangePassword(ctx, e.auditActor(), f.login, password)
+	switch {
+	case errors.Is(err, authentication.ErrLocalCredentialNone):
 		return fmt.Errorf("no emergency account with login %q", f.login)
-	}
-	if err != nil {
+	case errors.Is(err, authentication.ErrPasswordTooShort), errors.Is(err, authentication.ErrPasswordTooLong):
+		return err
+	case err != nil:
 		return fmt.Errorf("set emergency password: %w", err)
 	}
 	fmt.Fprintf(e.stdout, "Password of emergency account %q changed (%d session(s) revoked).\n", f.login, revoked)
@@ -202,22 +176,14 @@ func emergencySetEnabled(ctx context.Context, e env, args []string, enabled bool
 	if err != nil {
 		return err
 	}
-	audit := e.credentialAudit()
+	accounts := e.emergencyAccounts()
 	var changed bool
 	revoked := 0
-	err = pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
-		userID, ch, err := authentication.SetLocalEnabled(ctx, tx, f.login, enabled, audit)
-		if err != nil {
-			return err
-		}
-		changed = ch
-		if !enabled {
-			// Disabling always ends the account's sessions, even when it
-			// was already disabled.
-			revoked, err = authentication.RevokeUserSessions(ctx, tx, userID, "emergency_account_disabled", "cli", audit.CorrelationID, audit.At)
-		}
-		return err
-	})
+	if enabled {
+		changed, err = accounts.Enable(ctx, e.auditActor(), f.login)
+	} else {
+		changed, revoked, err = accounts.Disable(ctx, e.auditActor(), f.login)
+	}
 	if errors.Is(err, authentication.ErrLocalCredentialNone) {
 		return fmt.Errorf("no emergency account with login %q", f.login)
 	}

@@ -128,12 +128,14 @@ func changeUserStatus(ctx context.Context, tx pgx.Tx, ids []string, t statusTran
 
 // revokeSessionsOfLeftActive revokes every session of the users that left
 // "active" and returns the number of sessions revoked.
+// system names the non-human actor ("directory-sync").
 func revokeSessionsOfLeftActive(ctx context.Context, tx pgx.Tx, userIDs []string, system, correlationID string, at time.Time) (int, error) {
+	actor := audit.SystemActor(system)
 	sorted := append([]string(nil), userIDs...)
 	sort.Strings(sorted)
 	total := 0
 	for _, id := range sorted {
-		n, err := authentication.RevokeUserSessions(ctx, tx, id, "user_deactivated", system, correlationID, at)
+		n, err := authentication.RevokeUserSessions(ctx, tx, id, "user_deactivated", actor, correlationID, at)
 		if err != nil {
 			return 0, fmt.Errorf("revoke sessions: %w", err)
 		}

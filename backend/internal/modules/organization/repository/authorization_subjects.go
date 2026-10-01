@@ -96,10 +96,27 @@ func (r *Repository) DisplayNames(ctx context.Context, userIDs, groupIDs []strin
 	return out, nil
 }
 
+func (r *Repository) ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND status = 'active'`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("active users: %w", err)
+	}
+	active, err := collectStrings(rows, "active users")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(active))
+	for _, id := range active {
+		out[id] = true
+	}
+	return out, nil
+}
+
 func (r *Repository) UsersByUsername(ctx context.Context, username string) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT user_id::text FROM organization.external_identities
-		WHERE lower(username) = lower($1) ORDER BY 1 LIMIT 2`, username)
+		WHERE lower(username) = lower($1) AND deleted_observed_at IS NULL ORDER BY 1 LIMIT 2`, username)
 	if err != nil {
 		return nil, fmt.Errorf("users by username: %w", err)
 	}

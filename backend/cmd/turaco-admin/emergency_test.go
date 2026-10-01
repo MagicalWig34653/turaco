@@ -145,7 +145,7 @@ func TestEmergencyCreateFromStdin(t *testing.T) {
 			t.Fatalf("audit row %q", a)
 		}
 	}
-	if got := strings.Join(actions, ","); got != "organization.user.created_local,authentication.emergency_account.created" {
+	if got := strings.Join(actions, ","); got != "organization.user.created_local,auth.emergency_account.created" {
 		t.Fatalf("audit actions = %v", actions)
 	}
 }
@@ -260,7 +260,7 @@ func TestEmergencySetPassword(t *testing.T) {
 	if _, err := svc.Authenticate(ctx, token); !errors.Is(err, authentication.ErrInvalidSession) {
 		t.Fatalf("session survived a password change: %v", err)
 	}
-	if got := f.audit(before.UserID); !containsAction(got, "authentication.emergency_account.password_changed") {
+	if got := f.audit(before.UserID); !containsAction(got, "auth.emergency_account.password_changed") {
 		t.Fatalf("audit = %v", got)
 	}
 	if strings.Contains(f.stdout.String(), newPw) {
@@ -318,7 +318,7 @@ func TestEmergencyEnableDisable(t *testing.T) {
 		}
 	}
 	got := f.audit(cred.UserID)
-	if !containsAction(got, "authentication.emergency_account.enabled") || !containsAction(got, "authentication.emergency_account.disabled") {
+	if !containsAction(got, "auth.emergency_account.enabled") || !containsAction(got, "auth.emergency_account.disabled") {
 		t.Fatalf("audit = %v", got)
 	}
 	// A revoked session is audited with the CLI system marker.
@@ -333,7 +333,7 @@ func TestEmergencyEnableDisable(t *testing.T) {
 	}
 	disabledAudits := 0
 	for _, a := range f.audit(cred.UserID) {
-		if strings.HasPrefix(a, "authentication.emergency_account.disabled") {
+		if strings.HasPrefix(a, "auth.emergency_account.disabled") {
 			disabledAudits++
 		}
 	}

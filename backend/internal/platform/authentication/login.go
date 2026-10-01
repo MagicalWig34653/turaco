@@ -2,9 +2,7 @@ package authentication
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -30,7 +28,6 @@ const (
 	maxIdentifierBytes    = 256
 	maxLoginNameBytes     = 64
 	maxLoginPasswordBytes = 1024
-	maxAuditIdentifier    = 128
 	// defaultMinFailureTime is the minimum duration of every credential
 	// failure response, so unknown, disabled and wrong-password accounts
 	// cannot be told apart by timing.
@@ -39,6 +36,11 @@ const (
 	emergencySessionMax = time.Hour
 	// verifyTimeout bounds one directory password verification.
 	verifyTimeout = 15 * time.Second
+	// defaultEmergencyHashWait is how long an emergency login waits for a
+	// hash slot before it is answered 429 without hashing.
+	defaultEmergencyHashWait = time.Second
+	// hashBusyRetryAfter is the Retry-After (seconds) of that answer.
+	hashBusyRetryAfter = 5
 
 	methodLDAP      = "ldap"
 	methodEmergency = "emergency"
@@ -56,10 +58,15 @@ type LoginConfig struct {
 	TrustedProxies []netip.Prefix
 	// MinFailureTime defaults to 400 ms.
 	MinFailureTime time.Duration
+	// EmergencyHashWait bounds the wait for a password hash slot of an
+	// emergency login; defaults to one second.
+	EmergencyHashWait time.Duration
 }
 
-// LoginDeps are the collaborators of the login endpoints. Directory, Verifier
-// and Users may be nil when directory password login is not configured.
+// LoginDeps are the collaborators of the login endpoints. Users is required
+// (it serializes session creation with user status changes, also for the
+// emergency account); Directory and Verifier may be nil when directory
+// password login is not configured.
 type LoginDeps struct {
 	Pool      *pgxpool.Pool
 	Sessions  *Service
@@ -92,9 +99,17 @@ type loginHandler struct {
 	sleep     func(ctx context.Context, d time.Duration)
 }
 
+// errEmergencyCredentialChanged aborts emergency session creation when the
+// credential was disabled, replaced or removed after it was verified.
+var errEmergencyCredentialChanged = errors.New("authentication: emergency credential changed")
+
 // RegisterLogin mounts the login endpoints under /api/v1/auth. Unsafe
-// methods are protected by the same-origin guard.
+// methods are protected by the same-origin guard. It panics when d.Users is
+// nil: without the user lock a login could race a deactivation.
 func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
+	if d.Users == nil {
+		panic("authentication: RegisterLogin requires LoginDeps.Users")
+	}
 	h := &loginHandler{
 		pool: d.Pool, sessions: d.Sessions, throttle: d.Throttle,
 		directory: d.Directory, verifier: d.Verifier, users: d.Users,
@@ -112,10 +127,13 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	if h.cfg.MinFailureTime <= 0 {
 		h.cfg.MinFailureTime = defaultMinFailureTime
 	}
-	mux.HandleFunc("GET /api/v1/auth/methods", h.methods)
-	mux.Handle("POST /api/v1/auth/login", RequireSameOrigin(http.HandlerFunc(h.login)))
-	mux.Handle("POST /api/v1/auth/emergency-login", RequireSameOrigin(http.HandlerFunc(h.emergencyLogin)))
-	mux.HandleFunc("GET /api/v1/auth/kerberos", h.kerberos)
+	if h.cfg.EmergencyHashWait <= 0 {
+		h.cfg.EmergencyHashWait = defaultEmergencyHashWait
+	}
+	mux.Handle("GET /api/v1/auth/methods", httpx.NoStore(http.HandlerFunc(h.methods)))
+	mux.Handle("POST /api/v1/auth/login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.login))))
+	mux.Handle("POST /api/v1/auth/emergency-login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.emergencyLogin))))
+	mux.Handle("GET /api/v1/auth/kerberos", httpx.NoStore(http.HandlerFunc(h.kerberos)))
 }
 
 func sleepContext(ctx context.Context, d time.Duration) {
@@ -128,11 +146,10 @@ func sleepContext(ctx context.Context, d time.Duration) {
 }
 
 func (h *loginHandler) passwordEnabled() bool {
-	return h.cfg.ProviderKey != "" && h.directory != nil && h.verifier != nil && h.users != nil
+	return h.cfg.ProviderKey != "" && h.directory != nil && h.verifier != nil
 }
 
 func (h *loginHandler) methods(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, map[string]bool{
 		"password":  h.passwordEnabled(),
 		"kerberos":  false,
@@ -142,8 +159,7 @@ func (h *loginHandler) methods(w http.ResponseWriter, _ *http.Request) {
 
 // kerberos is a placeholder until F1 slice 4.
 func (h *loginHandler) kerberos(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
-	writeError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
+	httpx.WriteError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
 }
 
 type passwordLoginRequest struct {
@@ -157,9 +173,8 @@ type emergencyLoginRequest struct {
 }
 
 func (h *loginHandler) login(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
 	if !h.passwordEnabled() {
-		writeError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
+		httpx.WriteError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
 		return
 	}
 	var req passwordLoginRequest
@@ -170,11 +185,13 @@ func (h *loginHandler) login(w http.ResponseWriter, r *http.Request) {
 	// An empty password is rejected before anything else: an empty simple
 	// bind is an unauthenticated bind and would succeed.
 	if !validLoginField(identifier, maxIdentifierBytes) || !validLoginField(req.Password, maxLoginPasswordBytes) {
-		writeError(w, http.StatusBadRequest, "auth.invalid_request", "Identifier and password are required.")
+		httpx.WriteError(w, http.StatusBadRequest, "auth.invalid_request", "Identifier and password are required.")
 		return
 	}
-	a := h.begin(r, IdentifierKey(identifier))
-	if h.rejectIfThrottled(w, r, a) {
+	a := h.begin(r)
+	// The client budget is reserved before any lookup, so a flood is refused
+	// without touching the directory tables.
+	if !h.reserve(w, r, a, a.ipKey, true) {
 		return
 	}
 
@@ -183,8 +200,19 @@ func (h *loginHandler) login(w http.ResponseWriter, r *http.Request) {
 		writeInternal(h.logger, w, r, err)
 		return
 	}
+	// One budget per account (all spellings of its identifiers share it) or,
+	// for identifiers that resolve to nothing, per normalized identifier.
+	userID := ""
+	a.subjectKey = IdentifierKey(identifier)
+	if found {
+		userID = acct.UserID
+		a.subjectKey = AccountKey(acct.UserID)
+	}
+	if !h.reserve(w, r, a, a.subjectKey, false) {
+		return
+	}
 	if !found {
-		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, identifier, "unknown_account")
+		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, "", "unknown_account")
 		return
 	}
 	vctx, cancel := context.WithTimeout(r.Context(), verifyTimeout)
@@ -193,23 +221,35 @@ func (h *loginHandler) login(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrInvalidCredentials):
-		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, identifier, "invalid_password")
+		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, userID, "invalid_password")
 		return
 	case errors.Is(err, ErrProviderUnavailable):
-		h.logger.WarnContext(r.Context(), "directory password verification unavailable", "request_id", requestID(w), "error", err)
-		writeError(w, http.StatusServiceUnavailable, "auth.provider_unavailable", "The identity provider is not available.")
+		h.logger.WarnContext(r.Context(), "directory password verification unavailable", "request_id", httpx.RequestID(w), "error", err)
+		// The password was never checked, so the attempt must not count
+		// toward a lock: otherwise users retrying during a directory outage
+		// would be locked out afterwards. No bind happened, so this cannot
+		// help an attacker or trigger directory lockout.
+		for _, key := range []string{a.subjectKey, a.ipKey} {
+			if rerr := h.throttle.Refund(r.Context(), key); rerr != nil {
+				h.logger.WarnContext(r.Context(), "refund login attempt", "request_id", httpx.RequestID(w), "error", rerr)
+			}
+		}
+		httpx.WriteError(w, http.StatusServiceUnavailable, "auth.provider_unavailable", "The identity provider is not available.")
 		return
 	default:
 		writeInternal(h.logger, w, r, err)
 		return
 	}
 
-	token, sess, err := h.createSession(w, r, LoginSession{
-		UserID: acct.UserID, AuthMethod: methodLDAP, CorrelationID: requestID(w), Locker: h.users,
+	token, sess, err := h.createSession(r, LoginSession{
+		UserID: acct.UserID, AuthMethod: methodLDAP, CorrelationID: httpx.RequestID(w), Locker: h.users,
 	})
 	switch {
 	case errors.Is(err, ErrUserInactive):
-		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, identifier, "user_inactive")
+		h.credentialFailure(w, r, a, "auth.login.failed", methodLDAP, userID, "user_inactive")
+		return
+	case errors.Is(err, ErrTemporarilyUnavailable):
+		h.unavailable(w, r)
 		return
 	case err != nil:
 		writeInternal(h.logger, w, r, err)
@@ -219,9 +259,8 @@ func (h *loginHandler) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *loginHandler) emergencyLogin(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
 	if !h.cfg.EmergencyEnabled {
-		writeError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
+		httpx.WriteError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
 		return
 	}
 	var req emergencyLoginRequest
@@ -230,14 +269,13 @@ func (h *loginHandler) emergencyLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	login := strings.ToLower(strings.TrimSpace(req.Login))
 	if !validLoginField(login, maxLoginNameBytes) || !validLoginField(req.Password, maxLoginPasswordBytes) {
-		writeError(w, http.StatusBadRequest, "auth.invalid_request", "Login and password are required.")
+		httpx.WriteError(w, http.StatusBadRequest, "auth.invalid_request", "Login and password are required.")
 		return
 	}
-	// The emergency key space is separate from directory identifiers, so
-	// failures against a directory user of the same name cannot lock the
-	// emergency account (and vice versa).
-	a := h.begin(r, IdentifierKey(methodEmergency+":"+login))
-	if h.rejectIfThrottled(w, r, a) {
+	a := h.begin(r)
+	// No per-account key: strangers must not be able to lock the break-glass
+	// account. Only the client budget applies, reserved before any hashing.
+	if !h.reserve(w, r, a, a.ipKey, true) {
 		return
 	}
 
@@ -252,12 +290,21 @@ func (h *loginHandler) emergencyLogin(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		hash = dummyHash()
 	}
-	match, err := VerifyPasswordHash(r.Context(), hash, req.Password)
+	match, err := VerifyPasswordHashWithin(r.Context(), hash, req.Password, h.cfg.EmergencyHashWait)
+	if errors.Is(err, ErrHashBusy) {
+		h.logger.WarnContext(r.Context(), "emergency login: no hash capacity", "request_id", httpx.RequestID(w), "client_ip", a.ip)
+		w.Header().Set("Retry-After", strconv.Itoa(hashBusyRetryAfter))
+		httpx.WriteError(w, http.StatusTooManyRequests, "auth.too_many_attempts", "Too many failed attempts. Try again later.")
+		return
+	}
 	if err != nil {
-		h.logger.ErrorContext(r.Context(), "emergency credential unusable", "request_id", requestID(w), "login", login, "error", err)
+		h.logger.ErrorContext(r.Context(), "emergency credential unusable", "request_id", httpx.RequestID(w), "user_id", cred.UserID, "error", err)
 		match = false
 	}
-	reason := ""
+	reason, userID := "", ""
+	if found {
+		userID = cred.UserID
+	}
 	switch {
 	case !found:
 		reason = "unknown_account"
@@ -267,25 +314,43 @@ func (h *loginHandler) emergencyLogin(w http.ResponseWriter, r *http.Request) {
 		reason = "wrong_password"
 	}
 	if reason != "" {
-		h.credentialFailure(w, r, a, "auth.emergency_login.failed", methodEmergency, login, reason)
+		h.credentialFailure(w, r, a, "auth.emergency_login.failed", methodEmergency, userID, reason)
 		return
 	}
 
-	corr := requestID(w)
-	token, sess, err := h.createSession(w, r, LoginSession{
+	corr := httpx.RequestID(w)
+	token, sess, err := h.createSession(r, LoginSession{
 		UserID: cred.UserID, AuthMethod: methodEmergency, CorrelationID: corr,
 		MaxLifetime: emergencySessionMax, Locker: h.users,
 		AfterCreate: func(ctx context.Context, tx pgx.Tx, s Session) error {
-			if _, err := tx.Exec(ctx, `UPDATE platform.local_credentials SET last_used_at = $2 WHERE user_id = $1`, cred.UserID, s.CreatedAt); err != nil {
+			// The credential must still be exactly what was verified: a
+			// concurrent disable, password change or removal makes this
+			// update match nothing and rolls the session back.
+			tag, err := tx.Exec(ctx, `
+				UPDATE platform.local_credentials SET last_used_at = now()
+				WHERE user_id = $1 AND enabled AND password_hash = $2`, cred.UserID, cred.PasswordHash)
+			if err != nil {
 				return err
 			}
-			return h.insertAudit(ctx, tx, "auth.emergency_login.succeeded", "user", cred.UserID, &cred.UserID, corr, s.CreatedAt,
-				map[string]any{"method": methodEmergency, "loginName": cred.LoginName, "clientIp": a.ip, "sessionId": s.ID})
+			if tag.RowsAffected() == 0 {
+				return errEmergencyCredentialChanged
+			}
+			return audit.Record(ctx, tx, audit.Change{
+				Action: "auth.emergency_login.succeeded", TargetType: "user", TargetID: cred.UserID,
+				Actor: audit.UserActor(cred.UserID), CorrelationID: corr, OccurredAt: s.CreatedAt,
+				Metadata: map[string]any{"method": methodEmergency, "loginName": cred.LoginName, "clientIp": a.ip, "sessionId": s.ID},
+			})
 		},
 	})
 	switch {
 	case errors.Is(err, ErrUserInactive):
-		h.credentialFailure(w, r, a, "auth.emergency_login.failed", methodEmergency, login, "user_inactive")
+		h.credentialFailure(w, r, a, "auth.emergency_login.failed", methodEmergency, userID, "user_inactive")
+		return
+	case errors.Is(err, errEmergencyCredentialChanged):
+		h.credentialFailure(w, r, a, "auth.emergency_login.failed", methodEmergency, userID, "credential_changed")
+		return
+	case errors.Is(err, ErrTemporarilyUnavailable):
+		h.unavailable(w, r)
 		return
 	case err != nil:
 		writeInternal(h.logger, w, r, err)
@@ -300,60 +365,77 @@ func (h *loginHandler) emergencyLogin(w http.ResponseWriter, r *http.Request) {
 type attempt struct {
 	start time.Time
 	ip    string
-	idKey string
 	ipKey string
+	// subjectKey is the account or identifier key reserved by /auth/login;
+	// empty for emergency logins.
+	subjectKey string
 }
 
-func (h *loginHandler) begin(r *http.Request, idKey string) attempt {
+func (h *loginHandler) begin(r *http.Request) attempt {
 	ip := ClientIP(r, h.cfg.TrustedProxies)
-	return attempt{start: h.now(), ip: ip, idKey: idKey, ipKey: ClientKey(ip)}
+	return attempt{start: h.now(), ip: ip, ipKey: ClientKey(ip)}
 }
 
-// rejectIfThrottled answers 429 and returns true when the identifier or the
-// client is locked. It runs before any directory or hash work.
-func (h *loginHandler) rejectIfThrottled(w http.ResponseWriter, r *http.Request, a attempt) bool {
-	retry, locked, err := h.throttle.Check(r.Context(), a.idKey, a.ipKey)
+// reserve reserves one attempt for key and returns true when the request may
+// proceed. Otherwise it has answered 429 (or 500) and the caller must stop;
+// throttled requests are logged but not audited.
+func (h *loginHandler) reserve(w http.ResponseWriter, r *http.Request, a attempt, key string, client bool) bool {
+	reserveFn := h.throttle.ReserveIdentifier
+	if client {
+		reserveFn = h.throttle.ReserveClient
+	}
+	allowed, retry, err := reserveFn(r.Context(), key)
 	if err != nil {
 		writeInternal(h.logger, w, r, err)
-		return true
-	}
-	if !locked {
 		return false
+	}
+	if allowed {
+		return true
 	}
 	secs := int(math.Ceil(retry.Seconds()))
 	if secs < 1 {
 		secs = 1
 	}
-	h.logger.WarnContext(r.Context(), "login throttled", "request_id", requestID(w), "client_ip", a.ip)
+	h.logger.WarnContext(r.Context(), "login throttled", "request_id", httpx.RequestID(w), "client_ip", a.ip)
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
-	writeError(w, http.StatusTooManyRequests, "auth.too_many_attempts", "Too many failed attempts. Try again later.")
-	return true
+	httpx.WriteError(w, http.StatusTooManyRequests, "auth.too_many_attempts", "Too many failed attempts. Try again later.")
+	return false
 }
 
-// credentialFailure counts the failure, audits it and answers the uniform 401
-// after the minimum response time. The password is never part of any of it.
-func (h *loginHandler) credentialFailure(w http.ResponseWriter, r *http.Request, a attempt, action, method, identifier, reason string) {
+func (h *loginHandler) unavailable(w http.ResponseWriter, r *http.Request) {
+	h.logger.WarnContext(r.Context(), "login session creation timed out on a lock", "request_id", httpx.RequestID(w))
+	httpx.WriteError(w, http.StatusServiceUnavailable, "auth.temporarily_unavailable", "Login is temporarily unavailable. Try again.")
+}
+
+// credentialFailure audits the failure and answers the uniform 401 after the
+// minimum response time. The attempt was already counted by reserve. The
+// audit never contains the raw identifier or any password: the target is the
+// resolved user, or the fixed "login"/"unknown" when nothing resolved.
+func (h *loginHandler) credentialFailure(w http.ResponseWriter, r *http.Request, a attempt, action, method, userID, reason string) {
 	ctx := context.WithoutCancel(r.Context())
-	if err := h.throttle.RecordFailures(ctx, a.idKey, a.ipKey); err != nil {
-		h.logger.ErrorContext(ctx, "record login failure failed", "request_id", requestID(w), "error", err)
+	targetType, targetID := "login", "unknown"
+	if userID != "" {
+		targetType, targetID = "user", userID
 	}
 	err := pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
-		return h.insertAudit(ctx, tx, action, "login", a.idKey, nil, requestID(w), h.now(), map[string]any{
-			"method": method, "identifier": truncateIdentifier(identifier), "reason": reason, "clientIp": a.ip,
+		return audit.Record(ctx, tx, audit.Change{
+			Action: action, TargetType: targetType, TargetID: targetID,
+			Actor: audit.SystemActor("login"), CorrelationID: httpx.RequestID(w),
+			Metadata: map[string]any{"method": method, "reason": reason, "clientIp": a.ip},
 		})
 	})
 	if err != nil {
-		h.logger.ErrorContext(ctx, "audit login failure failed", "request_id", requestID(w), "error", err)
+		h.logger.ErrorContext(ctx, "audit login failure failed", "request_id", httpx.RequestID(w), "error", err)
 	}
 	if rest := h.cfg.MinFailureTime - h.now().Sub(a.start); rest > 0 {
 		h.sleep(r.Context(), rest)
 	}
-	writeError(w, http.StatusUnauthorized, "auth.invalid_credentials", "Invalid credentials.")
+	httpx.WriteError(w, http.StatusUnauthorized, "auth.invalid_credentials", "Invalid credentials.")
 }
 
 // createSession adds the request's current session (if any) to be revoked and
 // creates the login session.
-func (h *loginHandler) createSession(w http.ResponseWriter, r *http.Request, p LoginSession) (string, Session, error) {
+func (h *loginHandler) createSession(r *http.Request, p LoginSession) (string, Session, error) {
 	if token, ok := tokenFromRequest(r, h.cfg.SecureCookie); ok {
 		switch old, err := h.sessions.Authenticate(r.Context(), token); {
 		case err == nil:
@@ -366,9 +448,17 @@ func (h *loginHandler) createSession(w http.ResponseWriter, r *http.Request, p L
 	return h.sessions.CreateLogin(r.Context(), p)
 }
 
+// finishLogin gives the successful attempt back: the account counter is
+// forgotten and the client budget refunded by one.
 func (h *loginHandler) finishLogin(w http.ResponseWriter, r *http.Request, a attempt, token string, sess Session) {
-	if err := h.throttle.Clear(r.Context(), a.idKey); err != nil {
-		h.logger.ErrorContext(r.Context(), "clear login throttle failed", "request_id", requestID(w), "error", err)
+	ctx := context.WithoutCancel(r.Context())
+	if a.subjectKey != "" {
+		if err := h.throttle.Clear(ctx, a.subjectKey); err != nil {
+			h.logger.ErrorContext(ctx, "clear login throttle failed", "request_id", httpx.RequestID(w), "error", err)
+		}
+	}
+	if err := h.throttle.Refund(ctx, a.ipKey); err != nil {
+		h.logger.ErrorContext(ctx, "refund login throttle failed", "request_id", httpx.RequestID(w), "error", err)
 	}
 	expires := sess.IdleExpiresAt
 	if sess.AbsoluteExpiresAt.Before(expires) {
@@ -378,33 +468,11 @@ func (h *loginHandler) finishLogin(w http.ResponseWriter, r *http.Request, a att
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *loginHandler) insertAudit(ctx context.Context, tx pgx.Tx, action, targetType, targetID string, actor *string, corr string, at time.Time, metadata map[string]any) error {
-	meta, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
-	var id string
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&id); err != nil {
-		return err
-	}
-	return audit.Insert(ctx, tx, audit.Entry{
-		ID: id, OccurredAt: at.UTC().Truncate(time.Microsecond), ActorID: actor, Action: action,
-		TargetType: targetType, TargetID: targetID, CorrelationID: corr, Metadata: meta,
-	})
-}
-
 // decodeLoginBody reads one JSON object of at most 8 KiB with no unknown
 // fields. Bodies are never logged.
 func decodeLoginBody(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		writeError(w, http.StatusBadRequest, "auth.invalid_request", "The request body is invalid.")
-		return false
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "auth.invalid_request", "The request body is invalid.")
+	if err := httpx.DecodeJSON(w, r, dst, maxLoginBodyBytes); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "auth.invalid_request", "The request body is invalid.")
 		return false
 	}
 	return true
@@ -414,18 +482,3 @@ func decodeLoginBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 func validLoginField(s string, max int) bool {
 	return s != "" && len(s) <= max && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
-
-// truncateIdentifier limits an identifier for audit metadata to 128 bytes
-// without splitting a character.
-func truncateIdentifier(s string) string {
-	if len(s) <= maxAuditIdentifier {
-		return s
-	}
-	cut := maxAuditIdentifier
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
-}
-
-func requestID(w http.ResponseWriter) string { return w.Header().Get("X-Request-ID") }

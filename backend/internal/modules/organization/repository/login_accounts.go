@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -17,7 +16,11 @@ var _ application.LoginAccountStore = (*Repository)(nil)
 
 // FindDirectoryAccounts implements application.LoginAccountStore. The
 // identity must be enabled and not deleted, carry a distinguished name and
-// belong to an active User. LIMIT 2 is enough to detect ambiguity.
+// belong to an active User. LIMIT 2 is enough to detect ambiguity. The
+// username lookup is served by the partial index
+// external_identities_login_lookup_idx (provider_key, lower(username)) WHERE
+// deleted_observed_at IS NULL (migration 000012): keep its predicate and the
+// lower(e.username) expression exactly as they are, or the index is not used.
 func (r *Repository) FindDirectoryAccounts(ctx context.Context, providerKey, by, value string) ([]application.DirectoryAccount, error) {
 	var sql string
 	switch by {
@@ -91,21 +94,10 @@ func (r *Repository) InsertLocalUser(ctx context.Context, tx pgx.Tx, in applicat
 	if err != nil {
 		return "", fmt.Errorf("insert local user: %w", err)
 	}
-	after, err := json.Marshal(map[string]string{"displayName": in.DisplayName, "status": statusActive, "statusSource": statusSourcePlatform})
-	if err != nil {
-		return "", fmt.Errorf("insert local user: marshal audit: %w", err)
-	}
-	meta := in.Actor
-	if len(meta) == 0 {
-		meta = json.RawMessage(`{}`)
-	}
-	var auditID string
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&auditID); err != nil {
-		return "", fmt.Errorf("insert local user: audit id: %w", err)
-	}
-	if err := audit.Insert(ctx, tx, audit.Entry{
-		ID: auditID, OccurredAt: at, Action: "organization.user.created_local", TargetType: "user", TargetID: id,
-		CorrelationID: in.CorrelationID, After: after, Metadata: meta,
+	after := map[string]string{"displayName": in.DisplayName, "status": statusActive, "statusSource": statusSourcePlatform}
+	if err := audit.Record(ctx, tx, audit.Change{
+		Action: "organization.user.created_local", TargetType: "user", TargetID: id,
+		Actor: in.Actor, CorrelationID: in.CorrelationID, OccurredAt: at, After: after,
 	}); err != nil {
 		return "", err
 	}

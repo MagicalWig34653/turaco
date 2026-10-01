@@ -57,250 +57,304 @@ func throttleKey(t *testing.T, pool *pgxpool.Pool, prefix string) string {
 	return key
 }
 
+// failures returns the attempts counter of key and whether it is locked.
 func failures(t *testing.T, pool *pgxpool.Pool, key string) (n int, locked bool) {
 	t.Helper()
 	var until *time.Time
-	err := pool.QueryRow(context.Background(), `SELECT failures, locked_until FROM platform.auth_throttle WHERE key = $1`, key).Scan(&n, &until)
+	err := pool.QueryRow(context.Background(), `SELECT attempts, locked_until FROM platform.auth_throttle WHERE key = $1`, key).Scan(&n, &until)
 	if err != nil {
 		return 0, false
 	}
 	return n, until != nil
 }
 
-func TestIdentifierKey(t *testing.T) {
-	a, b := IdentifierKey("Alice@Example.Test"), IdentifierKey("alice@example.test")
-	if a != b {
-		t.Fatal("key must be case-insensitive")
-	}
-	if len(a) != len("id:")+64 || a[:3] != "id:" {
-		t.Fatalf("key = %q", a)
-	}
-	if IdentifierKey("alice") == IdentifierKey("bob") {
-		t.Fatal("collision")
-	}
-	if ClientKey("203.0.113.7") != "ip:203.0.113.7" {
-		t.Fatal("client key")
+// shiftBack moves a counter d into the past (the throttle uses database
+// time, so tests age rows instead of advancing a clock).
+func shiftBack(t *testing.T, pool *pgxpool.Pool, key string, d time.Duration) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(), `
+		UPDATE platform.auth_throttle SET
+		  window_started_at = window_started_at - $2::bigint * interval '1 microsecond',
+		  locked_until = locked_until - $2::bigint * interval '1 microsecond',
+		  updated_at = updated_at - $2::bigint * interval '1 microsecond'
+		WHERE key = $1`, key, d.Microseconds())
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestThrottleLocksAtLimit(t *testing.T) {
-	th, _, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	for i := 1; i <= 4; i++ {
-		if err := th.RecordFailure(ctx, key, 5); err != nil {
+func reserveN(t *testing.T, th *Throttle, key string, limit, n int) (allowed int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		ok, _, err := th.Reserve(context.Background(), key, limit)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, locked, err := th.Check(ctx, key); err != nil || locked {
-			t.Fatalf("after %d failures: locked=%v err=%v", i, locked, err)
+		if ok {
+			allowed++
 		}
 	}
-	if err := th.RecordFailure(ctx, key, 5); err != nil {
-		t.Fatal(err)
+	return allowed
+}
+
+func TestIdentifierKey(t *testing.T) {
+	base := IdentifierKey("alice")
+	for _, v := range []string{"Alice", "ALICE", " alice ", "X\\alice", "x\\ alice", `CORP\ Alice `} {
+		if IdentifierKey(v) != base {
+			t.Fatalf("%q must share the key of alice", v)
+		}
 	}
-	retry, locked, err := th.Check(ctx, key)
-	if err != nil || !locked {
-		t.Fatalf("locked=%v err=%v", locked, err)
+	if len(base) != len("id:")+64 || base[:3] != "id:" {
+		t.Fatalf("key = %q", base)
 	}
-	if retry != 15*time.Minute {
-		t.Fatalf("retry = %v, want 15m", retry)
+	if IdentifierKey("alice") == IdentifierKey("bob") || IdentifierKey("alice@example.test") == base {
+		t.Fatal("distinct identifiers collide")
+	}
+	if NormalizeIdentifier(`X\ Alice `) != "alice" {
+		t.Fatal("normalization")
+	}
+	if AccountKey("0190A000-0000-7000-8000-000000000001") != "acct:0190a000-0000-7000-8000-000000000001" {
+		t.Fatal("account key")
 	}
 }
 
-func TestThrottleCheckReturnsLongestLock(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	k1, k2, k3 := throttleKey(t, pool, "id:"), throttleKey(t, pool, "ip:"), throttleKey(t, pool, "id:")
-	_ = th.RecordFailure(ctx, k1, 1)
-	clk.advance(5 * time.Minute)
-	_ = th.RecordFailure(ctx, k2, 1)
-	retry, locked, err := th.Check(ctx, k1, k2, k3)
-	if err != nil || !locked || retry != 15*time.Minute {
-		t.Fatalf("retry=%v locked=%v err=%v", retry, locked, err)
+func TestClientKeyBuckets(t *testing.T) {
+	tests := []struct{ ip, want string }{
+		{"203.0.113.7", "ip:203.0.113.7"},
+		{"2001:db8:1:2:aaaa:bbbb:cccc:dddd", "ip:2001:db8:1:2::/64"},
+		{"2001:db8:1:2::1", "ip:2001:db8:1:2::/64"},
+		{"2001:db8:1:3::1", "ip:2001:db8:1:3::/64"},
+		{"::ffff:203.0.113.7", "ip:203.0.113.7"},
+		{"unknown", "ip:unknown"},
 	}
-	if _, locked, _ := th.Check(ctx, k3); locked {
-		t.Fatal("unrelated key locked")
+	for _, tt := range tests {
+		if got := ClientKey(tt.ip); got != tt.want {
+			t.Errorf("ClientKey(%q) = %q, want %q", tt.ip, got, tt.want)
+		}
 	}
-}
-
-func TestThrottleWindowExpiryRestartsCount(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	for i := 0; i < 4; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
-	}
-	clk.advance(15*time.Minute + time.Second)
-	_ = th.RecordFailure(ctx, key, 5)
-	if n, locked := failures(t, pool, key); n != 1 || locked {
-		t.Fatalf("failures=%d locked=%v, want 1 unlocked (old window expired)", n, locked)
-	}
-	for i := 0; i < 3; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
-	}
-	if _, locked, _ := th.Check(ctx, key); locked {
-		t.Fatal("4 failures in the new window must not lock")
+	if ClientKey("2001:db8:1:2::1") != ClientKey("2001:db8:1:2:ffff:ffff:ffff:ffff") {
+		t.Fatal("one /64 must be one bucket")
 	}
 }
 
-func TestThrottleFailuresWithinWindowAccumulate(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	for i := 0; i < 4; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
-		clk.advance(3 * time.Minute) // 12 minutes in total, inside the window
-	}
-	_ = th.RecordFailure(ctx, key, 5) // 5th failure at +12m
-	if _, locked, _ := th.Check(ctx, key); !locked {
-		t.Fatal("5 failures within 15 minutes must lock")
-	}
-}
-
-func TestThrottleLockExpiryAndRestart(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	for i := 0; i < 5; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
-	}
-	clk.advance(15*time.Minute - time.Second)
-	if _, locked, _ := th.Check(ctx, key); !locked {
-		t.Fatal("still locked just before expiry")
-	}
-	clk.advance(2 * time.Second)
-	if _, locked, _ := th.Check(ctx, key); locked {
-		t.Fatal("lock must expire")
-	}
-	_ = th.RecordFailure(ctx, key, 5)
-	if n, locked := failures(t, pool, key); n != 1 || locked {
-		t.Fatalf("failures=%d locked=%v, want a fresh count after the lock expired", n, locked)
-	}
-}
-
-func TestThrottleLockedKeyIsNotExtended(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	for i := 0; i < 5; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
-	}
-	clk.advance(10 * time.Minute)
-	_ = th.RecordFailure(ctx, key, 5) // raced past Check
-	retry, locked, _ := th.Check(ctx, key)
-	if !locked || retry != 5*time.Minute {
-		t.Fatalf("retry=%v locked=%v, want the original lock to end in 5m", retry, locked)
-	}
-}
-
-func TestThrottleClear(t *testing.T) {
+func TestReserveLocksAboveLimit(t *testing.T) {
 	th, _, pool := newTestThrottle(t)
 	ctx := context.Background()
 	key := throttleKey(t, pool, "id:")
+	if got := reserveN(t, th, key, 5, 5); got != 5 {
+		t.Fatalf("allowed = %d, want 5", got)
+	}
+	ok, retry, err := th.Reserve(ctx, key, 5)
+	if err != nil || ok {
+		t.Fatalf("6th attempt: allowed=%v err=%v", ok, err)
+	}
+	if retry < 14*time.Minute+50*time.Second || retry > 15*time.Minute {
+		t.Fatalf("retry = %v, want about 15m", retry)
+	}
+	if n, locked := failures(t, pool, key); n != 6 || !locked {
+		t.Fatalf("attempts=%d locked=%v, want 6 locked", n, locked)
+	}
+}
+
+func TestReserveLockedKeyIsNotCountedOrExtended(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	ctx := context.Background()
+	key := throttleKey(t, pool, "id:")
+	reserveN(t, th, key, 5, 6)
+	var before time.Time
+	if err := pool.QueryRow(ctx, `SELECT locked_until FROM platform.auth_throttle WHERE key = $1`, key).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	shiftBack(t, pool, key, 10*time.Minute)
+	if err := pool.QueryRow(ctx, `SELECT locked_until FROM platform.auth_throttle WHERE key = $1`, key).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	ok, retry, _ := th.Reserve(ctx, key, 5)
+	if ok || retry > 5*time.Minute || retry < 4*time.Minute+50*time.Second {
+		t.Fatalf("allowed=%v retry=%v, want the original lock to end in about 5m", ok, retry)
+	}
+	var after time.Time
+	var n int
+	_ = pool.QueryRow(ctx, `SELECT locked_until, attempts FROM platform.auth_throttle WHERE key = $1`, key).Scan(&after, &n)
+	if !after.Equal(before) || n != 6 {
+		t.Fatalf("locked_until moved from %v to %v, attempts=%d", before, after, n)
+	}
+}
+
+func TestReserveWindowExpiryRestartsCount(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	key := throttleKey(t, pool, "id:")
+	reserveN(t, th, key, 5, 4)
+	shiftBack(t, pool, key, 15*time.Minute+time.Second)
+	if ok, _, _ := th.Reserve(context.Background(), key, 5); !ok {
+		t.Fatal("refused in a new window")
+	}
+	if n, locked := failures(t, pool, key); n != 1 || locked {
+		t.Fatalf("attempts=%d locked=%v, want 1 unlocked (old window expired)", n, locked)
+	}
+	if got := reserveN(t, th, key, 5, 4); got != 4 {
+		t.Fatalf("allowed = %d, want 4 more in the new window", got)
+	}
+}
+
+func TestReserveAttemptsWithinWindowAccumulate(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	key := throttleKey(t, pool, "id:")
 	for i := 0; i < 5; i++ {
-		_ = th.RecordFailure(ctx, key, 5)
+		reserveN(t, th, key, 5, 1)
+		shiftBack(t, pool, key, 2*time.Minute) // 8 minutes in total, inside the window
+	}
+	if ok, _, _ := th.Reserve(context.Background(), key, 5); ok {
+		t.Fatal("the 6th attempt within 15 minutes must be refused")
+	}
+}
+
+func TestReserveLockExpiryRestarts(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	ctx := context.Background()
+	key := throttleKey(t, pool, "id:")
+	reserveN(t, th, key, 5, 6)
+	shiftBack(t, pool, key, 15*time.Minute-time.Second)
+	if ok, _, _ := th.Reserve(ctx, key, 5); ok {
+		t.Fatal("still locked just before expiry")
+	}
+	shiftBack(t, pool, key, 2*time.Second)
+	if ok, _, _ := th.Reserve(ctx, key, 5); !ok {
+		t.Fatal("lock must expire")
+	}
+	if n, locked := failures(t, pool, key); n != 1 || locked {
+		t.Fatalf("attempts=%d locked=%v, want a fresh count after the lock expired", n, locked)
+	}
+}
+
+func TestReserveLimitOne(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	key := throttleKey(t, pool, "id:")
+	if got := reserveN(t, th, key, 1, 3); got != 1 {
+		t.Fatalf("allowed = %d, want 1", got)
+	}
+	// Limit 0 refuses even the first attempt.
+	zero := throttleKey(t, pool, "id:")
+	if got := reserveN(t, th, zero, 0, 1); got != 0 {
+		t.Fatal("limit 0 must refuse")
+	}
+}
+
+func TestReserveClientAndIdentifierLimits(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	id, ip := throttleKey(t, pool, "id:"), throttleKey(t, pool, "ip:")
+	ctx := context.Background()
+	allowedID, allowedIP := 0, 0
+	for i := 0; i < 40; i++ {
+		if ok, _, _ := th.ReserveIdentifier(ctx, id); ok {
+			allowedID++
+		}
+		if ok, _, _ := th.ReserveClient(ctx, ip); ok {
+			allowedIP++
+		}
+	}
+	if allowedID != 5 || allowedIP != 30 {
+		t.Fatalf("allowed identifier=%d client=%d, want 5 and 30", allowedID, allowedIP)
+	}
+}
+
+// Concurrent reservations are all counted and exactly limit are allowed: the
+// upsert is atomic (no check-then-act gap).
+func TestReserveConcurrentIsExact(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	ctx := context.Background()
+	run := func(key string, limit, n int) (allowed int) {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ok, _, err := th.Reserve(ctx, key, limit)
+				if err != nil {
+					t.Error(err)
+				}
+				if ok {
+					mu.Lock()
+					allowed++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		return allowed
+	}
+	open := throttleKey(t, pool, "id:")
+	if got := run(open, 1000, 40); got != 40 {
+		t.Fatalf("allowed = %d, want 40", got)
+	}
+	if n, locked := failures(t, pool, open); n != 40 || locked {
+		t.Fatalf("attempts=%d locked=%v, want 40 unlocked", n, locked)
+	}
+	tight := throttleKey(t, pool, "id:")
+	if got := run(tight, 5, 60); got != 5 {
+		t.Fatalf("allowed = %d, want exactly 5 of 60", got)
+	}
+}
+
+func TestClearAndRefund(t *testing.T) {
+	th, _, pool := newTestThrottle(t)
+	ctx := context.Background()
+	key := throttleKey(t, pool, "id:")
+	reserveN(t, th, key, 5, 3)
+	if err := th.Refund(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := failures(t, pool, key); n != 2 {
+		t.Fatalf("attempts after refund = %d", n)
+	}
+	for i := 0; i < 5; i++ {
+		_ = th.Refund(ctx, key)
+	}
+	if n, _ := failures(t, pool, key); n != 0 {
+		t.Fatalf("refund went below zero: %d", n)
+	}
+	if err := th.Refund(ctx, key+"-absent"); err != nil {
+		t.Fatalf("refunding an absent key: %v", err)
+	}
+	// A locked key is not unlocked by a refund.
+	reserveN(t, th, key, 5, 6)
+	_ = th.Refund(ctx, key)
+	if _, locked := failures(t, pool, key); !locked {
+		t.Fatal("refund must not touch a locked key")
 	}
 	if err := th.Clear(ctx, key); err != nil {
 		t.Fatal(err)
 	}
-	if _, locked, _ := th.Check(ctx, key); locked {
+	if ok, _, _ := th.Reserve(ctx, key, 5); !ok {
 		t.Fatal("cleared key still locked")
 	}
-	if err := th.Clear(ctx, key); err != nil {
+	if err := th.Clear(ctx, key+"-absent"); err != nil {
 		t.Fatalf("clearing an absent key: %v", err)
 	}
 }
 
-func TestThrottleLimitOne(t *testing.T) {
+func TestThrottlePrunesOldRowsInBoundedBatches(t *testing.T) {
 	th, _, pool := newTestThrottle(t)
 	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	_ = th.RecordFailure(ctx, key, 1)
-	if _, locked, _ := th.Check(ctx, key); !locked {
-		t.Fatal("limit 1 locks on the first failure")
+	prefix := "id:zt-prune-" + randHex(6) + "-"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.auth_throttle WHERE key LIKE $1`, prefix+"%")
+	})
+	// A row older than the retention (by database time) and fresh ones.
+	_, err := pool.Exec(ctx, `
+		INSERT INTO platform.auth_throttle (key, attempts, window_started_at, updated_at)
+		SELECT $1 || g, 1, now() - interval '26 hours', now() - interval '25 hours' FROM generate_series(1, $2) g`,
+		prefix, pruneBatch+20)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestThrottleRecordFailuresUsesBothLimits(t *testing.T) {
-	th, _, pool := newTestThrottle(t)
-	ctx := context.Background()
-	id, ip := throttleKey(t, pool, "id:"), throttleKey(t, pool, "ip:")
-	for i := 0; i < 5; i++ {
-		_ = th.RecordFailures(ctx, id, ip)
-	}
-	if _, locked := failures(t, pool, id); !locked {
-		t.Fatal("identifier must lock at 5")
-	}
-	if n, locked := failures(t, pool, ip); n != 5 || locked {
-		t.Fatalf("client failures=%d locked=%v, want 5 unlocked (limit 30)", n, locked)
-	}
-	for i := 0; i < 25; i++ {
-		_ = th.RecordFailures(ctx, id, ip)
-	}
-	if _, locked := failures(t, pool, ip); !locked {
-		t.Fatal("client must lock at 30")
-	}
-}
-
-// Concurrent failures must all be counted: the upsert is atomic.
-func TestThrottleConcurrentFailuresAreAllCounted(t *testing.T) {
-	th, _, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	const n = 40
-	var wg sync.WaitGroup
-	errs := make(chan error, n)
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			errs <- th.RecordFailure(ctx, key, 1000)
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got, locked := failures(t, pool, key); got != n || locked {
-		t.Fatalf("failures=%d locked=%v, want %d unlocked", got, locked, n)
-	}
-}
-
-func TestThrottleConcurrentFailuresLockExactlyOnce(t *testing.T) {
-	th, _, pool := newTestThrottle(t)
-	ctx := context.Background()
-	key := throttleKey(t, pool, "id:")
-	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_ = th.RecordFailure(ctx, key, 5)
-		}()
-	}
-	wg.Wait()
-	retry, locked, err := th.Check(ctx, key)
-	if err != nil || !locked || retry != 15*time.Minute {
-		t.Fatalf("retry=%v locked=%v err=%v", retry, locked, err)
-	}
-	if got, _ := failures(t, pool, key); got != 20 {
-		t.Fatalf("failures = %d, want 20", got)
-	}
-}
-
-func TestThrottlePrunesOldRows(t *testing.T) {
-	th, clk, pool := newTestThrottle(t)
-	ctx := context.Background()
-	old := throttleKey(t, pool, "id:")
-	_ = th.RecordFailure(ctx, old, 5)
-	clk.advance(25 * time.Hour)
 	other := throttleKey(t, pool, "id:")
-	_ = th.RecordFailure(ctx, other, 5) // triggers the (first) prune
-	if n, _ := failures(t, pool, old); n != 0 {
-		t.Fatal("row older than 24h must be pruned")
+	reserveN(t, th, other, 5, 1) // triggers the first prune
+	var left int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM platform.auth_throttle WHERE key LIKE $1`, prefix+"%").Scan(&left)
+	if left != 20 {
+		t.Fatalf("%d old rows left, want 20 (one batch of %d pruned)", left, pruneBatch)
 	}
 	if n, _ := failures(t, pool, other); n != 1 {
 		t.Fatal("fresh row must remain")

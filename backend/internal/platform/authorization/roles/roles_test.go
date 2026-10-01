@@ -1,4 +1,4 @@
-package authorization
+package roles
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/permissions"
 )
@@ -19,6 +20,8 @@ import (
 type fakeDirectory struct {
 	users  map[string]string
 	groups map[string]string
+	// inactive lists users whose status is not "active".
+	inactive map[string]bool
 	// groupsOf is what the GroupResolver returns per user.
 	groupsOf map[string][]string
 }
@@ -45,9 +48,14 @@ func (f *fakeDirectory) DisplayNames(_ context.Context, u, g []string) (map[stri
 	}
 	return out, nil
 }
-func (f *fakeDirectory) FindUser(_ context.Context, ref string) (string, bool, error) {
-	_, ok := f.users[ref]
-	return ref, ok, nil
+func (f *fakeDirectory) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		if _, ok := f.users[id]; ok && !f.inactive[id] {
+			out[id] = true
+		}
+	}
+	return out, nil
 }
 func (f *fakeDirectory) GroupIDsOfUser(_ context.Context, userID string) ([]string, error) {
 	return f.groupsOf[userID], nil
@@ -59,7 +67,8 @@ type fixture struct {
 	dir  *fakeDirectory
 	svc  *Service
 	pfx  string
-	cli  Actor
+	cli  audit.Actor
+	corr string // correlation id of every mutation made through the fixture
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -68,9 +77,10 @@ func newFixture(t *testing.T) *fixture {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	f := &fixture{t: t, pool: pool, pfx: "zt-" + hex.EncodeToString(b)}
-	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, groupsOf: map[string][]string{}}
+	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}}
 	f.svc = NewService(pool, f.dir)
-	f.cli = Actor{CLI: json.RawMessage(`{"actor":"cli","osUser":"tester"}`), CorrelationID: f.pfx + "-cli"}
+	f.cli = audit.CLIActor("tester")
+	f.corr = f.pfx + "-c"
 	t.Cleanup(f.cleanup)
 	return f
 }
@@ -115,13 +125,11 @@ func (f *fixture) group(name string) string {
 	return id
 }
 
-func (f *fixture) actor(userID, suffix string) Actor {
-	return UserActor(userID, f.pfx+"-"+suffix)
-}
+func (f *fixture) actor(userID string) audit.Actor { return audit.UserActor(userID) }
 
 func (f *fixture) role(suffix string, perms ...string) Role {
 	f.t.Helper()
-	r, err := f.svc.CreateRole(context.Background(), f.cli, CreateRoleInput{Key: f.pfx + "-" + suffix, Name: "Role " + suffix, Permissions: perms})
+	r, err := f.svc.CreateRole(context.Background(), f.cli, f.corr, CreateRoleInput{Key: f.pfx + "-" + suffix, Name: "Role " + suffix, Permissions: perms})
 	if err != nil {
 		f.t.Fatalf("create role: %v", err)
 	}
@@ -187,9 +195,9 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	admin := f.user("Admin")
-	actor := f.actor(admin, "a")
+	actor := f.actor(admin)
 
-	created, err := f.svc.CreateRole(ctx, actor, CreateRoleInput{Key: f.pfx + "-helpdesk", Name: " Helpdesk ", Description: "d", Permissions: []string{"tasks.view", "organization.view", "tasks.view"}})
+	created, err := f.svc.CreateRole(ctx, actor, f.corr, CreateRoleInput{Key: f.pfx + "-helpdesk", Name: " Helpdesk ", Description: "d", Permissions: []string{"tasks.view", "organization.view", "tasks.view"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,62 +208,62 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 		t.Fatalf("permissions = %v", got)
 	}
 
-	if _, err := f.svc.CreateRole(ctx, actor, CreateRoleInput{Key: created.Key, Name: "x"}); !errors.Is(err, ErrDuplicateKey) {
+	if _, err := f.svc.CreateRole(ctx, actor, f.corr, CreateRoleInput{Key: created.Key, Name: "x"}); !errors.Is(err, ErrDuplicateKey) {
 		t.Fatalf("duplicate key err = %v", err)
 	}
 	var inv *InvalidError
 	for _, in := range []CreateRoleInput{
 		{Key: "A", Name: "x"}, {Key: f.pfx + "-n", Name: " "}, {Key: f.pfx + "-n", Name: "x", Description: "a\x00"},
 	} {
-		if _, err := f.svc.CreateRole(ctx, actor, in); !errors.As(err, &inv) {
+		if _, err := f.svc.CreateRole(ctx, actor, f.corr, in); !errors.As(err, &inv) {
 			t.Fatalf("CreateRole(%+v) err = %v, want invalid", in, err)
 		}
 	}
 	var unk *UnknownPermissionError
-	if _, err := f.svc.CreateRole(ctx, actor, CreateRoleInput{Key: f.pfx + "-bad", Name: "x", Permissions: []string{"no.such"}}); !errors.Is(err, ErrUnknownPermission) || !errors.As(err, &unk) {
+	if _, err := f.svc.CreateRole(ctx, actor, f.corr, CreateRoleInput{Key: f.pfx + "-bad", Name: "x", Permissions: []string{"no.such"}}); !errors.Is(err, ErrUnknownPermission) || !errors.As(err, &unk) {
 		t.Fatalf("unknown permission err = %v", err)
 	}
 
 	name := "Service desk"
-	updated, err := f.svc.UpdateRole(ctx, actor, created.ID, UpdateRoleInput{Name: &name})
+	updated, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{Name: &name})
 	if err != nil || updated.Name != name || updated.Description != "d" {
 		t.Fatalf("update = %+v, %v", updated, err)
 	}
-	if _, err := f.svc.UpdateRole(ctx, actor, created.ID, UpdateRoleInput{}); !errors.As(err, &inv) {
+	if _, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{}); !errors.As(err, &inv) {
 		t.Fatalf("empty update err = %v", err)
 	}
 
-	set, err := f.svc.SetRolePermissions(ctx, actor, created.ID, []string{"tickets.view"})
+	set, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, []string{"tickets.view"})
 	if err != nil || len(set.Permissions) != 1 || set.Permissions[0] != "tickets.view" {
 		t.Fatalf("set = %+v, %v", set, err)
 	}
-	if _, err := f.svc.SetRolePermissions(ctx, actor, created.ID, []string{"nope"}); !errors.Is(err, ErrUnknownPermission) {
+	if _, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, []string{"nope"}); !errors.Is(err, ErrUnknownPermission) {
 		t.Fatalf("set unknown err = %v", err)
 	}
-	cleared, err := f.svc.SetRolePermissions(ctx, actor, created.ID, nil)
+	cleared, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, nil)
 	if err != nil || len(cleared.Permissions) != 0 {
 		t.Fatalf("clear = %+v, %v", cleared, err)
 	}
 
 	// Deletion is refused while an assignment is active, allowed after revoke.
 	u := f.user("Alice")
-	as, err := f.svc.AssignRole(ctx, actor, AssignInput{RoleID: created.ID, SubjectType: SubjectUser, SubjectID: u})
+	as, err := f.svc.AssignRole(ctx, actor, f.corr, AssignInput{RoleID: created.ID, SubjectType: SubjectUser, SubjectID: u})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, created.ID); !errors.Is(err, ErrRoleInUse) {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); !errors.Is(err, ErrRoleInUse) {
 		t.Fatalf("delete in use err = %v", err)
 	}
-	if _, _, err := f.svc.RevokeAssignment(ctx, actor, as.ID, false); err != nil {
+	if _, _, err := f.svc.RevokeAssignment(ctx, actor, f.corr, as.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, created.ID); err != nil {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if _, err := f.svc.GetRole(ctx, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get deleted err = %v", err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, created.ID); !errors.Is(err, ErrNotFound) {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete twice err = %v", err)
 	}
 	// Soft delete keeps the role row and its assignment history.
@@ -266,7 +274,7 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 		t.Fatalf("deleted role row: deleted_at=%v history=%d err=%v", deletedAt, historic, err)
 	}
 	// The key is free again for a new role.
-	if again, err := f.svc.CreateRole(ctx, actor, CreateRoleInput{Key: created.Key, Name: "Again"}); err != nil || again.ID == created.ID {
+	if again, err := f.svc.CreateRole(ctx, actor, f.corr, CreateRoleInput{Key: created.Key, Name: "Again"}); err != nil || again.ID == created.ID {
 		t.Fatalf("recreate with released key = %+v, %v", again, err)
 	}
 	if _, err := f.svc.GetRole(ctx, "not-a-uuid"); !errors.Is(err, ErrNotFound) {
@@ -315,13 +323,13 @@ func TestBuiltInRoleIsImmutable(t *testing.T) {
 		t.Fatalf("admin role = %+v", admin)
 	}
 	name := "x"
-	if _, err := f.svc.UpdateRole(ctx, f.cli, admin.ID, UpdateRoleInput{Name: &name}); !errors.Is(err, ErrBuiltInRole) {
+	if _, err := f.svc.UpdateRole(ctx, f.cli, f.corr, admin.ID, UpdateRoleInput{Name: &name}); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("update err = %v", err)
 	}
-	if _, err := f.svc.SetRolePermissions(ctx, f.cli, admin.ID, []string{"tasks.view"}); !errors.Is(err, ErrBuiltInRole) {
+	if _, err := f.svc.SetRolePermissions(ctx, f.cli, f.corr, admin.ID, []string{"tasks.view"}); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("set permissions err = %v", err)
 	}
-	if err := f.svc.DeleteRole(ctx, f.cli, admin.ID); !errors.Is(err, ErrBuiltInRole) {
+	if err := f.svc.DeleteRole(ctx, f.cli, f.corr, admin.ID); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("delete err = %v", err)
 	}
 	if got := f.auditRows(admin.ID); len(got) != 0 {
@@ -336,33 +344,33 @@ func TestAssignAndRevokeAssignment(t *testing.T) {
 	u := f.user("Alice")
 	g := f.group("Helpdesk group")
 	admin := f.user("Admin")
-	session := f.actor(admin, "s")
+	session := f.actor(admin)
 
-	a1, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u})
+	a1, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if a1.RoleKey != role.Key || a1.Scope != "global" || a1.SubjectDisplayName != "Alice" || a1.CreatedBy != admin || a1.RevokedAt != nil {
 		t.Fatalf("assignment = %+v", a1)
 	}
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u}); !errors.Is(err, ErrDuplicateAssignment) {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u}); !errors.Is(err, ErrDuplicateAssignment) {
 		t.Fatalf("duplicate err = %v", err)
 	}
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: f.newID()}); !errors.Is(err, ErrSubjectNotFound) {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: f.newID()}); !errors.Is(err, ErrSubjectNotFound) {
 		t.Fatalf("unknown user err = %v", err)
 	}
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: SubjectDirectoryGroup, SubjectID: u}); !errors.Is(err, ErrSubjectNotFound) {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectDirectoryGroup, SubjectID: u}); !errors.Is(err, ErrSubjectNotFound) {
 		t.Fatalf("user id as group err = %v", err)
 	}
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: f.newID(), SubjectType: SubjectUser, SubjectID: u}); !errors.Is(err, ErrNotFound) {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: f.newID(), SubjectType: SubjectUser, SubjectID: u}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown role err = %v", err)
 	}
 	var inv *InvalidError
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: "team", SubjectID: u}); !errors.As(err, &inv) {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: "team", SubjectID: u}); !errors.As(err, &inv) {
 		t.Fatalf("bad subject type err = %v", err)
 	}
 	// The CLI may assign too; its audit row has no actor id.
-	a2, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: role.ID, SubjectType: SubjectDirectoryGroup, SubjectID: g})
+	a2, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectDirectoryGroup, SubjectID: g})
 	if err != nil || a2.CreatedBy != "" || a2.SubjectDisplayName != "Helpdesk group" {
 		t.Fatalf("cli assignment = %+v, %v", a2, err)
 	}
@@ -376,19 +384,19 @@ func TestAssignAndRevokeAssignment(t *testing.T) {
 		t.Fatalf("role = %+v, %v", got, err)
 	}
 
-	revoked, outcome, err := f.svc.RevokeAssignment(ctx, session, a1.ID, false)
+	revoked, outcome, err := f.svc.RevokeAssignment(ctx, session, f.corr, a1.ID, false)
 	if err != nil || revoked.RevokedAt == nil || revoked.RevokedBy != admin || outcome.AlreadyRevoked {
 		t.Fatalf("revoke = %+v %+v %v", revoked, outcome, err)
 	}
-	again, outcome, err := f.svc.RevokeAssignment(ctx, session, a1.ID, false)
+	again, outcome, err := f.svc.RevokeAssignment(ctx, session, f.corr, a1.ID, false)
 	if err != nil || !outcome.AlreadyRevoked || again.RevokedAt == nil {
 		t.Fatalf("second revoke = %+v %+v %v", again, outcome, err)
 	}
-	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.newID(), false); !errors.Is(err, ErrNotFound) {
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, f.newID(), false); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoke unknown err = %v", err)
 	}
 	// Revoked assignments can be assigned again.
-	if _, err := f.svc.AssignRole(ctx, session, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u}); err != nil {
+	if _, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u}); err != nil {
 		t.Fatalf("reassign: %v", err)
 	}
 
@@ -413,13 +421,13 @@ func TestListAssignments(t *testing.T) {
 	role := f.role("lst")
 	var ids []string
 	for i := 0; i < 3; i++ {
-		a, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: f.user("U")})
+		a, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: f.user("U")})
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, a.ID)
 	}
-	if _, _, err := f.svc.RevokeAssignment(ctx, f.cli, ids[0], false); err != nil {
+	if _, _, err := f.svc.RevokeAssignment(ctx, f.cli, f.corr, ids[0], false); err != nil {
 		t.Fatal(err)
 	}
 	active, err := f.svc.ListAssignments(ctx, AssignmentFilter{RoleID: role.ID})
@@ -462,35 +470,35 @@ func TestLastAdministratorGuard(t *testing.T) {
 		t.Skip("database already has active administrator assignments; the guard cannot be exercised deterministically")
 	}
 	u1, u2, grp := f.user("A1"), f.user("A2"), f.group("Admins")
-	a1, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: u1})
+	a1, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: u1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Group assignments are not counted.
-	ag, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: admin.ID, SubjectType: SubjectDirectoryGroup, SubjectID: grp})
+	ag, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectDirectoryGroup, SubjectID: grp})
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := f.actor(u1, "g")
-	if _, _, err := f.svc.RevokeAssignment(ctx, session, a1.ID, false); !errors.Is(err, ErrLastAdministrator) {
+	session := f.actor(u1)
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, a1.ID, false); !errors.Is(err, ErrLastAdministrator) {
 		t.Fatalf("last admin err = %v", err)
 	}
 	// Revoking the group assignment is always fine.
-	if _, _, err := f.svc.RevokeAssignment(ctx, session, ag.ID, false); err != nil {
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, ag.ID, false); err != nil {
 		t.Fatalf("revoke group: %v", err)
 	}
-	a2, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: u2})
+	a2, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: u2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.svc.RevokeAssignment(ctx, session, a1.ID, false); err != nil {
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, a1.ID, false); err != nil {
 		t.Fatalf("revoke with second admin: %v", err)
 	}
 	// a2 is last again; only the CLI bypass may revoke it.
-	if _, _, err := f.svc.RevokeAssignment(ctx, session, a2.ID, false); !errors.Is(err, ErrLastAdministrator) {
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, a2.ID, false); !errors.Is(err, ErrLastAdministrator) {
 		t.Fatalf("last admin err = %v", err)
 	}
-	_, outcome, err := f.svc.RevokeAssignment(ctx, f.cli, a2.ID, true)
+	_, outcome, err := f.svc.RevokeAssignment(ctx, f.cli, f.corr, a2.ID, true)
 	if err != nil || !outcome.LastAdministratorBypassed {
 		t.Fatalf("bypass = %+v, %v", outcome, err)
 	}
@@ -503,7 +511,7 @@ func TestLastAdministratorGuard(t *testing.T) {
 func TestRolePermissionsEvaluation(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	eval := NewRolePermissions(f.pool, f.dir)
+	eval := NewEvaluator(f.pool, f.dir)
 
 	direct := f.role("direct", "tasks.view", "organization.view")
 	viaGroup := f.role("viagroup", "tickets.view")
@@ -534,20 +542,20 @@ func TestRolePermissionsEvaluation(t *testing.T) {
 	}
 
 	has()
-	direct1, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: direct.ID, SubjectType: SubjectUser, SubjectID: u})
+	direct1, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: direct.ID, SubjectType: SubjectUser, SubjectID: u})
 	if err != nil {
 		t.Fatal(err)
 	}
 	has("tasks.view", "organization.view")
 
-	gAssign, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: viaGroup.ID, SubjectType: SubjectDirectoryGroup, SubjectID: parent})
+	gAssign, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: viaGroup.ID, SubjectType: SubjectDirectoryGroup, SubjectID: parent})
 	if err != nil {
 		t.Fatal(err)
 	}
 	has("tasks.view", "organization.view", "tickets.view")
 
 	// Unregistered stored permissions are ignored.
-	lAssign, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: legacy.ID, SubjectType: SubjectUser, SubjectID: u})
+	lAssign, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: legacy.ID, SubjectType: SubjectUser, SubjectID: u})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,14 +563,14 @@ func TestRolePermissionsEvaluation(t *testing.T) {
 
 	// Revoked assignments grant nothing.
 	for _, id := range []string{direct1.ID, gAssign.ID, lAssign.ID} {
-		if _, _, err := f.svc.RevokeAssignment(ctx, f.cli, id, false); err != nil {
+		if _, _, err := f.svc.RevokeAssignment(ctx, f.cli, f.corr, id, false); err != nil {
 			t.Fatal(err)
 		}
 	}
 	has()
 
 	// Losing the group membership removes the group's permissions immediately.
-	if _, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: viaGroup.ID, SubjectType: SubjectDirectoryGroup, SubjectID: parent}); err != nil {
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: viaGroup.ID, SubjectType: SubjectDirectoryGroup, SubjectID: parent}); err != nil {
 		t.Fatal(err)
 	}
 	has("tickets.view")
@@ -583,10 +591,10 @@ func TestAdministratorEvaluationGrantsEveryRegisteredPermission(t *testing.T) {
 	}
 	u, g := f.user("Root"), f.group("Admin group")
 	f.dir.groupsOf[u] = []string{g}
-	if _, err := f.svc.AssignRole(ctx, f.cli, AssignInput{RoleID: admin.ID, SubjectType: SubjectDirectoryGroup, SubjectID: g}); err != nil {
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectDirectoryGroup, SubjectID: g}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := NewRolePermissions(f.pool, f.dir).Permissions(ctx, u)
+	got, err := NewEvaluator(f.pool, f.dir).Permissions(ctx, u)
 	if err != nil || len(got) != len(permissions.Registry) {
 		t.Fatalf("permissions = %d, %v", len(got), err)
 	}
@@ -594,5 +602,118 @@ func TestAdministratorEvaluationGrantsEveryRegisteredPermission(t *testing.T) {
 		if _, ok := got[p.Name]; !ok {
 			t.Fatalf("missing %s", p.Name)
 		}
+	}
+}
+
+// An administrator assignment of a User who is not active does not keep the
+// platform administrable: the guard counts only active Users.
+func TestLastAdministratorGuardIgnoresInactiveUsers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	admin, err := f.svc.GetRoleByKey(ctx, AdministratorRoleKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var existing int
+	if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM platform.role_assignments WHERE role_id = $1 AND subject_type = 'user' AND revoked_at IS NULL`, admin.ID).Scan(&existing); err != nil {
+		t.Fatal(err)
+	}
+	if existing > 0 {
+		t.Skip("database already has active administrator assignments; the guard cannot be exercised deterministically")
+	}
+	active, gone := f.user("Active admin"), f.user("Inactive admin")
+	f.dir.inactive[gone] = true
+	aActive, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: active})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aGone, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: gone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := f.actor(active)
+	// The inactive administrator does not count as "another administrator".
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, aActive.ID, false); !errors.Is(err, ErrLastAdministrator) {
+		t.Fatalf("revoke last active admin err = %v", err)
+	}
+	// Revoking the inactive administrator's assignment loses no active administrator.
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, aGone.ID, false); err != nil {
+		t.Fatalf("revoke inactive admin: %v", err)
+	}
+	// A reactivated administrator counts again.
+	f.dir.inactive[gone] = false
+	aBack, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: gone})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, aActive.ID, false); err != nil {
+		t.Fatalf("revoke with an active second admin: %v", err)
+	}
+	if _, _, err := f.svc.RevokeAssignment(ctx, f.cli, f.corr, aBack.ID, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// DeleteRole locks the role first and loads the assignment count afterwards,
+// so an assignment committed while DeleteRole waits for the lock is seen.
+func TestDeleteRoleSeesAssignmentCommittedWhileWaiting(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	role := f.role("race")
+	u := f.user("Racer")
+
+	// Transaction A does what AssignRole does: share-lock the role, insert an
+	// assignment, and stay open.
+	txA, err := f.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = txA.Rollback(ctx) }()
+	if _, err := txA.Exec(ctx, `SELECT 1 FROM platform.roles WHERE id = $1 FOR SHARE`, role.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := txA.Exec(ctx, `INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by) VALUES ($1, 'user', $2, '{"actor":"cli"}')`, role.ID, u); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- f.svc.DeleteRole(ctx, f.cli, f.corr, role.ID) }()
+
+	// Wait until DeleteRole is blocked on the role lock held by A.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting int
+		if err := f.pool.QueryRow(ctx, `
+			SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database() AND wait_event_type = 'Lock'
+			  AND query LIKE '%FROM platform.roles%FOR UPDATE%'`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("DeleteRole returned while the role was locked: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("DeleteRole never blocked on the role lock")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := txA.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrRoleInUse) {
+			t.Fatalf("DeleteRole err = %v, want ErrRoleInUse", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("DeleteRole did not finish after the assignment committed")
+	}
+	if _, err := f.svc.GetRole(ctx, role.ID); err != nil {
+		t.Fatalf("role must still exist: %v", err)
 	}
 }

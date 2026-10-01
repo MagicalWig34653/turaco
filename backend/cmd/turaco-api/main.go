@@ -17,7 +17,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
+	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
@@ -65,7 +66,7 @@ func main() {
 	orgReader := orgrepository.New(pool)
 	subjects := orgpublic.NewAuthorizationSubjects(orgReader)
 	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
-	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), authorization.NewRolePermissions(pool, subjects), cfg.SessionCookieSecure)
+	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure)
 	authentication.Register(mux, sessions, sessionAuth, cfg.SessionCookieSecure, logger)
 
 	// Login. Password login binds as the synced account, so the API needs the
@@ -100,7 +101,7 @@ func main() {
 	// Manual directory sync requests need a configured provider; the worker
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
-	authorization.Register(mux, authorization.NewService(pool, subjects), sessionAuth, logger)
+	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 
 	server := &http.Server{

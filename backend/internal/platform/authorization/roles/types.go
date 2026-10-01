@@ -1,4 +1,7 @@
-package authorization
+// Package roles implements Roles, Role assignments and the effective
+// permission evaluation behind authorization.Principal. See
+// docs/security/identity-access-design.md sections 5 and 9.
+package roles
 
 import (
 	"context"
@@ -9,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 // Built-in role key. The role implicitly holds every registered permission,
@@ -40,9 +45,10 @@ type SubjectDirectory interface {
 	DirectoryGroupObserved(ctx context.Context, id string) (bool, error)
 	// DisplayNames returns id -> current display name; unknown ids are absent.
 	DisplayNames(ctx context.Context, userIDs, groupIDs []string) (map[string]string, error)
-	// FindUser resolves a uuid, username (unique across providers) or primary
-	// email to a User id.
-	FindUser(ctx context.Context, ref string) (id string, found bool, err error)
+	// ActiveUsers returns the subset of ids that are Users with status
+	// "active"; unknown and non-active Users are absent (value false or
+	// missing). The last-administrator guard counts only these.
+	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
 }
 
 var (
@@ -136,48 +142,36 @@ type AssignmentPage struct {
 	NextCursor string
 }
 
-// Actor identifies who performs a mutation: a session User, or the CLI
-// (actor id NULL, metadata carries the CLI marker).
-type Actor struct {
-	UserID        string
-	CLI           json.RawMessage // e.g. {"actor":"cli","osUser":"root"}
-	CorrelationID string          // generated when empty
-}
-
-// UserActor is the Actor of an authenticated request.
-func UserActor(userID, correlationID string) Actor {
-	return Actor{UserID: userID, CorrelationID: correlationID}
-}
-
-// CLIActor is the Actor of a turaco-admin invocation.
-func CLIActor(marker json.RawMessage) Actor { return Actor{CLI: marker} }
-
-func (a Actor) validate() error {
-	switch {
-	case a.UserID != "" && len(a.CLI) > 0:
-		return errors.New("authorization: actor must be a user or the CLI, not both")
-	case a.UserID != "":
-		if !uuidPattern.MatchString(a.UserID) {
-			return errors.New("authorization: actor user id must be a UUID")
-		}
-	case len(a.CLI) > 0:
-		var m map[string]any
-		if err := json.Unmarshal(a.CLI, &m); err != nil || len(m) == 0 {
-			return errors.New("authorization: CLI actor must be a non-empty JSON object")
-		}
-	default:
-		return errors.New("authorization: actor is required")
+// validateActor checks the audit actor and the correlation id of a mutation.
+// Sessions pass audit.UserActor (the id must be a UUID); the CLI passes
+// audit.CLIActor.
+func validateActor(a audit.Actor, correlationID string) error {
+	if err := a.Validate(); err != nil {
+		return err
+	}
+	if a.UserID != "" && !uuidPattern.MatchString(a.UserID) {
+		return errors.New("authorization: actor user id must be a UUID")
+	}
+	if correlationID == "" {
+		return errors.New("authorization: correlation id is required")
 	}
 	return nil
 }
 
-// ref is the created_by/revoked_by JSON.
-func (a Actor) ref() json.RawMessage {
+// actorRef is the created_by/revoked_by JSON: {"userId": ...} for a User,
+// {"actor": ..., "osUser": ...} for a system actor.
+func actorRef(a audit.Actor) json.RawMessage {
+	m := map[string]string{}
 	if a.UserID != "" {
-		b, _ := json.Marshal(map[string]string{"userId": a.UserID})
-		return b
+		m["userId"] = a.UserID
+	} else {
+		m["actor"] = a.System
+		if a.OSUser != "" {
+			m["osUser"] = a.OSUser
+		}
 	}
-	return a.CLI
+	b, _ := json.Marshal(m)
+	return b
 }
 
 var (

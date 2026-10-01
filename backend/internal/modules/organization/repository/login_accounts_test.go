@@ -2,13 +2,13 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 )
 
@@ -260,7 +260,7 @@ func TestCreateEmergencyUser(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	la := newLoginAccounts(f)
-	actor := json.RawMessage(`{"actor":"cli","osUser":"tester"}`)
+	actor := audit.CLIActor("tester")
 
 	tx, err := f.pool.Begin(ctx)
 	if err != nil {
@@ -323,5 +323,22 @@ func TestCreateEmergencyUser(t *testing.T) {
 	var n int
 	if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM organization.users WHERE id = $1`, rolled).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("rolled back user persisted: n=%d err=%v", n, err)
+	}
+}
+
+// The username lookup of password login runs before any verification and must
+// be served by the partial index of migration 000012.
+func TestLoginLookupIndexMatchesQueryPredicate(t *testing.T) {
+	f := newFixture(t)
+	var def string
+	err := f.pool.QueryRow(context.Background(),
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'organization' AND indexname = 'external_identities_login_lookup_idx'`).Scan(&def)
+	if err != nil {
+		t.Fatalf("login lookup index missing (run make migrate): %v", err)
+	}
+	for _, want := range []string{"(provider_key, lower(username))", "WHERE (deleted_observed_at IS NULL)"} {
+		if !strings.Contains(def, want) {
+			t.Fatalf("index definition %q lacks %q", def, want)
+		}
 	}
 }

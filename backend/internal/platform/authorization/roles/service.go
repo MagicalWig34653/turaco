@@ -1,12 +1,10 @@
-package authorization
+package roles
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,7 +15,9 @@ import (
 )
 
 // Service implements role and role-assignment operations. Every mutation runs
-// in one transaction together with its audit entry.
+// in one transaction together with its audit event; actors are audit.Actor
+// values (audit.UserActor for sessions, audit.CLIActor for turaco-admin) and
+// every mutation takes the correlation id of its request or invocation.
 type Service struct {
 	pool     *pgxpool.Pool
 	subjects SubjectDirectory
@@ -124,9 +124,9 @@ func intersectRegistry(perms []string) ([]string, error) {
 	return out, nil
 }
 
-func loadRole(ctx context.Context, q querier, where string, arg any, lock string) (Role, error) {
+func loadRole(ctx context.Context, q querier, where string, arg any) (Role, error) {
 	// Deleted roles are kept for assignment history but are invisible here.
-	r, err := scanRole(q.QueryRow(ctx, roleSelect+" WHERE r.deleted_at IS NULL AND "+where+lock, arg))
+	r, err := scanRole(q.QueryRow(ctx, roleSelect+" WHERE r.deleted_at IS NULL AND "+where, arg))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Role{}, ErrNotFound
 	}
@@ -134,6 +134,33 @@ func loadRole(ctx context.Context, q querier, where string, arg any, lock string
 		return Role{}, fmt.Errorf("load role: %w", err)
 	}
 	return r, nil
+}
+
+// lockRole locks the live role row in its own statement and returns
+// ErrNotFound for unknown or deleted roles. Callers load the role (and its
+// assignment count) in a later statement: under READ COMMITTED each statement
+// takes a fresh snapshot, so what is read after the lock includes everything
+// committed by transactions that held the lock before. A single
+// "SELECT ... FOR UPDATE" would count assignments from the statement's
+// pre-lock snapshot and miss an AssignRole that committed while it waited.
+func lockRole(ctx context.Context, tx pgx.Tx, id, mode string) error {
+	var one int
+	err := tx.QueryRow(ctx, `SELECT 1 FROM platform.roles WHERE id = $1 AND deleted_at IS NULL FOR `+mode, id).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock role: %w", err)
+	}
+	return nil
+}
+
+// lockAndLoadRole takes the exclusive role lock, then loads the role.
+func lockAndLoadRole(ctx context.Context, tx pgx.Tx, id string) (Role, error) {
+	if err := lockRole(ctx, tx, id, "UPDATE"); err != nil {
+		return Role{}, err
+	}
+	return loadRole(ctx, tx, "r.id = $1", id)
 }
 
 // ListRoles returns all roles sorted by name.
@@ -162,12 +189,12 @@ func (s *Service) GetRole(ctx context.Context, id string) (Role, error) {
 	if !uuidPattern.MatchString(id) {
 		return Role{}, ErrNotFound
 	}
-	return loadRole(ctx, s.pool, "r.id = $1", id, "")
+	return loadRole(ctx, s.pool, "r.id = $1", id)
 }
 
 // GetRoleByKey returns one role by its key.
 func (s *Service) GetRoleByKey(ctx context.Context, key string) (Role, error) {
-	return loadRole(ctx, s.pool, "r.key = $1", key, "")
+	return loadRole(ctx, s.pool, "r.key = $1", key)
 }
 
 // CreateRoleInput are the fields of a new custom role.
@@ -179,8 +206,8 @@ type CreateRoleInput struct {
 }
 
 // CreateRole creates a custom role.
-func (s *Service) CreateRole(ctx context.Context, actor Actor, in CreateRoleInput) (Role, error) {
-	if err := actor.validate(); err != nil {
+func (s *Service) CreateRole(ctx context.Context, actor audit.Actor, correlationID string, in CreateRoleInput) (Role, error) {
+	if err := validateActor(actor, correlationID); err != nil {
 		return Role{}, err
 	}
 	if !keyPattern.MatchString(in.Key) {
@@ -214,10 +241,10 @@ func (s *Service) CreateRole(ctx context.Context, actor Actor, in CreateRoleInpu
 				return fmt.Errorf("insert role permission: %w", err)
 			}
 		}
-		if out, err = loadRole(ctx, tx, "r.id = $1", id, ""); err != nil {
+		if out, err = loadRole(ctx, tx, "r.id = $1", id); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.created", "role", id, nil, roleState(out), nil)
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.created", "role", id, nil, roleState(out), nil)
 	})
 	if err != nil {
 		return Role{}, wrap("create role", err)
@@ -232,8 +259,8 @@ type UpdateRoleInput struct {
 }
 
 // UpdateRole renames or redescribes a custom role.
-func (s *Service) UpdateRole(ctx context.Context, actor Actor, id string, in UpdateRoleInput) (Role, error) {
-	if err := actor.validate(); err != nil {
+func (s *Service) UpdateRole(ctx context.Context, actor audit.Actor, correlationID, id string, in UpdateRoleInput) (Role, error) {
+	if err := validateActor(actor, correlationID); err != nil {
 		return Role{}, err
 	}
 	if !uuidPattern.MatchString(id) {
@@ -256,7 +283,7 @@ func (s *Service) UpdateRole(ctx context.Context, actor Actor, id string, in Upd
 	}
 	var out Role
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		before, err := loadRole(ctx, tx, "r.id = $1", id, " FOR UPDATE OF r")
+		before, err := lockAndLoadRole(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -268,10 +295,10 @@ func (s *Service) UpdateRole(ctx context.Context, actor Actor, id string, in Upd
 			WHERE id = $1`, id, in.Name, in.Description); err != nil {
 			return fmt.Errorf("update role: %w", err)
 		}
-		if out, err = loadRole(ctx, tx, "r.id = $1", id, ""); err != nil {
+		if out, err = loadRole(ctx, tx, "r.id = $1", id); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.updated", "role", id, roleState(before), roleState(out), nil)
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.updated", "role", id, roleState(before), roleState(out), nil)
 	})
 	if err != nil {
 		return Role{}, wrap("update role", err)
@@ -280,8 +307,8 @@ func (s *Service) UpdateRole(ctx context.Context, actor Actor, id string, in Upd
 }
 
 // SetRolePermissions replaces the permissions of a custom role.
-func (s *Service) SetRolePermissions(ctx context.Context, actor Actor, id string, perms []string) (Role, error) {
-	if err := actor.validate(); err != nil {
+func (s *Service) SetRolePermissions(ctx context.Context, actor audit.Actor, correlationID, id string, perms []string) (Role, error) {
+	if err := validateActor(actor, correlationID); err != nil {
 		return Role{}, err
 	}
 	if !uuidPattern.MatchString(id) {
@@ -293,7 +320,7 @@ func (s *Service) SetRolePermissions(ctx context.Context, actor Actor, id string
 	}
 	var out Role
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		before, err := loadRole(ctx, tx, "r.id = $1", id, " FOR UPDATE OF r")
+		before, err := lockAndLoadRole(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -311,10 +338,10 @@ func (s *Service) SetRolePermissions(ctx context.Context, actor Actor, id string
 		if _, err := tx.Exec(ctx, `UPDATE platform.roles SET updated_at = now() WHERE id = $1`, id); err != nil {
 			return fmt.Errorf("touch role: %w", err)
 		}
-		if out, err = loadRole(ctx, tx, "r.id = $1", id, ""); err != nil {
+		if out, err = loadRole(ctx, tx, "r.id = $1", id); err != nil {
 			return err
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.permissions_changed", "role", id,
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.permissions_changed", "role", id,
 			map[string]any{"permissions": before.Permissions}, map[string]any{"permissions": out.Permissions}, nil)
 	})
 	if err != nil {
@@ -323,18 +350,19 @@ func (s *Service) SetRolePermissions(ctx context.Context, actor Actor, id string
 	return out, nil
 }
 
-// DeleteRole deletes a custom role without active assignments. Revoked
-// assignments of the role are removed with it; their history stays in the
-// audit log (authorization.role.assigned / assignment_revoked).
-func (s *Service) DeleteRole(ctx context.Context, actor Actor, id string) error {
-	if err := actor.validate(); err != nil {
+// DeleteRole soft-deletes a custom role that has no active assignments. The
+// role row and its revoked assignments are kept as history (they reference
+// the role, and the role key becomes free for a new role); the audit log
+// records authorization.role.deleted.
+func (s *Service) DeleteRole(ctx context.Context, actor audit.Actor, correlationID, id string) error {
+	if err := validateActor(actor, correlationID); err != nil {
 		return err
 	}
 	if !uuidPattern.MatchString(id) {
 		return ErrNotFound
 	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		before, err := loadRole(ctx, tx, "r.id = $1", id, " FOR UPDATE OF r")
+		before, err := lockAndLoadRole(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -349,7 +377,7 @@ func (s *Service) DeleteRole(ctx context.Context, actor Actor, id string) error 
 		if _, err := tx.Exec(ctx, `UPDATE platform.roles SET deleted_at = now(), updated_at = now() WHERE id = $1`, id); err != nil {
 			return fmt.Errorf("delete role: %w", err)
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.deleted", "role", id, roleState(before), nil, nil)
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.deleted", "role", id, roleState(before), nil, nil)
 	})
 	return wrap("delete role", err)
 }
@@ -358,44 +386,12 @@ func roleState(r Role) map[string]any {
 	return map[string]any{"key": r.Key, "name": r.Name, "description": r.Description, "permissions": r.Permissions}
 }
 
-// audit writes the audit entry of a mutation inside tx. CLI actors have a NULL
-// actor id and carry their marker in the metadata.
-func (s *Service) audit(ctx context.Context, tx pgx.Tx, a Actor, action, targetType, targetID string, before, after any, extra map[string]any) error {
-	meta := map[string]any{}
-	if len(a.CLI) > 0 {
-		if err := json.Unmarshal(a.CLI, &meta); err != nil {
-			return fmt.Errorf("decode cli actor: %w", err)
-		}
-	}
-	for k, v := range extra {
-		meta[k] = v
-	}
-	e := audit.Entry{OccurredAt: time.Now().UTC().Truncate(time.Microsecond), Action: action, TargetType: targetType, TargetID: targetID, CorrelationID: a.CorrelationID}
-	var err error
-	if e.Metadata, err = json.Marshal(meta); err != nil {
-		return fmt.Errorf("marshal audit metadata: %w", err)
-	}
-	if before != nil {
-		if e.Before, err = json.Marshal(before); err != nil {
-			return fmt.Errorf("marshal audit before: %w", err)
-		}
-	}
-	if after != nil {
-		if e.After, err = json.Marshal(after); err != nil {
-			return fmt.Errorf("marshal audit after: %w", err)
-		}
-	}
-	if a.UserID != "" {
-		u := a.UserID
-		e.ActorID = &u
-	}
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&e.ID); err != nil {
-		return fmt.Errorf("generate audit id: %w", err)
-	}
-	if e.CorrelationID == "" {
-		e.CorrelationID = e.ID
-	}
-	return audit.Insert(ctx, tx, e)
+// record writes the audit event of a mutation inside tx.
+func (s *Service) record(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, action, targetType, targetID string, before, after any, extra map[string]any) error {
+	return audit.Record(ctx, tx, audit.Change{
+		Action: action, TargetType: targetType, TargetID: targetID, Actor: actor, CorrelationID: correlationID,
+		Before: before, After: after, Metadata: extra,
+	})
 }
 
 func isUnique(err error) bool {

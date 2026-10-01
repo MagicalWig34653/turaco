@@ -4,17 +4,22 @@ package authentication
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
+
+// ErrTemporarilyUnavailable means session creation timed out waiting for a
+// row lock (for example a user status change in progress); nothing was
+// written and the login may be retried.
+var ErrTemporarilyUnavailable = errors.New("authentication: temporarily unavailable")
 
 // ErrInvalidSession means the token is malformed, unknown, revoked or expired.
 var ErrInvalidSession = errors.New("authentication: invalid session")
@@ -117,13 +122,14 @@ func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, 
 	if idleExp.After(absExp) {
 		idleExp = absExp
 	}
-	metadata, err := json.Marshal(map[string]string{"authMethod": authMethod})
-	if err != nil {
-		return "", Session{}, fmt.Errorf("marshal audit metadata: %w", err)
-	}
 
 	var sess Session
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		// Waiting for the user row (a status change in progress) must not pin
+		// a connection and a request indefinitely.
+		if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+			return fmt.Errorf("set lock timeout: %w", err)
+		}
 		if p.Locker != nil {
 			active, err := p.Locker.LockActiveUser(ctx, tx, userID)
 			if err != nil {
@@ -139,11 +145,8 @@ func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, 
 				return err
 			}
 			if changed {
-				meta, err := json.Marshal(map[string]string{"userId": owner, "authMethod": method, "reason": "replaced_by_login"})
-				if err != nil {
-					return fmt.Errorf("marshal audit metadata: %w", err)
-				}
-				if err := s.audit(ctx, tx, "auth.session.revoked", p.ReplaceSessionID, &userID, p.CorrelationID, meta, now); err != nil {
+				if err := recordSessionAudit(ctx, tx, "auth.session.revoked", p.ReplaceSessionID, audit.SystemActor("login"), p.CorrelationID, now,
+					map[string]any{"userId": owner, "authMethod": method, "reason": "replaced_by_login", "replacedByUserId": userID}); err != nil {
 					return err
 				}
 			}
@@ -153,7 +156,8 @@ func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, 
 		if err != nil {
 			return err
 		}
-		if err := s.audit(ctx, tx, "auth.session.created", sess.ID, &userID, p.CorrelationID, metadata, now); err != nil {
+		if err := recordSessionAudit(ctx, tx, "auth.session.created", sess.ID, audit.UserActor(userID), p.CorrelationID, now,
+			map[string]any{"authMethod": authMethod}); err != nil {
 			return err
 		}
 		if p.AfterCreate != nil {
@@ -163,6 +167,9 @@ func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, 
 	})
 	if errors.Is(err, ErrUserInactive) {
 		return "", Session{}, err
+	}
+	if isLockTimeout(err) {
+		return "", Session{}, ErrTemporarilyUnavailable
 	}
 	if err != nil {
 		return "", Session{}, fmt.Errorf("create session: %w", err)
@@ -196,12 +203,12 @@ func (s *Service) Revoke(ctx context.Context, sessionID, actorID, correlationID 
 	if !uuidPattern.MatchString(sessionID) {
 		return errors.New("revoke session: session id must be a UUID")
 	}
-	var actor *string
+	actor := audit.SystemActor("system")
 	if actorID != "" {
 		if !uuidPattern.MatchString(actorID) {
 			return errors.New("revoke session: actor id must be a UUID")
 		}
-		actor = &actorID
+		actor = audit.UserActor(actorID)
 	}
 	now := s.clock()
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -209,11 +216,8 @@ func (s *Service) Revoke(ctx context.Context, sessionID, actorID, correlationID 
 		if err != nil || !changed {
 			return err
 		}
-		meta, err := json.Marshal(map[string]string{"userId": owner, "authMethod": method})
-		if err != nil {
-			return fmt.Errorf("marshal audit metadata: %w", err)
-		}
-		return s.audit(ctx, tx, "auth.session.revoked", sessionID, actor, correlationID, meta, now)
+		return recordSessionAudit(ctx, tx, "auth.session.revoked", sessionID, actor, correlationID, now,
+			map[string]any{"userId": owner, "authMethod": method})
 	})
 	if err != nil {
 		return fmt.Errorf("revoke session: %w", err)
@@ -221,32 +225,35 @@ func (s *Service) Revoke(ctx context.Context, sessionID, actorID, correlationID 
 	return nil
 }
 
-func (s *Service) audit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor *string, correlationID string, metadata json.RawMessage, now time.Time) error {
-	return insertAudit(ctx, tx, action, sessionID, actor, correlationID, metadata, now)
-}
-
-func insertAudit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor *string, correlationID string, metadata json.RawMessage, now time.Time) error {
-	var id string
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&id); err != nil {
-		return fmt.Errorf("generate audit id: %w", err)
-	}
-	return audit.Insert(ctx, tx, audit.Entry{
-		ID: id, OccurredAt: now, ActorID: actor, Action: action,
-		TargetType: "session", TargetID: sessionID, CorrelationID: correlationID, Metadata: metadata,
+func recordSessionAudit(ctx context.Context, tx pgx.Tx, action, sessionID string, actor audit.Actor, correlationID string, at time.Time, metadata map[string]any) error {
+	return audit.Record(ctx, tx, audit.Change{
+		Action: action, TargetType: "session", TargetID: sessionID, Actor: actor,
+		CorrelationID: correlationID, Metadata: metadata, OccurredAt: at,
 	})
 }
 
+// isLockTimeout reports a PostgreSQL lock_not_available error (SQLSTATE 55P03).
+func isLockTimeout(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "55P03"
+}
+
 // RevokeUserSessions revokes every unrevoked session of userID inside tx and
-// audits each revocation with reason (for example "user_deactivated"), no
-// human actor and actor marker system (for example "directory-sync"). It lets an operation that ends a user's `active` status (such as
-// directory sync) revoke sessions atomically with the status change, so a later
-// reactivation does not revive old sessions. It returns the number revoked.
-func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, system, correlationID string, now time.Time) (int, error) {
+// audits each revocation with reason (for example "user_deactivated") and the
+// given actor (for example audit.SystemActor("directory-sync")). It lets an
+// operation that ends a user's `active` status (such as directory sync) or
+// replaces their credential revoke sessions atomically with that change, so a
+// later reactivation does not revive old sessions. It returns the number
+// revoked.
+func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason string, actor audit.Actor, correlationID string, now time.Time) (int, error) {
 	if !uuidPattern.MatchString(userID) {
 		return 0, errors.New("revoke user sessions: user id must be a UUID")
 	}
-	if reason == "" || system == "" {
-		return 0, errors.New("revoke user sessions: reason and system are required")
+	if reason == "" {
+		return 0, errors.New("revoke user sessions: reason is required")
+	}
+	if err := actor.Validate(); err != nil {
+		return 0, fmt.Errorf("revoke user sessions: %w", err)
 	}
 	now = now.UTC().Truncate(time.Microsecond)
 	rows, err := tx.Query(ctx, `
@@ -271,11 +278,8 @@ func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason, system, 
 		return 0, fmt.Errorf("revoke user sessions: %w", err)
 	}
 	for _, r := range sessions {
-		meta, err := json.Marshal(map[string]string{"userId": userID, "authMethod": r.method, "reason": reason, "actor": system})
-		if err != nil {
-			return 0, fmt.Errorf("marshal audit metadata: %w", err)
-		}
-		if err := insertAudit(ctx, tx, "auth.session.revoked", r.id, nil, correlationID, meta, now); err != nil {
+		if err := recordSessionAudit(ctx, tx, "auth.session.revoked", r.id, actor, correlationID, now,
+			map[string]any{"userId": userID, "authMethod": r.method, "reason": reason}); err != nil {
 			return 0, err
 		}
 	}

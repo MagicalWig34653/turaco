@@ -1,4 +1,4 @@
-package authorization
+package roles
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 // AssignInput identifies the role and subject of a new assignment.
@@ -51,8 +53,8 @@ func assignmentState(a Assignment) map[string]any {
 }
 
 // AssignRole grants a role to an existing User or non-deleted Directory Group.
-func (s *Service) AssignRole(ctx context.Context, actor Actor, in AssignInput) (Assignment, error) {
-	if err := actor.validate(); err != nil {
+func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlationID string, in AssignInput) (Assignment, error) {
+	if err := validateActor(actor, correlationID); err != nil {
 		return Assignment{}, err
 	}
 	if !uuidPattern.MatchString(in.RoleID) {
@@ -66,7 +68,7 @@ func (s *Service) AssignRole(ctx context.Context, actor Actor, in AssignInput) (
 	}
 	var out Assignment
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := loadRole(ctx, tx, "r.id = $1", in.RoleID, " FOR SHARE OF r"); err != nil {
+		if err := lockRole(ctx, tx, in.RoleID, "SHARE"); err != nil {
 			return err
 		}
 		var exists bool
@@ -86,7 +88,7 @@ func (s *Service) AssignRole(ctx context.Context, actor Actor, in AssignInput) (
 		err = tx.QueryRow(ctx, `
 			INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by)
 			VALUES ($1,$2,$3,$4) RETURNING id::text`,
-			in.RoleID, in.SubjectType, in.SubjectID, []byte(actor.ref())).Scan(&id)
+			in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(actor))).Scan(&id)
 		if isUnique(err) {
 			return ErrDuplicateAssignment
 		}
@@ -96,7 +98,7 @@ func (s *Service) AssignRole(ctx context.Context, actor Actor, in AssignInput) (
 		if out, err = scanAssignment(tx.QueryRow(ctx, assignmentSelect+` WHERE a.id = $1`, id)); err != nil {
 			return fmt.Errorf("reload assignment: %w", err)
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.assigned", "role_assignment", id, nil, assignmentState(out), nil)
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.assigned", "role_assignment", id, nil, assignmentState(out), nil)
 	})
 	if err != nil {
 		return Assignment{}, wrap("assign role", err)
@@ -109,9 +111,9 @@ func (s *Service) AssignRole(ctx context.Context, actor Actor, in AssignInput) (
 // assignment is a no-op. Unless bypassLastAdministratorGuard is set (CLI only),
 // revoking the last active platform-administrator assignment of a User fails
 // with ErrLastAdministrator.
-func (s *Service) RevokeAssignment(ctx context.Context, actor Actor, id string, bypassLastAdministratorGuard bool) (Assignment, RevokeOutcome, error) {
+func (s *Service) RevokeAssignment(ctx context.Context, actor audit.Actor, correlationID, id string, bypassLastAdministratorGuard bool) (Assignment, RevokeOutcome, error) {
 	var outcome RevokeOutcome
-	if err := actor.validate(); err != nil {
+	if err := validateActor(actor, correlationID); err != nil {
 		return Assignment{}, outcome, err
 	}
 	if !uuidPattern.MatchString(id) {
@@ -147,13 +149,11 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor Actor, id string, 
 		}
 		extra := map[string]any{}
 		if roleKey == AdministratorRoleKey && before.SubjectType == SubjectUser {
-			var others int
-			if err := tx.QueryRow(ctx, `
-				SELECT count(*) FROM platform.role_assignments
-				WHERE role_id = $1 AND subject_type = 'user' AND revoked_at IS NULL AND id <> $2`, roleID, id).Scan(&others); err != nil {
-				return fmt.Errorf("count administrators: %w", err)
+			last, err := s.isLastActiveAdministrator(ctx, tx, roleID, before)
+			if err != nil {
+				return err
 			}
-			if others == 0 {
+			if last {
 				if !bypassLastAdministratorGuard {
 					return ErrLastAdministrator
 				}
@@ -161,13 +161,13 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor Actor, id string, 
 				extra["lastAdministratorGuardBypassed"] = true
 			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE platform.role_assignments SET revoked_at = now(), revoked_by = $2 WHERE id = $1`, id, []byte(actor.ref())); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE platform.role_assignments SET revoked_at = now(), revoked_by = $2 WHERE id = $1`, id, []byte(actorRef(actor))); err != nil {
 			return fmt.Errorf("revoke assignment: %w", err)
 		}
 		if out, err = scanAssignment(tx.QueryRow(ctx, assignmentSelect+` WHERE a.id = $1`, id)); err != nil {
 			return fmt.Errorf("reload assignment: %w", err)
 		}
-		return s.audit(ctx, tx, actor, "authorization.role.assignment_revoked", "role_assignment", id,
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.assignment_revoked", "role_assignment", id,
 			assignmentState(before), assignmentState(out), extra)
 	})
 	if err != nil {
@@ -277,4 +277,48 @@ func (s *Service) nameAll(ctx context.Context, items []Assignment) {
 	for i := range items {
 		items[i].SubjectDisplayName = names[items[i].SubjectID]
 	}
+}
+
+// isLastActiveAdministrator reports whether revoking target would remove the
+// last active platform-administrator assignment of an active User. Only
+// assignments whose User is active count: an inactive or departed User cannot
+// sign in, so such an assignment does not keep the platform administrable.
+// Group assignments never count. The role is locked by the caller, so the set
+// of assignments cannot change concurrently.
+func (s *Service) isLastActiveAdministrator(ctx context.Context, tx pgx.Tx, roleID string, target Assignment) (bool, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT subject_id::text FROM platform.role_assignments
+		WHERE role_id = $1 AND subject_type = 'user' AND revoked_at IS NULL AND id <> $2`, roleID, target.ID)
+	if err != nil {
+		return false, fmt.Errorf("list administrators: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{target.SubjectID}
+	var others []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return false, fmt.Errorf("list administrators: scan: %w", err)
+		}
+		others = append(others, id)
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("list administrators: %w", err)
+	}
+	rows.Close()
+	ids = append(ids, others...)
+	active, err := s.subjects.ActiveUsers(ctx, ids)
+	if err != nil {
+		return false, fmt.Errorf("check active administrators: %w", err)
+	}
+	if !active[target.SubjectID] {
+		// Revoking an assignment of an inactive User loses no active administrator.
+		return false, nil
+	}
+	for _, id := range others {
+		if active[id] {
+			return false, nil
+		}
+	}
+	return true, nil
 }

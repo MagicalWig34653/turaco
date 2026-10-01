@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,14 +11,15 @@ import (
 
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepo "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 )
 
 // runRole implements the "role" command group. Every change uses the same
 // audited application operations as the API, with the CLI actor.
 func runRole(ctx context.Context, e env, command string, args []string) error {
 	subjects := orgpublic.NewAuthorizationSubjects(orgrepo.New(e.pool))
-	svc := authorization.NewService(e.pool, subjects)
+	svc := roles.NewService(e.pool, subjects)
 	switch command {
 	case "list":
 		if len(args) != 0 {
@@ -39,6 +41,16 @@ func runRole(ctx context.Context, e env, command string, args []string) error {
 	default:
 		return errUsage
 	}
+}
+
+// auditActor is the audit actor of this invocation: the system actor "cli"
+// with the (informational) OS user from e.actor.
+func (e env) auditActor() audit.Actor {
+	var marker struct {
+		OSUser string `json:"osUser"`
+	}
+	_ = json.Unmarshal(e.actor, &marker)
+	return audit.CLIActor(marker.OSUser)
 }
 
 type grantArgs struct {
@@ -93,28 +105,28 @@ func parseRevokeArgs(args []string) (revokeArgs, error) {
 	return a, nil
 }
 
-func roleList(ctx context.Context, e env, svc *authorization.Service) error {
-	roles, err := svc.ListRoles(ctx)
+func roleList(ctx context.Context, e env, svc *roles.Service) error {
+	list, err := svc.ListRoles(ctx)
 	if err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(e.stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "KEY\tNAME\tBUILT-IN\tACTIVE ASSIGNMENTS")
-	for _, r := range roles {
+	for _, r := range list {
 		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\n", r.Key, r.Name, r.BuiltIn, r.ActiveAssignments)
 	}
 	return tw.Flush()
 }
 
-func roleGrant(ctx context.Context, e env, svc *authorization.Service, subjects authorization.SubjectDirectory, a grantArgs) error {
+func roleGrant(ctx context.Context, e env, svc *roles.Service, subjects *orgpublic.AuthorizationSubjects, a grantArgs) error {
 	role, err := svc.GetRoleByKey(ctx, a.role)
-	if errors.Is(err, authorization.ErrNotFound) {
+	if errors.Is(err, roles.ErrNotFound) {
 		return fmt.Errorf("role %q not found (see: turaco-admin role list)", a.role)
 	}
 	if err != nil {
 		return err
 	}
-	in := authorization.AssignInput{RoleID: role.ID}
+	in := roles.AssignInput{RoleID: role.ID}
 	if a.user != "" {
 		id, found, err := subjects.FindUser(ctx, a.user)
 		if err != nil {
@@ -123,15 +135,15 @@ func roleGrant(ctx context.Context, e env, svc *authorization.Service, subjects 
 		if !found {
 			return fmt.Errorf("user %q not found or ambiguous; use the user's UUID", a.user)
 		}
-		in.SubjectType, in.SubjectID = authorization.SubjectUser, id
+		in.SubjectType, in.SubjectID = roles.SubjectUser, id
 	} else {
-		in.SubjectType, in.SubjectID = authorization.SubjectDirectoryGroup, a.group
+		in.SubjectType, in.SubjectID = roles.SubjectDirectoryGroup, a.group
 	}
-	assignment, err := svc.AssignRole(ctx, authorization.CLIActor(e.actor), in)
+	assignment, err := svc.AssignRole(ctx, e.auditActor(), e.correlationID(), in)
 	switch {
-	case errors.Is(err, authorization.ErrSubjectNotFound):
+	case errors.Is(err, roles.ErrSubjectNotFound):
 		return fmt.Errorf("%s %q does not exist (or the directory group is deleted)", in.SubjectType, in.SubjectID)
-	case errors.Is(err, authorization.ErrDuplicateAssignment):
+	case errors.Is(err, roles.ErrDuplicateAssignment):
 		return fmt.Errorf("role %q is already assigned to this %s", a.role, in.SubjectType)
 	case err != nil:
 		return err
@@ -144,10 +156,10 @@ func roleGrant(ctx context.Context, e env, svc *authorization.Service, subjects 
 	return nil
 }
 
-func roleRevoke(ctx context.Context, e env, svc *authorization.Service, a revokeArgs) error {
+func roleRevoke(ctx context.Context, e env, svc *roles.Service, a revokeArgs) error {
 	// The CLI is the recovery path, so it may revoke the last administrator.
-	assignment, outcome, err := svc.RevokeAssignment(ctx, authorization.CLIActor(e.actor), a.assignment, true)
-	if errors.Is(err, authorization.ErrNotFound) {
+	assignment, outcome, err := svc.RevokeAssignment(ctx, e.auditActor(), e.correlationID(), a.assignment, true)
+	if errors.Is(err, roles.ErrNotFound) {
 		return fmt.Errorf("assignment %q not found", a.assignment)
 	}
 	if err != nil {

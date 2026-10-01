@@ -2,10 +2,8 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
@@ -49,19 +47,12 @@ func (r *Repository) RequestDirectorySync(ctx context.Context, actorUserID, prov
 	if correlationID == "" {
 		correlationID = jobID
 	}
-	var auditID string
-	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&auditID); err != nil {
-		return "", false, fmt.Errorf("request directory sync: audit id: %w", err)
-	}
-	meta, err := json.Marshal(map[string]any{"jobId": jobID, "created": created})
-	if err != nil {
-		return "", false, fmt.Errorf("request directory sync: marshal audit metadata: %w", err)
-	}
-	if err := audit.Insert(ctx, tx, audit.Entry{
-		ID: auditID, OccurredAt: time.Now().UTC(), ActorID: &actorUserID, Action: "organization.directory_sync.requested",
-		TargetType: "directory_provider", TargetID: providerKey, CorrelationID: correlationID, Metadata: meta,
+	if err := audit.Record(ctx, tx, audit.Change{
+		Action: "organization.directory_sync.requested", TargetType: "directory_provider", TargetID: providerKey,
+		Actor: audit.UserActor(actorUserID), CorrelationID: correlationID,
+		Metadata: map[string]any{"jobId": jobID, "created": created},
 	}); err != nil {
-		return "", false, err
+		return "", false, fmt.Errorf("request directory sync: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", false, fmt.Errorf("request directory sync: commit: %w", err)

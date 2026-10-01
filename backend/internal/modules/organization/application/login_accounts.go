@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 // Login account operations: resolving a login identifier to a synced
@@ -32,8 +33,8 @@ type DirectoryAccount struct {
 type LocalUserInsert struct {
 	DisplayName   string
 	CorrelationID string
-	// Actor is the JSON object recorded as audit metadata.
-	Actor json.RawMessage
+	// Actor performs the creation (the CLI actor for turaco-admin).
+	Actor audit.Actor
 	At    time.Time
 }
 
@@ -84,6 +85,10 @@ func (l *LoginAccounts) FindDirectoryAccount(ctx context.Context, providerKey, i
 	return accounts[0], true, nil
 }
 
+// parseLoginIdentifier must stay consistent with
+// authentication.NormalizeIdentifier, which keys the login throttle: the
+// "DOMAIN\" prefix is stripped and the rest trimmed (case is folded by the
+// lookup queries).
 func parseLoginIdentifier(identifier string) (by, value string) {
 	identifier = strings.TrimSpace(identifier)
 	if i := strings.IndexByte(identifier, '\\'); i >= 0 {
@@ -105,9 +110,8 @@ func (l *LoginAccounts) LockActiveUser(ctx context.Context, tx pgx.Tx, userID st
 
 // CreateEmergencyUser creates the User of an emergency (break-glass) account
 // in tx: status active, status_source platform, no directory identity. It is
-// audited as organization.user.created_local with actor as metadata (the CLI
-// passes {"actor":"cli",...}).
-func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, displayName, correlationID string, actor json.RawMessage) (string, error) {
+// audited as organization.user.created_local with the given actor.
+func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, displayName, correlationID string, actor audit.Actor) (string, error) {
 	displayName = strings.TrimSpace(displayName)
 	if displayName == "" || utf8.RuneCountInString(displayName) > maxDisplayNameLength {
 		return "", fmt.Errorf("%w: display name must be 1-%d characters", ErrInvalidLocalUser, maxDisplayNameLength)
