@@ -1,5 +1,3 @@
-import { endpoints } from '../../platform/api/endpoints';
-import type { Role } from '../../platform/api/types';
 import { useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
@@ -7,11 +5,13 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { accessApi } from './api';
+import type { Role } from './types';
 
 export function RolesScreen() {
   const { t } = useI18n();
   const { can } = useSession();
-  const roles = useAsync((signal) => endpoints.roles(signal), []);
+  const roles = useAsync((signal) => accessApi.roles(signal), []);
 
   const columns: Column<Role>[] = [
     {

@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
-import { endpoints } from '../../platform/api/endpoints';
-import type { Role, SubjectType } from '../../platform/api/types';
 import { asApiError } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Alert } from '../../platform/ui/Alert';
@@ -11,6 +9,8 @@ import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
 import { Select } from '../../platform/ui/Field';
 import { SubjectPicker, type Subject } from './SubjectPicker';
+import { accessApi } from './api';
+import type { Role, SubjectType } from './types';
 
 type Props = {
   roles: readonly Role[];
@@ -33,7 +33,7 @@ export function AssignDialog({ roles, initialRoleId, onClose, onAssigned }: Prop
     setBusy(true);
     setError(undefined);
     try {
-      await endpoints.assignRole({ roleId, subjectType, subjectId: subject.id });
+      await accessApi.assignRole({ roleId, subjectType, subjectId: subject.id });
       onAssigned();
     } catch (cause) {
       setError(asApiError(cause));

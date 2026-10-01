@@ -20,6 +20,19 @@ describe('loginErrorMessage', () => {
     );
   });
 
+  it('maps auth.temporarily_unavailable and short 429 Retry-After', () => {
+    expect(
+      loginErrorMessage({
+        status: 503,
+        code: 'auth.temporarily_unavailable',
+        retryAfterSeconds: undefined,
+      }).key,
+    ).toBe('login.error.temporarilyUnavailable');
+    expect(loginErrorMessage({ status: 429, retryAfterSeconds: 5 })).toEqual({
+      key: 'login.error.busy',
+    });
+  });
+
   it('shows Retry-After as minutes for 429', () => {
     expect(loginErrorMessage({ status: 429, retryAfterSeconds: 610 })).toEqual({
       key: 'login.error.tooManyAttempts',

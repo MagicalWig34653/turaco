@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import type { ApiError } from '../../platform/api/client';
-import { endpoints } from '../../platform/api/endpoints';
-import type { DirectorySyncRequest, DirectorySyncRun, SyncOutcome } from '../../platform/api/types';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime, summarizeSyncCounts } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -13,6 +11,8 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { directoryApi } from './api';
+import type { DirectorySyncRequest, DirectorySyncRun, SyncOutcome } from './types';
 
 export const outcomeKeys: Record<SyncOutcome, MessageKey> = {
   running: 'sync.outcome.running',
@@ -35,7 +35,7 @@ export function OutcomeBadge({ outcome }: { outcome: SyncOutcome }) {
 export function DirectorySyncScreen() {
   const { t, locale } = useI18n();
   const { can } = useSession();
-  const list = usePagedList((cursor, signal) => endpoints.directorySyncRuns(cursor, signal), []);
+  const list = usePagedList((cursor, signal) => directoryApi.syncRuns(cursor, signal), []);
   const [requesting, setRequesting] = useState(false);
   const [requested, setRequested] = useState<DirectorySyncRequest | null>(null);
   const [requestError, setRequestError] = useState<ApiError | undefined>(undefined);
@@ -45,7 +45,7 @@ export function DirectorySyncScreen() {
     setRequested(null);
     setRequestError(undefined);
     try {
-      setRequested(await endpoints.requestDirectorySync());
+      setRequested(await directoryApi.requestSync());
       list.reload();
     } catch (cause) {
       setRequestError(asApiError(cause));

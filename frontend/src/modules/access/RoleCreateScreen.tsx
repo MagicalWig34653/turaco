@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
-import { endpoints } from '../../platform/api/endpoints';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
 import { isValidRoleKey } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -11,10 +10,11 @@ import { Button } from '../../platform/ui/Button';
 import { TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { PermissionChecklist } from './PermissionChecklist';
+import { accessApi } from './api';
 
 export function RoleCreateScreen() {
   const { t } = useI18n();
-  const permissions = useAsync((signal) => endpoints.permissions(signal), []);
+  const permissions = useAsync((signal) => accessApi.permissions(signal), []);
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -33,7 +33,7 @@ export function RoleCreateScreen() {
     setBusy(true);
     setError(undefined);
     try {
-      const role = await endpoints.createRole({
+      const role = await accessApi.createRole({
         key,
         name: name.trim(),
         description,

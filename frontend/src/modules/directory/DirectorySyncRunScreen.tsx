@@ -1,5 +1,3 @@
-import { endpoints } from '../../platform/api/endpoints';
-import type { SyncConflict, SyncConflictKind } from '../../platform/api/types';
 import { useAsync } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -10,6 +8,8 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { OutcomeBadge } from './DirectorySyncScreen';
+import { directoryApi } from './api';
+import type { SyncConflict, SyncConflictKind } from './types';
 
 const conflictKeys: Record<SyncConflictKind, MessageKey> = {
   email_in_use: 'sync.conflict.email_in_use',
@@ -19,7 +19,7 @@ const conflictKeys: Record<SyncConflictKind, MessageKey> = {
 
 export function DirectorySyncRunScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
-  const run = useAsync((signal) => endpoints.directorySyncRun(id, signal), [id]);
+  const run = useAsync((signal) => directoryApi.syncRun(id, signal), [id]);
   const data = run.data;
 
   const conflictColumns: Column<SyncConflict>[] = [

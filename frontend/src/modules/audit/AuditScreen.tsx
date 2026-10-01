@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { endpoints } from '../../platform/api/endpoints';
-import type { AuditEvent, AuditFilter } from '../../platform/api/types';
 import { usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime, formatJson } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -11,6 +9,8 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { emptyForm, toAuditFilter, type FormState } from './auditFilter';
+import { auditApi } from './api';
+import type { AuditEvent, AuditFilter } from './types';
 
 function actorOf(event: AuditEvent, system: string): string {
   if (event.actorId) return event.actorId;
@@ -74,7 +74,7 @@ export function AuditScreen() {
   const [applied, setApplied] = useState<AuditFilter>({});
   const [selected, setSelected] = useState<AuditEvent | null>(null);
   const list = usePagedList(
-    (cursor, signal) => endpoints.auditEvents(applied, cursor, signal),
+    (cursor, signal) => auditApi.events(applied, cursor, signal),
     [applied],
   );
 

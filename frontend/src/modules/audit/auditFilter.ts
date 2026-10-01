@@ -1,5 +1,5 @@
-import type { AuditFilter } from '../../platform/api/types';
 import { localInputToIso } from '../../platform/format/format';
+import type { AuditFilter } from './types';
 
 export type FormState = {
   actionPrefix: string;

@@ -1,12 +1,12 @@
 import { useId, useState } from 'react';
-import { endpoints } from '../../platform/api/endpoints';
 import { useAsync } from '../../platform/api/useAsync';
-import type { SubjectType } from '../../platform/api/types';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { TextField } from '../../platform/ui/Field';
 import { useDebouncedValue } from '../../platform/ui/hooks';
+import { organizationApi } from '../organization/api';
+import type { SubjectType } from './types';
 
 export type Subject = { id: string; label: string };
 
@@ -32,7 +32,7 @@ export function SubjectPicker({ subjectType, value, onChange }: Props) {
     async (signal): Promise<Candidate[]> => {
       if (!allowed) return [];
       if (subjectType === 'user') {
-        const page = await endpoints.searchUsers(debounced, signal);
+        const page = await organizationApi.searchUsers(debounced, signal);
         return page.items.map((user) => ({
           id: user.id,
           label: user.displayName,
@@ -40,7 +40,7 @@ export function SubjectPicker({ subjectType, value, onChange }: Props) {
           disabled: false,
         }));
       }
-      const page = await endpoints.searchDirectoryGroups(debounced, signal);
+      const page = await organizationApi.searchDirectoryGroups(debounced, signal);
       return page.items.map((group) => ({
         id: group.id,
         label: group.displayName,

@@ -1,4 +1,3 @@
-import { endpoints } from '../../platform/api/endpoints';
 import { useAsync } from '../../platform/api/useAsync';
 import { formatDateTime, groupPermissions } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -6,6 +5,7 @@ import type { MessageKey } from '../../platform/i18n/i18n';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Alert } from '../../platform/ui/Alert';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { organizationApi } from '../organization/api';
 
 const methodKeys: Record<string, MessageKey> = {
   password: 'auth.method.password',
@@ -19,7 +19,7 @@ export function MeScreen() {
   const canViewUser = can('organization.view');
   const userId = session?.userId ?? '';
   const user = useAsync(
-    (signal) => (canViewUser ? endpoints.user(userId, signal) : Promise.resolve(undefined)),
+    (signal) => (canViewUser ? organizationApi.user(userId, signal) : Promise.resolve(undefined)),
     [canViewUser, userId],
   );
   if (!session) return null;

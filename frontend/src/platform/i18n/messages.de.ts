@@ -84,6 +84,10 @@ export const de: Record<MessageKey, string> = {
     'Zu viele fehlgeschlagene Versuche. Bitte versuchen Sie es in {minutes} Minute(n) erneut.',
   'login.error.providerUnavailable':
     'Der Verzeichnisdienst ist derzeit nicht erreichbar. Bitte versuchen Sie es später erneut.',
+  'login.error.temporarilyUnavailable':
+    'Die Anmeldung ist vorübergehend nicht verfügbar. Bitte versuchen Sie es in Kürze erneut.',
+  'login.error.busy':
+    'Der Server ist ausgelastet. Bitte versuchen Sie es in einigen Sekunden erneut.',
   'login.error.invalidRequest': 'Geben Sie Benutzername und Passwort ein.',
   'login.error.methodUnavailable': 'Diese Anmeldemethode ist nicht verfügbar.',
   'login.error.network':

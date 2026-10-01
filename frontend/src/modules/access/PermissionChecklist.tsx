@@ -1,9 +1,9 @@
 import { groupPermissions } from '../../platform/format/format';
-import type { Permission } from '../../platform/api/types';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Badge } from '../../platform/ui/Alert';
 import { Checkbox } from '../../platform/ui/Field';
+import type { Permission } from './types';
 
 const riskKey: Record<Permission['risk'], MessageKey> = {
   normal: 'risk.normal',

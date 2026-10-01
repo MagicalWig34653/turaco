@@ -98,17 +98,19 @@ describe('ApiClient', () => {
 });
 
 describe('errorMessageKey', () => {
-  it('maps known codes and falls back by status', () => {
-    expect(errorMessageKey({ code: 'authorization.last_administrator', status: 409 })).toBe(
-      'error.lastAdministrator',
+  it('maps platform and auth codes and falls back by status', () => {
+    expect(errorMessageKey({ code: 'platform.csrf_rejected', status: 403 })).toBe('error.csrf');
+    expect(errorMessageKey({ code: 'auth.temporarily_unavailable', status: 503 })).toBe(
+      'login.error.temporarilyUnavailable',
     );
-    expect(
-      errorMessageKey({ code: 'organization.directory_sync_not_configured', status: 409 }),
-    ).toBe('error.directorySyncNotConfigured');
     expect(errorMessageKey({ code: 'audit.invalid_cursor', status: 400 })).toBe(
       'error.invalidRequest',
     );
     expect(errorMessageKey({ code: 'whatever', status: 403 })).toBe('error.forbidden');
     expect(errorMessageKey({ code: 'whatever', status: 418 })).toBe('error.generic');
+  });
+
+  it('does not know feature codes until the module registers them', () => {
+    expect(errorMessageKey({ code: 'unregistered.code', status: 409 })).toBe('error.generic');
   });
 });

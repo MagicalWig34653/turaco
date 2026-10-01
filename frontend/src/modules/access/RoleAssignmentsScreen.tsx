@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { errorMessageKey } from '../../platform/api/errorMessages';
 import type { ApiError } from '../../platform/api/client';
-import { endpoints } from '../../platform/api/endpoints';
-import type { RoleAssignment, SubjectType } from '../../platform/api/types';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -16,6 +14,8 @@ import { ConfirmDialog } from '../../platform/ui/Dialog';
 import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { AssignDialog } from './AssignDialog';
+import { accessApi } from './api';
+import type { RoleAssignment, SubjectType } from './types';
 
 export function RoleAssignmentsScreen() {
   const { t, locale } = useI18n();
@@ -31,10 +31,10 @@ export function RoleAssignmentsScreen() {
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeError, setRevokeError] = useState<ApiError | undefined>(undefined);
 
-  const roles = useAsync((signal) => endpoints.roles(signal), []);
+  const roles = useAsync((signal) => accessApi.roles(signal), []);
   const list = usePagedList(
     (cursor, signal) =>
-      endpoints.roleAssignments({ roleId, subjectType, includeRevoked }, cursor, signal),
+      accessApi.roleAssignments({ roleId, subjectType, includeRevoked }, cursor, signal),
     [roleId, subjectType, includeRevoked],
   );
 
@@ -43,7 +43,7 @@ export function RoleAssignmentsScreen() {
     setRevokeBusy(true);
     setRevokeError(undefined);
     try {
-      await endpoints.revokeRoleAssignment(revoking.id);
+      await accessApi.revokeRoleAssignment(revoking.id);
       setRevoking(null);
       list.reload();
       roles.reload();

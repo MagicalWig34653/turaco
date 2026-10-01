@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useAsync } from '../platform/api/useAsync';
-import { endpoints } from '../platform/api/endpoints';
 import { useI18n } from '../platform/i18n/I18nProvider';
 import { locales, type Locale } from '../platform/i18n/i18n';
 import { Link, useLocation } from '../platform/router/Router';
 import { useSession } from '../platform/session/SessionProvider';
 import { Button } from '../platform/ui/Button';
 import { isNavActive, visibleNavItems, type AppRoute, type NavGroup } from './routes';
+import { organizationApi } from '../modules/organization/api';
 
 function NavSection({ group, labelKey }: { group: NavGroup; labelKey?: 'nav.admin' }) {
   const { t } = useI18n();
@@ -36,7 +36,7 @@ function UserName() {
   const canViewUser = can('organization.view');
   const userId = session?.userId ?? '';
   const user = useAsync(
-    (signal) => (canViewUser ? endpoints.user(userId, signal) : Promise.resolve(undefined)),
+    (signal) => (canViewUser ? organizationApi.user(userId, signal) : Promise.resolve(undefined)),
     [canViewUser, userId],
   );
   return <span className="user-name">{user.data?.displayName ?? userId}</span>;

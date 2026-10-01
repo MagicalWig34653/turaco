@@ -77,6 +77,9 @@ export const en = {
     'Too many failed attempts. Please try again in {minutes} minute(s).',
   'login.error.providerUnavailable':
     'The directory service cannot be reached right now. Please try again later.',
+  'login.error.temporarilyUnavailable':
+    'Sign-in is temporarily unavailable. Please try again shortly.',
+  'login.error.busy': 'The server is busy. Please try again in a few seconds.',
   'login.error.invalidRequest': 'Enter both a username and a password.',
   'login.error.methodUnavailable': 'This sign-in method is not available.',
   'login.error.network': 'The server could not be reached. Check your connection and try again.',

@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
-import { endpoints } from '../../platform/api/endpoints';
-import type { Permission, Role } from '../../platform/api/types';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
 import { errorMessageKey } from '../../platform/api/errorMessages';
 import { formatDateTime } from '../../platform/format/format';
@@ -16,6 +14,8 @@ import { ConfirmDialog } from '../../platform/ui/Dialog';
 import { TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { PermissionChecklist } from './PermissionChecklist';
+import { accessApi } from './api';
+import type { Permission, Role } from './types';
 
 function sameSet(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return a.size === b.length && b.every((value) => a.has(value));
@@ -57,10 +57,10 @@ function RoleEditor({ role, permissions, canManage, onSaved }: EditorProps) {
     setSaved(false);
     try {
       if (name !== role.name || description !== role.description) {
-        await endpoints.updateRole(role.id, { name: name.trim(), description });
+        await accessApi.updateRole(role.id, { name: name.trim(), description });
       }
       if (!sameSet(selected, role.permissions)) {
-        await endpoints.setRolePermissions(role.id, [...selected].sort());
+        await accessApi.setRolePermissions(role.id, [...selected].sort());
       }
       setName(name.trim());
       setSaved(true);
@@ -76,7 +76,7 @@ function RoleEditor({ role, permissions, canManage, onSaved }: EditorProps) {
     setDeleting(true);
     setDeleteError(undefined);
     try {
-      await endpoints.deleteRole(role.id);
+      await accessApi.deleteRole(role.id);
       navigate('/admin/roles');
     } catch (cause) {
       setDeleteError(asApiError(cause));
@@ -169,8 +169,8 @@ function RoleEditor({ role, permissions, canManage, onSaved }: EditorProps) {
 export function RoleDetailScreen({ id }: { id: string }) {
   const { t } = useI18n();
   const { can } = useSession();
-  const role = useAsync((signal) => endpoints.role(id, signal), [id]);
-  const permissions = useAsync((signal) => endpoints.permissions(signal), []);
+  const role = useAsync((signal) => accessApi.role(id, signal), [id]);
+  const permissions = useAsync((signal) => accessApi.permissions(signal), []);
 
   return (
     <>
