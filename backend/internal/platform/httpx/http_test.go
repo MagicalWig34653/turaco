@@ -15,7 +15,7 @@ func TestRequestIDHandling(t *testing.T) {
 		name, in string
 		keep     bool
 	}{
-		{"valid kept", "req-1.abc_2", true},
+		{"valid client value replaced", "req-1.abc_2", false},
 		{"empty replaced", "", false},
 		{"too long replaced", strings.Repeat("a", 65), false},
 		{"special characters replaced", "a b\"<x>", false},
@@ -29,7 +29,7 @@ func TestRequestIDHandling(t *testing.T) {
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 			got := rec.Header().Get("X-Request-ID")
-			if tt.keep != (got == tt.in) || !validRequestID.MatchString(got) {
+			if tt.keep != (got == tt.in) || len(got) != 32 {
 				t.Fatalf("request id = %q", got)
 			}
 		})
