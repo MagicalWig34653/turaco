@@ -154,8 +154,8 @@ func Load() (Config, error) {
 // APP_ENV, which decides whether plain LDAP is allowed.
 func LoadLDAP(environment string) (LDAPConfig, error) {
 	c := LDAPConfig{
-		ProviderKey:      getenv("LDAP_PROVIDER_KEY", "ad"),
-		URL:              os.Getenv("LDAP_URL"),
+		ProviderKey: getenv("LDAP_PROVIDER_KEY", "ad"),
+		URL:         os.Getenv("LDAP_URL"),
 
 		CAFile:           os.Getenv("LDAP_CA_FILE"),
 		BindDN:           os.Getenv("LDAP_BIND_DN"),
