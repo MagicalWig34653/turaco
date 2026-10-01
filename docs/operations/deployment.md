@@ -20,7 +20,7 @@ Managed-service environments use isolated customer DB/object/key data planes. Co
 
 ## Reverse proxy and client addresses
 
-Browsers reach `turaco-api` through `turaco-web` (nginx) or another reverse proxy. Set `HTTP_TRUSTED_PROXIES` on the API to the proxy network so login throttling and audit see the real client address from `X-Forwarded-For`; untrusted senders of that header are ignored. Without it every client appears as the proxy and shares one throttle counter. Proxies must preserve the `Host` header (the same-origin CSRF guard compares it with `Origin`) and pass `Authorization`/`WWW-Authenticate` unchanged for Kerberos.
+Browsers reach `turaco-api` through `turaco-web` (nginx) or another reverse proxy. Set `HTTP_TRUSTED_PROXIES` on the API to the proxy network so login throttling and audit see the real client address from `X-Forwarded-For`; untrusted senders of that header are ignored. Trust only the proxy's own address(es), not whole networks containing gateways or other containers. Without real client addresses every client appears as the proxy and shares one throttle counter, so 30 failed attempts from anyone would block password and emergency login for everyone for 15 minutes. In Docker Swarm the default `mode: ingress` replaces client addresses with the ingress network's; publish the proxy with `mode: host` (or use PROXY protocol on an external load balancer) when login throttling must see clients. Proxies must preserve the `Host` header (the same-origin CSRF guard compares it with `Origin`) and pass `Authorization`/`WWW-Authenticate` unchanged for Kerberos.
 
 ## First administrator and emergency access
 

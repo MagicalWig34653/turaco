@@ -37,7 +37,7 @@ turaco-worker
       start run → provider-key check → fetch → prepare → apply in one transaction → finish run
 ```
 
-- `backend/internal/integrations/ldap` speaks LDAP (ADR-0022) and returns `public.DirectorySnapshot`. It imports only `organization/public` and `platform/config`.
+- `backend/internal/integrations/ldap` speaks LDAP (ADR-0022) and returns `public.DirectorySnapshot`. It imports only `organization/public`, `platform/config` and, for password login verification, `platform/authentication` contracts.
 - The use case lives in `organization/application` behind the `DirectorySyncStore` port implemented by `organization/repository`; `organization/public` re-exports the snapshot contract and the job contract as type aliases. The use case does not depend on `platform/jobs`.
 - The Organization module owns run records and all writes to its tables.
 - `backend/internal/platform/jobs` knows nothing about Organization.
