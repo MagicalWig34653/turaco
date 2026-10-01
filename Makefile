@@ -103,6 +103,7 @@ build:
 	@go build -trimpath -o dist/bin/turaco-api ./backend/cmd/turaco-api
 	@go build -trimpath -o dist/bin/turaco-worker ./backend/cmd/turaco-worker
 	@go build -trimpath -o dist/bin/turaco-migrate ./backend/cmd/turaco-migrate
+	@go build -trimpath -o dist/bin/turaco-admin ./backend/cmd/turaco-admin
 	@go build -trimpath -o dist/bin/connector-agent ./agents/connector
 	@go build -trimpath -o dist/bin/endpoint-agent ./agents/endpoint
 	@cd frontend && npm run build
