@@ -55,7 +55,7 @@ turaco-worker
       - **Existing identity.** Compute `attributes_hash` (SHA-256 over a canonical encoding of every directory field except the manager). If the hash is unchanged and the identity is not deleted, only collect it for the bulk `last_seen_at` update. Otherwise update the identity (`username`, `distinguished_name`, `enabled`, hash, `deleted_observed_at = NULL`, `last_seen_at`) and the User's directory-owned fields. An email already used by another User is not applied: keep the old value and record conflict `email_in_use`.
       - **New account.** If the email belongs to an existing User (case-insensitive), record conflict `email_in_use` and skip (D2). Otherwise insert the User with `status = active` if enabled else `inactive`, `status_source = directory`, and the identity, then audit `organization.user.created_from_directory`.
    4. **Not observed.** Set `enabled = false, deleted_observed_at = observed_at` on this provider's non-deleted identities that are missing from the snapshot.
-   5. **Status.** For every User touched by steps 3–4, apply the status rule below. Audit each status change as `organization.user.status_changed` with before/after `{status, statusSource}`.
+   5. **Status.** For every User touched by steps 3–4, apply the status rule below. Audit each status change as `organization.user.status_changed` with before/after `{status, statusSource}`. When a User leaves `active`, revoke all of their sessions in the same transaction (`authentication.RevokeUserSessions`, reason `user_deactivated`, audited per session), so a later reactivation never revives an old session.
    6. **Managers.** Map the snapshot's external IDs to user IDs and set `manager_user_id`. A manager ID that cannot be mapped (skipped by a conflict) or `ManagerUnresolved` sets null and records conflict `manager_unresolved`. A self-reference is set to null.
    7. **Groups.** Upsert by `(provider_key, external_id)`, setting `display_name`, `description`, `last_observed_at = observed_at` and `deleted_observed_at = NULL` (`first_observed_at` is set only on insert). Groups missing from the snapshot get `deleted_observed_at = observed_at` if it is null.
    8. **Memberships and nesting**, for each observed group:
@@ -76,7 +76,7 @@ turaco-worker
 
 Sync never sets `departed`: leaving the company is a business fact, not a directory fact.
 
-**Counts** (`counts` jsonb): `usersObserved`, `usersCreated`, `usersUpdated`, `usersUnchanged`, `usersNotObserved`, `usersActivated`, `usersDeactivated`, `groupsObserved`, `groupsCreated`, `groupsUpdated`, `groupsNotObserved`, `membershipsOpened`, `membershipsClosed`, `nestingOpened`, `nestingClosed`, `unresolvedMembers`.
+**Counts** (`counts` jsonb): `usersObserved`, `usersCreated`, `usersUpdated`, `usersUnchanged`, `usersNotObserved`, `usersActivated`, `usersDeactivated`, `groupsObserved`, `groupsCreated`, `groupsUpdated`, `groupsNotObserved`, `membershipsOpened`, `membershipsClosed`, `nestingOpened`, `nestingClosed`, `unresolvedMembers`, `sessionsRevoked`.
 
 **Conflicts** (`conflicts` jsonb, at most 100 stored; `conflict_count` is the total): `{kind, externalId, username}`, where `kind` is one of `email_in_use` or `manager_unresolved`. Never emails or other attribute values.
 
