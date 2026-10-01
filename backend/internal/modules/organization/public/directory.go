@@ -36,6 +36,14 @@ type DirectoryUser struct {
 	ManagerExternalID *string
 	ManagerUnresolved bool
 	Enabled           bool
+	// Invalid marks an account whose identity-relevant attributes (username,
+	// email, employee number) are not valid text. The account is still
+	// observed (it must not be swept as missing) and Enabled is still
+	// authoritative, but its attribute values must not be applied: an
+	// existing User keeps its stored values and a new account is skipped as a
+	// conflict. Free-text display attributes are sanitized by the source
+	// instead of invalidating the entry.
+	Invalid bool
 }
 
 // DirectoryGroup is one directory group with its direct members.
