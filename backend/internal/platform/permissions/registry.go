@@ -10,6 +10,7 @@ var Registry = []Permission{
 	{Name: "platform.admin", Description: "Administer platform-wide configuration.", Risk: "high"},
 	{Name: "organization.view", Description: "View organization users, teams and locations.", Risk: "normal"},
 	{Name: "organization.directory.view", Description: "View observed Directory Groups and their memberships.", Risk: "normal"},
+	{Name: "organization.directory.sync", Description: "Request an immediate directory synchronization run.", Risk: "elevated"},
 	{Name: "tasks.view", Description: "View tasks within authorized scope.", Risk: "normal"},
 	{Name: "tasks.manage", Description: "Create and update tasks within authorized scope.", Risk: "normal"},
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},

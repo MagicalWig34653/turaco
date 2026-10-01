@@ -80,3 +80,95 @@ func TestLoadSessionValidation(t *testing.T) {
 		})
 	}
 }
+
+func setLDAPEnv(t *testing.T, overrides map[string]string) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("APP_ENV", "production")
+	values := map[string]string{
+		"LDAP_URL": "ldaps://dc.example.test", "LDAP_PROVIDER_KEY": "", "LDAP_START_TLS": "",
+		"LDAP_BIND_DN": "CN=svc,DC=example,DC=test", "LDAP_BIND_PASSWORD_FILE": "/run/secrets/ldap",
+		"LDAP_DIRECTORY_TYPE": "", "LDAP_USER_BASE_DN": "OU=Users,DC=example,DC=test",
+		"LDAP_GROUP_BASE_DN": "OU=Groups,DC=example,DC=test", "LDAP_USER_FILTER": "", "LDAP_GROUP_FILTER": "",
+		"LDAP_SYNC_INTERVAL": "", "LDAP_SYNC_TIMEOUT": "", "LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "",
+	}
+	for k, v := range overrides {
+		values[k] = v
+	}
+	for k, v := range values {
+		t.Setenv(k, v)
+	}
+}
+
+func TestLoadLDAPDisabledByDefault(t *testing.T) {
+	setLDAPEnv(t, map[string]string{"LDAP_URL": ""})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LDAP.Enabled() {
+		t.Fatal("LDAP must be disabled without LDAP_URL")
+	}
+}
+
+func TestLoadLDAPDefaults(t *testing.T) {
+	setLDAPEnv(t, nil)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := cfg.LDAP
+	if l.ProviderKey != "ad" || l.DirectoryType != DirectoryTypeActiveDirectory || l.SyncInterval != time.Hour ||
+		l.SyncTimeout != 15*time.Minute || l.MaxDeactivationPercent != 10 ||
+		l.UserFilter != "(&(objectCategory=person)(objectClass=user))" || l.GroupFilter != "(objectClass=group)" {
+		t.Fatalf("unexpected LDAP defaults %+v", l)
+	}
+}
+
+func TestLoadLDAPOpenLDAPFilters(t *testing.T) {
+	setLDAPEnv(t, map[string]string{"LDAP_DIRECTORY_TYPE": "openldap"})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LDAP.UserFilter != "(objectClass=inetOrgPerson)" || cfg.LDAP.GroupFilter != "(objectClass=groupOfNames)" {
+		t.Fatalf("unexpected filters %+v", cfg.LDAP)
+	}
+}
+
+func TestLoadLDAPValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"plain ldap in production", map[string]string{"LDAP_URL": "ldap://dc.example.test"}},
+		{"starttls with ldaps", map[string]string{"LDAP_START_TLS": "true"}},
+		{"unknown scheme", map[string]string{"LDAP_URL": "https://dc.example.test"}},
+		{"missing host", map[string]string{"LDAP_URL": "ldaps://"}},
+		{"missing bind dn", map[string]string{"LDAP_BIND_DN": ""}},
+		{"missing password file", map[string]string{"LDAP_BIND_PASSWORD_FILE": ""}},
+		{"missing user base", map[string]string{"LDAP_USER_BASE_DN": ""}},
+		{"missing group base", map[string]string{"LDAP_GROUP_BASE_DN": ""}},
+		{"bad provider key", map[string]string{"LDAP_PROVIDER_KEY": "AD Main"}},
+		{"unknown directory type", map[string]string{"LDAP_DIRECTORY_TYPE": "novell"}},
+		{"interval too short", map[string]string{"LDAP_SYNC_INTERVAL": "1m"}},
+		{"percent out of range", map[string]string{"LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "101"}},
+		{"percent not a number", map[string]string{"LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "ten"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLDAPEnv(t, tt.env)
+			if _, err := Load(); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestLoadLDAPPlainAllowedInDevelopment(t *testing.T) {
+	setLDAPEnv(t, map[string]string{"LDAP_URL": "ldap://localhost:389"})
+	t.Setenv("APP_ENV", "development")
+	if _, err := Load(); err != nil {
+		t.Fatalf("plain LDAP must be allowed in development: %v", err)
+	}
+}
