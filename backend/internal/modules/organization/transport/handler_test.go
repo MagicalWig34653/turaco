@@ -41,6 +41,9 @@ type fakeReader struct {
 	nameF      application.NameFilter
 	page       application.Page
 	id         string
+	runF       application.RunFilter
+	runs       []application.DirectorySyncRun
+	identities []application.ExternalIdentity
 }
 
 var now = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
@@ -83,11 +86,44 @@ func (f *fakeReader) ListDirectoryGroupMembers(_ context.Context, id string, p a
 	return application.Result[application.DirectoryGroupMember]{}, f.err
 }
 
+func (f *fakeReader) ListUserExternalIdentities(context.Context, string) ([]application.ExternalIdentity, error) {
+	return f.identities, f.err
+}
+func (f *fakeReader) ListDirectorySyncRuns(_ context.Context, x application.RunFilter) (application.Result[application.DirectorySyncRun], error) {
+	f.runF = x
+	return application.Result[application.DirectorySyncRun]{Items: f.runs, NextCursor: f.nextCursor}, f.err
+}
+func (f *fakeReader) GetDirectorySyncRun(_ context.Context, id string) (application.DirectorySyncRun, error) {
+	f.id = id
+	return application.DirectorySyncRun{ID: id, ProviderKey: "ad", Trigger: "manual", StartedAt: now, Outcome: "running"}, f.err
+}
+
+// fakeSyncer records manual sync requests.
+type fakeSyncer struct {
+	calls   int
+	actor   string
+	key     string
+	jobID   string
+	created bool
+	err     error
+}
+
+func (f *fakeSyncer) RequestDirectorySync(_ context.Context, actor, key string) (string, bool, error) {
+	f.calls++
+	f.actor, f.key = actor, key
+	return f.jobID, f.created, f.err
+}
+
 func serve(t *testing.T, r application.Reader, a authorization.Authenticator, method, target string) (*httptest.ResponseRecorder, *bytes.Buffer) {
+	t.Helper()
+	return serveSync(t, r, &fakeSyncer{}, "ad", a, method, target)
+}
+
+func serveSync(t *testing.T, r application.Reader, s application.DirectorySyncRequester, providerKey string, a authorization.Authenticator, method, target string) (*httptest.ResponseRecorder, *bytes.Buffer) {
 	t.Helper()
 	logs := &bytes.Buffer{}
 	mux := http.NewServeMux()
-	Register(mux, r, a, slog.New(slog.NewTextHandler(logs, nil)))
+	Register(mux, r, s, providerKey, a, slog.New(slog.NewTextHandler(logs, nil)))
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(method, target, nil)
 	rec.Header().Set("X-Request-ID", "req-1")

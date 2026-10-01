@@ -97,9 +97,72 @@ func toDirectoryGroup(g application.DirectoryGroup) directoryGroupDTO {
 type directoryGroupMemberDTO struct {
 	UserID         string `json:"userId"`
 	DisplayName    string `json:"displayName"`
+	ObservedFrom   string `json:"observedFrom"`
 	LastObservedAt string `json:"lastObservedAt"`
 }
 
 func toDirectoryGroupMember(m application.DirectoryGroupMember) directoryGroupMemberDTO {
-	return directoryGroupMemberDTO{m.UserID, m.DisplayName, ts(m.LastObservedAt)}
+	return directoryGroupMemberDTO{m.UserID, m.DisplayName, ts(m.ObservedFrom), ts(m.LastObservedAt)}
+}
+
+type externalIdentityDTO struct {
+	ProviderKey       string  `json:"providerKey"`
+	Username          *string `json:"username"`
+	Enabled           bool    `json:"enabled"`
+	LastSeenAt        *string `json:"lastSeenAt"`
+	DeletedObservedAt *string `json:"deletedObservedAt"`
+}
+
+// userDetailDTO is the single-user response; lists keep the smaller userDTO.
+type userDetailDTO struct {
+	userDTO
+	ExternalIdentities []externalIdentityDTO `json:"externalIdentities"`
+}
+
+func toUserDetail(u application.User, identities []application.ExternalIdentity) userDetailDTO {
+	out := userDetailDTO{userDTO: toUser(u), ExternalIdentities: make([]externalIdentityDTO, 0, len(identities))}
+	for _, e := range identities {
+		out.ExternalIdentities = append(out.ExternalIdentities, externalIdentityDTO{e.ProviderKey, e.Username, e.Enabled, tsPtr(e.LastSeenAt), tsPtr(e.DeletedObservedAt)})
+	}
+	return out
+}
+
+type syncConflictDTO struct {
+	Kind       string `json:"kind"`
+	ExternalID string `json:"externalId"`
+	Username   string `json:"username"`
+}
+
+type syncRunDTO struct {
+	ID            string            `json:"id"`
+	ProviderKey   string            `json:"providerKey"`
+	Trigger       string            `json:"trigger"`
+	StartedAt     string            `json:"startedAt"`
+	ObservedAt    *string           `json:"observedAt"`
+	FinishedAt    *string           `json:"finishedAt"`
+	Outcome       string            `json:"outcome"`
+	Counts        map[string]int    `json:"counts"`
+	Conflicts     []syncConflictDTO `json:"conflicts"`
+	ConflictCount int               `json:"conflictCount"`
+	Error         *string           `json:"error"`
+}
+
+func toSyncRun(r application.DirectorySyncRun) syncRunDTO {
+	out := syncRunDTO{
+		ID: r.ID, ProviderKey: r.ProviderKey, Trigger: r.Trigger, StartedAt: ts(r.StartedAt),
+		ObservedAt: tsPtr(r.ObservedAt), FinishedAt: tsPtr(r.FinishedAt), Outcome: r.Outcome,
+		Counts: r.Counts, Conflicts: make([]syncConflictDTO, 0, len(r.Conflicts)), ConflictCount: r.ConflictCount, Error: r.Error,
+	}
+	if out.Counts == nil {
+		out.Counts = map[string]int{}
+	}
+	for _, c := range r.Conflicts {
+		out.Conflicts = append(out.Conflicts, syncConflictDTO{c.Kind, c.ExternalID, c.Username})
+	}
+	return out
+}
+
+type syncRequestDTO struct {
+	JobID   string `json:"jobId"`
+	Created bool   `json:"created"`
 }

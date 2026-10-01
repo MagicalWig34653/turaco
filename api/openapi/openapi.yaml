@@ -44,7 +44,7 @@ paths:
     get:
       operationId: getUser
       summary: Get a user.
-      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`."
+      description: "Requires authentication and the `organization.view` permission. Responses are `Cache-Control: no-store`. Includes the directory accounts (external identities) linked to the user; the external subject and distinguished name are never exposed."
       security:
         - sessionAuth: []
       parameters:
@@ -55,7 +55,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserDetail'
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -212,7 +212,7 @@ paths:
   /directory-groups/{id}/members:
     get:
       operationId: listDirectoryGroupMembers
-      summary: List observed members of a directory group.
+      summary: List currently observed members of a directory group.
       description: "Requires authentication and both `organization.directory.view` and `organization.view` (members are user identities). Responses are `Cache-Control: no-store`."
       security:
         - sessionAuth: []
@@ -222,12 +222,76 @@ paths:
         - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
-          description: One page of observed members, ordered by user id. Stale or removed memberships are not distinguished yet.
+          description: One page of currently observed members (open membership intervals), ordered by user id. Memberships that ended are not listed; `observedFrom` is the start of the current interval.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DirectoryGroupMemberList'
         '400': {$ref: '#/components/responses/InvalidRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-sync-runs:
+    get:
+      operationId: listDirectorySyncRuns
+      summary: List directory synchronization runs.
+      description: "Requires authentication and both `organization.directory.view` and `organization.view` (run conflicts carry directory usernames). Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/ProviderKey'
+      responses:
+        '200':
+          description: One page of runs, newest first (id descending, UUIDv7). Unlike other lists, `nextCursor` is the last (smallest) id of the page and the next page contains smaller ids.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncRunList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: requestDirectorySync
+      summary: Request a manual directory synchronization.
+      description: "Requires authentication and the elevated `organization.directory.sync` permission. Enqueues a deduplicated background job (at most one active job per provider) and audits the request with the caller as actor; the worker performs the synchronization. Requests must be same-origin. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      responses:
+        '202':
+          description: "The job was enqueued (`created: true`) or an active job already exists (`created: false`)."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncRequest'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: Directory synchronization is not configured on this API instance (organization.directory_sync_not_configured).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-sync-runs/{id}:
+    get:
+      operationId: getDirectorySyncRun
+      summary: Get a directory synchronization run.
+      description: "Requires authentication and both `organization.directory.view` and `organization.view`. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested run.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncRun'
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -296,9 +360,14 @@ components:
       in: query
       description: Exact status filter (else 400 organization.invalid_status).
       schema: {type: string, enum: [active, inactive, departed, external, unknown]}
+    ProviderKey:
+      name: providerKey
+      in: query
+      description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
+      schema: {type: string, maxLength: 100}
   responses:
     InvalidRequest:
-      description: Invalid limit, cursor, query or status (organization.invalid_limit, organization.invalid_cursor, organization.invalid_query, organization.invalid_status).
+      description: Invalid limit, cursor, query, status or provider key (organization.invalid_limit, organization.invalid_cursor, organization.invalid_query, organization.invalid_status, organization.invalid_provider_key).
       content:
         application/json:
           schema:
@@ -462,16 +531,150 @@ components:
     DirectoryGroupMember:
       type: object
       additionalProperties: false
-      required: [userId, displayName, lastObservedAt]
+      required: [userId, displayName, observedFrom, lastObservedAt]
       properties:
         userId:
           type: string
           format: uuid
         displayName:
           type: string
+        observedFrom:
+          type: string
+          format: date-time
+          description: Start of the current continuous observed interval.
         lastObservedAt:
           type: string
           format: date-time
+    UserDetail:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, status, updatedAt, externalIdentities]
+      properties:
+        id:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        givenName:
+          type: [string, "null"]
+        familyName:
+          type: [string, "null"]
+        primaryEmail:
+          type: [string, "null"]
+        status:
+          type: string
+          enum: [active, inactive, departed, external, unknown]
+        departmentId:
+          type: [string, "null"]
+          format: uuid
+        primaryLocationId:
+          type: [string, "null"]
+          format: uuid
+        managerUserId:
+          type: [string, "null"]
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+        externalIdentities:
+          type: array
+          description: Directory accounts linked to the user, ordered by provider key. Not included in user lists.
+          items:
+            $ref: '#/components/schemas/ExternalIdentity'
+    ExternalIdentity:
+      type: object
+      additionalProperties: false
+      required: [providerKey, username, enabled, lastSeenAt, deletedObservedAt]
+      properties:
+        providerKey:
+          type: string
+        username:
+          type: [string, "null"]
+        enabled:
+          type: boolean
+          description: Whether the directory account is enabled as last observed.
+        lastSeenAt:
+          type: [string, "null"]
+          format: date-time
+        deletedObservedAt:
+          type: [string, "null"]
+          format: date-time
+          description: Set when the account was no longer observed in the directory; cleared when it reappears.
+    SyncConflict:
+      type: object
+      additionalProperties: false
+      required: [kind, externalId, username]
+      properties:
+        kind:
+          type: string
+          enum: [email_in_use, manager_unresolved]
+        externalId:
+          type: string
+        username:
+          type: string
+    DirectorySyncRun:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, trigger, startedAt, observedAt, finishedAt, outcome, counts, conflicts, conflictCount, error]
+      properties:
+        id:
+          type: string
+          format: uuid
+        providerKey:
+          type: string
+        trigger:
+          type: string
+          enum: [scheduled, manual]
+        startedAt:
+          type: string
+          format: date-time
+        observedAt:
+          type: [string, "null"]
+          format: date-time
+          description: The time the directory snapshot was observed; null while running or when the fetch failed.
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        outcome:
+          type: string
+          enum: [running, succeeded, failed, aborted_safeguard]
+        counts:
+          type: object
+          description: Counters of a succeeded run (usersObserved, usersCreated, usersUpdated, usersUnchanged, usersNotObserved, usersActivated, usersDeactivated, sessionsRevoked, groupsObserved, groupsCreated, groupsUpdated, groupsNotObserved, membershipsOpened, membershipsClosed, nestingOpened, nestingClosed, unresolvedMembers). Empty for other outcomes.
+          additionalProperties: {type: integer}
+        conflicts:
+          type: array
+          description: At most 100 conflicts; `conflictCount` is the total.
+          items:
+            $ref: '#/components/schemas/SyncConflict'
+        conflictCount:
+          type: integer
+        error:
+          type: [string, "null"]
+          description: Sanitized failure reason, at most 500 characters; never contains attribute values.
+    DirectorySyncRunList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySyncRun'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    DirectorySyncRequest:
+      type: object
+      additionalProperties: false
+      required: [jobId, created]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        created:
+          type: boolean
+          description: False when an active job for the provider already existed.
     UserList:
       type: object
       additionalProperties: false
