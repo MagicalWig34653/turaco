@@ -607,7 +607,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [email_in_use, manager_unresolved]
+          enum: [email_in_use, manager_unresolved, invalid_attributes]
         externalId:
           type: string
         username:
@@ -615,13 +615,17 @@ components:
     DirectorySyncRun:
       type: object
       additionalProperties: false
-      required: [id, providerKey, trigger, startedAt, observedAt, finishedAt, outcome, counts, conflicts, conflictCount, error]
+      required: [id, providerKey, jobId, trigger, startedAt, observedAt, finishedAt, outcome, counts, conflicts, conflictCount, error]
       properties:
         id:
           type: string
           format: uuid
         providerKey:
           type: string
+        jobId:
+          type: [string, "null"]
+          format: uuid
+          description: The platform job that executed the run; null when the run was not started by a job.
         trigger:
           type: string
           enum: [scheduled, manual]
@@ -637,10 +641,11 @@ components:
           format: date-time
         outcome:
           type: string
-          enum: [running, succeeded, failed, aborted_safeguard]
+          enum: [running, succeeded, failed, sweep_withheld]
+          description: '`sweep_withheld` is a successful run in which the not-observed sweep of users and/or groups was withheld by the safeguard (too many objects missing from the snapshot); everything else in the snapshot was applied.'
         counts:
           type: object
-          description: Counters of a succeeded run (usersObserved, usersCreated, usersUpdated, usersUnchanged, usersNotObserved, usersActivated, usersDeactivated, sessionsRevoked, groupsObserved, groupsCreated, groupsUpdated, groupsNotObserved, membershipsOpened, membershipsClosed, nestingOpened, nestingClosed, unresolvedMembers). Empty for other outcomes.
+          description: Counters of a run that applied a snapshot (usersObserved, usersCreated, usersUpdated, usersUnchanged, usersNotObserved, usersSweepWithheld, usersActivated, usersDeactivated, sessionsRevoked, groupsObserved, groupsCreated, groupsUpdated, groupsNotObserved, groupsSweepWithheld, membershipsOpened, membershipsClosed, nestingOpened, nestingClosed, unresolvedMembers). Empty for other outcomes.
           additionalProperties: {type: integer}
         conflicts:
           type: array

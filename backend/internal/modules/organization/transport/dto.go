@@ -136,6 +136,7 @@ type syncConflictDTO struct {
 type syncRunDTO struct {
 	ID            string            `json:"id"`
 	ProviderKey   string            `json:"providerKey"`
+	JobID         *string           `json:"jobId"`
 	Trigger       string            `json:"trigger"`
 	StartedAt     string            `json:"startedAt"`
 	ObservedAt    *string           `json:"observedAt"`
@@ -149,7 +150,7 @@ type syncRunDTO struct {
 
 func toSyncRun(r application.DirectorySyncRun) syncRunDTO {
 	out := syncRunDTO{
-		ID: r.ID, ProviderKey: r.ProviderKey, Trigger: r.Trigger, StartedAt: ts(r.StartedAt),
+		ID: r.ID, ProviderKey: r.ProviderKey, JobID: r.JobID, Trigger: r.Trigger, StartedAt: ts(r.StartedAt),
 		ObservedAt: tsPtr(r.ObservedAt), FinishedAt: tsPtr(r.FinishedAt), Outcome: r.Outcome,
 		Counts: r.Counts, Conflicts: make([]syncConflictDTO, 0, len(r.Conflicts)), ConflictCount: r.ConflictCount, Error: r.Error,
 	}

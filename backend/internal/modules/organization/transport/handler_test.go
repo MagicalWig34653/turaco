@@ -103,14 +103,15 @@ type fakeSyncer struct {
 	calls   int
 	actor   string
 	key     string
+	corr    string
 	jobID   string
 	created bool
 	err     error
 }
 
-func (f *fakeSyncer) RequestDirectorySync(_ context.Context, actor, key string) (string, bool, error) {
+func (f *fakeSyncer) RequestDirectorySync(_ context.Context, actor, key, correlationID string) (string, bool, error) {
 	f.calls++
-	f.actor, f.key = actor, key
+	f.actor, f.key, f.corr = actor, key, correlationID
 	return f.jobID, f.created, f.err
 }
 

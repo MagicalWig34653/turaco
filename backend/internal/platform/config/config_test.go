@@ -90,7 +90,7 @@ func setLDAPEnv(t *testing.T, overrides map[string]string) {
 		"LDAP_BIND_DN": "CN=svc,DC=example,DC=test", "LDAP_BIND_PASSWORD_FILE": "/run/secrets/ldap",
 		"LDAP_DIRECTORY_TYPE": "", "LDAP_USER_BASE_DN": "OU=Users,DC=example,DC=test",
 		"LDAP_GROUP_BASE_DN": "OU=Groups,DC=example,DC=test", "LDAP_USER_FILTER": "", "LDAP_GROUP_FILTER": "",
-		"LDAP_SYNC_INTERVAL": "", "LDAP_SYNC_TIMEOUT": "", "LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "",
+		"LDAP_SYNC_INTERVAL": "", "LDAP_SYNC_TIMEOUT": "", "LDAP_SYNC_MAX_MISSING_PERCENT": "",
 	}
 	for k, v := range overrides {
 		values[k] = v
@@ -136,7 +136,7 @@ func TestLoadLDAPDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if l.ProviderKey != "ad" || l.DirectoryType != DirectoryTypeActiveDirectory || l.SyncInterval != time.Hour ||
-		l.SyncTimeout != 15*time.Minute || l.MaxDeactivationPercent != 10 ||
+		l.SyncTimeout != 15*time.Minute || l.MaxMissingPercent != 10 ||
 		l.UserFilter != "(&(objectCategory=person)(objectClass=user))" || l.GroupFilter != "(objectClass=group)" {
 		t.Fatalf("unexpected LDAP defaults %+v", l)
 	}
@@ -172,8 +172,8 @@ func TestLoadLDAPValidation(t *testing.T) {
 		{"bad provider key", map[string]string{"LDAP_PROVIDER_KEY": "AD Main"}},
 		{"unknown directory type", map[string]string{"LDAP_DIRECTORY_TYPE": "novell"}},
 		{"interval too short", map[string]string{"LDAP_SYNC_INTERVAL": "1m"}},
-		{"percent out of range", map[string]string{"LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "101"}},
-		{"percent not a number", map[string]string{"LDAP_SYNC_MAX_DEACTIVATION_PERCENT": "ten"}},
+		{"percent out of range", map[string]string{"LDAP_SYNC_MAX_MISSING_PERCENT": "101"}},
+		{"percent not a number", map[string]string{"LDAP_SYNC_MAX_MISSING_PERCENT": "ten"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -80,7 +80,7 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 		return err
 	}
 	sync := orgpublic.NewDirectorySync(orgrepository.New(pool),
-		orgpublic.DirectorySyncConfig{MaxDeactivationPercent: cfg.MaxDeactivationPercent, RunTimeout: cfg.SyncTimeout},
+		orgpublic.DirectorySyncConfig{MaxMissingPercent: cfg.MaxMissingPercent, RunTimeout: cfg.SyncTimeout},
 		nil, logger)
 	if err := runner.Register(orgpublic.DirectorySyncJobType, cfg.SyncTimeout+directorySyncMargin, directorySyncHandler(sync, src, logger)); err != nil {
 		return err

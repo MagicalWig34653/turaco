@@ -45,6 +45,7 @@ func TestRequestDirectorySyncEndToEnd(t *testing.T) {
 	Register(mux, repo, repo, provider, userAuth{userID: actor}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	post := func() (int, map[string]any) {
 		rec := httptest.NewRecorder()
+		rec.Header().Set("X-Request-ID", "req-e2e") // set by httpx.Middleware in production
 		mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/v1/directory-sync-runs", nil))
 		var body map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &body)
@@ -58,6 +59,12 @@ func TestRequestDirectorySyncEndToEnd(t *testing.T) {
 	code, second := post()
 	if code != 202 || second["created"] != false || second["jobId"] != first["jobId"] {
 		t.Fatalf("second = %d %v", code, second)
+	}
+	var corrOK int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events
+		WHERE action = 'organization.directory_sync.requested' AND target_id = $1 AND correlation_id = 'req-e2e'
+		  AND metadata->>'jobId' = $2 AND metadata ? 'created'`, provider, first["jobId"]).Scan(&corrOK); err != nil || corrOK != 2 {
+		t.Errorf("audit rows correlated by request id = %d (%v)", corrOK, err)
 	}
 	var jobs, audits, byActor int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.jobs WHERE dedupe_key = $1 AND status = 'pending'`, public.DirectorySyncDedupeKey(provider)).Scan(&jobs); err != nil {

@@ -31,7 +31,10 @@ Design and exact semantics: [LDAP/AD Directory Sync Design](ldap-ad-sync-design.
 - Users are matched only by the immutable directory ID (`objectGUID` / `entryUUID`). Turaco never links a directory account to an existing User by email; such accounts are reported as `email_in_use` conflicts.
 - Directory-owned User fields are overwritten by the directory; department, location and cost center remain platform-owned for now.
 - A disabled or removed account makes its User `inactive` and revokes the User's sessions. Sync never marks a User `departed`.
-- Mass-deactivation safeguard: a run that would deactivate more than `LDAP_SYNC_MAX_DEACTIVATION_PERCENT` (and more than 5) users is aborted without changes. After verifying an intended large change, raise the percentage for one run and restore it.
+- A disabled or removed account makes its User `inactive`; an account with malformed identity attributes is kept as observed and reported as an `invalid_attributes` conflict instead of failing the run.
+- Mass-removal safeguard: when more than `LDAP_SYNC_MAX_MISSING_PERCENT` (and more than 5) of the provider's active users, or of its groups, are missing from a run, that "not observed" sweep is withheld and the run ends as `sweep_withheld` (explicit disables are still applied). This protects against a wrong base DN or filter. After verifying an intended large removal, raise the percentage for one run and restore it.
+- Changing `LDAP_PROVIDER_KEY` after the first sync is refused (runs fail permanently): it would orphan all existing directory Users.
+- `turaco-api` only needs `LDAP_URL` and `LDAP_PROVIDER_KEY` (to accept manual run requests); the bind secret is mounted only into `turaco-worker`. Both must use the same values.
 
 ### Service account and secret
 
@@ -39,7 +42,7 @@ Use a dedicated, read-only directory account; it needs read access to the config
 
 ### TLS
 
-Use `ldaps://` (port 636) or `ldap://` with `LDAP_START_TLS=true`. Certificate verification cannot be disabled; for an internal CA set `LDAP_CA_FILE`. Plain LDAP is accepted only with `APP_ENV=development`.
+Use `ldaps://` (port 636) or `ldap://` with `LDAP_START_TLS=true`. Certificate verification cannot be disabled; for an internal CA set `LDAP_CA_FILE`. Plain LDAP is accepted only with both `LDAP_ALLOW_PLAINTEXT=true` and `APP_ENV=development` (local test directories).
 
 ### Testing against a real directory
 

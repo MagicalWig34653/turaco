@@ -287,7 +287,7 @@ func (h *handler) requestDirectorySync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
 		return
 	}
-	jobID, created, err := h.syncer.RequestDirectorySync(r.Context(), principal.UserID, h.syncProviderKey)
+	jobID, created, err := h.syncer.RequestDirectorySync(r.Context(), principal.UserID, h.syncProviderKey, w.Header().Get("X-Request-ID"))
 	if err != nil {
 		h.fail(w, r, err)
 		return

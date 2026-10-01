@@ -20,7 +20,6 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 )
 
 // tickClock returns strictly increasing times so every run has distinct,
@@ -70,7 +69,7 @@ func newSyncFixture(t *testing.T, maxPercent int) *syncFixture {
 	pfx := "zt" + hex.EncodeToString(b)
 	f := &syncFixture{t: t, pool: pool, repo: New(pool), provider: pfx + "-ad", pfx: pfx, clock: &tickClock{t: clockBase}}
 	f.src = &fakeSource{key: f.provider}
-	f.sync = public.NewDirectorySync(f.repo, public.DirectorySyncConfig{MaxDeactivationPercent: maxPercent, RunTimeout: 15 * time.Minute},
+	f.sync = public.NewDirectorySync(f.repo, public.DirectorySyncConfig{MaxMissingPercent: maxPercent, RunTimeout: 15 * time.Minute},
 		f.clock.Now, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(f.cleanup)
 	return f
@@ -149,7 +148,7 @@ func (f *syncFixture) setGroups(groups ...public.DirectoryGroup) {
 }
 
 func (f *syncFixture) run() (public.SyncRunResult, error) {
-	return f.sync.Run(context.Background(), f.src, public.SyncTriggerScheduled)
+	return f.sync.Run(context.Background(), f.src, public.SyncTriggerScheduled, "")
 }
 
 func (f *syncFixture) mustRun() public.SyncRunResult {
@@ -485,8 +484,15 @@ func TestSyncUpdatesChangedAttributes(t *testing.T) {
 		t.Error("attributes hash must change")
 	}
 	eq(t, "username", f.count(`SELECT count(*) FROM organization.external_identities WHERE provider_key = $1 AND username = 'alice.r'`, f.provider), 1)
-	// Attribute refreshes are observations, not audit events.
-	eq(t, "audit rows", f.auditRows(res.RunID), 0)
+	// Attribute refreshes are observations, not audit events; an email change is audited.
+	eq(t, "audit rows", f.auditRows(res.RunID), 1)
+	eq(t, "email audit", f.syncAudit(res.RunID, "organization.user.primary_email_changed"), 1)
+	var before, after string
+	if err := f.pool.QueryRow(context.Background(), `SELECT before_data->>'primaryEmail', after_data->>'primaryEmail' FROM platform.audit_events
+		WHERE correlation_id = $1 AND action = 'organization.user.primary_email_changed' AND target_id = $2`, res.RunID, a.id).Scan(&before, &after); err != nil ||
+		before != f.email("alice") || after != f.email("alice2") {
+		t.Errorf("email audit before=%q after=%q (%v)", before, after, err)
+	}
 	evs := f.events(res.RunID)
 	if len(evs) != 1 {
 		t.Fatalf("events = %+v", evs)
@@ -619,7 +625,7 @@ func TestSyncNotObservedSweepAndReappear(t *testing.T) {
 	eq(t, "bob status", f.userRow("bob").status, "active")
 }
 
-func TestSyncSafeguardAbortLeavesDataUnchanged(t *testing.T) {
+func TestSyncUserSweepWithheldAppliesEverythingElse(t *testing.T) {
 	f := newSyncFixture(t, 10)
 	var all []public.DirectoryUser
 	for i := 0; i < 10; i++ {
@@ -628,47 +634,128 @@ func TestSyncSafeguardAbortLeavesDataUnchanged(t *testing.T) {
 	f.setUsers(all...)
 	f.setGroups(f.group("g", []string{"u00", "u05"}, nil))
 	f.mustRun()
-	before := f.userRow("u05")
-	session := f.insertSession(before.id)
+	missing := f.userRow("u05")
+	session := f.insertSession(missing.id)
+	disabledSession := f.insertSession(f.userRow("u01").id)
 
-	f.setUsers(all[0], all[1]) // 8 of 10 missing: more than 5 and more than 10%
+	// 8 of 10 missing: more than 5 and more than 10%. u01 is explicitly disabled
+	// (not missing) and u00 gets a new name; both are applied.
+	disabled := all[1]
+	disabled.Enabled = false
+	renamed := all[0]
+	renamed.DisplayName = "Renamed"
+	f.setUsers(renamed, disabled)
 	f.setGroups(f.group("g", []string{"u00"}, nil))
 	res, err := f.run()
-	if !errors.Is(err, public.ErrSyncSafeguard) || !jobs.IsPermanent(err) {
-		t.Fatalf("err = %v, want permanent ErrSyncSafeguard", err)
+	if err != nil {
+		t.Fatalf("err = %v, want nil (no retry storm)", err)
 	}
-	eq(t, "outcome", res.Outcome, "aborted_safeguard")
-	run := f.runRow(res.RunID)
-	eq(t, "run outcome", run.Outcome, "aborted_safeguard")
-	if run.FinishedAt == nil || run.Error == nil || !strings.Contains(*run.Error, "8 of 10") {
-		t.Errorf("run = %+v", run)
+	eq(t, "outcome", res.Outcome, "sweep_withheld")
+	eq(t, "run outcome", f.runRow(res.RunID).Outcome, "sweep_withheld")
+	f.expectCounts(res, map[string]int{"usersSweepWithheld": 8, "usersNotObserved": 0, "usersDeactivated": 1, "sessionsRevoked": 1, "usersUpdated": 2})
+	// Missing identities stay observed, active and with their sessions.
+	if id := f.identity("u05"); !id.enabled || id.deleted != nil {
+		t.Errorf("missing identity swept: %+v", id)
 	}
-	eq(t, "active identities", f.count(`SELECT count(*) FROM organization.external_identities WHERE provider_key = $1 AND enabled AND deleted_observed_at IS NULL`, f.provider), 10)
-	eq(t, "active users", f.count(`SELECT count(*) FROM organization.users u JOIN organization.external_identities e ON e.user_id = u.id WHERE e.provider_key = $1 AND u.status = 'active'`, f.provider), 10)
 	after := f.userRow("u05")
-	if !after.updatedAt.Equal(before.updatedAt) || after.status != "active" {
-		t.Errorf("user changed: %+v -> %+v", before, after)
+	if !after.updatedAt.Equal(missing.updatedAt) || after.status != "active" || f.sessionRevoked(session) {
+		t.Errorf("missing user changed or session revoked: %+v", after)
 	}
-	if f.sessionRevoked(session) {
-		t.Error("aborted run must not revoke sessions")
+	// The explicit disable and the rename are applied.
+	if f.identity("u01").enabled || f.userRow("u01").status != "inactive" || !f.sessionRevoked(disabledSession) {
+		t.Error("explicit disable must be applied with session revocation")
 	}
-	eq(t, "open memberships", len(f.openMembers("g")), 2)
-	eq(t, "aborted audit", f.syncAudit(res.RunID, "organization.directory_sync.aborted"), 1)
-	eq(t, "all audit rows of the run", f.auditRows(res.RunID), 1)
-	var target string
-	if err := f.pool.QueryRow(context.Background(), `SELECT target_type || ':' || target_id FROM platform.audit_events WHERE correlation_id = $1`, res.RunID).Scan(&target); err != nil || target != "directory_sync_run:"+res.RunID {
-		t.Errorf("target = %q (%v)", target, err)
+	eq(t, "rename", f.userRow("u00").display, "Renamed")
+	// Group data of observed groups is applied: u05 is no longer a member.
+	eq(t, "open memberships", len(f.openMembers("g")), 1)
+	eq(t, "withheld audit", f.syncAudit(res.RunID, "organization.directory_sync.sweep_withheld"), 1)
+	var target, metaUsers, metaMissing string
+	if err := f.pool.QueryRow(context.Background(), `
+		SELECT target_type || ':' || target_id, metadata->>'usersSweepWithheld', metadata->>'usersMissing'
+		FROM platform.audit_events WHERE correlation_id = $1 AND action = 'organization.directory_sync.sweep_withheld'`, res.RunID).
+		Scan(&target, &metaUsers, &metaMissing); err != nil || target != "directory_sync_run:"+res.RunID || metaUsers != "8" || metaMissing != "8" {
+		t.Errorf("audit target=%q users=%q missing=%q (%v)", target, metaUsers, metaMissing, err)
 	}
-	eq(t, "outbox rows", f.outboxRows(res.RunID), 0)
 
-	// Boundary: deactivating exactly 5 identities is never a safeguard abort.
-	f.setUsers(all[0], all[1], all[2], all[3], all[4]) // 5 missing of 10
-	f.setGroups()
-	res, err = f.run()
+	// The next run re-evaluates: once the directory is back the identities stay observed.
+	f.setUsers(all...)
+	f.setGroups(f.group("g", []string{"u00", "u05"}, nil))
+	res2 := f.mustRun()
+	f.expectCounts(res2, map[string]int{"usersSweepWithheld": 0, "usersNotObserved": 0})
+	eq(t, "run 2 outcome", res2.Outcome, "succeeded")
+}
+
+func TestSyncUserSweepBoundaryAndExplicitDisablesAreNeverWithheld(t *testing.T) {
+	f := newSyncFixture(t, 10)
+	var all []public.DirectoryUser
+	for i := 0; i < 10; i++ {
+		all = append(all, f.user(fmt.Sprintf("u%02d", i)))
+	}
+	f.setUsers(all...)
+	f.mustRun()
+
+	// Disabling 9 of 10 accounts explicitly is applied: only missing identities count.
+	var disabled []public.DirectoryUser
+	for _, u := range all {
+		u.Enabled = false
+		disabled = append(disabled, u)
+	}
+	disabled[0].Enabled = true
+	f.setUsers(disabled...)
+	res := f.mustRun()
+	f.expectCounts(res, map[string]int{"usersDeactivated": 9, "usersSweepWithheld": 0})
+
+	// Exactly 5 missing is never withheld.
+	f.setUsers(disabled[0], disabled[1], disabled[2], disabled[3], disabled[4])
+	res, err := f.run()
 	if err != nil || res.Outcome != "succeeded" {
-		t.Fatalf("5 deactivations: %v %+v", err, res)
+		t.Fatalf("5 missing: %v %+v", err, res)
 	}
 	f.expectCounts(res, map[string]int{"usersNotObserved": 5})
+}
+
+func TestSyncGroupSweepWithheldKeepsMembershipAndNesting(t *testing.T) {
+	f := newSyncFixture(t, 10)
+	f.setUsers(f.user("alice"), f.user("bob"))
+	var groups []public.DirectoryGroup
+	for i := 0; i < 10; i++ {
+		groups = append(groups, f.group(fmt.Sprintf("g%02d", i), []string{"alice", "bob"}, nil))
+	}
+	groups[0] = f.group("g00", []string{"alice"}, []string{"g09"}) // g00 contains g09
+	f.setGroups(groups...)
+	f.mustRun()
+	_, _, _, _, lastBefore := f.groupState("g09")
+
+	// 8 of 10 groups missing (g00 stays, g01 stays, g09 is missing). g00 no
+	// longer lists g09 because the source cannot resolve it any more.
+	f.setGroups(f.group("g00", []string{"alice"}, nil), groups[1])
+	res, err := f.run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eq(t, "outcome", res.Outcome, "sweep_withheld")
+	f.expectCounts(res, map[string]int{"groupsSweepWithheld": 8, "groupsNotObserved": 0, "usersSweepWithheld": 0, "nestingClosed": 0, "unresolvedMembers": 0})
+	for _, name := range []string{"g02", "g09"} {
+		if _, _, deleted, _, _ := f.groupState(name); deleted != nil {
+			t.Errorf("%s marked not observed", name)
+		}
+	}
+	if _, _, _, _, last := f.groupState("g09"); !last.Equal(lastBefore) {
+		t.Error("withheld group must not be refreshed")
+	}
+	eq(t, "g02 members untouched", len(f.openMembers("g02")), 2)
+	eq(t, "g09 members untouched", len(f.openMembers("g09")), 2)
+	eq(t, "g00 member bob closed", len(f.openMembers("g00")), 1)
+	eq(t, "nesting to the missing child untouched", f.count(`
+		SELECT count(*) FROM organization.directory_group_nesting n
+		JOIN organization.directory_groups p ON p.id = n.parent_group_id
+		WHERE p.provider_key = $1 AND n.observed_until IS NULL`, f.provider), 1)
+	eq(t, "withheld audit", f.syncAudit(res.RunID, "organization.directory_sync.sweep_withheld"), 1)
+
+	// Once the sweep is allowed again (fewer missing than the minimum) it is applied.
+	f.setGroups(append([]public.DirectoryGroup{f.group("g00", []string{"alice"}, nil)}, groups[1:6]...)...)
+	res2 := f.mustRun()
+	f.expectCounts(res2, map[string]int{"groupsNotObserved": 4, "groupsSweepWithheld": 0, "nestingClosed": 1})
 }
 
 func TestSyncEmailInUse(t *testing.T) {
@@ -955,7 +1042,7 @@ func TestSyncAbandonedRunCleanupAndConcurrentRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := f.run()
-	if !errors.Is(err, public.ErrSyncAlreadyRunning) || jobs.IsPermanent(err) || res.RunID != "" {
+	if !errors.Is(err, public.ErrSyncAlreadyRunning) || res.RunID != "" {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	eq(t, "runs", f.count(`SELECT count(*) FROM organization.directory_sync_runs WHERE provider_key = $1`, f.provider), 1)
@@ -963,7 +1050,7 @@ func TestSyncAbandonedRunCleanupAndConcurrentRejection(t *testing.T) {
 
 	// Another provider is not blocked by it.
 	other := &fakeSource{key: f.provider + "-other", snap: f.src.snap}
-	otherRes, err := f.sync.Run(ctx, other, public.SyncTriggerManual)
+	otherRes, err := f.sync.Run(ctx, other, public.SyncTriggerManual, "")
 	if err != nil {
 		t.Fatalf("other provider: %v", err)
 	}
@@ -973,6 +1060,10 @@ func TestSyncAbandonedRunCleanupAndConcurrentRejection(t *testing.T) {
 		o.cleanup()
 	})
 	eq(t, "other provider trigger", f.runRow(otherRes.RunID).Trigger, "manual")
+	// Remove the other provider's data: its identities would otherwise look like a changed provider key.
+	o := *f
+	o.provider = other.key
+	o.cleanup()
 
 	// Once it is older than the run timeout it is closed as abandoned.
 	if _, err := f.pool.Exec(ctx, `UPDATE organization.directory_sync_runs SET started_at = $2 WHERE id = $1`, live, clockBase.Add(-time.Hour)); err != nil {
@@ -995,13 +1086,13 @@ func TestSyncInvalidSnapshotIsPermanentAndChangesNothing(t *testing.T) {
 		"user id equals group id": {Users: []public.DirectoryUser{good}, Groups: []public.DirectoryGroup{{ExternalID: good.ExternalID, DisplayName: "G"}}},
 		"duplicate group":         {Users: []public.DirectoryUser{good}, Groups: []public.DirectoryGroup{{ExternalID: "g1", DisplayName: "G"}, {ExternalID: "g1", DisplayName: "G"}}},
 		"empty user id":           {Users: []public.DirectoryUser{{DisplayName: "X"}}},
-		"empty display name":      {Users: []public.DirectoryUser{{ExternalID: "x"}}},
+		"NUL in external id":      {Users: []public.DirectoryUser{{ExternalID: "x\x00", DisplayName: "X"}}},
 	}
 	for name, snap := range cases {
 		t.Run(name, func(t *testing.T) {
 			f.src.snap = snap
 			res, err := f.run()
-			if !errors.Is(err, public.ErrInvalidSnapshot) || !jobs.IsPermanent(err) {
+			if !errors.Is(err, public.ErrInvalidSnapshot) {
 				t.Fatalf("err = %v", err)
 			}
 			run := f.runRow(res.RunID)
@@ -1018,8 +1109,8 @@ func TestSyncFetchErrorFailsRunRetryably(t *testing.T) {
 	f := newSyncFixture(t, 10)
 	f.src.err = errors.New("search failed\n" + strings.Repeat("x", 800))
 	res, err := f.run()
-	if err == nil || jobs.IsPermanent(err) || !errors.Is(err, f.src.err) {
-		t.Fatalf("err = %v, want retryable wrapped fetch error", err)
+	if err == nil || !errors.Is(err, f.src.err) {
+		t.Fatalf("err = %v, want wrapped fetch error", err)
 	}
 	run := f.runRow(res.RunID)
 	if run.Outcome != "failed" || run.Error == nil || !strings.HasPrefix(*run.Error, "fetch failed: search failed") || len(*run.Error) > 500 || strings.ContainsRune(*run.Error, '\n') {
@@ -1037,7 +1128,7 @@ func TestSyncCancelledContextStillRecordsFailure(t *testing.T) {
 	f.setUsers(f.user("alice"))
 	ctx, cancel := context.WithCancel(context.Background())
 	src := cancelSource{fakeSource: f.src, cancel: cancel}
-	res, err := f.sync.Run(ctx, src, public.SyncTriggerScheduled)
+	res, err := f.sync.Run(ctx, src, public.SyncTriggerScheduled, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -1144,7 +1235,7 @@ func TestRequestDirectorySyncEnqueuesAuditsAndDeduplicates(t *testing.T) {
 		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE target_type = 'directory_provider' AND target_id = $1`, f.provider)
 	})
 
-	id1, created, err := f.repo.RequestDirectorySync(ctx, actor, f.provider)
+	id1, created, err := f.repo.RequestDirectorySync(ctx, actor, f.provider, "req-1")
 	if err != nil || !created || id1 == "" {
 		t.Fatalf("first: %q %v %v", id1, created, err)
 	}
@@ -1158,7 +1249,7 @@ func TestRequestDirectorySyncEnqueuesAuditsAndDeduplicates(t *testing.T) {
 		t.Errorf("job = %s %s %d (%v)", typ, payload, attempts, err)
 	}
 
-	id2, created2, err := f.repo.RequestDirectorySync(ctx, actor, f.provider)
+	id2, created2, err := f.repo.RequestDirectorySync(ctx, actor, f.provider, "req-1")
 	if err != nil || created2 || id2 != id1 {
 		t.Fatalf("second: %q %v %v, want %q false", id2, created2, err, id1)
 	}
@@ -1190,7 +1281,7 @@ func TestRequestDirectorySyncEnqueuesAuditsAndDeduplicates(t *testing.T) {
 			t.Errorf("audit rows = %+v", got)
 		}
 	}
-	if _, _, err := f.repo.RequestDirectorySync(ctx, "not-a-uuid", f.provider); err == nil {
+	if _, _, err := f.repo.RequestDirectorySync(ctx, "not-a-uuid", f.provider, "req-1"); err == nil {
 		t.Error("non-user actor must be rejected")
 	}
 }
@@ -1206,7 +1297,7 @@ func TestStartRunConcurrentCallsAdmitExactlyOne(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := f.repo.StartRun(context.Background(), f.provider, public.SyncTriggerScheduled, clockBase, clockBase.Add(-time.Hour))
+			_, err := f.repo.StartRun(context.Background(), f.provider, public.SyncTriggerScheduled, "", clockBase, clockBase.Add(-time.Hour))
 			results <- err
 		}()
 	}

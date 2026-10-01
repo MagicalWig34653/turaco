@@ -36,9 +36,6 @@ ALTER TABLE organization.directory_group_memberships
         AND (observed_until IS NULL OR observed_until >= last_observed_at));
 CREATE UNIQUE INDEX IF NOT EXISTS directory_group_memberships_current_unique
     ON organization.directory_group_memberships(group_id, user_id) WHERE observed_until IS NULL;
--- Replaced by the partial unique index above plus a history lookup index.
-CREATE INDEX IF NOT EXISTS directory_group_memberships_history_idx
-    ON organization.directory_group_memberships(group_id, user_id, observed_from DESC);
 
 -- Direct group-in-group edges as observed; transitive membership is not expanded.
 CREATE TABLE IF NOT EXISTS organization.directory_group_nesting (
@@ -59,12 +56,14 @@ CREATE INDEX IF NOT EXISTS directory_group_nesting_child_idx ON organization.dir
 CREATE TABLE IF NOT EXISTS organization.directory_sync_runs (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     provider_key text NOT NULL CHECK (provider_key <> ''),
+    -- platform.jobs.id of the job that executed the run; no foreign key because jobs are pruned independently.
+    job_id uuid,
     trigger text NOT NULL CHECK (trigger IN ('scheduled', 'manual')),
     started_at timestamptz NOT NULL,
     observed_at timestamptz,
     finished_at timestamptz,
     outcome text NOT NULL DEFAULT 'running'
-        CHECK (outcome IN ('running', 'succeeded', 'failed', 'aborted_safeguard')),
+        CHECK (outcome IN ('running', 'succeeded', 'failed', 'sweep_withheld')),
     counts jsonb NOT NULL DEFAULT '{}'::jsonb,
     conflicts jsonb NOT NULL DEFAULT '[]'::jsonb,
     conflict_count integer NOT NULL DEFAULT 0 CHECK (conflict_count >= 0),
@@ -75,5 +74,6 @@ CREATE TABLE IF NOT EXISTS organization.directory_sync_runs (
 -- At most one running run per provider.
 CREATE UNIQUE INDEX IF NOT EXISTS directory_sync_runs_running_unique
     ON organization.directory_sync_runs(provider_key) WHERE outcome = 'running';
+-- Serves the per-provider listing (newest first by UUIDv7 id) and the observed_at clamp lookup.
 CREATE INDEX IF NOT EXISTS directory_sync_runs_provider_idx
-    ON organization.directory_sync_runs(provider_key, started_at DESC);
+    ON organization.directory_sync_runs(provider_key, id DESC);

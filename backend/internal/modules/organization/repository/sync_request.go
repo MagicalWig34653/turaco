@@ -16,8 +16,10 @@ import (
 var _ application.DirectorySyncRequester = (*Repository)(nil)
 
 // RequestDirectorySync enqueues a deduplicated manual sync job and writes the
-// audit event in the same transaction.
-func (r *Repository) RequestDirectorySync(ctx context.Context, actorUserID, providerKey string) (string, bool, error) {
+// audit event in the same transaction. correlationID (the HTTP request ID)
+// correlates the audit event with the request; jobID is recorded in the
+// metadata and used when no request ID is available.
+func (r *Repository) RequestDirectorySync(ctx context.Context, actorUserID, providerKey, correlationID string) (string, bool, error) {
 	if _, ok := parseID(actorUserID); !ok {
 		return "", false, errors.New("request directory sync: actor must be a user id")
 	}
@@ -44,6 +46,9 @@ func (r *Repository) RequestDirectorySync(ctx context.Context, actorUserID, prov
 	if jobID == "" {
 		return "", false, errors.New("request directory sync: no active job after retry")
 	}
+	if correlationID == "" {
+		correlationID = jobID
+	}
 	var auditID string
 	if err := tx.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&auditID); err != nil {
 		return "", false, fmt.Errorf("request directory sync: audit id: %w", err)
@@ -54,7 +59,7 @@ func (r *Repository) RequestDirectorySync(ctx context.Context, actorUserID, prov
 	}
 	if err := audit.Insert(ctx, tx, audit.Entry{
 		ID: auditID, OccurredAt: time.Now().UTC(), ActorID: &actorUserID, Action: "organization.directory_sync.requested",
-		TargetType: "directory_provider", TargetID: providerKey, CorrelationID: jobID, Metadata: meta,
+		TargetType: "directory_provider", TargetID: providerKey, CorrelationID: correlationID, Metadata: meta,
 	}); err != nil {
 		return "", false, err
 	}

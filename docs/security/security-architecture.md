@@ -22,7 +22,7 @@ Browser sessions are server-side. The cookie carries a 256-bit random opaque tok
 
 Platform User is separate from External Identity. Initial AD/LDAP and transparent Windows auth can coexist with future OIDC/Entra without re-keying business history.
 
-Directory synchronization matches accounts only by immutable directory IDs and never links a directory account to an existing User by email (account-takeover prevention). It binds with a read-only service account whose password is read from a deployment secret file, requires LDAPS/StartTLS with certificate verification, requests an explicit attribute allowlist and aborts runs that would deactivate an unexpectedly large share of users. See [LDAP/AD integration](../integrations/ldap-ad.md).
+Directory synchronization matches accounts only by immutable directory IDs and never links a directory account to an existing User by email (account-takeover prevention). It binds with a read-only service account whose password is read from a deployment secret file, requires LDAPS/StartTLS with certificate verification, requests an explicit attribute allowlist, resolves DN references exactly (ambiguous references stay unresolved), bounds resources a hostile directory could exhaust, degrades malformed entries individually instead of stopping deactivations, and withholds the "not observed" sweep when an unexpectedly large share of users or groups is missing. See [LDAP/AD integration](../integrations/ldap-ad.md).
 
 ## Agents
 

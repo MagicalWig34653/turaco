@@ -37,21 +37,21 @@ type Config struct {
 // configuration values: only the path of a file holding it (a deployment
 // secret such as a Docker secret) is configured.
 type LDAPConfig struct {
-	ProviderKey            string
-	URL                    string
-	StartTLS               bool
-	AllowPlaintext         bool // plain ldap:// without StartTLS; development only
-	CAFile                 string
-	BindDN                 string
-	BindPasswordFile       string
-	DirectoryType          string // "active_directory" or "openldap"
-	UserBaseDN             string
-	UserFilter             string
-	GroupBaseDN            string
-	GroupFilter            string
-	SyncInterval           time.Duration
-	SyncTimeout            time.Duration
-	MaxDeactivationPercent int
+	ProviderKey       string
+	URL               string
+	StartTLS          bool
+	AllowPlaintext    bool // plain ldap:// without StartTLS; development only
+	CAFile            string
+	BindDN            string
+	BindPasswordFile  string
+	DirectoryType     string // "active_directory" or "openldap"
+	UserBaseDN        string
+	UserFilter        string
+	GroupBaseDN       string
+	GroupFilter       string
+	SyncInterval      time.Duration
+	SyncTimeout       time.Duration
+	MaxMissingPercent int
 }
 
 // Enabled reports whether directory synchronization is configured.
@@ -106,7 +106,7 @@ var Registry = []Descriptor{
 	{Name: "LDAP_GROUP_FILTER", Type: "string", Description: "Group search filter. Default depends on LDAP_DIRECTORY_TYPE."},
 	{Name: "LDAP_SYNC_INTERVAL", Type: "duration", Default: "1h", Description: "Interval between scheduled directory synchronization runs; at least 5m."},
 	{Name: "LDAP_SYNC_TIMEOUT", Type: "duration", Default: "15m", Description: "Maximum duration of one directory synchronization run; a run still marked running after this is treated as abandoned."},
-	{Name: "LDAP_SYNC_MAX_DEACTIVATION_PERCENT", Type: "int", Default: "10", Description: "Safeguard: a run that would deactivate more than this percentage of the provider's active directory users (and more than 5 users) is aborted without changes. 0-100."},
+	{Name: "LDAP_SYNC_MAX_MISSING_PERCENT", Type: "int", Default: "10", Description: "Safeguard: when more than this percentage (and more than 5) of the provider's active directory users, or of its observed groups, are missing from a run, that not-observed sweep is withheld (outcome sweep_withheld); everything else, including explicit disables, is applied. 0-100."},
 }
 
 func Load() (Config, error) {
@@ -222,9 +222,9 @@ func LoadLDAP(environment string) (LDAPConfig, error) {
 	if c.SyncTimeout, err = getDuration("LDAP_SYNC_TIMEOUT", 15*time.Minute); err != nil {
 		return LDAPConfig{}, err
 	}
-	pct := getenv("LDAP_SYNC_MAX_DEACTIVATION_PERCENT", "10")
-	if c.MaxDeactivationPercent, err = strconv.Atoi(pct); err != nil || c.MaxDeactivationPercent < 0 || c.MaxDeactivationPercent > 100 {
-		return LDAPConfig{}, fmt.Errorf("LDAP_SYNC_MAX_DEACTIVATION_PERCENT must be an integer between 0 and 100")
+	pct := getenv("LDAP_SYNC_MAX_MISSING_PERCENT", "10")
+	if c.MaxMissingPercent, err = strconv.Atoi(pct); err != nil || c.MaxMissingPercent < 0 || c.MaxMissingPercent > 100 {
+		return LDAPConfig{}, fmt.Errorf("LDAP_SYNC_MAX_MISSING_PERCENT must be an integer between 0 and 100")
 	}
 	return c, nil
 }

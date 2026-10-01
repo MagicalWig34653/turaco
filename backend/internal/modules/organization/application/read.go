@@ -111,8 +111,10 @@ type ExternalIdentity struct {
 
 // DirectorySyncRun is one directory synchronization execution.
 type DirectorySyncRun struct {
-	ID            string
-	ProviderKey   string
+	ID          string
+	ProviderKey string
+	// JobID is the platform job that executed the run; nil when unknown.
+	JobID         *string
 	Trigger       string
 	StartedAt     time.Time
 	ObservedAt    *time.Time
@@ -143,8 +145,10 @@ type RunFilter struct {
 type DirectorySyncRequester interface {
 	// RequestDirectorySync enqueues a deduplicated manual sync job for
 	// providerKey and audits the request with actorUserID, atomically.
-	// created is false when an active job already exists.
-	RequestDirectorySync(ctx context.Context, actorUserID, providerKey string) (jobID string, created bool, err error)
+	// correlationID is the HTTP request ID and becomes the audit event's
+	// correlation ID (the job ID when empty). created is false when an
+	// active job already exists.
+	RequestDirectorySync(ctx context.Context, actorUserID, providerKey, correlationID string) (jobID string, created bool, err error)
 }
 
 type UserFilter struct {

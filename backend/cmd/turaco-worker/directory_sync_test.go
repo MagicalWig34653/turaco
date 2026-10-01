@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -22,13 +23,18 @@ func (fakeSource) Fetch(context.Context) (orgpublic.DirectorySnapshot, error) {
 type fakeSync struct {
 	calls   int
 	trigger orgpublic.SyncTrigger
+	jobID   string
+	res     orgpublic.SyncRunResult
 	err     error
 }
 
-func (f *fakeSync) Run(_ context.Context, _ orgpublic.DirectorySource, trigger orgpublic.SyncTrigger) (orgpublic.SyncRunResult, error) {
+func (f *fakeSync) Run(_ context.Context, _ orgpublic.DirectorySource, trigger orgpublic.SyncTrigger, jobID string) (orgpublic.SyncRunResult, error) {
 	f.calls++
-	f.trigger = trigger
-	return orgpublic.SyncRunResult{RunID: "r", Outcome: orgpublic.SyncOutcomeSucceeded}, f.err
+	f.trigger, f.jobID = trigger, jobID
+	if f.res.RunID == "" {
+		return orgpublic.SyncRunResult{RunID: "r", Outcome: orgpublic.SyncOutcomeSucceeded}, f.err
+	}
+	return f.res, f.err
 }
 
 func job(t *testing.T, payload any) jobs.Job {
@@ -45,7 +51,6 @@ func TestDirectorySyncHandlerRejectsInvalidJobsPermanently(t *testing.T) {
 	tests := map[string]jobs.Job{
 		"bad json":       {Payload: json.RawMessage(`{`)},
 		"other provider": job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "other", Trigger: orgpublic.SyncTriggerManual}),
-		"bad trigger":    job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "ad", Trigger: "cron"}),
 	}
 	for name, j := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -65,12 +70,41 @@ func TestDirectorySyncHandlerRunsAndPropagatesErrors(t *testing.T) {
 	if err := h(context.Background(), job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "ad", Trigger: orgpublic.SyncTriggerManual})); err != nil {
 		t.Fatal(err)
 	}
-	if sync.calls != 1 || sync.trigger != orgpublic.SyncTriggerManual {
-		t.Fatalf("calls = %d, trigger = %q", sync.calls, sync.trigger)
+	if sync.calls != 1 || sync.trigger != orgpublic.SyncTriggerManual || sync.jobID != "j" {
+		t.Fatalf("calls = %d, trigger = %q, job = %q", sync.calls, sync.trigger, sync.jobID)
 	}
 	sync.err = orgpublic.ErrSyncAlreadyRunning
 	err := h(context.Background(), job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "ad", Trigger: orgpublic.SyncTriggerScheduled}))
 	if !errors.Is(err, orgpublic.ErrSyncAlreadyRunning) || jobs.IsPermanent(err) {
 		t.Fatalf("err = %v; want retryable ErrSyncAlreadyRunning", err)
+	}
+}
+
+func TestDirectorySyncHandlerMapsPermanentConditions(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	payload := job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "ad", Trigger: orgpublic.SyncTriggerScheduled})
+	permanent := []error{
+		orgpublic.ErrInvalidSnapshot, orgpublic.ErrProviderKeyChanged, orgpublic.ErrInvalidRequest,
+		fmt.Errorf("wrapped: %w", orgpublic.ErrInvalidSnapshot),
+	}
+	for _, cause := range permanent {
+		err := directorySyncHandler(&fakeSync{err: cause}, fakeSource{}, logger)(context.Background(), payload)
+		if !jobs.IsPermanent(err) || !errors.Is(err, cause) {
+			t.Errorf("%v: err = %v (permanent=%v)", cause, err, jobs.IsPermanent(err))
+		}
+	}
+	for _, cause := range []error{orgpublic.ErrSyncAlreadyRunning, errors.New("fetch failed")} {
+		if err := directorySyncHandler(&fakeSync{err: cause}, fakeSource{}, logger)(context.Background(), payload); jobs.IsPermanent(err) || !errors.Is(err, cause) {
+			t.Errorf("%v: err = %v, want retryable", cause, err)
+		}
+	}
+}
+
+func TestDirectorySyncHandlerSweepWithheldIsSuccess(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sync := &fakeSync{res: orgpublic.SyncRunResult{RunID: "r", Outcome: orgpublic.SyncOutcomeSweepWithheld}}
+	err := directorySyncHandler(sync, fakeSource{}, logger)(context.Background(), job(t, orgpublic.DirectorySyncJobPayload{ProviderKey: "ad", Trigger: orgpublic.SyncTriggerScheduled}))
+	if err != nil {
+		t.Fatalf("err = %v, want nil (no retry storm)", err)
 	}
 }

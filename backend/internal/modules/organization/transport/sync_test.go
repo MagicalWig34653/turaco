@@ -37,8 +37,9 @@ func TestSyncRunReadAuthorization(t *testing.T) {
 func TestListSyncRunsParamsAndDTO(t *testing.T) {
 	finished := now.Add(time.Minute)
 	reason := "abandoned"
+	jobID := "job-7"
 	fr := &fakeReader{nextCursor: "next", runs: []application.DirectorySyncRun{{
-		ID: "r1", ProviderKey: "ad", Trigger: "scheduled", StartedAt: now, FinishedAt: &finished, Outcome: "failed",
+		ID: "r1", ProviderKey: "ad", JobID: &jobID, Trigger: "scheduled", StartedAt: now, FinishedAt: &finished, Outcome: "failed",
 		Counts: nil, Conflicts: nil, ConflictCount: 3, Error: &reason,
 	}}}
 	both := with("organization.view", "organization.directory.view")
@@ -60,7 +61,7 @@ func TestListSyncRunsParamsAndDTO(t *testing.T) {
 		t.Fatalf("body = %s", rec.Body)
 	}
 	it := body.Items[0]
-	if it["conflictCount"] != float64(3) || it["error"] != "abandoned" || it["observedAt"] != nil || it["finishedAt"] != "2026-01-02T03:05:05Z" {
+	if it["jobId"] != "job-7" || it["conflictCount"] != float64(3) || it["error"] != "abandoned" || it["observedAt"] != nil || it["finishedAt"] != "2026-01-02T03:05:05Z" {
 		t.Errorf("item = %v", it)
 	}
 	if c, ok := it["conflicts"].([]any); !ok || len(c) != 0 {
@@ -147,7 +148,7 @@ func TestRequestDirectorySync(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["jobId"] != "job-1" || body["created"] != true {
 			t.Errorf("body = %s (%v)", rec.Body, err)
 		}
-		if s.actor != "u" || s.key != "ad" || s.calls != 1 {
+		if s.actor != "u" || s.key != "ad" || s.calls != 1 || s.corr != "req-1" {
 			t.Errorf("syncer = %+v", s)
 		}
 		if rec.Header().Get("Cache-Control") != "no-store" {

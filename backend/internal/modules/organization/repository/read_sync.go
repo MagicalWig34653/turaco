@@ -39,13 +39,13 @@ func (r *Repository) ListUserExternalIdentities(ctx context.Context, userID stri
 	return out, nil
 }
 
-const runColumns = `id::text, provider_key, trigger, started_at, observed_at, finished_at, outcome,
+const runColumns = `id::text, provider_key, job_id::text, trigger, started_at, observed_at, finished_at, outcome,
 	counts, conflicts, conflict_count, error`
 
 func scanRun(row pgx.Row) (application.DirectorySyncRun, error) {
 	var run application.DirectorySyncRun
 	var counts, conflicts []byte
-	if err := row.Scan(&run.ID, &run.ProviderKey, &run.Trigger, &run.StartedAt, &run.ObservedAt, &run.FinishedAt,
+	if err := row.Scan(&run.ID, &run.ProviderKey, &run.JobID, &run.Trigger, &run.StartedAt, &run.ObservedAt, &run.FinishedAt,
 		&run.Outcome, &counts, &conflicts, &run.ConflictCount, &run.Error); err != nil {
 		return run, err
 	}
