@@ -180,12 +180,16 @@ func loadLDAP(environment string) (LDAPConfig, error) {
 	default:
 		return LDAPConfig{}, fmt.Errorf("LDAP_URL must use ldaps:// or ldap://")
 	}
-	for _, required := range [][2]string{
-		{"LDAP_BIND_DN", c.BindDN}, {"LDAP_BIND_PASSWORD_FILE", c.BindPasswordFile},
-		{"LDAP_USER_BASE_DN", c.UserBaseDN}, {"LDAP_GROUP_BASE_DN", c.GroupBaseDN},
+	// Only emptiness flows into the error, never a configured value.
+	for _, required := range []struct {
+		name    string
+		missing bool
+	}{
+		{"LDAP_BIND_DN", c.BindDN == ""}, {"LDAP_BIND_PASSWORD_FILE", c.BindPasswordFile == ""},
+		{"LDAP_USER_BASE_DN", c.UserBaseDN == ""}, {"LDAP_GROUP_BASE_DN", c.GroupBaseDN == ""},
 	} {
-		if required[1] == "" {
-			return LDAPConfig{}, fmt.Errorf("%s is required when LDAP_URL is set", required[0])
+		if required.missing {
+			return LDAPConfig{}, fmt.Errorf("%s is required when LDAP_URL is set", required.name)
 		}
 	}
 	if c.SyncInterval, err = getDuration("LDAP_SYNC_INTERVAL", time.Hour); err != nil {
