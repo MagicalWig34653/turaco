@@ -91,11 +91,60 @@ type DirectoryGroup struct {
 	DeletedObservedAt *time.Time
 }
 
-// DirectoryGroupMember is an observed user membership with freshness.
+// DirectoryGroupMember is a currently observed user membership with freshness.
 type DirectoryGroupMember struct {
 	UserID         string
 	DisplayName    string
+	ObservedFrom   time.Time
 	LastObservedAt time.Time
+}
+
+// ExternalIdentity is a directory account linked to a User. The external
+// subject and distinguished name are deliberately not exposed.
+type ExternalIdentity struct {
+	ProviderKey       string
+	Username          *string
+	Enabled           bool
+	LastSeenAt        *time.Time
+	DeletedObservedAt *time.Time
+}
+
+// DirectorySyncRun is one directory synchronization execution.
+type DirectorySyncRun struct {
+	ID            string
+	ProviderKey   string
+	Trigger       string
+	StartedAt     time.Time
+	ObservedAt    *time.Time
+	FinishedAt    *time.Time
+	Outcome       string
+	Counts        map[string]int
+	Conflicts     []SyncConflict
+	ConflictCount int
+	Error         *string
+}
+
+// SyncConflict is a skipped or unresolved item of a run. It never carries
+// attribute values beyond the directory username.
+type SyncConflict struct {
+	Kind       string
+	ExternalID string
+	Username   string
+}
+
+// RunFilter filters directory sync runs. Runs are paginated newest first:
+// Cursor is the last (smallest) ID of the previous page.
+type RunFilter struct {
+	ProviderKey string
+	Page
+}
+
+// DirectorySyncRequester enqueues a manual directory sync and audits the request.
+type DirectorySyncRequester interface {
+	// RequestDirectorySync enqueues a deduplicated manual sync job for
+	// providerKey and audits the request with actorUserID, atomically.
+	// created is false when an active job already exists.
+	RequestDirectorySync(ctx context.Context, actorUserID, providerKey string) (jobID string, created bool, err error)
 }
 
 type UserFilter struct {
@@ -114,6 +163,8 @@ type NameFilter struct {
 type Reader interface {
 	ListUsers(ctx context.Context, f UserFilter) (Result[User], error)
 	GetUser(ctx context.Context, id string) (User, error)
+	// ListUserExternalIdentities returns the directory accounts of a user ordered by provider key and creation.
+	ListUserExternalIdentities(ctx context.Context, userID string) ([]ExternalIdentity, error)
 	ListTeams(ctx context.Context, f NameFilter) (Result[Team], error)
 	GetTeam(ctx context.Context, id string) (Team, error)
 	ListTeamMembers(ctx context.Context, teamID string, p Page) (Result[TeamMember], error)
@@ -121,5 +172,9 @@ type Reader interface {
 	GetLocation(ctx context.Context, id string) (Location, error)
 	ListDirectoryGroups(ctx context.Context, f NameFilter) (Result[DirectoryGroup], error)
 	GetDirectoryGroup(ctx context.Context, id string) (DirectoryGroup, error)
+	// ListDirectoryGroupMembers returns only currently observed members.
 	ListDirectoryGroupMembers(ctx context.Context, groupID string, p Page) (Result[DirectoryGroupMember], error)
+	// ListDirectorySyncRuns pages newest first (descending id).
+	ListDirectorySyncRuns(ctx context.Context, f RunFilter) (Result[DirectorySyncRun], error)
+	GetDirectorySyncRun(ctx context.Context, id string) (DirectorySyncRun, error)
 }

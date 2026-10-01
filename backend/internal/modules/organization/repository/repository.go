@@ -324,7 +324,7 @@ func (r *Repository) GetDirectoryGroup(ctx context.Context, id string) (applicat
 	return getOne(ctx, r, "directory group", id, `SELECT `+groupColumns+` FROM organization.directory_groups WHERE id = $1`, scanGroup)
 }
 
-// ListDirectoryGroupMembers returns observed members of a group. An unknown group yields ErrNotFound.
+// ListDirectoryGroupMembers returns the currently observed members of a group (open intervals). An unknown group yields ErrNotFound.
 func (r *Repository) ListDirectoryGroupMembers(ctx context.Context, groupID string, p application.Page) (application.Result[application.DirectoryGroupMember], error) {
 	p = p.Normalize()
 	if err := r.exists(ctx, `SELECT 1 FROM organization.directory_groups WHERE id = $1`, groupID); err != nil {
@@ -342,17 +342,17 @@ func (r *Repository) ListDirectoryGroupMembers(ctx context.Context, groupID stri
 		cursorCond = " AND m.user_id > $2"
 	}
 	args = append(args, p.Limit+1)
-	sql := `SELECT m.user_id::text, u.display_name, m.last_observed_at
+	sql := `SELECT m.user_id::text, u.display_name, m.observed_from, m.last_observed_at
 FROM organization.directory_group_memberships m
 JOIN organization.users u ON u.id = m.user_id
-WHERE m.group_id = $1` + cursorCond + fmt.Sprintf(` ORDER BY m.user_id LIMIT $%d`, len(args))
+WHERE m.group_id = $1 AND m.observed_until IS NULL` + cursorCond + fmt.Sprintf(` ORDER BY m.user_id LIMIT $%d`, len(args))
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return application.Result[application.DirectoryGroupMember]{}, fmt.Errorf("list directory group members: %w", err)
 	}
 	return collect(rows, p.Limit, func(rows pgx.Rows) (application.DirectoryGroupMember, string, error) {
 		var m application.DirectoryGroupMember
-		err := rows.Scan(&m.UserID, &m.DisplayName, &m.LastObservedAt)
+		err := rows.Scan(&m.UserID, &m.DisplayName, &m.ObservedFrom, &m.LastObservedAt)
 		return m, m.UserID, err
 	})
 }
