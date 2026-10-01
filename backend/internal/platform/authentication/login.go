@@ -20,8 +20,8 @@ import (
 )
 
 // Login endpoints: POST /auth/login (directory password), POST
-// /auth/emergency-login (local break-glass account), GET /auth/methods and the
-// Kerberos placeholder. Behaviour: docs/security/identity-access-design.md §6, §7.
+// /auth/emergency-login (local break-glass account), GET /auth/methods and GET
+// /auth/kerberos (kerberos.go). Behaviour: docs/security/identity-access-design.md §6, §7.
 
 const (
 	maxLoginBodyBytes     = 8 << 10
@@ -49,7 +49,8 @@ const (
 // LoginConfig configures the login endpoints.
 type LoginConfig struct {
 	// ProviderKey is the directory provider key used to resolve accounts. It
-	// is set only when directory password login is configured.
+	// is set only when the directory is configured (password or Kerberos
+	// login).
 	ProviderKey string
 	// EmergencyEnabled mirrors AUTH_EMERGENCY_LOGIN_ENABLED.
 	EmergencyEnabled bool
@@ -73,8 +74,11 @@ type LoginDeps struct {
 	Throttle  *Throttle
 	Directory AccountDirectory
 	Verifier  PasswordVerifier
-	Users     UserLocker
-	Logger    *slog.Logger
+	// Kerberos validates SPNEGO tickets; nil disables GET /auth/kerberos. It
+	// also needs Directory and LoginConfig.ProviderKey.
+	Kerberos KerberosValidator
+	Users    UserLocker
+	Logger   *slog.Logger
 	// Now and Sleep are injectable for tests; defaults are time.Now and a
 	// context-aware sleep.
 	Now   func() time.Time
@@ -92,6 +96,7 @@ type loginHandler struct {
 	throttle  *Throttle
 	directory AccountDirectory
 	verifier  PasswordVerifier
+	krb       KerberosValidator
 	users     UserLocker
 	cfg       LoginConfig
 	logger    *slog.Logger
@@ -112,7 +117,7 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	}
 	h := &loginHandler{
 		pool: d.Pool, sessions: d.Sessions, throttle: d.Throttle,
-		directory: d.Directory, verifier: d.Verifier, users: d.Users,
+		directory: d.Directory, verifier: d.Verifier, krb: d.Kerberos, users: d.Users,
 		cfg: cfg, logger: d.Logger, now: d.Now, sleep: d.Sleep,
 	}
 	if h.logger == nil {
@@ -152,14 +157,9 @@ func (h *loginHandler) passwordEnabled() bool {
 func (h *loginHandler) methods(w http.ResponseWriter, _ *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]bool{
 		"password":  h.passwordEnabled(),
-		"kerberos":  false,
+		"kerberos":  h.kerberosEnabled(),
 		"emergency": h.cfg.EmergencyEnabled,
 	})
-}
-
-// kerberos is a placeholder until F1 slice 4.
-func (h *loginHandler) kerberos(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
 }
 
 type passwordLoginRequest struct {

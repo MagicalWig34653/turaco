@@ -22,6 +22,21 @@ Managed-service environments use isolated customer DB/object/key data planes. Co
 
 Browsers reach `turaco-api` through `turaco-web` (nginx) or another reverse proxy. Set `HTTP_TRUSTED_PROXIES` on the API to the proxy network so login throttling and audit see the real client address from `X-Forwarded-For`; untrusted senders of that header are ignored. Trust only the proxy's own address(es), not whole networks containing gateways or other containers. Without real client addresses every client appears as the proxy and shares one throttle counter, so 30 failed attempts from anyone would block password and emergency login for everyone for 15 minutes. In Docker Swarm the default `mode: ingress` replaces client addresses with the ingress network's; publish the proxy with `mode: host` (or use PROXY protocol on an external load balancer) when login throttling must see clients. Proxies must preserve the `Host` header (the same-origin CSRF guard compares it with `Origin`) and pass `Authorization`/`WWW-Authenticate` unchanged for Kerberos.
 
+## Kerberos single sign-on
+
+1. Create a dedicated service account in AD for Turaco (no delegation rights, not used for anything else) and register the SPN `HTTP/<turaco host name>` (the name users type in the browser), for example `setspn -S HTTP/turaco.example.local svc-turaco-http`.
+2. Export a keytab for that principal with AES encryption types (`ktpass ... -crypto AES256-SHA1 -ptype KRB5_NT_PRINCIPAL`), store it as a secret and mount it **only into turaco-api**.
+3. Set `KERBEROS_KEYTAB_FILE`, `KERBEROS_SERVICE_PRINCIPAL=HTTP/turaco.example.local` and `KERBEROS_REALM=EXAMPLE.LOCAL` on the API (directory sync and `LDAP_URL` must be configured: principals map to synced accounts).
+4. Add the Turaco URL to the browsers' intranet/trusted zone (group policy); otherwise browsers do not send Negotiate and users see the password form.
+5. Keep API and domain controller clocks synchronized (default allowed skew 5 minutes). Proxies must pass `Authorization` and `WWW-Authenticate` unchanged and accept large request headers: tickets with big group memberships exceed nginx defaults (`turaco-web` sets `large_client_header_buffers 4 64k`).
+
+Security notes:
+
+- The keytab is equivalent to the service account's password: whoever holds it can mint tickets for any user of the realm towards Turaco. Keep it readable only by the API process and rotate it (new key version, new keytab) if it may have leaked.
+- Mark administrator accounts "Account is sensitive and cannot be delegated" in AD; Turaco needs no delegated credentials.
+- The service principal must be `HTTP/<host>`; only AES keys for it in `KERBEROS_REALM` are used, and tickets from trusted foreign realms are refused.
+- The Windows PAC is not evaluated: a user disabled in AD can still sign in by Kerberos until the next directory sync marks the User inactive. Shorten the sync interval or run a manual sync when access must end immediately.
+
 ## First administrator and emergency access
 
 After the first directory sync, grant the first administrator from the worker container (it ships `turaco-admin` and uses the worker's `DATABASE_URL`):

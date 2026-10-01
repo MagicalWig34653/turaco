@@ -27,6 +27,9 @@ const maxDisplayNameLength = 200
 type DirectoryAccount struct {
 	UserID            string
 	DistinguishedName string
+	// Username is the synced directory username (exact stored form), used by
+	// Kerberos to require an exact rather than a folded name match.
+	Username string
 }
 
 // LocalUserInsert is the input of LoginAccountStore.InsertLocalUser.

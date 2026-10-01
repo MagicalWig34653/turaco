@@ -26,7 +26,7 @@ func (r *Repository) FindDirectoryAccounts(ctx context.Context, providerKey, by,
 	switch by {
 	case "username":
 		sql = `
-			SELECT u.id::text, e.distinguished_name
+			SELECT u.id::text, e.distinguished_name, coalesce(e.username, '')
 			FROM organization.external_identities e
 			JOIN organization.users u ON u.id = e.user_id
 			WHERE e.provider_key = $1 AND lower(e.username) = lower($2)
@@ -36,7 +36,7 @@ func (r *Repository) FindDirectoryAccounts(ctx context.Context, providerKey, by,
 			LIMIT 2`
 	case "email":
 		sql = `
-			SELECT u.id::text, e.distinguished_name
+			SELECT u.id::text, e.distinguished_name, coalesce(e.username, '')
 			FROM organization.users u
 			JOIN organization.external_identities e ON e.user_id = u.id
 			WHERE e.provider_key = $1 AND lower(u.primary_email) = lower($2)
@@ -55,7 +55,7 @@ func (r *Repository) FindDirectoryAccounts(ctx context.Context, providerKey, by,
 	var out []application.DirectoryAccount
 	for rows.Next() {
 		var a application.DirectoryAccount
-		if err := rows.Scan(&a.UserID, &a.DistinguishedName); err != nil {
+		if err := rows.Scan(&a.UserID, &a.DistinguishedName, &a.Username); err != nil {
 			return nil, fmt.Errorf("find directory accounts: scan: %w", err)
 		}
 		out = append(out, a)

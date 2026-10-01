@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
@@ -95,6 +96,22 @@ func main() {
 		}
 		loginDeps.Directory, loginDeps.Verifier = loginAccounts, verifier
 		loginCfg.ProviderKey = ldapConn.ProviderKey
+	}
+	// Kerberos/SPNEGO login maps tickets to synced directory accounts, so it
+	// needs the directory too (config.Load enforces this). The keytab is read
+	// once here; a missing or wrong keytab stops the API instead of silently
+	// disabling single sign-on.
+	if cfg.Kerberos.Enabled() {
+		if !ldapConn.Enabled() {
+			logger.Error("configure kerberos login", "error", "KERBEROS_KEYTAB_FILE requires LDAP_URL")
+			os.Exit(1)
+		}
+		validator, err := kerberos.NewValidator(cfg.Kerberos, logger)
+		if err != nil {
+			logger.Error("configure kerberos login", "error", err)
+			os.Exit(1)
+		}
+		loginDeps.Kerberos = validator
 	}
 	authentication.RegisterLogin(mux, loginDeps, loginCfg)
 

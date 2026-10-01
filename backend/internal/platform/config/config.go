@@ -38,7 +38,33 @@ type Config struct {
 	// TrustedProxies are the networks whose X-Forwarded-For header is
 	// trusted when determining the client address (login throttling, audit).
 	TrustedProxies []netip.Prefix
+
+	// Kerberos configures Kerberos/SPNEGO login; it is disabled unless
+	// KERBEROS_KEYTAB_FILE is set and requires the directory (LDAP_URL).
+	Kerberos KerberosConfig
 }
+
+// KerberosConfig configures validation of SPNEGO tickets by turaco-api. Only
+// the path of the keytab (a deployment secret) is configured, never key
+// material. It is enabled when KeytabFile is set.
+type KerberosConfig struct {
+	KeytabFile string
+	// ServicePrincipal is the service's principal without realm, for example
+	// HTTP/turaco.example.local.
+	ServicePrincipal string
+	// Realm is the only accepted Kerberos realm, upper case.
+	Realm string
+	// MaxClockSkew bounds the clock difference and the replay window.
+	MaxClockSkew time.Duration
+}
+
+// Enabled reports whether Kerberos login is configured.
+func (c KerberosConfig) Enabled() bool { return c.KeytabFile != "" }
+
+// MaxKerberosClockSkew is the largest accepted KERBEROS_MAX_CLOCK_SKEW: the
+// replay cache only remembers tickets for this long, so a larger value widens
+// the replay window.
+const MaxKerberosClockSkew = 15 * time.Minute
 
 // LDAPConfig configures one directory provider. turaco-worker loads it fully
 // with LoadLDAP for synchronization; turaco-api loads only the connection
@@ -77,6 +103,14 @@ var defaultLDAPFilters = map[string][2]string{
 	DirectoryTypeOpenLDAP:        {"(objectClass=inetOrgPerson)", "(objectClass=groupOfNames)"},
 }
 
+var (
+	// kerberosRealmPattern accepts upper-case realm names (DNS-style, letters,
+	// digits, dots, hyphens, underscores).
+	kerberosRealmPattern = regexp.MustCompile(`^[A-Z0-9][A-Z0-9._-]{0,254}$`)
+	// kerberosServicePattern accepts exactly service/host without a realm.
+	kerberosServicePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
+)
+
 var providerKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type Descriptor struct {
@@ -104,6 +138,10 @@ var Registry = []Descriptor{
 	{Name: "SESSION_COOKIE_SECURE", Type: "bool", Default: "true", Description: "Set the Secure attribute on the session cookie; disable only for local plain-HTTP development."},
 	{Name: "AUTH_EMERGENCY_LOGIN_ENABLED", Type: "bool", Default: "false", Description: "Expose POST /api/v1/auth/emergency-login for the local break-glass account (created with turaco-admin). Every use is audited and logged at error level."},
 	{Name: "HTTP_TRUSTED_PROXIES", Type: "string", Description: "Comma-separated CIDR prefixes of reverse proxies (for example the turaco-web container network) whose X-Forwarded-For header is trusted for the client address used by login throttling and audit. Empty trusts no proxy."},
+	{Name: "KERBEROS_KEYTAB_FILE", Type: "string", Secret: true, Description: "Path to the keytab file (a deployment secret, mounted only into turaco-api) holding the key of KERBEROS_SERVICE_PRINCIPAL. Setting it enables Kerberos/SPNEGO login (GET /api/v1/auth/kerberos) and requires LDAP_URL: tickets are mapped to synced directory accounts. Empty disables Kerberos."},
+	{Name: "KERBEROS_SERVICE_PRINCIPAL", Type: "string", Description: "Service principal of turaco-api without realm, for example `HTTP/turaco.example.local`; its key must be in the keytab. Required when KERBEROS_KEYTAB_FILE is set."},
+	{Name: "KERBEROS_REALM", Type: "string", Description: "The only accepted Kerberos realm, upper case (for example `EXAMPLE.LOCAL`); tickets of other realms are refused. Required when KERBEROS_KEYTAB_FILE is set."},
+	{Name: "KERBEROS_MAX_CLOCK_SKEW", Type: "duration", Default: "5m", Description: "Maximum clock difference between client and server accepted for Kerberos tickets, which also sets the replay-cache window; at most 15m."},
 	{Name: "LDAP_URL", Type: "string", Description: "Directory server URL (`ldaps://host:636`, or `ldap://` with LDAP_START_TLS). Empty disables directory synchronization and password login."},
 	{Name: "LDAP_PROVIDER_KEY", Type: "string", Default: "ad", Description: "Stable key identifying this directory in external identities and directory groups; lowercase letters, digits and hyphens. Changing it makes all existing observations stale."},
 	{Name: "LDAP_START_TLS", Type: "bool", Default: "false", Description: "Upgrade an `ldap://` connection with StartTLS. Invalid boolean values are rejected."},
@@ -161,10 +199,48 @@ func Load() (Config, error) {
 	if cfg.AuthEmergencyLoginEnabled, err = getBool("AUTH_EMERGENCY_LOGIN_ENABLED", false); err != nil {
 		return Config{}, err
 	}
+	if cfg.Kerberos, err = loadKerberos(cfg.DirectoryProviderKey != ""); err != nil {
+		return Config{}, err
+	}
 	if cfg.TrustedProxies, err = getPrefixes("HTTP_TRUSTED_PROXIES"); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// loadKerberos reads and validates the Kerberos settings. The other settings
+// are ignored while KERBEROS_KEYTAB_FILE is empty. It does not touch the
+// file system: the keytab is checked when the validator is built.
+func loadKerberos(directoryConfigured bool) (KerberosConfig, error) {
+	c := KerberosConfig{KeytabFile: os.Getenv("KERBEROS_KEYTAB_FILE")}
+	if c.KeytabFile == "" {
+		return KerberosConfig{}, nil
+	}
+	if !directoryConfigured {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_KEYTAB_FILE requires LDAP_URL: Kerberos principals are mapped to synced directory accounts")
+	}
+	c.ServicePrincipal = os.Getenv("KERBEROS_SERVICE_PRINCIPAL")
+	c.Realm = os.Getenv("KERBEROS_REALM")
+	if c.ServicePrincipal == "" {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_SERVICE_PRINCIPAL is required when KERBEROS_KEYTAB_FILE is set")
+	}
+	if c.Realm == "" {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_REALM is required when KERBEROS_KEYTAB_FILE is set")
+	}
+	if !kerberosRealmPattern.MatchString(c.Realm) {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_REALM must be an upper-case realm name such as EXAMPLE.LOCAL")
+	}
+	if !kerberosServicePattern.MatchString(c.ServicePrincipal) {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_SERVICE_PRINCIPAL must be service/host without a realm, for example HTTP/turaco.example.local")
+	}
+	var err error
+	if c.MaxClockSkew, err = getDuration("KERBEROS_MAX_CLOCK_SKEW", 5*time.Minute); err != nil {
+		return KerberosConfig{}, err
+	}
+	if c.MaxClockSkew > MaxKerberosClockSkew {
+		return KerberosConfig{}, fmt.Errorf("KERBEROS_MAX_CLOCK_SKEW must not exceed %s", MaxKerberosClockSkew)
+	}
+	return c, nil
 }
 
 // getPrefixes parses a comma-separated list of CIDR prefixes or addresses.

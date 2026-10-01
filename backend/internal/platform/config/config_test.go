@@ -242,3 +242,83 @@ func TestLoadAuthSettings(t *testing.T) {
 		t.Fatal("invalid boolean must be rejected")
 	}
 }
+
+func setKerberosEnv(t *testing.T, overrides map[string]string) {
+	t.Helper()
+	setLDAPEnv(t, nil)
+	values := map[string]string{
+		"KERBEROS_KEYTAB_FILE": "/run/secrets/turaco.keytab", "KERBEROS_SERVICE_PRINCIPAL": "HTTP/turaco.example.test",
+		"KERBEROS_REALM": "EXAMPLE.TEST", "KERBEROS_MAX_CLOCK_SKEW": "",
+	}
+	for k, v := range overrides {
+		values[k] = v
+	}
+	for k, v := range values {
+		t.Setenv(k, v)
+	}
+}
+
+func TestLoadKerberosDisabledByDefault(t *testing.T) {
+	setKerberosEnv(t, map[string]string{"KERBEROS_KEYTAB_FILE": "", "KERBEROS_REALM": "not validated while disabled"})
+	cfg, err := Load()
+	if err != nil || cfg.Kerberos.Enabled() || cfg.Kerberos != (KerberosConfig{}) {
+		t.Fatalf("Kerberos = %+v, %v; want disabled", cfg.Kerberos, err)
+	}
+	// Disabled Kerberos does not need the directory either.
+	setKerberosEnv(t, map[string]string{"KERBEROS_KEYTAB_FILE": "", "LDAP_URL": ""})
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() = %v", err)
+	}
+}
+
+func TestLoadKerberosEnabled(t *testing.T) {
+	setKerberosEnv(t, nil)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := KerberosConfig{KeytabFile: "/run/secrets/turaco.keytab", ServicePrincipal: "HTTP/turaco.example.test", Realm: "EXAMPLE.TEST", MaxClockSkew: 5 * time.Minute}
+	if cfg.Kerberos != want || !cfg.Kerberos.Enabled() {
+		t.Fatalf("Kerberos = %+v, want %+v", cfg.Kerberos, want)
+	}
+	setKerberosEnv(t, map[string]string{"KERBEROS_MAX_CLOCK_SKEW": "90s"})
+	if cfg, err = Load(); err != nil || cfg.Kerberos.MaxClockSkew != 90*time.Second {
+		t.Fatalf("MaxClockSkew = %v, %v", cfg.Kerberos.MaxClockSkew, err)
+	}
+}
+
+func TestLoadKerberosValidation(t *testing.T) {
+	cases := map[string]map[string]string{
+		"requires the directory":         {"LDAP_URL": ""},
+		"service principal required":     {"KERBEROS_SERVICE_PRINCIPAL": ""},
+		"realm required":                 {"KERBEROS_REALM": ""},
+		"realm must be upper case":       {"KERBEROS_REALM": "example.test"},
+		"realm mixed case":               {"KERBEROS_REALM": "Example.Test"},
+		"realm with whitespace":          {"KERBEROS_REALM": "EXAMPLE TEST"},
+		"principal with realm":           {"KERBEROS_SERVICE_PRINCIPAL": "HTTP/turaco.example.test@EXAMPLE.TEST"},
+		"principal without host":         {"KERBEROS_SERVICE_PRINCIPAL": "HTTP"},
+		"principal with three parts":     {"KERBEROS_SERVICE_PRINCIPAL": "HTTP/a/b"},
+		"principal with empty host":      {"KERBEROS_SERVICE_PRINCIPAL": "HTTP/"},
+		"principal with space":           {"KERBEROS_SERVICE_PRINCIPAL": "HTTP/turaco example"},
+		"skew not a duration":            {"KERBEROS_MAX_CLOCK_SKEW": "soon"},
+		"skew zero":                      {"KERBEROS_MAX_CLOCK_SKEW": "0s"},
+		"skew negative":                  {"KERBEROS_MAX_CLOCK_SKEW": "-5m"},
+		"skew above the allowed maximum": {"KERBEROS_MAX_CLOCK_SKEW": "16m"},
+	}
+	for name, overrides := range cases {
+		t.Run(name, func(t *testing.T) {
+			setKerberosEnv(t, overrides)
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() accepted %v", overrides)
+			}
+		})
+	}
+}
+
+func TestKerberosKeytabIsASecretSetting(t *testing.T) {
+	for _, d := range Registry {
+		if d.Name == "KERBEROS_KEYTAB_FILE" && !d.Secret {
+			t.Fatal("KERBEROS_KEYTAB_FILE must be documented as a secret")
+		}
+	}
+}
