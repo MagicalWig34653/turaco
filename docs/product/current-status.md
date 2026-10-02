@@ -4,7 +4,7 @@
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
-**In progress:** F2 (Work Foundation, [design](f2-work-foundation-design.md)); slice 1 (outbox dispatcher) and the Teams write API of slice 2 are implemented.
+**In progress:** F2 (Work Foundation, [design](f2-work-foundation-design.md)); slice 1 (outbox dispatcher) and the Teams write API and Task backend of slice 2 are implemented; the Task/My Work UI is next.
 
 **Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". Next milestone: F2 (Work Foundation).
 
@@ -17,6 +17,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Health endpoints and `/api/v1/meta`.
 - Organization read APIs (F1 slice 1): paginated, read-only `GET` endpoints for Users, Teams (with current members), Locations and observed Directory Groups (with observed User memberships). Data is written by directory synchronization (below); there is no write API.
 - Team write API (F2 slice 2): `POST/PATCH /api/v1/teams`, `activate`/`deactivate`, add/remove members (permission `organization.teams.manage`); Teams and memberships are platform-owned (source `platform`), active team names are unique, at most one current membership per user and team, every change audited (`organization.team.*`).
+- Tasks and My Work backend (F2 slice 2; [design](f2-work-foundation-design.md), [state machine](../domain/state-machines.md#task)): `GET/POST /api/v1/tasks`, `GET/PATCH /tasks/{id}`, explicit actions `assign`, `unassign`, `start`, `block`, `unblock`, `complete`, `cancel`, `reopen`, and `GET /api/v1/my-work`. New permission `tasks.work` (see and work tasks assigned to oneself or one's Teams; `tasks.view` sees all, `tasks.manage` changes all); invisible tasks are 404. Optimistic `version`, every operation audited without title/description, `TaskAssigned`/`TaskCompleted` written to the outbox in the same transaction. Organization exposes `public.WorkDirectory` for active-user/team checks, names and a user's Teams. Task context (`context_type`/`context_id`) is stored but no module sets it yet; no notification consumer exists yet.
 - Platform `authorization` package: request `Principal`, `Authenticator` interface and `Require(permission)` middleware; default-deny `DenyAll` remains the fallback. There is deliberately no development bypass.
 - Roles and permissions (F1 slice 5; [design](../security/identity-access-design.md)): custom roles (registry-validated permission sets) plus the immutable built-in `platform-administrator`, assigned to Users or Directory Groups with `global` scope; session permissions are evaluated per request from direct and transitive Directory Group assignments; last-administrator guard; soft-deleted roles keep assignment history; API `GET /permissions`, `/roles*`, `/role-assignments*`.
 - Audit query (F1 slice 6): `GET /api/v1/audit-events` with filters and keyset paging (`platform.audit.view`); all privileged identity/configuration changes listed in the design are audited.
@@ -60,7 +61,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - The migrator runs each file in one transaction, so indexes on large existing tables cannot be built `CONCURRENTLY`; revisit before tables grow large.
 - Directory sync applies a whole snapshot in one transaction; it is designed for directories of about 50k users but tested only up to 3,000, so larger directories need measurement.
 - No per-query timeout beyond the HTTP server write timeout.
-- My Work/Task application APIs and UI.
+- Task and My Work UI.
 - Service Catalog, Service Requests and Approvals.
 - Inventory, procurement and Asset application behavior.
 - Service Desk/Tickets/Major Incidents/Problems.

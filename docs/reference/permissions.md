@@ -22,5 +22,6 @@
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
 | `tasks.manage` | normal | Create and update tasks within authorized scope. |
 | `tasks.view` | normal | View tasks within authorized scope. |
+| `tasks.work` | normal | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
 | `tickets.manage` | normal | Work service-desk records within authorized scope. |
 | `tickets.view` | normal | View service-desk records within authorized scope. |

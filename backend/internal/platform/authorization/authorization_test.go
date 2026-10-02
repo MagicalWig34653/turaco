@@ -64,3 +64,52 @@ func TestRequirePanicsOnUnregisteredPermission(t *testing.T) {
 	}()
 	Require(DenyAll{}, "does.not.exist")
 }
+
+func TestRequireAny(t *testing.T) {
+	has := func(perms ...string) Authenticator {
+		m := map[string]struct{}{}
+		for _, p := range perms {
+			m[p] = struct{}{}
+		}
+		return fixed{p: Principal{UserID: "u", Permissions: m}, ok: true}
+	}
+	tests := []struct {
+		name string
+		auth Authenticator
+		want int
+	}{
+		{"default deny", DenyAll{}, http.StatusUnauthorized},
+		{"none of them", has("organization.view"), http.StatusForbidden},
+		{"first", has("tasks.view"), http.StatusOK},
+		{"second", has("tasks.work", "organization.view"), http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			h := RequireAny(tt.auth, "tasks.view", "tasks.work")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				if _, ok := PrincipalFrom(r.Context()); !ok {
+					t.Error("principal missing in context")
+				}
+			}))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != tt.want || called != (tt.want == http.StatusOK) {
+				t.Fatalf("status = %d, called = %v, want %d", rec.Code, called, tt.want)
+			}
+		})
+	}
+}
+
+func TestRequireAnyPanicsAtConstruction(t *testing.T) {
+	for name, perms := range map[string][]string{"none": nil, "one unregistered": {"tasks.view", "tasks.typo"}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: want panic", name)
+				}
+			}()
+			RequireAny(DenyAll{}, perms...)
+		}()
+	}
+}

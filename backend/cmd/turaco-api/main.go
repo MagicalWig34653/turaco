@@ -16,6 +16,9 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
+	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
+	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
@@ -120,6 +123,8 @@ func main() {
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
+	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
+	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 

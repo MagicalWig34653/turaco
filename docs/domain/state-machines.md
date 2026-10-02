@@ -65,6 +65,8 @@ Terminal alternatives: `rejected`, `cancelled`. `waiting_reason` is separate (`s
 ## Task
 `open → in_progress | blocked | completed | cancelled`; `blocked → open/in_progress`; completed reopen is explicit and audited. Assignment is not state.
 
+Implemented operations (F2, `modules/tasks`): `start` (open/blocked → in_progress), `block(reason)` (open/in_progress → blocked), `unblock` (blocked → open), `complete` (open/in_progress → completed), `cancel(reason)` (open/in_progress/blocked → cancelled), `reopen(reason)` (completed/cancelled → open). Completed and cancelled tasks accept no other change (no edit, no assignment). A reason is stored while a task is blocked or cancelled and cleared on leaving that state; `completed_at` is set exactly while completed. `start`, `block`, `unblock` and `complete` need `tasks.manage` or `tasks.work` on a task assigned to the caller or one of the caller's Teams; `cancel`, `reopen`, editing and assignment need `tasks.manage`. Every change increments `version` (optional `expectedVersion` guards against lost updates), is audited and, for `complete` and assignment changes, emits `TaskCompleted`/`TaskAssigned`.
+
 ## Change
 `draft → assessment → pending_approval? → approved → scheduled → in_progress → completed → review? → closed`.
 

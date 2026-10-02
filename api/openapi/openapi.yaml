@@ -263,6 +263,351 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. Callers holding only `tasks.work` see only tasks assigned to them or one of their Teams; `mine=true` applies that restriction for others. Ordered by due date (undated last), priority (urgent first), id. Keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: One or more of open, in_progress, blocked, completed, cancelled (repeatable or comma-separated).
+          schema: {type: string}
+        - name: priority
+          in: query
+          schema: {type: string, enum: [low, normal, high, urgent]}
+        - name: assignedUserId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: assignedTeamId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: overdue
+          in: query
+          description: Only `true`; unfinished tasks whose due date has passed.
+          schema: {type: boolean}
+        - name: mine
+          in: query
+          description: Only `true`.
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTask
+      summary: Create a task.
+      description: "Requires `tasks.manage`. Audited (tasks.task.created); assigning on creation emits TaskAssigned."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: The created task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get a task.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. Tasks the caller may not see are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateTask
+      summary: Change task details.
+      description: "Requires `tasks.manage`. Title, description, priority and/or due date (`dueAt: null` clears it). Not allowed on completed or cancelled tasks. Audited (tasks.task.details_updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: The updated task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/assign:
+    post:
+      operationId: assignTask
+      summary: Assign a task.
+      description: "Requires `tasks.manage`. Sets the assigned User and/or Team (an omitted side is cleared); both must be active. Audited (tasks.task.assigned); emits TaskAssigned. Assigning the current assignees is a no-op."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAssign'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/unassign:
+    post:
+      operationId: unassignTask
+      summary: Clear the assignment of a task.
+      description: "Requires `tasks.manage`. Audited (tasks.task.unassigned)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/start:
+    post:
+      operationId: startTask
+      summary: Start a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.started)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/block:
+    post:
+      operationId: blockTask
+      summary: Block a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). `reason` is required. Audited (tasks.task.blocked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/unblock:
+    post:
+      operationId: unblockTask
+      summary: Unblock a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.unblocked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/complete:
+    post:
+      operationId: completeTask
+      summary: Complete a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.completed). Emits TaskCompleted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/cancel:
+    post:
+      operationId: cancelTask
+      summary: Cancel a task.
+      description: "Requires `tasks.manage`. `reason` is required. Audited (tasks.task.cancelled)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/reopen:
+    post:
+      operationId: reopenTask
+      summary: Reopen a completed or cancelled task.
+      description: "Requires `tasks.manage`. `reason` is required. Audited (tasks.task.reopened)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /my-work:
+    get:
+      operationId: getMyWork
+      summary: List my work.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. The caller's unfinished (open, in progress, blocked) tasks assigned to the caller or one of its Teams, in the shared task order."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /locations:
     get:
       operationId: listLocations
@@ -938,6 +1283,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    TasksInvalid:
+      description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TasksNotFound:
+      description: Task not found or not visible to the caller (tasks.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TasksConflict:
+      description: Conflict (tasks.invalid_transition, tasks.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     AuthorizationInvalid:
       description: Invalid input (authorization.invalid_request, authorization.unknown_permission, authorization.invalid_cursor, authorization.invalid_limit).
       content:
@@ -1029,6 +1392,78 @@ components:
         updatedAt:
           type: string
           format: date-time
+    Task:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        status: {type: string, enum: [open, in_progress, blocked, completed, cancelled]}
+        statusReason: {type: [string, "null"], description: "Set exactly while the task is blocked or cancelled."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedUserName: {type: [string, "null"]}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        assignedTeamName: {type: [string, "null"]}
+        contextType: {type: [string, "null"]}
+        contextId: {type: [string, "null"], format: uuid}
+        dueAt: {type: [string, "null"], format: date-time}
+        completedAt: {type: [string, "null"], format: date-time}
+        createdByUserId: {type: [string, "null"], format: uuid}
+        completedByUserId: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TaskList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Task'}
+        nextCursor: {type: string}
+    TaskCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000}
+        priority: {type: string, enum: [low, normal, high, urgent], default: normal}
+        dueAt: {type: [string, "null"], format: date-time}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+    TaskUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000, description: "Empty clears."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        dueAt: {type: [string, "null"], format: date-time, description: "null clears; absent keeps."}
+    TaskAssign:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        userId: {type: [string, "null"], format: uuid}
+        teamId: {type: [string, "null"], format: uuid}
+    TaskVersion:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    TaskTransition:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 500}
     TeamName:
       type: object
       additionalProperties: false

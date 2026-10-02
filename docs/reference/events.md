@@ -15,5 +15,7 @@
 | `ManagementAssignmentChanged` | 1 | endpoint | A normalized management-provider assignment meaningfully changed. |
 | `ServiceRequestSubmitted` | 1 | requests | A service request was submitted. |
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. |
+| `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
+| `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |
 | `TicketCreated` | 1 | service-desk | A ticket was created. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |
