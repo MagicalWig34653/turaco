@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,11 +14,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
+	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 var version = "dev"
@@ -62,8 +71,42 @@ func main() {
 		logger.Info("directory sync enabled", "provider_key", ldapCfg.ProviderKey, "interval", ldapCfg.SyncInterval.String())
 	}
 
+	// Consumers are registered here as modules add them (ADR-0024). Events
+	// without a consumer are acknowledged, so the outbox does not grow.
+	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
+	smtpCfg, err := config.LoadSMTP(cfg.Environment)
+	if err != nil {
+		logger.Error("load email configuration", "error", err)
+		os.Exit(1)
+	}
+	if smtpCfg.Enabled() {
+		if err := registerEmail(runner, pool, smtpCfg); err != nil {
+			logger.Error("configure email notifications", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("email notifications enabled", "host", smtpCfg.Host, "port", smtpCfg.Port, "security", smtpCfg.Security)
+	}
+	if err := registerRecurrence(runner, pool); err != nil {
+		logger.Error("configure recurring tasks", "error", err)
+		os.Exit(1)
+	}
+	if err := registerConsumers(dispatcher, pool, smtpCfg.Enabled()); err != nil {
+		logger.Error("register outbox consumers", "error", err)
+		os.Exit(1)
+	}
+	dispatcherDone := make(chan struct{})
+	go func() {
+		defer close(dispatcherDone)
+		if err := dispatcher.Run(ctx); err != nil {
+			logger.Error("outbox dispatcher stopped", "error", err)
+		}
+	}()
+
 	logger.Info("turaco-worker started", "version", version)
-	if err := runner.Run(ctx); err != nil {
+	err = runner.Run(ctx)
+	stop()
+	<-dispatcherDone
+	if err != nil {
 		logger.Error("job runner stopped", "error", err)
 		os.Exit(1)
 	}
@@ -92,4 +135,98 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 		Interval:    cfg.SyncInterval,
 		MaxAttempts: 3,
 	})
+}
+
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, email bool) error {
+	orgReader := orgrepository.New(pool)
+	return registerConsumersWith(d, pool, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+}
+
+// registerConsumersWith registers the outbox consumers; perms decides which
+// Users hold task permissions and may therefore be notified about tasks.
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, email bool, perms tasksapp.PermissionResolver) error {
+	notifier := notifications.NewService(pool)
+	if email {
+		notifier = notifier.WithEmail()
+	}
+	taskConsumers := tasksapp.NewConsumers(
+		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier, perms)
+	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
+		return err
+	}
+	return d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted)
+}
+
+// orgContacts adapts the Organization work directory to the email sender.
+type orgContacts struct{ dir *orgpublic.WorkDirectory }
+
+func (o orgContacts) EmailContact(ctx context.Context, userID string) (string, string, bool, error) {
+	contacts, err := o.dir.Contacts(ctx, []string{userID})
+	if err != nil {
+		return "", "", false, err
+	}
+	c, ok := contacts[userID]
+	return c.Email, c.DisplayName, ok && c.Active && c.Email != "", nil
+}
+
+func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig) error {
+	mailerCfg := smtp.Config{
+		Host: cfg.Host, Port: cfg.Port, Security: smtp.Security(cfg.Security), Username: cfg.Username,
+		From: cfg.From, Timeout: cfg.Timeout,
+	}
+	if cfg.PasswordFile != "" {
+		password, err := config.ReadSecretFile(cfg.PasswordFile)
+		if err != nil {
+			return fmt.Errorf("read SMTP password file: %w", err)
+		}
+		mailerCfg.Password = password
+	}
+	if cfg.CAFile != "" {
+		pem, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return fmt.Errorf("read SMTP CA file: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			return errors.New("SMTP_CA_FILE contains no PEM certificate")
+		}
+		mailerCfg.RootCAs = pool
+	}
+	mailer, err := smtp.New(mailerCfg)
+	if err != nil {
+		return err
+	}
+	sender := notifications.NewEmailSender(pool, smtpMailer{mailer},
+		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, cfg.BaseURL, cfg.DefaultLocale)
+	return runner.Register(notifications.EmailJobType, notifications.EmailJobTimeout, sender.Handle)
+}
+
+// registerRecurrence schedules the generation of tasks from Recurring Task
+// Definitions. The schedule's dedupe key keeps several workers from
+// enqueueing it twice; the generation itself is idempotent per run.
+func registerRecurrence(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	svc := tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool),
+		orgpublic.NewWorkDirectory(orgrepository.New(pool)), nil)
+	if err := runner.Register(tasksapp.GenerateJobType, tasksapp.GenerateJobTimeout, svc.HandleGenerate); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{
+		JobType: tasksapp.GenerateJobType, DedupeKey: tasksapp.GenerateJobType,
+		Interval: tasksapp.GenerateInterval, MaxAttempts: 3,
+	})
+}
+
+// smtpMailer adapts the SMTP integration to the notification service's
+// Mailer port and maps its permanent errors.
+type smtpMailer struct{ m smtp.Mailer }
+
+func (a smtpMailer) Send(ctx context.Context, msg notifications.EmailMessage) error {
+	err := a.m.Send(ctx, smtp.Message{To: msg.To, Subject: msg.Subject, Text: msg.Text, HTML: msg.HTML})
+	if err != nil && smtp.IsPermanent(err) {
+		return &notifications.PermanentEmailError{Err: err}
+	}
+	return err
 }

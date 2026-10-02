@@ -22,3 +22,10 @@ export type DirectoryGroup = {
   lastObservedAt: string;
   deletedObservedAt?: string | null;
 };
+
+export type Team = {
+  id: string;
+  name: string;
+  active: boolean;
+  updatedAt: string;
+};

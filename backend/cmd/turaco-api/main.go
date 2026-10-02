@@ -12,9 +12,16 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	briefingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
+	briefingrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/repository"
+	briefingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/transport"
+	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
+	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
+	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
@@ -23,6 +30,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
+	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
 )
 
 var version = "dev"
@@ -118,6 +127,12 @@ func main() {
 	// Manual directory sync requests need a configured provider; the worker
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
+	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
+	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
+	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
+	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
+	notificationstransport.Register(mux, notifications.NewService(pool), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 

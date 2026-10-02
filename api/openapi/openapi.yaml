@@ -82,6 +82,29 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTeam
+      summary: Create a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.created). The name must be unique among active teams (case-insensitive)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamName'
+      responses:
+        '201':
+          description: The created team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /teams/{id}:
     get:
       operationId: getTeam
@@ -101,6 +124,74 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: renameTeam
+      summary: Rename a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.renamed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamName'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/activate:
+    post:
+      operationId: activateTeam
+      summary: Activate a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.activated). 409 when already active or its name is used by another active team."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/deactivate:
+    post:
+      operationId: deactivateTeam
+      summary: Deactivate a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.deactivated). Members are kept; no members can be added while inactive."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
   /teams/{id}/members:
     get:
@@ -124,6 +215,861 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: addTeamMember
+      summary: Add a member to a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.member_added). Only active users; the membership has source `platform`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberAdd'
+      responses:
+        '201':
+          description: The new membership.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamMember'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/members/{userId}:
+    delete:
+      operationId: removeTeamMember
+      summary: Remove a member from a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.member_removed). Ends the current membership; history is kept."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: userId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '204':
+          description: Membership ended.
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. Callers holding only `tasks.work` see only tasks assigned to them or one of their Teams; `mine=true` applies that restriction for others. Ordered by due date (undated last), priority (urgent first), id. Keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: One or more of open, in_progress, blocked, completed, cancelled (repeatable or comma-separated).
+          schema: {type: string}
+        - name: priority
+          in: query
+          schema: {type: string, enum: [low, normal, high, urgent]}
+        - name: assignedUserId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: assignedTeamId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: overdue
+          in: query
+          description: Only `true`; unfinished tasks whose due date has passed.
+          schema: {type: boolean}
+        - name: mine
+          in: query
+          description: Only `true`.
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTask
+      summary: Create a task.
+      description: "Requires `tasks.manage`. Audited (tasks.task.created); assigning on creation emits TaskAssigned."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: The created task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get a task.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. Tasks the caller may not see are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateTask
+      summary: Change task details.
+      description: "Requires `tasks.manage`. Title, description, priority and/or due date (`dueAt: null` clears it). Not allowed on completed or cancelled tasks. Audited (tasks.task.details_updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: The updated task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/assign:
+    post:
+      operationId: assignTask
+      summary: Assign a task.
+      description: "Requires `tasks.manage`. Sets the assigned User and/or Team (an omitted side is cleared); both must be active. Audited (tasks.task.assigned); emits TaskAssigned. Assigning the current assignees is a no-op."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAssign'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/unassign:
+    post:
+      operationId: unassignTask
+      summary: Clear the assignment of a task.
+      description: "Requires `tasks.manage`. Audited (tasks.task.unassigned)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/start:
+    post:
+      operationId: startTask
+      summary: Start a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.started)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/block:
+    post:
+      operationId: blockTask
+      summary: Block a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). `reason` is required. Audited (tasks.task.blocked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/unblock:
+    post:
+      operationId: unblockTask
+      summary: Unblock a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.unblocked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/complete:
+    post:
+      operationId: completeTask
+      summary: Complete a task.
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.completed). Emits TaskCompleted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/cancel:
+    post:
+      operationId: cancelTask
+      summary: Cancel a task.
+      description: "Requires `tasks.manage`. `reason` is required. Audited (tasks.task.cancelled)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/reopen:
+    post:
+      operationId: reopenTask
+      summary: Reopen a completed or cancelled task.
+      description: "Requires `tasks.manage`. `reason` is required. Audited (tasks.task.reopened)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskTransition'
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions:
+    get:
+      operationId: listRecurringTaskDefinitions
+      summary: List recurring task definitions.
+      description: "Requires `tasks.recurrence.manage`. Oldest first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of definitions.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinitionList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRecurringTaskDefinition
+      summary: Create a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Audited (tasks.recurrence.created). The first run is the first occurrence after now."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecurringTaskDefinitionCreate'}
+      responses:
+        '201':
+          description: The created definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}:
+    get:
+      operationId: getRecurringTaskDefinition
+      summary: Get a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRecurringTaskDefinition
+      summary: Change a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Changing the rule reschedules an active definition from now. Audited (tasks.recurrence.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecurringTaskDefinitionUpdate'}
+      responses:
+        '200':
+          description: The updated definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteRecurringTaskDefinition
+      summary: Delete a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. The tasks it generated stay. Audited (tasks.recurrence.deleted)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: expectedVersion
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        '204':
+          description: Deleted.
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}/pause:
+    post:
+      operationId: pauseRecurringTaskDefinition
+      summary: Pause a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Generation stops; pausing a paused definition is a no-op. Audited (tasks.recurrence.paused)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}/resume:
+    post:
+      operationId: resumeRecurringTaskDefinition
+      summary: Resume a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Continues from the first run after now; runs missed while paused are not generated. Audited (tasks.recurrence.resumed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items:
+    get:
+      operationId: listBriefingItems
+      summary: List IT Briefing items.
+      description: "Requires `briefing.view` or `briefing.manage`. Viewers (briefing.view) see published, unexpired items only; managers see every item and may filter by status. Newest publication first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Managers only; ignored for viewers.
+          schema: {type: string, enum: [draft, published, withdrawn]}
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItemList'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createBriefingItem
+      summary: Create a draft briefing item.
+      description: "Requires `briefing.manage`. Plain text only. Audited (briefing.item.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BriefingItemCreate'}
+      responses:
+        '201':
+          description: The created draft.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}:
+    get:
+      operationId: getBriefingItem
+      summary: Get a briefing item.
+      description: "Requires `briefing.view` or `briefing.manage`. Items the caller may not see are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateBriefingItem
+      summary: Change a draft briefing item.
+      description: "Requires `briefing.manage`. Only drafts can change; to correct a published item, withdraw it and create a new one. `expectedVersion` is required. Audited (briefing.item.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BriefingItemUpdate'}
+      responses:
+        '200':
+          description: The updated draft.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteBriefingItem
+      summary: Delete a draft briefing item.
+      description: "Requires `briefing.manage`. Published and withdrawn items are kept as history. Audited (briefing.item.deleted)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: expectedVersion
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        '204':
+          description: Deleted.
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}/publish:
+    post:
+      operationId: publishBriefingItem
+      summary: Publish a draft briefing item.
+      description: "Requires `briefing.manage`. Visible to everybody with `briefing.view` until it expires or is withdrawn. An expired draft cannot be published. Audited (briefing.item.published); emits BriefingItemPublished."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}/withdraw:
+    post:
+      operationId: withdrawBriefingItem
+      summary: Withdraw a published briefing item.
+      description: "Requires `briefing.manage`. The item disappears for viewers and stays visible to managers. Audited (briefing.item.withdrawn)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /my-work:
+    get:
+      operationId: getMyWork
+      summary: List my work.
+      description: "Requires `tasks.view`, `tasks.manage` or `tasks.work`. The caller's unfinished (open, in progress, blocked) tasks assigned to the caller or one of its Teams, in the shared task order."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of tasks.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List my notifications.
+      description: "Any signed-in user; only the caller's own notifications, newest first. Texts are not stored: clients localize them from `category` and `params`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: unread
+          in: query
+          description: Only `true`.
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page of notifications.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationList'}
+        '400':
+          description: Invalid input (notifications.invalid_request, notifications.invalid_cursor, notifications.invalid_limit).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/unread-count:
+    get:
+      operationId: getUnreadNotificationCount
+      summary: Count my unread notifications.
+      description: "Any signed-in user. The count is capped at `max` (100)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [count, max]
+                properties:
+                  count: {type: integer, minimum: 0}
+                  max: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/preferences:
+    get:
+      operationId: listNotificationPreferences
+      summary: List my email preferences.
+      description: "Any signed-in user. One entry per notification category; email is enabled unless the user opted out."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The preferences.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/NotificationPreference'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/preferences/{category}/email:
+    put:
+      operationId: setNotificationEmailPreference
+      summary: Enable or disable email for a category.
+      description: "Any signed-in user; only the caller's own preference. Idempotent. Emails already scheduled are cancelled at send time when the user opted out in the meantime."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: The stored preference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationPreference'}
+        '400':
+          description: Invalid body (notifications.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Unknown category (notifications.unknown_category).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      summary: Mark all my notifications read.
+      description: "Any signed-in user; affects only the caller's notifications."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: How many notifications changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [marked]
+                properties:
+                  marked: {type: integer, minimum: 0}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: Mark one of my notifications read.
+      description: "Any signed-in user. Idempotent. Another user's or an unknown notification is 404 (notifications.not_found)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Marked read.
+        '404':
+          description: Not found (notifications.not_found).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
         '500': {$ref: '#/components/responses/InternalError'}
   /locations:
     get:
@@ -788,6 +1734,54 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    OrganizationInvalid:
+      description: Invalid input (organization.invalid_request, organization.invalid_cursor, organization.invalid_limit, organization.invalid_query, organization.invalid_status).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    OrganizationConflict:
+      description: Conflict (organization.conflict, organization.user_not_active, organization.team_inactive).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BriefingInvalid:
+      description: Invalid input (briefing.invalid_request, briefing.invalid_cursor, briefing.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BriefingNotFound:
+      description: Item not found or not visible to the caller (briefing.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BriefingConflict:
+      description: Conflict (briefing.invalid_transition, briefing.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TasksInvalid:
+      description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TasksNotFound:
+      description: Task not found or not visible to the caller (tasks.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TasksConflict:
+      description: Conflict (tasks.invalid_transition, tasks.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     AuthorizationInvalid:
       description: Invalid input (authorization.invalid_request, authorization.unknown_permission, authorization.invalid_cursor, authorization.invalid_limit).
       content:
@@ -879,6 +1873,238 @@ components:
         updatedAt:
           type: string
           format: date-time
+    Task:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        status: {type: string, enum: [open, in_progress, blocked, completed, cancelled]}
+        statusReason: {type: [string, "null"], description: "Set exactly while the task is blocked or cancelled."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedUserName: {type: [string, "null"]}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        assignedTeamName: {type: [string, "null"]}
+        contextType: {type: [string, "null"]}
+        contextId: {type: [string, "null"], format: uuid}
+        dueAt: {type: [string, "null"], format: date-time}
+        completedAt: {type: [string, "null"], format: date-time}
+        createdByUserId: {type: [string, "null"], format: uuid}
+        completedByUserId: {type: [string, "null"], format: uuid}
+        recurrenceDefinitionId: {type: [string, "null"], format: uuid, description: "Set on tasks generated from a recurring task definition (which may have been deleted since)."}
+        version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TaskList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Task'}
+        nextCursor: {type: string}
+    RecurrenceRule:
+      type: object
+      additionalProperties: false
+      required: [frequency, interval, weekday, dayOfMonth, timeOfDay, timezone, startsOn]
+      properties:
+        frequency: {type: string, enum: [daily, weekly, monthly]}
+        interval: {type: integer, minimum: 1, maximum: 365, description: "Every N days, weeks or months, anchored at startsOn."}
+        weekday: {type: [integer, "null"], minimum: 1, maximum: 7, description: "Weekly only; 1 = Monday, 7 = Sunday."}
+        dayOfMonth: {type: [integer, "null"], minimum: 1, maximum: 31, description: "Monthly only; clamped to the last day of shorter months."}
+        timeOfDay: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: "Local time HH:MM."}
+        timezone: {type: string, description: "IANA time zone name such as Europe/Berlin."}
+        startsOn: {type: string, format: date, description: "Local date of the first possible run."}
+    RecurringTaskDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, priority, assignedUserId, assignedTeamId, dueAfterHours, rule, active, nextRunAt, lastGeneratedAt, createdByUserId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        dueAfterHours: {type: [integer, "null"], minimum: 1, maximum: 8760, description: "Generated tasks are due this many hours after their scheduled run."}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
+        active: {type: boolean}
+        nextRunAt: {type: [string, "null"], format: date-time, description: "Null exactly while paused."}
+        lastGeneratedAt: {type: [string, "null"], format: date-time}
+        createdByUserId: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RecurringTaskDefinitionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        nextCursor: {type: string}
+    RecurringTaskDefinitionCreate:
+      type: object
+      additionalProperties: false
+      required: [title, rule]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000}
+        priority: {type: string, enum: [low, normal, high, urgent], default: normal}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        dueAfterHours: {type: [integer, "null"], minimum: 1, maximum: 8760}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
+    RecurringTaskDefinitionUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000, description: "Empty clears."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: string, format: uuid}
+        assignedTeamId: {type: string, format: uuid}
+        clearAssignment: {type: boolean, description: "Removes both assignees; excludes assignedUserId/assignedTeamId."}
+        dueAfterHours: {type: integer, minimum: 1, maximum: 8760}
+        clearDueAfter: {type: boolean}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
+    BriefingItem:
+      type: object
+      additionalProperties: false
+      required: [id, title, body, severity, status, validUntil, authorUserId, publishedAt, publishedByUserId, withdrawnAt, withdrawnByUserId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        body: {type: string, description: "Plain text; clients must not render it as HTML."}
+        severity: {type: string, enum: [info, warning, critical]}
+        status: {type: string, enum: [draft, published, withdrawn]}
+        validUntil: {type: [string, "null"], format: date-time, description: "After this instant a published item is hidden from viewers."}
+        authorUserId: {type: [string, "null"], format: uuid}
+        publishedAt: {type: [string, "null"], format: date-time}
+        publishedByUserId: {type: [string, "null"], format: uuid}
+        withdrawnAt: {type: [string, "null"], format: date-time}
+        withdrawnByUserId: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    BriefingItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/BriefingItem'}
+        nextCursor: {type: string}
+    BriefingItemCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, maxLength: 10000}
+        severity: {type: string, enum: [info, warning, critical], default: info}
+        validUntil: {type: [string, "null"], format: date-time}
+    BriefingItemUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, maxLength: 10000}
+        severity: {type: string, enum: [info, warning, critical]}
+        validUntil: {type: string, format: date-time}
+        clearValidUntil: {type: boolean}
+    TaskCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000}
+        priority: {type: string, enum: [low, normal, high, urgent], default: normal}
+        dueAt: {type: [string, "null"], format: date-time}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+    TaskUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000, description: "Empty clears."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        dueAt: {type: [string, "null"], format: date-time, description: "null clears; absent keeps."}
+    TaskAssign:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        userId: {type: [string, "null"], format: uuid}
+        teamId: {type: [string, "null"], format: uuid}
+    TaskVersion:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    TaskTransition:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, minLength: 1, maxLength: 500}
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, category, params, linkType, linkId, createdAt, readAt]
+      properties:
+        id: {type: string, format: uuid}
+        category: {type: string, description: "For example task.assigned or task.completed; unknown categories must get a generic text."}
+        params: {type: object, additionalProperties: true}
+        linkType: {type: [string, "null"], description: "For example task."}
+        linkId: {type: [string, "null"], format: uuid}
+        createdAt: {type: string, format: date-time}
+        readAt: {type: [string, "null"], format: date-time}
+    NotificationPreference:
+      type: object
+      additionalProperties: false
+      required: [category, channel, enabled]
+      properties:
+        category: {type: string}
+        channel: {type: string, enum: [email]}
+        enabled: {type: boolean}
+    NotificationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Notification'}
+        nextCursor: {type: string}
+    TeamName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+    TeamMemberAdd:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId: {type: string, format: uuid}
+        role: {type: [string, "null"], maxLength: 100}
     TeamMember:
       type: object
       additionalProperties: false

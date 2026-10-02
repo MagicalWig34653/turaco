@@ -1,20 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import { matchRoute } from '../platform/router/routing';
 import { createCan } from '../platform/session/permissions';
-import { appRoutes, isNavActive, visibleNavItems } from './routes';
+import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes';
 
 const ids = (permissions: string[], group: 'main' | 'admin') =>
   visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
   it('always shows the main entries and hides admin entries without permission', () => {
-    expect(ids([], 'main')).toEqual(['home', 'me']);
+    expect(ids([], 'main')).toEqual(['home', 'me', 'notifications']);
     expect(ids([], 'admin')).toEqual([]);
   });
 
   it('filters admin entries by permission', () => {
     expect(ids(['platform.roles.view'], 'admin')).toEqual(['roles', 'roleAssignments']);
     expect(ids(['platform.audit.view'], 'admin')).toEqual(['audit']);
+  });
+
+  it('shows My Work and Tasks with any one task permission', () => {
+    for (const permission of ['tasks.view', 'tasks.work', 'tasks.manage']) {
+      expect(ids([permission], 'main')).toEqual(['home', 'me', 'myWork', 'notifications', 'tasks']);
+    }
+    expect(ids(['organization.view'], 'main')).toEqual(['home', 'me', 'notifications']);
+  });
+
+  it('shows the briefing with either briefing permission and creation only to managers', () => {
+    expect(ids(['briefing.view'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
+    expect(ids(['briefing.manage'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
+    expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
+    expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['briefing.view'] }), route('briefingNew'))).toBe(
+      false,
+    );
+    expect(
+      canViewRoute(createCan({ permissions: ['briefing.manage'] }), route('briefingNew')),
+    ).toBe(true);
+  });
+
+  it('shows recurring tasks only with tasks.recurrence.manage', () => {
+    expect(ids(['tasks.manage'], 'admin')).toEqual([]);
+    expect(ids(['tasks.recurrence.manage'], 'admin')).toEqual(['recurrence']);
+    expect(matchRoute(appRoutes, '/admin/recurring-tasks/new')?.route.id).toBe('recurrenceNew');
+    expect(matchRoute(appRoutes, '/admin/recurring-tasks/7')?.route.id).toBe('recurrenceDetail');
   });
 
   it('requires both directory permissions for directory sync', () => {
@@ -31,6 +59,18 @@ describe('route table', () => {
     expect(matchRoute(appRoutes, '/admin/roles/42')?.route.id).toBe('roleDetail');
     expect(matchRoute(appRoutes, '/admin/directory-sync/9')?.params).toEqual({ id: '9' });
     expect(matchRoute(appRoutes, '/unknown')).toBeNull();
+  });
+
+  it('keeps /tasks/new ahead of /tasks/:id and gates creation on tasks.manage', () => {
+    expect(matchRoute(appRoutes, '/tasks/new')?.route.id).toBe('taskNew');
+    expect(matchRoute(appRoutes, '/tasks/42')?.route.id).toBe('taskDetail');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['tasks.work'] }), route('taskNew'))).toBe(false);
+    expect(canViewRoute(createCan({ permissions: ['tasks.manage'] }), route('taskNew'))).toBe(true);
+    expect(canViewRoute(createCan({ permissions: ['tasks.work'] }), route('taskDetail'))).toBe(
+      true,
+    );
+    expect(canViewRoute(createCan({ permissions: [] }), route('taskDetail'))).toBe(false);
   });
 
   it('marks parent entries active on detail paths', () => {

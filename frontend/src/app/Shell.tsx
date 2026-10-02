@@ -8,6 +8,7 @@ import { useSession } from '../platform/session/SessionProvider';
 import { Button } from '../platform/ui/Button';
 import { isNavActive, visibleNavItems, type AppRoute, type NavGroup } from './routes';
 import { organizationApi } from '../modules/organization/api';
+import { UnreadIndicator } from '../modules/notifications/UnreadIndicator';
 
 function NavSection({ group, labelKey }: { group: NavGroup; labelKey?: 'nav.admin' }) {
   const { t } = useI18n();
@@ -25,6 +26,7 @@ function NavSection({ group, labelKey }: { group: NavGroup; labelKey?: 'nav.admi
           aria-current={isNavActive(item.pattern, pathname) ? 'page' : undefined}
         >
           {t(item.titleKey)}
+          {item.id === 'notifications' ? <UnreadIndicator /> : null}
         </Link>
       ))}
     </div>

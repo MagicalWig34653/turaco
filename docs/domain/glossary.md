@@ -96,7 +96,10 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 
 ## Platform/integration
 - **Notification** — message intent delivered through in-app/email/Teams/webhook channels.
-- **IT Briefing Item** — operational information highlighted to IT staff; references an authoritative underlying record where possible.
+- **IT Briefing Item** — operational information highlighted to IT staff; references an authoritative underlying record where possible. A *manual* Briefing Item is authored by a person and has no underlying record (plain text, title, severity, optional expiry); it is `draft → published → withdrawn` and immutable once published.
+- **Recurring Task Definition** — a template plus schedule rule that generates real Tasks; neither a Scheduled Job (technical timed execution) nor a Workflow (multi-step process). Generated Tasks keep a reference to their definition and the run they stand for.
+- **Notification Delivery** — the state of sending one Notification through one channel (for example email), separate from the Notification and from the state of the record it is about.
+- **Notification Preference** — a User's opt-out of a channel for a Notification category.
 - **Rule** — small deterministic condition/action automation.
 - **Workflow** — multi-step business process with state.
 - **Scheduled Job** — technical/operational timed execution.

@@ -9,6 +9,9 @@ type Definition struct {
 
 var Registry = []Definition{
 	{Name: "UserSynchronized", Version: 1, Owner: "organization", Description: "Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md."},
+	{Name: "TaskAssigned", Version: 1, Owner: "tasks", Description: "A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId."},
+	{Name: "TaskCompleted", Version: 1, Owner: "tasks", Description: "A task was completed. Payload: taskId, completedByUserId."},
+	{Name: "BriefingItemPublished", Version: 1, Owner: "briefing", Description: "A manual IT Briefing item was published. Payload: itemId, severity."},
 	{Name: "AssetCreated", Version: 1, Owner: "assets", Description: "A new asset was registered."},
 	{Name: "AssetAssigned", Version: 1, Owner: "assets", Description: "An asset assignment became active."},
 	{Name: "StockReserved", Version: 1, Owner: "inventory", Description: "Stock or a serialized asset was reserved."},

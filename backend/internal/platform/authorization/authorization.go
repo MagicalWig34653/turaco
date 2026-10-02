@@ -28,6 +28,16 @@ func (p Principal) Has(permission string) bool {
 	return ok
 }
 
+// HasAny reports whether the principal holds at least one of the permissions.
+func (p Principal) HasAny(permissions ...string) bool {
+	for _, permission := range permissions {
+		if p.Has(permission) {
+			return true
+		}
+	}
+	return false
+}
+
 // Authenticator resolves the caller of a request. It returns ok=false when the
 // request carries no valid credentials and an error only for internal failures.
 type Authenticator interface {
@@ -56,8 +66,42 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 // named permission. It panics at construction time if the permission is not
 // registered, so typos fail at startup instead of silently denying or allowing.
 func Require(auth Authenticator, permission string) func(http.Handler) http.Handler {
-	if !registered(permission) {
-		panic(fmt.Sprintf("authorization: unregistered permission %q", permission))
+	return RequireAny(auth, permission)
+}
+
+// RequireAuthenticated returns middleware that only requires a signed-in User,
+// for resources whose access rule is ownership (a user's own notifications)
+// rather than a permission. The handler must restrict itself to the principal.
+func RequireAuthenticated(auth Authenticator) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok, err := auth.Authenticate(r)
+			if err != nil {
+				slog.ErrorContext(r.Context(), "authentication failed", "request_id", httpx.RequestID(w), "error", err)
+				httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
+				return
+			}
+			if !ok || principal.UserID == "" {
+				httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+		})
+	}
+}
+
+// RequireAny is Require for routes that several permissions open, for example
+// a view that is scoped differently per permission; the handler then decides
+// what each permission may see. At least one permission is required and all
+// must be registered.
+func RequireAny(auth Authenticator, permissions ...string) func(http.Handler) http.Handler {
+	if len(permissions) == 0 {
+		panic("authorization: RequireAny needs at least one permission")
+	}
+	for _, permission := range permissions {
+		if !registered(permission) {
+			panic(fmt.Sprintf("authorization: unregistered permission %q", permission))
+		}
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +115,7 @@ func Require(auth Authenticator, permission string) func(http.Handler) http.Hand
 				httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
 				return
 			}
-			if !principal.Has(permission) {
+			if !principal.HasAny(permissions...) {
 				httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
 				return
 			}

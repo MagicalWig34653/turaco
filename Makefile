@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # which can contain Go packages (and tests) shipped by npm dependencies.
 GO_PACKAGES := ./backend/... ./agents/... ./tools/...
 
-.PHONY: help doctor bootstrap dev infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean
+.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean
 
 help:
 	@printf '%s\n' \
@@ -14,6 +14,7 @@ help:
 	  '  make bootstrap    Install dependencies and initialize local development' \
 	  '  make infra-up     Start PostgreSQL and local S3 mock in Colima/Docker' \
 	  '  make migrate      Apply database migrations' \
+	  '  make dev-setup    Start infra, migrate and create the dev admin' \
 	  '  make api          Run turaco-api natively' \
 	  '  make worker       Run turaco-worker natively' \
 	  '  make frontend     Run Vite dev server natively' \
@@ -36,6 +37,9 @@ infra-down:
 
 migrate:
 	@./scripts/with-env.sh ./scripts/migrate.sh
+
+dev-setup:
+	@./scripts/dev-setup.sh
 
 api:
 	@./scripts/with-env.sh go run ./backend/cmd/turaco-api

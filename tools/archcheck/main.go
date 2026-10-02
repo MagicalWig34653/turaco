@@ -32,6 +32,9 @@ func main() {
 			value := strings.Trim(imp.Path.Value, `"`)
 			match := moduleImport.FindStringSubmatch(value)
 			if match == nil {
+				if kind == "platform" && strings.Contains(value, "/backend/internal/integrations/") {
+					violations = append(violations, fmt.Sprintf("%s: platform package imports integration adapter %s (define a port and wire the adapter in the composition root)", path, value))
+				}
 				if kind == "domain" && (value == "net/http" || strings.HasPrefix(value, "github.com/jackc/pgx")) {
 					violations = append(violations, fmt.Sprintf("%s: domain package imports infrastructure dependency %s", path, value))
 				}
