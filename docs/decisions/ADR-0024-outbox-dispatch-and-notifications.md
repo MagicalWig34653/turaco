@@ -12,6 +12,7 @@ Domain events are written to `platform.outbox_events` in the same transaction as
 
 - A dispatcher in `turaco-worker` polls `platform.outbox_events`, claims one due event at a time (`FOR UPDATE SKIP LOCKED`) inside a transaction and runs the consumers registered for its event type **in that same transaction**. On success the event is marked `processed` and the transaction commits, so a consumer's database writes and the event's completion are atomic.
 - Consumers receive the `pgx.Tx`, touch only their own tables and must be idempotent anyway (delivery is at-least-once when a consumer has effects outside the transaction). Consumers never call external systems; they enqueue a job (for example email delivery) in the same transaction.
+- An empty event type filter claims every event type; a failed attempt backs off from 30 s doubling up to 30 min, and an event fails terminally after 10 attempts or at once for a consumer error marked permanent.
 - On failure the transaction rolls back and a second transaction records `attempts`, `last_error` and a back-off `available_at`. After the maximum number of attempts the event becomes `failed` (terminal, visible in logs and metrics); it is never silently dropped.
 - An event type without a registered consumer is marked `processed` (the outbox is also an integration record, not only a work queue).
 - No broker is introduced; the dispatcher polls (default 2 s).

@@ -38,7 +38,7 @@ Glossary and state-machine documents are updated with these terms.
 
 ## 6. Data
 
-Forward migrations: Task columns (`status_reason` for blocked and cancelled tasks, `created_by_user_id`, `completed_by_user_id`, `version`; `recurrence_definition_id` arrives with slice 5); `platform.notifications`, `platform.notification_deliveries` (dedupe key), `platform.notification_preferences`; recurring task definitions; briefing items. Assignment stays as columns on the Task; history lives in audit.
+Forward migrations: Task columns (`status_reason` for blocked and cancelled tasks, `created_by_user_id`, `completed_by_user_id`, `version`, `recurrence_definition_id` and `scheduled_for`, unique together so generation is idempotent); `platform.notifications` (unique per recipient and dedupe key), `platform.notification_deliveries` (unique per notification and channel), `platform.notification_preferences`; recurring task definitions; briefing items. Assignment stays as columns on the Task; history lives in audit.
 
 Known limitations (accepted in the slice 2 database review): assignee and Team-membership checks run before the write transaction, so a concurrent deactivation can still produce one assignment or action; deactivating a Team or a User does not touch tasks assigned to them, which stay visible to `tasks.view`/`tasks.manage` (filter by `assignedTeamId`/`assignedUserId`) but drop out of members' My Work; there are no foreign keys from tasks to Organization tables (module boundary, see [module boundaries](../architecture/module-boundaries.md)). Lock order for code touching several owners is task, then team, then user. Security review (2026-10-02) outcomes: task notifications go only to Users holding a task permission; `organization.teams.manage` indirectly controls task scope (documented on the permission); notification titles are retained without a pruning job; membership is resolved outside the write transaction (millisecond TOCTOU window); `CurrentMemberIDs` caps at 500 members.
 
@@ -48,7 +48,7 @@ Known limitations (accepted in the slice 2 database review): assignee and Team-m
 
 ## 8. Permissions
 
-`tasks.view`, `tasks.manage` (existing, global); new `tasks.work`, `tasks.recurrence.manage`, `briefing.manage`, `organization.teams.manage`. Backend-enforced; unknown or foreign Task ids return 404.
+`tasks.view`, `tasks.manage` (existing, global); new `tasks.work`, `tasks.recurrence.manage`, `briefing.view`, `briefing.manage`, `organization.teams.manage`. Backend-enforced; unknown or foreign Task ids return 404.
 
 ## 9. Audit
 
@@ -56,7 +56,7 @@ Every Task operation, Team change, recurrence change and briefing publish/withdr
 
 ## 10. Events and background work
 
-New events `TaskAssigned`, `TaskCompleted`, `BriefingItemPublished`. Outbox dispatch (ADR-0024) drives Notifications; email delivery and recurrence generation are jobs. Recurrence is idempotent per `(definition, scheduled run)` and catches up at most one missed run.
+New events `TaskAssigned`, `TaskCompleted`, `BriefingItemPublished`. Outbox dispatch (ADR-0024) drives Notifications; email delivery and recurrence generation are jobs. Recurrence is idempotent per `(definition, scheduled run)` and does not catch up missed runs: per definition and pass it creates at most one task, for the oldest due run, and moves the schedule to the first run after now.
 
 ## 11. Cross-cutting impact
 

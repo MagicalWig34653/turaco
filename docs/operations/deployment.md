@@ -37,6 +37,10 @@ Security notes:
 - The service principal must be `HTTP/<host>`; only AES keys for it in `KERBEROS_REALM` are used, and tickets from trusted foreign realms are refused.
 - The Windows PAC is not evaluated: a user disabled in AD can still sign in by Kerberos until the next directory sync marks the User inactive. Shorten the sync interval or run a manual sync when access must end immediately.
 
+## Email notifications
+
+Only `turaco-worker` sends email; `turaco-api` needs no mail settings. Set `SMTP_HOST`, `SMTP_FROM`, `EMAIL_BASE_URL` (the public https address of the web application, used in links) and, with authentication, `SMTP_USERNAME` plus `SMTP_PASSWORD_FILE` on the worker only; mount the password as a deployment secret. The default `SMTP_SECURITY=starttls` refuses relays that do not offer STARTTLS; `tls` uses implicit TLS. Clear-text relays need `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true` and `APP_ENV=development`, so a production stack cannot send mail in clear text by accident. Use `SMTP_CA_FILE` for a private CA. Without `SMTP_HOST` email is off and in-app notifications continue. Behavior and limits: [Teams and email notifications](../integrations/teams-email.md).
+
 ## First administrator and emergency access
 
 After the first directory sync, grant the first administrator from the worker container (it ships `turaco-admin` and uses the worker's `DATABASE_URL`):
