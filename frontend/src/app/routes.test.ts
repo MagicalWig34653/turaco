@@ -24,6 +24,20 @@ describe('visibleNavItems', () => {
     expect(ids(['organization.view'], 'main')).toEqual(['home', 'me', 'notifications']);
   });
 
+  it('shows the briefing with either briefing permission and creation only to managers', () => {
+    expect(ids(['briefing.view'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
+    expect(ids(['briefing.manage'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
+    expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
+    expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['briefing.view'] }), route('briefingNew'))).toBe(
+      false,
+    );
+    expect(
+      canViewRoute(createCan({ permissions: ['briefing.manage'] }), route('briefingNew')),
+    ).toBe(true);
+  });
+
   it('shows recurring tasks only with tasks.recurrence.manage', () => {
     expect(ids(['tasks.manage'], 'admin')).toEqual([]);
     expect(ids(['tasks.recurrence.manage'], 'admin')).toEqual(['recurrence']);

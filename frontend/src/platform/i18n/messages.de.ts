@@ -420,4 +420,40 @@ export const de: Record<MessageKey, string> = {
   'recurrence.error.startsOn': 'Gib ein Startdatum an.',
   'recurrence.error.dueAfter':
     'Die Fälligkeit muss eine ganze Zahl von 1 bis 8760 Stunden sein oder leer bleiben.',
+  'nav.briefing': 'IT-Briefing',
+  'briefing.intro': 'Betriebliche Informationen für die IT.',
+  'briefing.empty': 'Es gibt keine Briefing-Einträge.',
+  'briefing.back': 'Zurück zum IT-Briefing',
+  'briefing.detail.title': 'Briefing-Eintrag',
+  'briefing.create.action': 'Briefing-Eintrag anlegen',
+  'briefing.create.title': 'Briefing-Eintrag anlegen',
+  'briefing.create.intro':
+    'Schreibe den Eintrag als Entwurf. Für andere sichtbar wird er erst, wenn du ihn veröffentlichst.',
+  'briefing.edit.title': 'Briefing-Eintrag bearbeiten',
+  'briefing.col.severity': 'Schweregrad',
+  'briefing.col.published': 'Veröffentlicht',
+  'briefing.col.validUntil': 'Gültig bis',
+  'briefing.severity.info': 'Information',
+  'briefing.severity.warning': 'Warnung',
+  'briefing.severity.critical': 'Kritisch',
+  'briefing.status.draft': 'Entwurf',
+  'briefing.status.published': 'Veröffentlicht',
+  'briefing.status.withdrawn': 'Zurückgezogen',
+  'briefing.expired': 'abgelaufen',
+  'briefing.fact.withdrawnAt': 'Zurückgezogen',
+  'briefing.field.body': 'Text',
+  'briefing.field.bodyHint':
+    'Reiner Text; Zeilenumbrüche bleiben erhalten. Veröffentlichte Einträge lassen sich nicht bearbeiten: Ziehe sie zurück und lege einen neuen an, um sie zu korrigieren.',
+  'briefing.field.validUntilHint':
+    'Optional. Nach diesem Zeitpunkt wird der Eintrag Lesenden nicht mehr angezeigt.',
+  'briefing.action.publish': 'Veröffentlichen',
+  'briefing.action.withdraw': 'Zurückziehen',
+  'briefing.confirm.publish.title': 'Briefing-Eintrag veröffentlichen',
+  'briefing.confirm.publish.message':
+    '„{title}“ veröffentlichen? Der Eintrag wird für alle mit Zugriff auf das IT-Briefing sichtbar und lässt sich nicht mehr bearbeiten.',
+  'briefing.confirm.withdraw.title': 'Briefing-Eintrag zurückziehen',
+  'briefing.confirm.withdraw.message':
+    '„{title}“ zurückziehen? Der Eintrag verschwindet für Lesende und bleibt für Verwaltende sichtbar.',
+  'briefing.confirm.delete.title': 'Entwurf löschen',
+  'briefing.confirm.delete.message': 'Den Entwurf „{title}“ löschen?',
 };

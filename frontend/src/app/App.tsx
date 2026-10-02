@@ -13,6 +13,11 @@ import {
   DefinitionDetailScreen,
 } from '../modules/recurrence/DefinitionScreens';
 import { RecurrenceScreen } from '../modules/recurrence/RecurrenceScreen';
+import { BriefingScreen } from '../modules/briefing/BriefingScreen';
+import {
+  BriefingCreateScreen,
+  BriefingDetailScreen,
+} from '../modules/briefing/BriefingItemScreens';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -36,6 +41,12 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <MeScreen />;
     case 'myWork':
       return <MyWorkScreen />;
+    case 'briefing':
+      return <BriefingScreen />;
+    case 'briefingNew':
+      return <BriefingCreateScreen />;
+    case 'briefingDetail':
+      return <BriefingDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'notifications':
       return <NotificationsScreen />;
     case 'tasks':

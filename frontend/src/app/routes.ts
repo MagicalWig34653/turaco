@@ -6,6 +6,9 @@ export type RouteId =
   | 'me'
   | 'myWork'
   | 'notifications'
+  | 'briefing'
+  | 'briefingNew'
+  | 'briefingDetail'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -47,6 +50,25 @@ export const appRoutes: readonly AppRoute[] = [
     nav: 'main',
   },
   { id: 'notifications', pattern: '/notifications', titleKey: 'nav.notifications', nav: 'main' },
+  {
+    id: 'briefing',
+    pattern: '/briefing',
+    titleKey: 'nav.briefing',
+    requiresAny: ['briefing.view', 'briefing.manage'],
+    nav: 'main',
+  },
+  {
+    id: 'briefingNew',
+    pattern: '/briefing/new',
+    titleKey: 'briefing.create.title',
+    requires: ['briefing.manage'],
+  },
+  {
+    id: 'briefingDetail',
+    pattern: '/briefing/:id',
+    titleKey: 'briefing.detail.title',
+    requiresAny: ['briefing.view', 'briefing.manage'],
+  },
   {
     id: 'tasks',
     pattern: '/tasks',

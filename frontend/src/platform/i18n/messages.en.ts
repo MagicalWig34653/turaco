@@ -409,6 +409,42 @@ export const en = {
   'recurrence.error.startsOn': 'Enter a start date.',
   'recurrence.error.dueAfter':
     'The due offset must be a whole number of hours from 1 to 8760, or empty.',
+  'nav.briefing': 'IT Briefing',
+  'briefing.intro': 'Operational information for IT staff.',
+  'briefing.empty': 'There are no briefing items.',
+  'briefing.back': 'Back to the IT Briefing',
+  'briefing.detail.title': 'Briefing item',
+  'briefing.create.action': 'Create briefing item',
+  'briefing.create.title': 'Create briefing item',
+  'briefing.create.intro':
+    'Write the item as a draft. It becomes visible to others only when you publish it.',
+  'briefing.edit.title': 'Edit briefing item',
+  'briefing.col.severity': 'Severity',
+  'briefing.col.published': 'Published',
+  'briefing.col.validUntil': 'Valid until',
+  'briefing.severity.info': 'Information',
+  'briefing.severity.warning': 'Warning',
+  'briefing.severity.critical': 'Critical',
+  'briefing.status.draft': 'Draft',
+  'briefing.status.published': 'Published',
+  'briefing.status.withdrawn': 'Withdrawn',
+  'briefing.expired': 'expired',
+  'briefing.fact.withdrawnAt': 'Withdrawn',
+  'briefing.field.body': 'Text',
+  'briefing.field.bodyHint':
+    'Plain text; line breaks are kept. Published items cannot be edited: withdraw and create a new one to correct them.',
+  'briefing.field.validUntilHint':
+    'Optional. After this time the item is no longer shown to readers.',
+  'briefing.action.publish': 'Publish',
+  'briefing.action.withdraw': 'Withdraw',
+  'briefing.confirm.publish.title': 'Publish briefing item',
+  'briefing.confirm.publish.message':
+    'Publish “{title}”? It becomes visible to everybody with access to the IT Briefing and can no longer be edited.',
+  'briefing.confirm.withdraw.title': 'Withdraw briefing item',
+  'briefing.confirm.withdraw.message':
+    'Withdraw “{title}”? It disappears for readers and stays visible to managers.',
+  'briefing.confirm.delete.title': 'Delete draft',
+  'briefing.confirm.delete.message': 'Delete the draft “{title}”?',
 } as const;
 
 export type MessageKey = keyof typeof en;
