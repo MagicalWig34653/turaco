@@ -10,15 +10,17 @@ import (
 
 // Product is the minimal view other modules get.
 type Product struct {
-	ID     string
-	Name   string
-	Active bool
+	ID         string
+	Name       string
+	Active     bool
+	CategoryID *string
 }
 
 // Reader loads products by id (implemented by the repository).
 type Reader interface {
 	GetProduct(ctx context.Context, id string) (application.Product, error)
 	ListProducts(ctx context.Context, f application.ProductFilter) (application.Result[application.Product], error)
+	CategoriesByIDs(ctx context.Context, ids []string) (map[string]bool, error)
 }
 
 // Directory answers product questions for catalog and request code without
@@ -42,7 +44,27 @@ func (d *Directory) Products(ctx context.Context, ids []string) (map[string]Prod
 		if err != nil {
 			return nil, err
 		}
-		out[id] = Product{ID: p.ID, Name: p.Name, Active: p.Active}
+		out[id] = Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID}
 	}
 	return out, nil
+}
+
+// ActiveInCategory returns up to limit active products of a category (exactly
+// that category, not its subcategories), ordered by id.
+func (d *Directory) ActiveInCategory(ctx context.Context, categoryID string, limit int) ([]Product, error) {
+	active := true
+	res, err := d.r.ListProducts(ctx, application.ProductFilter{CategoryID: categoryID, Active: &active, Page: application.Page{Limit: limit}})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Product, 0, len(res.Items))
+	for _, p := range res.Items {
+		out = append(out, Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID})
+	}
+	return out, nil
+}
+
+// CategoriesExist returns id -> true for existing product categories among ids.
+func (d *Directory) CategoriesExist(ctx context.Context, ids []string) (map[string]bool, error) {
+	return d.r.CategoriesByIDs(ctx, ids)
 }

@@ -1302,6 +1302,150 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items:
+    get:
+      operationId: listCatalogItems
+      summary: List catalog items.
+      description: "Any signed-in user sees active items; `catalog.manage` also sees inactive ones and may filter with `status`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Managers only; ignored for others.
+          schema: {type: string, enum: [active, inactive]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItemList'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createCatalogItem
+      summary: Create a catalog item.
+      description: "Requires `catalog.manage`. The definition is validated against the closed schema of ADR-0025 (field types, limits, references to users, teams, products and categories must exist and be active). Audited (catalog.item.created, without title or definition)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogItemCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}:
+    get:
+      operationId: getCatalogItem
+      summary: Get a catalog item with its form.
+      description: "Any signed-in user gets the form of an active item (fields, with the active products of product fields resolved to `productOptions`); approval steps and fulfillment tasks are never shown to employees. `catalog.manage` also gets inactive items and the full `definition`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogForm'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateCatalogItem
+      summary: Change a catalog item.
+      description: "Requires `catalog.manage`. Changing the definition affects only requests submitted afterwards. `expectedVersion` is required. Audited (catalog.item.updated; changed parts only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogItemUpdate'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}/activate:
+    post:
+      operationId: activateCatalogItem
+      summary: Activate a catalog item.
+      description: "Requires `catalog.manage`. Inactive items are not offered; existing requests keep their snapshot. Idempotent. Audited (catalog.item.activated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}/deactivate:
+    post:
+      operationId: deactivateCatalogItem
+      summary: Deactivate a catalog item.
+      description: "Requires `catalog.manage`. Inactive items are not offered; existing requests keep their snapshot. Idempotent. Audited (catalog.item.deactivated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -2200,6 +2344,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    CatalogInvalid:
+      description: Invalid input (catalog.invalid_request, catalog.invalid_reference, catalog.invalid_cursor, catalog.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogNotFound:
+      description: Not found or not visible to the caller (catalog.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogConflict:
+      description: Conflict (catalog.conflict, catalog.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -2614,6 +2776,102 @@ components:
       properties:
         comment: {type: string, maxLength: 1000}
         expectedVersion: {type: integer, minimum: 1}
+    CatalogItem:
+      type: object
+      additionalProperties: false
+      required: [id, key, title, description, active, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, description: "Stable identifier, fixed at creation."}
+        title: {type: string}
+        description: {type: string}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    CatalogItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogItem'}
+        nextCursor: {type: string}
+    CatalogFormField:
+      type: object
+      additionalProperties: false
+      required: [key, type, label, required]
+      properties:
+        key: {type: string}
+        type: {type: string, enum: [text, longtext, number, boolean, date, select, user, product]}
+        label: {type: string}
+        help: {type: string}
+        required: {type: boolean}
+        maxLength: {type: integer}
+        min: {type: integer}
+        max: {type: integer}
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [value, label]
+            properties:
+              value: {type: string}
+              label: {type: string}
+        categoryId: {type: string, format: uuid, description: "Managers only."}
+        productIds:
+          type: array
+          description: "Managers only."
+          items: {type: string, format: uuid}
+        productOptions:
+          type: array
+          description: "Active products offered by a product field."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+    CatalogForm:
+      type: object
+      required: [id, key, title, description, active, version, updatedAt, allowRequestedFor, fields]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        title: {type: string}
+        description: {type: string}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+        allowRequestedFor: {type: boolean, description: "The requester may pick another User the request is for."}
+        fields:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogFormField'}
+        definition:
+          type: object
+          description: "Managers only: the full definition (fields, allowRequestedFor, approvals, fulfillment)."
+    CatalogItemCreate:
+      type: object
+      additionalProperties: false
+      required: [key, title, definition]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9-]{1,62}$'}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        definition:
+          type: object
+          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager), fulfillment (at most 20 task templates)."
+    CatalogItemUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        definition: {type: object}
     TaskCreate:
       type: object
       additionalProperties: false

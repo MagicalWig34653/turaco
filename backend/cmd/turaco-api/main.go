@@ -18,11 +18,16 @@ import (
 	briefingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
 	briefingrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/repository"
 	briefingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/transport"
+	catalogapp "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/application"
+	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
+	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
+	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
 	productsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
+	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
 	productsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/products/repository"
 	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
@@ -137,7 +142,10 @@ func main() {
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
-	productstransport.Register(mux, productsapp.NewService(productsrepository.New(pool)), sessionAuth, logger)
+	productsRepo := productsrepository.New(pool)
+	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
+	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
+		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	categories, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)

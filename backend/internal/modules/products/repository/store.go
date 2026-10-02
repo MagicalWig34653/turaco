@@ -325,3 +325,29 @@ func (r *Repository) ListProducts(ctx context.Context, f application.ProductFilt
 	}
 	return listPage(ctx, r, "products.products", productCols, conds, args, f.Page, scanProduct, func(p application.Product) string { return p.ID })
 }
+
+func (r *Repository) CategoriesByIDs(ctx context.Context, ids []string) (map[string]bool, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	out := map[string]bool{}
+	if len(valid) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM products.categories WHERE id = ANY($1::text[]::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("categories by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("categories by ids: scan: %w", err)
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

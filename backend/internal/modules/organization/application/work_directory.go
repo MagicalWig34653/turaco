@@ -18,6 +18,8 @@ type WorkDirectoryStore interface {
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
 	// Contacts returns id -> Contact for existing Users.
 	Contacts(ctx context.Context, ids []string) (map[string]Contact, error)
+	// ManagerIDs returns user id -> manager user id for Users that have one.
+	ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error)
 	// CurrentMemberIDs returns the Users currently in an active Team, at most MaxTeamMembers.
 	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
 }
@@ -102,4 +104,12 @@ func (w *WorkDirectory) Contacts(ctx context.Context, ids []string) (map[string]
 		return map[string]Contact{}, nil
 	}
 	return w.store.Contacts(ctx, valid)
+}
+
+func (w *WorkDirectory) ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error) {
+	valid := validIDs(userIDs)
+	if len(valid) == 0 {
+		return map[string]string{}, nil
+	}
+	return w.store.ManagerIDs(ctx, valid)
 }

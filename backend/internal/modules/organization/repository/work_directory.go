@@ -104,3 +104,7 @@ func (r *Repository) Contacts(ctx context.Context, ids []string) (map[string]app
 	}
 	return out, nil
 }
+
+func (r *Repository) ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error) {
+	return r.idNameMap(ctx, `SELECT id::text, manager_user_id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND manager_user_id IS NOT NULL`, "manager ids", userIDs)
+}

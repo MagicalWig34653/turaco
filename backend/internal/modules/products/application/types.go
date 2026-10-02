@@ -149,6 +149,8 @@ type Store interface {
 	InsertCategory(ctx context.Context, c Caller, name string, parentID *string) (Category, error)
 	ChangeCategory(ctx context.Context, c Caller, id string, decide func(Category) (Change[Category], error)) (Category, error)
 	ListCategories(ctx context.Context, prefix string, p Page) (Result[Category], error)
+	// CategoriesByIDs returns id -> true for existing categories among ids.
+	CategoriesByIDs(ctx context.Context, ids []string) (map[string]bool, error)
 
 	InsertProduct(ctx context.Context, c Caller, n NewProduct) (Product, error)
 	GetProduct(ctx context.Context, id string) (Product, error)
