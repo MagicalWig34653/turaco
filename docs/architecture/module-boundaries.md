@@ -18,7 +18,7 @@ The core is a modular monolith. Each domain owns its model, application operatio
 - relationships;
 - global search contracts;
 - secrets/encryption abstractions;
-- tasks/My Work primitives;
+- tasks/My Work primitives (implemented as the Tasks module below, which owns the task tables);
 - scheduling and maintenance windows;
 - targeting/dynamic groups;
 - configuration and feature flags;
@@ -31,6 +31,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Module | Owns |
 |---|---|
 | Organization | users, departments, teams, locations, cost centers, external Directory Groups and observed memberships |
+| Tasks | tasks (shared work model, My Work queries), Recurring Task Definitions and their schedule rule; a business module on the `platform.tasks` tables (created before the module split). Other modules will create Tasks through a `tasks/public` contract once the first non-task producer exists. |
 | Products | product, optional variant, manufacturer, categories |
 | Catalog | requestable services/forms/eligibility |
 | Requests | service request lifecycle and fulfillment coordination |

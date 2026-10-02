@@ -37,7 +37,7 @@ type handler struct {
 // the service decides per task what the caller may see and do.
 func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
 	h := &handler{svc: svc, logger: logger}
-	anyTask := authorization.RequireAny(auth, permView, permManage, permWork)
+	anyTask := authorization.RequireAny(auth, application.TaskPermissions...)
 	manage := authorization.Require(auth, permManage)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))

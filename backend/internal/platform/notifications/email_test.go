@@ -8,18 +8,17 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 type fakeMailer struct {
 	mu   sync.Mutex
-	sent []smtp.Message
+	sent []notifications.EmailMessage
 	err  error
 }
 
-func (m *fakeMailer) Send(_ context.Context, msg smtp.Message) error {
+func (m *fakeMailer) Send(_ context.Context, msg notifications.EmailMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.err != nil {
@@ -267,7 +266,7 @@ func TestPermanentFailureFailsTheDelivery(t *testing.T) {
 	ctx := context.Background()
 	e.createViaEmailService(e.a, "k1")
 	d, _ := e.delivery(e.a)
-	e.mailer.err = &smtp.PermanentError{Err: errors.New("550 no such mailbox")}
+	e.mailer.err = &notifications.PermanentEmailError{Err: errors.New("550 no such mailbox")}
 	err := e.send.Handle(ctx, e.job(d))
 	if !jobs.IsPermanent(err) {
 		t.Fatalf("err = %v, want a permanent job error", err)
@@ -347,7 +346,7 @@ func TestShutdownDuringSendDoesNotConsumeAnAttempt(t *testing.T) {
 
 type cancelingMailer struct{ cancel context.CancelFunc }
 
-func (m cancelingMailer) Send(ctx context.Context, _ smtp.Message) error {
+func (m cancelingMailer) Send(ctx context.Context, _ notifications.EmailMessage) error {
 	m.cancel() // the worker is shutting down while the relay dialogue runs
 	return ctx.Err()
 }

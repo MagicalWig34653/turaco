@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 )
 
@@ -52,6 +51,34 @@ func scheduleEmail(ctx context.Context, tx pgx.Tx, notificationID, userID, categ
 	return nil
 }
 
+// EmailMessage is one email to one recipient; both bodies are required.
+type EmailMessage struct {
+	To      string
+	Subject string
+	Text    string
+	HTML    string
+}
+
+// Mailer sends an email. It is the port of the email channel; an adapter in
+// integrations (SMTP) implements it and is wired in the composition root, so
+// platform code never imports an integration.
+type Mailer interface {
+	Send(ctx context.Context, m EmailMessage) error
+}
+
+// PermanentEmailError marks a failure retrying cannot fix (a rejected
+// recipient, bad credentials); a Mailer returns it for such outcomes.
+type PermanentEmailError struct{ Err error }
+
+func (e *PermanentEmailError) Error() string { return e.Err.Error() }
+func (e *PermanentEmailError) Unwrap() error { return e.Err }
+
+// IsPermanentEmailError reports whether err is a PermanentEmailError.
+func IsPermanentEmailError(err error) bool {
+	var p *PermanentEmailError
+	return errors.As(err, &p)
+}
+
 // ContactResolver answers who can receive email; Organization implements it.
 type ContactResolver interface {
 	// EmailContact returns the User's email address and whether they may receive email
@@ -62,7 +89,7 @@ type ContactResolver interface {
 // EmailSender sends the email channel jobs.
 type EmailSender struct {
 	pool     *pgxpool.Pool
-	mailer   smtp.Mailer
+	mailer   Mailer
 	contacts ContactResolver
 	baseURL  string
 	locale   string
@@ -70,7 +97,7 @@ type EmailSender struct {
 
 // NewEmailSender creates the handler of EmailJobType. baseURL is the web
 // application's address used for links; locale is "en" or "de".
-func NewEmailSender(pool *pgxpool.Pool, mailer smtp.Mailer, contacts ContactResolver, baseURL, locale string) *EmailSender {
+func NewEmailSender(pool *pgxpool.Pool, mailer Mailer, contacts ContactResolver, baseURL, locale string) *EmailSender {
 	return &EmailSender{pool: pool, mailer: mailer, contacts: contacts, baseURL: baseURL, locale: locale}
 }
 
@@ -114,8 +141,8 @@ func (e *EmailSender) Handle(ctx context.Context, job jobs.Job) error {
 	if name != "" {
 		to = (&mailAddress{Name: name, Address: email}).String()
 	}
-	if err := e.mailer.Send(ctx, smtp.Message{To: to, Subject: rendered.Subject, Text: rendered.Text, HTML: rendered.HTML}); err != nil {
-		return e.release(ctx, d, err, smtp.IsPermanent(err))
+	if err := e.mailer.Send(ctx, EmailMessage{To: to, Subject: rendered.Subject, Text: rendered.Text, HTML: rendered.HTML}); err != nil {
+		return e.release(ctx, d, err, IsPermanentEmailError(err))
 	}
 	return e.finish(ctx, d, "delivered", "")
 }

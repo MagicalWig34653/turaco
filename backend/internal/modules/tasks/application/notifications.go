@@ -119,7 +119,7 @@ func (c *Consumers) mayKnowTasks(ctx context.Context, userID string) (bool, erro
 	if err != nil {
 		return false, fmt.Errorf("load permissions: %w", err)
 	}
-	for _, p := range []string{"tasks.work", "tasks.view", "tasks.manage"} {
+	for _, p := range TaskPermissions {
 		if _, ok := perms[p]; ok {
 			return true, nil
 		}

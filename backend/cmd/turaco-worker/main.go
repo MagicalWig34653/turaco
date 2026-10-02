@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -176,7 +175,7 @@ func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfi
 		From: cfg.From, Timeout: cfg.Timeout,
 	}
 	if cfg.PasswordFile != "" {
-		password, err := readSecretFile(cfg.PasswordFile)
+		password, err := config.ReadSecretFile(cfg.PasswordFile)
 		if err != nil {
 			return fmt.Errorf("read SMTP password file: %w", err)
 		}
@@ -200,22 +199,9 @@ func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfi
 	if err != nil {
 		return err
 	}
-	sender := notifications.NewEmailSender(pool, mailer,
+	sender := notifications.NewEmailSender(pool, smtpMailer{mailer},
 		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, cfg.BaseURL, cfg.DefaultLocale)
 	return runner.Register(notifications.EmailJobType, notifications.EmailJobTimeout, sender.Handle)
-}
-
-// readSecretFile reads a one-line secret, trimming only the trailing newline.
-func readSecretFile(path string) (string, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	secret := strings.TrimRight(string(raw), "\r\n")
-	if secret == "" {
-		return "", errors.New("file is empty")
-	}
-	return secret, nil
 }
 
 // registerRecurrence schedules the generation of tasks from Recurring Task
@@ -231,4 +217,16 @@ func registerRecurrence(runner *jobs.Runner, pool *pgxpool.Pool) error {
 		JobType: tasksapp.GenerateJobType, DedupeKey: tasksapp.GenerateJobType,
 		Interval: tasksapp.GenerateInterval, MaxAttempts: 3,
 	})
+}
+
+// smtpMailer adapts the SMTP integration to the notification service's
+// Mailer port and maps its permanent errors.
+type smtpMailer struct{ m smtp.Mailer }
+
+func (a smtpMailer) Send(ctx context.Context, msg notifications.EmailMessage) error {
+	err := a.m.Send(ctx, smtp.Message{To: msg.To, Subject: msg.Subject, Text: msg.Text, HTML: msg.HTML})
+	if err != nil && smtp.IsPermanent(err) {
+		return &notifications.PermanentEmailError{Err: err}
+	}
+	return err
 }

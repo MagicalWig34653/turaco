@@ -86,3 +86,15 @@ ADR-0024 (outbox dispatch and notification service). SMTP via the standard libra
 4. HTML email channel.
 5. Recurring Task Definitions.
 6. Briefing items.
+
+## Known design debt (architecture review, 2026-10-02)
+
+Accepted for F2 and to be paid when the next producer or module needs it; none is a defect today.
+
+- **Notification categories are hard-coded** in `platform/notifications` (category list, bilingual email texts, the link-type to path mapping) and in `frontend/src/modules/notifications/text.ts`. The first non-task producer should introduce a category registry owned by the producing module (like `events.Registry`), embedded per-locale email resources and a link-type table, plus frontend registration like `registerErrorMessages`.
+- **Task creation paths:** `Insert` and the recurrence generator both insert tasks and build the `TaskAssigned` payload; payloads are untyped maps and the generator derives the due date in the repository. Consolidate into one insert helper with typed payloads when a third creator appears (a `tasks/public` contract).
+- **Email channel enablement depends on the worker's SMTP configuration.** Only `turaco-worker` creates notifications (through outbox consumers); `turaco-api` never calls `Create`. Running workers with different mail settings would schedule email inconsistently, so all workers must share one configuration.
+- **Frontend module boundaries:** `recurrence` and `my-work` import from `tasks` (types, picker, table); fold them into `tasks` or give `tasks` an explicit public surface and add an ESLint boundary rule. The user/team picker duplicates the access module's subject picker; the task and briefing action rules duplicate the backend state machine (returning `allowedActions` from the API would remove that).
+- **Recurrence rule engine** (`modules/tasks/application/recurrence_rule.go`) is general calendar logic; promote it to a `platform/scheduling` package when Maintenance Windows or Change schedules need recurrence, instead of writing a second engine.
+- **Small shared helpers** (`validUUID`, opaque keyset cursors, `Page`/limit normalization, `Caller`, `prefixPattern`) are copied across packages; extract specific platform helpers (not a `utils` package) when touching several of them. The `Change`/decide store pattern is deliberately not generalized.
+- **Organization display names** from the directory are checked for control characters only, not for bidirectional or invisible characters (`platform/safetext` covers user-authored text).

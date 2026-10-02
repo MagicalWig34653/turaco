@@ -180,7 +180,7 @@ func (r *Repository) RemoveTeamMember(ctx context.Context, c application.Caller,
 		var role *string
 		err := tx.QueryRow(ctx, `
 			UPDATE organization.team_memberships SET valid_until = greatest(valid_from, clock_timestamp())
-			WHERE team_id = $1 AND user_id = $2 AND valid_until IS NULL
+			WHERE team_id = $1 AND user_id = $2 AND valid_until IS NULL AND source = 'platform'
 			RETURNING role`, teamID, uid).Scan(&role)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return application.ErrNotFound

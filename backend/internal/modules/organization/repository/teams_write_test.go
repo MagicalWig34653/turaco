@@ -204,3 +204,20 @@ func TestConcurrentAddMemberCreatesOneMembership(t *testing.T) {
 		t.Errorf("ok=%d conflict=%d, want 1 and 7", ok, conflict)
 	}
 }
+
+func TestRemoveMemberLeavesNonPlatformMembershipsAlone(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	u := f.user(f.pfx+" Synced", "active")
+	tm := f.createTeam(f.pfx + " Mixed")
+	if _, err := f.pool.Exec(ctx, `INSERT INTO organization.team_memberships(team_id, user_id, source) VALUES ($1, $2, 'directory')`, tm.ID, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.repo.RemoveTeamMember(ctx, testCaller(f), tm.ID, u); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("removing a directory-sourced membership = %v, want ErrNotFound (platform operations never touch it)", err)
+	}
+	members, _ := f.repo.ListTeamMembers(ctx, tm.ID, application.Page{})
+	if len(members.Items) != 1 {
+		t.Errorf("the directory membership was ended: %d members", len(members.Items))
+	}
+}

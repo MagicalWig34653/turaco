@@ -28,6 +28,11 @@ const (
 	PriorityUrgent = "urgent"
 )
 
+// TaskPermissions are the permissions that let a User see at least some
+// tasks; the transport routes and the notification recipients rely on the
+// same list.
+var TaskPermissions = []string{"tasks.view", "tasks.manage", "tasks.work"}
+
 var (
 	statuses   = []string{StatusOpen, StatusInProgress, StatusBlocked, StatusCompleted, StatusCancelled}
 	priorities = []string{PriorityLow, PriorityNormal, PriorityHigh, PriorityUrgent}
