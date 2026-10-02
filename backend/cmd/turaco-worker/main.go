@@ -15,6 +15,7 @@ import (
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 )
 
@@ -62,8 +63,22 @@ func main() {
 		logger.Info("directory sync enabled", "provider_key", ldapCfg.ProviderKey, "interval", ldapCfg.SyncInterval.String())
 	}
 
+	// Consumers are registered here as modules add them (ADR-0024). Events
+	// without a consumer are acknowledged, so the outbox does not grow.
+	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
+	dispatcherDone := make(chan struct{})
+	go func() {
+		defer close(dispatcherDone)
+		if err := dispatcher.Run(ctx); err != nil {
+			logger.Error("outbox dispatcher stopped", "error", err)
+		}
+	}()
+
 	logger.Info("turaco-worker started", "version", version)
-	if err := runner.Run(ctx); err != nil {
+	err = runner.Run(ctx)
+	stop()
+	<-dispatcherDone
+	if err != nil {
 		logger.Error("job runner stopped", "error", err)
 		os.Exit(1)
 	}

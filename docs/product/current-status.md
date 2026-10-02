@@ -1,8 +1,10 @@
 # Current Implementation Status
 
-**Status date:** 2026-10-01
+**Status date:** 2026-10-02
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
+
+**In progress:** F2 (Work Foundation, [design](f2-work-foundation-design.md)); slice 1, the outbox dispatcher, is implemented.
 
 **Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". Next milestone: F2 (Work Foundation).
 
@@ -23,9 +25,10 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - `turaco-admin` operator CLI (shipped in the worker image): `role list|grant|revoke`, `emergency create|set-password|enable|disable`.
 - Web UI (F1): login (automatic Kerberos attempt when configured, password, and emergency when enabled), app shell with permission-filtered navigation, current user, roles, role assignments, directory sync runs and audit events; English and German.
 - Platform `authentication` package (F1 slice 2): server-side sessions (`platform.sessions`, only a SHA-256 hash of the opaque token is stored), idle and absolute expiry, explicit `Create`/`Authenticate`/`Revoke` operations (creation and revocation are audited in the same transaction), `turaco_session` cookie (HttpOnly, SameSite=Lax, Secure by configuration), same-origin CSRF guard for unsafe methods, `GET /api/v1/auth/session` and `POST /api/v1/auth/logout`. A session is valid only while the Organization User is `active`.
-- LDAP/AD directory synchronization (F1 slice 3; [design](../integrations/ldap-ad-sync-design.md), [operation](../integrations/ldap-ad.md)): one directory per deployment configured with `LDAP_*` (bind password from a deployment secret file, LDAPS/StartTLS with verification). `turaco-worker` syncs every `LDAP_SYNC_INTERVAL` and on manual request: Users and External Identities (matched only by objectGUID/entryUUID, never linked by email), directory-owned User fields, Directory Groups, membership and direct group nesting as interval history, the User status rule with `status_source`, session revocation when a User leaves `active`, mass-removal safeguard (`sweep_withheld`), per-entry handling of malformed data, run records with counts and conflicts, audit and `UserSynchronized` outbox events (written to the outbox only; nothing dispatches them yet).
+- LDAP/AD directory synchronization (F1 slice 3; [design](../integrations/ldap-ad-sync-design.md), [operation](../integrations/ldap-ad.md)): one directory per deployment configured with `LDAP_*` (bind password from a deployment secret file, LDAPS/StartTLS with verification). `turaco-worker` syncs every `LDAP_SYNC_INTERVAL` and on manual request: Users and External Identities (matched only by objectGUID/entryUUID, never linked by email), directory-owned User fields, Directory Groups, membership and direct group nesting as interval history, the User status rule with `status_source`, session revocation when a User leaves `active`, mass-removal safeguard (`sweep_withheld`), per-entry handling of malformed data, run records with counts and conflicts, audit and `UserSynchronized` outbox events (written to the outbox; the dispatcher acknowledges them, no consumer exists yet).
 - Directory sync API: `GET /api/v1/directory-sync-runs[/{id}]`, `POST /api/v1/directory-sync-runs` (permission `organization.directory.sync`, 409 when sync is not configured); `GET /api/v1/users/{id}` returns `externalIdentities`; group members list only currently observed members with `observedFrom`.
-- Platform job runner (`backend/internal/platform/jobs`): PostgreSQL queue with dedupe keys, retry with backoff, permanent failure, stale-lock reclaim and interval schedules (ADR-0006). Outbox dispatch is not implemented.
+- Platform job runner (`backend/internal/platform/jobs`): PostgreSQL queue with dedupe keys, retry with backoff, permanent failure, stale-lock reclaim and interval schedules (ADR-0006).
+- Outbox dispatcher (F2 slice 1, [ADR-0024](../decisions/ADR-0024-outbox-dispatch-and-notifications.md)): `turaco-worker` claims due `platform.outbox_events` one at a time and runs registered consumers in the claim transaction, with retry/back-off and terminal `failed`; events without a consumer are acknowledged. No module has registered a consumer yet.
 - Claude Code cloud sessions bootstrap automatically and run the full `make check`/`make build` (ADR-0021); database tests are required in CI and cloud (`TURACO_REQUIRE_DB_TESTS`) and run against a separate migrated test database locally and in the cloud (`TEST_DATABASE_URL`).
 - Permission, event and configuration registries with generated reference documentation.
 - Architecture boundary checker and Markdown-link checker.
@@ -43,7 +46,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Session cleanup job for expired/revoked sessions (needs an index on `absolute_expires_at`) and session listing/administration.
 - Scoped role assignments (only `global` exists until the first scoped module).
 - Real object-store client and envelope encryption implementation.
-- Outbox dispatch/consumers (events are written but not delivered).
+- Outbox consumers (the dispatcher exists; Notifications and other reactions arrive with F2).
 - Organization write APIs, Departments/Cost Centers APIs and directory mapping of department/location/cost center, Directory Group *Device* memberships.
 - Connector Agent `ldap.*` capabilities (hosted deployments), DB-managed/multi-directory configuration (waits for ADR-0014 key management).
 - Automated tests against a real directory and browser: the LDAP adapter and login are tested with fakes; OpenLDAP sync and login, Kerberos login against an MIT KDC (curl GSS-API), and a Playwright run through login and all admin screens were verified manually (scripts not yet in CI). Kerberos with real Windows clients/Active Directory still needs verification. Active Directory specifics (objectGUID, userAccountControl, range retrieval) must be verified against a real AD before production use.
