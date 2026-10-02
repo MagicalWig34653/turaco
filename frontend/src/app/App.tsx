@@ -8,6 +8,11 @@ import { RoleCreateScreen } from '../modules/access/RoleCreateScreen';
 import { RoleDetailScreen } from '../modules/access/RoleDetailScreen';
 import { RolesScreen } from '../modules/access/RolesScreen';
 import { NotificationsScreen } from '../modules/notifications/NotificationsScreen';
+import {
+  DefinitionCreateScreen,
+  DefinitionDetailScreen,
+} from '../modules/recurrence/DefinitionScreens';
+import { RecurrenceScreen } from '../modules/recurrence/RecurrenceScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -39,6 +44,12 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <TaskCreateScreen />;
     case 'taskDetail':
       return <TaskDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'recurrence':
+      return <RecurrenceScreen />;
+    case 'recurrenceNew':
+      return <DefinitionCreateScreen />;
+    case 'recurrenceDetail':
+      return <DefinitionDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'roles':
       return <RolesScreen />;
     case 'roleNew':

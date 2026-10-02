@@ -24,6 +24,13 @@ describe('visibleNavItems', () => {
     expect(ids(['organization.view'], 'main')).toEqual(['home', 'me', 'notifications']);
   });
 
+  it('shows recurring tasks only with tasks.recurrence.manage', () => {
+    expect(ids(['tasks.manage'], 'admin')).toEqual([]);
+    expect(ids(['tasks.recurrence.manage'], 'admin')).toEqual(['recurrence']);
+    expect(matchRoute(appRoutes, '/admin/recurring-tasks/new')?.route.id).toBe('recurrenceNew');
+    expect(matchRoute(appRoutes, '/admin/recurring-tasks/7')?.route.id).toBe('recurrenceDetail');
+  });
+
   it('requires both directory permissions for directory sync', () => {
     expect(ids(['organization.directory.view'], 'admin')).toEqual([]);
     expect(ids(['organization.directory.view', 'organization.view'], 'admin')).toEqual([

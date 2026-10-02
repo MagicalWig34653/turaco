@@ -9,6 +9,9 @@ export type RouteId =
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
+  | 'recurrence'
+  | 'recurrenceNew'
+  | 'recurrenceDetail'
   | 'roles'
   | 'roleNew'
   | 'roleDetail'
@@ -62,6 +65,25 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/tasks/:id',
     titleKey: 'tasks.detail.title',
     requiresAny: taskViewPermissions,
+  },
+  {
+    id: 'recurrence',
+    pattern: '/admin/recurring-tasks',
+    titleKey: 'nav.recurrence',
+    requires: ['tasks.recurrence.manage'],
+    nav: 'admin',
+  },
+  {
+    id: 'recurrenceNew',
+    pattern: '/admin/recurring-tasks/new',
+    titleKey: 'recurrence.create.title',
+    requires: ['tasks.recurrence.manage'],
+  },
+  {
+    id: 'recurrenceDetail',
+    pattern: '/admin/recurring-tasks/:id',
+    titleKey: 'recurrence.detail.title',
+    requires: ['tasks.recurrence.manage'],
   },
   {
     id: 'roles',
