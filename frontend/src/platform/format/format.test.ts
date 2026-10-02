@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatJson,
   groupPermissions,
+  isoToLocalInput,
   isValidRoleKey,
   localInputToIso,
   permissionPrefix,
@@ -72,5 +73,21 @@ describe('summarizeSyncCounts', () => {
       usersUpdated: 0,
       groupsObserved: 0,
     });
+  });
+});
+
+describe('isoToLocalInput', () => {
+  it('round-trips through localInputToIso at minute precision', () => {
+    const iso = '2026-11-01T09:30:00.000Z';
+    const local = isoToLocalInput(iso);
+    expect(local).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(localInputToIso(local)).toBe(iso);
+  });
+
+  it('is empty for missing or invalid values', () => {
+    expect(isoToLocalInput(null)).toBe('');
+    expect(isoToLocalInput(undefined)).toBe('');
+    expect(isoToLocalInput('')).toBe('');
+    expect(isoToLocalInput('garbage')).toBe('');
   });
 });

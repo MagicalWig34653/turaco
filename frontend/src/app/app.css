@@ -772,3 +772,8 @@ code {
     box-shadow: none;
   }
 }
+
+.preline {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

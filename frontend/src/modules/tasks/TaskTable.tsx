@@ -1,0 +1,92 @@
+import { formatDateTime } from '../../platform/format/format';
+import { useI18n } from '../../platform/i18n/I18nProvider';
+import { Link } from '../../platform/router/Router';
+import { Badge } from '../../platform/ui/Alert';
+import { DataTable, type Column } from '../../platform/ui/DataTable';
+import type { PagedState } from '../../platform/api/useAsync';
+import { isOverdue } from './actions';
+import type { Task, TaskStatus } from './types';
+
+const statusTone: Record<TaskStatus, 'neutral' | 'success' | 'warning' | 'info'> = {
+  open: 'neutral',
+  in_progress: 'info',
+  blocked: 'warning',
+  completed: 'success',
+  cancelled: 'neutral',
+};
+
+export function StatusBadge({ status }: { status: TaskStatus }) {
+  const { t } = useI18n();
+  return <Badge tone={statusTone[status]}>{t(`tasks.status.${status}`)}</Badge>;
+}
+
+export function assigneeLabel(task: Task, none: string): string {
+  const parts = [
+    task.assignedUserName ?? task.assignedUserId,
+    task.assignedTeamName ?? task.assignedTeamId,
+  ];
+  const text = parts.filter((part): part is string => Boolean(part)).join(' · ');
+  return text || none;
+}
+
+/** Task list shared by the task and My Work screens. */
+export function TaskTable({
+  caption,
+  emptyText,
+  list,
+}: {
+  caption: string;
+  emptyText: string;
+  list: PagedState<Task>;
+}) {
+  const { t, locale } = useI18n();
+  const now = new Date();
+  const columns: Column<Task>[] = [
+    {
+      key: 'title',
+      header: t('tasks.col.title'),
+      render: (task) => <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>,
+    },
+    {
+      key: 'status',
+      header: t('tasks.col.status'),
+      render: (task) => <StatusBadge status={task.status} />,
+    },
+    {
+      key: 'priority',
+      header: t('tasks.col.priority'),
+      render: (task) => t(`tasks.priority.${task.priority}`),
+    },
+    {
+      key: 'assignee',
+      header: t('tasks.col.assignee'),
+      render: (task) => assigneeLabel(task, t('tasks.assignee.none')),
+    },
+    {
+      key: 'due',
+      header: t('tasks.col.due'),
+      render: (task) => (
+        <>
+          {task.dueAt ? formatDateTime(locale, task.dueAt) : '–'}{' '}
+          {isOverdue(task, now) ? <Badge tone="danger">{t('tasks.overdue')}</Badge> : null}
+        </>
+      ),
+    },
+  ];
+  return (
+    <DataTable
+      caption={caption}
+      columns={columns}
+      rows={list.items}
+      rowKey={(task) => task.id}
+      loading={list.loading}
+      error={list.error}
+      onRetry={list.reload}
+      emptyText={emptyText}
+      hasMore={list.hasMore}
+      loadingMore={list.loadingMore}
+      loadMoreError={list.loadMoreError}
+      onLoadMore={list.loadMore}
+    />
+  );
+}

@@ -7,15 +7,18 @@ import { RoleAssignmentsScreen } from '../modules/access/RoleAssignmentsScreen';
 import { RoleCreateScreen } from '../modules/access/RoleCreateScreen';
 import { RoleDetailScreen } from '../modules/access/RoleDetailScreen';
 import { RolesScreen } from '../modules/access/RolesScreen';
+import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
+import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
+import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
+import { TasksScreen } from '../modules/tasks/TasksScreen';
 import { DirectorySyncRunScreen } from '../modules/directory/DirectorySyncRunScreen';
 import { DirectorySyncScreen } from '../modules/directory/DirectorySyncScreen';
 import { I18nProvider, useI18n } from '../platform/i18n/I18nProvider';
 import { matchRoute } from '../platform/router/routing';
 import { navigate, useLocation } from '../platform/router/Router';
-import { canAll } from '../platform/session/permissions';
 import { SessionProvider, useSession } from '../platform/session/SessionProvider';
 import { Home } from './Home';
-import { appRoutes, type RouteId } from './routes';
+import { appRoutes, canViewRoute, type RouteId } from './routes';
 import { Shell } from './Shell';
 import { ForbiddenView, NotFoundView } from './StatusViews';
 
@@ -25,6 +28,14 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <Home />;
     case 'me':
       return <MeScreen />;
+    case 'myWork':
+      return <MyWorkScreen />;
+    case 'tasks':
+      return <TasksScreen />;
+    case 'taskNew':
+      return <TaskCreateScreen />;
+    case 'taskDetail':
+      return <TaskDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'roles':
       return <RolesScreen />;
     case 'roleNew':
@@ -59,7 +70,7 @@ function AuthenticatedApp() {
       </Shell>
     );
   }
-  const allowed = canAll(can, match.route.requires);
+  const allowed = canViewRoute(can, match.route);
   return (
     <Shell title={allowed ? t(match.route.titleKey) : t('forbidden.title')}>
       {allowed ? renderScreen(match.route.id, match.params) : <ForbiddenView />}
