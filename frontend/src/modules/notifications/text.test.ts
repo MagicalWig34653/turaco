@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from '../../platform/i18n/i18n';
-import { notificationLink, notificationText, unreadLabel } from './text';
+import { categoryLabel, notificationLink, notificationText, unreadLabel } from './text';
 import type { AppNotification } from './types';
 
 const base: AppNotification = {
@@ -50,5 +50,14 @@ describe('unreadLabel', () => {
     expect(unreadLabel(3, 100)).toBe('3');
     expect(unreadLabel(99, 100)).toBe('99');
     expect(unreadLabel(100, 100)).toBe('99+');
+  });
+});
+
+describe('categoryLabel', () => {
+  it('labels known categories and shows the key of unknown ones', () => {
+    expect(categoryLabel(t, 'task.assigned')).toBe(
+      translate('en', 'notifications.category.task.assigned'),
+    );
+    expect(categoryLabel(t, 'future.thing')).toBe('future.thing');
   });
 });

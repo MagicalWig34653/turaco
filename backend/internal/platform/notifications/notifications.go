@@ -83,10 +83,20 @@ type Result struct {
 	NextCursor string
 }
 
-// Service stores and reads notifications.
-type Service struct{ pool *pgxpool.Pool }
+// Service stores and reads notifications and, when the email channel is
+// enabled, schedules their email delivery.
+type Service struct {
+	pool  *pgxpool.Pool
+	email bool
+}
 
+// NewService creates a Service without the email channel (turaco-api).
 func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+
+// WithEmail returns a Service that also creates an email delivery (and its
+// job) for every new notification whose recipient has not opted out of email
+// for the category. Only turaco-worker, which sends the mail, enables it.
+func (s *Service) WithEmail() *Service { return &Service{pool: s.pool, email: true} }
 
 func validCategory(c string) bool {
 	for _, known := range Categories {
@@ -127,15 +137,25 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in Intent) (bool, error
 	if in.LinkType != "" {
 		linkType, linkID = &in.LinkType, &in.LinkID
 	}
-	tag, err := tx.Exec(ctx, `
+	var notificationID string
+	err := tx.QueryRow(ctx, `
 		INSERT INTO platform.notifications(recipient_user_id, category, params, link_type, link_id, dedupe_key)
 		VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6)
-		ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING`,
-		in.RecipientUserID, in.Category, params, linkType, linkID, in.DedupeKey)
+		ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING
+		RETURNING id::text`,
+		in.RecipientUserID, in.Category, params, linkType, linkID, in.DedupeKey).Scan(&notificationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // already created by an earlier delivery of the same event
+	}
 	if err != nil {
 		return false, fmt.Errorf("create notification: %w", err)
 	}
-	return tag.RowsAffected() == 1, nil
+	if s.email {
+		if err := scheduleEmail(ctx, tx, notificationID, in.RecipientUserID, in.Category); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // List returns the recipient's notifications, newest first.

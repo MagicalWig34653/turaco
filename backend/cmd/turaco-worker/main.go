@@ -2,15 +2,20 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
@@ -69,7 +74,19 @@ func main() {
 	// Consumers are registered here as modules add them (ADR-0024). Events
 	// without a consumer are acknowledged, so the outbox does not grow.
 	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
-	if err := registerConsumers(dispatcher, pool); err != nil {
+	smtpCfg, err := config.LoadSMTP(cfg.Environment)
+	if err != nil {
+		logger.Error("load email configuration", "error", err)
+		os.Exit(1)
+	}
+	if smtpCfg.Enabled() {
+		if err := registerEmail(runner, pool, smtpCfg); err != nil {
+			logger.Error("configure email notifications", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("email notifications enabled", "host", smtpCfg.Host, "port", smtpCfg.Port, "security", smtpCfg.Security)
+	}
+	if err := registerConsumers(dispatcher, pool, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
 	}
@@ -116,11 +133,72 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 	})
 }
 
-func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool) error {
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, email bool) error {
+	notifier := notifications.NewService(pool)
+	if email {
+		notifier = notifier.WithEmail()
+	}
 	taskConsumers := tasksapp.NewConsumers(
-		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifications.NewService(pool))
+		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
 		return err
 	}
 	return d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted)
+}
+
+// orgContacts adapts the Organization work directory to the email sender.
+type orgContacts struct{ dir *orgpublic.WorkDirectory }
+
+func (o orgContacts) EmailContact(ctx context.Context, userID string) (string, string, bool, error) {
+	contacts, err := o.dir.Contacts(ctx, []string{userID})
+	if err != nil {
+		return "", "", false, err
+	}
+	c, ok := contacts[userID]
+	return c.Email, c.DisplayName, ok && c.Active && c.Email != "", nil
+}
+
+func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig) error {
+	mailerCfg := smtp.Config{
+		Host: cfg.Host, Port: cfg.Port, Security: smtp.Security(cfg.Security), Username: cfg.Username,
+		From: cfg.From, Timeout: cfg.Timeout,
+	}
+	if cfg.PasswordFile != "" {
+		password, err := readSecretFile(cfg.PasswordFile)
+		if err != nil {
+			return fmt.Errorf("read SMTP password file: %w", err)
+		}
+		mailerCfg.Password = password
+	}
+	if cfg.CAFile != "" {
+		pem, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return fmt.Errorf("read SMTP CA file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return errors.New("SMTP_CA_FILE contains no PEM certificate")
+		}
+		mailerCfg.RootCAs = pool
+	}
+	mailer, err := smtp.New(mailerCfg)
+	if err != nil {
+		return err
+	}
+	sender := notifications.NewEmailSender(pool, mailer,
+		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, cfg.BaseURL, cfg.DefaultLocale)
+	return runner.Register(notifications.EmailJobType, notifications.EmailJobTimeout, sender.Handle)
+}
+
+// readSecretFile reads a one-line secret, trimming only the trailing newline.
+func readSecretFile(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	secret := strings.TrimRight(string(raw), "\r\n")
+	if secret == "" {
+		return "", errors.New("file is empty")
+	}
+	return secret, nil
 }

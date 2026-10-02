@@ -16,8 +16,19 @@ type WorkDirectoryStore interface {
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
 	// CurrentTeamIDs returns the active Teams the User currently belongs to.
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
+	// Contacts returns id -> Contact for existing Users.
+	Contacts(ctx context.Context, ids []string) (map[string]Contact, error)
 	// CurrentMemberIDs returns the Users currently in an active Team, at most MaxTeamMembers.
 	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
+}
+
+// Contact is how a User can be reached by email, and whether they may be.
+type Contact struct {
+	DisplayName string
+	// Email is the primary email address; empty when the User has none.
+	Email string
+	// Active reports status "active"; only active Users receive email.
+	Active bool
 }
 
 // MaxTeamMembers bounds CurrentMemberIDs; Teams are operational groups, not directories.
@@ -83,4 +94,12 @@ func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]
 		return []string{}, nil
 	}
 	return w.store.CurrentMemberIDs(ctx, teamID)
+}
+
+func (w *WorkDirectory) Contacts(ctx context.Context, ids []string) (map[string]Contact, error) {
+	valid := validIDs(ids)
+	if len(valid) == 0 {
+		return map[string]Contact{}, nil
+	}
+	return w.store.Contacts(ctx, valid)
 }

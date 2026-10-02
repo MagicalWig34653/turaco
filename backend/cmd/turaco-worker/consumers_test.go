@@ -68,12 +68,14 @@ func (w *world) caller(user string) tasksapp.Caller {
 	return tasksapp.Caller{Actor: audit.UserActor(user), CorrelationID: w.corr}
 }
 
-func (w *world) dispatch() {
+func (w *world) dispatch() { w.dispatchWith(false) }
+
+func (w *world) dispatchWith(email bool) {
 	w.t.Helper()
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
 		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: []string{"TaskAssigned", "TaskCompleted"},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := registerConsumers(d, w.pool); err != nil {
+	if err := registerConsumers(d, w.pool, email); err != nil {
 		w.t.Fatal(err)
 	}
 	for i := 0; i < 1000; i++ {
@@ -214,5 +216,34 @@ func TestCompletionNotifiesCreatorUnlessSelf(t *testing.T) {
 	w.dispatch()
 	if w.notified(w.creator, "task.completed") != 1 {
 		t.Error("the creator must be notified when somebody else completes the task")
+	}
+}
+
+func TestAssignmentSchedulesEmailDeliveriesWhenEmailIsEnabled(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM platform.jobs WHERE job_type = 'notifications.email.send' AND payload->>'deliveryId' IN (
+			SELECT d.id::text FROM platform.notification_deliveries d JOIN platform.notifications n ON n.id = d.notification_id
+			WHERE n.recipient_user_id = ANY($1::uuid[]))`, []string{w.assignee, w.member, w.creator, w.outsider, w.inactive})
+	})
+	repo := tasksrepository.New(w.pool)
+	if _, err := repo.Insert(ctx, w.caller(w.creator), tasksapp.NewTask{
+		Title: "Replace toner", Priority: "normal", CreatedBy: strp(w.creator), AssignedUserID: strp(w.assignee),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w.dispatchWith(true)
+
+	var deliveries, jobs int
+	if err := w.pool.QueryRow(ctx, `
+		SELECT count(*), count(j.id) FROM platform.notification_deliveries d
+		JOIN platform.notifications n ON n.id = d.notification_id
+		LEFT JOIN platform.jobs j ON j.job_type = 'notifications.email.send' AND j.payload->>'deliveryId' = d.id::text AND j.status = 'pending'
+		WHERE n.recipient_user_id = $1::uuid AND d.status = 'pending'`, w.assignee).Scan(&deliveries, &jobs); err != nil {
+		t.Fatal(err)
+	}
+	if deliveries != 1 || jobs != 1 {
+		t.Errorf("deliveries=%d jobs=%d, want one pending delivery with one pending job", deliveries, jobs)
 	}
 }

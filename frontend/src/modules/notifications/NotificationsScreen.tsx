@@ -11,6 +11,7 @@ import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { announceNotificationsChanged, notificationsApi } from './api';
+import { PreferencesPanel } from './PreferencesPanel';
 import { notificationLink, notificationText } from './text';
 import type { AppNotification } from './types';
 
@@ -125,6 +126,7 @@ export function NotificationsScreen() {
         loadMoreError={list.loadMoreError}
         onLoadMore={list.loadMore}
       />
+      <PreferencesPanel />
     </>
   );
 }

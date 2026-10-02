@@ -11,3 +11,5 @@ export type AppNotification = {
 };
 
 export type UnreadCount = { count: number; max: number };
+
+export type EmailPreference = { category: string; channel: 'email'; enabled: boolean };

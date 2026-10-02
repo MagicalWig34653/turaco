@@ -81,3 +81,26 @@ func (r *Repository) CurrentMemberIDs(ctx context.Context, teamID string) ([]str
 	}
 	return collectStrings(rows, "current member ids")
 }
+
+func (r *Repository) Contacts(ctx context.Context, ids []string) (map[string]application.Contact, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, display_name, coalesce(primary_email, ''), status = 'active'
+		FROM organization.users WHERE id = ANY($1::text[]::uuid[])`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("contacts: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]application.Contact{}
+	for rows.Next() {
+		var id string
+		var c application.Contact
+		if err := rows.Scan(&id, &c.DisplayName, &c.Email, &c.Active); err != nil {
+			return nil, fmt.Errorf("contacts: scan: %w", err)
+		}
+		out[id] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("contacts: %w", err)
+	}
+	return out, nil
+}

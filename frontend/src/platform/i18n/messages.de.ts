@@ -348,4 +348,9 @@ export const de: Record<MessageKey, string> = {
   'notifications.task.assigned': 'Dir wurde eine Aufgabe zugewiesen: {title}',
   'notifications.task.completed': 'Eine von dir angelegte Aufgabe wurde erledigt: {title}',
   'notifications.generic': 'Du hast eine neue Benachrichtigung.',
+  'notifications.prefs.title': 'E-Mail',
+  'notifications.prefs.hint':
+    'Lege fest, welche Benachrichtigungen zusätzlich an deine E-Mail-Adresse gesendet werden. Benachrichtigungen in der App bleiben immer erhalten.',
+  'notifications.category.task.assigned': 'Mir wird eine Aufgabe zugewiesen',
+  'notifications.category.task.completed': 'Eine von mir angelegte Aufgabe wird erledigt',
 };

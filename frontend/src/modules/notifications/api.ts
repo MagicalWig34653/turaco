@@ -1,12 +1,15 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { AppNotification, UnreadCount } from './types';
+import type { AppNotification, EmailPreference, UnreadCount } from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
 
-registerErrorMessages({ 'notifications.not_found': 'error.notFound' });
+registerErrorMessages({
+  'notifications.not_found': 'error.notFound',
+  'notifications.unknown_category': 'error.notFound',
+});
 
 /** Own notifications only; the server never returns another user's. */
 export const notificationsApi = {
@@ -16,6 +19,10 @@ export const notificationsApi = {
       query: { unread, limit: 50, cursor },
     }),
   unreadCount: (signal?: Signal) => api.get<UnreadCount>('/notifications/unread-count', { signal }),
+  preferences: (signal?: Signal) =>
+    api.get<{ items: EmailPreference[] }>('/notifications/preferences', { signal }),
+  setEmailPreference: (category: string, enabled: boolean) =>
+    api.put<EmailPreference>(`/notifications/preferences/${enc(category)}/email`, { enabled }),
   markRead: (id: string) => api.post<void>(`/notifications/${enc(id)}/read`),
   markAllRead: () => api.post<{ marked: number }>('/notifications/read-all'),
 };

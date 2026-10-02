@@ -41,6 +41,15 @@ func (w *WorkDirectory) CurrentTeamIDs(ctx context.Context, userID string) ([]st
 	return w.app.CurrentTeamIDs(ctx, userID)
 }
 
+// Contact is the reachability of a User: display name, primary email address (empty when
+// none) and whether the User is active.
+type Contact = application.Contact
+
+// Contacts returns id -> Contact for existing Users; unknown ids are absent.
+func (w *WorkDirectory) Contacts(ctx context.Context, ids []string) (map[string]Contact, error) {
+	return w.app.Contacts(ctx, ids)
+}
+
 // CurrentMemberIDs returns the Users currently in an active Team (at most
 // application.MaxTeamMembers); an inactive or unknown Team has none.
 func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error) {

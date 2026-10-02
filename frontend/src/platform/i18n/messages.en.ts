@@ -336,6 +336,11 @@ export const en = {
   'notifications.task.assigned': 'A task was assigned to you: {title}',
   'notifications.task.completed': 'A task you created was completed: {title}',
   'notifications.generic': 'You have a new notification.',
+  'notifications.prefs.title': 'Email',
+  'notifications.prefs.hint':
+    'Choose which notifications are also sent to your email address. In-app notifications are always kept.',
+  'notifications.category.task.assigned': 'A task is assigned to me',
+  'notifications.category.task.completed': 'A task I created is completed',
 } as const;
 
 export type MessageKey = keyof typeof en;

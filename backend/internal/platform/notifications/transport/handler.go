@@ -28,6 +28,8 @@ func Register(mux *http.ServeMux, svc *notifications.Service, auth authorization
 	}
 	route("GET /api/v1/notifications", h.list)
 	route("GET /api/v1/notifications/unread-count", h.unreadCount)
+	route("GET /api/v1/notifications/preferences", h.preferences)
+	route("PUT /api/v1/notifications/preferences/{category}/email", h.setEmailPreference)
 	route("POST /api/v1/notifications/read-all", h.readAll)
 	route("POST /api/v1/notifications/{id}/read", h.read)
 }
@@ -36,6 +38,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, notifications.ErrNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "notifications.not_found", "The requested resource was not found.")
+	case errors.Is(err, notifications.ErrUnknownCategory):
+		httpx.WriteError(w, http.StatusNotFound, "notifications.unknown_category", "The notification category is not known.")
 	case errors.Is(err, notifications.ErrInvalidCursor):
 		httpx.WriteError(w, http.StatusBadRequest, "notifications.invalid_cursor", "The cursor is invalid.")
 	default:
@@ -126,4 +130,38 @@ func (h *handler) readAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"marked": n})
+}
+
+type preferenceDTO struct {
+	Category string `json:"category"`
+	Channel  string `json:"channel"`
+	Enabled  bool   `json:"enabled"`
+}
+
+func (h *handler) preferences(w http.ResponseWriter, r *http.Request) {
+	prefs, err := h.svc.Preferences(r.Context(), userID(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := make([]preferenceDTO, 0, len(prefs))
+	for _, p := range prefs {
+		out = append(out, preferenceDTO{Category: p.Category, Channel: p.Channel, Enabled: p.Enabled})
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": out})
+}
+
+func (h *handler) setEmailPreference(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := httpx.DecodeJSON(w, r, &body, 1<<10); err != nil || body.Enabled == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "notifications.invalid_request", "The request body is not valid JSON for this operation.")
+		return
+	}
+	if err := h.svc.SetEmailPreference(r.Context(), userID(r), r.PathValue("category"), *body.Enabled); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, preferenceDTO{Category: r.PathValue("category"), Channel: notifications.ChannelEmail, Enabled: *body.Enabled})
 }

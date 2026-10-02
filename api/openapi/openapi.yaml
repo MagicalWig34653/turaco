@@ -656,6 +656,68 @@ paths:
                   max: {type: integer}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/preferences:
+    get:
+      operationId: listNotificationPreferences
+      summary: List my email preferences.
+      description: "Any signed-in user. One entry per notification category; email is enabled unless the user opted out."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The preferences.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/NotificationPreference'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/preferences/{category}/email:
+    put:
+      operationId: setNotificationEmailPreference
+      summary: Enable or disable email for a category.
+      description: "Any signed-in user; only the caller's own preference. Idempotent. Emails already scheduled are cancelled at send time when the user opted out in the meantime."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: The stored preference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationPreference'}
+        '400':
+          description: Invalid body (notifications.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Unknown category (notifications.unknown_category).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /notifications/read-all:
     post:
       operationId: markAllNotificationsRead
@@ -1563,6 +1625,14 @@ components:
         linkId: {type: [string, "null"], format: uuid}
         createdAt: {type: string, format: date-time}
         readAt: {type: [string, "null"], format: date-time}
+    NotificationPreference:
+      type: object
+      additionalProperties: false
+      required: [category, channel, enabled]
+      properties:
+        category: {type: string}
+        channel: {type: string, enum: [email]}
+        enabled: {type: boolean}
     NotificationList:
       type: object
       additionalProperties: false

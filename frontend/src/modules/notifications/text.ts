@@ -28,3 +28,15 @@ export function notificationLink(notification: AppNotification): string | undefi
 export function unreadLabel(count: number, max: number): string {
   return count >= max ? `${max - 1}+` : String(count);
 }
+
+/** Label of a notification category in the preferences list; unknown ones show their key. */
+export function categoryLabel(t: Translate, category: string): string {
+  switch (category) {
+    case 'task.assigned':
+      return t('notifications.category.task.assigned');
+    case 'task.completed':
+      return t('notifications.category.task.completed');
+    default:
+      return category;
+  }
+}
