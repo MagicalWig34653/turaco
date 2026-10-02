@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -201,5 +202,38 @@ func TestConcurrentCreateWithSameKeyInsertsOnce(t *testing.T) {
 	wg.Wait()
 	if created != 1 {
 		t.Errorf("created %d times, want 1", created)
+	}
+}
+
+func TestSuppressWithinSkipsRepeatsForTheSameLink(t *testing.T) {
+	f := newFixture(t)
+	in := f.intent(f.a, "e1")
+	in.SuppressWithin = time.Hour
+	if !f.create(in) {
+		t.Fatal("the first notification must be created")
+	}
+	in2 := f.intent(f.a, "e2") // a different event, same recipient, category and link
+	in2.SuppressWithin = time.Hour
+	if f.create(in2) {
+		t.Error("a repeat for the same link within the window must be suppressed")
+	}
+	other := f.intent(f.a, "e3")
+	other.SuppressWithin = time.Hour
+	other.LinkID = f.a // another link
+	if !f.create(other) {
+		t.Error("another link is not a repeat")
+	}
+	unsuppressed := f.intent(f.a, "e4")
+	if !f.create(unsuppressed) {
+		t.Error("without SuppressWithin every new event creates a notification")
+	}
+	// Outside the window the notification is created again.
+	if _, err := f.pool.Exec(context.Background(), `UPDATE platform.notifications SET created_at = now() - interval '2 hours' WHERE recipient_user_id = $1::uuid`, f.a); err != nil {
+		t.Fatal(err)
+	}
+	in5 := f.intent(f.a, "e5")
+	in5.SuppressWithin = time.Hour
+	if !f.create(in5) {
+		t.Error("a notification older than the window must not suppress a new one")
 	}
 }

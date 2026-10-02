@@ -318,3 +318,23 @@ func TestConsumerTimeoutIsARecordedFailure(t *testing.T) {
 		t.Errorf("event = %+v", r)
 	}
 }
+
+func TestPermanentConsumerErrorFailsTheEventImmediately(t *testing.T) {
+	pool := testPool(t)
+	d := newDispatcher(pool, 10)
+	if err := d.Register(testEventType, "bad payload", func(context.Context, pgx.Tx, events.OutboxEvent) error {
+		return events.Permanent(errors.New("cannot decode payload"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	id := insertEvent(t, pool, "corr-permanent")
+	if _, err := d.DispatchOne(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r := readEvent(t, pool, id); r.Status != "failed" || r.Attempts != 1 {
+		t.Errorf("event = %+v, want failed after one attempt", r)
+	}
+	if !events.IsPermanent(events.Permanent(errors.New("x"))) || events.IsPermanent(errors.New("x")) || events.Permanent(nil) != nil {
+		t.Error("Permanent/IsPermanent contract")
+	}
+}

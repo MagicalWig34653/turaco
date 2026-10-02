@@ -560,3 +560,30 @@ func TestSystemActorCreatesTasksWithoutCreator(t *testing.T) {
 		t.Errorf("tasks = %d", len(st.tasks))
 	}
 }
+
+func TestTextWithInvisibleOrBidirectionalCharactersIsRejected(t *testing.T) {
+	s, st := newSvc()
+	ctx := context.Background()
+	for name, in := range map[string]CreateInput{
+		"rtl override in title":  {Title: "Invoice \u202Eexe.pdf"},
+		"zero width space":       {Title: "pay\u200Bment"},
+		"isolate in description": {Title: "x", Description: "a\u2066b"},
+		"bom in description":     {Title: "x", Description: "\ufeffhidden"},
+	} {
+		var inv *InvalidInputError
+		if _, err := s.Create(ctx, callerOf(pManager), pManager, in); !errors.As(err, &inv) {
+			t.Errorf("%s: err = %v, want InvalidInputError", name, err)
+		}
+	}
+	if len(st.tasks) != 0 {
+		t.Error("a task with unsafe text was created")
+	}
+	v, err := s.Create(ctx, callerOf(pManager), pManager, CreateInput{Title: "Größe ändern 👩\u200D💻", Description: "line 1\nline 2"})
+	if err != nil {
+		t.Fatalf("legitimate unicode must pass: %v", err)
+	}
+	var inv *InvalidInputError
+	if _, err := s.Transition(ctx, callerOf(pManager), pManager, v.ID, nil, OpBlock, "wait\u202E"); !errors.As(err, &inv) {
+		t.Errorf("reason with an override: %v", err)
+	}
+}

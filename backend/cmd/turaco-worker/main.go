@@ -20,6 +20,7 @@ import (
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
@@ -138,12 +139,19 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 }
 
 func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, email bool) error {
+	orgReader := orgrepository.New(pool)
+	return registerConsumersWith(d, pool, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+}
+
+// registerConsumersWith registers the outbox consumers; perms decides which
+// Users hold task permissions and may therefore be notified about tasks.
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, email bool, perms tasksapp.PermissionResolver) error {
 	notifier := notifications.NewService(pool)
 	if email {
 		notifier = notifier.WithEmail()
 	}
 	taskConsumers := tasksapp.NewConsumers(
-		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier, perms)
 	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
 		return err
 	}
@@ -179,7 +187,10 @@ func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfi
 		if err != nil {
 			return fmt.Errorf("read SMTP CA file: %w", err)
 		}
-		pool := x509.NewCertPool()
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
 		if !pool.AppendCertsFromPEM(pem) {
 			return errors.New("SMTP_CA_FILE contains no PEM certificate")
 		}

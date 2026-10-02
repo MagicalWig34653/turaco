@@ -33,7 +33,7 @@ func goodCaller() Caller { return Caller{Actor: audit.UserActor("u"), Correlatio
 func TestTeamNameValidation(t *testing.T) {
 	for name, in := range map[string]string{
 		"empty": "", "blank": "   ", "control": "a\x00b", "newline": "a\nb",
-		"too long": strings.Repeat("x", 101), "invalid utf8": "a\xffb",
+		"too long": strings.Repeat("x", 101), "invalid utf8": "a\xffb", "rtl override": "Help\u202Edesk",
 	} {
 		s := &recordingStore{}
 		_, err := NewTeams(s).Create(context.Background(), goodCaller(), in)

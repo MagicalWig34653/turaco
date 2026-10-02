@@ -6,8 +6,9 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
 const (
@@ -79,10 +80,8 @@ func cleanTitle(s string) (string, error) {
 	if s == "" || utf8.RuneCountInString(s) > maxTitleLength || !utf8.ValidString(s) {
 		return "", invalid("title must be 1-%d characters", maxTitleLength)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return "", invalid("title must not contain control characters")
-		}
+	if safetext.ContainsUnsafe(s, false) {
+		return "", invalid("title must not contain control or invisible formatting characters")
 	}
 	return s, nil
 }
@@ -97,10 +96,8 @@ func cleanDescription(s string) (*string, error) {
 	if utf8.RuneCountInString(s) > maxDescriptionLength || !utf8.ValidString(s) {
 		return nil, invalid("description must be at most %d characters", maxDescriptionLength)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
-			return nil, invalid("description must not contain control characters")
-		}
+	if safetext.ContainsUnsafe(s, true) {
+		return nil, invalid("description must not contain control or invisible formatting characters")
 	}
 	return &s, nil
 }
@@ -110,10 +107,8 @@ func cleanReason(s string) (string, error) {
 	if s == "" || utf8.RuneCountInString(s) > maxReasonLength || !utf8.ValidString(s) {
 		return "", invalid("reason must be 1-%d characters", maxReasonLength)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return "", invalid("reason must not contain control characters")
-		}
+	if safetext.ContainsUnsafe(s, false) {
+		return "", invalid("reason must not contain control or invisible formatting characters")
 	}
 	return s, nil
 }

@@ -232,6 +232,10 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
+	if b.ExpectedVersion == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "tasks.invalid_request", "expectedVersion is required to change a task.")
+		return
+	}
 	in := application.UpdateInput{Title: b.Title, Description: b.Description, Priority: b.Priority}
 	if b.DueAt.Set {
 		in.DueAt, in.ClearDueAt = b.DueAt.Value, b.DueAt.Value == nil

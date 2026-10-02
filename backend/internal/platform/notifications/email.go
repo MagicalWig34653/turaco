@@ -153,7 +153,9 @@ func (e *EmailSender) claim(ctx context.Context, id string) (delivery, Notificat
 		return delivery{}, Notification{}, "", fmt.Errorf("claim email delivery: %w", err)
 	}
 	if err := json.Unmarshal(raw, &n.Params); err != nil {
-		return delivery{}, Notification{}, "", jobs.Permanent(fmt.Errorf("email delivery params: %w", err))
+		cause := fmt.Errorf("email delivery params: %w", err)
+		_ = e.release(ctx, delivery{id: d.id, attempts: d.attempts}, cause, true)
+		return delivery{}, Notification{}, "", jobs.Permanent(cause)
 	}
 	return d, n, userID, nil
 }
@@ -193,6 +195,18 @@ func (e *EmailSender) finish(ctx context.Context, d delivery, status, reason str
 // attempt) ends the delivery as failed; otherwise it returns to pending and
 // the job is retried by the runner with back-off.
 func (e *EmailSender) release(ctx context.Context, d delivery, cause error, permanent bool) error {
+	// An attempt interrupted by shutdown is not a failure: the runner refunds
+	// the job attempt, so the delivery attempt is refunded too and the
+	// delivery stays open for the next worker.
+	if ctx.Err() != nil && !permanent {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, _ = e.pool.Exec(fctx, `
+			UPDATE platform.notification_deliveries
+			SET status = 'pending', attempts = greatest(attempts - 1, 0), updated_at = now()
+			WHERE id = $1::uuid AND status = 'sending'`, d.id)
+		return ctx.Err()
+	}
 	terminal := permanent || d.attempts >= emailMaxAttempts
 	status := "pending"
 	if terminal {

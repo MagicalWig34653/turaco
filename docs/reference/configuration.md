@@ -40,11 +40,12 @@
 | `SESSION_ABSOLUTE_TIMEOUT` | duration | false | false | `24h` | Maximum session lifetime regardless of activity; must be positive. |
 | `SESSION_COOKIE_SECURE` | bool | false | false | `true` | Set the Secure attribute on the session cookie; disable only for local plain-HTTP development. |
 | `SESSION_IDLE_TIMEOUT` | duration | false | false | `8h` | Session idle timeout; must be positive and not exceed SESSION_ABSOLUTE_TIMEOUT. |
+| `SMTP_ALLOW_PLAINTEXT` | bool | false | false | `false` | Allow SMTP_SECURITY=none (clear text, credentials included). Accepted only together with APP_ENV=development, for local test relays. |
 | `SMTP_CA_FILE` | string | false | false | `` | PEM file with CA certificates trusted for the relay, in addition to the system pool. |
 | `SMTP_FROM` | string | false | false | `` | Sender address of notification emails, for example `Turaco <turaco@example.org>`. Required when SMTP_HOST is set. |
 | `SMTP_HOST` | string | false | false | `` | Mail relay host name. Setting it enables the email channel of notifications in turaco-worker; empty disables email (in-app notifications are unaffected). |
 | `SMTP_PASSWORD_FILE` | string | false | true | `` | Path to a file containing the relay password (for example a Docker secret). Requires SMTP_USERNAME. The password is never stored in the database or logged. |
 | `SMTP_PORT` | int | false | false | `` | Mail relay port. Default 587 for starttls, 465 for tls and 25 for none. |
-| `SMTP_SECURITY` | string | false | false | `starttls` | Connection protection: `starttls` (required upgrade before credentials or mail are sent), `tls` (implicit TLS) or `none` (clear text; accepted only with APP_ENV=development). Certificate verification is never disabled. |
+| `SMTP_SECURITY` | string | false | false | `starttls` | Connection protection: `starttls` (required upgrade before credentials or mail are sent), `tls` (implicit TLS) or `none` (clear text; requires SMTP_ALLOW_PLAINTEXT=true and APP_ENV=development). Certificate verification is never disabled. |
 | `SMTP_TIMEOUT` | duration | false | false | `30s` | Maximum duration of sending one email (connect, dialogue and transfer). |
 | `SMTP_USERNAME` | string | false | false | `` | Relay account. Requires SMTP_PASSWORD_FILE. |

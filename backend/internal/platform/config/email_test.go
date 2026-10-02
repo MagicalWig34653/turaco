@@ -11,7 +11,7 @@ func setSMTPEnv(t *testing.T, overrides map[string]string) {
 	env := map[string]string{
 		"SMTP_HOST": "mail.example.org", "SMTP_PORT": "", "SMTP_SECURITY": "", "SMTP_USERNAME": "turaco",
 		"SMTP_PASSWORD_FILE": "/run/secrets/smtp", "SMTP_CA_FILE": "", "SMTP_FROM": "Turaco <turaco@example.org>",
-		"SMTP_TIMEOUT": "", "EMAIL_BASE_URL": "https://turaco.example.org", "EMAIL_DEFAULT_LOCALE": "",
+		"SMTP_TIMEOUT": "", "SMTP_ALLOW_PLAINTEXT": "", "EMAIL_BASE_URL": "https://turaco.example.org", "EMAIL_DEFAULT_LOCALE": "",
 	}
 	for k, v := range overrides {
 		env[k] = v
@@ -48,7 +48,7 @@ func TestSMTPPortDefaultsFollowSecurity(t *testing.T) {
 			t.Errorf("%s: port = %d %v, want %d", sec, c.Port, err, port)
 		}
 	}
-	setSMTPEnv(t, map[string]string{"SMTP_SECURITY": "none", "SMTP_USERNAME": "", "SMTP_PASSWORD_FILE": "", "EMAIL_BASE_URL": "http://localhost:5173"})
+	setSMTPEnv(t, map[string]string{"SMTP_SECURITY": "none", "SMTP_ALLOW_PLAINTEXT": "true", "SMTP_USERNAME": "", "SMTP_PASSWORD_FILE": "", "EMAIL_BASE_URL": "http://localhost:5173"})
 	c, err := LoadSMTP("development")
 	if err != nil || c.Port != 25 {
 		t.Errorf("none: %+v %v", c, err)

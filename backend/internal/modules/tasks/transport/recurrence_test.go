@@ -78,7 +78,7 @@ func TestRecurrenceRoutesRequireTheRecurrencePermission(t *testing.T) {
 		{"GET", "/api/v1/recurring-task-definitions", ""},
 		{"POST", "/api/v1/recurring-task-definitions", goodDef},
 		{"GET", defPath, ""},
-		{"PATCH", defPath, `{"title":"x"}`},
+		{"PATCH", defPath, `{"expectedVersion":1,"title":"x"}`},
 		{"DELETE", defPath, ""},
 		{"POST", defPath + "/pause", `{}`},
 		{"POST", defPath + "/resume", `{}`},
@@ -131,11 +131,12 @@ func TestRecurrenceInvalidInput(t *testing.T) {
 		"no rule":          {"POST", "/api/v1/recurring-task-definitions", `{"title":"x"}`, 400},
 		"bad zone":         {"POST", "/api/v1/recurring-task-definitions", `{"title":"x","rule":{"frequency":"daily","interval":1,"timeOfDay":"09:00","timezone":"Nowhere/City","startsOn":"2026-01-01"}}`, 400},
 		"weekly no day":    {"POST", "/api/v1/recurring-task-definitions", `{"title":"x","rule":{"frequency":"weekly","interval":1,"timeOfDay":"09:00","timezone":"UTC","startsOn":"2026-01-01"}}`, 400},
-		"empty update":     {"PATCH", defPath, `{}`, 400},
+		"empty update":     {"PATCH", defPath, `{"expectedVersion":1}`, 400},
+		"missing version":  {"PATCH", defPath, `{"title":"x"}`, 400},
 		"bad limit":        {"GET", "/api/v1/recurring-task-definitions?limit=0", ``, 400},
 		"bad expected":     {"DELETE", defPath + "?expectedVersion=x", ``, 400},
 		"stale version":    {"POST", defPath + "/pause", `{"expectedVersion":9}`, 409},
-		"clear and assign": {"PATCH", defPath, `{"clearAssignment":true,"assignedUserId":"00000000-0000-7000-8000-0000000000b1"}`, 400},
+		"clear and assign": {"PATCH", defPath, `{"expectedVersion":1,"clearAssignment":true,"assignedUserId":"00000000-0000-7000-8000-0000000000b1"}`, 400},
 	}
 	for name, c := range cases {
 		rec := serveRec(t, newDef(), with("tasks.recurrence.manage"), c.method, c.path, c.body)

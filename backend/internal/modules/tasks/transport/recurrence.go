@@ -183,6 +183,10 @@ func (h *recurrenceHandler) update(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
+	if b.ExpectedVersion == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "tasks.invalid_request", "expectedVersion is required to change a definition.")
+		return
+	}
 	in := application.UpdateDefinitionInput{
 		Title: b.Title, Description: b.Description, Priority: b.Priority, AssignedUserID: b.AssignedUserID,
 		AssignedTeamID: b.AssignedTeamID, ClearAssignment: b.ClearAssignment, DueAfterHours: b.DueAfterHours,

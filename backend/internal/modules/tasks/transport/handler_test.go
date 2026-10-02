@@ -115,7 +115,7 @@ func TestRoutePermissions(t *testing.T) {
 		{"GET", "/api/v1/my-work", "", false},
 		{"GET", taskPath, "", false},
 		{"POST", "/api/v1/tasks", `{"title":"x"}`, true},
-		{"PATCH", taskPath, `{"title":"x"}`, true},
+		{"PATCH", taskPath, `{"expectedVersion":1,"title":"x"}`, true},
 		{"POST", taskPath + "/assign", `{"userId":"00000000-0000-7000-8000-0000000000b1"}`, true},
 		{"POST", taskPath + "/unassign", `{}`, true},
 		{"POST", taskPath + "/cancel", `{"reason":"r"}`, true},
@@ -265,4 +265,15 @@ func TestDueAtNullClearsAndAbsentKeeps(t *testing.T) {
 func decodeBodyForTest(body string, dst any) error {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 	return httpx.DecodeJSON(httptest.NewRecorder(), req, dst, maxBody)
+}
+
+func TestPatchRequiresTheExpectedVersion(t *testing.T) {
+	store := newStore()
+	rec := serve(t, store, with("tasks.manage"), "PATCH", taskPath, `{"title":"x"}`)
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "expectedVersion") || store.calls != 0 {
+		t.Errorf("status=%d calls=%d body=%s, want 400 without touching the store", rec.Code, store.calls, rec.Body)
+	}
+	if rec := serve(t, store, with("tasks.manage"), "PATCH", taskPath, `{"expectedVersion":1,"title":"x"}`); rec.Code != 200 {
+		t.Errorf("with the version = %d: %s", rec.Code, rec.Body)
+	}
 }

@@ -51,8 +51,14 @@ func LoadSMTP(environment string) (SMTPConfig, error) {
 	case "tls":
 		defaultPort = "465"
 	case "none":
-		if environment != "development" {
-			return SMTPConfig{}, fmt.Errorf("SMTP_SECURITY=none is accepted only with APP_ENV=development")
+		// Fail closed: APP_ENV defaults to development, so clear text also needs
+		// an explicit opt-in that a production deployment never sets by accident.
+		allow, err := getBool("SMTP_ALLOW_PLAINTEXT", false)
+		if err != nil {
+			return SMTPConfig{}, err
+		}
+		if environment != "development" || !allow {
+			return SMTPConfig{}, fmt.Errorf("SMTP_SECURITY=none requires SMTP_ALLOW_PLAINTEXT=true and APP_ENV=development")
 		}
 		defaultPort = "25"
 	default:
@@ -78,7 +84,7 @@ func LoadSMTP(environment string) (SMTPConfig, error) {
 	c.BaseURL = strings.TrimRight(os.Getenv("EMAIL_BASE_URL"), "/")
 	u, perr := url.Parse(c.BaseURL)
 	switch {
-	case c.BaseURL == "" || perr != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.User != nil:
+	case c.BaseURL == "" || perr != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil:
 		return SMTPConfig{}, fmt.Errorf("EMAIL_BASE_URL must be the web application's address, for example https://turaco.example.org")
 	case u.Scheme != "https" && !(u.Scheme == "http" && environment == "development"):
 		return SMTPConfig{}, fmt.Errorf("EMAIL_BASE_URL must use https (http is accepted only with APP_ENV=development)")

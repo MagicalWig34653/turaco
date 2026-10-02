@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
 // Team write operations. Teams and their memberships are platform-owned:
@@ -78,10 +78,8 @@ func cleanText(field, s string, max int) (string, error) {
 	if s == "" || utf8.RuneCountInString(s) > max || !utf8.ValidString(s) {
 		return "", invalid("%s must be 1-%d characters", field, max)
 	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return "", invalid("%s must not contain control characters", field)
-		}
+	if safetext.ContainsUnsafe(s, false) {
+		return "", invalid("%s must not contain control or invisible formatting characters", field)
 	}
 	return s, nil
 }

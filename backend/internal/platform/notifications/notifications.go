@@ -48,6 +48,10 @@ type Intent struct {
 	// DedupeKey makes creation idempotent per recipient (for example outbox
 	// event id plus recipient). Required.
 	DedupeKey string
+	// SuppressWithin, when positive and a link is set, skips the notification
+	// if the recipient already received one of the same category for the same
+	// link within this duration, so repeated changes cannot flood an inbox.
+	SuppressWithin time.Duration
 }
 
 // Notification is a stored in-app notification.
@@ -136,6 +140,20 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in Intent) (bool, error
 	var linkType, linkID *string
 	if in.LinkType != "" {
 		linkType, linkID = &in.LinkType, &in.LinkID
+	}
+	if in.SuppressWithin > 0 && in.LinkID != "" {
+		var recent bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM platform.notifications
+				WHERE recipient_user_id = $1::uuid AND category = $2 AND link_type = $3 AND link_id = $4::uuid
+				  AND created_at > now() - make_interval(secs => $5))`,
+			in.RecipientUserID, in.Category, in.LinkType, in.LinkID, in.SuppressWithin.Seconds()).Scan(&recent); err != nil {
+			return false, fmt.Errorf("check recent notification: %w", err)
+		}
+		if recent {
+			return false, nil
+		}
 	}
 	var notificationID string
 	err := tx.QueryRow(ctx, `

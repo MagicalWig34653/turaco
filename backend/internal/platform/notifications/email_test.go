@@ -327,3 +327,45 @@ func TestResolverErrorIsRetryable(t *testing.T) {
 		t.Errorf("delivery = %+v", got)
 	}
 }
+
+func TestShutdownDuringSendDoesNotConsumeAnAttempt(t *testing.T) {
+	e := newEmailFixture(t)
+	e.createViaEmailService(e.a, "k1")
+	d, _ := e.delivery(e.a)
+	ctx, cancel := context.WithCancel(context.Background())
+	e.mailer.err = context.Canceled
+	e.send = notifications.NewEmailSender(e.pool, cancelingMailer{cancel: cancel}, e.cont, "https://turaco.example.org", "en")
+	err := e.send.Handle(ctx, e.job(d))
+	if err == nil || jobs.IsPermanent(err) {
+		t.Fatalf("err = %v, want a non-permanent error", err)
+	}
+	got, _ := e.delivery(e.a)
+	if got.Status != "pending" || got.Attempts != 0 {
+		t.Errorf("delivery = %+v, want pending with the attempt refunded", got)
+	}
+}
+
+type cancelingMailer struct{ cancel context.CancelFunc }
+
+func (m cancelingMailer) Send(ctx context.Context, _ smtp.Message) error {
+	m.cancel() // the worker is shutting down while the relay dialogue runs
+	return ctx.Err()
+}
+
+func TestCorruptParamsFailTheDeliveryInsteadOfLeavingItSending(t *testing.T) {
+	e := newEmailFixture(t)
+	e.createViaEmailService(e.a, "k1")
+	d, _ := e.delivery(e.a)
+	// params is jsonb, so a value that is valid JSON but not an object is the corruption we can store.
+	if _, err := e.pool.Exec(context.Background(), `UPDATE platform.notifications SET params = '[1,2]'::jsonb
+		WHERE id = (SELECT notification_id FROM platform.notification_deliveries WHERE id = $1::uuid)`, d.ID); err != nil {
+		t.Fatal(err)
+	}
+	err := e.send.Handle(context.Background(), e.job(d))
+	if !jobs.IsPermanent(err) {
+		t.Fatalf("err = %v, want permanent", err)
+	}
+	if got, _ := e.delivery(e.a); got.Status != "failed" {
+		t.Errorf("delivery = %+v, want failed", got)
+	}
+}

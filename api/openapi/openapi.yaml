@@ -1786,6 +1786,7 @@ components:
     RecurringTaskDefinitionUpdate:
       type: object
       additionalProperties: false
+      required: [expectedVersion]
       properties:
         expectedVersion: {type: integer, minimum: 1}
         title: {type: string, minLength: 1, maxLength: 200}
@@ -1811,6 +1812,7 @@ components:
     TaskUpdate:
       type: object
       additionalProperties: false
+      required: [expectedVersion]
       properties:
         expectedVersion: {type: integer, minimum: 1}
         title: {type: string, minLength: 1, maxLength: 200}

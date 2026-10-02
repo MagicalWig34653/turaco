@@ -25,6 +25,26 @@ const (
 	finalizeTimeout   = 10 * time.Second
 )
 
+type permanentError struct{ err error }
+
+func (e permanentError) Error() string { return e.err.Error() }
+func (e permanentError) Unwrap() error { return e.err }
+
+// Permanent marks a consumer error that retrying cannot fix (an undecodable
+// payload): the event becomes failed immediately instead of after all attempts.
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentError{err: err}
+}
+
+// IsPermanent reports whether err was marked with Permanent.
+func IsPermanent(err error) bool {
+	var p permanentError
+	return errors.As(err, &p)
+}
+
 // Consumer reacts to one outbox event inside the dispatcher's claim
 // transaction (ADR-0024). It must touch only its own tables through tx, stay
 // short, never call external systems (enqueue a job instead) and be
@@ -219,7 +239,7 @@ func (d *Dispatcher) recordFailure(ctx context.Context, event OutboxEvent, attem
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 	defer cancel()
 	next := attempts + 1
-	terminal := next >= d.opts.MaxAttempts
+	terminal := next >= d.opts.MaxAttempts || IsPermanent(cause)
 	status := "pending"
 	if terminal {
 		status = "failed"

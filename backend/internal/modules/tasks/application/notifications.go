@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -17,6 +18,16 @@ import (
 type Notifier interface {
 	Create(ctx context.Context, tx pgx.Tx, in notifications.Intent) (bool, error)
 }
+
+// PermissionResolver returns the effective permissions of a User
+// (platform/authorization/roles.Evaluator).
+type PermissionResolver interface {
+	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
+}
+
+// assignedSuppressWindow keeps repeated assign/unassign cycles from flooding
+// a recipient: no second "assigned" notification for the same task within it.
+const assignedSuppressWindow = time.Hour
 
 // TxReader reads a task inside the consumer's transaction.
 type TxReader interface {
@@ -31,10 +42,11 @@ type Consumers struct {
 	tasks    TxReader
 	dir      Directory
 	notifier Notifier
+	perms    PermissionResolver
 }
 
-func NewConsumers(tasks TxReader, dir Directory, notifier Notifier) *Consumers {
-	return &Consumers{tasks: tasks, dir: dir, notifier: notifier}
+func NewConsumers(tasks TxReader, dir Directory, notifier Notifier, perms PermissionResolver) *Consumers {
+	return &Consumers{tasks: tasks, dir: dir, notifier: notifier, perms: perms}
 }
 
 type assignedPayload struct {
@@ -49,7 +61,7 @@ type assignedPayload struct {
 func (c *Consumers) OnTaskAssigned(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p assignedPayload
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
-		return fmt.Errorf("decode TaskAssigned payload: %w", err)
+		return events.Permanent(fmt.Errorf("decode TaskAssigned payload: %w", err))
 	}
 	task, err := c.tasks.GetTx(ctx, tx, p.TaskID)
 	if errors.Is(err, ErrNotFound) {
@@ -84,7 +96,7 @@ type completedPayload struct {
 func (c *Consumers) OnTaskCompleted(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p completedPayload
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
-		return fmt.Errorf("decode TaskCompleted payload: %w", err)
+		return events.Permanent(fmt.Errorf("decode TaskCompleted payload: %w", err))
 	}
 	task, err := c.tasks.GetTx(ctx, tx, p.TaskID)
 	if errors.Is(err, ErrNotFound) {
@@ -99,8 +111,24 @@ func (c *Consumers) OnTaskCompleted(ctx context.Context, tx pgx.Tx, ev events.Ou
 	return c.notify(ctx, tx, ev, task, "task.completed", []string{*task.CreatedByUserID})
 }
 
-// notify creates one notification per distinct active candidate other than
-// the actor of the event.
+// mayKnowTasks reports whether the User holds a permission that lets them see
+// at least some tasks. A notification carries the task title, so it is only
+// created for Users who hold task permissions, not for every Team member.
+func (c *Consumers) mayKnowTasks(ctx context.Context, userID string) (bool, error) {
+	perms, err := c.perms.Permissions(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("load permissions: %w", err)
+	}
+	for _, p := range []string{"tasks.work", "tasks.view", "tasks.manage"} {
+		if _, ok := perms[p]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// notify creates one notification per distinct active candidate that holds a
+// task permission, other than the actor of the event.
 func (c *Consumers) notify(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent, task Task, category string, candidates []string) error {
 	seen := map[string]struct{}{}
 	var ids []string
@@ -125,6 +153,15 @@ func (c *Consumers) notify(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent
 		if !active[id] {
 			continue
 		}
+		if may, err := c.mayKnowTasks(ctx, id); err != nil {
+			return err
+		} else if !may {
+			continue
+		}
+		var suppress time.Duration
+		if category == "task.assigned" {
+			suppress = assignedSuppressWindow
+		}
 		_, err := c.notifier.Create(ctx, tx, notifications.Intent{
 			RecipientUserID: id,
 			Category:        category,
@@ -132,6 +169,7 @@ func (c *Consumers) notify(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent
 			LinkType:        "task",
 			LinkID:          task.ID,
 			DedupeKey:       ev.ID + ":" + id,
+			SuppressWithin:  suppress,
 		})
 		if err != nil {
 			return fmt.Errorf("create notification: %w", err)

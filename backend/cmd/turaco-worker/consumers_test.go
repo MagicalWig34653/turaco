@@ -68,14 +68,34 @@ func (w *world) caller(user string) tasksapp.Caller {
 	return tasksapp.Caller{Actor: audit.UserActor(user), CorrelationID: w.corr}
 }
 
-func (w *world) dispatch() { w.dispatchWith(false) }
+// grants holds the task permission of each test User; a User not listed has none.
+type grants map[string][]string
 
-func (w *world) dispatchWith(email bool) {
+func (g grants) Permissions(_ context.Context, userID string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, p := range g[userID] {
+		out[p] = struct{}{}
+	}
+	return out, nil
+}
+
+// everyone lets all of the world's Users work tasks.
+func (w *world) everyone() grants {
+	g := grants{}
+	for _, u := range []string{w.creator, w.assignee, w.member, w.outsider, w.inactive} {
+		g[u] = []string{"tasks.work"}
+	}
+	return g
+}
+
+func (w *world) dispatch() { w.dispatchWith(false, w.everyone()) }
+
+func (w *world) dispatchWith(email bool, perms grants) {
 	w.t.Helper()
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
 		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: []string{"TaskAssigned", "TaskCompleted"},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := registerConsumers(d, w.pool, email); err != nil {
+	if err := registerConsumersWith(d, w.pool, email, perms); err != nil {
 		w.t.Fatal(err)
 	}
 	for i := 0; i < 1000; i++ {
@@ -233,7 +253,7 @@ func TestAssignmentSchedulesEmailDeliveriesWhenEmailIsEnabled(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	w.dispatchWith(true)
+	w.dispatchWith(true, w.everyone())
 
 	var deliveries, jobs int
 	if err := w.pool.QueryRow(ctx, `
@@ -245,5 +265,76 @@ func TestAssignmentSchedulesEmailDeliveriesWhenEmailIsEnabled(t *testing.T) {
 	}
 	if deliveries != 1 || jobs != 1 {
 		t.Errorf("deliveries=%d jobs=%d, want one pending delivery with one pending job", deliveries, jobs)
+	}
+}
+
+func TestOnlyUsersWithTaskPermissionsAreNotified(t *testing.T) {
+	w := newWorld(t)
+	repo := tasksrepository.New(w.pool)
+	if _, err := repo.Insert(context.Background(), w.caller(w.creator), tasksapp.NewTask{
+		Title: "Confidential", Priority: "normal", CreatedBy: strp(w.creator), AssignedUserID: strp(w.assignee), AssignedTeamID: strp(w.team),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Only the assignee holds a task permission; the Team member does not.
+	w.dispatchWith(false, grants{w.assignee: {"tasks.work"}})
+	if w.notified(w.assignee, "task.assigned") != 1 {
+		t.Error("a User with tasks.work must be notified")
+	}
+	if w.notified(w.member, "task.assigned") != 0 {
+		t.Error("a Team member without a task permission must not receive the task title")
+	}
+}
+
+func TestCompletionDoesNotNotifyACreatorWhoLostTaskPermissions(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	repo := tasksrepository.New(w.pool)
+	task, _ := repo.Insert(ctx, w.caller(w.creator), tasksapp.NewTask{Title: "t", Priority: "normal", CreatedBy: strp(w.creator)})
+	by := w.assignee
+	if _, err := repo.Change(ctx, w.caller(by), task.ID, func(cur tasksapp.Task) (tasksapp.Change, error) {
+		n := cur
+		n.Status = tasksapp.StatusCompleted
+		now := time.Now().UTC()
+		n.CompletedAt, n.CompletedByUserID = &now, &by
+		return tasksapp.Change{Next: n, Action: "tasks.task.completed", Events: []tasksapp.Event{
+			{Type: "TaskCompleted", Payload: map[string]any{"taskId": cur.ID, "completedByUserId": by}},
+		}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w.dispatchWith(false, grants{}) // nobody holds a task permission any more
+	if w.notified(w.creator, "task.completed") != 0 {
+		t.Error("the creator no longer holds a task permission and must not be notified")
+	}
+}
+
+func TestRepeatedAssignmentsDoNotFloodTheRecipient(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	repo := tasksrepository.New(w.pool)
+	task, err := repo.Insert(ctx, w.caller(w.creator), tasksapp.NewTask{Title: "t", Priority: "normal", CreatedBy: strp(w.creator), AssignedUserID: strp(w.assignee)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reassign := func(to *string) {
+		if _, err := repo.Change(ctx, w.caller(w.creator), task.ID, func(cur tasksapp.Task) (tasksapp.Change, error) {
+			n := cur
+			n.AssignedUserID = to
+			return tasksapp.Change{Next: n, Action: "tasks.task.assigned", Events: []tasksapp.Event{
+				{Type: "TaskAssigned", Payload: map[string]any{"taskId": cur.ID, "assignedUserId": to, "assignedTeamId": nil}},
+			}}, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w.dispatch()
+	}
+	w.dispatch()
+	for i := 0; i < 4; i++ { // outsider, assignee, outsider, assignee ...
+		reassign(strp(w.outsider))
+		reassign(strp(w.assignee))
+	}
+	if n := w.notified(w.assignee, "task.assigned"); n != 1 {
+		t.Errorf("assignee received %d notifications for one task within the window, want 1", n)
 	}
 }
