@@ -320,6 +320,22 @@ export const en = {
   'error.versionConflict': 'The task was changed by someone else. Reload it and try again.',
   'error.invalidTransition': 'This is not possible in the task’s current status.',
   'error.assigneeInvalid': 'The selected user or Team does not exist or is not active.',
+  'nav.notifications': 'Notifications',
+  'notifications.intro': 'Messages about work that concerns you.',
+  'notifications.empty': 'You have no notifications.',
+  'notifications.unreadOnly': 'Unread only',
+  'notifications.col.text': 'Message',
+  'notifications.col.time': 'Received',
+  'notifications.col.state': 'State',
+  'notifications.col.action': 'Action',
+  'notifications.read': 'Read',
+  'notifications.unread': 'Unread',
+  'notifications.markRead': 'Mark as read',
+  'notifications.markAllRead': 'Mark all as read',
+  'notifications.unreadCount': '{count} unread notifications',
+  'notifications.task.assigned': 'A task was assigned to you: {title}',
+  'notifications.task.completed': 'A task you created was completed: {title}',
+  'notifications.generic': 'You have a new notification.',
 } as const;
 
 export type MessageKey = keyof typeof en;

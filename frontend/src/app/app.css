@@ -777,3 +777,7 @@ code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.nav-count {
+  margin-left: 0.5rem;
+}

@@ -8,7 +8,7 @@ const ids = (permissions: string[], group: 'main' | 'admin') =>
 
 describe('visibleNavItems', () => {
   it('always shows the main entries and hides admin entries without permission', () => {
-    expect(ids([], 'main')).toEqual(['home', 'me']);
+    expect(ids([], 'main')).toEqual(['home', 'me', 'notifications']);
     expect(ids([], 'admin')).toEqual([]);
   });
 
@@ -19,9 +19,9 @@ describe('visibleNavItems', () => {
 
   it('shows My Work and Tasks with any one task permission', () => {
     for (const permission of ['tasks.view', 'tasks.work', 'tasks.manage']) {
-      expect(ids([permission], 'main')).toEqual(['home', 'me', 'myWork', 'tasks']);
+      expect(ids([permission], 'main')).toEqual(['home', 'me', 'myWork', 'notifications', 'tasks']);
     }
-    expect(ids(['organization.view'], 'main')).toEqual(['home', 'me']);
+    expect(ids(['organization.view'], 'main')).toEqual(['home', 'me', 'notifications']);
   });
 
   it('requires both directory permissions for directory sync', () => {

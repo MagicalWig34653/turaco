@@ -5,6 +5,7 @@ export type RouteId =
   | 'home'
   | 'me'
   | 'myWork'
+  | 'notifications'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -42,6 +43,7 @@ export const appRoutes: readonly AppRoute[] = [
     requiresAny: taskViewPermissions,
     nav: 'main',
   },
+  { id: 'notifications', pattern: '/notifications', titleKey: 'nav.notifications', nav: 'main' },
   {
     id: 'tasks',
     pattern: '/tasks',
