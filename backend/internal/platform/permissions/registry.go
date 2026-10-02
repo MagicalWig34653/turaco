@@ -21,6 +21,8 @@ var Registry = []Permission{
 	{Name: "tasks.manage", Description: "Create, edit, assign, cancel and reopen any task and work on any task.", Risk: "normal"},
 	{Name: "briefing.view", Description: "View published IT Briefing items.", Risk: "normal"},
 	{Name: "briefing.manage", Description: "Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items.", Risk: "elevated"},
+	{Name: "products.view", Description: "View the product catalog: products, manufacturers and product categories.", Risk: "normal"},
+	{Name: "products.manage", Description: "Create and change products, manufacturers and product categories.", Risk: "elevated"},
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},
 	{Name: "endpoint.management.view", Description: "View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope.", Risk: "normal"},

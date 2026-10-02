@@ -21,6 +21,8 @@
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
+| `products.manage` | elevated | Create and change products, manufacturers and product categories. |
+| `products.view` | normal | View the product catalog: products, manufacturers and product categories. |
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |

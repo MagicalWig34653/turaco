@@ -902,6 +902,308 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /manufacturers:
+    get:
+      operationId: listManufacturers
+      summary: List manufacturers.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManufacturerList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createManufacturer
+      summary: Create a manufacturer.
+      description: "Requires `products.manage`. Names are unique case-insensitively. Audited (products.manufacturer.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManufacturerCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Manufacturer'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /manufacturers/{id}:
+    patch:
+      operationId: renameManufacturer
+      summary: Rename a manufacturer.
+      description: "Requires `products.manage`. Audited (products.manufacturer.renamed). `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManufacturerRename'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Manufacturer'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /product-categories:
+    get:
+      operationId: listProductCategorys
+      summary: List productcategorys.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategoryList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProductCategory
+      summary: Create a productcategory.
+      description: "Requires `products.manage`. Optional `parentId` (fixed at creation, so the tree has no cycles); names are unique per parent. Audited (products.category.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCategoryCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategory'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /product-categories/{id}:
+    patch:
+      operationId: renameProductCategory
+      summary: Rename a productcategory.
+      description: "Requires `products.manage`. Audited (products.category.renamed). `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCategoryRename'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategory'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products:
+    get:
+      operationId: listProducts
+      summary: List products.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+        - name: categoryId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: manufacturerId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: active
+          in: query
+          description: true or false
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProduct
+      summary: Create a product.
+      description: "Requires `products.manage`. Audited (products.product.created). `stockManaged` defaults to true. Internal part numbers are unique case-insensitively."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}:
+    get:
+      operationId: getProduct
+      summary: Get a product.
+      description: "Requires `products.view` or `products.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateProduct
+      summary: Change a product.
+      description: "Requires `products.manage`. `expectedVersion` is required; an empty part number clears it. Audited (products.product.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdate'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}/activate:
+    post:
+      operationId: activateProduct
+      summary: Activate a product.
+      description: "Requires `products.manage`. Deactivated products are kept for history but not offered. Idempotent. Audited (products.product.activated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}/deactivate:
+    post:
+      operationId: deactivateProduct
+      summary: Deactivate a product.
+      description: "Requires `products.manage`. Deactivated products are kept for history but not offered. Idempotent. Audited (products.product.deactivated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -1764,6 +2066,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ProductsInvalid:
+      description: Invalid input (products.invalid_request, products.invalid_reference, products.invalid_cursor, products.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProductsNotFound:
+      description: Not found (products.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProductsConflict:
+      description: Conflict (products.conflict, products.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -2023,6 +2343,128 @@ components:
         severity: {type: string, enum: [info, warning, critical]}
         validUntil: {type: string, format: date-time}
         clearValidUntil: {type: boolean}
+    Manufacturer:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ManufacturerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Manufacturer'}
+        nextCursor: {type: string}
+    ManufacturerRename:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        expectedVersion: {type: integer, minimum: 1}
+    ProductCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        parentId: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProductCategoryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ProductCategory'}
+        nextCursor: {type: string}
+    ProductCategoryRename:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        expectedVersion: {type: integer, minimum: 1}
+    ManufacturerCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+    ProductCategoryCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        parentId: {type: [string, "null"], format: uuid}
+    Product:
+      type: object
+      additionalProperties: false
+      required: [id, name, manufacturerId, categoryId, manufacturerPartNumber, internalPartNumber, serialized, stockManaged, assetManaged, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        manufacturerId: {type: [string, "null"], format: uuid}
+        categoryId: {type: [string, "null"], format: uuid}
+        manufacturerPartNumber: {type: [string, "null"]}
+        internalPartNumber: {type: [string, "null"]}
+        serialized: {type: boolean}
+        stockManaged: {type: boolean}
+        assetManaged: {type: boolean}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProductList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Product'}
+        nextCursor: {type: string}
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        manufacturerId: {type: [string, "null"], format: uuid}
+        categoryId: {type: [string, "null"], format: uuid}
+        manufacturerPartNumber: {type: string, maxLength: 100}
+        internalPartNumber: {type: string, maxLength: 100}
+        serialized: {type: boolean, default: false}
+        stockManaged: {type: boolean, default: true}
+        assetManaged: {type: boolean, default: false}
+    ProductUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 200}
+        manufacturerId: {type: string, format: uuid}
+        clearManufacturer: {type: boolean}
+        categoryId: {type: string, format: uuid}
+        clearCategory: {type: boolean}
+        manufacturerPartNumber: {type: string, maxLength: 100, description: "Empty clears."}
+        internalPartNumber: {type: string, maxLength: 100, description: "Empty clears."}
+        serialized: {type: boolean}
+        stockManaged: {type: boolean}
+        assetManaged: {type: boolean}
     TaskCreate:
       type: object
       additionalProperties: false

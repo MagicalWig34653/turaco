@@ -19,6 +19,9 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
+	productsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
+	productsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/products/repository"
+	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
@@ -130,6 +133,7 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	productstransport.Register(mux, productsapp.NewService(productsrepository.New(pool)), sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	categories, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)

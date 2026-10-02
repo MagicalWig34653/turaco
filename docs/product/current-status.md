@@ -46,6 +46,8 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Claude Code project instructions, model-routed Opus/Sonnet skills/subagents, reviewer agents, context policy and deterministic hooks.
 - Product/architecture/domain/security/workflow/operations documentation.
 
+- Products backend (F3 slice 1): `GET/POST /api/v1/manufacturers`, `PATCH /manufacturers/{id}`, `GET/POST /api/v1/product-categories`, `PATCH /product-categories/{id}`, `GET/POST /api/v1/products`, `GET/PATCH /products/{id}`, `POST /products/{id}/activate|deactivate`. Permissions `products.view` (read) and `products.manage` (write, audited); optimistic versions, unique manufacturer names, category names per parent and internal part numbers, soft deactivation of products; categories are a tree whose parent is fixed at creation. Products `public.Directory` serves other modules. No UI yet; no Product Variants.
+
 ## Explicit stubs / not implemented yet
 
 - Connector Agent transport and LDAP/AD operations.
