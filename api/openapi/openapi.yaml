@@ -743,6 +743,165 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items:
+    get:
+      operationId: listBriefingItems
+      summary: List IT Briefing items.
+      description: "Requires `briefing.view` or `briefing.manage`. Viewers (briefing.view) see published, unexpired items only; managers see every item and may filter by status. Newest publication first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Managers only; ignored for viewers.
+          schema: {type: string, enum: [draft, published, withdrawn]}
+      responses:
+        '200':
+          description: One page of items.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItemList'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createBriefingItem
+      summary: Create a draft briefing item.
+      description: "Requires `briefing.manage`. Plain text only. Audited (briefing.item.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BriefingItemCreate'}
+      responses:
+        '201':
+          description: The created draft.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}:
+    get:
+      operationId: getBriefingItem
+      summary: Get a briefing item.
+      description: "Requires `briefing.view` or `briefing.manage`. Items the caller may not see are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateBriefingItem
+      summary: Change a draft briefing item.
+      description: "Requires `briefing.manage`. Only drafts can change; to correct a published item, withdraw it and create a new one. `expectedVersion` is required. Audited (briefing.item.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BriefingItemUpdate'}
+      responses:
+        '200':
+          description: The updated draft.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteBriefingItem
+      summary: Delete a draft briefing item.
+      description: "Requires `briefing.manage`. Published and withdrawn items are kept as history. Audited (briefing.item.deleted)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: expectedVersion
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        '204':
+          description: Deleted.
+        '400': {$ref: '#/components/responses/BriefingInvalid'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}/publish:
+    post:
+      operationId: publishBriefingItem
+      summary: Publish a draft briefing item.
+      description: "Requires `briefing.manage`. Visible to everybody with `briefing.view` until it expires or is withdrawn. An expired draft cannot be published. Audited (briefing.item.published); emits BriefingItemPublished."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /briefing-items/{id}/withdraw:
+    post:
+      operationId: withdrawBriefingItem
+      summary: Withdraw a published briefing item.
+      description: "Requires `briefing.manage`. The item disappears for viewers and stays visible to managers. Audited (briefing.item.withdrawn)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingItem'}
+        '404': {$ref: '#/components/responses/BriefingNotFound'}
+        '409': {$ref: '#/components/responses/BriefingConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -1587,6 +1746,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    BriefingInvalid:
+      description: Invalid input (briefing.invalid_request, briefing.invalid_cursor, briefing.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BriefingNotFound:
+      description: Item not found or not visible to the caller (briefing.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BriefingConflict:
+      description: Conflict (briefing.invalid_transition, briefing.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -1798,6 +1975,54 @@ components:
         dueAfterHours: {type: integer, minimum: 1, maximum: 8760}
         clearDueAfter: {type: boolean}
         rule: {$ref: '#/components/schemas/RecurrenceRule'}
+    BriefingItem:
+      type: object
+      additionalProperties: false
+      required: [id, title, body, severity, status, validUntil, authorUserId, publishedAt, publishedByUserId, withdrawnAt, withdrawnByUserId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        body: {type: string, description: "Plain text; clients must not render it as HTML."}
+        severity: {type: string, enum: [info, warning, critical]}
+        status: {type: string, enum: [draft, published, withdrawn]}
+        validUntil: {type: [string, "null"], format: date-time, description: "After this instant a published item is hidden from viewers."}
+        authorUserId: {type: [string, "null"], format: uuid}
+        publishedAt: {type: [string, "null"], format: date-time}
+        publishedByUserId: {type: [string, "null"], format: uuid}
+        withdrawnAt: {type: [string, "null"], format: date-time}
+        withdrawnByUserId: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    BriefingItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/BriefingItem'}
+        nextCursor: {type: string}
+    BriefingItemCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, maxLength: 10000}
+        severity: {type: string, enum: [info, warning, critical], default: info}
+        validUntil: {type: [string, "null"], format: date-time}
+    BriefingItemUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        body: {type: string, maxLength: 10000}
+        severity: {type: string, enum: [info, warning, critical]}
+        validUntil: {type: string, format: date-time}
+        clearValidUntil: {type: boolean}
     TaskCreate:
       type: object
       additionalProperties: false

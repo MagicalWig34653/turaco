@@ -62,7 +62,9 @@ A **DeviceContextSnapshot** may capture technical context at ticket creation so 
 
 ## Tasks/services/knowledge/change/planning
 
-**Task** is one shared work model with assignee/team/due/state/priority and primary context. Recurrence definitions generate real Task instances.
+**Task** is one shared work model with assignee/team/due/state/priority and primary context. Recurrence definitions generate real Task instances. Implemented (F2): `platform.tasks` carries a version, a reason for blocked/cancelled tasks, creator/completer and, for generated tasks, `recurrence_definition_id` plus `scheduled_for` (unique together, so generation is idempotent); `platform.recurring_task_definitions` holds template, schedule rule (frequency, interval, weekday or day of month, local time of day, IANA time zone, start date), `next_run_at` and `last_generated_at`. Tasks reference Organization Users and Teams by id without foreign keys (module boundary).
+
+**Notification** (`platform.notifications`) is one in-app row per recipient with a category, parameters, an optional link and read state; **NotificationDelivery** (`platform.notification_deliveries`) is the per-channel send state; `platform.notification_preferences` stores opt-outs. **Briefing Item** (`briefing.items`) is the manual editorial item with status, severity and validity.
 
 **Service** stores owners/support team/criticality/status and structured dependencies to infrastructure/vendor resources.
 

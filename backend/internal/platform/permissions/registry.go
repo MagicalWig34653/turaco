@@ -19,6 +19,8 @@ var Registry = []Permission{
 	{Name: "tasks.work", Description: "See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams.", Risk: "normal"},
 	{Name: "tasks.recurrence.manage", Description: "Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule.", Risk: "normal"},
 	{Name: "tasks.manage", Description: "Create, edit, assign, cancel and reopen any task and work on any task.", Risk: "normal"},
+	{Name: "briefing.view", Description: "View published IT Briefing items.", Risk: "normal"},
+	{Name: "briefing.manage", Description: "Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items.", Risk: "elevated"},
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},
 	{Name: "endpoint.management.view", Description: "View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope.", Risk: "normal"},

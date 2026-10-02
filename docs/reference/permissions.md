@@ -6,6 +6,8 @@
 |---|---|---|
 | `assets.manage` | elevated | Create and update assets within authorized scope. |
 | `assets.view` | normal | View assets and device context within authorized scope. |
+| `briefing.manage` | elevated | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |
+| `briefing.view` | normal | View published IT Briefing items. |
 | `changes.approve` | high | Approve infrastructure/service changes according to policy. |
 | `deployments.execute` | high | Start endpoint software/remediation deployments. |
 | `endpoint.management.view` | normal | View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope. |

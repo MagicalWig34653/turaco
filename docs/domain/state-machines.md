@@ -90,6 +90,12 @@ Advisory: `new → analyzing → applicable | not_applicable → remediation_pla
 
 Finding: `open → investigating/accepted → remediation_planned → remediating → remediated`, or `false_positive` / `risk_accepted` (reason, actor and review/expiry where policy requires).
 
+## Briefing Item
+`draft → published → withdrawn`. Operations (F2, `modules/briefing`): `publish` (draft → published; an expired draft cannot be published; emits `BriefingItemPublished`), `withdraw` (published → withdrawn). Only drafts can be edited or deleted; published and withdrawn items are immutable history, so what readers saw stays traceable (correct a published item by withdrawing it and creating a new one). Viewers (`briefing.view`) see published, unexpired items only; managers (`briefing.manage`) see all. Plain text; titles and bodies are never audited.
+
+## Recurring Task Definition
+`active ↔ paused`, plus deletion. `pause` clears the next run; `resume` schedules the first run after now (runs missed while paused are not generated). Changing the rule of an active definition reschedules it from now. The generation job creates at most one Task per definition per pass, for the oldest due run, and moves the schedule to the first run after now.
+
 ## Notification / Agent command
 NotificationDelivery: `pending → sending → delivered | failed | cancelled`.
 

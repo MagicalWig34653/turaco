@@ -6,6 +6,7 @@
 |---|---:|---|---|
 | `AssetAssigned` | 1 | assets | An asset assignment became active. |
 | `AssetCreated` | 1 | assets | A new asset was registered. |
+| `BriefingItemPublished` | 1 | briefing | A manual IT Briefing item was published. Payload: itemId, severity. |
 | `ChangeScheduled` | 1 | changes | A change received an execution schedule. |
 | `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |
 | `DeploymentStarted` | 1 | endpoint | A deployment began target execution. |
