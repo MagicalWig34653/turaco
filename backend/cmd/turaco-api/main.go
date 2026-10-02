@@ -12,6 +12,9 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
+	approvalstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/transport"
 	briefingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
 	briefingrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/repository"
 	briefingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/transport"
@@ -133,10 +136,11 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsrepository.New(pool)), sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
-	categories, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)
+	categories, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)
 	if err != nil {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)

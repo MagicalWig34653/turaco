@@ -50,6 +50,8 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 - Tasks public contract (F3 slice 2, `modules/tasks/public`): other modules create Tasks that belong to one of their records (typed context) inside their own transaction (`CreateInTx`, audited, `TaskAssigned` when assigned), cancel all unfinished tasks of a context (`CancelByContextInTx`, audited, `TaskCancelled` per task) and read task state (`Tasks`, `StatusesInTx`). Cancelling a task by hand also emits `TaskCancelled`.
 
+- Approvals (F3 slice 3, `modules/approvals`): shared Approval model (`approvals.approvals`, `pending → approved | rejected | cancelled`, immutable decisions) with a public contract for other modules (request a step in the caller's transaction, cancel pending steps, read approvals of a subject, `CanView`), emitting `ApprovalRequested`/`ApprovalDecided`. API: `GET /api/v1/approvals` (inbox: `status=pending|decided`), `GET /approvals/{id}`, `POST /approvals/{id}/approve|reject` for any signed-in User; access is by assignment (the approver User or any member of the approver Team), strangers get 404, and the requester and requested-for User can never decide. The first decision wins under concurrency. A notification category `approval.requested` is created for approvers by an outbox consumer (no task permission needed). Steps are created one at a time by the subject's module; expiry and delegation are not implemented. No UI yet.
+
 ## Explicit stubs / not implemented yet
 
 - Connector Agent transport and LDAP/AD operations.

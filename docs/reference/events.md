@@ -4,6 +4,8 @@
 
 | Event | Version | Owner | Description |
 |---|---:|---|---|
+| `ApprovalDecided` | 1 | approvals | An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision. |
+| `ApprovalRequested` | 1 | approvals | An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex. |
 | `AssetAssigned` | 1 | assets | An asset assignment became active. |
 | `AssetCreated` | 1 | assets | A new asset was registered. |
 | `BriefingItemPublished` | 1 | briefing | A manual IT Briefing item was published. Payload: itemId, severity. |

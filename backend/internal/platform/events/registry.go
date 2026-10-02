@@ -12,6 +12,8 @@ var Registry = []Definition{
 	{Name: "TaskAssigned", Version: 1, Owner: "tasks", Description: "A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId."},
 	{Name: "TaskCompleted", Version: 1, Owner: "tasks", Description: "A task was completed. Payload: taskId, completedByUserId."},
 	{Name: "TaskCancelled", Version: 1, Owner: "tasks", Description: "A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId."},
+	{Name: "ApprovalRequested", Version: 1, Owner: "approvals", Description: "An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex."},
+	{Name: "ApprovalDecided", Version: 1, Owner: "approvals", Description: "An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision."},
 	{Name: "BriefingItemPublished", Version: 1, Owner: "briefing", Description: "A manual IT Briefing item was published. Payload: itemId, severity."},
 	{Name: "AssetCreated", Version: 1, Owner: "assets", Description: "A new asset was registered."},
 	{Name: "AssetAssigned", Version: 1, Owner: "assets", Description: "An asset assignment became active."},

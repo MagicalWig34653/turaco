@@ -15,6 +15,8 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
@@ -79,7 +81,7 @@ func main() {
 		logger.Error("load email configuration", "error", err)
 		os.Exit(1)
 	}
-	categories, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)
+	categories, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)
 	if err != nil {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
@@ -159,7 +161,11 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
 		return err
 	}
-	return d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted)
+	if err := d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted); err != nil {
+		return err
+	}
+	approvalConsumers := approvalsapp.NewConsumers(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	return d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested)
 }
 
 // orgContacts adapts the Organization work directory to the email sender.

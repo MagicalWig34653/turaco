@@ -1204,6 +1204,104 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /approvals:
+    get:
+      operationId: listApprovals
+      summary: List my approvals.
+      description: "Any signed-in user; access is by assignment: only the approvals assigned to the caller (directly or through a Team) or decided by the caller. `status=pending` (default) lists approvals the caller may decide now (not those of their own requests); `status=decided` lists those the caller decided. Newest first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [pending, decided]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalList'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}:
+    get:
+      operationId: getApproval
+      summary: Get an approval.
+      description: "Any signed-in user; access is by assignment: only the approvals assigned to the caller (directly or through a Team) or decided by the caller. Approvals of others are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}/approve:
+    post:
+      operationId: approveApproval
+      summary: Approve.
+      description: "Only an approver (the assigned User, or any member of the assigned Team) who is not excluded (the requester and the requested-for User never decide) may decide a pending approval; the first decision wins and is immutable (409 approvals.not_pending afterwards). Audited (approvals.approval.approved); emits ApprovalDecided."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '409': {$ref: '#/components/responses/ApprovalsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}/reject:
+    post:
+      operationId: rejectApproval
+      summary: Reject.
+      description: "Only an approver (the assigned User, or any member of the assigned Team) who is not excluded (the requester and the requested-for User never decide) may decide a pending approval; the first decision wins and is immutable (409 approvals.not_pending afterwards). Audited (approvals.approval.rejected); emits ApprovalDecided."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '409': {$ref: '#/components/responses/ApprovalsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -2084,6 +2182,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ApprovalsInvalid:
+      description: Invalid input (approvals.invalid_request, approvals.invalid_cursor, approvals.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApprovalsNotFound:
+      description: Not found or not visible to the caller (approvals.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApprovalsConflict:
+      description: Conflict (approvals.not_pending, approvals.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -2465,6 +2581,39 @@ components:
         serialized: {type: boolean}
         stockManaged: {type: boolean}
         assetManaged: {type: boolean}
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [id, subjectType, subjectId, subjectLabel, stepIndex, status, approverUserId, approverTeamId, decidedByUserId, decidedAt, decisionComment, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        subjectType: {type: string, description: "Kind of record the approval is about, for example service_request."}
+        subjectId: {type: string, format: uuid}
+        subjectLabel: {type: string}
+        stepIndex: {type: integer, minimum: 0}
+        status: {type: string, enum: [pending, approved, rejected, cancelled]}
+        approverUserId: {type: [string, "null"], format: uuid}
+        approverTeamId: {type: [string, "null"], format: uuid}
+        decidedByUserId: {type: [string, "null"], format: uuid}
+        decidedAt: {type: [string, "null"], format: date-time}
+        decisionComment: {type: [string, "null"]}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+    ApprovalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Approval'}
+        nextCursor: {type: string}
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        comment: {type: string, maxLength: 1000}
+        expectedVersion: {type: integer, minimum: 1}
     TaskCreate:
       type: object
       additionalProperties: false
