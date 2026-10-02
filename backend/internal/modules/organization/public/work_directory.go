@@ -40,3 +40,9 @@ func (w *WorkDirectory) TeamNames(ctx context.Context, ids []string) (map[string
 func (w *WorkDirectory) CurrentTeamIDs(ctx context.Context, userID string) ([]string, error) {
 	return w.app.CurrentTeamIDs(ctx, userID)
 }
+
+// CurrentMemberIDs returns the Users currently in an active Team (at most
+// application.MaxTeamMembers); an inactive or unknown Team has none.
+func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error) {
+	return w.app.CurrentMemberIDs(ctx, teamID)
+}

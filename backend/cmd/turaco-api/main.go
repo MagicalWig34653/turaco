@@ -27,6 +27,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
+	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
 )
 
 var version = "dev"
@@ -125,6 +127,7 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	notificationstransport.Register(mux, notifications.NewService(pool), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 

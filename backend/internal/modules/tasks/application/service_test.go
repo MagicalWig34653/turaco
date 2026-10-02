@@ -89,6 +89,7 @@ type fakeDir struct {
 	activeUsers map[string]bool
 	activeTeams map[string]bool
 	teamsOf     map[string][]string
+	membersOf   map[string][]string
 }
 
 func (d fakeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
@@ -118,6 +119,9 @@ func (d fakeDir) UserNames(_ context.Context, ids []string) (map[string]string, 
 }
 func (d fakeDir) TeamNames(_ context.Context, ids []string) (map[string]string, error) {
 	return d.UserNames(nil, ids)
+}
+func (d fakeDir) CurrentMemberIDs(_ context.Context, teamID string) ([]string, error) {
+	return d.membersOf[teamID], nil
 }
 func (d fakeDir) CurrentTeamIDs(_ context.Context, userID string) ([]string, error) {
 	return d.teamsOf[userID], nil
@@ -542,5 +546,17 @@ func TestCallerIsRequired(t *testing.T) {
 	}
 	if len(st.tasks) != 0 {
 		t.Error("task created for an invalid caller")
+	}
+}
+
+func TestSystemActorCreatesTasksWithoutCreator(t *testing.T) {
+	s, st := newSvc()
+	sys := Caller{Actor: audit.SystemActor("recurrence"), CorrelationID: "corr"}
+	v, err := s.Create(context.Background(), sys, pManager, CreateInput{Title: "Monthly backup check"})
+	if err != nil || v.CreatedByUserID != nil {
+		t.Fatalf("create = %+v %v, want no creating user", v.Task, err)
+	}
+	if len(st.tasks) != 1 {
+		t.Errorf("tasks = %d", len(st.tasks))
 	}
 }

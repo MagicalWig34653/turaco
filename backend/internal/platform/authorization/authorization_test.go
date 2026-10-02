@@ -113,3 +113,27 @@ func TestRequireAnyPanicsAtConstruction(t *testing.T) {
 		}()
 	}
 }
+
+func TestRequireAuthenticated(t *testing.T) {
+	tests := []struct {
+		name string
+		auth Authenticator
+		want int
+	}{
+		{"default deny", DenyAll{}, http.StatusUnauthorized},
+		{"no user id", fixed{p: Principal{}, ok: true}, http.StatusUnauthorized},
+		{"error fails closed", fixed{err: errors.New("boom"), ok: true}, http.StatusInternalServerError},
+		{"any signed-in user", fixed{p: Principal{UserID: "u"}, ok: true}, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			h := RequireAuthenticated(tt.auth)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+			if rec.Code != tt.want || called != (tt.want == http.StatusOK) {
+				t.Fatalf("status = %d, called = %v, want %d", rec.Code, called, tt.want)
+			}
+		})
+	}
+}

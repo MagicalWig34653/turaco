@@ -296,3 +296,25 @@ func TestRunStopsOnContextCancel(t *testing.T) {
 		t.Fatal("Run did not stop after cancellation")
 	}
 }
+
+func TestConsumerTimeoutIsARecordedFailure(t *testing.T) {
+	pool := testPool(t)
+	d := events.NewDispatcher(pool, events.DispatcherOptions{
+		PollInterval: 10 * time.Millisecond, MaxAttempts: 3, EventTypes: []string{testEventType},
+		ConsumerTimeout: 50 * time.Millisecond,
+	}, quietLogger())
+	if err := d.Register(testEventType, "slow", func(ctx context.Context, _ pgx.Tx, _ events.OutboxEvent) error {
+		<-ctx.Done() // a hung consumer only ends through its deadline
+		return ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	id := insertEvent(t, pool, "corr-timeout")
+	dispatched, err := d.DispatchOne(context.Background())
+	if err != nil || !dispatched {
+		t.Fatalf("a consumer timeout must be recorded, not returned: dispatched=%v err=%v", dispatched, err)
+	}
+	if r := readEvent(t, pool, id); r.Status != "pending" || r.Attempts != 1 || r.LastError == nil || !strings.Contains(*r.LastError, "deadline") {
+		t.Errorf("event = %+v", r)
+	}
+}

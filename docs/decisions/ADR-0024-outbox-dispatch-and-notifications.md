@@ -23,6 +23,9 @@ Domain events are written to `platform.outbox_events` in the same transaction as
 
 ## Consequences
 
+- Delivery order is not guaranteed: retries with back-off can deliver a later event of a record before an earlier one, so consumers must derive their effect from current state (for example a `TaskAssigned` consumer compares the event with the task's current assignment) rather than from event order.
+- A consumer's time is bounded (`ConsumerTimeout`, default 30 s); a timeout is a recorded failed attempt.
+- `processed` outbox rows and notifications are not pruned yet; a retention job is a later obligation.
 - One long-lived claim transaction per event: consumers must stay short and database-only.
 - A consumer that always fails blocks only its own event after back-off, not the queue.
 - Email is at-least-once; the delivery `dedupe_key` prevents duplicates from consumer retries but a crash between SMTP acceptance and the status update can send a mail twice.

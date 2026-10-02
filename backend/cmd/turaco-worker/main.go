@@ -13,10 +13,13 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
+	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 var version = "dev"
@@ -66,6 +69,10 @@ func main() {
 	// Consumers are registered here as modules add them (ADR-0024). Events
 	// without a consumer are acknowledged, so the outbox does not grow.
 	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
+	if err := registerConsumers(dispatcher, pool); err != nil {
+		logger.Error("register outbox consumers", "error", err)
+		os.Exit(1)
+	}
 	dispatcherDone := make(chan struct{})
 	go func() {
 		defer close(dispatcherDone)
@@ -107,4 +114,13 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 		Interval:    cfg.SyncInterval,
 		MaxAttempts: 3,
 	})
+}
+
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool) error {
+	taskConsumers := tasksapp.NewConsumers(
+		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifications.NewService(pool))
+	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
+		return err
+	}
+	return d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted)
 }

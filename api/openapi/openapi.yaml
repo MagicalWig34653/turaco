@@ -608,6 +608,93 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: List my notifications.
+      description: "Any signed-in user; only the caller's own notifications, newest first. Texts are not stored: clients localize them from `category` and `params`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: unread
+          in: query
+          description: Only `true`.
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page of notifications.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationList'}
+        '400':
+          description: Invalid input (notifications.invalid_request, notifications.invalid_cursor, notifications.invalid_limit).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/unread-count:
+    get:
+      operationId: getUnreadNotificationCount
+      summary: Count my unread notifications.
+      description: "Any signed-in user. The count is capped at `max` (100)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [count, max]
+                properties:
+                  count: {type: integer, minimum: 0}
+                  max: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      summary: Mark all my notifications read.
+      description: "Any signed-in user; affects only the caller's notifications."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: How many notifications changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [marked]
+                properties:
+                  marked: {type: integer, minimum: 0}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: Mark one of my notifications read.
+      description: "Any signed-in user. Idempotent. Another user's or an unknown notification is 404 (notifications.not_found)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Marked read.
+        '404':
+          description: Not found (notifications.not_found).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /locations:
     get:
       operationId: listLocations
@@ -1464,6 +1551,27 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         reason: {type: string, minLength: 1, maxLength: 500}
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, category, params, linkType, linkId, createdAt, readAt]
+      properties:
+        id: {type: string, format: uuid}
+        category: {type: string, description: "For example task.assigned or task.completed; unknown categories must get a generic text."}
+        params: {type: object, additionalProperties: true}
+        linkType: {type: [string, "null"], description: "For example task."}
+        linkId: {type: [string, "null"], format: uuid}
+        createdAt: {type: string, format: date-time}
+        readAt: {type: [string, "null"], format: date-time}
+    NotificationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Notification'}
+        nextCursor: {type: string}
     TeamName:
       type: object
       additionalProperties: false

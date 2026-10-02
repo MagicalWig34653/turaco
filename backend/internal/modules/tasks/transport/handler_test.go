@@ -82,6 +82,9 @@ func (stubDir) TeamNames(context.Context, []string) (map[string]string, error) {
 	return map[string]string{}, nil
 }
 func (stubDir) CurrentTeamIDs(context.Context, string) ([]string, error) { return nil, nil }
+func (stubDir) CurrentMemberIDs(context.Context, string) ([]string, error) {
+	return nil, nil
+}
 
 func serve(t *testing.T, store *stubStore, a authorization.Authenticator, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()

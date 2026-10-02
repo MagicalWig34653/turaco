@@ -16,7 +16,12 @@ type WorkDirectoryStore interface {
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
 	// CurrentTeamIDs returns the active Teams the User currently belongs to.
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
+	// CurrentMemberIDs returns the Users currently in an active Team, at most MaxTeamMembers.
+	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
 }
+
+// MaxTeamMembers bounds CurrentMemberIDs; Teams are operational groups, not directories.
+const MaxTeamMembers = 500
 
 // WorkDirectory answers Organization questions for work modules. Malformed
 // ids are "not found/inactive", never errors.
@@ -71,4 +76,11 @@ func (w *WorkDirectory) CurrentTeamIDs(ctx context.Context, userID string) ([]st
 		return []string{}, nil
 	}
 	return w.store.CurrentTeamIDs(ctx, userID)
+}
+
+func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error) {
+	if !subjectUUID.MatchString(teamID) {
+		return []string{}, nil
+	}
+	return w.store.CurrentMemberIDs(ctx, teamID)
 }

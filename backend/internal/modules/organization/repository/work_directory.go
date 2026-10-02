@@ -68,3 +68,16 @@ func (r *Repository) CurrentTeamIDs(ctx context.Context, userID string) ([]strin
 	}
 	return collectStrings(rows, "current team ids")
 }
+
+func (r *Repository) CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT tm.user_id::text
+		FROM organization.team_memberships tm
+		JOIN organization.teams t ON t.id = tm.team_id AND t.active
+		WHERE tm.team_id = $1::uuid AND tm.valid_from <= now() AND (tm.valid_until IS NULL OR tm.valid_until > now())
+		ORDER BY 1 LIMIT $2`, teamID, application.MaxTeamMembers)
+	if err != nil {
+		return nil, fmt.Errorf("current member ids: %w", err)
+	}
+	return collectStrings(rows, "current member ids")
+}

@@ -51,10 +51,14 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	if err := s.checkAssignees(ctx, in.AssignedUserID, in.AssignedTeamID); err != nil {
 		return TaskView{}, err
 	}
-	createdBy := c.Actor.UserID
+	// System actors (recurrence generation) create tasks without a creating User.
+	var createdBy *string
+	if c.Actor.UserID != "" {
+		createdBy = &c.Actor.UserID
+	}
 	t, err := s.store.Insert(ctx, c, NewTask{
 		Title: title, Description: desc, Priority: priority, DueAt: utc(in.DueAt),
-		AssignedUserID: in.AssignedUserID, AssignedTeamID: in.AssignedTeamID, CreatedBy: &createdBy,
+		AssignedUserID: in.AssignedUserID, AssignedTeamID: in.AssignedTeamID, CreatedBy: createdBy,
 	})
 	if err != nil {
 		return TaskView{}, err

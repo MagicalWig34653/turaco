@@ -57,3 +57,34 @@ func TestWorkDirectory(t *testing.T) {
 		t.Errorf("ended membership still counted: %v", ids)
 	}
 }
+
+func TestWorkDirectoryCurrentMembers(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	wd := application.NewWorkDirectory(f.repo)
+	a := f.user(f.pfx+" A", "active")
+	b := f.user(f.pfx+" B", "active")
+	team := f.createTeam(f.pfx + " Members")
+	c := testCaller(f)
+	for _, u := range []string{a, b} {
+		if _, err := f.repo.AddTeamMember(ctx, c, team.ID, u, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.repo.RemoveTeamMember(ctx, c, team.ID, b); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := wd.CurrentMemberIDs(ctx, team.ID)
+	if err != nil || len(ids) != 1 || ids[0] != a {
+		t.Errorf("members = %v %v, want only the current member", ids, err)
+	}
+	if _, err := f.repo.SetTeamActive(ctx, c, team.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := wd.CurrentMemberIDs(ctx, team.ID); len(ids) != 0 {
+		t.Errorf("inactive team has members: %v", ids)
+	}
+	if ids, err := wd.CurrentMemberIDs(ctx, "garbage"); err != nil || len(ids) != 0 {
+		t.Errorf("malformed id = %v %v", ids, err)
+	}
+}

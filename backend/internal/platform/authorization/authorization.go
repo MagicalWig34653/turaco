@@ -69,6 +69,27 @@ func Require(auth Authenticator, permission string) func(http.Handler) http.Hand
 	return RequireAny(auth, permission)
 }
 
+// RequireAuthenticated returns middleware that only requires a signed-in User,
+// for resources whose access rule is ownership (a user's own notifications)
+// rather than a permission. The handler must restrict itself to the principal.
+func RequireAuthenticated(auth Authenticator) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok, err := auth.Authenticate(r)
+			if err != nil {
+				slog.ErrorContext(r.Context(), "authentication failed", "request_id", httpx.RequestID(w), "error", err)
+				httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
+				return
+			}
+			if !ok || principal.UserID == "" {
+				httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+		})
+	}
+}
+
 // RequireAny is Require for routes that several permissions open, for example
 // a view that is scoped differently per permission; the handler then decides
 // what each permission may see. At least one permission is required and all

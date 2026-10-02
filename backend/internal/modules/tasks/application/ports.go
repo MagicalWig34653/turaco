@@ -75,4 +75,5 @@ type Directory interface {
 	ActiveTeams(ctx context.Context, ids []string) (map[string]bool, error)
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
+	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
 }

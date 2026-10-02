@@ -21,7 +21,10 @@ import (
 // Repository stores tasks in platform.tasks.
 type Repository struct{ pool *pgxpool.Pool }
 
-var _ application.Store = (*Repository)(nil)
+var (
+	_ application.Store    = (*Repository)(nil)
+	_ application.TxReader = (*Repository)(nil)
+)
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
@@ -63,6 +66,21 @@ func (r *Repository) Get(ctx context.Context, id string) (application.Task, erro
 		return application.Task{}, application.ErrNotFound
 	}
 	t, err := scan(r.pool.QueryRow(ctx, `SELECT `+columns+` FROM platform.tasks WHERE id = $1::uuid`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Task{}, application.ErrNotFound
+	}
+	if err != nil {
+		return application.Task{}, fmt.Errorf("get task: %w", err)
+	}
+	return t, nil
+}
+
+// GetTx reads a task inside the caller's transaction (outbox consumers).
+func (r *Repository) GetTx(ctx context.Context, tx pgx.Tx, id string) (application.Task, error) {
+	if !validUUID(id) {
+		return application.Task{}, application.ErrNotFound
+	}
+	t, err := scan(tx.QueryRow(ctx, `SELECT `+columns+` FROM platform.tasks WHERE id = $1::uuid`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Task{}, application.ErrNotFound
 	}

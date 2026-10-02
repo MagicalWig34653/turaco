@@ -38,7 +38,9 @@ Glossary and state-machine documents are updated with these terms.
 
 ## 6. Data
 
-Forward migrations: Task columns (`blocked_reason`, `created_by_user_id`, `completed_by_user_id`, `version`, `recurrence_definition_id`); `platform.notifications`, `platform.notification_deliveries` (dedupe key), `platform.notification_preferences`; recurring task definitions; briefing items. Assignment stays as columns on the Task; history lives in audit.
+Forward migrations: Task columns (`status_reason` for blocked and cancelled tasks, `created_by_user_id`, `completed_by_user_id`, `version`; `recurrence_definition_id` arrives with slice 5); `platform.notifications`, `platform.notification_deliveries` (dedupe key), `platform.notification_preferences`; recurring task definitions; briefing items. Assignment stays as columns on the Task; history lives in audit.
+
+Known limitations (accepted in the slice 2 database review): assignee and Team-membership checks run before the write transaction, so a concurrent deactivation can still produce one assignment or action; deactivating a Team or a User does not touch tasks assigned to them, which stay visible to `tasks.view`/`tasks.manage` (filter by `assignedTeamId`/`assignedUserId`) but drop out of members' My Work; there are no foreign keys from tasks to Organization tables (module boundary, see [module boundaries](../architecture/module-boundaries.md)). Lock order for code touching several owners is task, then team, then user.
 
 ## 7. API (all lists bounded and paginated)
 

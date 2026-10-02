@@ -137,9 +137,12 @@ func (r *Repository) AddTeamMember(ctx context.Context, c application.Caller, te
 		if !ok {
 			return application.ErrNotFound
 		}
-		// FOR SHARE: directory sync takes FOR UPDATE when it deactivates a User.
+		// No row lock on the user: a lock would wait for a whole directory sync
+		// transaction while holding the team lock, and a later deactivation
+		// leaves the same state anyway. The membership insert's foreign key
+		// still prevents deleting the user.
 		var name, status string
-		err = tx.QueryRow(ctx, `SELECT display_name, status FROM organization.users WHERE id = $1 FOR SHARE`, uid).Scan(&name, &status)
+		err = tx.QueryRow(ctx, `SELECT display_name, status FROM organization.users WHERE id = $1`, uid).Scan(&name, &status)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return application.ErrNotFound
 		}
@@ -151,8 +154,8 @@ func (r *Repository) AddTeamMember(ctx context.Context, c application.Caller, te
 		}
 		out = application.TeamMember{UserID: userID, DisplayName: name, Role: role, Source: "platform"}
 		err = tx.QueryRow(ctx, `
-			INSERT INTO organization.team_memberships(team_id, user_id, role, source)
-			VALUES ($1, $2, $3, 'platform') RETURNING valid_from`, teamID, uid, role).Scan(&out.ValidFrom)
+			INSERT INTO organization.team_memberships(team_id, user_id, role, source, valid_from)
+			VALUES ($1, $2, $3, 'platform', clock_timestamp()) RETURNING valid_from`, teamID, uid, role).Scan(&out.ValidFrom)
 		if isUnique(err) {
 			return application.ErrConflict
 		}
@@ -176,7 +179,7 @@ func (r *Repository) RemoveTeamMember(ctx context.Context, c application.Caller,
 		}
 		var role *string
 		err := tx.QueryRow(ctx, `
-			UPDATE organization.team_memberships SET valid_until = now()
+			UPDATE organization.team_memberships SET valid_until = greatest(valid_from, clock_timestamp())
 			WHERE team_id = $1 AND user_id = $2 AND valid_until IS NULL
 			RETURNING role`, teamID, uid).Scan(&role)
 		if errors.Is(err, pgx.ErrNoRows) {

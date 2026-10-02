@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	defaultPollInterval = 2 * time.Second
-	defaultMaxAttempts  = 10
+	defaultPollInterval    = 2 * time.Second
+	defaultMaxAttempts     = 10
+	defaultConsumerTimeout = 30 * time.Second
 
 	backoffBase = 30 * time.Second
 	backoffCap  = 30 * time.Minute
@@ -46,6 +47,9 @@ type DispatcherOptions struct {
 	MaxAttempts int
 	// EventTypes restricts claiming to these event types; empty means all.
 	EventTypes []string
+	// ConsumerTimeout bounds the consumers of one event, which hold the claim
+	// transaction and a connection. A timeout is a failed attempt. Default 30s.
+	ConsumerTimeout time.Duration
 }
 
 // Dispatcher delivers pending outbox events to registered consumers.
@@ -71,6 +75,9 @@ func NewDispatcher(pool *pgxpool.Pool, opts DispatcherOptions, logger *slog.Logg
 	}
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = defaultMaxAttempts
+	}
+	if opts.ConsumerTimeout <= 0 {
+		opts.ConsumerTimeout = defaultConsumerTimeout
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -144,7 +151,10 @@ func (d *Dispatcher) DispatchOne(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("dispatch outbox: claim: %w", err)
 	}
 
-	if err := d.deliver(ctx, tx, event); err != nil {
+	deliverCtx, cancelDeliver := context.WithTimeout(ctx, d.opts.ConsumerTimeout)
+	err = d.deliver(deliverCtx, tx, event)
+	cancelDeliver()
+	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err() // shutdown: do not count the attempt
 		}
@@ -172,7 +182,7 @@ func (d *Dispatcher) claim(ctx context.Context, tx pgx.Tx) (OutboxEvent, int, er
 		SELECT id::text, event_type, event_version, occurred_at, actor_id::text,
 		       correlation_id, payload, attempts
 		FROM platform.outbox_events
-		WHERE status = 'pending' AND available_at <= clock_timestamp()
+		WHERE status = 'pending' AND available_at <= now()
 		  AND (cardinality($1::text[]) = 0 OR event_type = ANY($1::text[]))
 		ORDER BY available_at, id
 		LIMIT 1
