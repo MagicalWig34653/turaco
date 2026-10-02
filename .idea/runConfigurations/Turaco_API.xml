@@ -1,0 +1,22 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Turaco API" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="turaco" />
+    <working_directory value="$PROJECT_DIR$" />
+    <envs>
+      <env name="APP_ENV" value="development" />
+      <env name="DATABASE_URL" value="postgres://turaco:turaco-dev@localhost:5432/turaco?sslmode=disable" />
+      <env name="SESSION_COOKIE_SECURE" value="false" />
+      <env name="LOG_LEVEL" value="debug" />
+      <env name="S3_ENDPOINT" value="http://localhost:9090" />
+      <env name="S3_ACCESS_KEY_ID" value="test" />
+      <env name="S3_SECRET_ACCESS_KEY" value="test" />
+      <env name="HTTP_ADDR" value=":8080" />
+      <env name="AUTH_EMERGENCY_LOGIN_ENABLED" value="true" />
+    </envs>
+    <kind value="PACKAGE" />
+    <package value="github.com/MagicalWig34653/turaco/backend/cmd/turaco-api" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$/backend/cmd/turaco-api/main.go" />
+    <method v="2" />
+  </configuration>
+</component>

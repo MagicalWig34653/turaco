@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Turaco Go Tests" type="GoTestRunConfiguration" factoryName="Go Test">
+    <module name="turaco" />
+    <working_directory value="$PROJECT_DIR$/backend" />
+    <envs>
+      <env name="TEST_DATABASE_URL" value="postgres://turaco:turaco-dev@localhost:5432/turaco_test?sslmode=disable" />
+      <env name="TURACO_REQUIRE_DB_TESTS" value="true" />
+    </envs>
+    <framework value="gotest" />
+    <kind value="DIRECTORY" />
+    <package value="github.com/MagicalWig34653/turaco/backend" />
+    <directory value="$PROJECT_DIR$/backend" />
+    <filePath value="$PROJECT_DIR$/backend" />
+    <method v="2" />
+  </configuration>
+</component>

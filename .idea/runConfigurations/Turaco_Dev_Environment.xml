@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Turaco Dev Environment" type="CompoundRunConfigurationType">
+    <toRun type="ShConfigurationType" name="Turaco Dev Setup" />
+    <toRun type="GoApplicationRunConfiguration" name="Turaco API" />
+    <toRun type="GoApplicationRunConfiguration" name="Turaco Worker" />
+    <toRun type="js.build_tools.npm" name="Turaco Web" />
+    <method v="2" />
+  </configuration>
+</component>

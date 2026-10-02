@@ -56,6 +56,22 @@ make bootstrap
 
 `make bootstrap` creates `.env` when missing, downloads Go modules, installs frontend dependencies, starts PostgreSQL/S3Mock, waits for PostgreSQL, applies migrations and regenerates reference documentation. On the first connected bootstrap it also creates `go.sum` and `frontend/package-lock.json`; commit both immediately.
 
+## Local test instance (one click)
+
+`make dev-setup` (or the GoLand run configuration **Turaco Dev Setup**) starts PostgreSQL and S3Mock, migrates the development and test databases and creates a development administrator through the emergency account: login `devadmin`, password `turaco-dev-password` (public, development only; override with `DEV_ADMIN_LOGIN` and `DEV_ADMIN_PASSWORD`). It is safe to run repeatedly.
+
+The shared GoLand run configurations live in `.idea/runConfigurations/`:
+
+| Configuration | Purpose |
+|---|---|
+| Turaco Dev Environment | Compound: setup, API, worker and web UI together; open http://localhost:5173 and sign in with the emergency account |
+| Turaco Dev Setup / API / Worker / Web | the individual parts |
+| Turaco Go Tests | all Go tests against the `turaco_test` database with `TURACO_REQUIRE_DB_TESTS=true` (run Dev Setup once first so the test database exists) |
+| Turaco Web Tests | frontend unit tests |
+| Turaco Quality Gate (make check) | the full local gate |
+
+Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` and `EMAIL_BASE_URL=http://localhost:5173` on the worker at a local test relay such as MailHog.
+
 ## Development processes
 
 Use separate terminals:
