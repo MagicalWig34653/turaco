@@ -94,29 +94,135 @@ func (r *Repository) Insert(ctx context.Context, c application.Caller, n applica
 	var out application.Task
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		var err error
-		out, err = scan(tx.QueryRow(ctx, `
-			INSERT INTO platform.tasks(title, description, priority, due_at, assigned_user_id, assigned_team_id, created_by_user_id)
-			VALUES ($1, $2, $3, $4, $5::uuid, $6::uuid, $7::uuid)
-			RETURNING `+columns,
-			n.Title, n.Description, n.Priority, n.DueAt, n.AssignedUserID, n.AssignedTeamID, n.CreatedBy))
-		if err != nil {
-			return fmt.Errorf("insert task: %w", err)
-		}
-		if err := record(ctx, tx, c, "tasks.task.created", out.ID, nil, auditState(out), nil); err != nil {
-			return err
-		}
-		if out.AssignedUserID != nil || out.AssignedTeamID != nil {
-			return publish(ctx, tx, c, application.Event{Type: "TaskAssigned", Payload: map[string]any{
-				"taskId": out.ID, "assignedUserId": out.AssignedUserID, "assignedTeamId": out.AssignedTeamID,
-				"previousUserId": nil, "previousTeamId": nil,
-			}})
-		}
-		return nil
+		out, err = r.InsertTx(ctx, tx, c, n)
+		return err
 	})
 	if err != nil {
 		return application.Task{}, err
 	}
 	return out, nil
+}
+
+func (r *Repository) InsertTx(ctx context.Context, tx pgx.Tx, c application.Caller, n application.NewTask) (application.Task, error) {
+	out, err := scan(tx.QueryRow(ctx, `
+		INSERT INTO platform.tasks(title, description, priority, due_at, assigned_user_id, assigned_team_id, created_by_user_id,
+		                           context_type, context_id)
+		VALUES ($1, $2, $3, $4, $5::uuid, $6::uuid, $7::uuid, $8, $9::uuid)
+		RETURNING `+columns,
+		n.Title, n.Description, n.Priority, n.DueAt, n.AssignedUserID, n.AssignedTeamID, n.CreatedBy, n.ContextType, n.ContextID))
+	if err != nil {
+		return application.Task{}, fmt.Errorf("insert task: %w", err)
+	}
+	var meta map[string]any
+	if n.ContextType != nil {
+		meta = map[string]any{"contextType": *n.ContextType, "contextId": *n.ContextID}
+	}
+	if err := record(ctx, tx, c, "tasks.task.created", out.ID, nil, auditState(out), meta); err != nil {
+		return application.Task{}, err
+	}
+	if out.AssignedUserID != nil || out.AssignedTeamID != nil {
+		if err := publish(ctx, tx, c, application.Event{Type: "TaskAssigned", Payload: map[string]any{
+			"taskId": out.ID, "assignedUserId": out.AssignedUserID, "assignedTeamId": out.AssignedTeamID,
+			"previousUserId": nil, "previousTeamId": nil,
+		}}); err != nil {
+			return application.Task{}, err
+		}
+	}
+	return out, nil
+}
+
+func (r *Repository) CancelByContextTx(ctx context.Context, tx pgx.Tx, c application.Caller, contextType, contextID, reason string) (int, error) {
+	if !validUUID(contextID) {
+		return 0, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT `+columns+` FROM platform.tasks
+		WHERE context_type = $1 AND context_id = $2::uuid AND status NOT IN ('completed', 'cancelled')
+		ORDER BY id FOR UPDATE`, contextType, contextID)
+	if err != nil {
+		return 0, fmt.Errorf("select tasks of context: %w", err)
+	}
+	var open []application.Task
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("select tasks of context: scan: %w", err)
+		}
+		open = append(open, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("select tasks of context: %w", err)
+	}
+	for _, cur := range open {
+		out, err := scan(tx.QueryRow(ctx, `
+			UPDATE platform.tasks SET status = 'cancelled', status_reason = $2, completed_at = NULL, completed_by_user_id = NULL,
+				version = version + 1, updated_at = now()
+			WHERE id = $1::uuid RETURNING `+columns, cur.ID, reason))
+		if err != nil {
+			return 0, fmt.Errorf("cancel task of context: %w", err)
+		}
+		if err := record(ctx, tx, c, "tasks.task.cancelled", cur.ID, auditState(cur), auditState(out),
+			map[string]any{"reason": reason, "cause": "context_cancelled"}); err != nil {
+			return 0, err
+		}
+		if err := publish(ctx, tx, c, application.Event{Type: "TaskCancelled", Payload: map[string]any{"taskId": cur.ID}}); err != nil {
+			return 0, err
+		}
+	}
+	return len(open), nil
+}
+
+func (r *Repository) ListByIDs(ctx context.Context, ids []string) ([]application.Task, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return []application.Task{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM platform.tasks WHERE id = ANY($1::text[]::uuid[]) ORDER BY id`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks by ids: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Task{}
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list tasks by ids: scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) StatusesTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return out, nil
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, status FROM platform.tasks WHERE id = ANY($1::text[]::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("task statuses: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
+			return nil, fmt.Errorf("task statuses: scan: %w", err)
+		}
+		out[id] = status
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) Change(ctx context.Context, c application.Caller, id string, decide func(application.Task) (application.Change, error)) (application.Task, error) {

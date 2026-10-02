@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Event is a domain event recorded in the outbox with a task change.
@@ -31,6 +33,10 @@ type NewTask struct {
 	AssignedUserID *string
 	AssignedTeamID *string
 	CreatedBy      *string
+	// ContextType and ContextID name the record the task belongs to (for
+	// example a service request); both or neither.
+	ContextType *string
+	ContextID   *string
 }
 
 // ListQuery selects tasks in the shared task order: due date (tasks without
@@ -58,6 +64,16 @@ type Mine struct {
 // Store is the persistence port of tasks.
 type Store interface {
 	Insert(ctx context.Context, c Caller, n NewTask) (Task, error)
+	// InsertTx creates the task inside the caller's transaction, with its
+	// audit event and TaskAssigned event; the caller commits.
+	InsertTx(ctx context.Context, tx pgx.Tx, c Caller, n NewTask) (Task, error)
+	// CancelByContextTx cancels every unfinished task of a context inside the
+	// caller's transaction (audited, TaskCancelled events) and returns how many.
+	CancelByContextTx(ctx context.Context, tx pgx.Tx, c Caller, contextType, contextID, reason string) (int, error)
+	// ListByIDs returns the existing tasks with the given ids.
+	ListByIDs(ctx context.Context, ids []string) ([]Task, error)
+	// StatusesTx returns id -> status for the given task ids inside the caller's transaction.
+	StatusesTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error)
 	Get(ctx context.Context, id string) (Task, error)
 	// Change locks the task row (FOR UPDATE), calls decide with its current
 	// state and, unless decide fails or returns NoChange, stores Next with
