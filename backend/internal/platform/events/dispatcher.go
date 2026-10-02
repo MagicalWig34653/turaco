@@ -96,6 +96,10 @@ func NewDispatcher(pool *pgxpool.Pool, opts DispatcherOptions, logger *slog.Logg
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = defaultMaxAttempts
 	}
+	if opts.EventTypes == nil {
+		// A nil slice reaches PostgreSQL as NULL, which would match nothing.
+		opts.EventTypes = []string{}
+	}
 	if opts.ConsumerTimeout <= 0 {
 		opts.ConsumerTimeout = defaultConsumerTimeout
 	}
@@ -203,7 +207,7 @@ func (d *Dispatcher) claim(ctx context.Context, tx pgx.Tx) (OutboxEvent, int, er
 		       correlation_id, payload, attempts
 		FROM platform.outbox_events
 		WHERE status = 'pending' AND available_at <= now()
-		  AND (cardinality($1::text[]) = 0 OR event_type = ANY($1::text[]))
+		  AND (coalesce(cardinality($1::text[]), 0) = 0 OR event_type = ANY($1::text[]))
 		ORDER BY available_at, id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, d.opts.EventTypes).Scan(
