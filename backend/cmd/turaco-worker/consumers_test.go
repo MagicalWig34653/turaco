@@ -16,6 +16,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 type world struct {
@@ -95,7 +96,7 @@ func (w *world) dispatchWith(email bool, perms grants) {
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
 		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: []string{"TaskAssigned", "TaskCompleted"},
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := registerConsumersWith(d, w.pool, email, perms); err != nil {
+	if err := registerConsumersWith(d, w.pool, testCategories(w.t), email, perms); err != nil {
 		w.t.Fatal(err)
 	}
 	for i := 0; i < 1000; i++ {
@@ -337,4 +338,13 @@ func TestRepeatedAssignmentsDoNotFloodTheRecipient(t *testing.T) {
 	if n := w.notified(w.assignee, "task.assigned"); n != 1 {
 		t.Errorf("assignee received %d notifications for one task within the window, want 1", n)
 	}
+}
+
+func testCategories(t *testing.T) *notifications.Registry {
+	t.Helper()
+	r, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

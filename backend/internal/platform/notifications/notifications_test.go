@@ -30,7 +30,7 @@ func newFixture(t *testing.T) *fixture {
 	pool := dbtest.Pool(t)
 	rnd := make([]byte, 6)
 	_, _ = rand.Read(rnd)
-	f := &fixture{t: t, pool: pool, svc: notifications.NewService(pool), pfx: hex.EncodeToString(rnd)}
+	f := &fixture{t: t, pool: pool, svc: notifications.NewService(pool, testRegistry(t)), pfx: hex.EncodeToString(rnd)}
 	// Notifications reference no foreign table, so random ids isolate the tests.
 	for _, dst := range []*string{&f.a, &f.b} {
 		if err := pool.QueryRow(context.Background(), `SELECT uuidv7()::text`).Scan(dst); err != nil {
@@ -236,4 +236,27 @@ func TestSuppressWithinSkipsRepeatsForTheSameLink(t *testing.T) {
 	if !f.create(in5) {
 		t.Error("a notification older than the window must not suppress a new one")
 	}
+}
+
+// testRegistry has the categories the tests use; the platform package does
+// not import the module that owns them.
+func testRegistry(t *testing.T) *notifications.Registry {
+	t.Helper()
+	text := func(subject, intro, action string) notifications.EmailText {
+		return notifications.EmailText{Subject: subject, Intro: intro, Action: action}
+	}
+	r, err := notifications.NewRegistry(
+		notifications.Category{Name: "task.assigned", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: map[string]notifications.EmailText{
+			"en": text("Task assigned: %s", "A task was assigned to you:", "Open task"),
+			"de": text("Aufgabe zugewiesen: %s", "Dir wurde eine Aufgabe zugewiesen:", "Aufgabe öffnen"),
+		}},
+		notifications.Category{Name: "task.completed", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: map[string]notifications.EmailText{
+			"en": text("Task completed: %s", "A task you created was completed:", "Open task"),
+			"de": text("Aufgabe erledigt: %s", "Eine von dir angelegte Aufgabe wurde erledigt:", "Aufgabe öffnen"),
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

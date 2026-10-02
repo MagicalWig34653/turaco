@@ -16,13 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Categories lists the notification categories modules may create. A client
-// shows the text of a category it knows and a generic text otherwise.
-var Categories = []string{
-	"task.assigned",
-	"task.completed",
-}
-
 const (
 	maxParamsBytes = 4096
 	// MaxUnreadCount caps the unread counter so the query stays cheap.
@@ -90,25 +83,21 @@ type Result struct {
 // Service stores and reads notifications and, when the email channel is
 // enabled, schedules their email delivery.
 type Service struct {
-	pool  *pgxpool.Pool
-	email bool
+	pool       *pgxpool.Pool
+	categories *Registry
+	email      bool
 }
 
 // NewService creates a Service without the email channel (turaco-api).
-func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+func NewService(pool *pgxpool.Pool, categories *Registry) *Service {
+	return &Service{pool: pool, categories: categories}
+}
 
 // WithEmail returns a Service that also creates an email delivery (and its
 // job) for every new notification whose recipient has not opted out of email
 // for the category. Only turaco-worker, which sends the mail, enables it.
-func (s *Service) WithEmail() *Service { return &Service{pool: s.pool, email: true} }
-
-func validCategory(c string) bool {
-	for _, known := range Categories {
-		if known == c {
-			return true
-		}
-	}
-	return false
+func (s *Service) WithEmail() *Service {
+	return &Service{pool: s.pool, categories: s.categories, email: true}
 }
 
 // Create stores the notification inside the caller's transaction (typically
@@ -118,7 +107,7 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in Intent) (bool, error
 	switch {
 	case !validUUID(in.RecipientUserID):
 		return false, errors.New("notifications: recipient must be a user id")
-	case !validCategory(in.Category):
+	case !s.categories.Valid(in.Category):
 		return false, fmt.Errorf("notifications: unregistered category %q", in.Category)
 	case in.DedupeKey == "":
 		return false, errors.New("notifications: dedupe key is required")

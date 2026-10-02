@@ -79,8 +79,13 @@ func main() {
 		logger.Error("load email configuration", "error", err)
 		os.Exit(1)
 	}
+	categories, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)
+	if err != nil {
+		logger.Error("register notification categories", "error", err)
+		os.Exit(1)
+	}
 	if smtpCfg.Enabled() {
-		if err := registerEmail(runner, pool, smtpCfg); err != nil {
+		if err := registerEmail(runner, pool, smtpCfg, categories); err != nil {
 			logger.Error("configure email notifications", "error", err)
 			os.Exit(1)
 		}
@@ -90,7 +95,7 @@ func main() {
 		logger.Error("configure recurring tasks", "error", err)
 		os.Exit(1)
 	}
-	if err := registerConsumers(dispatcher, pool, smtpCfg.Enabled()); err != nil {
+	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
 	}
@@ -137,15 +142,15 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 	})
 }
 
-func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, email bool) error {
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
 	orgReader := orgrepository.New(pool)
-	return registerConsumersWith(d, pool, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
 }
 
 // registerConsumersWith registers the outbox consumers; perms decides which
 // Users hold task permissions and may therefore be notified about tasks.
-func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, email bool, perms tasksapp.PermissionResolver) error {
-	notifier := notifications.NewService(pool)
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver) error {
+	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
 	}
@@ -169,7 +174,7 @@ func (o orgContacts) EmailContact(ctx context.Context, userID string) (string, s
 	return c.Email, c.DisplayName, ok && c.Active && c.Email != "", nil
 }
 
-func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig) error {
+func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig, categories *notifications.Registry) error {
 	mailerCfg := smtp.Config{
 		Host: cfg.Host, Port: cfg.Port, Security: smtp.Security(cfg.Security), Username: cfg.Username,
 		From: cfg.From, Timeout: cfg.Timeout,
@@ -200,7 +205,7 @@ func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfi
 		return err
 	}
 	sender := notifications.NewEmailSender(pool, smtpMailer{mailer},
-		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, cfg.BaseURL, cfg.DefaultLocale)
+		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, categories, cfg.BaseURL, cfg.DefaultLocale)
 	return runner.Register(notifications.EmailJobType, notifications.EmailJobTimeout, sender.Handle)
 }
 

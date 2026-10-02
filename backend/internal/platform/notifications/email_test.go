@@ -58,9 +58,9 @@ type emailFixture struct {
 func newEmailFixture(t *testing.T) *emailFixture {
 	t.Helper()
 	f := newFixture(t)
-	e := &emailFixture{fixture: f, svc: notifications.NewService(f.pool).WithEmail(), mailer: &fakeMailer{}}
+	e := &emailFixture{fixture: f, svc: notifications.NewService(f.pool, testRegistry(t)).WithEmail(), mailer: &fakeMailer{}}
 	e.cont = fakeContacts{f.a: {email: "ada@example.org", name: "Ada Lovelace", ok: true}}
-	e.send = notifications.NewEmailSender(f.pool, e.mailer, e.cont, "https://turaco.example.org", "en")
+	e.send = notifications.NewEmailSender(f.pool, e.mailer, e.cont, testRegistry(t), "https://turaco.example.org", "en")
 	t.Cleanup(func() {
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.notification_preferences WHERE user_id = ANY($1::uuid[])`, []string{f.a, f.b})
 		_, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.jobs WHERE job_type = $1 AND payload->>'deliveryId' IN (
@@ -154,7 +154,7 @@ func TestPreferences(t *testing.T) {
 	e := newEmailFixture(t)
 	ctx := context.Background()
 	prefs, err := e.svc.Preferences(ctx, e.a)
-	if err != nil || len(prefs) != len(notifications.Categories) {
+	if err != nil || len(prefs) != 2 {
 		t.Fatalf("prefs = %+v %v", prefs, err)
 	}
 	for _, p := range prefs {
@@ -333,7 +333,7 @@ func TestShutdownDuringSendDoesNotConsumeAnAttempt(t *testing.T) {
 	d, _ := e.delivery(e.a)
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mailer.err = context.Canceled
-	e.send = notifications.NewEmailSender(e.pool, cancelingMailer{cancel: cancel}, e.cont, "https://turaco.example.org", "en")
+	e.send = notifications.NewEmailSender(e.pool, cancelingMailer{cancel: cancel}, e.cont, testRegistry(t), "https://turaco.example.org", "en")
 	err := e.send.Handle(ctx, e.job(d))
 	if err == nil || jobs.IsPermanent(err) {
 		t.Fatalf("err = %v, want a non-permanent error", err)

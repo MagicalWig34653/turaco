@@ -1,7 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
+import { registerModuleNotifications } from './app/notificationCategories';
 import './app/app.css';
+
+registerModuleNotifications();
 
 const root = document.getElementById('root');
 if (!root) {

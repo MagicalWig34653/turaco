@@ -132,7 +132,12 @@ func main() {
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
-	notificationstransport.Register(mux, notifications.NewService(pool), sessionAuth, logger)
+	categories, err := notifications.NewRegistry(tasksapp.NotificationCategories()...)
+	if err != nil {
+		logger.Error("register notification categories", "error", err)
+		os.Exit(1)
+	}
+	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 
