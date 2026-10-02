@@ -4,7 +4,7 @@
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
-**In progress:** F2 (Work Foundation, [design](f2-work-foundation-design.md)); slice 1, the outbox dispatcher, is implemented.
+**In progress:** F2 (Work Foundation, [design](f2-work-foundation-design.md)); slice 1 (outbox dispatcher) and the Teams write API of slice 2 are implemented.
 
 **Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". Next milestone: F2 (Work Foundation).
 
@@ -16,6 +16,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Initial PostgreSQL schemas plus foundation tables for platform audit/outbox/jobs, organization, products and tasks.
 - Health endpoints and `/api/v1/meta`.
 - Organization read APIs (F1 slice 1): paginated, read-only `GET` endpoints for Users, Teams (with current members), Locations and observed Directory Groups (with observed User memberships). Data is written by directory synchronization (below); there is no write API.
+- Team write API (F2 slice 2): `POST/PATCH /api/v1/teams`, `activate`/`deactivate`, add/remove members (permission `organization.teams.manage`); Teams and memberships are platform-owned (source `platform`), active team names are unique, at most one current membership per user and team, every change audited (`organization.team.*`).
 - Platform `authorization` package: request `Principal`, `Authenticator` interface and `Require(permission)` middleware; default-deny `DenyAll` remains the fallback. There is deliberately no development bypass.
 - Roles and permissions (F1 slice 5; [design](../security/identity-access-design.md)): custom roles (registry-validated permission sets) plus the immutable built-in `platform-administrator`, assigned to Users or Directory Groups with `global` scope; session permissions are evaluated per request from direct and transitive Directory Group assignments; last-administrator guard; soft-deleted roles keep assignment history; API `GET /permissions`, `/roles*`, `/role-assignments*`.
 - Audit query (F1 slice 6): `GET /api/v1/audit-events` with filters and keyset paging (`platform.audit.view`); all privileged identity/configuration changes listed in the design are audited.
@@ -47,7 +48,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Scoped role assignments (only `global` exists until the first scoped module).
 - Real object-store client and envelope encryption implementation.
 - Outbox consumers (the dispatcher exists; Notifications and other reactions arrive with F2).
-- Organization write APIs, Departments/Cost Centers APIs and directory mapping of department/location/cost center, Directory Group *Device* memberships.
+- Organization write APIs other than Teams (below), Departments/Cost Centers APIs and directory mapping of department/location/cost center, Directory Group *Device* memberships.
 - Connector Agent `ldap.*` capabilities (hosted deployments), DB-managed/multi-directory configuration (waits for ADR-0014 key management).
 - Automated tests against a real directory and browser: the LDAP adapter and login are tested with fakes; OpenLDAP sync and login, Kerberos login against an MIT KDC (curl GSS-API), and a Playwright run through login and all admin screens were verified manually (scripts not yet in CI). Kerberos with real Windows clients/Active Directory still needs verification. Active Directory specifics (objectGUID, userAccountControl, range retrieval) must be verified against a real AD before production use.
 - Scheduled cleanup of expired login-throttle rows and sessions: throttle rows are pruned opportunistically during logins; a worker job should replace this together with session cleanup.

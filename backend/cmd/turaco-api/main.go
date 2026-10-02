@@ -12,6 +12,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
@@ -118,6 +119,7 @@ func main() {
 	// Manual directory sync requests need a configured provider; the worker
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
+	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 

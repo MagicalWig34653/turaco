@@ -82,6 +82,29 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTeam
+      summary: Create a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.created). The name must be unique among active teams (case-insensitive)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamName'
+      responses:
+        '201':
+          description: The created team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /teams/{id}:
     get:
       operationId: getTeam
@@ -101,6 +124,74 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: renameTeam
+      summary: Rename a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.renamed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamName'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/activate:
+    post:
+      operationId: activateTeam
+      summary: Activate a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.activated). 409 when already active or its name is used by another active team."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/deactivate:
+    post:
+      operationId: deactivateTeam
+      summary: Deactivate a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.deactivated). Members are kept; no members can be added while inactive."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The team.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Team'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
   /teams/{id}/members:
     get:
@@ -124,6 +215,53 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: addTeamMember
+      summary: Add a member to a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.member_added). Only active users; the membership has source `platform`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamMemberAdd'
+      responses:
+        '201':
+          description: The new membership.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamMember'}
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/OrganizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/members/{userId}:
+    delete:
+      operationId: removeTeamMember
+      summary: Remove a member from a team.
+      description: "Requires `organization.teams.manage`. Audited (organization.team.member_removed). Ends the current membership; history is kept."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: userId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '204':
+          description: Membership ended.
+        '400': {$ref: '#/components/responses/OrganizationInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '500': {$ref: '#/components/responses/InternalError'}
   /locations:
     get:
@@ -788,6 +926,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    OrganizationInvalid:
+      description: Invalid input (organization.invalid_request, organization.invalid_cursor, organization.invalid_limit, organization.invalid_query, organization.invalid_status).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    OrganizationConflict:
+      description: Conflict (organization.conflict, organization.user_not_active, organization.team_inactive).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     AuthorizationInvalid:
       description: Invalid input (authorization.invalid_request, authorization.unknown_permission, authorization.invalid_cursor, authorization.invalid_limit).
       content:
@@ -879,6 +1029,19 @@ components:
         updatedAt:
           type: string
           format: date-time
+    TeamName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+    TeamMemberAdd:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId: {type: string, format: uuid}
+        role: {type: [string, "null"], maxLength: 100}
     TeamMember:
       type: object
       additionalProperties: false

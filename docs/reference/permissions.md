@@ -13,6 +13,7 @@
 | `inventory.manage` | elevated | Receive, reserve, transfer and correct inventory. |
 | `organization.directory.sync` | elevated | Request an immediate directory synchronization run. |
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
+| `organization.teams.manage` | elevated | Create, rename and deactivate Teams and manage their members. |
 | `organization.view` | normal | View organization users, teams and locations. |
 | `platform.admin` | high | Administer platform-wide configuration. |
 | `platform.audit.view` | elevated | Query the audit log. |
