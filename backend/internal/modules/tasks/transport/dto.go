@@ -12,25 +12,26 @@ type listResponse struct {
 }
 
 type taskDTO struct {
-	ID                string  `json:"id"`
-	Title             string  `json:"title"`
-	Description       *string `json:"description"`
-	Status            string  `json:"status"`
-	StatusReason      *string `json:"statusReason"`
-	Priority          string  `json:"priority"`
-	AssignedUserID    *string `json:"assignedUserId"`
-	AssignedUserName  *string `json:"assignedUserName"`
-	AssignedTeamID    *string `json:"assignedTeamId"`
-	AssignedTeamName  *string `json:"assignedTeamName"`
-	ContextType       *string `json:"contextType"`
-	ContextID         *string `json:"contextId"`
-	DueAt             *string `json:"dueAt"`
-	CompletedAt       *string `json:"completedAt"`
-	CreatedByUserID   *string `json:"createdByUserId"`
-	CompletedByUserID *string `json:"completedByUserId"`
-	Version           int     `json:"version"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
+	ID                     string  `json:"id"`
+	Title                  string  `json:"title"`
+	Description            *string `json:"description"`
+	Status                 string  `json:"status"`
+	StatusReason           *string `json:"statusReason"`
+	Priority               string  `json:"priority"`
+	AssignedUserID         *string `json:"assignedUserId"`
+	AssignedUserName       *string `json:"assignedUserName"`
+	AssignedTeamID         *string `json:"assignedTeamId"`
+	AssignedTeamName       *string `json:"assignedTeamName"`
+	ContextType            *string `json:"contextType"`
+	ContextID              *string `json:"contextId"`
+	DueAt                  *string `json:"dueAt"`
+	CompletedAt            *string `json:"completedAt"`
+	CreatedByUserID        *string `json:"createdByUserId"`
+	CompletedByUserID      *string `json:"completedByUserId"`
+	RecurrenceDefinitionID *string `json:"recurrenceDefinitionId"`
+	Version                int     `json:"version"`
+	CreatedAt              string  `json:"createdAt"`
+	UpdatedAt              string  `json:"updatedAt"`
 }
 
 func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -49,7 +50,7 @@ func toTask(v application.TaskView) taskDTO {
 		Priority: v.Priority, AssignedUserID: v.AssignedUserID, AssignedUserName: v.AssignedUserName,
 		AssignedTeamID: v.AssignedTeamID, AssignedTeamName: v.AssignedTeamName,
 		ContextType: v.ContextType, ContextID: v.ContextID, DueAt: tsPtr(v.DueAt), CompletedAt: tsPtr(v.CompletedAt),
-		CreatedByUserID: v.CreatedByUserID, CompletedByUserID: v.CompletedByUserID,
+		CreatedByUserID: v.CreatedByUserID, CompletedByUserID: v.CompletedByUserID, RecurrenceDefinitionID: v.RecurrenceDefinitionID,
 		Version: v.Version, CreatedAt: ts(v.CreatedAt), UpdatedAt: ts(v.UpdatedAt),
 	}
 }

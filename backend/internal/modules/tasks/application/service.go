@@ -135,8 +135,12 @@ func utc(t *time.Time) *time.Time {
 
 // checkAssignees verifies that the referenced User and Team are active.
 func (s *Service) checkAssignees(ctx context.Context, userID, teamID *string) error {
+	return checkAssignees(ctx, s.dir, userID, teamID)
+}
+
+func checkAssignees(ctx context.Context, dir Directory, userID, teamID *string) error {
 	if userID != nil {
-		active, err := s.dir.ActiveUsers(ctx, []string{*userID})
+		active, err := dir.ActiveUsers(ctx, []string{*userID})
 		if err != nil {
 			return fmt.Errorf("check assignee: %w", err)
 		}
@@ -145,7 +149,7 @@ func (s *Service) checkAssignees(ctx context.Context, userID, teamID *string) er
 		}
 	}
 	if teamID != nil {
-		active, err := s.dir.ActiveTeams(ctx, []string{*teamID})
+		active, err := dir.ActiveTeams(ctx, []string{*teamID})
 		if err != nil {
 			return fmt.Errorf("check assignee: %w", err)
 		}

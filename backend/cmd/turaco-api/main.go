@@ -127,6 +127,7 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	notificationstransport.Register(mux, notifications.NewService(pool), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)

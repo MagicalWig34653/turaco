@@ -59,6 +59,10 @@ type Task struct {
 	CompletedAt       *time.Time
 	CreatedByUserID   *string
 	CompletedByUserID *string
+	// RecurrenceDefinitionID and ScheduledFor are set on tasks generated from a
+	// Recurring Task Definition; the definition may have been deleted since.
+	RecurrenceDefinitionID *string
+	ScheduledFor           *time.Time
 	// Version starts at 1 and increases with every change.
 	Version   int
 	CreatedAt time.Time
@@ -87,6 +91,8 @@ type Principal struct {
 	// Work (tasks.work) sees and works tasks assigned to the caller or to one
 	// of the caller's Teams.
 	Work bool
+	// RecurrenceManage (tasks.recurrence.manage) manages Recurring Task Definitions.
+	RecurrenceManage bool
 }
 
 // Caller identifies who performs a mutation and the request it belongs to.

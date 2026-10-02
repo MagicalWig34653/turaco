@@ -588,6 +588,161 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions:
+    get:
+      operationId: listRecurringTaskDefinitions
+      summary: List recurring task definitions.
+      description: "Requires `tasks.recurrence.manage`. Oldest first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of definitions.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinitionList'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRecurringTaskDefinition
+      summary: Create a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Audited (tasks.recurrence.created). The first run is the first occurrence after now."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecurringTaskDefinitionCreate'}
+      responses:
+        '201':
+          description: The created definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}:
+    get:
+      operationId: getRecurringTaskDefinition
+      summary: Get a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRecurringTaskDefinition
+      summary: Change a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Changing the rule reschedules an active definition from now. Audited (tasks.recurrence.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RecurringTaskDefinitionUpdate'}
+      responses:
+        '200':
+          description: The updated definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteRecurringTaskDefinition
+      summary: Delete a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. The tasks it generated stay. Audited (tasks.recurrence.deleted)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: expectedVersion
+          in: query
+          schema: {type: integer, minimum: 1}
+      responses:
+        '204':
+          description: Deleted.
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}/pause:
+    post:
+      operationId: pauseRecurringTaskDefinition
+      summary: Pause a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Generation stops; pausing a paused definition is a no-op. Audited (tasks.recurrence.paused)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /recurring-task-definitions/{id}/resume:
+    post:
+      operationId: resumeRecurringTaskDefinition
+      summary: Resume a recurring task definition.
+      description: "Requires `tasks.recurrence.manage`. Continues from the first run after now; runs missed while paused are not generated. Audited (tasks.recurrence.resumed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The definition.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -1544,7 +1699,7 @@ components:
     Task:
       type: object
       additionalProperties: false
-      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, version, createdAt, updatedAt]
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -1562,6 +1717,7 @@ components:
         completedAt: {type: [string, "null"], format: date-time}
         createdByUserId: {type: [string, "null"], format: uuid}
         completedByUserId: {type: [string, "null"], format: uuid}
+        recurrenceDefinitionId: {type: [string, "null"], format: uuid, description: "Set on tasks generated from a recurring task definition (which may have been deleted since)."}
         version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -1574,6 +1730,73 @@ components:
           type: array
           items: {$ref: '#/components/schemas/Task'}
         nextCursor: {type: string}
+    RecurrenceRule:
+      type: object
+      additionalProperties: false
+      required: [frequency, interval, weekday, dayOfMonth, timeOfDay, timezone, startsOn]
+      properties:
+        frequency: {type: string, enum: [daily, weekly, monthly]}
+        interval: {type: integer, minimum: 1, maximum: 365, description: "Every N days, weeks or months, anchored at startsOn."}
+        weekday: {type: [integer, "null"], minimum: 1, maximum: 7, description: "Weekly only; 1 = Monday, 7 = Sunday."}
+        dayOfMonth: {type: [integer, "null"], minimum: 1, maximum: 31, description: "Monthly only; clamped to the last day of shorter months."}
+        timeOfDay: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: "Local time HH:MM."}
+        timezone: {type: string, description: "IANA time zone name such as Europe/Berlin."}
+        startsOn: {type: string, format: date, description: "Local date of the first possible run."}
+    RecurringTaskDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, priority, assignedUserId, assignedTeamId, dueAfterHours, rule, active, nextRunAt, lastGeneratedAt, createdByUserId, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        dueAfterHours: {type: [integer, "null"], minimum: 1, maximum: 8760, description: "Generated tasks are due this many hours after their scheduled run."}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
+        active: {type: boolean}
+        nextRunAt: {type: [string, "null"], format: date-time, description: "Null exactly while paused."}
+        lastGeneratedAt: {type: [string, "null"], format: date-time}
+        createdByUserId: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RecurringTaskDefinitionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RecurringTaskDefinition'}
+        nextCursor: {type: string}
+    RecurringTaskDefinitionCreate:
+      type: object
+      additionalProperties: false
+      required: [title, rule]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000}
+        priority: {type: string, enum: [low, normal, high, urgent], default: normal}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        dueAfterHours: {type: [integer, "null"], minimum: 1, maximum: 8760}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
+    RecurringTaskDefinitionUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 10000, description: "Empty clears."}
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        assignedUserId: {type: string, format: uuid}
+        assignedTeamId: {type: string, format: uuid}
+        clearAssignment: {type: boolean, description: "Removes both assignees; excludes assignedUserId/assignedTeamId."}
+        dueAfterHours: {type: integer, minimum: 1, maximum: 8760}
+        clearDueAfter: {type: boolean}
+        rule: {$ref: '#/components/schemas/RecurrenceRule'}
     TaskCreate:
       type: object
       additionalProperties: false

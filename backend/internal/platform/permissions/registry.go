@@ -17,6 +17,7 @@ var Registry = []Permission{
 	{Name: "organization.teams.manage", Description: "Create, rename and deactivate Teams and manage their members.", Risk: "elevated"},
 	{Name: "tasks.view", Description: "View tasks within authorized scope.", Risk: "normal"},
 	{Name: "tasks.work", Description: "See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams.", Risk: "normal"},
+	{Name: "tasks.recurrence.manage", Description: "Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule.", Risk: "normal"},
 	{Name: "tasks.manage", Description: "Create and update tasks within authorized scope.", Risk: "normal"},
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},

@@ -33,14 +33,14 @@ const taskTarget = "task"
 const columns = `id::text, title, description, status, status_reason, priority,
 	assigned_user_id::text, assigned_team_id::text, context_type, context_id::text,
 	due_at, completed_at, created_by_user_id::text, completed_by_user_id::text,
-	version, created_at, updated_at`
+	recurrence_definition_id::text, scheduled_for, version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Task, error) {
 	var t application.Task
 	err := row.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
 		&t.AssignedUserID, &t.AssignedTeamID, &t.ContextType, &t.ContextID,
 		&t.DueAt, &t.CompletedAt, &t.CreatedByUserID, &t.CompletedByUserID,
-		&t.Version, &t.CreatedAt, &t.UpdatedAt)
+		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.Version, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
 

@@ -86,6 +86,10 @@ func main() {
 		}
 		logger.Info("email notifications enabled", "host", smtpCfg.Host, "port", smtpCfg.Port, "security", smtpCfg.Security)
 	}
+	if err := registerRecurrence(runner, pool); err != nil {
+		logger.Error("configure recurring tasks", "error", err)
+		os.Exit(1)
+	}
 	if err := registerConsumers(dispatcher, pool, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
@@ -201,4 +205,19 @@ func readSecretFile(path string) (string, error) {
 		return "", errors.New("file is empty")
 	}
 	return secret, nil
+}
+
+// registerRecurrence schedules the generation of tasks from Recurring Task
+// Definitions. The schedule's dedupe key keeps several workers from
+// enqueueing it twice; the generation itself is idempotent per run.
+func registerRecurrence(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	svc := tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool),
+		orgpublic.NewWorkDirectory(orgrepository.New(pool)), nil)
+	if err := runner.Register(tasksapp.GenerateJobType, tasksapp.GenerateJobTimeout, svc.HandleGenerate); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{
+		JobType: tasksapp.GenerateJobType, DedupeKey: tasksapp.GenerateJobType,
+		Interval: tasksapp.GenerateInterval, MaxAttempts: 3,
+	})
 }

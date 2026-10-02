@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -18,9 +19,10 @@ import (
 )
 
 const (
-	permView   = "tasks.view"
-	permManage = "tasks.manage"
-	permWork   = "tasks.work"
+	permView       = "tasks.view"
+	permManage     = "tasks.manage"
+	permWork       = "tasks.work"
+	permRecurrence = "tasks.recurrence.manage"
 
 	maxBody     = 32 << 10
 	maxQueryLen = 100
@@ -82,6 +84,7 @@ func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{
 		UserID: p.UserID, ViewAll: p.Has(permView), Manage: p.Has(permManage), Work: p.Has(permWork),
+		RecurrenceManage: p.Has(permRecurrence),
 	}
 }
 
@@ -295,4 +298,12 @@ func (h *handler) transition(op application.Operation) http.HandlerFunc {
 		}
 		httpx.JSON(w, http.StatusOK, toTask(v))
 	}
+}
+
+func parsePositiveInt(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return 0, errors.New("not a positive integer")
+	}
+	return n, nil
 }
