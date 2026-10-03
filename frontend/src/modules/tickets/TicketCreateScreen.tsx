@@ -9,6 +9,7 @@ import { Button } from '../../platform/ui/Button';
 import { Select, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { assetsApi } from '../assets/api';
+import { Suggestions } from '../knowledge/Suggestions';
 import { ticketsApi } from './api';
 
 /** Raising a ticket asks for little: what is wrong, and optionally which of my devices. */
@@ -55,6 +56,7 @@ export function TicketCreateScreen() {
           autoFocus
           onChange={(event) => setTitle(event.target.value)}
         />
+        <Suggestions text={title} />
         <TextArea
           label={t('tickets.field.description')}
           hint={t('tickets.field.description.hint')}

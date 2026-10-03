@@ -34,6 +34,8 @@ var Registry = []Permission{
 	{Name: "procurement.manage", Description: "Manage suppliers and procurement requests; create, submit for approval, send, cancel and close purchase orders.", Risk: "elevated"},
 	{Name: "inventory.view", Description: "View warehouses, stock balances, the inventory ledger and reservations.", Risk: "normal"},
 	{Name: "inventory.manage", Description: "Manage warehouses and storage locations; issue, return, transfer, correct and dispose stock; reserve, release and fulfill reservations; post goods receipts.", Risk: "elevated"},
+	{Name: "knowledge.view", Description: "Read published internal knowledge articles (published employee articles are readable by every signed-in user).", Risk: "normal"},
+	{Name: "knowledge.manage", Description: "Write, publish and retire knowledge articles and read drafts and retired articles.", Risk: "elevated"},
 	{Name: "tickets.view", Description: "View all tickets and their internal comments. Every signed-in user can raise tickets and read their own.", Risk: "normal"},
 	{Name: "tickets.manage", Description: "Work tickets: assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "normal"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},

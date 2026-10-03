@@ -276,6 +276,15 @@ export function TicketDetailScreen({ id }: { id: string }) {
         <section>
           <h2>{t('tickets.fact.resolution')}</h2>
           <p className="preline">{ticket.resolution}</p>
+          {can('knowledge.manage') ? (
+            <p>
+              <Link
+                to={`/knowledge/new?title=${encodeURIComponent(ticket.title)}&body=${encodeURIComponent(ticket.resolution)}`}
+              >
+                {t('tickets.action.makeArticle')}
+              </Link>
+            </p>
+          ) : null}
         </section>
       ) : null}
       <section>

@@ -3627,6 +3627,153 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /knowledge-articles:
+    get:
+      operationId: listKnowledgeArticles
+      summary: Search or list knowledge articles.
+      description: "Any signed-in user sees published employee articles; `knowledge.view` also published internal ones; `knowledge.manage` everything incl. drafts and retired. `q` is a full-text query (web-search syntax, language-neutral); matches are ranked, otherwise newest first. Lists omit the body."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 200}
+        - name: status
+          in: query
+          schema: {type: string, enum: [draft, published, retired]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticleList'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createKnowledgeArticle
+      summary: Write a draft.
+      description: "Needs `knowledge.manage`. Audited without the article text."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleInput'
+      responses:
+        '201':
+          description: The article.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticle'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /knowledge-articles/{id}:
+    get:
+      operationId: getKnowledgeArticle
+      summary: Read an article.
+      description: "Visible to the audience described at the list; everybody else gets 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The article.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticle'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateKnowledgeArticle
+      summary: Edit an article.
+      description: "Needs `knowledge.manage`; `expectedVersion` is required; not for retired articles."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleInput'
+      responses:
+        '200':
+          description: The article.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticle'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /knowledge-articles/{id}/publish:
+    post:
+      operationId: publishKnowledgeArticle
+      summary: Publish (or republish) an article.
+      description: "Needs `knowledge.manage`; draft or retired. Emits KnowledgeArticlePublished."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The article.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticle'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /knowledge-articles/{id}/retire:
+    post:
+      operationId: retireKnowledgeArticle
+      summary: Retire an article.
+      description: "Needs `knowledge.manage`; published only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The article.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeArticle'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -4634,6 +4781,24 @@ components:
             $ref: '#/components/schemas/Error'
     TicketsConflict:
       description: Conflict (tickets.invalid_transition, tickets.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    KnowledgeInvalid:
+      description: Invalid input (knowledge.invalid_request, knowledge.invalid_cursor, knowledge.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    KnowledgeNotFound:
+      description: Not found or not visible to the caller (knowledge.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    KnowledgeConflict:
+      description: Conflict (knowledge.invalid_transition, knowledge.version_conflict).
       content:
         application/json:
           schema:
@@ -5979,6 +6144,45 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 5000}
+    KnowledgeArticle:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, summary, audience, status, publishedAt, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as KB-000001."}
+        title: {type: string}
+        summary: {type: string}
+        body: {type: string, description: "Plain text; clients must render it escaped. Omitted in lists."}
+        audience: {type: string, enum: [internal, employee]}
+        status: {type: string, enum: [draft, published, retired]}
+        publishedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    KnowledgeArticleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/KnowledgeArticle'}
+        nextCursor: {type: string}
+    KnowledgeArticleInput:
+      type: object
+      additionalProperties: false
+      required: [title, body]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: "Required when editing."}
+        title: {type: string, maxLength: 200}
+        summary: {type: string, maxLength: 500}
+        body: {type: string, maxLength: 20000}
+        audience: {type: string, enum: [internal, employee]}
+    KnowledgeArticleVersion:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
     TaskCreate:
       type: object
       additionalProperties: false

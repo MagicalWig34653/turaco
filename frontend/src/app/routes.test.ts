@@ -17,6 +17,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'myAssets',
       'myTickets',
+      'knowledge',
     ]);
     expect(ids([], 'admin')).toEqual([]);
   });
@@ -38,6 +39,7 @@ describe('visibleNavItems', () => {
         'approvals',
         'myAssets',
         'myTickets',
+        'knowledge',
         'tasks',
       ]);
     }
@@ -50,6 +52,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'myAssets',
       'myTickets',
+      'knowledge',
     ]);
   });
 
@@ -64,6 +67,7 @@ describe('visibleNavItems', () => {
       'briefing',
       'myAssets',
       'myTickets',
+      'knowledge',
     ]);
     expect(ids(['briefing.manage'], 'main')).toEqual([
       'home',
@@ -75,6 +79,7 @@ describe('visibleNavItems', () => {
       'briefing',
       'myAssets',
       'myTickets',
+      'knowledge',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
@@ -199,5 +204,21 @@ describe('support', () => {
   it('matches the static ticket route before the parameterised one', () => {
     expect(matchRoute(appRoutes, '/support/new')?.route.id).toBe('ticketNew');
     expect(matchRoute(appRoutes, '/support/7')?.route.id).toBe('ticketDetail');
+  });
+});
+
+describe('knowledge', () => {
+  it('lists articles for everyone and keeps authoring behind knowledge.manage', () => {
+    expect(ids([], 'main')).toContain('knowledge');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['knowledge.view'] }), route('articleNew'))).toBe(
+      false,
+    );
+    expect(
+      canViewRoute(createCan({ permissions: ['knowledge.manage'] }), route('articleEdit')),
+    ).toBe(true);
+    expect(matchRoute(appRoutes, '/knowledge/new')?.route.id).toBe('articleNew');
+    expect(matchRoute(appRoutes, '/knowledge/7/edit')?.route.id).toBe('articleEdit');
+    expect(matchRoute(appRoutes, '/knowledge/7')?.route.id).toBe('articleDetail');
   });
 });

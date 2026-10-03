@@ -31,6 +31,7 @@ var Registry = []Definition{
 	{Name: "PurchaseOrderReceived", Version: 1, Owner: "procurement", Description: "Every line of a purchase order was received. Payload: orderId, supplierId."},
 	{Name: "GoodsReceived", Version: 1, Owner: "inventory", Description: "A goods receipt was posted."},
 	{Name: "ServiceRequestSubmitted", Version: 1, Owner: "requests", Description: "A service request was submitted. Payload: requestId."},
+	{Name: "KnowledgeArticlePublished", Version: 1, Owner: "knowledge", Description: "A knowledge article was published. Payload: articleId, audience."},
 	{Name: "TicketCreated", Version: 1, Owner: "service-desk", Description: "A ticket was created. Payload: ticketId, reporterId, affectedUserId."},
 	{Name: "TicketAssigned", Version: 1, Owner: "service-desk", Description: "A ticket was assigned to a user. Payload: ticketId, assigneeId."},
 	{Name: "TicketResolved", Version: 1, Owner: "service-desk", Description: "A ticket was resolved. Payload: ticketId, reporterId, affectedUserId."},
