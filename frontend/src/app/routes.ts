@@ -20,6 +20,9 @@ export type RouteId =
   | 'allRequests'
   | 'myAssets'
   | 'assets'
+  | 'devices'
+  | 'deviceDetail'
+  | 'endpointFindings'
   | 'assetNew'
   | 'assetDetail'
   | 'stock'
@@ -62,7 +65,7 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit';
 
-export type NavGroup = 'main' | 'logistics' | 'admin';
+export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -113,6 +116,26 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/briefing/:id',
     titleKey: 'briefing.detail.title',
     requiresAny: ['briefing.view', 'briefing.manage'],
+  },
+  {
+    id: 'devices',
+    pattern: '/devices',
+    titleKey: 'nav.devices',
+    requiresAny: ['endpoints.view', 'endpoints.manage'],
+    nav: 'endpoints',
+  },
+  {
+    id: 'deviceDetail',
+    pattern: '/devices/:id',
+    titleKey: 'endpoints.detailTitle',
+    requiresAny: ['endpoints.view', 'endpoints.manage'],
+  },
+  {
+    id: 'endpointFindings',
+    pattern: '/endpoint-findings',
+    titleKey: 'nav.endpointFindings',
+    requiresAny: ['endpoints.view', 'endpoints.manage'],
+    nav: 'endpoints',
   },
   { id: 'myAssets', pattern: '/my-assets', titleKey: 'nav.myAssets', nav: 'main' },
   {

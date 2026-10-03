@@ -15,7 +15,7 @@ function NavSection({
   labelKey,
 }: {
   group: NavGroup;
-  labelKey?: 'nav.admin' | 'nav.logistics';
+  labelKey?: 'nav.admin' | 'nav.logistics' | 'nav.endpoints';
 }) {
   const { t } = useI18n();
   const { can } = useSession();
@@ -89,6 +89,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
         <nav aria-label={t('nav.primary')}>
           <NavSection group="main" />
           <NavSection group="logistics" labelKey="nav.logistics" />
+          <NavSection group="endpoints" labelKey="nav.endpoints" />
           <NavSection group="admin" labelKey="nav.admin" />
         </nav>
       </aside>

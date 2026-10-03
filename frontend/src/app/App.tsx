@@ -29,6 +29,9 @@ import { RequestsScreen } from '../modules/requests/RequestsScreen';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
 import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
+import { DevicesScreen } from '../modules/endpoints/DevicesScreen';
+import { DeviceDetailScreen } from '../modules/endpoints/DeviceDetailScreen';
+import { FindingsScreen } from '../modules/endpoints/FindingsScreen';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
 import { ReceiptsScreen } from '../modules/inventory/ReceiptsScreen';
@@ -103,6 +106,12 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <RequestsScreen scope="all" />;
     case 'myAssets':
       return <MyAssetsScreen />;
+    case 'devices':
+      return <DevicesScreen />;
+    case 'deviceDetail':
+      return <DeviceDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'endpointFindings':
+      return <FindingsScreen />;
     case 'assets':
       return <AssetsScreen />;
     case 'assetNew':

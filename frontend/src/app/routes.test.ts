@@ -3,7 +3,7 @@ import { matchRoute } from '../platform/router/routing';
 import { createCan } from '../platform/session/permissions';
 import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes';
 
-const ids = (permissions: string[], group: 'main' | 'logistics' | 'admin') =>
+const ids = (permissions: string[], group: 'main' | 'logistics' | 'endpoints' | 'admin') =>
   visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
@@ -256,5 +256,20 @@ describe('runbooks', () => {
     expect(matchRoute(appRoutes, '/runbooks/new')?.route.id).toBe('runbookNew');
     expect(matchRoute(appRoutes, '/runbooks/7/edit')?.route.id).toBe('runbookEdit');
     expect(matchRoute(appRoutes, '/runbooks/7')?.route.id).toBe('runbookDetail');
+  });
+});
+
+describe('endpoints', () => {
+  it('gates the nav and all routes by endpoint permission', () => {
+    expect(ids([], 'endpoints')).toEqual([]);
+    for (const permission of ['endpoints.view', 'endpoints.manage']) {
+      expect(ids([permission], 'endpoints')).toEqual(['devices', 'endpointFindings']);
+      for (const id of ['devices', 'deviceDetail', 'endpointFindings']) {
+        const route = appRoutes.find((candidate) => candidate.id === id)!;
+        expect(canViewRoute(createCan({ permissions: [permission] }), route)).toBe(true);
+      }
+    }
+    expect(matchRoute(appRoutes, '/devices/7')?.route.id).toBe('deviceDetail');
+    expect(matchRoute(appRoutes, '/endpoint-findings')?.route.id).toBe('endpointFindings');
   });
 });
