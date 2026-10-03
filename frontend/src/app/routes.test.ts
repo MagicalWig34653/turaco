@@ -202,8 +202,8 @@ describe('support', () => {
   it('offers My tickets to everyone and the queue to ticket staff', () => {
     expect(ids([], 'main')).toContain('myTickets');
     expect(ids([], 'logistics')).toEqual([]);
-    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue']);
-    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue']);
+    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue', 'problems']);
+    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue', 'problems']);
   });
 
   it('matches the static ticket route before the parameterised one', () => {
