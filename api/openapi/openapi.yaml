@@ -3215,6 +3215,72 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /goods-receipts:
+    get:
+      operationId: listGoodsReceipts
+      summary: List goods receipts.
+      description: "Needs `inventory.view` or `inventory.manage`. Newest first; `orderId` filters by purchase order."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: orderId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GoodsReceiptList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: postGoodsReceipt
+      summary: Post a goods receipt.
+      description: "Needs `inventory.manage`. Books a delivery against a purchase order in one transaction: the order's received quantities (over-delivery is refused with 409 inventory.over_receipt, an order that is not sent, acknowledged or partially received with 409 inventory.order_not_receivable), the stock of quantity-tracked products at the given storage location (ledger rows) and one asset per delivered unit of serialized products (one serial number per piece). If any part fails nothing is booked. A posted receipt is immutable. Audited (inventory.goods_receipt.posted); emits GoodsReceived, and PurchaseOrderReceived once the order is complete."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoodsReceiptCreate'
+      responses:
+        '201':
+          description: The receipt.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GoodsReceipt'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /goods-receipts/{id}:
+    get:
+      operationId: getGoodsReceipt
+      summary: Get a goods receipt.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The receipt.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GoodsReceipt'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -5323,6 +5389,75 @@ components:
         expectedVersion: {type: integer, minimum: 1}
         approverUserId: {type: string, format: uuid}
         approverTeamId: {type: string, format: uuid}
+    GoodsReceiptLine:
+      type: object
+      additionalProperties: false
+      required: [id, orderLineId, productId, quantity, storageLocationId, assetIds]
+      properties:
+        id: {type: string, format: uuid}
+        orderLineId: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1}
+        storageLocationId: {type: [string, "null"], format: uuid}
+        assetIds:
+          type: array
+          items: {type: string, format: uuid}
+    GoodsReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, reference, orderId, supplierId, deliveryNote, receivedBy, createdAt, lines]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as GR-000001."}
+        orderId: {type: string, format: uuid}
+        supplierId: {type: string, format: uuid}
+        deliveryNote: {type: [string, "null"]}
+        receivedBy: {type: [string, "null"], format: uuid}
+        createdAt: {type: string, format: date-time}
+        lines:
+          type: array
+          items: {$ref: '#/components/schemas/GoodsReceiptLine'}
+    GoodsReceiptList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/GoodsReceipt'}
+        nextCursor: {type: string}
+    GoodsReceiptCreate:
+      type: object
+      additionalProperties: false
+      required: [orderId, lines]
+      properties:
+        orderId: {type: string, format: uuid}
+        deliveryNote: {type: string, maxLength: 100}
+        assetsAvailable: {type: boolean, description: "Register new assets as available instead of received (still to be checked)."}
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [orderLineId, quantity]
+            properties:
+              orderLineId: {type: string, format: uuid}
+              quantity: {type: integer, minimum: 1, maximum: 1000000}
+              storageLocationId: {type: string, format: uuid, description: "Required for quantity-tracked products."}
+              units:
+                type: array
+                description: "Serialized products: one entry per piece."
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [serialNumber]
+                  properties:
+                    serialNumber: {type: string, maxLength: 100}
+                    assetTag: {type: string, maxLength: 50}
+              assetLocationId: {type: string, format: uuid}
+              warrantyUntil: {type: string, format: date}
     TaskCreate:
       type: object
       additionalProperties: false

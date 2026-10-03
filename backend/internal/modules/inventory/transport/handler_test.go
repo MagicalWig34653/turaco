@@ -69,11 +69,23 @@ type noAssets struct{}
 func (noAssets) Assets(context.Context, []string) (map[string]application.AssetView, error) {
 	return map[string]application.AssetView{}, nil
 }
+func (noAssets) CreateReceivedInTx(context.Context, pgx.Tx, audit.Actor, string, application.ReceivedAsset) (string, error) {
+	return "", nil
+}
 func (noAssets) ReserveInTx(context.Context, pgx.Tx, audit.Actor, string, string) error { return nil }
 func (noAssets) ReleaseReservationInTx(context.Context, pgx.Tx, audit.Actor, string, string) error {
 	return nil
 }
 func (noAssets) AssignReservedInTx(context.Context, pgx.Tx, audit.Actor, string, string, application.AssetAssignee, string) error {
+	return nil
+}
+
+type noOrders struct{}
+
+func (noOrders) Order(context.Context, string) (application.OrderView, error) {
+	return application.OrderView{}, application.ErrNotFound
+}
+func (noOrders) RecordReceiptInTx(context.Context, pgx.Tx, audit.Actor, string, string, []application.OrderReceipt) error {
 	return nil
 }
 
@@ -86,7 +98,7 @@ const (
 func serve(t *testing.T, a authorization.Authenticator) (http.Handler, *application.Service) {
 	t.Helper()
 	pool := dbtest.Pool(t)
-	svc := application.NewService(repository.New(pool), dir{}, products{product: {ID: product, Name: "Cable", Active: true, StockManaged: true}}, noAssets{})
+	svc := application.NewService(repository.New(pool), dir{}, products{product: {ID: product, Name: "Cable", Active: true, StockManaged: true}}, noAssets{}, noOrders{})
 	mux := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	transport.Register(mux, svc, a, logger)
@@ -180,6 +192,15 @@ func TestInventoryOverHTTP(t *testing.T) {
 	if rec := do(h, "GET", "/api/v1/reservations/not-a-uuid", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("malformed id = %d", rec.Code)
 	}
+	if rec := do(h, "POST", "/api/v1/goods-receipts", `{"orderId":"`+someone+`","lines":[{"orderLineId":"`+someone+`","quantity":1}]}`); rec.Code != http.StatusNotFound {
+		t.Errorf("receipt for an unknown order = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(h, "POST", "/api/v1/goods-receipts", `{"orderId":"`+someone+`","lines":[{"orderLineId":"x","quantity":1,"warrantyUntil":"01.02.2027"}]}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad date = %d", rec.Code)
+	}
+	if rec := do(h, "GET", "/api/v1/goods-receipts/not-a-uuid", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("malformed receipt id = %d", rec.Code)
+	}
 }
 
 func TestPermissionsOverHTTP(t *testing.T) {
@@ -187,19 +208,19 @@ func TestPermissionsOverHTTP(t *testing.T) {
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/v1/warehouses"}, {"POST", "/api/v1/stock/issue"}, {"POST", "/api/v1/stock/transfer"},
 		{"POST", "/api/v1/stock/correct"}, {"POST", "/api/v1/reservations"}, {"POST", "/api/v1/reservations/" + admin + "/release"},
-		{"PATCH", "/api/v1/storage-locations/" + admin},
+		{"PATCH", "/api/v1/storage-locations/" + admin}, {"POST", "/api/v1/goods-receipts"},
 	} {
 		if rec := do(view, c.method, c.path, `{}`); rec.Code != http.StatusForbidden {
 			t.Errorf("%s %s with inventory.view = %d, want 403", c.method, c.path, rec.Code)
 		}
 	}
-	for _, path := range []string{"/api/v1/warehouses", "/api/v1/stock", "/api/v1/inventory-transactions", "/api/v1/reservations"} {
+	for _, path := range []string{"/api/v1/warehouses", "/api/v1/stock", "/api/v1/inventory-transactions", "/api/v1/reservations", "/api/v1/goods-receipts"} {
 		if rec := do(view, "GET", path, ""); rec.Code != http.StatusOK {
 			t.Errorf("GET %s with inventory.view = %d", path, rec.Code)
 		}
 	}
 	nobody, _ := serve(t, as(someone))
-	for _, path := range []string{"/api/v1/warehouses", "/api/v1/stock", "/api/v1/inventory-transactions", "/api/v1/reservations"} {
+	for _, path := range []string{"/api/v1/warehouses", "/api/v1/stock", "/api/v1/inventory-transactions", "/api/v1/reservations", "/api/v1/goods-receipts"} {
 		if rec := do(nobody, "GET", path, ""); rec.Code != http.StatusForbidden {
 			t.Errorf("GET %s without permission = %d, want 403", path, rec.Code)
 		}

@@ -52,6 +52,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **ProcurementRequest** represents acquisition need. **PurchaseOrder** and **PurchaseOrderLine** record supplier, status, quantities/prices and links to originating needs. Goods Receipt reconciles deliveries and may create Assets.
 
+*Implemented shape (migration 000029):* `inventory.goods_receipts` (reference `GR-NNNNNN`, order and supplier ids, delivery note), `goods_receipt_lines` (order line, product, quantity, storage location for stock) and `goods_receipt_assets`; all three are immutable (trigger).
+
 ## Catalog/requests
 
 **CatalogItem** is a user-facing offering with visibility/form/workflow/eligibility. It is not Product.

@@ -161,6 +161,12 @@ var (
 	ErrReferenceInvalid  = errors.New("inventory: referenced location does not exist")
 	ErrAssetUnavailable  = errors.New("inventory: the asset cannot be reserved")
 	ErrAssigneeInvalid   = errors.New("inventory: assignee does not exist or is not active")
+	// ErrDuplicateAsset means a delivered unit's serial number or asset tag already exists.
+	ErrDuplicateAsset = errors.New("inventory: an asset with this serial number or asset tag already exists")
+	// ErrOrderNotReceivable means the purchase order cannot receive goods in its current status.
+	ErrOrderNotReceivable = errors.New("inventory: the purchase order cannot receive goods in its current status")
+	// ErrOverReceipt means a line would receive more than was ordered.
+	ErrOverReceipt = errors.New("inventory: received quantity exceeds the ordered quantity")
 )
 
 // InvalidTransitionError reports an operation the reservation's status does not allow.
@@ -292,6 +298,13 @@ type Store interface {
 	ListStock(ctx context.Context, f StockFilter) (Result[Balance], error)
 	ListTransactions(ctx context.Context, f TransactionFilter) (Result[Transaction], error)
 	ListReservations(ctx context.Context, f ReservationFilter) (Result[Reservation], error)
+
+	InsertGoodsReceiptTx(ctx context.Context, tx pgx.Tx, orderID, supplierID string, deliveryNote, receivedBy *string) (GoodsReceipt, error)
+	InsertGoodsReceiptLineTx(ctx context.Context, tx pgx.Tx, receiptID string, l GoodsReceiptLine) (GoodsReceiptLine, error)
+	AddReceiptAssetTx(ctx context.Context, tx pgx.Tx, receiptLineID, assetID string) error
+	// GetGoodsReceipt returns a receipt with its lines and the assets they created.
+	GetGoodsReceipt(ctx context.Context, id string) (GoodsReceipt, error)
+	ListGoodsReceipts(ctx context.Context, orderID string, page Page) (Result[GoodsReceipt], error)
 }
 
 // Directory answers the Organization questions inventory needs.
@@ -329,8 +342,79 @@ type AssetAssignee struct {
 	ID   string
 }
 
+// GoodsReceipt is an immutable record of delivered goods.
+type GoodsReceipt struct {
+	ID           string
+	Reference    string
+	OrderID      string
+	SupplierID   string
+	DeliveryNote *string
+	ReceivedBy   *string
+	CreatedAt    time.Time
+	Lines        []GoodsReceiptLine
+}
+
+// GoodsReceiptLine is the delivery of one purchase order line.
+type GoodsReceiptLine struct {
+	ID                string
+	OrderLineID       string
+	ProductID         string
+	Quantity          int
+	StorageLocationID *string
+	AssetIDs          []string
+}
+
+// ReceivedAsset describes goods that become an Asset.
+type ReceivedAsset struct {
+	ProductID     string
+	SerialNumber  string
+	AssetTag      string
+	SupplierID    string
+	PurchasedAt   *time.Time
+	WarrantyUntil *time.Time
+	LocationID    *string
+	// Available registers the asset as available instead of received (still to be checked).
+	Available bool
+	// SourceID is the goods receipt the asset came from.
+	SourceID string
+}
+
+// OrderLine is a purchase order line as goods receipt sees it.
+type OrderLine struct {
+	ID               string
+	ProductID        string
+	Quantity         int
+	ReceivedQuantity int
+}
+
+// OrderView is a purchase order as goods receipt sees it.
+type OrderView struct {
+	ID         string
+	Reference  string
+	SupplierID string
+	Status     string
+	Lines      []OrderLine
+}
+
+// OrderReceipt is the quantity booked on one order line.
+type OrderReceipt struct {
+	LineID   string
+	Quantity int
+}
+
+// Orders is the Procurement contract (procurement/public adapter). It reports
+// over-delivery as ErrOverReceipt and an order in the wrong status as
+// ErrOrderNotReceivable, and an unknown order as ErrNotFound.
+type Orders interface {
+	Order(ctx context.Context, id string) (OrderView, error)
+	RecordReceiptInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, orderID string, lines []OrderReceipt) error
+}
+
 // Assets is the Assets contract (assets/public adapter).
 type Assets interface {
+	// CreateReceivedInTx registers one asset from delivered goods and returns its id;
+	// a duplicate serial number or asset tag is ErrDuplicateAsset.
+	CreateReceivedInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID string, in ReceivedAsset) (string, error)
 	Assets(ctx context.Context, ids []string) (map[string]AssetView, error)
 	ReserveInTx(ctx context.Context, tx pgx.Tx, c audit.Actor, correlationID, assetID string) error
 	ReleaseReservationInTx(ctx context.Context, tx pgx.Tx, c audit.Actor, correlationID, assetID string) error

@@ -54,6 +54,8 @@ type Received struct {
 	LocationID    *string
 	// SourceID is the goods receipt the asset came from.
 	SourceID string
+	// Available registers the asset as available instead of received (still to be checked).
+	Available bool
 }
 
 // Asset is the minimal view other modules get.
@@ -79,8 +81,12 @@ func view(a application.Asset) Asset {
 // CreateReceivedInTx registers an asset in status "received" from a goods receipt.
 func (a *Assets) CreateReceivedInTx(ctx context.Context, tx pgx.Tx, c Caller, in Received) (Asset, error) {
 	source, sourceType := in.SourceID, "goods_receipt"
+	status := application.StatusReceived
+	if in.Available {
+		status = application.StatusAvailable
+	}
 	created, err := a.svc.CreateInTx(ctx, tx, ac(c), application.CreateInput{
-		ProductID: in.ProductID, SerialNumber: in.SerialNumber, AssetTag: in.AssetTag, Status: application.StatusReceived,
+		ProductID: in.ProductID, SerialNumber: in.SerialNumber, AssetTag: in.AssetTag, Status: status,
 		SupplierID: in.SupplierID, PurchasedAt: in.PurchasedAt, WarrantyUntil: in.WarrantyUntil, LocationID: in.LocationID,
 	}, &sourceType, &source)
 	if err != nil {

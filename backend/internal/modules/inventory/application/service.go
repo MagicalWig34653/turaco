@@ -22,10 +22,11 @@ type Service struct {
 	dir      Directory
 	products Products
 	assets   Assets
+	orders   Orders
 }
 
-func NewService(store Store, dir Directory, products Products, assets Assets) *Service {
-	return &Service{store: store, dir: dir, products: products, assets: assets}
+func NewService(store Store, dir Directory, products Products, assets Assets, orders Orders) *Service {
+	return &Service{store: store, dir: dir, products: products, assets: assets, orders: orders}
 }
 
 func publish(ctx context.Context, tx pgx.Tx, c Caller, typ string, payload map[string]any) error {

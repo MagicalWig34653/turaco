@@ -17,7 +17,7 @@ import (
 const (
 	permView   = "inventory.view"
 	permManage = "inventory.manage"
-	maxBody    = 16 << 10
+	maxBody    = 128 << 10
 )
 
 type handler struct {
@@ -53,6 +53,10 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/stock/transfer", write, h.transfer)
 	route("POST /api/v1/stock/correct", write, h.correct)
 
+	route("GET /api/v1/goods-receipts", read, h.listReceipts)
+	route("POST /api/v1/goods-receipts", write, h.postReceipt)
+	route("GET /api/v1/goods-receipts/{id}", read, h.getReceipt)
+
 	route("GET /api/v1/reservations", read, h.listReservations)
 	route("POST /api/v1/reservations", write, h.reserve)
 	route("GET /api/v1/reservations/{id}", read, h.getReservation)
@@ -86,6 +90,12 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "inventory.location_invalid", "The storage location or warehouse does not exist or is not active.")
 	case errors.Is(err, application.ErrReferenceInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "inventory.invalid_reference", "The referenced location does not exist.")
+	case errors.Is(err, application.ErrDuplicateAsset):
+		httpx.WriteError(w, http.StatusConflict, "inventory.duplicate_asset", "An asset with this serial number or asset tag already exists.")
+	case errors.Is(err, application.ErrOrderNotReceivable):
+		httpx.WriteError(w, http.StatusConflict, "inventory.order_not_receivable", "The purchase order cannot receive goods in its current status.")
+	case errors.Is(err, application.ErrOverReceipt):
+		httpx.WriteError(w, http.StatusConflict, "inventory.over_receipt", "A received quantity exceeds the ordered quantity.")
 	case errors.Is(err, application.ErrAssigneeInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "inventory.assignee_invalid", "The assignee does not exist or is not active.")
 	case errors.Is(err, application.ErrInvalidCursor):

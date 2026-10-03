@@ -11,6 +11,7 @@ import (
 
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/inventory/application"
+	procurementpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/procurement/public"
 	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
@@ -73,6 +74,63 @@ func (x *Assets) AssignReservedInTx(ctx context.Context, tx pgx.Tx, actor audit.
 	_, err := x.a.AssignReservedInTx(ctx, tx, caller(actor, correlationID), assetID, assetspublic.Assignee{Type: to.Type, ID: to.ID}, note)
 	if errors.Is(err, assetspublic.ErrAssigneeInvalid) {
 		return application.ErrAssigneeInvalid
+	}
+	return err
+}
+
+// CreateReceivedInTx registers one asset from delivered goods.
+func (x *Assets) CreateReceivedInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID string, in application.ReceivedAsset) (string, error) {
+	var supplier *string
+	if in.SupplierID != "" {
+		supplier = &in.SupplierID
+	}
+	a, err := x.a.CreateReceivedInTx(ctx, tx, caller(actor, correlationID), assetspublic.Received{
+		ProductID: in.ProductID, SerialNumber: in.SerialNumber, AssetTag: in.AssetTag, SupplierID: supplier, PurchasedAt: in.PurchasedAt,
+		WarrantyUntil: in.WarrantyUntil, LocationID: in.LocationID, SourceID: in.SourceID, Available: in.Available,
+	})
+	if errors.Is(err, assetspublic.ErrConflict) {
+		return "", application.ErrDuplicateAsset
+	}
+	if err != nil {
+		return "", err
+	}
+	return a.ID, nil
+}
+
+// Orders adapts the Procurement contract to what goods receipt needs.
+type Orders struct{ o *procurementpublic.Orders }
+
+func NewOrders(o *procurementpublic.Orders) *Orders { return &Orders{o: o} }
+
+func (x *Orders) Order(ctx context.Context, id string) (application.OrderView, error) {
+	o, err := x.o.Order(ctx, id)
+	if errors.Is(err, procurementpublic.ErrNotFound) {
+		return application.OrderView{}, application.ErrNotFound
+	}
+	if err != nil {
+		return application.OrderView{}, err
+	}
+	out := application.OrderView{ID: o.ID, Reference: o.Reference, SupplierID: o.SupplierID, Status: o.Status, Lines: make([]application.OrderLine, 0, len(o.Lines))}
+	for _, l := range o.Lines {
+		out.Lines = append(out.Lines, application.OrderLine{ID: l.ID, ProductID: l.ProductID, Quantity: l.Quantity, ReceivedQuantity: l.ReceivedQuantity})
+	}
+	return out, nil
+}
+
+func (x *Orders) RecordReceiptInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, orderID string, lines []application.OrderReceipt) error {
+	receipt := make([]procurementpublic.ReceiptLine, 0, len(lines))
+	for _, l := range lines {
+		receipt = append(receipt, procurementpublic.ReceiptLine{LineID: l.LineID, Quantity: l.Quantity})
+	}
+	_, err := x.o.RecordReceiptInTx(ctx, tx, procurementpublic.Caller{Actor: actor, CorrelationID: correlationID}, orderID, receipt)
+	var tr *procurementpublic.InvalidTransitionError
+	switch {
+	case errors.Is(err, procurementpublic.ErrOverReceipt):
+		return application.ErrOverReceipt
+	case errors.As(err, &tr):
+		return application.ErrOrderNotReceivable
+	case errors.Is(err, procurementpublic.ErrNotFound):
+		return application.ErrNotFound
 	}
 	return err
 }

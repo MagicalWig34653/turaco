@@ -86,6 +86,19 @@ func (a *assets) AssignReservedInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, 
 	return a.move(id, "reserved", "assigned")
 }
 
+func (a *assets) CreateReceivedInTx(context.Context, pgx.Tx, audit.Actor, string, application.ReceivedAsset) (string, error) {
+	return "", errors.New("not used in these tests")
+}
+
+type noOrders struct{}
+
+func (noOrders) Order(context.Context, string) (application.OrderView, error) {
+	return application.OrderView{}, application.ErrNotFound
+}
+func (noOrders) RecordReceiptInTx(context.Context, pgx.Tx, audit.Actor, string, string, []application.OrderReceipt) error {
+	return nil
+}
+
 type env struct {
 	t                         *testing.T
 	pool                      *pgxpool.Pool
@@ -117,7 +130,7 @@ func newEnv(t *testing.T) *env {
 		e.laptop: {ID: e.laptop, Name: "Laptop", Active: true, Serialized: true, AssetManaged: true},
 		e.dock:   {ID: e.dock, Name: "Dock", Active: false, StockManaged: true},
 	}
-	e.svc = application.NewService(repository.New(pool), dir{active: map[string]bool{e.holder: true}}, pr, e.assets)
+	e.svc = application.NewService(repository.New(pool), dir{active: map[string]bool{e.holder: true}}, pr, e.assets, noOrders{})
 	e.manage = application.Principal{UserID: e.manager, Manage: true}
 	e.view = application.Principal{UserID: e.stranger, View: true}
 	t.Cleanup(func() {
