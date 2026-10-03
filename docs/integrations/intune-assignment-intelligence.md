@@ -257,7 +257,7 @@ SAP GUI                  installed       not applicable
 
 Opening a difference shows the two Assignment Paths and observations.
 
-> Implemented (slice 4): `GET /devices/{id}/management/diff?otherDeviceId=` and `GET /directory-groups/{id}/management/diff?otherGroupId=`. Classes are `same|different|only_left|only_right`; an unknown evaluation stays unknown (`uncertain`). The group diff compares configuration only (mode, intent, filter); "differing expected target sets" are not computed.
+> Implemented (slice 4): `GET /devices/{id}/management/diff?otherDeviceId=` and `GET /directory-groups/{id}/management/diff?otherGroupId=`. Classes are `same|different|only_left|only_right|unknown`; an unknown input (Assigned, Expected or Observed) stays unknown (`uncertain`) and an item with nothing known to differ but something unknown is class `unknown`, never `same`. The group diff compares configuration only (mode, intent, filter); "differing expected target sets" are not computed.
 
 ### Directory Group vs Directory Group
 
@@ -309,7 +309,7 @@ Turaco may surface findings/warnings where evidence is sufficient:
 
 Warnings must distinguish **provider-reported** problems from **Turaco-derived** findings.
 
-> Implemented (slice 4): `provider_reported_error` (provider-reported, slice 2) and `assignment_ineffective` (Turaco-derived: assigned and expected applicable with confidence high or medium but observed absent or `not_applicable` for more than 7 days). The API and UI keep them as separate kinds; the first is the provider's statement, the second is Turaco's inference from local data and shows no provider text. Stale check-in, empty known groups, include/exclude contradictions and `assignment_stale` are not implemented.
+> Implemented (slice 4): `provider_reported_error` (provider-reported, slice 2) and `assignment_ineffective` (Turaco-derived: assigned and expected applicable with confidence high or medium but observed absent or `not_applicable` for more than 7 days, counted from the newest of the assignment, the Device, its group membership and the retirement or state change of the observation). Both kinds need management access to be listed, filtered or shown on the Device. The API and UI keep them as separate kinds; the first is the provider's statement, the second is Turaco's inference from local data and shows no provider text. Stale check-in, empty known groups, include/exclude contradictions and `assignment_stale` are not implemented.
 
 ## Query and Saved Views
 
