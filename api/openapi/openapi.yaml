@@ -2076,6 +2076,597 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /warehouses:
+    get:
+      operationId: listWarehouses
+      summary: List warehouses.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: includeInactive
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WarehouseList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createWarehouse
+      summary: Create a warehouse.
+      description: "Needs `inventory.manage`. Audited (inventory.warehouse.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseCreate'
+      responses:
+        '201':
+          description: The warehouse.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Warehouse'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /warehouses/{id}:
+    get:
+      operationId: getWarehouse
+      summary: Get a warehouse.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The warehouse.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Warehouse'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateWarehouse
+      summary: Rename a warehouse or change its Location.
+      description: "Needs `inventory.manage`. `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseUpdate'
+      responses:
+        '200':
+          description: The warehouse.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Warehouse'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /warehouses/{id}/activate:
+    post:
+      operationId: activateWarehouse
+      summary: Activate a warehouse.
+      description: "Needs `inventory.manage`. Stock may remain in an inactive warehouse and be drained; nothing new can be put in."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionOptional'
+      responses:
+        '200':
+          description: The warehouse.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Warehouse'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /warehouses/{id}/deactivate:
+    post:
+      operationId: deactivateWarehouse
+      summary: Deactivate a warehouse.
+      description: "Needs `inventory.manage`. Stock may remain in an inactive warehouse and be drained; nothing new can be put in."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionOptional'
+      responses:
+        '200':
+          description: The warehouse.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Warehouse'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /warehouses/{id}/storage-locations:
+    get:
+      operationId: listStorageLocations
+      summary: List the storage locations of a warehouse.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: includeInactive
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageLocationList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createStorageLocation
+      summary: Create a storage location.
+      description: "Needs `inventory.manage`. The warehouse must be active."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NameBody'
+      responses:
+        '201':
+          description: The storage location.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageLocation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /storage-locations/{id}:
+    patch:
+      operationId: renameStorageLocation
+      summary: Rename a storage location.
+      description: "Needs `inventory.manage`. `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NameVersionBody'
+      responses:
+        '200':
+          description: The storage location.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageLocation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /storage-locations/{id}/activate:
+    post:
+      operationId: activateStorageLocation
+      summary: Activate a storage location.
+      description: "Needs `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionOptional'
+      responses:
+        '200':
+          description: The storage location.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageLocation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /storage-locations/{id}/deactivate:
+    post:
+      operationId: deactivateStorageLocation
+      summary: Deactivate a storage location.
+      description: "Needs `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VersionOptional'
+      responses:
+        '200':
+          description: The storage location.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StorageLocation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock:
+    get:
+      operationId: listStock
+      summary: List stock balances.
+      description: "Needs `inventory.view` or `inventory.manage`. Balances of products tracked by quantity per storage location; `available` = `onHand` - `reserved`. Keyset paginated by product and location."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: productId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: warehouseId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: storageLocationId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: withStockOnly
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BalanceList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /inventory-transactions:
+    get:
+      operationId: listInventoryTransactions
+      summary: List the inventory ledger, newest first.
+      description: "Needs `inventory.view` or `inventory.manage`. The ledger is append-only: rows are never changed or deleted; corrections are new rows."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: productId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: storageLocationId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: type
+          in: query
+          schema: {type: string, enum: [goods_receipt, reservation, release, issue, return, transfer, correction, disposal]}
+        - name: contextType
+          in: query
+          schema: {type: string}
+        - name: contextId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock/issue:
+    post:
+      operationId: issueStock
+      summary: Issue stock.
+      description: "Needs `inventory.manage`. Takes available stock out for use. Reserved stock can only leave through its reservation (409 inventory.insufficient_stock). Audited once per operation (inventory.stock.*). Stock enters inventory only through goods receipts or corrections."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMove'
+      responses:
+        '200':
+          description: The ledger rows written.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionRows'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock/return:
+    post:
+      operationId: returnStock
+      summary: Return stock.
+      description: "Needs `inventory.manage`. Puts previously issued stock back into an active storage location. Audited once per operation (inventory.stock.*). Stock enters inventory only through goods receipts or corrections."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMove'
+      responses:
+        '200':
+          description: The ledger rows written.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionRows'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock/dispose:
+    post:
+      operationId: disposeStock
+      summary: Dispose stock.
+      description: "Needs `inventory.manage`. Removes available stock that is broken or unusable; a reason is required. Audited once per operation (inventory.stock.*). Stock enters inventory only through goods receipts or corrections."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMove'
+      responses:
+        '200':
+          description: The ledger rows written.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionRows'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock/transfer:
+    post:
+      operationId: transferStock
+      summary: Transfer stock.
+      description: "Needs `inventory.manage`. Moves available stock between two storage locations as two ledger rows of one group; the destination must be active. Audited once per operation (inventory.stock.*). Stock enters inventory only through goods receipts or corrections."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMove'
+      responses:
+        '200':
+          description: The ledger rows written.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionRows'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /stock/correct:
+    post:
+      operationId: correctStock
+      summary: Correct a balance.
+      description: "Needs `inventory.manage`. Changes a balance by a signed `delta` after a count or a mistake; a reason is required and the balance cannot drop below the reserved quantity. Audited once per operation (inventory.stock.*). Stock enters inventory only through goods receipts or corrections."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMove'
+      responses:
+        '200':
+          description: The ledger rows written.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionRows'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /reservations:
+    get:
+      operationId: listReservations
+      summary: List reservations.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [active, fulfilled, released, cancelled]}
+        - name: productId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: contextType
+          in: query
+          schema: {type: string}
+        - name: contextId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReservationList'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createReservation
+      summary: Reserve stock or a serialized asset.
+      description: "Needs `inventory.manage`. `kind` quantity reserves available stock at one storage location (never more than available, also under concurrency); `kind` asset reserves one available asset (at most one active reservation per asset). An optional origin links the reservation to a record such as a service request. Emits StockReserved."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationCreate'
+      responses:
+        '201':
+          description: The reservation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /reservations/{id}:
+    get:
+      operationId: getReservation
+      summary: Get a reservation.
+      description: "Needs `inventory.view` or `inventory.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The reservation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /reservations/{id}/release:
+    post:
+      operationId: releaseReservation
+      summary: Release a reservation.
+      description: "Needs `inventory.manage`. Reserved stock becomes available again, a reserved asset becomes available. Only active reservations; terminal reservations are never rewound. Emits ReservationReleased."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationRelease'
+      responses:
+        '200':
+          description: The reservation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /reservations/{id}/fulfill:
+    post:
+      operationId: fulfillReservation
+      summary: Fulfill a reservation.
+      description: "Needs `inventory.manage`. Reserved stock is issued; a reserved asset is assigned to the given user, team or location (assigneeType/assigneeId required). Emits ReservationFulfilled."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationFulfill'
+      responses:
+        '200':
+          description: The reservation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+        '400': {$ref: '#/components/responses/InventoryInvalid'}
+        '404': {$ref: '#/components/responses/InventoryNotFound'}
+        '409': {$ref: '#/components/responses/InventoryConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -3028,6 +3619,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    InventoryInvalid:
+      description: Invalid input (inventory.invalid_request, inventory.product_invalid, inventory.location_invalid, inventory.invalid_reference, inventory.assignee_invalid, inventory.invalid_cursor, inventory.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InventoryNotFound:
+      description: Not found (inventory.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InventoryConflict:
+      description: Conflict (inventory.conflict, inventory.insufficient_stock, inventory.asset_unavailable, inventory.invalid_transition, inventory.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -3756,6 +4365,206 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         reason: {type: string, maxLength: 500}
+        note: {type: string, maxLength: 500}
+        assigneeType: {type: string, enum: [user, team, location]}
+        assigneeId: {type: string, format: uuid}
+    Warehouse:
+      type: object
+      additionalProperties: false
+      required: [id, name, locationId, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        locationId: {type: [string, "null"], format: uuid, description: "Organization Location the warehouse is in."}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    WarehouseList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Warehouse'}
+        nextCursor: {type: string}
+    WarehouseCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 100}
+        locationId: {type: string, format: uuid}
+    WarehouseUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, maxLength: 100}
+        locationId: {type: string, format: uuid}
+        clearLocation: {type: boolean}
+    VersionOptional:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    NameBody:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 100}
+    NameVersionBody:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string, maxLength: 100}
+        expectedVersion: {type: integer, minimum: 1}
+    StorageLocation:
+      type: object
+      additionalProperties: false
+      required: [id, warehouseId, name, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        warehouseId: {type: string, format: uuid}
+        name: {type: string}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    StorageLocationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/StorageLocation'}
+        nextCursor: {type: string}
+    Balance:
+      type: object
+      additionalProperties: false
+      required: [productId, storageLocationId, warehouseId, onHand, reserved, available, updatedAt]
+      properties:
+        productId: {type: string, format: uuid}
+        storageLocationId: {type: string, format: uuid}
+        warehouseId: {type: string, format: uuid}
+        onHand: {type: integer, minimum: 0}
+        reserved: {type: integer, minimum: 0}
+        available: {type: integer, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+    BalanceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Balance'}
+        nextCursor: {type: string}
+    InventoryTransaction:
+      type: object
+      additionalProperties: false
+      required: [id, type, productId, storageLocationId, onHandDelta, reservedDelta, groupId, reservationId, contextType, contextId, reason, actorUserId, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string, enum: [goods_receipt, reservation, release, issue, return, transfer, correction, disposal]}
+        productId: {type: string, format: uuid}
+        storageLocationId: {type: string, format: uuid}
+        onHandDelta: {type: integer}
+        reservedDelta: {type: integer}
+        groupId: {type: string, format: uuid, description: "Rows that belong together (the two sides of a transfer) share a group."}
+        reservationId: {type: [string, "null"], format: uuid}
+        contextType: {type: [string, "null"]}
+        contextId: {type: [string, "null"], format: uuid}
+        reason: {type: [string, "null"]}
+        actorUserId: {type: [string, "null"], format: uuid}
+        createdAt: {type: string, format: date-time}
+    TransactionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/InventoryTransaction'}
+        nextCursor: {type: string}
+    TransactionRows:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/InventoryTransaction'}
+    StockMove:
+      type: object
+      additionalProperties: false
+      properties:
+        productId: {type: string, format: uuid}
+        storageLocationId: {type: string, format: uuid, description: "issue, return, dispose and correct."}
+        fromStorageLocationId: {type: string, format: uuid, description: "transfer only."}
+        toStorageLocationId: {type: string, format: uuid, description: "transfer only."}
+        quantity: {type: integer, minimum: 1, maximum: 1000000, description: "issue, return, dispose and transfer."}
+        delta: {type: integer, description: "correct only: signed, non-zero."}
+        reason: {type: string, maxLength: 500, description: "Required for dispose and correct."}
+        originType: {type: string, description: "Optional record the movement belongs to, for example service_request."}
+        originId: {type: string, format: uuid}
+    Reservation:
+      type: object
+      additionalProperties: false
+      required: [id, kind, productId, storageLocationId, quantity, assetId, status, contextType, contextId, reason, closedAt, createdBy, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [quantity, asset]}
+        productId: {type: string, format: uuid}
+        storageLocationId: {type: [string, "null"], format: uuid}
+        quantity: {type: [integer, "null"]}
+        assetId: {type: [string, "null"], format: uuid}
+        status: {type: string, enum: [active, fulfilled, released, expired, cancelled]}
+        contextType: {type: [string, "null"]}
+        contextId: {type: [string, "null"], format: uuid}
+        reason: {type: [string, "null"]}
+        closedAt: {type: [string, "null"], format: date-time}
+        createdBy: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ReservationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Reservation'}
+        nextCursor: {type: string}
+    ReservationCreate:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [quantity, asset]}
+        productId: {type: string, format: uuid, description: "quantity only."}
+        storageLocationId: {type: string, format: uuid, description: "quantity only."}
+        quantity: {type: integer, minimum: 1, maximum: 1000000, description: "quantity only."}
+        assetId: {type: string, format: uuid, description: "asset only."}
+        originType: {type: string}
+        originId: {type: string, format: uuid}
+    ReservationRelease:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, maxLength: 500}
+    ReservationFulfill:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
         note: {type: string, maxLength: 500}
         assigneeType: {type: string, enum: [user, team, location]}
         assigneeId: {type: string, format: uuid}

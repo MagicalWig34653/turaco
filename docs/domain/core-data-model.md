@@ -42,6 +42,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **Warehouse** and **StorageLocation** define inventory placement.
 
+*Implemented shape (migration 000027, schema `inventory`):* `warehouses` (optional Organization Location id), `storage_locations`, `stock_balances` (primary key product + storage location; `on_hand`, `reserved`; check constraints `on_hand >= 0` and `0 <= reserved <= on_hand`), `inventory_transactions` (append-only ledger guarded by a trigger; `on_hand_delta`, `reserved_delta`, group id, reservation, origin, actor, correlation id) and `reservations` (kind quantity or asset, one active reservation per asset by partial unique index). Balances are only changed together with ledger rows in the same transaction; tests reconcile the sums.
+
 **InventoryTransaction** is immutable (`goods_receipt`, `reservation`, `release`, `issue`, `return`, `transfer`, `correction`, `disposal`). Current non-serialized stock balance is a materialized/reconciled view of transactions. Serialized Assets use placement + lifecycle instead of fake quantity rows.
 
 **Reservation** may reserve stock quantity or a serialized Asset for a Service Request/Onboarding/Change/etc. It prevents over-reservation atomically.

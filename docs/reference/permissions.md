@@ -13,7 +13,8 @@
 | `deployments.execute` | high | Start endpoint software/remediation deployments. |
 | `endpoint.management.view` | normal | View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope. |
 | `integrations.intune.manage` | high | Administer Intune integration configuration, credentials and synchronization controls. |
-| `inventory.manage` | elevated | Receive, reserve, transfer and correct inventory. |
+| `inventory.manage` | elevated | Manage warehouses and storage locations; issue, return, transfer, correct and dispose stock; reserve, release and fulfill reservations; post goods receipts. |
+| `inventory.view` | normal | View warehouses, stock balances, the inventory ledger and reservations. |
 | `organization.directory.sync` | elevated | Request an immediate directory synchronization run. |
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.teams.manage` | elevated | Create, rename and deactivate Teams and manage their members. Team membership determines which tasks a user with tasks.work can see and which notifications they receive, so this permission indirectly controls task access. |

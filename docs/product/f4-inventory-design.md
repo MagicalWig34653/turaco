@@ -30,7 +30,7 @@ Asset (+ Asset Assignment), Warehouse, Storage Location, Stock Balance, Inventor
 
 - **Asset:** `received → available → reserved → assigned → returned → available`; `assigned → in_repair → available`; `available/returned → retired → disposed`; exceptional `lost`. `ordered` is not used (an Asset exists once goods are received). Explicit operations: `MakeAvailable`, `Reserve`/`ReleaseReservation` (called by Inventory), `Assign(user | team | location)`, `Return`, `SendToRepair`, `FinishRepair`, `Retire`, `Dispose`, `MarkLost`, `Recover` (lost → available, reasoned). `disposed` is terminal. Provisioning (`not_required | not_started | pending | in_progress | ready | failed`) is a separate field changed by its own operation; endpoint management state belongs to F6/F9.
 - **Asset Assignment:** historical rows with validity; at most one active assignment per Asset (partial unique index); reassigning closes the old row.
-- **Reservation:** `active → fulfilled | released | expired | cancelled`; `expired` needs an optional `expires_at` and a job and is implemented as `released` with reason `expired` by a scheduled sweep only if an expiry was set.
+- **Reservation:** `active → fulfilled | released | expired | cancelled`; F4 implements `release` and `fulfill`. `expired` (an optional expiry swept by a job) and `cancelled` (cancelling by origin when a request is cancelled) are reserved for the request integration and not produced yet.
 - **Purchase Order:** `draft → pending_approval → approved → sent → acknowledged? → partially_received → received → closed`, `cancelled` from `draft`, `pending_approval`, `approved`, `sent` (before any receipt). Editing lines is possible only in `draft`.
 - **Procurement Request:** `open → ordered → fulfilled`, `cancelled`; `ordered` when linked to a PO line, `fulfilled` when its PO line is fully received.
 
@@ -41,7 +41,7 @@ New schemas `assets`, `inventory`, `procurement`. Forward migrations only. Key c
 ## 6. API (bounded lists, optimistic versions where rows are edited)
 
 - `/api/v1/assets` (filters: status, product, assigned user/team, location, q), `GET/PATCH /assets/{id}`, lifecycle and assignment action endpoints, `GET /assets/lookup?code=`, `GET /my-assets`.
-- `/api/v1/warehouses`, `/warehouses/{id}/locations`, `GET /stock` (balances, filter by product/warehouse), `GET /inventory-transactions`, stock operations (`receive-manual` is not offered: stock enters only through goods receipt or `correction`; `issue`, `return`, `transfer`, `correction`, `disposal`), `/reservations` (create, `release`, `fulfill`, `cancel`).
+- `/api/v1/warehouses`, `/warehouses/{id}/storage-locations`, `GET /stock` (balances, filter by product/warehouse), `GET /inventory-transactions`, stock operations (stock enters only through goods receipt or `correct`; `issue`, `return`, `transfer`, `correct`, `dispose` under `/stock/*`), `/reservations` (create, `release`, `fulfill`, `cancel`).
 - `/api/v1/suppliers`, `/procurement-requests`, `/purchase-orders` with action endpoints (`submit`, `send`, `acknowledge`, `cancel`, `close`), `/goods-receipts` (create posts immediately; read).
 
 ## 7. Permissions

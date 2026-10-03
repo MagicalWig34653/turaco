@@ -63,6 +63,8 @@ Implemented (F3, `modules/requests`): a request is created when submitted (there
 ## Reservation
 `active → fulfilled | released | expired | cancelled`. Terminal reservations are never rewound; create a new reservation.
 
+Implemented (F4, `modules/inventory`): `release` (stock becomes available again / the asset becomes `available`) and `fulfill` (stock is issued / the asset is assigned) from `active`; `expired` and `cancelled` are not produced yet (no expiry, and cancelling by origin arrives with the request integration). Reserving checks availability atomically; an asset has at most one active reservation.
+
 ## Purchase Order
 `draft → approved → sent → acknowledged? → partially_received → received → closed`, with `cancelled` where supplier state allows. Posted Goods Receipt is immutable; corrections use reversal/correction transactions.
 

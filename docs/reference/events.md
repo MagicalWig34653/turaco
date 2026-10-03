@@ -18,12 +18,14 @@
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `ManagementApplicabilityChanged` | 1 | endpoint | Turaco's expected applicability evaluation meaningfully changed for a managed target. |
 | `ManagementAssignmentChanged` | 1 | endpoint | A normalized management-provider assignment meaningfully changed. |
+| `ReservationFulfilled` | 1 | inventory | A reservation was fulfilled: stock was issued or the reserved asset was assigned. Payload as StockReserved. |
+| `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
 | `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
 | `ServiceRequestCancelled` | 1 | requests | A service request was cancelled. Payload: requestId. |
 | `ServiceRequestCompleted` | 1 | requests | A service request was completed. Payload: requestId. |
 | `ServiceRequestRejected` | 1 | requests | A service request was rejected by an approver. Payload: requestId. |
 | `ServiceRequestSubmitted` | 1 | requests | A service request was submitted. Payload: requestId. |
-| `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. |
+| `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |
 | `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |
