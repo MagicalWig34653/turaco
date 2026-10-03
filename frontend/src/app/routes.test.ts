@@ -212,7 +212,7 @@ describe('support', () => {
   });
 });
 
-describe('knowledge', 'incidents', () => {
+describe('knowledge', () => {
   it('lists articles for everyone and keeps authoring behind knowledge.manage', () => {
     expect(ids([], 'main')).toContain('knowledge');
     const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
@@ -225,5 +225,12 @@ describe('knowledge', 'incidents', () => {
     expect(matchRoute(appRoutes, '/knowledge/new')?.route.id).toBe('articleNew');
     expect(matchRoute(appRoutes, '/knowledge/7/edit')?.route.id).toBe('articleEdit');
     expect(matchRoute(appRoutes, '/knowledge/7')?.route.id).toBe('articleDetail');
+  });
+});
+
+describe('incidents', () => {
+  it('shows known issues to everyone and matches the detail route', () => {
+    expect(ids([], 'main')).toContain('incidents');
+    expect(matchRoute(appRoutes, '/incidents/7')?.route.id).toBe('incidentDetail');
   });
 });
