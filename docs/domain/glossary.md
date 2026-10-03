@@ -61,10 +61,12 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Maintenance Window** — time period in which defined operational changes may occur.
 
 ## Infrastructure/network
-- **Site** — physical geographic site.
-- **Building / Room / Rack** — physical topology.
-- **Rack Placement** — placement of an Asset/Device in a Rack.
-- **Virtual Machine** — virtual compute instance; not necessarily a physical Asset.
+- **Site** — physical geographic site; an Organization Location that has Buildings.
+- **Building** — physical building at a Site (an Organization Location); contains Rooms.
+- **Room** — room in a Building (optional floor); contains Racks.
+- **Rack** — rack in a Room with a fixed height in units (U, 1-60).
+- **Rack Placement** — placement of an Asset in a Rack: first unit, height in U and face (`front|rear`). Removed or moved placements stay as history; an Asset has at most one active placement and no unit of a face is occupied twice.
+- **Virtual Machine** — virtual compute instance entered by hand (name, state `running|stopped|unknown|decommissioned`, vCPU, memory, management address, optional hypervisor Asset); not necessarily a physical Asset.
 - **Hypervisor** — virtualization host, normally represented by an Asset/Device role.
 - **Interface** — network interface belonging to Device/VM.
 - **VLAN / VRF / Prefix / IP Address** — canonical network/IPAM concepts if natively modeled.

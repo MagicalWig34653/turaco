@@ -84,6 +84,8 @@ A **DeviceContextSnapshot** may capture technical context at ticket creation so 
 
 Site→Building→Room→Rack models physical topology. Physical infrastructure devices are normal Assets/Devices with RackPlacement and specialized metadata, not a parallel device database. VM is an infrastructure resource related to hypervisor/service/IP.
 
+Implementation (F7a, schema `infrastructure`): `buildings` (references the Site Location by id), `rooms`, `racks`, `rack_placements` (Asset by id, history rows with `removed_at`, `previous_placement_id` for moves), `rack_unit_occupancy` (one row per occupied unit; its primary key `(rack_id, face, u)` is the database guarantee against overlaps) and `virtual_machines` (hypervisor Asset by id). `VM RUNS_ON Asset` is not yet a Relationship row; it is the `hypervisor_asset_id` column until `platform/relationships` exists. See the [F7 design](../product/f7-infrastructure-change-design.md#slice-1-status).
+
 Native Network/IPAM may model VRF, VLAN, Prefix, IPAddress and NetworkInterface, or may integrate NetBox. That implementation decision requires an ADR.
 
 ## Endpoint/software/security

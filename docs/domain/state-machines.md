@@ -84,6 +84,12 @@ Implemented (F4, `modules/procurement`): `submit` (draft → pending_approval, o
 
 Implemented operations (F2, `modules/tasks`): `start` (open/blocked → in_progress), `block(reason)` (open/in_progress → blocked), `unblock` (blocked → open), `complete` (open/in_progress → completed), `cancel(reason)` (open/in_progress/blocked → cancelled), `reopen(reason)` (completed/cancelled → open). Completed and cancelled tasks accept no other change (no edit, no assignment). A reason is stored while a task is blocked or cancelled and cleared on leaving that state; `completed_at` is set exactly while completed. `start`, `block`, `unblock` and `complete` need `tasks.manage` or `tasks.work` on a task assigned to the caller or one of the caller's Teams; `cancel`, `reopen`, editing and assignment need `tasks.manage`. The reasons given for `block`, `cancel` and `reopen` are written to the audit log (they are free text, up to 500 characters, and audit records cannot be redacted; titles and descriptions are never audited). Every change increments `version` (`expectedVersion` is required to edit a task and optional on the other operations; it guards against lost updates), is audited and emits `TaskAssigned` (assignment), `TaskCompleted` (complete) and `TaskCancelled` (cancel, including cancellation of all tasks of a context record by its owning module).
 
+## Virtual Machine
+`running | stopped | unknown ⇄ each other`, then `decommissioned` (terminal tombstone). Implemented (F7a, `modules/infrastructure`): `ChangeVMState` moves between `running`, `stopped` and `unknown` (the state is hand-entered, not observed); `DecommissionVM` needs a reason code (`retired|migrated|deleted|other`) and from then on no operation is accepted. A decommissioned VM's name can be reused.
+
+## Rack Placement
+`active → removed`. A move closes the active placement with the internal reason `moved` and opens a new active placement linked through `previous_placement_id`; `RemoveAsset` closes it with `relocated|replaced|decommissioned|error_correction|other`. Closed placements are history and never reopened; place the Asset again instead. Buildings, Rooms and Racks are `active ⇄ archived` and cannot be archived while the level below is active or holds active placements.
+
 ## Change
 `draft → assessment → pending_approval? → approved → scheduled → in_progress → completed → review? → closed`.
 

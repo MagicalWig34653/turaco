@@ -42,7 +42,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Procurement | procurement request, supplier, purchase order |
 | Endpoint (`endpoints`) | Devices and observations, desired state, deployments and *(planned)* Deployment Rings, management identities/providers, normalized management artifacts/assignments/filters/applicability/observations, Endpoint Agent integration; software: normalized products/versions/aliases/install observations and *(planned, [ADR-0027](../decisions/ADR-0027-software-management-providers.md))* Software Approval Status, version approvals and Software Package references. Software is not a separate module (F6 design E2); a split needs an ADR. Catalog reads approved software through the `endpoints` public contract. |
 | Security | advisories, findings, remediation tracking |
-| Infrastructure | sites/buildings/rooms/racks/VMs/physical topology |
+| Infrastructure (`infrastructure`, implemented F7a backend) | buildings/rooms/racks/rack placements/VMs; Sites are Organization Locations referenced by id; Assets are referenced through the `assets` public contract; exposes `infrastructure/public.WhereIs` |
 | Network/IPAM | optional native VLAN/prefix/IP/interface model; decision remains separate |
 | Services | service ownership, criticality, service relationships/status |
 | Changes | changes, risk, approvals, execution/review |
