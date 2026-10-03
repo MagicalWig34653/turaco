@@ -84,6 +84,9 @@ func seedDemo(ctx context.Context, e env) error {
 	if err := d.logistics(ctx, ids); err != nil {
 		return err
 	}
+	if err := d.servicedesk(ctx); err != nil {
+		return err
+	}
 	for _, item := range demoItems(laptops, monitors, peripherals) {
 		created, err := d.item(ctx, item)
 		if err != nil {
