@@ -31,6 +31,9 @@ type Service struct {
 	now      func() time.Time
 	// syncCooldown is the minimum time between two manual synchronizations of the provider.
 	syncCooldown time.Duration
+	// dir and holders answer the Organization and Assets questions of the management views (WithViews).
+	dir     Directory
+	holders AssetHolders
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -42,7 +45,14 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown}
+	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}}
+}
+
+// WithViews connects the management views to the Organization directory graph and to the Asset holders.
+// Without it Users are unknown and no group nesting is known, so the views answer unknown where that matters.
+func (s *Service) WithViews(dir Directory, holders AssetHolders) *Service {
+	s.dir, s.holders = dir, holders
+	return s
 }
 
 // WithSyncCooldown sets the minimum time between the end of one Sync and the start of the next (0 disables it).

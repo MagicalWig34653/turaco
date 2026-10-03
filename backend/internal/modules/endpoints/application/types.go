@@ -303,6 +303,7 @@ var (
 // and events commit together.
 type Store interface {
 	ManagementStore
+	ViewStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.

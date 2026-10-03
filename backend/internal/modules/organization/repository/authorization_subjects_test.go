@@ -200,3 +200,53 @@ func TestFindUser(t *testing.T) {
 		}
 	}
 }
+
+func TestDirectoryGraphLookups(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	child, mid, top, gone := f.group(f.pfx+"-child", nil), f.group(f.pfx+"-mid", nil), f.group(f.pfx+"-top", nil), f.group(f.pfx+"-gone", nil)
+	f.nest(mid, child, false)
+	f.nest(top, mid, false)
+	f.nest(gone, top, true)   // ended edge
+	f.nest(child, top, false) // cycle top -> child
+	u1, u2 := f.user(f.pfx+"-u1", "active"), f.user(f.pfx+"-u2", "active")
+	f.member(child, u1, false)
+	f.member(child, u2, true) // ended
+	f.member(top, u1, false)
+
+	byExt, err := f.repo.GroupsByExternalIDs(ctx, []string{f.pfx + "-top", f.pfx + "-missing"})
+	if err != nil || len(byExt) != 1 || byExt[0].ID != top || byExt[0].DisplayName != f.pfx+"-top" {
+		t.Fatalf("by external id = %+v, %v", byExt, err)
+	}
+	up, err := f.repo.NestingUp(ctx, []string{child}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parents := map[string]bool{}
+	for _, e := range up {
+		parents[e.ParentID] = true
+	}
+	if !parents[mid] || !parents[top] || parents[gone] {
+		t.Errorf("up edges = %+v (ended edge must not count)", up)
+	}
+	down, err := f.repo.NestingDown(ctx, []string{top}, 100)
+	if err != nil || len(down) < 2 {
+		t.Fatalf("down edges = %+v, %v", down, err)
+	}
+	if limited, _ := f.repo.NestingUp(ctx, []string{child}, 1); len(limited) != 1 {
+		t.Errorf("limit not applied: %d", len(limited))
+	}
+	ms, err := f.repo.UserMemberships(ctx, []string{u1, u2}, 100)
+	if err != nil || len(ms) != 2 {
+		t.Fatalf("user memberships = %+v, %v (ended interval must not count)", ms, err)
+	}
+	members, err := f.repo.GroupMembers(ctx, []string{child}, 100)
+	if err != nil || len(members) != 1 || members[0].UserID != u1 {
+		t.Fatalf("group members = %+v, %v", members, err)
+	}
+	// The public wrapper ignores malformed ids.
+	g := application.NewDirectoryGraph(f.repo)
+	if got, err := g.GroupsByIDs(ctx, []string{"not-a-uuid"}); err != nil || got != nil {
+		t.Errorf("malformed id: %v, %v", got, err)
+	}
+}

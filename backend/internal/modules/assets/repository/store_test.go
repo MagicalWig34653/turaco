@@ -466,3 +466,26 @@ func TestReservedAssetsLeaveOnlyThroughInventoryAndHoldersSeeAReducedView(t *tes
 		t.Error("the serial number change must be audited with old and new value")
 	}
 }
+
+func TestUserHoldersAndHeldAssets(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	repo := repository.New(e.pool)
+	mk := func(serial string) application.Asset {
+		a := e.create(application.CreateInput{ProductID: e.laptop, SerialNumber: serial + e.corr, AssetTag: "T" + serial + e.corr, Status: "received"})
+		return e.mustOp(a, application.OpMakeAvailable, application.Params{})
+	}
+	held, returned, free := mk("h"), mk("r"), mk("f")
+	held = e.mustOp(held, application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	returned = e.mustOp(returned, application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	e.mustOp(returned, application.OpReturn, application.Params{})
+
+	got, err := repo.UserHolders(ctx, []string{held.ID, returned.ID, free.ID})
+	if err != nil || len(got) != 1 || got[held.ID] != e.holder {
+		t.Fatalf("holders = %v, %v (returned and unassigned assets have no holder)", got, err)
+	}
+	byUser, err := repo.AssetsHeldByUsers(ctx, []string{e.holder, e.other}, 10)
+	if err != nil || len(byUser[e.holder]) != 1 || byUser[e.holder][0] != held.ID || len(byUser[e.other]) != 0 {
+		t.Fatalf("held = %v, %v", byUser, err)
+	}
+}
