@@ -36,8 +36,11 @@ const (
 	FindingResolved = "resolved"
 )
 
+// ManagementFindingKinds are the findings derived from management data; reading them needs management access.
+var ManagementFindingKinds = []string{FindingProviderReportedError, FindingAssignmentIneffective}
+
 // FindingKinds lists every finding kind.
-var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware, FindingProviderReportedError}
+var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware, FindingProviderReportedError, FindingAssignmentIneffective}
 
 // Asset link sources.
 const (
@@ -55,9 +58,14 @@ const (
 // so the audit trail never carries user-typed content.
 var ReasonCodes = []string{"serial_confirmed", "correction", "duplicate", "wrong_asset", "other"}
 
+// ManagementStateFilters are the observed states the device list can be filtered by: the ones that need attention.
+var ManagementStateFilters = []string{"failed", "conflict", "pending"}
+
 const (
-	DefaultLimit = 50
-	MaxLimit     = 200
+	// MaxCheckinDays bounds the lastCheckinOlderThanDays filter.
+	MaxCheckinDays = 3650
+	DefaultLimit   = 50
+	MaxLimit       = 200
 	// BatchSize is the number of devices ingested per transaction.
 	BatchSize = 100
 	// MaxSoftwarePerDevice bounds the installations kept per device.
@@ -218,15 +226,28 @@ type DeviceFilter struct {
 	// Linked restricts to devices with (true) or without (false) an Asset.
 	Linked         *bool
 	IncludeDeleted bool
-	Page           Page
+	// ManagementState selects Devices with an active provider observation of that state (failed, conflict or
+	// pending) on a live artifact. It needs management access.
+	ManagementState string
+	// HasFinding selects Devices with an open finding of that kind.
+	HasFinding string
+	// OSVersionPrefix matches the OS version by prefix.
+	OSVersionPrefix string
+	// LastCheckinOlderThanDays selects Devices whose last check-in is older than that many days (never checked in: not selected).
+	LastCheckinOlderThanDays int
+	// LastCheckinBefore is the cutoff derived from LastCheckinOlderThanDays by the service.
+	LastCheckinBefore *time.Time
+	Page              Page
 }
 
 // FindingFilter selects findings; Status defaults to open.
 type FindingFilter struct {
-	Kind     string
-	Status   string
-	DeviceID string
-	Page     Page
+	Kind string
+	// ExcludeKinds leaves out findings of these kinds (set by the service, never by the caller).
+	ExcludeKinds []string
+	Status       string
+	DeviceID     string
+	Page         Page
 }
 
 // DeviceResult and FindingResult are one page; NextCursor is empty on the last page.

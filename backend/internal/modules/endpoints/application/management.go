@@ -20,6 +20,8 @@ import (
 const (
 	auditManagementCompleted = "endpoints.management_sync.completed"
 	auditManagementFailed    = "endpoints.management_sync.failed"
+	// auditFindingsReconcileFailed: the derived-finding pass failed after the management data was committed.
+	auditFindingsReconcileFailed = "endpoints.findings_reconcile.failed"
 )
 
 func (r *ManagementResult) add(o ManagementResult) {
@@ -51,6 +53,9 @@ func (r *ManagementResult) add(o ManagementResult) {
 	r.ManagementTombstonesSkipped += o.ManagementTombstonesSkipped
 	r.ProviderFindingsRaised += o.ProviderFindingsRaised
 	r.ProviderFindingsResolved += o.ProviderFindingsResolved
+	r.IneffectiveFindingsRaised += o.IneffectiveFindingsRaised
+	r.IneffectiveFindingsResolved += o.IneffectiveFindingsResolved
+	r.IneffectiveDevicesSkipped += o.IneffectiveDevicesSkipped
 }
 
 func (s *Service) recordManagementSync(ctx context.Context, c Caller, action, provider, source string, complete bool, r ManagementResult, reason string) error {
@@ -70,6 +75,7 @@ func (s *Service) recordManagementSync(ctx context.Context, c Caller, action, pr
 			"observationsCreated": r.ObservationsCreated, "observationsChanged": r.ObservationsChanged, "observationsSkipped": r.ObservationsSkipped, "observationsRetired": r.ObservationsRetired,
 			"membershipsOpened": r.MembershipsOpened, "membershipsClosed": r.MembershipsClosed, "membershipsSkipped": r.MembershipsSkipped,
 			"tombstonesSkipped": r.ManagementTombstonesSkipped, "providerFindingsRaised": r.ProviderFindingsRaised, "providerFindingsResolved": r.ProviderFindingsResolved,
+			"ineffectiveFindingsRaised": r.IneffectiveFindingsRaised, "ineffectiveFindingsResolved": r.IneffectiveFindingsResolved, "ineffectiveDevicesSkipped": r.IneffectiveDevicesSkipped,
 		}
 		if reason != "" {
 			meta["reason"] = reason
@@ -138,6 +144,11 @@ func (s *Service) ingestManagementLocked(ctx context.Context, c Caller, snap Man
 	}
 	if err := s.ingestMemberships(ctx, snap, runAt, &total); err != nil {
 		return fail("membership_error", err)
+	}
+	// The management data is committed at this point. A failure of the derived-finding pass is audited on its own and
+	// does not turn the run into a failed one; the pass continues behind its cursor in the next run.
+	if err := s.reconcileIneffective(ctx, c, snap.Provider, &total); err != nil {
+		_ = s.recordManagementSync(ctx, c, auditFindingsReconcileFailed, snap.Provider, snap.Source, snap.Complete, ManagementResult{}, "finding_error")
 	}
 	if err := s.recordManagementSync(ctx, c, auditManagementCompleted, snap.Provider, snap.Source, snap.Complete, total, ""); err != nil {
 		return total, err

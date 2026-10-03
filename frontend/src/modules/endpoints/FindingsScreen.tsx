@@ -32,7 +32,14 @@ export function FindingsScreen() {
     {
       key: 'kind',
       header: t('endpoints.findingKind'),
-      render: (f) => t(`endpoints.finding.${f.kind}` as MessageKey),
+      render: (f) => (
+        <>
+          {t(`endpoints.finding.${f.kind}` as MessageKey)}
+          {f.kind === 'assignment_ineffective' ? (
+            <small> · {t('endpoints.finding.derivedNote')}</small>
+          ) : null}
+        </>
+      ),
     },
     {
       key: 'status',

@@ -345,12 +345,13 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 	}
 	type key struct{ a, d string }
 	type prevRow struct {
-		state string
-		at    time.Time
+		state   string
+		at      time.Time
+		retired bool
 	}
 	prev := map[key]prevRow{}
 	rows, err := tx.Query(ctx, `
-		SELECT o.artifact_id::text, o.device_id::text, o.normalized_state, o.observed_at
+		SELECT o.artifact_id::text, o.device_id::text, o.normalized_state, o.observed_at, o.retired_at IS NOT NULL
 		FROM endpoints.management_observations o
 		JOIN unnest($1::uuid[], $2::uuid[]) AS t(artifact_id, device_id) ON t.artifact_id = o.artifact_id AND t.device_id = o.device_id
 		ORDER BY o.id FOR UPDATE OF o`, arts, devs)
@@ -360,11 +361,12 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 	for rows.Next() {
 		var a, d, st string
 		var at time.Time
-		if err := rows.Scan(&a, &d, &st, &at); err != nil {
+		var retired bool
+		if err := rows.Scan(&a, &d, &st, &at, &retired); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("lock observations: scan: %w", err)
 		}
-		prev[key{a, d}] = prevRow{st, at}
+		prev[key{a, d}] = prevRow{st, at, retired}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("lock observations: %w", err)
@@ -389,7 +391,9 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 	out := make([]application.ObservationOutcome, len(in))
 	for i, o := range in {
 		p, existed := prev[key{o.ArtifactID, o.DeviceID}]
-		out[i] = application.ObservationOutcome{ObservationInput: o, Created: !existed, Changed: !existed || (!o.ObservedAt.Before(p.at) && p.state != o.State)}
+		out[i] = application.ObservationOutcome{ObservationInput: o, Created: !existed, // A report of a retired observation is a change even with the same state: the observation returns, and
+			// history (and so the age of its state) starts again. A replayed report older than the stored one changes nothing.
+			Changed: !existed || (!o.ObservedAt.Before(p.at) && (p.state != o.State || p.retired))}
 	}
 	return out, nil
 }

@@ -11,6 +11,7 @@ export const findingKinds = [
   'duplicate_device',
   'unmatched_software',
   'provider_reported_error',
+  'assignment_ineffective',
 ] as const;
 export const artifactKinds = [
   'application',
@@ -159,6 +160,10 @@ export type DeviceFilters = {
   q: string;
   linked: string;
   includeDeleted: boolean;
+  managementState: string;
+  hasFinding: string;
+  osVersion: string;
+  lastCheckinOlderThanDays: string;
 };
 export type FindingFilters = { kind: string; status: string; deviceId: string };
 export type SyncCounts = {
@@ -310,3 +315,78 @@ export type ArtifactTargets = {
   observedTotal: Record<string, number>;
 };
 export type DeviceManagementFilters = { kind: string; state: string; mismatch: string };
+
+export type HistoryEntry = {
+  kind: string;
+  occurredAt: string;
+  source: string;
+  observedAt: string;
+  artifact?: { id: string; name: string; kind: string; deleted: boolean };
+  assignment?: {
+    assignmentId: string;
+    providerAssignmentId: string;
+    current: AssignmentSnapshot;
+    previous: AssignmentSnapshot | null;
+    changes: string[];
+  };
+  observation?: { state: string; previousState?: string; rawStatus: string };
+  group?: GroupRef;
+};
+export type AssignmentSnapshot = {
+  targetKind: string;
+  group: GroupRef | null;
+  mode: string;
+  intent: string;
+  filterMode: string;
+  filterId: string | null;
+  filterName: string | null;
+};
+export type ArtifactHistory = {
+  artifact: ManagementArtifact;
+  items: HistoryEntry[];
+  nextCursor?: string;
+};
+export type DeviceHistory = {
+  deviceId: string;
+  assignmentScope: string;
+  truncated: boolean;
+  items: HistoryEntry[];
+  nextCursor?: string;
+};
+export type DiffClass = 'same' | 'different' | 'only_left' | 'only_right' | 'unknown';
+export type DiffFilters = { kind: string; differences: boolean };
+export type DiffSide = {
+  assigned: boolean;
+  assignedUnknown: boolean;
+  assignments: AssignedTarget[];
+  expected: Expected;
+  observed: Observed | null;
+  mismatch?: string;
+};
+export type DeviceDiff = {
+  left: { deviceId: string; name: string };
+  right: { deviceId: string; name: string };
+  items: {
+    artifact: ManagementArtifact;
+    left: DiffSide;
+    right: DiffSide;
+    class: DiffClass;
+    dimensions: { assigned: string; expected: string; observed: string };
+    uncertain: boolean;
+  }[];
+  nextCursor?: string;
+  truncated: boolean;
+};
+export type GroupDiff = {
+  left: { groupId: string; externalId: string; name: string };
+  right: { groupId: string; externalId: string; name: string };
+  items: {
+    artifact: ManagementArtifact;
+    left: AssignedTarget[];
+    right: AssignedTarget[];
+    class: DiffClass;
+    differences: string[];
+  }[];
+  nextCursor?: string;
+  truncated: boolean;
+};

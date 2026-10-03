@@ -25,6 +25,12 @@ var (
 // Turaco derives.
 const FindingProviderReportedError = "provider_reported_error"
 
+// FindingAssignmentIneffective is Turaco's own finding: an include assignment covers the Device, the evaluator
+// expects the artifact to apply (confidence high or medium) and yet the provider shows no observation, or
+// not_applicable, for longer than IneffectiveAfter. It is derived from local data after each management run
+// and stays distinct from FindingProviderReportedError (the provider's own failed/conflict statement).
+const FindingAssignmentIneffective = "assignment_ineffective"
+
 const (
 	// MaxSnapshotArtifacts, MaxSnapshotFilters, MaxSnapshotObservations and MaxSnapshotMemberships bound one
 	// management snapshot; a larger one is refused.
@@ -108,6 +114,12 @@ type ManagementResult struct {
 
 	ProviderFindingsRaised   int
 	ProviderFindingsResolved int
+	// IneffectiveFindingsRaised and IneffectiveFindingsResolved count the Turaco-derived assignment_ineffective
+	// findings the reconcile step after the run raised and resolved; IneffectiveDevicesSkipped counts live Devices
+	// beyond MaxReconcileDevices that this run did not evaluate.
+	IneffectiveFindingsRaised   int
+	IneffectiveFindingsResolved int
+	IneffectiveDevicesSkipped   int
 	// ManagementErrors counts reads or ingestions of the management data that failed (Sync only).
 	ManagementErrors int
 }

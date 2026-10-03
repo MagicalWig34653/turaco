@@ -289,5 +289,30 @@ describe('endpoints', () => {
     expect(matchRoute(appRoutes, '/management-artifacts/7')?.route.id).toBe(
       'managementArtifactDetail',
     );
+    expect(matchRoute(appRoutes, '/endpoints/devices/7/diff')?.route.id).toBe(
+      'deviceManagementDiff',
+    );
+    expect(matchRoute(appRoutes, '/endpoints/groups/7/diff')?.route.id).toBe('groupManagementDiff');
+    const deviceDiff = appRoutes.find((route) => route.id === 'deviceManagementDiff')!;
+    expect(
+      canViewRoute(
+        createCan({ permissions: ['endpoints.view', 'endpoint.management.view'] }),
+        deviceDiff,
+      ),
+    ).toBe(true);
+    expect(canViewRoute(createCan({ permissions: ['endpoints.manage'] }), deviceDiff)).toBe(true);
+    expect(canViewRoute(createCan({ permissions: ['endpoint.management.view'] }), deviceDiff)).toBe(
+      false,
+    );
+    const groupDiff = appRoutes.find((route) => route.id === 'groupManagementDiff')!;
+    expect(
+      canViewRoute(
+        createCan({ permissions: ['organization.directory.view', 'endpoint.management.view'] }),
+        groupDiff,
+      ),
+    ).toBe(true);
+    expect(canViewRoute(createCan({ permissions: ['endpoint.management.view'] }), groupDiff)).toBe(
+      false,
+    );
   });
 });

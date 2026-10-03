@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { orderedCounts, visibleGroupName } from './viewHelpers';
+import { diffBadge, historyChanges, orderedCounts, visibleGroupName } from './viewHelpers';
 
 describe('management view helpers', () => {
   it('does not display an external ID when the API redacts a group name', () => {
@@ -20,5 +20,15 @@ describe('management view helpers', () => {
       { key: 'excluded', count: 0 },
       { key: 'unknown', count: 2 },
     ]);
+  });
+});
+
+describe('history and diff helpers', () => {
+  it('marks uncertain comparisons without losing their class', () => {
+    expect(diffBadge('same', true)).toBe('uncertain');
+    expect(diffBadge('only_left', false)).toBe('only_left');
+  });
+  it('keeps only documented changed fields', () => {
+    expect(historyChanges(['target', 'noise', 'filter'])).toEqual(['target', 'filter']);
   });
 });

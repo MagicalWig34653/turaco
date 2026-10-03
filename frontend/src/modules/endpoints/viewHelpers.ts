@@ -8,3 +8,12 @@ export function visibleGroupName(group: GroupRef | null): string | null {
 export function orderedCounts(keys: readonly string[], counts: Record<string, number>) {
   return keys.map((key) => ({ key, count: counts[key] ?? 0 }));
 }
+
+/** Unknown applicability must remain visible even when the server class is same. */
+export function diffBadge(value: string, uncertain: boolean): string {
+  return uncertain ? 'uncertain' : value;
+}
+
+export function historyChanges(changes: readonly string[]): string[] {
+  return changes.filter((value) => ['target', 'mode', 'intent', 'filter'].includes(value));
+}

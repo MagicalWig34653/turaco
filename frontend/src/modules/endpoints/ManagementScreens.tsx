@@ -13,6 +13,7 @@ import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
 import { orderedCounts, visibleGroupName } from './viewHelpers';
+import { HistorySection } from './HistoryDiffScreens';
 import {
   artifactKinds,
   observationStates,
@@ -305,6 +306,7 @@ export function ManagementArtifactDetailScreen({ id }: { id: string }) {
         </dl>
       </section>
       <TargetsSection data={targets.data} error={targets.error} reload={targets.reload} />
+      <HistorySection id={id} type="artifact" />
       <section>
         <h2>{t('management.assignments')}</h2>
         <DataTable
@@ -601,6 +603,11 @@ export function DirectoryGroupManagementScreen({ id }: { id: string }) {
   return (
     <>
       <PageHeader title={summary.data?.name ?? t('management.groupPage')} />
+      <p>
+        <Link to={`/endpoints/groups/${encodeURIComponent(id)}/diff`}>
+          {t('management.compareGroups')}
+        </Link>
+      </p>
       {summary.data ? (
         <p>
           {t('management.candidateDevices')}: {summary.data.candidateDevices}

@@ -36,6 +36,10 @@ type Service struct {
 	holders AssetHolders
 	// viewProvider is the provider whose Device groups, Directory Groups and assignments the views evaluate.
 	viewProvider string
+	// reconcileBudget is the wall time after which the finding reconciliation of a run stops and continues next run.
+	reconcileBudget time.Duration
+	// reconcileMax bounds the Devices evaluated per run.
+	reconcileMax int
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -47,7 +51,7 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey}
+	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices}
 }
 
 // WithViews connects the management views to the Organization directory graph and to the Asset holders.
@@ -61,6 +65,19 @@ func (s *Service) WithViews(dir Directory, holders AssetHolders) *Service {
 // Groups and identities are looked up under the same key.
 func (s *Service) WithProviderKey(key string) *Service {
 	s.viewProvider = key
+	return s
+}
+
+// WithReconcileLimits sets how many Devices and how much wall time the assignment_ineffective reconciliation of one
+// management run may use before it stops and continues with the next run (defaults MaxReconcileDevices and
+// DefaultReconcileBudget; zero keeps a default).
+func (s *Service) WithReconcileLimits(maxDevices int, budget time.Duration) *Service {
+	if maxDevices > 0 {
+		s.reconcileMax = maxDevices
+	}
+	if budget > 0 {
+		s.reconcileBudget = budget
+	}
 	return s
 }
 
@@ -359,6 +376,28 @@ func (s *Service) ListDevices(ctx context.Context, p Principal, f DeviceFilter) 
 	if !p.canView() {
 		return DeviceResult{}, ErrForbidden
 	}
+	switch {
+	case f.ManagementState != "" && !slices.Contains(ManagementStateFilters, f.ManagementState):
+		return DeviceResult{}, invalid("managementState must be one of %s", strings.Join(ManagementStateFilters, ", "))
+	case f.ManagementState != "" && !p.canViewManagement():
+		// The observed state of artifacts is management data.
+		return DeviceResult{}, ErrForbidden
+	case f.HasFinding != "" && !slices.Contains(FindingKinds, f.HasFinding):
+		return DeviceResult{}, invalid("hasFinding must be one of %s", strings.Join(FindingKinds, ", "))
+	case slices.Contains(ManagementFindingKinds, f.HasFinding) && !p.canViewManagement():
+		// These findings are derived from management data (assignments and observed state).
+		return DeviceResult{}, ErrForbidden
+	case f.LastCheckinOlderThanDays < 0 || f.LastCheckinOlderThanDays > MaxCheckinDays:
+		return DeviceResult{}, invalid("lastCheckinOlderThanDays must be between 1 and %d", MaxCheckinDays)
+	}
+	f.LastCheckinBefore = nil
+	if utf8.RuneCountInString(f.OSVersionPrefix) > 100 || !utf8.ValidString(f.OSVersionPrefix) {
+		return DeviceResult{}, invalid("osVersion is too long or invalid")
+	}
+	if f.LastCheckinOlderThanDays > 0 {
+		cutoff := s.now().Add(-time.Duration(f.LastCheckinOlderThanDays) * 24 * time.Hour)
+		f.LastCheckinBefore = &cutoff
+	}
 	f.Page = f.Page.Normalize()
 	return s.store.ListDevices(ctx, f)
 }
@@ -383,10 +422,14 @@ func (s *Service) GetDevice(ctx context.Context, p Principal, id string) (Device
 	if err != nil {
 		return DeviceDetail{}, err
 	}
+	if !p.canViewManagement() {
+		fs = slices.DeleteFunc(fs, func(f Finding) bool { return slices.Contains(ManagementFindingKinds, f.Kind) })
+	}
 	return DeviceDetail{Device: d, Software: sw, Findings: fs}, nil
 }
 
-// ListFindings lists findings (open by default). Requires endpoints.view.
+// ListFindings lists findings (open by default). Requires endpoints.view; the kinds derived from management data
+// (ManagementFindingKinds) need management access, and are left out of an unfiltered list without it.
 func (s *Service) ListFindings(ctx context.Context, p Principal, f FindingFilter) (FindingResult, error) {
 	if !p.canView() {
 		return FindingResult{}, ErrForbidden
@@ -399,6 +442,12 @@ func (s *Service) ListFindings(ctx context.Context, p Principal, f FindingFilter
 	}
 	if f.Kind != "" && !slices.Contains(FindingKinds, f.Kind) {
 		return FindingResult{}, invalid("kind must be one of %s", strings.Join(FindingKinds, ", "))
+	}
+	if slices.Contains(ManagementFindingKinds, f.Kind) && !p.canViewManagement() {
+		return FindingResult{}, ErrForbidden
+	}
+	if f.Kind == "" && !p.canViewManagement() {
+		f.ExcludeKinds = ManagementFindingKinds
 	}
 	if f.DeviceID != "" && !validUUID(f.DeviceID) {
 		return FindingResult{Items: []Finding{}}, nil

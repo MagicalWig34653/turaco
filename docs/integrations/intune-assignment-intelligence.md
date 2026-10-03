@@ -1,6 +1,6 @@
 # Intune Assignment Intelligence
 
-**Status:** Partly implemented. F6 slice 2 ingests the normalized model; slice 3 adds the evaluator, Assignment Paths and the Device, Directory Group, User and reverse-lookup read views (backend, local data only, see [F6 design](../product/f6-endpoint-intelligence-design.md#slice-3-status)). Memberships that were never synced, cut lookups and exclusions across User and Device groups evaluate to `unknown`, not guessed. History/diff views, the frontend, the Graph client and the `assignment_ineffective` finding are planned.
+**Status:** Partly implemented. F6 slice 2 ingests the normalized model; slice 3 adds the evaluator, Assignment Paths and the Device, Directory Group, User and reverse-lookup read views (backend, local data only, see [F6 design](../product/f6-endpoint-intelligence-design.md#slice-3-status)). Memberships that were never synced, cut lookups and exclusions across User and Device groups evaluate to `unknown`, not guessed. Slice 4 (backend, see [Slice 4 status](../product/f6-endpoint-intelligence-design.md#slice-4-status)) adds the artifact and Device history, the Device vs Device and Directory Group vs Directory Group diff, the Turaco-derived `assignment_ineffective` finding and the device list filters. The frontend, the Graph client, `assignment_stale`, expected-applicability history and Saved Views are not implemented.
 
 Turaco should turn Intune's distributed assignment/configuration information into an explainable operational view for **Directory Groups, Users and Devices**. The goal is not to mirror the Intune portal. The goal is to answer quickly:
 
@@ -257,6 +257,8 @@ SAP GUI                  installed       not applicable
 
 Opening a difference shows the two Assignment Paths and observations.
 
+> Implemented (slice 4): `GET /devices/{id}/management/diff?otherDeviceId=` and `GET /directory-groups/{id}/management/diff?otherGroupId=`. Classes are `same|different|only_left|only_right|unknown`; an unknown input (Assigned, Expected or Observed) stays unknown (`uncertain`) and an item with nothing known to differ but something unknown is class `unknown`, never `same`. The group diff compares configuration only (mode, intent, filter); "differing expected target sets" are not computed.
+
 ### Directory Group vs Directory Group
 
 Compare management artifacts and assignment properties between two Directory Groups:
@@ -291,6 +293,8 @@ Example:
 
 Do not store every identical polling result as business history. Preserve meaningful change plus observation freshness.
 
+> Implemented (slice 4): assignment added/changed/removed (target, mode, intent, filter), artifact removed, observation state changes and group membership joins/leaves, derived from the interval and change tables without any per-sync record (`GET /management-artifacts/{id}/history`, `GET /devices/{id}/management-history`). Not stored: expected-applicability changes (it is computed on demand, so only its inputs have history) and "source data became stale".
+
 ## Operational findings
 
 Turaco may surface findings/warnings where evidence is sufficient:
@@ -304,6 +308,8 @@ Turaco may surface findings/warnings where evidence is sufficient:
 - large unexpected drift between similar Directory Groups/Devices.
 
 Warnings must distinguish **provider-reported** problems from **Turaco-derived** findings.
+
+> Implemented (slice 4): `provider_reported_error` (provider-reported, slice 2) and `assignment_ineffective` (Turaco-derived: assigned and expected applicable with confidence high or medium but observed absent or `not_applicable` for more than 7 days, counted from the newest of the assignment, the Device, its group membership and the retirement or state change of the observation). Both kinds need management access to be listed, filtered or shown on the Device. The API and UI keep them as separate kinds; the first is the provider's statement, the second is Turaco's inference from local data and shows no provider text. Stale check-in, empty known groups, include/exclude contradictions and `assignment_stale` are not implemented.
 
 ## Query and Saved Views
 
@@ -321,6 +327,8 @@ Or:
 Devices where:
   Intune.last_check_in < now - 7 days
 ```
+
+> Implemented (slice 4): device list filters `managementState` (`failed|conflict|pending`), `hasFinding`, `osVersion` prefix and `lastCheckinOlderThanDays`. Per-artifact query terms such as `ManagementArtifact("BitLocker Baseline").expected_applicable` are not implemented. There is no platform Saved View mechanism yet, so the filters are plain list parameters.
 
 This query model can power Saved Views, Dynamic Groups, reporting and Security/IT Briefing correlation without allowing arbitrary SQL.
 

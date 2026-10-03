@@ -150,7 +150,7 @@ func (r *Repository) TryLockProvider(ctx context.Context, provider string) (func
 }
 
 func (r *Repository) LastSyncCompleted(ctx context.Context, provider string) (*time.Time, error) {
-	var at time.Time
+	var at *time.Time // NULL while only the finding cursor has been stored
 	err := r.pool.QueryRow(ctx, `SELECT last_completed_at FROM endpoints.provider_sync_state WHERE provider = $1`, provider).Scan(&at)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -158,7 +158,7 @@ func (r *Repository) LastSyncCompleted(ctx context.Context, provider string) (*t
 	if err != nil {
 		return nil, fmt.Errorf("last sync completed: %w", err)
 	}
-	return &at, nil
+	return at, nil
 }
 
 func (r *Repository) MarkSyncCompleted(ctx context.Context, provider string, at time.Time) error {
@@ -489,6 +489,19 @@ func (r *Repository) ListDevices(ctx context.Context, f application.DeviceFilter
 			conds = append(conds, "asset_id IS NULL")
 		}
 	}
+	if f.ManagementState != "" {
+		add(`EXISTS (SELECT 1 FROM endpoints.management_observations o JOIN endpoints.management_artifacts a ON a.id = o.artifact_id AND a.deleted_observed_at IS NULL
+			WHERE o.device_id = endpoints.devices.id AND o.retired_at IS NULL AND o.normalized_state = $%d)`, f.ManagementState)
+	}
+	if f.HasFinding != "" {
+		add(`EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.device_id = endpoints.devices.id AND f.status = 'open' AND f.kind = $%d)`, f.HasFinding)
+	}
+	if f.OSVersionPrefix != "" {
+		add("os_version LIKE $%d", prefixPattern(f.OSVersionPrefix))
+	}
+	if f.LastCheckinBefore != nil {
+		add("last_checkin_at < $%d", *f.LastCheckinBefore)
+	}
 	if f.Query != "" {
 		args = append(args, prefixPattern(strings.ToLower(f.Query)))
 		conds = append(conds, fmt.Sprintf(`(lower(name) LIKE $%[1]d OR lower(serial_number) LIKE $%[1]d)`, len(args)))
@@ -578,6 +591,9 @@ func (r *Repository) ListFindings(ctx context.Context, f application.FindingFilt
 	}
 	if f.Kind != "" {
 		add("f.kind = $%d", f.Kind)
+	}
+	if len(f.ExcludeKinds) > 0 {
+		add("NOT (f.kind = ANY($%d::text[]))", f.ExcludeKinds)
 	}
 	if f.DeviceID != "" {
 		add("f.device_id = $%d::uuid", f.DeviceID)

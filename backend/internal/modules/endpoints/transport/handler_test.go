@@ -341,3 +341,72 @@ func TestSyncCooldownReturns429(t *testing.T) {
 		t.Fatalf("second sync = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestHistoryDiffAndListFilterRoutes(t *testing.T) {
+	id, other := "00000000-0000-7000-8000-0000000000e5", "00000000-0000-7000-8000-0000000000e6"
+	none := serve(t, as(admin), nil, true)
+	viewer := serve(t, as(admin, "endpoints.view"), nil, true)
+	mgmt := serve(t, as(admin, "endpoint.management.view"), nil, true)
+	both := serve(t, as(admin, "endpoint.management.view", "endpoints.view"), nil, true)
+	withDir := serve(t, as(admin, "endpoint.management.view", "endpoints.view", "organization.directory.view"), nil, true)
+	paths := []string{
+		"/api/v1/management-artifacts/" + id + "/history",
+		"/api/v1/devices/" + id + "/management-history",
+		"/api/v1/devices/" + id + "/management/diff?otherDeviceId=" + other,
+		"/api/v1/directory-groups/" + id + "/management/diff?otherGroupId=" + other,
+	}
+	for _, p := range paths {
+		if rec := do(none, "GET", p, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("no permission %s = %d", p, rec.Code)
+		}
+		if rec := do(viewer, "GET", p, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("endpoints.view alone must not read %s: %d", p, rec.Code)
+		}
+	}
+	// Device data needs endpoints.view as well as the management permission.
+	for _, p := range paths[1:3] {
+		if rec := do(mgmt, "GET", p, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("management view alone %s = %d", p, rec.Code)
+		}
+	}
+	// Unknown ids are 404, never a hint that something exists.
+	for _, p := range []string{paths[0], paths[1], paths[2]} {
+		if rec := do(both, "GET", p, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("unknown id %s = %d %s", p, rec.Code, rec.Body)
+		}
+	}
+	if rec := do(withDir, "GET", paths[3], ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown group = %d", rec.Code)
+	}
+	// The group diff also needs organization.directory.view.
+	if rec := do(both, "GET", paths[3], ""); rec.Code != http.StatusForbidden {
+		t.Errorf("group diff without directory.view = %d", rec.Code)
+	}
+	if rec := do(both, "GET", paths[0]+"?cursor=zz", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad cursor = %d", rec.Code)
+	}
+	if rec := do(both, "GET", paths[2]+"&differences=maybe", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad differences = %d", rec.Code)
+	}
+	for _, q := range []string{"/api/v1/devices/" + id + "/management/diff", "/api/v1/devices/" + id + "/management/diff?otherDeviceId=zz",
+		"/api/v1/directory-groups/" + id + "/management/diff", "/api/v1/directory-groups/" + id + "/management/diff?otherGroupId=zz"} {
+		rec := do(withDir, "GET", q, "")
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "endpoints.invalid_request") {
+			t.Errorf("%q = %d %s", q, rec.Code, rec.Body.String())
+		}
+	}
+	// List filters.
+	for _, q := range []string{"managementState=applied", "hasFinding=x", "lastCheckinOlderThanDays=0", "lastCheckinOlderThanDays=abc"} {
+		if rec := do(both, "GET", "/api/v1/devices?"+q, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d", q, rec.Code)
+		}
+	}
+	if rec := do(viewer, "GET", "/api/v1/devices?managementState=failed", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("managementState without management access = %d", rec.Code)
+	}
+	for _, q := range []string{"managementState=failed", "hasFinding=assignment_ineffective", "osVersion=10.0", "lastCheckinOlderThanDays=7"} {
+		if rec := do(both, "GET", "/api/v1/devices?"+q, ""); rec.Code != http.StatusOK {
+			t.Errorf("%s = %d %s", q, rec.Code, rec.Body)
+		}
+	}
+}

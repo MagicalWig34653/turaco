@@ -21,6 +21,11 @@ import type {
   GroupManagement,
   UserManagement,
   ArtifactTargets,
+  ArtifactHistory,
+  DeviceHistory,
+  DeviceDiff,
+  GroupDiff,
+  DiffFilters,
 } from './types';
 
 registerErrorMessages({
@@ -93,5 +98,37 @@ export const endpointsApi = {
     }),
   artifactTargets: (id: string, signal?: AbortSignal) =>
     api.get<ArtifactTargets>(`/management-artifacts/${enc(id)}/targets`, { signal }),
+  artifactHistory: (id: string, cursor?: string, signal?: AbortSignal) =>
+    api.get<ArtifactHistory>(`/management-artifacts/${enc(id)}/history`, {
+      signal,
+      query: { limit: 50, cursor },
+    }),
+  deviceHistory: (id: string, cursor?: string, signal?: AbortSignal) =>
+    api.get<DeviceHistory>(`/devices/${enc(id)}/management-history`, {
+      signal,
+      query: { limit: 50, cursor },
+    }),
+  deviceDiff: (
+    id: string,
+    otherDeviceId: string,
+    filters: DiffFilters,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) =>
+    api.get<DeviceDiff>(`/devices/${enc(id)}/management/diff`, {
+      signal,
+      query: { otherDeviceId, ...filters, limit: 50, cursor },
+    }),
+  groupDiff: (
+    id: string,
+    otherGroupId: string,
+    filters: DiffFilters,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) =>
+    api.get<GroupDiff>(`/directory-groups/${enc(id)}/management/diff`, {
+      signal,
+      query: { otherGroupId, ...filters, limit: 50, cursor },
+    }),
   sync: () => api.post<SyncCounts>('/endpoint-sync', {}),
 };

@@ -31,6 +31,7 @@ import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
 import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
 import { DevicesScreen } from '../modules/endpoints/DevicesScreen';
 import { DeviceDetailScreen } from '../modules/endpoints/DeviceDetailScreen';
+import { DeviceDiffScreen, GroupDiffScreen } from '../modules/endpoints/HistoryDiffScreens';
 import { FindingsScreen } from '../modules/endpoints/FindingsScreen';
 import {
   ManagementArtifactsScreen,
@@ -115,6 +116,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <MyAssetsScreen />;
     case 'devices':
       return <DevicesScreen />;
+    case 'deviceManagementDiff':
+      return <DeviceDiffScreen id={params.id ?? ''} />;
+    case 'groupManagementDiff':
+      return <GroupDiffScreen id={params.id ?? ''} />;
     case 'deviceDetail':
       return <DeviceDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'endpointFindings':
