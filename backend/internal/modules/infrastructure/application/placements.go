@@ -102,12 +102,30 @@ func (s *Service) MoveAsset(ctx context.Context, c Caller, p Principal, placemen
 	if err := p.require(true); err != nil {
 		return Placement{}, err
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return Placement{}, err
+	}
 	if err := checkIDs(to.RackID); err != nil {
 		return Placement{}, err
 	}
 	to.RackID = strings.ToLower(to.RackID)
+	// The Assets lookup is a cross-module call and must not run while rack
+	// rows are locked, so it happens first, on the unlocked placement. The
+	// window between this check and the commit is accepted: an Asset disposed
+	// in that window still moves, and a disposed-while-placed Asset keeps its
+	// units until someone removes it (see PlacementWarnings).
+	pre, err := s.store.GetPlacement(ctx, placementID)
+	if err != nil {
+		return Placement{}, err
+	}
+	if pre.RemovedAt != nil {
+		return Placement{}, ErrPlacementClosed
+	}
+	if err := s.usableAsset(ctx, pre.AssetID); err != nil {
+		return Placement{}, err
+	}
 	var out Placement
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockPlacementTx(ctx, tx, placementID)
 		if err != nil {
 			return err
@@ -115,11 +133,8 @@ func (s *Service) MoveAsset(ctx context.Context, c Caller, p Principal, placemen
 		if cur.RemovedAt != nil {
 			return ErrPlacementClosed
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
-		}
-		if err := s.usableAsset(ctx, cur.AssetID); err != nil {
-			return err
 		}
 		// Lock both racks in id order so concurrent moves cannot deadlock.
 		first, second := cur.RackID, to.RackID
@@ -166,12 +181,16 @@ func (s *Service) MoveAsset(ctx context.Context, c Caller, p Principal, placemen
 }
 
 // RemoveAsset takes an Asset out of its Rack with a reason code. The
-// placement stays as history. Requires infrastructure.manage.
+// placement stays as history. Repeating a successful removal with the same
+// reason returns the current record without a second audit entry. Requires infrastructure.manage.
 func (s *Service) RemoveAsset(ctx context.Context, c Caller, p Principal, placementID string, expected *int, reason string) (Placement, error) {
 	if err := c.validate(); err != nil {
 		return Placement{}, err
 	}
 	if err := p.require(true); err != nil {
+		return Placement{}, err
+	}
+	if _, err := requireVersion(expected); err != nil {
 		return Placement{}, err
 	}
 	if !oneOf(reason, RemovalReasons) {
@@ -184,9 +203,15 @@ func (s *Service) RemoveAsset(ctx context.Context, c Caller, p Principal, placem
 			return err
 		}
 		if cur.RemovedAt != nil {
+			// A retry of a remove that already succeeded (same reason, version
+			// from before the removal) returns the current record.
+			if cur.RemovalReason != nil && *cur.RemovalReason == reason && (*expected == cur.Version-1 || *expected == cur.Version) {
+				out = cur
+				return nil
+			}
 			return ErrPlacementClosed
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if _, err := s.store.LockRackTx(ctx, tx, cur.RackID); err != nil {
@@ -226,4 +251,62 @@ func (s *Service) ListPlacements(ctx context.Context, p Principal, rackID string
 		return Result[Placement]{}, err
 	}
 	return s.store.ListPlacements(ctx, rackID, includeRemoved, page.Normalize())
+}
+
+// PlacementWarnings lists active placements whose Asset is disposed, lost or
+// retired (or missing). Placing never changes an Asset's status and Assets
+// cannot know about racks, so a disposed Asset keeps its units until someone
+// removes the placement; this list is how it gets noticed. It checks at most
+// MaxWarningScan active placements per call, in id order, through the Assets
+// contract in batches, and returns at most MaxWarnings. Requires
+// infrastructure.view and assets.view.
+func (s *Service) PlacementWarnings(ctx context.Context, p Principal) (WarningsResult, error) {
+	if err := p.require(false); err != nil {
+		return WarningsResult{}, err
+	}
+	if !p.AssetsView {
+		return WarningsResult{}, ErrForbidden
+	}
+	res := WarningsResult{Items: []PlacementWarning{}}
+	after, scanned := "", 0
+	for scanned < MaxWarningScan {
+		batch, err := s.store.ActivePlacementsAfter(ctx, after, warningBatch)
+		if err != nil {
+			return WarningsResult{}, err
+		}
+		if len(batch) == 0 {
+			return res, nil
+		}
+		ids := make([]string, 0, len(batch))
+		for _, b := range batch {
+			ids = append(ids, b.Placement.AssetID)
+		}
+		found, err := s.assets.Assets(ctx, ids)
+		if err != nil {
+			return WarningsResult{}, fmt.Errorf("check assets: %w", err)
+		}
+		for _, b := range batch {
+			a, ok := found[b.Placement.AssetID]
+			if ok && a.Usable() {
+				continue
+			}
+			if len(res.Items) >= MaxWarnings {
+				res.Truncated = true
+				return res, nil
+			}
+			w := PlacementWarning{Placement: b.Placement, RackName: b.RackName, AssetStatus: "missing"}
+			if ok {
+				w.AssetRef, w.AssetStatus = a.Reference, a.Status
+			}
+			res.Items = append(res.Items, w)
+		}
+		scanned += len(batch)
+		after = batch[len(batch)-1].Placement.ID
+		if len(batch) < warningBatch {
+			return res, nil
+		}
+	}
+	// The scan limit was reached; more active placements may exist.
+	res.Truncated = true
+	return res, nil
 }

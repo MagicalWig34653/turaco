@@ -49,6 +49,15 @@ func recordAudit(ctx context.Context, tx pgx.Tx, c Caller, action, targetType, t
 	})
 }
 
+// requireVersion refuses a state-changing request without the version the
+// caller saw: every such operation is optimistic-lock protected.
+func requireVersion(expected *int) (int, error) {
+	if expected == nil {
+		return 0, invalid("expectedVersion is required")
+	}
+	return *expected, nil
+}
+
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // checkIDs refuses ids that are not UUIDs before they reach SQL casts.
@@ -224,6 +233,9 @@ func (s *Service) SetBuildingArchived(ctx context.Context, c Caller, p Principal
 	if err := p.require(true); err != nil {
 		return Building{}, err
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return Building{}, err
+	}
 	action := "infrastructure.building.unarchived"
 	if archived {
 		action = "infrastructure.building.archived"
@@ -234,7 +246,7 @@ func (s *Service) SetBuildingArchived(ctx context.Context, c Caller, p Principal
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if cur.Active == !archived {
@@ -392,6 +404,9 @@ func (s *Service) SetRoomArchived(ctx context.Context, c Caller, p Principal, id
 	if err := p.require(true); err != nil {
 		return Room{}, err
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return Room{}, err
+	}
 	action := "infrastructure.room.unarchived"
 	if archived {
 		action = "infrastructure.room.archived"
@@ -402,7 +417,7 @@ func (s *Service) SetRoomArchived(ctx context.Context, c Caller, p Principal, id
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if cur.Active == !archived {
@@ -541,6 +556,9 @@ func (s *Service) SetRackArchived(ctx context.Context, c Caller, p Principal, id
 	if err := p.require(true); err != nil {
 		return Rack{}, err
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return Rack{}, err
+	}
 	action := "infrastructure.rack.unarchived"
 	if archived {
 		action = "infrastructure.rack.archived"
@@ -551,7 +569,7 @@ func (s *Service) SetRackArchived(ctx context.Context, c Caller, p Principal, id
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if cur.Active == !archived {
@@ -613,27 +631,28 @@ func (s *Service) GetRack(ctx context.Context, p Principal, id string) (RackDeta
 
 // ---- reads across the tree ----
 
-// Tree summarizes Buildings, Rooms, Racks and placed Assets per Site. Requires infrastructure.view.
-func (s *Service) Tree(ctx context.Context, p Principal, includeArchived bool) ([]SiteSummary, error) {
+// Tree summarizes Buildings, Rooms, Racks and placed Assets per Site, bounded
+// to MaxTreeSites Sites (Truncated is set when more exist). Requires infrastructure.view.
+func (s *Service) Tree(ctx context.Context, p Principal, includeArchived bool) (TreeResult, error) {
 	if err := p.require(false); err != nil {
-		return nil, err
+		return TreeResult{}, err
 	}
-	sites, err := s.store.Tree(ctx, includeArchived)
+	tree, err := s.store.Tree(ctx, includeArchived)
 	if err != nil {
-		return nil, err
+		return TreeResult{}, err
 	}
-	ids := make([]string, 0, len(sites))
-	for _, st := range sites {
+	ids := make([]string, 0, len(tree.Sites))
+	for _, st := range tree.Sites {
 		ids = append(ids, st.LocationID)
 	}
 	names, err := s.dir.LocationNames(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("load site names: %w", err)
+		return TreeResult{}, fmt.Errorf("load site names: %w", err)
 	}
-	for i := range sites {
-		sites[i].Name = names[sites[i].LocationID]
+	for i := range tree.Sites {
+		tree.Sites[i].Name = names[tree.Sites[i].LocationID]
 	}
-	return sites, nil
+	return tree, nil
 }
 
 // AssetReferences resolves Asset references for ids a caller already received.

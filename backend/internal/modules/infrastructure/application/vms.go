@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"regexp"
 	"strings"
@@ -55,18 +56,24 @@ func checkSize(vcpu, memoryMB int) error {
 	return nil
 }
 
-// hypervisor checks that a hypervisor Asset exists and is usable.
-func (s *Service) hypervisor(ctx context.Context, id *string) error {
+// hypervisor checks that a hypervisor Asset exists and is usable and returns
+// its normalized (lower-case) id. Only an unusable Asset is a client error;
+// a failing Assets lookup propagates as an internal error.
+func (s *Service) hypervisor(ctx context.Context, id *string) (*string, error) {
 	if id == nil {
-		return nil
+		return nil, nil
 	}
 	if err := checkIDs(*id); err != nil {
-		return err
+		return nil, err
 	}
-	if err := s.usableAsset(ctx, *id); err != nil {
-		return ErrReferenceInvalid
+	l := strings.ToLower(*id)
+	if err := s.usableAsset(ctx, l); err != nil {
+		if errors.Is(err, ErrAssetUnusable) {
+			return nil, ErrReferenceInvalid
+		}
+		return nil, err
 	}
-	return nil
+	return &l, nil
 }
 
 // CreateVM registers a Virtual Machine by hand. Requires infrastructure.manage.
@@ -102,10 +109,11 @@ func (s *Service) CreateVM(ctx context.Context, c Caller, p Principal, in VMInpu
 	if err != nil {
 		return VirtualMachine{}, err
 	}
-	if err := s.hypervisor(ctx, in.HypervisorAssetID); err != nil {
+	hv, err := s.hypervisor(ctx, in.HypervisorAssetID)
+	if err != nil {
 		return VirtualMachine{}, err
 	}
-	vm := VirtualMachine{Name: name, State: in.State, HypervisorAssetID: in.HypervisorAssetID, VCPU: in.VCPU, MemoryMB: in.MemoryMB,
+	vm := VirtualMachine{Name: name, State: in.State, HypervisorAssetID: hv, VCPU: in.VCPU, MemoryMB: in.MemoryMB,
 		ManagementAddress: addr, NetworkNote: netNote, Notes: notes, CreatedBy: strPtr(c.Actor.UserID)}
 	var out VirtualMachine
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
@@ -236,6 +244,9 @@ func (s *Service) ChangeVMState(ctx context.Context, c Caller, p Principal, id s
 	if err := p.require(true); err != nil {
 		return VirtualMachine{}, err
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return VirtualMachine{}, err
+	}
 	if !oneOf(state, VMSettableStates) {
 		return VirtualMachine{}, invalid("state must be one of %s", strings.Join(VMSettableStates, ", "))
 	}
@@ -245,7 +256,7 @@ func (s *Service) ChangeVMState(ctx context.Context, c Caller, p Principal, id s
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if cur.State == VMDecommissioned {
@@ -278,20 +289,20 @@ func (s *Service) AssignVMHypervisor(ctx context.Context, c Caller, p Principal,
 	if err := p.require(true); err != nil {
 		return VirtualMachine{}, err
 	}
-	if assetID != nil {
-		l := strings.ToLower(*assetID)
-		assetID = &l
+	if _, err := requireVersion(expected); err != nil {
+		return VirtualMachine{}, err
 	}
-	if err := s.hypervisor(ctx, assetID); err != nil {
+	assetID, err := s.hypervisor(ctx, assetID)
+	if err != nil {
 		return VirtualMachine{}, err
 	}
 	var out VirtualMachine
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockVMTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
+		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
 		if cur.State == VMDecommissioned {
@@ -316,12 +327,16 @@ func (s *Service) AssignVMHypervisor(ctx context.Context, c Caller, p Principal,
 }
 
 // DecommissionVM retires a VM with a reason code. The record stays as a
-// tombstone and cannot be changed again. Requires infrastructure.manage.
+// tombstone and cannot be changed again; repeating a successful decommission
+// with the same reason returns the current record. Requires infrastructure.manage.
 func (s *Service) DecommissionVM(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (VirtualMachine, error) {
 	if err := c.validate(); err != nil {
 		return VirtualMachine{}, err
 	}
 	if err := p.require(true); err != nil {
+		return VirtualMachine{}, err
+	}
+	if _, err := requireVersion(expected); err != nil {
 		return VirtualMachine{}, err
 	}
 	if !oneOf(reason, VMDecommissionReasons) {
@@ -333,11 +348,17 @@ func (s *Service) DecommissionVM(ctx context.Context, c Caller, p Principal, id 
 		if err != nil {
 			return err
 		}
-		if expected != nil && *expected != cur.Version {
-			return ErrVersionConflict
-		}
 		if cur.State == VMDecommissioned {
+			// A retry of a decommission that already succeeded (same reason,
+			// version from before it) returns the current record.
+			if cur.DecommissionReason != nil && *cur.DecommissionReason == reason && (*expected == cur.Version-1 || *expected == cur.Version) {
+				out = cur
+				return nil
+			}
 			return ErrDecommissioned
+		}
+		if *expected != cur.Version {
+			return ErrVersionConflict
 		}
 		next := cur
 		next.State = VMDecommissioned

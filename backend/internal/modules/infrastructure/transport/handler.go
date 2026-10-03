@@ -38,6 +38,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/infrastructure/tree", read, h.tree)
+	route("GET /api/v1/infrastructure/placement-warnings", read, h.placementWarnings)
 
 	route("GET /api/v1/buildings", read, h.listBuildings)
 	route("POST /api/v1/buildings", write, h.createBuilding)

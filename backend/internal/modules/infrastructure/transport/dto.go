@@ -53,7 +53,7 @@ func toRack(r application.Rack) rackDTO {
 type placementDTO struct {
 	ID                  string  `json:"id"`
 	RackID              string  `json:"rackId"`
-	AssetID             string  `json:"assetId"`
+	AssetID             string  `json:"assetId,omitempty"`
 	AssetReference      *string `json:"assetReference,omitempty"`
 	UPosition           int     `json:"uPosition"`
 	HeightU             int     `json:"heightU"`
@@ -64,6 +64,19 @@ type placementDTO struct {
 	RemovalReason       *string `json:"removalReason"`
 	PreviousPlacementID *string `json:"previousPlacementId"`
 	Version             int     `json:"version"`
+}
+
+// placementConv converts placements for a caller; the Asset id is only
+// disclosed to callers who may also view Assets (assets.view), otherwise the
+// placement is just "occupied" with its position and height.
+func placementConv(showAsset bool) func(application.Placement) placementDTO {
+	return func(p application.Placement) placementDTO {
+		d := toPlacement(p)
+		if !showAsset {
+			d.AssetID = ""
+		}
+		return d
+	}
 }
 
 func toPlacement(p application.Placement) placementDTO {
@@ -137,4 +150,22 @@ type siteDTO struct {
 	Racks      int                  `json:"racks"`
 	Placed     int                  `json:"placedAssets"`
 	Items      []buildingSummaryDTO `json:"buildingItems"`
+}
+
+type treeDTO struct {
+	Items     []siteDTO `json:"items"`
+	Truncated bool      `json:"truncated"`
+}
+
+type warningDTO struct {
+	PlacementID    string  `json:"placementId"`
+	RackID         string  `json:"rackId"`
+	RackName       string  `json:"rackName"`
+	AssetID        string  `json:"assetId"`
+	AssetReference *string `json:"assetReference,omitempty"`
+	AssetStatus    string  `json:"assetStatus"`
+	UPosition      int     `json:"uPosition"`
+	HeightU        int     `json:"heightU"`
+	Face           string  `json:"face"`
+	PlacedAt       string  `json:"placedAt"`
 }

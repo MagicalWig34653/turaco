@@ -288,8 +288,9 @@ func nilIfEmpty(s string) *string {
 
 func (r *Repository) InsertPlacementTx(ctx context.Context, tx pgx.Tx, in application.PlacementInput, placedBy string, previousID *string) (application.Placement, error) {
 	p, err := scanPlacement(tx.QueryRow(ctx, `
-		INSERT INTO infrastructure.rack_placements(rack_id, asset_id, u_position, height_u, face, placed_by, previous_placement_id)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid) RETURNING `+placementCols,
+		INSERT INTO infrastructure.rack_placements(rack_id, asset_id, u_position, height_u, face, placed_by, previous_placement_id, rack_height_u)
+		SELECT k.id, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid, k.height_u FROM infrastructure.racks k WHERE k.id = $1::uuid
+		RETURNING `+placementCols,
 		in.RackID, in.AssetID, in.UPosition, in.HeightU, in.Face, nilIfEmpty(placedBy), previousID))
 	if isUnique(err) {
 		return application.Placement{}, application.ErrAssetPlaced
@@ -348,6 +349,44 @@ func (r *Repository) ActivePlacements(ctx context.Context, rackID string) ([]app
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// ActivePlacementsAfter returns up to limit active placements with id > afterID
+// (all when empty) in id order, with their rack names.
+func (r *Repository) ActivePlacementsAfter(ctx context.Context, afterID string, limit int) ([]application.PlacementRef, error) {
+	if afterID == "" {
+		afterID = "00000000-0000-0000-0000-000000000000"
+	}
+	if !validUUID(afterID) {
+		return nil, application.ErrInvalidCursor
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+prefixed("p", placementCols)+`, k.name
+		FROM infrastructure.rack_placements p JOIN infrastructure.racks k ON k.id = p.rack_id
+		WHERE p.removed_at IS NULL AND p.id > $1::uuid ORDER BY p.id LIMIT $2`, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("active placements after: %w", err)
+	}
+	defer rows.Close()
+	out := []application.PlacementRef{}
+	for rows.Next() {
+		var p application.Placement
+		var name string
+		if err := rows.Scan(&p.ID, &p.RackID, &p.AssetID, &p.UPosition, &p.HeightU, &p.Face, &p.PlacedBy, &p.PlacedAt,
+			&p.RemovedAt, &p.RemovedBy, &p.RemovalReason, &p.PreviousID, &p.Version, &name); err != nil {
+			return nil, fmt.Errorf("active placements after: scan: %w", err)
+		}
+		out = append(out, application.PlacementRef{Placement: p, RackName: name})
+	}
+	return out, rows.Err()
+}
+
+// prefixed qualifies a comma-separated column list with a table alias.
+func prefixed(alias, cols string) string {
+	parts := strings.Split(cols, ",")
+	for i, c := range parts {
+		parts[i] = alias + "." + strings.TrimSpace(c)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (r *Repository) ListPlacements(ctx context.Context, rackID string, includeRemoved bool, page application.Page) (application.Result[application.Placement], error) {
@@ -426,6 +465,10 @@ func likeEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
+// ListVMs filters by state and hypervisor with the keyset order of the primary
+// key. The name search is an unindexed ILIKE scan: Virtual Machines are
+// hand-entered and bounded in the hundreds to low thousands, so the scan is
+// accepted; pg_trgm is not installed and would be a new dependency.
 func (r *Repository) ListVMs(ctx context.Context, f application.VMFilter) (application.Result[application.VirtualMachine], error) {
 	var conds []string
 	var args []any
@@ -447,41 +490,84 @@ func (r *Repository) ListVMs(ctx context.Context, f application.VMFilter) (appli
 
 // ---- tree ----
 
-// Tree counts buildings, rooms, racks and placed assets per site.
-func (r *Repository) Tree(ctx context.Context, includeArchived bool) ([]application.SiteSummary, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT b.site_location_id::text, b.id::text, b.name, b.active, b.version,
-		       (SELECT count(*) FROM infrastructure.rooms m WHERE m.building_id = b.id AND (m.active OR $1::boolean)),
-		       (SELECT count(*) FROM infrastructure.racks k JOIN infrastructure.rooms m ON m.id = k.room_id WHERE m.building_id = b.id AND (k.active OR $1::boolean)),
-		       (SELECT count(*) FROM infrastructure.rack_placements p JOIN infrastructure.racks k ON k.id = p.rack_id
-		            JOIN infrastructure.rooms m ON m.id = k.room_id WHERE m.building_id = b.id AND p.removed_at IS NULL)
-		FROM infrastructure.buildings b
-		WHERE b.active OR $1::boolean
-		ORDER BY b.site_location_id, b.id
-		LIMIT $2`, includeArchived, application.MaxTreeSites*20)
+// Tree counts buildings, rooms, racks and placed assets per site. It returns
+// at most MaxTreeSites sites (ordered by id) and at most MaxTreeSites*20
+// buildings; Truncated reports that more exist. Counts are GROUP BY aggregates
+// over the selected sites only.
+func (r *Repository) Tree(ctx context.Context, includeArchived bool) (application.TreeResult, error) {
+	var sites []string
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT site_location_id::text FROM infrastructure.buildings
+		WHERE active OR $1::boolean ORDER BY 1 LIMIT $2`, includeArchived, application.MaxTreeSites+1)
 	if err != nil {
-		return nil, fmt.Errorf("infrastructure tree: %w", err)
+		return application.TreeResult{}, fmt.Errorf("infrastructure tree: sites: %w", err)
 	}
-	defer rows.Close()
-	out := []application.SiteSummary{}
-	idx := map[string]int{}
 	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return application.TreeResult{}, fmt.Errorf("infrastructure tree: scan site: %w", err)
+		}
+		sites = append(sites, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return application.TreeResult{}, fmt.Errorf("infrastructure tree: sites: %w", err)
+	}
+	res := application.TreeResult{Sites: []application.SiteSummary{}}
+	if len(sites) > application.MaxTreeSites {
+		sites, res.Truncated = sites[:application.MaxTreeSites], true
+	}
+	if len(sites) == 0 {
+		return res, nil
+	}
+	maxBuildings := application.MaxTreeSites * 20
+	brows, err := r.pool.Query(ctx, `
+		WITH sel AS (
+			SELECT id, site_location_id, name, active, version FROM infrastructure.buildings
+			WHERE site_location_id = ANY($2::uuid[]) AND (active OR $1::boolean)
+			ORDER BY site_location_id, id LIMIT $3
+		), room_counts AS (
+			SELECT m.building_id, count(*) AS n FROM infrastructure.rooms m
+			WHERE m.building_id IN (SELECT id FROM sel) AND (m.active OR $1::boolean) GROUP BY m.building_id
+		), rack_counts AS (
+			SELECT m.building_id, count(*) AS n FROM infrastructure.racks k JOIN infrastructure.rooms m ON m.id = k.room_id
+			WHERE m.building_id IN (SELECT id FROM sel) AND (k.active OR $1::boolean) GROUP BY m.building_id
+		), placed_counts AS (
+			SELECT m.building_id, count(*) AS n FROM infrastructure.rack_placements p
+			JOIN infrastructure.racks k ON k.id = p.rack_id JOIN infrastructure.rooms m ON m.id = k.room_id
+			WHERE m.building_id IN (SELECT id FROM sel) AND p.removed_at IS NULL GROUP BY m.building_id
+		)
+		SELECT s.site_location_id::text, s.id::text, s.name, s.active, s.version,
+		       coalesce(rc.n, 0), coalesce(kc.n, 0), coalesce(pc.n, 0)
+		FROM sel s
+		LEFT JOIN room_counts rc ON rc.building_id = s.id
+		LEFT JOIN rack_counts kc ON kc.building_id = s.id
+		LEFT JOIN placed_counts pc ON pc.building_id = s.id
+		ORDER BY s.site_location_id, s.id`, includeArchived, sites, maxBuildings+1)
+	if err != nil {
+		return application.TreeResult{}, fmt.Errorf("infrastructure tree: %w", err)
+	}
+	defer brows.Close()
+	idx := map[string]int{}
+	n := 0
+	for brows.Next() {
 		var site string
 		var b application.BuildingSummary
-		if err := rows.Scan(&site, &b.ID, &b.Name, &b.Active, &b.Version, &b.Rooms, &b.Racks, &b.Placed); err != nil {
-			return nil, fmt.Errorf("infrastructure tree: scan: %w", err)
+		if err := brows.Scan(&site, &b.ID, &b.Name, &b.Active, &b.Version, &b.Rooms, &b.Racks, &b.Placed); err != nil {
+			return application.TreeResult{}, fmt.Errorf("infrastructure tree: scan: %w", err)
+		}
+		if n++; n > maxBuildings {
+			res.Truncated = true
+			break
 		}
 		b.SiteID = site
 		i, ok := idx[site]
 		if !ok {
-			if len(out) >= application.MaxTreeSites {
-				continue
-			}
-			out = append(out, application.SiteSummary{LocationID: site})
-			i = len(out) - 1
+			res.Sites = append(res.Sites, application.SiteSummary{LocationID: site})
+			i = len(res.Sites) - 1
 			idx[site] = i
 		}
-		out[i].Buildings = append(out[i].Buildings, b)
+		res.Sites[i].Buildings = append(res.Sites[i].Buildings, b)
 	}
-	return out, rows.Err()
+	return res, brows.Err()
 }

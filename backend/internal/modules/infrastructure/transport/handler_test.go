@@ -206,14 +206,44 @@ func TestTopologyPlacementAndVMFlow(t *testing.T) {
 		t.Fatalf("tree: %d %v", code, tree)
 	}
 	pid := pl["id"].(string)
-	if code, _ := call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "oops"}); code != http.StatusBadRequest {
+	if code, _ := call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "oops", "expectedVersion": 1}); code != http.StatusBadRequest {
 		t.Fatalf("free-text reason: %d", code)
 	}
-	if code, _ = call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "relocated"}); code != http.StatusOK {
+	for _, path := range []string{"/remove", "/move"} {
+		if code, _ := call(t, h, "POST", "/api/v1/rack-placements/"+pid+path, map[string]any{"reason": "relocated", "rackId": rid, "uPosition": 1, "heightU": 1, "face": "front"}); code != http.StatusBadRequest {
+			t.Fatalf("%s without expectedVersion: %d", path, code)
+		}
+	}
+	// A visitor without assets.view sees the placement as occupied, without the asset.
+	viewOnly := serve(t, as(admin, "infrastructure.view"))
+	code, vd := call(t, viewOnly, "GET", "/api/v1/racks/"+rid, nil)
+	vp, _ := vd["placements"].([]any)
+	if code != http.StatusOK || len(vp) != 1 || strings.Contains(toJSON(vd), asset) || strings.Contains(toJSON(vd), "AST-1") || vp[0].(map[string]any)["heightU"].(float64) != 2 {
+		t.Fatalf("rack detail without assets.view leaks the asset: %d %v", code, vd)
+	}
+	if code, l := call(t, viewOnly, "GET", "/api/v1/racks/"+rid+"/placements", nil); code != http.StatusOK || strings.Contains(toJSON(l), asset) || strings.Contains(toJSON(l), "AST-1") {
+		t.Fatalf("placement list without assets.view leaks the asset: %d %v", code, l)
+	}
+	if code, one := call(t, viewOnly, "GET", "/api/v1/rack-placements/"+pid, nil); code != http.StatusOK || strings.Contains(toJSON(one), asset) {
+		t.Fatalf("placement without assets.view leaks the asset: %d %v", code, one)
+	}
+	if code, _ := call(t, viewOnly, "GET", "/api/v1/infrastructure/placement-warnings", nil); code != http.StatusForbidden {
+		t.Fatalf("warnings without assets.view: %d", code)
+	}
+	if code, wl := call(t, h, "GET", "/api/v1/infrastructure/placement-warnings", nil); code != http.StatusOK || wl["truncated"] != false {
+		t.Fatalf("warnings: %d %v", code, wl)
+	}
+	if code, tr := call(t, h, "GET", "/api/v1/infrastructure/tree", nil); code != http.StatusOK || tr["truncated"] != false {
+		t.Fatalf("tree truncated flag: %d %v", code, tr)
+	}
+	if code, _ = call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "relocated", "expectedVersion": pl["version"]}); code != http.StatusOK {
 		t.Fatalf("remove: %d", code)
 	}
-	if code, _ = call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "relocated"}); code != http.StatusConflict {
-		t.Fatalf("remove twice: %d", code)
+	if code, _ = call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "relocated", "expectedVersion": pl["version"]}); code != http.StatusOK {
+		t.Fatalf("retried remove must be idempotent: %d", code)
+	}
+	if code, _ = call(t, h, "POST", "/api/v1/rack-placements/"+pid+"/remove", map[string]any{"reason": "other", "expectedVersion": pl["version"]}); code != http.StatusConflict {
+		t.Fatalf("remove twice with another reason: %d", code)
 	}
 	if code, loc = call(t, h, "GET", "/api/v1/assets/"+asset+"/location", nil); code != http.StatusOK || loc["placed"] != false {
 		t.Fatalf("location after removal: %d %v", code, loc)
@@ -224,13 +254,29 @@ func TestTopologyPlacementAndVMFlow(t *testing.T) {
 		t.Fatalf("vm: %d %v", code, vm)
 	}
 	vid := vm["id"].(string)
-	if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+"/state", map[string]any{"state": "stopped"}); code != http.StatusOK {
+	if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+"/state", map[string]any{"state": "stopped"}); code != http.StatusBadRequest {
+		t.Fatalf("state without expectedVersion: %d", code)
+	}
+	for _, c := range []struct {
+		path string
+		body map[string]any
+	}{{"/hypervisor", map[string]any{}}, {"/decommission", map[string]any{"reason": "retired"}}} {
+		if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+c.path, c.body); code != http.StatusBadRequest {
+			t.Fatalf("%s without expectedVersion: %d", c.path, code)
+		}
+	}
+	for _, path := range []string{"/archive", "/unarchive"} {
+		if code, _ := call(t, h, "POST", "/api/v1/racks/"+rid+path, map[string]any{}); code != http.StatusBadRequest {
+			t.Fatalf("rack %s without expectedVersion: %d", path, code)
+		}
+	}
+	if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+"/state", map[string]any{"state": "stopped", "expectedVersion": 1}); code != http.StatusOK {
 		t.Fatalf("state: %d", code)
 	}
 	if code, l := call(t, h, "GET", "/api/v1/virtual-machines?state=stopped&q=http-vm", nil); code != http.StatusOK || len(l["items"].([]any)) != 1 {
 		t.Fatalf("list: %d %v", code, l)
 	}
-	if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+"/decommission", map[string]any{"reason": "retired"}); code != http.StatusOK {
+	if code, _ := call(t, h, "POST", "/api/v1/virtual-machines/"+vid+"/decommission", map[string]any{"reason": "retired", "expectedVersion": 2}); code != http.StatusOK {
 		t.Fatalf("decommission: %d", code)
 	}
 	if code, _ := call(t, h, "PATCH", "/api/v1/virtual-machines/"+vid, map[string]any{"vcpu": 4, "expectedVersion": 4}); code != http.StatusConflict {

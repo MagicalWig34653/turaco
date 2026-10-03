@@ -14,15 +14,13 @@ type versionBody struct {
 // ---- tree ----
 
 func (h *handler) tree(w http.ResponseWriter, r *http.Request) {
-	sites, err := h.svc.Tree(r.Context(), principal(r), flag(r, "includeArchived"))
+	tree, err := h.svc.Tree(r.Context(), principal(r), flag(r, "includeArchived"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	out := struct {
-		Items []siteDTO `json:"items"`
-	}{Items: make([]siteDTO, 0, len(sites))}
-	for _, s := range sites {
+	out := treeDTO{Items: make([]siteDTO, 0, len(tree.Sites)), Truncated: tree.Truncated}
+	for _, s := range tree.Sites {
 		d := siteDTO{LocationID: s.LocationID, Name: s.Name, Buildings: len(s.Buildings), Items: make([]buildingSummaryDTO, 0, len(s.Buildings))}
 		for _, b := range s.Buildings {
 			d.Rooms, d.Racks, d.Placed = d.Rooms+b.Rooms, d.Racks+b.Racks, d.Placed+b.Placed
@@ -200,18 +198,22 @@ func (h *handler) getRack(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	ids := make([]string, 0, len(d.Placements))
-	for _, p := range d.Placements {
-		ids = append(ids, p.AssetID)
+	showAsset := principal(r).AssetsView
+	var refs map[string]string
+	if showAsset {
+		ids := make([]string, 0, len(d.Placements))
+		for _, p := range d.Placements {
+			ids = append(ids, p.AssetID)
+		}
+		if refs, err = h.svc.AssetReferences(r.Context(), ids); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
-	refs, err := h.svc.AssetReferences(r.Context(), ids)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
+	conv := placementConv(showAsset)
 	out := rackDetailDTO{rackDTO: toRack(d.Rack), Placements: make([]placementDTO, 0, len(d.Placements))}
 	for _, p := range d.Placements {
-		dto := toPlacement(p)
+		dto := conv(p)
 		if ref, ok := refs[p.AssetID]; ok {
 			dto.AssetReference = &ref
 		}
@@ -279,14 +281,17 @@ func (h *handler) listPlacements(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	out := toList(res, toPlacement)
-	ids := make([]string, 0, len(res.Items))
-	for _, p := range res.Items {
-		ids = append(ids, p.AssetID)
-	}
-	if out.Names, err = h.svc.AssetReferences(r.Context(), ids); err != nil {
-		h.fail(w, r, err)
-		return
+	showAsset := principal(r).AssetsView
+	out := toList(res, placementConv(showAsset))
+	if showAsset {
+		ids := make([]string, 0, len(res.Items))
+		for _, p := range res.Items {
+			ids = append(ids, p.AssetID)
+		}
+		if out.Names, err = h.svc.AssetReferences(r.Context(), ids); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -297,7 +302,7 @@ func (h *handler) getPlacement(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toPlacement(out))
+	httpx.JSON(w, http.StatusOK, placementConv(principal(r).AssetsView)(out))
 }
 
 type placementBody struct {
@@ -319,7 +324,7 @@ func (h *handler) place(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, toPlacement(out))
+	httpx.JSON(w, http.StatusCreated, placementConv(principal(r).AssetsView)(out))
 }
 
 func (h *handler) move(w http.ResponseWriter, r *http.Request) {
@@ -336,7 +341,7 @@ func (h *handler) move(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toPlacement(out))
+	httpx.JSON(w, http.StatusOK, placementConv(principal(r).AssetsView)(out))
 }
 
 func (h *handler) remove(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +357,30 @@ func (h *handler) remove(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toPlacement(out))
+	httpx.JSON(w, http.StatusOK, placementConv(principal(r).AssetsView)(out))
+}
+
+func (h *handler) placementWarnings(w http.ResponseWriter, r *http.Request) {
+	res, err := h.svc.PlacementWarnings(r.Context(), principal(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := struct {
+		Items     []warningDTO `json:"items"`
+		Truncated bool         `json:"truncated"`
+	}{Items: make([]warningDTO, 0, len(res.Items)), Truncated: res.Truncated}
+	for _, x := range res.Items {
+		p := x.Placement
+		d := warningDTO{PlacementID: p.ID, RackID: p.RackID, RackName: x.RackName, AssetID: p.AssetID, AssetStatus: x.AssetStatus,
+			UPosition: p.UPosition, HeightU: p.HeightU, Face: p.Face, PlacedAt: ts(p.PlacedAt)}
+		if x.AssetRef != "" {
+			ref := x.AssetRef
+			d.AssetReference = &ref
+		}
+		out.Items = append(out.Items, d)
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) assetLocation(w http.ResponseWriter, r *http.Request) {

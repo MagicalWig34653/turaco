@@ -63,8 +63,13 @@ const (
 	maxNetNote  = 500
 	maxNotes    = 2000
 	maxHost     = 253
-	// MaxTreeSites bounds the site tree.
+	// MaxTreeSites bounds the site tree; at most MaxTreeSites*20 buildings are returned.
 	MaxTreeSites = 500
+	// MaxWarnings bounds the placement warnings returned; MaxWarningScan bounds
+	// the active placements checked per request, in batches of warningBatch.
+	MaxWarnings    = 100
+	MaxWarningScan = 5000
+	warningBatch   = 500
 )
 
 // Building is a physical building at a Site (an Organization Location).
@@ -226,6 +231,36 @@ type BuildingSummary struct {
 	Version int
 }
 
+// TreeResult is the infrastructure tree; Truncated reports that more Sites or
+// Buildings exist than the bounded tree returns.
+type TreeResult struct {
+	Sites     []SiteSummary
+	Truncated bool
+}
+
+// PlacementRef is an active placement with the name of its Rack.
+type PlacementRef struct {
+	Placement Placement
+	RackName  string
+}
+
+// PlacementWarning is an active placement whose Asset can no longer be in a
+// rack (disposed, lost, retired) or no longer exists. AssetStatus is the
+// Asset status, or "missing".
+type PlacementWarning struct {
+	Placement   Placement
+	RackName    string
+	AssetRef    string
+	AssetStatus string
+}
+
+// WarningsResult is the bounded list of placement warnings. Truncated reports
+// that the scan or the list limit stopped before all placements were checked.
+type WarningsResult struct {
+	Items     []PlacementWarning
+	Truncated bool
+}
+
 // Principal is the caller's authority: View (infrastructure.view) reads,
 // Manage (infrastructure.manage) also changes. AssetsView (assets.view or
 // assets.manage) is needed for the Asset "where is it" lookup.
@@ -363,6 +398,8 @@ type Store interface {
 	ClosePlacementTx(ctx context.Context, tx pgx.Tx, id, reason, removedBy string) (Placement, error)
 	GetPlacement(ctx context.Context, id string) (Placement, error)
 	ActivePlacements(ctx context.Context, rackID string) ([]Placement, error)
+	// ActivePlacementsAfter pages through all active placements by id.
+	ActivePlacementsAfter(ctx context.Context, afterID string, limit int) ([]PlacementRef, error)
 	ListPlacements(ctx context.Context, rackID string, includeRemoved bool, page Page) (Result[Placement], error)
 	WhereIs(ctx context.Context, assetID string) (AssetLocation, error)
 
@@ -372,5 +409,5 @@ type Store interface {
 	GetVM(ctx context.Context, id string) (VirtualMachine, error)
 	ListVMs(ctx context.Context, f VMFilter) (Result[VirtualMachine], error)
 
-	Tree(ctx context.Context, includeArchived bool) ([]SiteSummary, error)
+	Tree(ctx context.Context, includeArchived bool) (TreeResult, error)
 }
