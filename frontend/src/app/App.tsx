@@ -36,6 +36,8 @@ import {
   ManagementArtifactsScreen,
   ManagementArtifactDetailScreen,
   ManagementFiltersScreen,
+  DirectoryGroupManagementScreen,
+  UserManagementScreen,
 } from '../modules/endpoints/ManagementScreens';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
@@ -121,6 +123,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ManagementArtifactsScreen />;
     case 'managementArtifactDetail':
       return <ManagementArtifactDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'endpointGroupManagement':
+      return <DirectoryGroupManagementScreen key={params.id} id={params.id ?? ''} />;
+    case 'endpointUserManagement':
+      return <UserManagementScreen key={params.id} id={params.id ?? ''} />;
     case 'managementFilters':
       return <ManagementFiltersScreen />;
     case 'assets':

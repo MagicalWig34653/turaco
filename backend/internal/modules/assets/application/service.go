@@ -672,6 +672,17 @@ func (s *Service) GetPlain(ctx context.Context, id string) (Asset, error) {
 	return s.store.Get(ctx, id)
 }
 
+// UserHolders returns assetID -> User id for the given assets that are currently assigned to a User.
+// It authorizes nothing: callers (other modules through the public contract) decide who may see it.
+func (s *Service) UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	return s.store.UserHolders(ctx, assetIDs)
+}
+
+// AssetsHeldByUsers returns userID -> ids of the assets currently assigned to the User (at most limit in total).
+func (s *Service) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
+	return s.store.AssetsHeldByUsers(ctx, userIDs, limit)
+}
+
 // ProductNames returns id -> name of the products of the given assets.
 func (s *Service) ProductNames(ctx context.Context, assets []Asset) (map[string]string, error) {
 	ids := make([]string, 0, len(assets))

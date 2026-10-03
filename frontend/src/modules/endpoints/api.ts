@@ -15,6 +15,12 @@ import type {
   ManagementFilter,
   ManagementFilterFilters,
   ManagementObservation,
+  DeviceManagementFilters,
+  DeviceManagementPage,
+  AssignmentPath,
+  GroupManagement,
+  UserManagement,
+  ArtifactTargets,
 } from './types';
 
 registerErrorMessages({
@@ -28,6 +34,7 @@ registerErrorMessages({
   'endpoints.provider_not_configured': 'error.endpointsProviderNotConfigured',
   'endpoints.invalid_cursor': 'error.invalidRequest',
   'endpoints.invalid_limit': 'error.invalidRequest',
+  'endpoints.sync_cooldown': 'error.endpointsSyncCooldown',
 });
 
 const enc = encodeURIComponent;
@@ -62,5 +69,29 @@ export const endpointsApi = {
       signal,
       query: { limit: 50, cursor },
     }),
+  deviceManagement: (
+    id: string,
+    filters: DeviceManagementFilters,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) =>
+    api.get<DeviceManagementPage>(`/devices/${enc(id)}/management`, {
+      signal,
+      query: { ...filters, limit: 50, cursor },
+    }),
+  assignmentPath: (id: string, artifactId: string, signal?: AbortSignal) =>
+    api.get<AssignmentPath>(`/devices/${enc(id)}/management/${enc(artifactId)}/path`, { signal }),
+  groupManagement: (id: string, cursor?: string, signal?: AbortSignal) =>
+    api.get<GroupManagement>(`/directory-groups/${enc(id)}/management`, {
+      signal,
+      query: { limit: 50, cursor },
+    }),
+  userManagement: (id: string, cursor?: string, signal?: AbortSignal) =>
+    api.get<UserManagement>(`/users/${enc(id)}/management`, {
+      signal,
+      query: { limit: 50, cursor },
+    }),
+  artifactTargets: (id: string, signal?: AbortSignal) =>
+    api.get<ArtifactTargets>(`/management-artifacts/${enc(id)}/targets`, { signal }),
   sync: () => api.post<SyncCounts>('/endpoint-sync', {}),
 };

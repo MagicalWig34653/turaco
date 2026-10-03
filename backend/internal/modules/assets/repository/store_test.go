@@ -466,3 +466,37 @@ func TestReservedAssetsLeaveOnlyThroughInventoryAndHoldersSeeAReducedView(t *tes
 		t.Error("the serial number change must be audited with old and new value")
 	}
 }
+
+func TestUserHoldersAndHeldAssets(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	repo := repository.New(e.pool)
+	mk := func(serial string) application.Asset {
+		a := e.create(application.CreateInput{ProductID: e.laptop, SerialNumber: serial + e.corr, AssetTag: "T" + serial + e.corr, Status: "received"})
+		return e.mustOp(a, application.OpMakeAvailable, application.Params{})
+	}
+	held, returned, free := mk("h"), mk("r"), mk("f")
+	held = e.mustOp(held, application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	returned = e.mustOp(returned, application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	e.mustOp(returned, application.OpReturn, application.Params{})
+
+	got, err := repo.UserHolders(ctx, []string{held.ID, returned.ID, free.ID})
+	if err != nil || len(got) != 1 || got[held.ID] != e.holder {
+		t.Fatalf("holders = %v, %v (returned and unassigned assets have no holder)", got, err)
+	}
+	byUser, err := repo.AssetsHeldByUsers(ctx, []string{e.holder, e.other}, 10)
+	if err != nil || len(byUser[e.holder]) != 1 || byUser[e.holder][0] != held.ID || len(byUser[e.other]) != 0 {
+		t.Fatalf("held = %v, %v", byUser, err)
+	}
+	// Malformed ids are ignored instead of failing the lookup; the row limit is applied.
+	if got, err := repo.UserHolders(ctx, []string{"not-a-uuid", held.ID}); err != nil || got[held.ID] != e.holder {
+		t.Fatalf("holders with a malformed id = %v, %v", got, err)
+	}
+	if got, err := repo.AssetsHeldByUsers(ctx, []string{"nope", e.holder}, 10); err != nil || len(got[e.holder]) != 1 {
+		t.Fatalf("held with a malformed id = %v, %v", got, err)
+	}
+	more := e.mustOp(mk("h2"), application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	if got, err := repo.AssetsHeldByUsers(ctx, []string{e.holder}, 1); err != nil || len(got[e.holder]) != 1 {
+		t.Fatalf("limit 1 = %v, %v (asset %s)", got, err, more.ID)
+	}
+}

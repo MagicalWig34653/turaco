@@ -26,6 +26,8 @@ export type RouteId =
   | 'managementArtifacts'
   | 'managementArtifactDetail'
   | 'managementFilters'
+  | 'endpointGroupManagement'
+  | 'endpointUserManagement'
   | 'assetNew'
   | 'assetDetail'
   | 'stock'
@@ -159,6 +161,20 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'nav.managementFilters',
     requiresAny: ['endpoint.management.view', 'endpoints.manage'],
     nav: 'endpoints',
+  },
+  {
+    id: 'endpointGroupManagement',
+    pattern: '/endpoints/groups/:id',
+    titleKey: 'management.groupPage',
+    requires: ['organization.directory.view'],
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'endpointUserManagement',
+    pattern: '/endpoints/users/:id',
+    titleKey: 'management.userPage',
+    requires: ['organization.directory.view'],
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
   },
   { id: 'myAssets', pattern: '/my-assets', titleKey: 'nav.myAssets', nav: 'main' },
   {

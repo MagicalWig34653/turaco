@@ -451,7 +451,7 @@ func (r *Repository) ResolveFindingTx(ctx context.Context, tx pgx.Tx, kind, devi
 // ---- reads ----
 
 func (r *Repository) GetDevice(ctx context.Context, id string) (application.Device, error) {
-	d, err := scanDevice(r.pool.QueryRow(ctx, `SELECT `+deviceColumns+` FROM endpoints.devices WHERE id = $1::uuid`, id))
+	d, err := scanDevice(r.q(ctx).QueryRow(ctx, `SELECT `+deviceColumns+` FROM endpoints.devices WHERE id = $1::uuid`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Device{}, application.ErrNotFound
 	}

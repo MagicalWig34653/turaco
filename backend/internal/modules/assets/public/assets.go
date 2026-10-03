@@ -163,3 +163,14 @@ func (a *Assets) FindBySerial(ctx context.Context, serial string) (Asset, error)
 	}
 	return view(got), nil
 }
+
+// UserHolders returns assetID -> User id for the assets currently assigned to a User (not to a Team or
+// Location). Ids must be asset UUIDs. The holder of an Asset is personal data: the caller decides who may see it.
+func (a *Assets) UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	return a.svc.UserHolders(ctx, assetIDs)
+}
+
+// AssetsHeldByUsers returns userID -> ids of the assets currently assigned to the User, at most limit in total.
+func (a *Assets) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
+	return a.svc.AssetsHeldByUsers(ctx, userIDs, limit)
+}

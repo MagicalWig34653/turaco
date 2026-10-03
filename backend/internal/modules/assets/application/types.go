@@ -215,6 +215,10 @@ type Store interface {
 	BySerial(ctx context.Context, serial string) ([]Asset, error)
 	List(ctx context.Context, f Filter) (Result, error)
 	Assignments(ctx context.Context, assetID string) ([]Assignment, error)
+	// UserHolders returns assetID -> User id for the assets that are currently assigned to a User.
+	UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error)
+	// AssetsHeldByUsers returns userID -> asset ids currently assigned to the User, at most limit assets in total.
+	AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error)
 	// InTx runs fn in one transaction.
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 }

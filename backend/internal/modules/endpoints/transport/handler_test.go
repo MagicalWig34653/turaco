@@ -287,9 +287,44 @@ func TestManagementEndpointsOverHTTP(t *testing.T) {
 	if rec := do(manage, "GET", "/api/v1/devices/00000000-0000-7000-8000-0000000000e5/management-observations", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown device = %d", rec.Code)
 	}
+	// Management views: the three states are separate fields; groups are redacted without organization.directory.view.
+	devID := devs.Items[0].ID
+	both := serve(t, as(admin, "endpoints.view", "endpoint.management.view"), fake, true)
+	vpath := "/api/v1/devices/" + devID + "/management"
+	rec = do(both, "GET", vpath, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"assigned":false`) || !strings.Contains(rec.Body.String(), `"expected":{`) ||
+		!strings.Contains(rec.Body.String(), `"state":"failed"`) || !strings.Contains(rec.Body.String(), `"redacted":true`) || strings.Contains(rec.Body.String(), `"g1"`) {
+		t.Errorf("device management = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(both, "GET", vpath+"?mismatch=bogus", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad mismatch = %d", rec.Code)
+	}
+	if rec := do(both, "GET", vpath+"/"+id+"/path", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"path":[`) {
+		t.Errorf("path = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(both, "GET", "/api/v1/management-artifacts/"+id+"/targets", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"evaluation":{"shown":true`) {
+		t.Errorf("targets = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(view, "GET", vpath, ""); rec.Code != http.StatusForbidden {
+		t.Errorf("device management without device access = %d", rec.Code)
+	}
+	unknown := "00000000-0000-7000-8000-0000000000e5"
+	if rec := do(both, "GET", "/api/v1/directory-groups/"+unknown+"/management", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("group view without directory = %d", rec.Code)
+	}
+	if rec := do(view, "GET", "/api/v1/directory-groups/"+unknown+"/management", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown group = %d", rec.Code)
+	}
+	if rec := do(view, "GET", "/api/v1/users/"+unknown+"/management", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown user = %d", rec.Code)
+	}
+	if rec := do(both, "GET", "/api/v1/devices/"+unknown+"/management", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown device view = %d", rec.Code)
+	}
 	// Without any permission nothing is readable.
 	none := serve(t, as(admin), fake, true)
-	for _, p := range []string{"/api/v1/management-artifacts", "/api/v1/management-artifacts/" + id, "/api/v1/management-filters", path} {
+	for _, p := range []string{"/api/v1/management-artifacts", "/api/v1/management-artifacts/" + id, "/api/v1/management-filters", path, vpath,
+		vpath + "/" + id + "/path", "/api/v1/management-artifacts/" + id + "/targets", "/api/v1/users/" + unknown + "/management"} {
 		if rec := do(none, "GET", p, ""); rec.Code != http.StatusForbidden {
 			t.Errorf("no permission: GET %s = %d", p, rec.Code)
 		}

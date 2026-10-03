@@ -317,3 +317,63 @@ func validUUID(s string) bool {
 	}
 	return true
 }
+
+// validUUIDs drops malformed ids so a bad id never turns into a cast error for the whole lookup.
+func validUUIDs(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		if validUUID(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// MaxHeldAssetsRows bounds AssetsHeldByUsers whatever the caller asks for.
+const MaxHeldAssetsRows = 5000
+
+func (r *Repository) UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if assetIDs = validUUIDs(assetIDs); len(assetIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT asset_id::text, assignee_id::text FROM assets.asset_assignments
+		WHERE asset_id = ANY($1::uuid[]) AND returned_at IS NULL AND assignee_type = 'user'`, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("user holders: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var asset, user string
+		if err := rows.Scan(&asset, &user); err != nil {
+			return nil, fmt.Errorf("user holders: scan: %w", err)
+		}
+		out[asset] = user
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
+	out := map[string][]string{}
+	if userIDs = validUUIDs(userIDs); len(userIDs) == 0 || limit <= 0 {
+		return out, nil
+	}
+	limit = min(limit, MaxHeldAssetsRows)
+	rows, err := r.pool.Query(ctx, `
+		SELECT assignee_id::text, asset_id::text FROM assets.asset_assignments
+		WHERE assignee_id = ANY($1::uuid[]) AND returned_at IS NULL AND assignee_type = 'user'
+		ORDER BY assignee_id, asset_id LIMIT $2`, userIDs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("assets held by users: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var user, asset string
+		if err := rows.Scan(&user, &asset); err != nil {
+			return nil, fmt.Errorf("assets held by users: scan: %w", err)
+		}
+		out[user] = append(out[user], asset)
+	}
+	return out, rows.Err()
+}

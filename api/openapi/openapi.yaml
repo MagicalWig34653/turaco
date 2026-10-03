@@ -4900,6 +4900,133 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/management:
+    get:
+      operationId: listDeviceManagement
+      summary: List assigned, expected and observed artifact states for a Device.
+      description: "Needs endpoint.management.view or endpoints.manage and endpoints.view or endpoints.manage. Expected Applicable is Turaco-derived, not provider state. Group and User names require organization.directory.view."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: kind
+          in: query
+          schema: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        - name: state
+          in: query
+          schema: {type: string, enum: [applied, pending, failed, conflict, not_applicable, unknown, none]}
+        - name: expected
+          in: query
+          schema: {type: string, enum: [applicable, excluded, not_applicable, unknown]}
+        - name: mismatch
+          in: query
+          schema: {type: string, enum: [assigned_not_observed, expected_not_applied, observed_not_expected]}
+      responses:
+        '200':
+          description: Management view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceManagementList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/management/{artifactId}/path:
+    get:
+      operationId: getDeviceAssignmentPath
+      summary: Explain the assignment path for a Device and artifact.
+      description: "Needs endpoint.management.view or endpoints.manage and endpoints.view or endpoints.manage. Expected Applicable is Turaco-derived, not provider state. Group and User names require organization.directory.view."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: artifactId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Management view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssignmentPathView'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-groups/{id}/management:
+    get:
+      operationId: getDirectoryGroupManagement
+      summary: List management affecting a Directory Group.
+      description: "Needs endpoint.management.view or endpoints.manage and organization.directory.view. Expected Applicable is Turaco-derived, not provider state. Names require organization.directory.view. Evaluation is bounded and may be truncated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Management view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GroupManagementView'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/management:
+    get:
+      operationId: getUserManagement
+      summary: List management targeting a User and their Devices.
+      description: "Needs endpoint.management.view or endpoints.manage and organization.directory.view. Device details also require assets.view. Expected Applicable is Turaco-derived, not provider state. Names require organization.directory.view."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Management view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserManagementView'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /management-artifacts/{id}/targets:
+    get:
+      operationId: getManagementArtifactTargets
+      summary: Show assigned targets and expected and observed target counts.
+      description: "Needs endpoint.management.view or endpoints.manage. Expected Applicable is Turaco-derived, not provider state. Group and User names require organization.directory.view. Device evaluation requires endpoints.view; User-held Devices also require assets.view."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Management view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ArtifactTargetsView'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /endpoint-sync:
     post:
       operationId: runEndpointSync
@@ -7796,6 +7923,186 @@ components:
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/ManagementObservation'}}
         nextCursor: {type: string}
+    ManagementGroupRef:
+      type: object
+      additionalProperties: false
+      required: [externalId, name, redacted]
+      properties:
+        externalId: {type: [string, 'null']}
+        name: {type: [string, 'null']}
+        redacted: {type: boolean}
+    ManagementUserRef:
+      type: object
+      additionalProperties: false
+      required: [id, name, redacted]
+      properties:
+        id: {type: [string, 'null'], format: uuid}
+        name: {type: [string, 'null']}
+        redacted: {type: boolean}
+    ManagementExpected:
+      type: object
+      additionalProperties: false
+      description: Turaco-derived Expected Applicable evaluation, not provider state.
+      required: [result, confidence, reasons, evaluatedAt]
+      properties:
+        result: {type: string, enum: [applicable, excluded, not_applicable, unknown]}
+        confidence: {type: string, enum: [high, medium, low]}
+        reasons: {type: array, items: {type: string}}
+        evaluatedAt: {type: string, format: date-time}
+    ManagementObserved:
+      type: object
+      additionalProperties: false
+      required: [state, rawStatus, source, observedAt, lastSyncedAt, stale]
+      properties:
+        state: {type: string, enum: [applied, pending, failed, conflict, not_applicable, unknown]}
+        rawStatus: {type: string}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        stale: {type: boolean}
+    ManagementAssignedTarget:
+      type: object
+      additionalProperties: false
+      required: [assignmentId, targetKind, group, mode, intent, filterMode, filter, match, origins, nested, source, lastSyncedAt]
+      properties:
+        assignmentId: {type: string, format: uuid}
+        targetKind: {type: string}
+        group: {oneOf: [{$ref: '#/components/schemas/ManagementGroupRef'}, {type: 'null'}]}
+        mode: {type: string}
+        intent: {type: string}
+        filterMode: {type: string}
+        filter: {oneOf: [{$ref: '#/components/schemas/ManagementFilterSummary'}, {type: 'null'}]}
+        match: {type: string}
+        origins: {type: array, items: {type: string}}
+        nested: {type: boolean}
+        source: {type: string}
+        lastSyncedAt: {type: string, format: date-time}
+    DeviceManagementItem:
+      type: object
+      additionalProperties: false
+      required: [artifact, assigned, assignments, expected, observed]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        assigned: {type: boolean}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        expected: {$ref: '#/components/schemas/ManagementExpected'}
+        observed: {oneOf: [{$ref: '#/components/schemas/ManagementObserved'}, {type: 'null'}]}
+        mismatch: {type: string, enum: [assigned_not_observed, expected_not_applied, observed_not_expected]}
+    DeviceManagementList:
+      type: object
+      additionalProperties: false
+      required: [items, truncated]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/DeviceManagementItem'}}
+        nextCursor: {type: string}
+        truncated: {type: boolean}
+    ManagementPathStep:
+      type: object
+      additionalProperties: false
+      required: [kind, origin, group, result]
+      properties:
+        kind: {type: string, enum: [membership, nested_in, target, assignment, filter, user_unknown, result]}
+        origin: {type: string}
+        group: {oneOf: [{$ref: '#/components/schemas/ManagementGroupRef'}, {type: 'null'}]}
+        assignmentId: {type: string, format: uuid}
+        mode: {type: string}
+        intent: {type: string}
+        targetKind: {type: string}
+        filterResult: {type: string}
+        result: {type: string}
+    AssignmentPathView:
+      type: object
+      additionalProperties: false
+      required: [deviceId, deviceName, artifact, user, expected, path, assignments, observed]
+      properties:
+        deviceId: {type: string, format: uuid}
+        deviceName: {type: string}
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        user: {oneOf: [{$ref: '#/components/schemas/ManagementUserRef'}, {type: 'null'}]}
+        expected: {$ref: '#/components/schemas/ManagementExpected'}
+        path: {type: array, items: {$ref: '#/components/schemas/ManagementPathStep'}}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        observed: {oneOf: [{$ref: '#/components/schemas/ManagementObserved'}, {type: 'null'}]}
+    ManagementDeviceExample:
+      type: object
+      additionalProperties: false
+      required: [deviceId, name, result, confidence, observed]
+      properties:
+        deviceId: {type: string, format: uuid}
+        name: {type: string}
+        result: {type: string}
+        confidence: {type: string}
+        observed: {type: string}
+    ManagementEvaluation:
+      type: object
+      additionalProperties: false
+      required: [shown, evaluated, truncated, expected, observed, examples]
+      properties:
+        shown: {type: boolean}
+        evaluated: {type: integer}
+        truncated: {type: boolean}
+        expected: {type: object, additionalProperties: {type: integer}}
+        observed: {type: object, additionalProperties: {type: integer}}
+        examples: {type: array, items: {$ref: '#/components/schemas/ManagementDeviceExample'}}
+    GroupManagementItem:
+      type: object
+      additionalProperties: false
+      required: [artifact, assignments, evaluation]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        evaluation: {$ref: '#/components/schemas/ManagementEvaluation'}
+    GroupManagementView:
+      type: object
+      additionalProperties: false
+      required: [groupId, externalId, name, items, candidateDevices, candidatesTruncated]
+      properties:
+        groupId: {type: string, format: uuid}
+        externalId: {type: string}
+        name: {type: string}
+        items: {type: array, items: {$ref: '#/components/schemas/GroupManagementItem'}}
+        nextCursor: {type: string}
+        candidateDevices: {type: integer}
+        candidatesTruncated: {type: boolean}
+    UserManagementDevice:
+      type: object
+      additionalProperties: false
+      required: [deviceId, name, expected, observed]
+      properties:
+        deviceId: {type: string, format: uuid}
+        name: {type: string}
+        expected: {$ref: '#/components/schemas/ManagementExpected'}
+        observed: {oneOf: [{$ref: '#/components/schemas/ManagementObserved'}, {type: 'null'}]}
+    UserManagementItem:
+      type: object
+      additionalProperties: false
+      required: [artifact, targeting, userResult, devices]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        targeting: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        userResult: {type: string}
+        devices: {type: array, items: {$ref: '#/components/schemas/UserManagementDevice'}}
+    UserManagementView:
+      type: object
+      additionalProperties: false
+      required: [userId, name, items, devicesShown, devicesTruncated, truncated]
+      properties:
+        userId: {type: string, format: uuid}
+        name: {type: string}
+        items: {type: array, items: {$ref: '#/components/schemas/UserManagementItem'}}
+        nextCursor: {type: string}
+        devicesShown: {type: boolean}
+        devicesTruncated: {type: boolean}
+        truncated: {type: boolean, description: "True when the User's memberships or the group nesting were cut; the artifact list may be incomplete and group-targeted results are unknown."}
+    ArtifactTargetsView:
+      type: object
+      additionalProperties: false
+      required: [artifact, assignments, evaluation, observedTotal]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        evaluation: {$ref: '#/components/schemas/ManagementEvaluation'}
+        observedTotal: {type: object, additionalProperties: {type: integer}}
     EndpointSyncResult:
       type: object
       additionalProperties: {type: integer}

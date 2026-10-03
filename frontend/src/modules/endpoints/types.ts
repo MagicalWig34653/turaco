@@ -201,3 +201,112 @@ export type SyncCounts = {
   providerFindingsResolved: number;
   managementErrors: number;
 };
+
+export type GroupRef = { externalId: string | null; name: string | null; redacted: boolean };
+export type UserRef = { id: string | null; name: string | null; redacted: boolean };
+export type Expected = {
+  result: string;
+  confidence: string;
+  reasons: string[];
+  evaluatedAt: string;
+};
+export type Observed = {
+  state: string;
+  rawStatus: string;
+  source: string;
+  observedAt: string;
+  lastSyncedAt: string;
+  stale: boolean;
+};
+export type AssignedTarget = {
+  assignmentId: string;
+  targetKind: string;
+  group: GroupRef | null;
+  mode: string;
+  intent: string;
+  filterMode: string;
+  filter: FilterSummary | null;
+  match: string;
+  origins: string[];
+  nested: boolean;
+  source: string;
+  lastSyncedAt: string;
+};
+export type DeviceManagementItem = {
+  artifact: ManagementArtifact;
+  assigned: boolean;
+  assignments: AssignedTarget[];
+  expected: Expected;
+  observed: Observed | null;
+  mismatch?: string;
+};
+export type DeviceManagementPage = {
+  items: DeviceManagementItem[];
+  nextCursor?: string;
+  truncated: boolean;
+};
+export type PathStep = {
+  kind: string;
+  origin: string;
+  group: GroupRef | null;
+  assignmentId?: string;
+  mode?: string;
+  intent?: string;
+  targetKind?: string;
+  filterResult?: string;
+  result: string;
+};
+export type AssignmentPath = {
+  deviceId: string;
+  deviceName: string;
+  artifact: ManagementArtifact;
+  user: UserRef | null;
+  expected: Expected;
+  path: PathStep[];
+  assignments: AssignedTarget[];
+  observed: Observed | null;
+};
+export type Evaluation = {
+  shown: boolean;
+  evaluated: number;
+  truncated: boolean;
+  expected: Record<string, number>;
+  observed: Record<string, number>;
+  examples: {
+    deviceId: string;
+    name: string;
+    result: string;
+    confidence: string;
+    observed: string;
+  }[];
+};
+export type GroupManagement = {
+  groupId: string;
+  externalId: string;
+  name: string;
+  items: { artifact: ManagementArtifact; assignments: AssignedTarget[]; evaluation: Evaluation }[];
+  nextCursor?: string;
+  candidateDevices: number;
+  candidatesTruncated: boolean;
+};
+export type UserManagement = {
+  userId: string;
+  name: string;
+  items: {
+    artifact: ManagementArtifact;
+    targeting: AssignedTarget[];
+    userResult: string;
+    devices: { deviceId: string; name: string; expected: Expected; observed: Observed | null }[];
+  }[];
+  nextCursor?: string;
+  devicesShown: boolean;
+  devicesTruncated: boolean;
+  truncated: boolean;
+};
+export type ArtifactTargets = {
+  artifact: ManagementArtifact;
+  assignments: AssignedTarget[];
+  evaluation: Evaluation;
+  observedTotal: Record<string, number>;
+};
+export type DeviceManagementFilters = { kind: string; state: string; mismatch: string };
