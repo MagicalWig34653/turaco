@@ -20,6 +20,7 @@ import (
 var allTestEventTypes = []string{
 	"AssetAssigned", "PurchaseOrderApproved", "RunbookExecutionStarted", "RunbookExecutionCompleted", "MajorIncidentDeclared", "MajorIncidentUpdated", "TicketCreated", "TicketAssigned", "TicketResolved", "TicketCommentAdded", "TaskAssigned", "TaskCompleted", "TaskCancelled", "ApprovalRequested", "ApprovalDecided",
 	"ServiceRequestSubmitted", "ServiceRequestApproved", "ServiceRequestRejected", "ServiceRequestCompleted", "ServiceRequestCancelled",
+	"ServiceCreated", "ChangeSubmitted", "ChangeApproved", "ChangeRejected", "ChangeScheduled", "ChangeStarted", "ChangeCompleted", "ChangeFailed",
 }
 
 // flow is a request workflow test environment over the real modules.
