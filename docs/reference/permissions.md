@@ -37,5 +37,5 @@
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |
 | `tasks.work` | normal | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
-| `tickets.manage` | normal | Work tickets: assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
+| `tickets.manage` | elevated | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
 | `tickets.view` | normal | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. |
