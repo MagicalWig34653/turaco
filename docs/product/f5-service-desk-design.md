@@ -52,3 +52,7 @@ Accepted limitations:
 - There is no rate limit or idempotency key on ticket creation.
 
 Database review fixes: a ticket links to one incident only (a repeated link is a no-op, moving it is refused); assigning the same values again changes nothing; visibility is checked before the version; canonical ids in audit and events; a "resolved" notification is dropped when the ticket was reopened meanwhile; suggestions match any word (`match=any`, ranked) while normal search needs all words; status and timestamp invariants are database constraints (migration 000034). Search returns one ranked page without a cursor.
+
+## Part 2 status (2026-10-03)
+
+Implemented: Problems and Known Errors, Runbooks with tracked executions, and the internal side of the Autotask integration (decision S1). Decision S3 holds: tickets and incidents are one `incident` kind. Not implemented: routing rules (staff set queue and priority by hand), the Autotask REST client and webhook, probabilistic device detection (F6).

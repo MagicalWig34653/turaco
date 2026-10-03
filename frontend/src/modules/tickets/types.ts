@@ -61,3 +61,13 @@ export type TicketDetail = Ticket & {
 
 export type TicketOperation =
   'start' | 'wait' | 'resume' | 'resolve' | 'close' | 'reopen' | 'cancel';
+
+export interface TicketExternalSync {
+  enabled: boolean;
+  syncState: 'pending' | 'synced' | 'failed' | null;
+  externalId: string | null;
+  lastError: string | null;
+  lastSyncedAt: string | null;
+  externalUpdatedAt: string | null;
+  attempts: number;
+}

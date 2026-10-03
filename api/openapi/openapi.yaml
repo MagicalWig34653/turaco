@@ -4617,6 +4617,41 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/external-sync:
+    get:
+      operationId: getTicketExternalSync
+      summary: Synchronization state of a ticket with the external service desk.
+      description: "Needs `tickets.view` or `tickets.manage`. `enabled` is false unless AUTOTASK_SYNC is on; `syncState` is null when the ticket was never synchronized."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketExternalSync'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: retryTicketExternalSync
+      summary: Ask for another push to the external service desk.
+      description: "Needs `tickets.manage`. 409 tickets.sync_disabled when the synchronization is off. The push runs as a job."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '202':
+          description: Queued.
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -7260,6 +7295,18 @@ components:
           type: array
           items: {$ref: '#/components/schemas/RunbookExecution'}
         nextCursor: {type: string}
+    TicketExternalSync:
+      type: object
+      additionalProperties: false
+      required: [enabled, syncState, externalId, lastError, lastSyncedAt, externalUpdatedAt, attempts]
+      properties:
+        enabled: {type: boolean}
+        syncState: {type: [string, "null"], enum: [pending, synced, failed, null]}
+        externalId: {type: [string, "null"]}
+        lastError: {type: [string, "null"]}
+        lastSyncedAt: {type: [string, "null"], format: date-time}
+        externalUpdatedAt: {type: [string, "null"], format: date-time}
+        attempts: {type: integer, minimum: 0}
     TaskCreate:
       type: object
       additionalProperties: false

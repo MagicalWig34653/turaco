@@ -119,6 +119,11 @@ export function TicketDetailScreen({ id }: { id: string }) {
     async (signal) => (staffReader ? (await problemsApi.knownErrors(id, signal)).items : []),
     [id, staffReader],
   );
+  const sync = useAsync(
+    async (signal) => (staffReader ? await ticketsApi.externalSync(id, signal) : null),
+    [id, staffReader],
+  );
+  const [retrying, setRetrying] = useState(false);
   const [dialog, setDialog] = useState<{
     kind: 'text' | 'wait' | 'assign';
     op?: TicketOperation;
@@ -278,6 +283,39 @@ export function TicketDetailScreen({ id }: { id: string }) {
             {t('tickets.action.runbook')}
           </Link>
         </p>
+      ) : null}
+      {sync.data?.enabled ? (
+        <section>
+          <h2>{t('tickets.section.externalSync')}</h2>
+          <p>
+            <Badge>
+              {sync.data.syncState
+                ? t(`tickets.sync.${sync.data.syncState}` as MessageKey)
+                : t('tickets.sync.none')}
+            </Badge>
+            {sync.data.externalId ? ` ${sync.data.externalId}` : ''}
+            {sync.data.lastSyncedAt ? ` · ${formatDateTime(locale, sync.data.lastSyncedAt)}` : ''}
+          </p>
+          {sync.data.lastError ? <p className="preline">{sync.data.lastError}</p> : null}
+          {can('tickets.manage') ? (
+            <Button
+              busy={retrying}
+              onClick={async () => {
+                setRetrying(true);
+                try {
+                  await ticketsApi.retryExternalSync(id);
+                  sync.reload();
+                } catch (e) {
+                  setActionError(asApiError(e));
+                } finally {
+                  setRetrying(false);
+                }
+              }}
+            >
+              {t('tickets.sync.retry')}
+            </Button>
+          ) : null}
+        </section>
       ) : null}
       {known.data && known.data.length > 0 ? (
         <section>
