@@ -745,6 +745,27 @@ func (s *Service) Mine(ctx context.Context, p Principal, page Page) (Result, err
 	return res, nil
 }
 
+// FindBySerial returns the one asset with this serial number for other modules (Endpoints links
+// Devices to Assets this way). ErrNotFound when none matches; ErrConflict when several products
+// share the serial number, so the match is ambiguous.
+func (s *Service) FindBySerial(ctx context.Context, serial string) (Asset, error) {
+	serial = strings.TrimSpace(serial)
+	if serial == "" || utf8.RuneCountInString(serial) > maxSerial {
+		return Asset{}, ErrNotFound
+	}
+	found, err := s.store.BySerial(ctx, serial)
+	if err != nil {
+		return Asset{}, err
+	}
+	switch len(found) {
+	case 0:
+		return Asset{}, ErrNotFound
+	case 1:
+		return found[0], nil
+	}
+	return Asset{}, ErrConflict
+}
+
 // Lookup resolves a scanned code to an asset. Requires assets.view.
 func (s *Service) Lookup(ctx context.Context, p Principal, code string) (Asset, error) {
 	if !p.canView() {

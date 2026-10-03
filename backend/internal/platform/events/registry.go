@@ -42,6 +42,8 @@ var Registry = []Definition{
 	{Name: "TicketStatusChanged", Version: 1, Owner: "service-desk", Description: "A ticket was reopened, closed or cancelled. Payload: ticketId, operation."},
 	{Name: "TicketCommentAdded", Version: 1, Owner: "service-desk", Description: "A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId."},
 	{Name: "ChangeScheduled", Version: 1, Owner: "changes", Description: "A change received an execution schedule."},
+	{Name: "DeviceLinked", Version: 1, Owner: "endpoints", Description: "A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method."},
+	{Name: "EndpointFindingRaised", Version: 1, Owner: "endpoints", Description: "An endpoint data-quality finding was raised. Payload: findingId, deviceId, kind."},
 	{Name: "ManagementAssignmentChanged", Version: 1, Owner: "endpoint", Description: "A normalized management-provider assignment meaningfully changed."},
 	{Name: "ManagementApplicabilityChanged", Version: 1, Owner: "endpoint", Description: "Turaco's expected applicability evaluation meaningfully changed for a managed target."},
 	{Name: "DeploymentStarted", Version: 1, Owner: "endpoint", Description: "A deployment began target execution."},

@@ -15,6 +15,8 @@
 | `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |
 | `DeploymentStarted` | 1 | endpoint | A deployment began target execution. |
 | `DeploymentTargetFailed` | 1 | endpoint | A deployment target attempt failed. |
+| `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
+| `EndpointFindingRaised` | 1 | endpoints | An endpoint data-quality finding was raised. Payload: findingId, deviceId, kind. |
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |
 | `MajorIncidentDeclared` | 1 | service-desk | A Major Incident was declared. Payload: majorIncidentId, status. |
