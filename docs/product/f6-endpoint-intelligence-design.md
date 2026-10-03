@@ -34,7 +34,7 @@ Supported: `all_devices`, `all_users`, group targets with membership from the cu
 
 ## API and permissions
 
-Read: `endpoints.view` (Devices, software, artifacts, assignment views). Administration of the integration and imports: `endpoints.integration.manage` (elevated). No management actions in F6. All endpoints are backend-authorized; an Assignment Path never reveals a User, Device or Group the caller cannot read (Devices need `endpoints.view`; Users and Groups are visible to holders of that permission only as names already visible in Organization). Employees see no endpoint data except their own Assets (F4).
+Read: `endpoints.view` (Devices, software); manual link/unlink and sync: `endpoints.manage` (elevated). Artifact and assignment views use the existing `endpoint.management.view`, integration credentials/configuration the existing `integrations.intune.manage` (slices 2–4). No management actions in F6. All endpoints are backend-authorized; an Assignment Path never reveals a User, Device or Group the caller cannot read (Devices need `endpoints.view`; Users and Groups are visible to holders of that permission only as names already visible in Organization). Employees see no endpoint data except their own Assets (F4).
 
 ## Audit, events, jobs
 
@@ -55,3 +55,7 @@ None expected: no new framework or dependency. ADR-0020 already covers the model
 ## Not in F6
 
 Graph client, Intune actions, script/remediation execution, undocumented Intune precedence rules, Endpoint Agent telemetry, live provider calls on page render.
+
+## Slice 1 status
+
+Backend implemented (migration 000038). Link/unlink reasons are codes (`serial_confirmed|correction|duplicate|wrong_asset|other`), a manual unlink blocks automatic re-linking until a manual link, an empty snapshot tombstones nothing, `last_checkin_at` alone is not a meaningful change. The sync runs in the request (no job yet). Software Products are registered through `Service.RegisterSoftwareProduct` only.
