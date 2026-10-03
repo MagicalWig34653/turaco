@@ -22,7 +22,8 @@ The core is a modular monolith. Each domain owns its model, application operatio
 - scheduling and maintenance windows;
 - targeting/dynamic groups;
 - configuration and feature flags;
-- localization and shared API/error conventions.
+- localization and shared API/error conventions;
+- *(planned, [ADR-0029](../decisions/ADR-0029-turaco-ai.md))* Turaco AI runtime: AI Provider connectors, the AI Tool registry and AI Proposals. Modules contribute AI Tools that call their own public application contracts; the AI runtime never reads module tables.
 
 A domain may use these capabilities but must not reimplement its own alternative.
 
@@ -39,8 +40,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Assets | asset/device identity, lifecycle, assignment |
 | Inventory | warehouse, storage location, stock, transactions, reservations, goods receipt |
 | Procurement | procurement request, supplier, purchase order |
-| Endpoint | desired state, deployment, management identities/providers, normalized management artifacts/assignments/filters/applicability/observations, Endpoint Agent integration |
-| Software | normalized products/versions/aliases/install observations/assignments |
+| Endpoint (`endpoints`) | Devices and observations, desired state, deployments and *(planned)* Deployment Rings, management identities/providers, normalized management artifacts/assignments/filters/applicability/observations, Endpoint Agent integration; software: normalized products/versions/aliases/install observations and *(planned, [ADR-0027](../decisions/ADR-0027-software-management-providers.md))* Software Approval Status, version approvals and Software Package references. Software is not a separate module (F6 design E2); a split needs an ADR. Catalog reads approved software through the `endpoints` public contract. |
 | Security | advisories, findings, remediation tracking |
 | Infrastructure | sites/buildings/rooms/racks/VMs/physical topology |
 | Network/IPAM | optional native VLAN/prefix/IP/interface model; decision remains separate |
@@ -48,10 +48,14 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Changes | changes, risk, approvals, execution/review |
 | Planning | initiatives/modernization/milestones |
 | Briefing | presentation/editorial aggregation; underlying entities remain authoritative |
+| Remote Access *(planned, [ADR-0026](../decisions/ADR-0026-remote-access-providers.md))* | Remote Access Sessions, unattended-access policy records, provider device mapping (as platform external references); reads Devices, Tickets and Users through public contracts and runs remote actions only through the Endpoint public contract |
+| Workforce Presence (`presence`) *(planned, [ADR-0028](../decisions/ADR-0028-workforce-presence.md))* | Presence Entries, per-Team coverage minimums, Operational Availability and Team Coverage read models; reads Users, Teams and Locations through Organization's public contract; not HR |
 
 ## Integration modules
 
 `backend/internal/integrations/` translates external systems into public domain/application contracts. Vendor SDK/types do not leak across the domain model.
+
+Each provider kind has its own port that names the capabilities the owning domain needs; there is no shared generic provider or plugin framework. Planned ports: Remote Access Provider (owner Remote Access, HopToDesk first, ADR-0026), Software Management Provider (owner Endpoint, IntuneGet first, ADR-0027), presence sources such as Microsoft 365 and HR systems (owner Workforce Presence, ADR-0028) and AI Providers (owner platform AI runtime, ADR-0029).
 
 ## Communication
 

@@ -33,7 +33,7 @@
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |
 | `products.manage` | elevated | Create and change products, manufacturers and product categories. |
 | `products.view` | normal | View the product catalog: products, manufacturers and product categories. |
-| `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
+| `remote_support.start` | high | Start a planned remote-access session through a Remote Access Provider when enabled by policy (ADR-0026). |
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
 | `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |

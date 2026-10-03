@@ -66,7 +66,10 @@ Likely integrate-first areas:
 - deep DCIM/IPAM through NetBox where appropriate;
 - EDR/AV through existing providers;
 - external vulnerability intelligence;
-- specialist deployment/patch providers where they outperform a native implementation.
+- software packaging and patch mechanics through Software Management Providers (IntuneGet first; [ADR-0027](../decisions/ADR-0027-software-management-providers.md)) while Turaco owns approval, rollout and context;
+- remote-desktop transport through Remote Access Providers (HopToDesk first; [ADR-0026](../decisions/ADR-0026-remote-access-providers.md)) while Turaco owns authorization, audit and context;
+- AI model runtimes through AI Providers (hosted or local; [ADR-0029](../decisions/ADR-0029-turaco-ai.md)) while Turaco owns the tools, permissions and audit;
+- presence sources such as Microsoft 365 and HR systems ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
 
 ## Planned capabilities
 
@@ -82,8 +85,10 @@ Likely integrate-first areas:
 10. Infrastructure Documentation / CMDB / optional IPAM or NetBox integration
 11. Change & modernization planning
 12. Security correlation against actual software/device inventory
-13. Future patch/software deployment through providers such as WinGet/Intune
-14. Future remote support as a separate high-trust subsystem
+13. Software lifecycle and patch orchestration over Software Management Providers (IntuneGet → Intune first)
+14. Remote access over Remote Access Providers (HopToDesk first), Turaco-authorized and audited
+15. Workforce Presence: operational availability and team coverage for IT, not HR
+16. Turaco AI: provider-independent assistance through permissioned Turaco tools
 
 ## Product character
 

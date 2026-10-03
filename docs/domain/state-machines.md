@@ -57,7 +57,7 @@ Implemented (F3, `modules/requests`): a request is created when submitted (there
 Implemented (F5, `modules/servicedesk`): one ticket kind `incident`. `new` becomes `open` when assigned; operations `start` (new/open → in_progress, assigns the caller when nobody is), `wait(reason)` (open/in_progress → waiting), `resume`, `resolve(resolution)` (any open status), `close` (resolved), `reopen(reason)` (resolved/closed → open) and `cancel(reason)` (before resolution). `tickets.manage` may do all; the reporter and the affected User may close, reopen and cancel while the ticket is new or open. A public reply from the reporter on a ticket waiting for the customer resumes it. Closed and cancelled tickets accept no comments. Events: `TicketCreated`, `TicketAssigned`, `TicketResolved`, `TicketCommentAdded`.
 
 ## Knowledge Article
-`draft → published → retired`, and `retired → published` (republish). Editing is possible in `draft` and `published`; a retired article is read-only until republished. Visibility: employee articles are readable by every signed-in user once published, internal ones need `knowledge.view`, drafts and retired articles need `knowledge.manage`.
+`draft → published → retired`, and `retired → published` (republish). Editing is possible in `draft` and `published`; a retired article is read-only until republished. Visibility: employee articles are readable by every signed-in user once published, internal ones need `knowledge.view`, drafts and retired articles need `knowledge.manage`. A review step (`review`, `needs_review`) from the original target design is not implemented.
 
 ## Major Incident
 `identified → investigating → mitigating → monitoring → resolved → closed`.
@@ -99,8 +99,18 @@ A few failed devices normally produce `completed_with_errors`, not overall `fail
 
 DeploymentTarget: `pending → queued → running → successful | failed | expired`, plus `not_applicable/cancelled`. Retries create immutable DeploymentAttempt history.
 
-## Knowledge Article
-`draft → review → published → needs_review → review`, or `archived`.
+Planned for provider-executed Deployments ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)), replacing `queued/running` for those Deployments: DeploymentTarget `pending → assignment_requested → awaiting_observation → successful | failed | expired`, plus `already_satisfied` (the version was present before rollout), `not_applicable` and `cancelled`. `successful` requires a Management Observation newer than the ring's assignment read-back; stale or unknown evidence never counts as success, including for promotion thresholds. Deployment additionally gets `paused` (`running ↔ paused`).
+
+Deployment Ring (planned): `pending → active → awaiting_promotion → promoted`, or `halted` (from `active`/`awaiting_promotion`, by failure threshold or decision; a halted ring can be resumed to `active`). Promotion requires the configured gate (Approval, fresh-evidence success threshold, soak time, Maintenance Window); the next ring becomes `active` only when the previous one is `promoted`.
+
+## Software Approval Status (planned)
+Software Product: `candidate → approved → deprecated → retired`; `blocked` can be entered from any state by decision with a reason and left only to `candidate` (re-evaluation). A version approval binds a Software Version to its installer SHA-256 (and publisher signature where available): `pending → approved | rejected`, `approved → revoked`; a changed hash, installer URL, install command or detection rule needs a new version approval. `approved` may be backed by an Approval record but is not one. Vendor end-of-life is a separate observed fact.
+
+## Remote Access Session (planned)
+`requested → pending_approval? → authorized → launched → closed`, or `rejected` (by policy or approver), `cancelled`, `expired` (launch handle not used in time), `failed` (launch failed). Consent is a separate field (`granted | declined | not_required | unknown`); provider-observed connect/disconnect are separate fields with source and observed time. Turaco never infers that a session ended without provider data or an explicit close. [ADR-0026](../decisions/ADR-0026-remote-access-providers.md).
+
+## AI Proposal (planned)
+`proposed → confirmed → executed | failed`, or `dismissed | expired`. Short-lived; confirmation is single-use, bound to the exact parameters and target record version; permissions are re-checked before execution. Not an Approval. [ADR-0029](../decisions/ADR-0029-turaco-ai.md).
 
 ## Security Advisory / Finding
 Advisory: `new → analyzing → applicable | not_applicable → remediation_planned → remediating → resolved → archived`.

@@ -45,5 +45,5 @@ var Registry = []Permission{
 	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
-	{Name: "remote_support.start", Description: "Start a future remote-support session when enabled by policy.", Risk: "high"},
+	{Name: "remote_support.start", Description: "Start a planned remote-access session through a Remote Access Provider when enabled by policy (ADR-0026).", Risk: "high"},
 }

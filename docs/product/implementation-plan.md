@@ -4,6 +4,8 @@
 
 The rule for every step is: implement a vertical slice with tests/docs instead of creating empty framework code for future phases.
 
+**Plan revision 2026-10-03 (after F6 slice 1):** F9 and F10 were re-scoped to integrate specialist providers instead of building a patch engine and a remote-desktop transport ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md), [ADR-0027](../decisions/ADR-0027-software-management-providers.md)); F11 Workforce Presence ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)) and F12 Turaco AI ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)) were added; Endpoint Agent management moved to "Later / optional". F0–F8 are unchanged. Earlier sessions planned F9 as "Endpoint Management" (Endpoint Agent command transport and a native WinGet provider) and F10 as a Turaco-built "Remote Support" subsystem; that plan is superseded. The F-number order is not a commitment; F9–F12 sequencing is an open product decision.
+
 ## F0 — Repository Foundation
 
 Already scaffolded:
@@ -114,24 +116,60 @@ Detailed requirements are in `docs/integrations/intune-assignment-intelligence.m
 2. advisory-to-software normalization,
 3. potential Vulnerability Findings with confidence,
 4. IT Briefing aggregation,
-5. remediation work/tasks and progress,
+5. remediation work/tasks and progress (remediation deployments follow F9),
 6. system/integration health briefing items.
 
-## F9 — Endpoint Management
+## F9 — Software Lifecycle and Patch Orchestration (provider-based)
 
-Only after Endpoint Intelligence is proven:
+[ADR-0027](../decisions/ADR-0027-software-management-providers.md). Turaco orchestrates; IntuneGet (first Software Management Provider) packages and publishes into Intune; Intune assigns, executes and reports. Do not build a native WinGet/packaging engine.
 
-1. Endpoint Agent enrollment/device identity,
-2. inventory telemetry,
-3. typed command transport,
-4. Desired Software State,
-5. WinGet provider,
-6. Deployment/Target/Attempt execution,
-7. pilot rings/maintenance windows,
-8. remediation and diagnostics.
+Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform targeting/dynamic groups and maintenance windows (built as platform services, not inside `endpoints`).
 
-Arbitrary remote shell is explicitly out of scope.
+1. Software Approval Status and version approvals bound to installer hash (approved software list),
+2. Software Management Provider port, IntuneGet connector and Software Package references (integration surface verified first),
+3. separate, disabled-by-default Intune write credential and typed assignment-write action,
+4. Desired State, Deployment and Deployment Rings with promotion gates (Approval, fresh-evidence thresholds, soak time, Maintenance Window),
+5. Deployment Target results derived from fresh Management Observations (Installation corroborates), keeping Desired / Assigned / Expected Applicable / Observed separate,
+6. failure correlation as Turaco-derived findings, distinct from provider-reported errors,
+7. security/CVE context from F8 on affected devices and versions,
+8. Tickets/Tasks for failures, IT Briefing items and explorable rollout reporting.
 
-## F10 — Remote Support
+## F10 — Remote Access (provider-based)
 
-Requires a separate threat model and accepted ADR. Treat control plane, relay/media path, consent, unattended policy, MFA/elevation, session audit and tenant isolation as a separate high-trust subsystem.
+[ADR-0026](../decisions/ADR-0026-remote-access-providers.md). Turaco owns authorization, audit, context and session records; the provider (HopToDesk first) owns the transport. Do not build a remote-desktop transport.
+
+1. threat model of the chosen provider and verification of its integration surface,
+2. Remote Access Provider port and HopToDesk connector (device mapping, session start with one-time launch handle, session records),
+3. Remote Access Session lifecycle with Ticket/Device context and audit,
+4. attended sessions with user consent,
+5. unattended-access policy records and unattended sessions only if the provider meets ADR-0026's constraints,
+6. typed remote actions through the Endpoint public contract.
+
+## F11 — Workforce Presence
+
+[ADR-0028](../decisions/ADR-0028-workforce-presence.md). Operational availability, not HR. Requires a data protection review before external sources.
+
+1. recurrence rule moved from Tasks into a platform scheduling package,
+2. Presence Entries entered in Turaco with privacy-scoped visibility and retention,
+3. Operational Availability and Team Coverage read models with per-Team minimums,
+4. My Work, Ticket assignment, Change and IT Briefing integration,
+5. Microsoft 365 source (free/busy, work location, out-of-office only),
+6. HR system source.
+
+## F12 — Turaco AI
+
+[ADR-0029](../decisions/ADR-0029-turaco-ai.md). Provider-independent, tool-based and user-delegated.
+
+1. AI runtime, first AI Provider connector, egress policy and audit,
+2. read-only AI Tools contributed by modules (summaries, explanations),
+3. AI Proposals with confirmed writes,
+4. drafts/requests into existing approval workflows for high-impact intents,
+5. read-only Turaco MCP server.
+
+## Later / optional
+
+Each item needs its own ADR before work starts.
+
+- Endpoint Agent enrollment, device identity, inventory telemetry and typed command transport ([ADR-0008](../decisions/ADR-0008-separate-agents.md)); arbitrary remote shell stays out of scope.
+- Native Software Management Provider (for example WinGet executed by the Endpoint Agent).
+- Native Remote Access Provider (requires its own threat model; control plane, relay/media path, consent, unattended policy, session audit and tenant isolation as a separate high-trust subsystem).

@@ -56,13 +56,13 @@ The employee can always override the affected device when reporting another devi
 
 Business mutation + outbox event commit atomically. Worker processes outbox/jobs idempotently with retries and observable failure state. PostgreSQL is the initial queue; no broker is required.
 
-Implemented job runner (`backend/internal/platform/jobs`): jobs are claimed with `FOR UPDATE SKIP LOCKED`; retryable failures return to `pending` with exponential backoff, permanent failures or exhausted attempts end in terminal `failed`; jobs whose lock outlives the lock timeout are reclaimed; a dedupe key allows at most one pending/processing job per unit of work; interval schedules enqueue through the same dedupe key. Handlers must be idempotent. Lifecycle: [state machines](../domain/state-machines.md#platform-job). Outbox dispatch is not implemented yet; when it is, it reuses these claim/retry semantics (or runs as jobs) instead of a second loop — note that `platform.outbox_events` currently still treats `failed` as claimable, unlike jobs.
+Implemented job runner (`backend/internal/platform/jobs`): jobs are claimed with `FOR UPDATE SKIP LOCKED`; retryable failures return to `pending` with exponential backoff, permanent failures or exhausted attempts end in terminal `failed`; jobs whose lock outlives the lock timeout are reclaimed; a dedupe key allows at most one pending/processing job per unit of work; interval schedules enqueue through the same dedupe key. Handlers must be idempotent. Lifecycle: [state machines](../domain/state-machines.md#platform-job). Outbox dispatch is implemented ([ADR-0024](../decisions/ADR-0024-outbox-dispatch-and-notifications.md), `platform/events`): the dispatcher claims due `pending` events with `FOR UPDATE SKIP LOCKED` and the same retry/back-off semantics; `failed` is terminal.
 
 Domain events are business facts in past tense and carry stable ID, type/version, time, actor and correlation ID. External Integration Events may be narrower/different from internal domain events.
 
 ## Realtime
 
-SSE is the default server-to-browser realtime mechanism for notifications/status refresh. WebSockets require a true bidirectional requirement. Future remote-control traffic is a separate subsystem.
+SSE is the default server-to-browser realtime mechanism for notifications/status refresh. WebSockets require a true bidirectional requirement. Remote-control traffic never passes through Turaco: it is carried by a Remote Access Provider ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
 
 ## Search
 
@@ -71,6 +71,15 @@ PostgreSQL full text/trigram/indexed normalized fields initially. Search is a re
 ## Management-provider intelligence
 
 Intune and future endpoint-management providers synchronize assignable artifacts, assignments, filters and observations into local normalized state. Interactive Device/User/Group views read that local model rather than blocking on live provider calls. Turaco separates configured assignment, derived expected applicability and provider-observed result. Explainability (`AssignmentPath`), reverse lookup and comparison are read models; vendor DTOs and provider-specific semantics remain at the integration boundary. See ADR-0020 and `docs/integrations/intune-assignment-intelligence.md`.
+
+## Provider-based capabilities (planned)
+
+Turaco integrates specialist providers where it owns the decision, context and audit but not the mechanics. Each provider kind has its own domain-specific port; there is no generic plugin framework.
+
+- Software lifecycle: Turaco approves software and orchestrates Deployment Rings; a Software Management Provider (IntuneGet) packages and publishes into Intune; Intune assigns and reports ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
+- Remote access: Turaco authorizes, audits and records sessions; a Remote Access Provider (HopToDesk) carries the session ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
+- Workforce Presence: Turaco derives operational availability from its own entries and from Microsoft 365/HR sources ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
+- Turaco AI: a platform runtime calls AI Providers and exposes only typed AI Tools that run as the requesting User; a future MCP server reuses the same tools ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)).
 
 
 ## Storage/security

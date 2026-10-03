@@ -9,7 +9,8 @@ paths:
 
 - External provider DTOs stay at the integration boundary; canonical Turaco management concepts are provider-agnostic.
 - Preserve provider external IDs, source, observed time and last successful sync.
-- Never collapse configured Assignment, Turaco-derived Expected Applicability and provider Observed result into one field/state.
+- Never collapse configured Assignment, Turaco-derived Expected Applicability and provider Observed result into one field/state. Turaco Desired State/Deployment intent is a fourth, separate dimension (ADR-0027); a requested assignment counts as Assigned only once provider sync reads it back.
+- A Software Management Provider (IntuneGet) packages and publishes; publication is never assignment, installation or deployment success. Do not build a native packaging/WinGet engine without a new ADR.
 - Applicability evaluation must be explainable with deterministic reason codes, confidence/freshness and explicit `unknown` when semantics cannot be reproduced safely.
 - Include/exclude targeting, User-vs-Device source, All Users/All Devices and assignment filters remain visible; do not flatten them away.
 - Provider-reported error/conflict and Turaco-derived findings must be distinguishable in data and UI.

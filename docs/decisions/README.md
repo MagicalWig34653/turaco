@@ -26,3 +26,8 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - ADR-0022 go-ldap as LDAP Client Library
 - ADR-0023 gokrb5 for Kerberos/SPNEGO Authentication
 - ADR-0024 Outbox Dispatch and Platform Notification Service
+- ADR-0025 Catalog Forms Are a Bounded Typed Schema, Not a Meta-Platform
+- ADR-0026 Remote Access Through Remote Access Providers
+- ADR-0027 Software Lifecycle and Patch Orchestration Through Software Management Providers
+- ADR-0028 Workforce Presence for Operational Availability
+- ADR-0029 Turaco AI — Provider-Independent, Tool-Based and User-Delegated

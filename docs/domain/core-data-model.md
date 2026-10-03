@@ -102,9 +102,17 @@ In the implementation (schema `endpoints`) a Device is `endpoints.devices` (prov
 
 **ManagementObservation** stores provider-reported artifact/target outcomes (for example applied, conflict, error, installed, pending) with source and observed time. Raw provider status may be retained alongside a normalized category for troubleshooting.
 
-**SoftwareProduct** + **SoftwareAlias** normalize discovery names. **SoftwareInstallation** is observed Endpoint↔Version with source/first/last seen. **SoftwareAssignment** is the software-focused projection of platform/provider intent and, when sourced from an external management provider, references the relevant ManagementAssignment rather than becoming a second provider-assignment truth.
+**SoftwareProduct** + **SoftwareAlias** normalize discovery names. **SoftwareInstallation** is observed Endpoint↔Version with source/first/last seen. **SoftwareAssignment** is the software-focused projection of a ManagementAssignment (provider-configured targeting); it references that ManagementAssignment rather than becoming a second provider-assignment truth and never represents Turaco rollout intent.
 
 **DesiredSoftwareState** defines installed/minimum/exact/absent outcomes. **Deployment** targets a Target/DynamicGroup; resolved **DeploymentTarget** rows are frozen historically even when group membership changes; retries become immutable attempts.
+
+*Planned ([ADR-0027](../decisions/ADR-0027-software-management-providers.md), not implemented):* **SoftwareApprovalStatus** on SoftwareProduct and a version approval bound to SoftwareVersion + installer SHA-256. **SoftwarePackage** links a SoftwareVersion to a Software Management Provider reference (platform external reference), installer hash, publish status and the resulting ManagementArtifact. **DeploymentRing** is an ordered stage of a Deployment with its own frozen DeploymentTargets (a Device in at most one ring per Deployment) and a promotion gate. For provider-executed Deployments the DeploymentTarget result is derived from fresh ManagementObservations ([rules](state-machines.md#deployment)); assignment writes awaiting read-back are tracked on the DeploymentAttempt.
+
+*Planned ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)):* **RemoteAccessSession** (Remote Access module) references Device, optional Ticket and initiating User; keeps Turaco-authorized facts, consent outcome and provider-observed session facts (source, observed time) in separate fields. Provider device identities are platform external references of the Device. **UnattendedAccessPolicy** is a typed record naming the Devices (by Endpoint-exposed attributes) eligible for unattended sessions.
+
+*Planned ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)):* **PresenceEntry** (Workforce Presence module) belongs to one User: period, kind (`location` with a Location reference, `remote`, `travelling`, `unavailable`), optional recurrence rule, source, observed/synced time; no absence reason. External entries are interval history; manual entries are cancelled, not deleted, until retention removes them. **TeamCoverageRequirement** stores an optional minimum per Team. Operational Availability and Team Coverage are read models.
+
+*Planned ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)):* the AI runtime stores no domain data of its own beyond audit of tool calls and short-lived AI Proposals; prompts and responses are not retained by default.
 
 **SecurityAdvisory** relates to CVE/software/OS/vendor. **VulnerabilityFinding** links advisory to a concrete resource with confidence (`confirmed`, `probable`, `potential`, `unknown`) and remediation state.
 
