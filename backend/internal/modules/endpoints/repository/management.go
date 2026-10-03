@@ -74,12 +74,12 @@ func (r *Repository) TouchFilterTx(ctx context.Context, tx pgx.Tx, id string, ob
 	return nil
 }
 
-func (r *Repository) ResolveFiltersTx(ctx context.Context, tx pgx.Tx, provider string, externalIDs []string) (map[string]string, error) {
+func (r *Repository) ResolveFiltersTx(ctx context.Context, tx pgx.Tx, provider string, externalIDs []string, since time.Time) (map[string]string, error) {
 	out := map[string]string{}
 	if len(externalIDs) == 0 {
 		return out, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT external_id, id::text FROM endpoints.management_filters WHERE provider = $1 AND external_id = ANY($2) AND deleted_observed_at IS NULL`, provider, externalIDs)
+	rows, err := tx.Query(ctx, `SELECT external_id, id::text FROM endpoints.management_filters WHERE provider = $1 AND external_id = ANY($2) AND deleted_observed_at IS NULL AND last_synced_at >= $3`, provider, externalIDs, since)
 	if err != nil {
 		return nil, fmt.Errorf("resolve filters: %w", err)
 	}
@@ -267,9 +267,13 @@ func (r *Repository) CurrentAssignmentsTx(ctx context.Context, tx pgx.Tx, artifa
 
 func (r *Repository) InsertAssignmentTx(ctx context.Context, tx pgx.Tx, artifactID string, a application.AssignmentInput, source string, validFrom, observedAt time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO endpoints.management_assignments (artifact_id, provider_assignment_id, target_kind, target_group_external_id, mode, intent,
+		INSERT INTO endpoints.management_assignments (artifact_id, provider, provider_assignment_id, target_kind, target_group_external_id, mode, intent,
 			filter_id, filter_mode, source, observed_at, last_synced_at, valid_from)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $10, $11)`,
+		SELECT a.id, a.provider, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $10,
+			-- Never before the end of the previous interval of this provider assignment.
+			GREATEST($11::timestamptz, COALESCE((SELECT max(p.valid_until) FROM endpoints.management_assignments p
+				WHERE p.artifact_id = a.id AND p.provider_assignment_id = $2), $11::timestamptz))
+		FROM endpoints.management_artifacts a WHERE a.id = $1::uuid`,
 		artifactID, a.ProviderAssignmentID, a.TargetKind, a.TargetGroupExternalID, a.Mode, a.Intent, a.FilterID, a.FilterMode, source, observedAt, validFrom)
 	if err != nil {
 		return fmt.Errorf("insert assignment: %w", err)
@@ -340,9 +344,13 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 		arts[i], devs[i], states[i], raws[i], ats[i] = o.ArtifactID, o.DeviceID, o.State, o.RawStatus, o.ObservedAt
 	}
 	type key struct{ a, d string }
-	prev := map[key][2]string{}
+	type prevRow struct {
+		state string
+		at    time.Time
+	}
+	prev := map[key]prevRow{}
 	rows, err := tx.Query(ctx, `
-		SELECT o.artifact_id::text, o.device_id::text, o.normalized_state, o.raw_status
+		SELECT o.artifact_id::text, o.device_id::text, o.normalized_state, o.observed_at
 		FROM endpoints.management_observations o
 		JOIN unnest($1::uuid[], $2::uuid[]) AS t(artifact_id, device_id) ON t.artifact_id = o.artifact_id AND t.device_id = o.device_id
 		ORDER BY o.id FOR UPDATE OF o`, arts, devs)
@@ -350,24 +358,30 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 		return nil, fmt.Errorf("lock observations: %w", err)
 	}
 	for rows.Next() {
-		var a, d, s, raw string
-		if err := rows.Scan(&a, &d, &s, &raw); err != nil {
+		var a, d, st string
+		var at time.Time
+		if err := rows.Scan(&a, &d, &st, &at); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("lock observations: scan: %w", err)
 		}
-		prev[key{a, d}] = [2]string{s, raw}
+		prev[key{a, d}] = prevRow{st, at}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("lock observations: %w", err)
 	}
+	// State, raw status and source follow the newest observation only: an older one (a replayed or
+	// delayed report) must not roll them back; freshness still advances.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO endpoints.management_observations (artifact_id, device_id, normalized_state, raw_status, source, observed_at, last_synced_at)
+		INSERT INTO endpoints.management_observations AS o (artifact_id, device_id, normalized_state, raw_status, source, observed_at, last_synced_at)
 		SELECT t.artifact_id, t.device_id, t.state, t.raw, $5, t.observed_at, $6
 		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $7::timestamptz[]) AS t(artifact_id, device_id, state, raw, observed_at)
 		ON CONFLICT (artifact_id, device_id) DO UPDATE SET
-			normalized_state = EXCLUDED.normalized_state, raw_status = EXCLUDED.raw_status, source = EXCLUDED.source,
-			observed_at = GREATEST(endpoints.management_observations.observed_at, EXCLUDED.observed_at),
-			last_synced_at = GREATEST(endpoints.management_observations.last_synced_at, EXCLUDED.last_synced_at)`,
+			normalized_state = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.normalized_state ELSE o.normalized_state END,
+			raw_status = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.raw_status ELSE o.raw_status END,
+			source = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.source ELSE o.source END,
+			observed_at = GREATEST(o.observed_at, EXCLUDED.observed_at),
+			last_synced_at = GREATEST(o.last_synced_at, EXCLUDED.last_synced_at),
+			retired_at = NULL`,
 		arts, devs, states, raws, source, syncedAt, ats)
 	if err != nil {
 		return nil, fmt.Errorf("upsert observations: %w", err)
@@ -375,7 +389,7 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 	out := make([]application.ObservationOutcome, len(in))
 	for i, o := range in {
 		p, existed := prev[key{o.ArtifactID, o.DeviceID}]
-		out[i] = application.ObservationOutcome{ObservationInput: o, Created: !existed, Changed: !existed || p[0] != o.State || p[1] != o.RawStatus}
+		out[i] = application.ObservationOutcome{ObservationInput: o, Created: !existed, Changed: !existed || (!o.ObservedAt.Before(p.at) && p.state != o.State)}
 	}
 	return out, nil
 }
@@ -409,7 +423,7 @@ func (r *Repository) ProviderErrorsTx(ctx context.Context, tx pgx.Tx, deviceIDs 
 			count(*) FILTER (WHERE a.id IS NOT NULL AND o.normalized_state = 'failed'),
 			count(*) FILTER (WHERE a.id IS NOT NULL AND o.normalized_state = 'conflict')
 		FROM endpoints.devices d
-		LEFT JOIN endpoints.management_observations o ON o.device_id = d.id AND o.normalized_state IN ('failed', 'conflict')
+		LEFT JOIN endpoints.management_observations o ON o.device_id = d.id AND o.normalized_state IN ('failed', 'conflict') AND o.retired_at IS NULL
 		LEFT JOIN endpoints.management_artifacts a ON a.id = o.artifact_id AND a.deleted_observed_at IS NULL
 		WHERE d.id = ANY($1::uuid[]) AND d.deleted_observed_at IS NULL
 		GROUP BY d.id`, deviceIDs)
@@ -426,6 +440,49 @@ func (r *Repository) ProviderErrorsTx(ctx context.Context, tx pgx.Tx, deviceIDs 
 		out[id] = pe
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) StaleObservationsTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time) (int, int, error) {
+	var stale, live int
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FILTER (WHERE o.last_synced_at < $2), count(*)
+		FROM endpoints.management_observations o JOIN endpoints.management_artifacts a ON a.id = o.artifact_id
+		WHERE a.provider = $1 AND o.retired_at IS NULL`, provider, before).Scan(&stale, &live)
+	if err != nil {
+		return 0, 0, fmt.Errorf("stale observations: %w", err)
+	}
+	return stale, live, nil
+}
+
+func (r *Repository) RetireStaleObservationsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time, limit int) (int, []string, error) {
+	rows, err := tx.Query(ctx, `
+		WITH picked AS (
+			SELECT o.id FROM endpoints.management_observations o JOIN endpoints.management_artifacts a ON a.id = o.artifact_id
+			WHERE a.provider = $1 AND o.retired_at IS NULL AND o.last_synced_at < $2
+			ORDER BY o.id LIMIT $4 FOR UPDATE OF o),
+		retired AS (
+			UPDATE endpoints.management_observations o SET retired_at = $3 FROM picked WHERE o.id = picked.id RETURNING o.device_id)
+		SELECT r.device_id::text, d.deleted_observed_at IS NULL FROM retired r JOIN endpoints.devices d ON d.id = r.device_id`, provider, before, at, limit)
+	if err != nil {
+		return 0, nil, fmt.Errorf("retire stale observations: %w", err)
+	}
+	defer rows.Close()
+	n := 0
+	seen := map[string]bool{}
+	var devices []string
+	for rows.Next() {
+		var id string
+		var live bool
+		if err := rows.Scan(&id, &live); err != nil {
+			return 0, nil, fmt.Errorf("retire stale observations: scan: %w", err)
+		}
+		n++
+		if live && !seen[id] {
+			seen[id] = true
+			devices = append(devices, id)
+		}
+	}
+	return n, devices, rows.Err()
 }
 
 // ---- memberships ----
@@ -464,9 +521,12 @@ func (r *Repository) StaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider
 	return stale, live, nil
 }
 
-func (r *Repository) CloseStaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time) (int, error) {
-	tag, err := tx.Exec(ctx, `UPDATE endpoints.device_group_memberships SET observed_until = GREATEST(observed_from, $3)
-		WHERE provider = $1 AND observed_until IS NULL AND last_synced_at < $2`, provider, before, at)
+func (r *Repository) CloseStaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time, limit int) (int, error) {
+	tag, err := tx.Exec(ctx, `
+		WITH picked AS (
+			SELECT id FROM endpoints.device_group_memberships
+			WHERE provider = $1 AND observed_until IS NULL AND last_synced_at < $2 ORDER BY id LIMIT $4 FOR UPDATE)
+		UPDATE endpoints.device_group_memberships m SET observed_until = GREATEST(m.observed_from, $3) FROM picked WHERE m.id = picked.id`, provider, before, at, limit)
 	if err != nil {
 		return 0, fmt.Errorf("close stale memberships: %w", err)
 	}
@@ -549,16 +609,15 @@ func (r *Repository) GetArtifact(ctx context.Context, id string) (application.Ar
 	return a, nil
 }
 
-// maxAssignmentRows bounds the assignment rows (current and closed) one artifact read returns.
-const maxAssignmentRows = 2000
-
 func (r *Repository) ArtifactAssignments(ctx context.Context, artifactID string) ([]application.Assignment, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+assignmentColumns+`, f.id::text, f.name, f.platform, f.rule, f.deleted_observed_at IS NOT NULL
 		FROM endpoints.management_assignments a
 		LEFT JOIN endpoints.management_filters f ON f.id = a.filter_id
-		WHERE a.artifact_id = $1::uuid
-		ORDER BY (a.valid_until IS NOT NULL), a.id LIMIT `+fmt.Sprint(maxAssignmentRows), artifactID)
+		WHERE a.artifact_id = $1::uuid AND (a.valid_until IS NULL OR a.id IN (
+			SELECT c.id FROM endpoints.management_assignments c WHERE c.artifact_id = $1::uuid AND c.valid_until IS NOT NULL
+			ORDER BY c.valid_until DESC, c.id DESC LIMIT `+fmt.Sprint(application.MaxClosedAssignments)+`))
+		ORDER BY (a.valid_until IS NOT NULL), a.id`, artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("artifact assignments: %w", err)
 	}
@@ -585,7 +644,7 @@ func (r *Repository) ArtifactObservationCounts(ctx context.Context, artifactID s
 	rows, err := r.pool.Query(ctx, `
 		SELECT o.normalized_state, count(*) FROM endpoints.management_observations o
 		JOIN endpoints.devices d ON d.id = o.device_id AND d.deleted_observed_at IS NULL
-		WHERE o.artifact_id = $1::uuid GROUP BY o.normalized_state`, artifactID)
+		WHERE o.artifact_id = $1::uuid AND o.retired_at IS NULL GROUP BY o.normalized_state`, artifactID)
 	if err != nil {
 		return nil, fmt.Errorf("observation counts: %w", err)
 	}
@@ -661,7 +720,7 @@ func (r *Repository) ListDeviceObservations(ctx context.Context, deviceID string
 		SELECT o.id::text, o.artifact_id::text, a.name, a.kind, a.deleted_observed_at IS NOT NULL, o.device_id::text, o.normalized_state, o.raw_status,
 			o.source, o.observed_at, o.last_synced_at
 		FROM endpoints.management_observations o JOIN endpoints.management_artifacts a ON a.id = o.artifact_id
-		WHERE o.device_id = $1::uuid%s ORDER BY o.id LIMIT $%d`, cursor, len(args)), args...)
+		WHERE o.device_id = $1::uuid AND o.retired_at IS NULL%s ORDER BY o.id LIMIT $%d`, cursor, len(args)), args...)
 	if err != nil {
 		return application.ObservationResult{}, fmt.Errorf("list observations: %w", err)
 	}

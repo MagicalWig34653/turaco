@@ -29,6 +29,8 @@ type Service struct {
 	provider intune.Provider
 	syncOn   bool
 	now      func() time.Time
+	// syncCooldown is the minimum time between two manual synchronizations of the provider.
+	syncCooldown time.Duration
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -40,7 +42,13 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now}
+	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown}
+}
+
+// WithSyncCooldown sets the minimum time between the end of one Sync and the start of the next (0 disables it).
+func (s *Service) WithSyncCooldown(d time.Duration) *Service {
+	s.syncCooldown = d
+	return s
 }
 
 func publish(ctx context.Context, tx pgx.Tx, c Caller, typ string, payload map[string]any) error {

@@ -163,6 +163,16 @@ func (s *Service) Sync(ctx context.Context, c Caller, p Principal) (IngestResult
 		return IngestResult{}, ErrSyncRunning
 	}
 	defer unlock()
+	// Checked under the lock so concurrent requests cannot both pass.
+	if s.syncCooldown > 0 {
+		last, err := s.store.LastSyncCompleted(ctx, intune.ProviderKey)
+		if err != nil {
+			return IngestResult{}, err
+		}
+		if last != nil && s.now().Sub(*last) < s.syncCooldown {
+			return IngestResult{}, ErrSyncCooldown
+		}
+	}
 	devices, err := s.provider.Devices(ctx)
 	if err != nil {
 		if !errors.Is(err, intune.ErrNotConfigured) {
@@ -189,6 +199,8 @@ func (s *Service) Sync(ctx context.Context, c Caller, p Principal) (IngestResult
 	if err != nil {
 		return res, err
 	}
+	// The cooldown starts when the run ends, whatever happens to the management part.
+	defer func() { _ = s.markSyncCompleted(ctx, snap.Provider) }()
 	// The management data refers to the devices just ingested; the same lock is still held.
 	mg, err := s.provider.Management(ctx)
 	if err != nil {
@@ -201,7 +213,22 @@ func (s *Service) Sync(ctx context.Context, c Caller, p Principal) (IngestResult
 		return res, nil
 	}
 	res.Management, err = s.ingestManagementLocked(ctx, c, ManagementSnapshot{Provider: snap.Provider, Source: snap.Source, Complete: true, ManagementSnapshot: mg})
-	return res, err
+	if err != nil {
+		if ctx.Err() != nil {
+			return res, ctx.Err()
+		}
+		// The device phase is committed: a failing management phase is reported like a failing read.
+		// ingestManagementLocked already audited the failure.
+		res.Management.ManagementErrors++
+		return res, nil
+	}
+	return res, nil
+}
+
+func (s *Service) markSyncCompleted(ctx context.Context, provider string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return s.store.MarkSyncCompleted(ctx, provider, s.now().UTC())
 }
 
 // Ingest stores a snapshot idempotently under the provider's run lock (ErrSyncRunning when another

@@ -143,6 +143,8 @@ type Principal struct {
 	Manage         bool
 	AssetsView     bool
 	ManagementView bool
+	// DirectoryView is organization.directory.view: it reveals provider group ids in assignments.
+	DirectoryView bool
 }
 
 func (p Principal) canView() bool { return p.View || p.Manage }
@@ -176,6 +178,8 @@ var (
 	ErrAssetInvalid = errors.New("endpoints: asset does not exist or is not in use")
 	// ErrSyncRunning means another ingestion run of the same provider is in progress. It is a conflict.
 	ErrSyncRunning = fmt.Errorf("%w: another run for this provider is in progress", ErrConflict)
+	// ErrSyncCooldown means the provider's last synchronization finished too recently.
+	ErrSyncCooldown = errors.New("endpoints: the provider was synchronized a moment ago")
 	// ErrSyncDisabled means the provider synchronization is not enabled.
 	ErrSyncDisabled = errors.New("endpoints: provider synchronization is not enabled")
 )
@@ -316,6 +320,10 @@ type Store interface {
 	// TryLockProvider takes the per-provider ingestion lock on a dedicated connection. It reports
 	// false when another run holds it. unlock must be called when ok.
 	TryLockProvider(ctx context.Context, provider string) (unlock func(), ok bool, err error)
+	// LastSyncCompleted returns when the provider's last manual synchronization completed (nil if never);
+	// MarkSyncCompleted records it.
+	LastSyncCompleted(ctx context.Context, provider string) (*time.Time, error)
+	MarkSyncCompleted(ctx context.Context, provider string, at time.Time) error
 	// TombstoneCandidatesTx locks (in id order) and returns the ids of the provider's live devices that
 	// were not seen since before and are not in keepExternalIDs, plus the number of live devices.
 	TombstoneCandidatesTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time, keepExternalIDs []string) (ids []string, live int, err error)

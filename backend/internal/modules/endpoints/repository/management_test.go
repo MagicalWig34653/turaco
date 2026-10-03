@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
@@ -297,13 +300,17 @@ func TestObservationHistoryOnlyOnChange(t *testing.T) {
 	if res.ObservationsChanged != 1 || e.obsHistory(d.ID) != 2 {
 		t.Fatalf("state change = %+v, history %d", res, e.obsHistory(d.ID))
 	}
-	e.mingest(true, snap("applied", "Succeeded"))
-	if e.obsHistory(d.ID) != 3 {
-		t.Errorf("raw status change must be history too, got %d", e.obsHistory(d.ID))
+	// A new raw status alone is kept on the current row but is no history row.
+	res = e.mingest(true, snap("applied", "Succeeded"))
+	if res.ObservationsChanged != 0 || e.obsHistory(d.ID) != 2 {
+		t.Errorf("raw-only change = %+v, history %d, want 2", res, e.obsHistory(d.ID))
+	}
+	if e.count(`SELECT count(*) FROM endpoints.management_observations WHERE device_id = $1::uuid AND raw_status = 'Succeeded'`, d.ID) != 1 {
+		t.Error("the latest raw status must be on the current row")
 	}
 	// An unknown state is stored as unknown, a long raw status is shortened.
 	res = e.mingest(true, snap("weird", strings.Repeat("r", 500)))
-	if res.ObservationsChanged != 1 {
+	if res.ObservationsChanged != 1 || e.obsHistory(d.ID) != 3 {
 		t.Fatalf("res = %+v", res)
 	}
 	o, err := e.svc.ListDeviceObservations(context.Background(), e.manage, d.ID, application.Page{})
@@ -458,7 +465,7 @@ func TestSyncRunsManagementAfterDevicesUnderOneLock(t *testing.T) {
 		Memberships:  []intune.DeviceGroupMembershipRecord{{ExternalDeviceID: "d1", GroupExternalID: "g1"}},
 	})
 	// Sync is bound to the intune provider key; hold that lock to prove a sync cannot interleave.
-	svc := application.NewService(repo, e.assets, fake, true, nil)
+	svc := application.NewService(repo, e.assets, fake, true, nil).WithSyncCooldown(0).WithSyncCooldown(0)
 	unlock, ok, err := repo.TryLockProvider(context.Background(), intune.ProviderKey)
 	if err != nil || !ok {
 		t.Skip("the intune provider lock is held elsewhere")
@@ -471,6 +478,8 @@ func TestSyncRunsManagementAfterDevicesUnderOneLock(t *testing.T) {
 	fake.FailManagementWith(errors.New("boom"))
 	defer func() {
 		ctx := context.Background()
+		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.management_observations WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id = 'd1' AND name = 'PC-1')`)
+		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.device_group_memberships WHERE provider = 'intune' AND device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id = 'd1' AND name = 'PC-1')`)
 		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = 'intune' AND external_id = 'd1' AND name = 'PC-1'`)
 		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.management_assignments WHERE artifact_id IN (SELECT id FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id = 'a1')`)
 		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id = 'a1'`)
@@ -617,5 +626,290 @@ func TestManagementSchemaConstraintsAndIndexes(t *testing.T) {
 		if e.count(`SELECT count(*) FROM pg_indexes WHERE schemaname = 'endpoints' AND indexname = $1`, idx) != 1 {
 			t.Errorf("missing index %s", idx)
 		}
+	}
+}
+
+func TestCompleteSnapshotRetiresObservationsNotReportedThisRun(t *testing.T) {
+	e := newEnv(t)
+	e.ingest(dev("d1", "PC-1", "SN1"), dev("d2", "PC-2", "SN2"))
+	d1 := e.device("d1")
+	arts := []intune.ArtifactRecord{art("a1", "One"), art("a2", "Two")}
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: arts, Observations: []intune.ObservationRecord{
+		obs("d1", "a1", "failed", "x"), obs("d1", "a2", "applied", ""), obs("d2", "a1", "applied", ""), obs("d2", "a2", "applied", "")}})
+	if !e.openFindings(d1.ID)[application.FindingProviderReportedError] {
+		t.Fatal("finding not raised")
+	}
+	// An incomplete snapshot retires nothing.
+	if res := e.mingest(false, intune.ManagementSnapshot{Artifacts: arts, Observations: []intune.ObservationRecord{obs("d2", "a1", "applied", "")}}); res.ObservationsRetired != 0 {
+		t.Fatalf("incomplete retired %+v", res)
+	}
+	// The complete snapshot no longer reports d1/a1: it is retired and the finding follows.
+	res := e.mingest(true, intune.ManagementSnapshot{Artifacts: arts, Observations: []intune.ObservationRecord{
+		obs("d1", "a2", "applied", ""), obs("d2", "a1", "applied", ""), obs("d2", "a2", "applied", "")}})
+	if res.ObservationsRetired != 1 || res.ProviderFindingsResolved != 1 || e.openFindings(d1.ID)[application.FindingProviderReportedError] {
+		t.Fatalf("retire = %+v findings %v", res, e.openFindings(d1.ID))
+	}
+	counts, err := repository.New(e.pool).ArtifactObservationCounts(context.Background(), e.artifactID("a1"))
+	if err != nil || counts["failed"] != 0 || counts["applied"] != 1 {
+		t.Errorf("counts = %v %v", counts, err)
+	}
+	o, err := e.svc.ListDeviceObservations(context.Background(), e.manage, d1.ID, application.Page{})
+	if err != nil || len(o.Items) != 1 {
+		t.Errorf("device observations = %d %v, want only the active one", len(o.Items), err)
+	}
+	// A later sighting revives the row and the finding.
+	res = e.mingest(true, intune.ManagementSnapshot{Artifacts: arts, Observations: []intune.ObservationRecord{
+		obs("d1", "a1", "failed", "x"), obs("d1", "a2", "applied", ""), obs("d2", "a1", "applied", ""), obs("d2", "a2", "applied", "")}})
+	if res.ProviderFindingsRaised != 1 || !e.openFindings(d1.ID)[application.FindingProviderReportedError] {
+		t.Errorf("revive = %+v", res)
+	}
+}
+
+func TestRetirementIsChunkedAndGuarded(t *testing.T) {
+	e := newEnv(t)
+	var ds []application.SnapshotDevice
+	var os []intune.ObservationRecord
+	for i := 0; i < 12; i++ {
+		ds = append(ds, dev(fmt.Sprintf("d%d", i), fmt.Sprintf("PC-%d", i), fmt.Sprintf("SN%d", i)))
+		os = append(os, obs(fmt.Sprintf("d%d", i), "a1", "applied", ""))
+	}
+	e.ingest(ds...)
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "One")}, Observations: os})
+	// 12 live, 7 unreported: more than half, the guard keeps them.
+	res := e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "One")}, Observations: os[:5]})
+	if res.ObservationsRetired != 0 || res.ManagementTombstonesSkipped != 7 {
+		t.Fatalf("guard = %+v", res)
+	}
+	// The store retires in chunks of at most the limit, in transactions of their own.
+	repo := repository.New(e.pool)
+	ctx := context.Background()
+	later := time.Now().UTC().Add(time.Hour)
+	var got []int
+	for i := 0; i < 3; i++ {
+		var n int
+		if err := repo.InTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			n, _, err = repo.RetireStaleObservationsTx(ctx, tx, e.provider, later, later, 5)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, n)
+	}
+	if fmt.Sprint(got) != "[5 5 2]" {
+		t.Errorf("chunks = %v, want [5 5 2]", got)
+	}
+}
+
+func TestOlderObservationDoesNotRollBackState(t *testing.T) {
+	e := newEnv(t)
+	e.ingest(dev("d1", "PC-1", "SN1"))
+	d := e.device("d1")
+	at := func(state string, ago time.Duration) intune.ManagementSnapshot {
+		o := obs("d1", "a1", state, state+"-raw")
+		// The test clock runs an hour behind; report times before it so they are not clamped to the run time.
+		o.ObservedAt = time.Now().Add(-2*time.Hour - ago)
+		return intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "Policy")}, Observations: []intune.ObservationRecord{o}}
+	}
+	e.mingest(true, at("applied", 10*time.Minute))
+	var synced1 time.Time
+	_ = e.pool.QueryRow(context.Background(), `SELECT last_synced_at FROM endpoints.management_observations WHERE device_id = $1::uuid`, d.ID).Scan(&synced1)
+	res := e.mingest(true, at("failed", 20*time.Minute))
+	if res.ObservationsChanged != 0 || e.obsHistory(d.ID) != 1 {
+		t.Fatalf("older report = %+v, history %d", res, e.obsHistory(d.ID))
+	}
+	var state, raw string
+	var synced2 time.Time
+	if err := e.pool.QueryRow(context.Background(), `SELECT normalized_state, raw_status, last_synced_at FROM endpoints.management_observations WHERE device_id = $1::uuid`, d.ID).Scan(&state, &raw, &synced2); err != nil {
+		t.Fatal(err)
+	}
+	if state != "applied" || raw != "applied-raw" || !synced2.After(synced1) {
+		t.Errorf("state %s raw %s synced %v -> %v: an older report must not roll back but still refresh freshness", state, raw, synced1, synced2)
+	}
+	if res = e.mingest(true, at("failed", 5*time.Minute)); res.ObservationsChanged != 1 || e.obsHistory(d.ID) != 2 {
+		t.Errorf("newer report = %+v, history %d", res, e.obsHistory(d.ID))
+	}
+}
+
+func TestProviderErrorsAreReconciledOncePerDeviceAcrossBatches(t *testing.T) {
+	e := newEnv(t)
+	e.ingest(dev("d1", "PC-1", "SN1"))
+	d := e.device("d1")
+	n := application.ObservationBatchSize + 100
+	var arts []intune.ArtifactRecord
+	var os []intune.ObservationRecord
+	for i := 0; i < n; i++ {
+		arts = append(arts, art(fmt.Sprintf("a%d", i), fmt.Sprintf("Policy %d", i)))
+		os = append(os, obs("d1", fmt.Sprintf("a%d", i), "failed", ""))
+	}
+	res := e.mingest(true, intune.ManagementSnapshot{Artifacts: arts, Observations: os})
+	if res.ProviderFindingsRaised != 1 {
+		t.Fatalf("res = %+v", res)
+	}
+	var detail string
+	if err := e.pool.QueryRow(context.Background(), `SELECT detail::text FROM endpoints.findings WHERE device_id = $1::uuid AND kind = 'provider_reported_error' AND status = 'open'`, d.ID).Scan(&detail); err != nil || !strings.Contains(detail, fmt.Sprintf(`"failed": %d`, n)) {
+		t.Errorf("detail = %s %v", detail, err)
+	}
+}
+
+func TestRejectedFilterDoesNotBindDependentAssignments(t *testing.T) {
+	e := newEnv(t)
+	filt := intune.FilterRecord{ExternalID: "f1", Name: "F", Platform: "windows", Rule: "ok"}
+	withFilter := func() intune.ArtifactRecord {
+		return art("a1", "Policy", intune.AssignmentRecord{ProviderAssignmentID: "x1", TargetKind: "all_devices", Mode: "include", FilterExternalID: "f1", FilterMode: "include"})
+	}
+	e.mingest(true, intune.ManagementSnapshot{Filters: []intune.FilterRecord{filt}, Artifacts: []intune.ArtifactRecord{withFilter()}})
+	// This run reports the filter in an unusable form (rule too long): the stored, older filter must not be bound.
+	bad := filt
+	bad.Rule = strings.Repeat("r", application.MaxFilterRuleLength+1)
+	res := e.mingest(true, intune.ManagementSnapshot{Filters: []intune.FilterRecord{bad}, Artifacts: []intune.ArtifactRecord{withFilter()}})
+	if res.FiltersRejected != 1 || res.AssignmentsRejected != 1 || res.AssignmentsClosed != 0 {
+		t.Fatalf("res = %+v", res)
+	}
+	if cur, closed := e.assignmentRows("a1"); cur != 1 || closed != 0 {
+		t.Errorf("the previous assignment must be kept: %d current, %d closed", cur, closed)
+	}
+}
+
+func TestStaleMembershipsAreClosedInChunks(t *testing.T) {
+	e := newEnv(t)
+	var ds []application.SnapshotDevice
+	var ms []intune.DeviceGroupMembershipRecord
+	for i := 0; i < 5; i++ {
+		ds = append(ds, dev(fmt.Sprintf("d%d", i), fmt.Sprintf("PC-%d", i), fmt.Sprintf("SN%d", i)))
+		ms = append(ms, intune.DeviceGroupMembershipRecord{ExternalDeviceID: fmt.Sprintf("d%d", i), GroupExternalID: "g1"})
+	}
+	e.ingest(ds...)
+	e.mingest(true, intune.ManagementSnapshot{Memberships: ms})
+	repo := repository.New(e.pool)
+	ctx := context.Background()
+	later := time.Now().UTC().Add(time.Hour)
+	var got []int
+	for i := 0; i < 3; i++ {
+		var n int
+		if err := repo.InTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			n, err = repo.CloseStaleMembershipsTx(ctx, tx, e.provider, later, later, 2)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, n)
+	}
+	if fmt.Sprint(got) != "[2 2 1]" {
+		t.Errorf("chunks = %v, want [2 2 1]", got)
+	}
+}
+
+func TestReopenedAssignmentNeverStartsBeforeThePreviousEnd(t *testing.T) {
+	e := newEnv(t)
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "P", grp("x1", "g1", "required"))}})
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "P", grp("x1", "g1", "available"))}})
+	id := e.artifactID("a1")
+	future := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Microsecond)
+	if _, err := e.pool.Exec(context.Background(), `UPDATE endpoints.management_assignments SET valid_until = $2 WHERE artifact_id = $1::uuid AND valid_until IS NOT NULL`, id, future); err != nil {
+		t.Fatal(err)
+	}
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "P", grp("x1", "g1", "uninstall"))}})
+	var from time.Time
+	if err := e.pool.QueryRow(context.Background(), `SELECT valid_from FROM endpoints.management_assignments WHERE artifact_id = $1::uuid AND valid_until IS NULL`, id).Scan(&from); err != nil {
+		t.Fatal(err)
+	}
+	if from.Before(future) {
+		t.Errorf("valid_from %v is before the previous valid_until %v", from, future)
+	}
+	var provider string
+	if err := e.pool.QueryRow(context.Background(), `SELECT provider FROM endpoints.management_assignments WHERE artifact_id = $1::uuid LIMIT 1`, id).Scan(&provider); err != nil || provider != e.provider {
+		t.Errorf("assignment provider = %q %v", provider, err)
+	}
+}
+
+func TestArtifactReadReturnsAtMost200ClosedAssignments(t *testing.T) {
+	e := newEnv(t)
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "P", grp("x1", "g1", "required"))}})
+	id := e.artifactID("a1")
+	if _, err := e.pool.Exec(context.Background(), `
+		INSERT INTO endpoints.management_assignments (artifact_id, provider, provider_assignment_id, target_kind, mode, source, observed_at, last_synced_at, valid_from, valid_until)
+		SELECT $1::uuid, $2, 'old' || g, 'all_users', 'include', 'sync', now(), now(), now() - interval '2 days', now() - interval '1 day' + g * interval '1 second'
+		FROM generate_series(1, 250) g`, id, e.provider); err != nil {
+		t.Fatal(err)
+	}
+	d, err := e.svc.GetArtifact(context.Background(), e.manage, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := 0
+	for _, a := range d.Assignments {
+		if !a.Current() {
+			closed++
+		}
+	}
+	if len(d.Assignments) != 1+application.MaxClosedAssignments || closed != application.MaxClosedAssignments || !d.Assignments[0].Current() {
+		t.Errorf("assignments = %d (%d closed), want current plus %d closed", len(d.Assignments), closed, application.MaxClosedAssignments)
+	}
+}
+
+func TestSyncCooldownAndManagementFailureAfterDevicePhase(t *testing.T) {
+	e := newEnv(t)
+	fake := intune.NewFake()
+	fake.SetDevices(intune.DeviceRecord{ExternalID: "d1", Name: "PC-1", SerialNumber: "SN1", OSPlatform: "windows"})
+	repo := repository.New(e.pool)
+	ctx := context.Background()
+	unlock, ok, err := repo.TryLockProvider(ctx, intune.ProviderKey)
+	if err != nil || !ok {
+		t.Skip("the intune provider lock is held elsewhere")
+	}
+	unlock()
+	_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider = $1`, intune.ProviderKey)
+	defer func() {
+		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider = $1`, intune.ProviderKey)
+		_, _ = e.pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = $1 AND external_id = 'd1' AND name = 'PC-1'`, intune.ProviderKey)
+	}()
+	// A management snapshot over the size limit makes the management ingestion itself fail.
+	fake.SetManagement(intune.ManagementSnapshot{Artifacts: make([]intune.ArtifactRecord, application.MaxSnapshotArtifacts+1)})
+	svc := application.NewService(repo, e.assets, fake, true, nil)
+	res, err := svc.Sync(ctx, e.caller(), e.manage)
+	if err != nil || res.Management.ManagementErrors != 1 {
+		t.Fatalf("sync with failing management ingestion = %+v %v", res, err)
+	}
+	if res.DevicesCreated+res.DevicesUnchanged+res.DevicesUpdated != 1 {
+		t.Errorf("the device phase must stay committed: %+v", res)
+	}
+	// The next one within the cooldown is refused; one with the cooldown elapsed is not.
+	if _, err := svc.Sync(ctx, e.caller(), e.manage); !errors.Is(err, application.ErrSyncCooldown) {
+		t.Errorf("second sync = %v, want the cooldown", err)
+	}
+	if _, err := svc.WithSyncCooldown(0).Sync(ctx, e.caller(), e.manage); errors.Is(err, application.ErrSyncCooldown) {
+		t.Errorf("sync without cooldown = %v", err)
+	}
+}
+
+func TestManagementSchemaReviewConstraints(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.ingest(dev("d1", "PC-1", "SN1"))
+	e.mingest(true, intune.ManagementSnapshot{Artifacts: []intune.ArtifactRecord{art("a1", "P")}, Observations: []intune.ObservationRecord{obs("d1", "a1", "failed", "")}, Memberships: []intune.DeviceGroupMembershipRecord{{ExternalDeviceID: "d1", GroupExternalID: "g"}}})
+	d := e.device("d1")
+	for name, sql := range map[string]string{
+		"history bad state":  `INSERT INTO endpoints.management_observation_history (artifact_id, device_id, normalized_state, raw_status, source, observed_at) VALUES (uuidv7(), uuidv7(), 'bogus', '', 'sync', now())`,
+		"history bad source": `INSERT INTO endpoints.management_observation_history (artifact_id, device_id, normalized_state, raw_status, source, observed_at) VALUES (uuidv7(), uuidv7(), 'applied', '', 'bogus', now())`,
+	} {
+		if _, err := e.pool.Exec(ctx, sql); err == nil {
+			t.Errorf("%s: the constraint did not hold", name)
+		}
+	}
+	// Observations and memberships restrict the deletion of the device they describe.
+	if _, err := e.pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE id = $1::uuid`, d.ID); err == nil {
+		t.Error("a device with observations or memberships must not be deletable")
+	}
+	if _, err := e.pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE id = $1::uuid`, e.artifactID("a1")); err == nil {
+		t.Error("an artifact with observations must not be deletable")
+	}
+	if e.count(`SELECT count(*) FROM pg_constraint WHERE conname = 'findings_kind_check' AND convalidated`) != 1 {
+		t.Error("findings_kind_check must be validated")
+	}
+	var def string
+	if err := e.pool.QueryRow(ctx, `SELECT indexdef FROM pg_indexes WHERE schemaname = 'endpoints' AND indexname = 'management_assignments_group_idx'`).Scan(&def); err != nil || !strings.Contains(def, "(provider, target_group_external_id") {
+		t.Errorf("group index = %s %v: the reverse lookup must lead with the provider", def, err)
 	}
 }

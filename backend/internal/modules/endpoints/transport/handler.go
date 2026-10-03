@@ -24,6 +24,7 @@ const (
 	permManage     = "endpoints.manage"
 	permAssetsView = "assets.view"
 	permMgmtView   = "endpoint.management.view"
+	permDirView    = "organization.directory.view"
 	maxBody        = 4 << 10
 )
 
@@ -63,6 +64,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusNotFound, "endpoints.not_found", "The requested resource was not found.")
 	case errors.Is(err, application.ErrForbidden):
 		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
+	case errors.Is(err, application.ErrSyncCooldown):
+		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.sync_cooldown", "The provider was synchronized a moment ago; try again shortly.")
 	case errors.Is(err, application.ErrSyncRunning):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.sync_running", "Another synchronization of this provider is running; try again later.")
 	case errors.Is(err, application.ErrConflict):
@@ -85,7 +88,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView), DirectoryView: p.Has(permDirView)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

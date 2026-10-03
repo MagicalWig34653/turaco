@@ -4732,6 +4732,11 @@ paths:
         '400': {$ref: '#/components/responses/EndpointsInvalid'}
         '404': {$ref: '#/components/responses/EndpointsNotFound'}
         '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '429':
+          description: endpoints.sync_cooldown - the provider was synchronized less than 30 seconds ago.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -4828,7 +4833,7 @@ paths:
     get:
       operationId: getManagementArtifact
       summary: Get an artifact with assignment history and current observation counts.
-      description: "Needs `endpoint.management.view` or `endpoints.manage`. Assignments include current and closed intervals."
+      description: "Needs `endpoint.management.view` or `endpoints.manage`. Assignments are all current ones plus at most the 200 most recently closed intervals (older history is not returned). `targetGroupExternalId` is returned only to callers who also hold `organization.directory.view`, otherwise it is null. Observation counts cover active observations of live devices; observations a complete snapshot no longer reported are retired and not counted."
       security:
         - sessionAuth: []
       parameters:
@@ -4899,7 +4904,7 @@ paths:
     post:
       operationId: runEndpointSync
       summary: Ingest the provider's current device and management snapshots.
-      description: "Needs `endpoints.manage` (it also covers the synchronization). 409 endpoints.sync_disabled when INTUNE_SYNC is off, 409 endpoints.provider_not_configured while no provider client exists, 409 endpoints.sync_running while another run of the provider is in progress. Every run is audited (endpoints.sync.completed or endpoints.sync.failed). Devices missing from the snapshot are tombstoned unless that would tombstone more than half of more than 10 live devices (reported as tombstonesSkipped). Management ingestion follows device ingestion; a management read failure increments managementErrors without failing the device part."
+      description: "Needs `endpoints.manage` (it also covers the synchronization). 409 endpoints.sync_disabled when INTUNE_SYNC is off, 409 endpoints.provider_not_configured while no provider client exists, 409 endpoints.sync_running while another run of the provider is in progress. Every run is audited (endpoints.sync.completed or endpoints.sync.failed). Devices missing from the snapshot are tombstoned unless that would tombstone more than half of more than 10 live devices (reported as tombstonesSkipped). Management ingestion follows device ingestion; a management read or ingestion failure increments managementErrors (HTTP 200) without failing the device part. 429 endpoints.sync_cooldown when the provider's last completed sync finished less than 30 seconds ago."
       security:
         - sessionAuth: []
       responses:

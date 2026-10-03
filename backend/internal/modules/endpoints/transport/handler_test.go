@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
@@ -55,14 +56,22 @@ const (
 
 func serve(t *testing.T, a authorization.Authenticator, provider intune.Provider, syncEnabled bool) http.Handler {
 	t.Helper()
+	return serveCooldown(t, a, provider, syncEnabled, 0)
+}
+
+func serveCooldown(t *testing.T, a authorization.Authenticator, provider intune.Provider, syncEnabled bool, cooldown time.Duration) http.Handler {
+	t.Helper()
 	pool := dbtest.Pool(t)
-	svc := application.NewService(repository.New(pool), assets{existing: map[string]bool{asset: true}}, provider, syncEnabled, nil)
+	svc := application.NewService(repository.New(pool), assets{existing: map[string]bool{asset: true}}, provider, syncEnabled, nil).WithSyncCooldown(cooldown)
 	mux := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	transport.Register(mux, svc, a, logger)
 	t.Cleanup(func() {
 		ctx := context.Background()
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_observations WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.device_group_memberships WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider = 'intune'`)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = $1::uuid`, admin)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE actor_id = $1::uuid`, admin)
 	})
@@ -207,7 +216,10 @@ func TestManagementEndpointsOverHTTP(t *testing.T) {
 	defer func() {
 		pool := dbtest.Pool(t)
 		ctx := context.Background()
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_observations WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.device_group_memberships WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider = 'intune'`)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_assignments WHERE artifact_id IN (SELECT id FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_filters WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
@@ -229,7 +241,13 @@ func TestManagementEndpointsOverHTTP(t *testing.T) {
 		t.Fatalf("list = %d %s", rec.Code, rec.Body)
 	}
 	id := list.Items[0].ID
-	view := serve(t, as(admin, "endpoint.management.view"), fake, true)
+	view := serve(t, as(admin, "endpoint.management.view", "organization.directory.view"), fake, true)
+	// Without organization.directory.view the provider group id is not returned.
+	noDir := serve(t, as(admin, "endpoint.management.view"), fake, true)
+	rec = do(noDir, "GET", "/api/v1/management-artifacts/"+id, "")
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"g1"`) || !strings.Contains(rec.Body.String(), `"targetGroupExternalId":null`) {
+		t.Fatalf("get without directory view = %d %s", rec.Code, rec.Body)
+	}
 	rec = do(view, "GET", "/api/v1/management-artifacts/"+id, "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"current":true`) || !strings.Contains(rec.Body.String(), `"targetGroupExternalId":"g1"`) ||
 		!strings.Contains(rec.Body.String(), `"name":"Http Filter"`) || !strings.Contains(rec.Body.String(), `"failed":1`) {
@@ -275,5 +293,16 @@ func TestManagementEndpointsOverHTTP(t *testing.T) {
 		if rec := do(none, "GET", p, ""); rec.Code != http.StatusForbidden {
 			t.Errorf("no permission: GET %s = %d", p, rec.Code)
 		}
+	}
+}
+
+func TestSyncCooldownReturns429(t *testing.T) {
+	manage := serveCooldown(t, as(admin, "endpoints.manage"), intune.NewFake(), true, time.Minute)
+	if rec := do(manage, "POST", "/api/v1/endpoint-sync", `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("first sync = %d %s", rec.Code, rec.Body)
+	}
+	rec := do(manage, "POST", "/api/v1/endpoint-sync", `{}`)
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "endpoints.sync_cooldown") {
+		t.Fatalf("second sync = %d %s", rec.Code, rec.Body)
 	}
 }

@@ -43,6 +43,7 @@ func (r *ManagementResult) add(o ManagementResult) {
 	r.ObservationsChanged += o.ObservationsChanged
 	r.ObservationsUnchanged += o.ObservationsUnchanged
 	r.ObservationsSkipped += o.ObservationsSkipped
+	r.ObservationsRetired += o.ObservationsRetired
 	r.MembershipsOpened += o.MembershipsOpened
 	r.MembershipsClosed += o.MembershipsClosed
 	r.MembershipsUnchanged += o.MembershipsUnchanged
@@ -66,7 +67,7 @@ func (s *Service) recordManagementSync(ctx context.Context, c Caller, action, pr
 			"artifactsCreated": r.ArtifactsCreated, "artifactsUpdated": r.ArtifactsUpdated, "artifactsUnchanged": r.ArtifactsUnchanged,
 			"artifactsTombstoned": r.ArtifactsTombstoned, "artifactsRejected": r.ArtifactsRejected, "artifactsLinked": r.ArtifactsLinked,
 			"assignmentsOpened": r.AssignmentsOpened, "assignmentsClosed": r.AssignmentsClosed, "assignmentsRejected": r.AssignmentsRejected,
-			"observationsCreated": r.ObservationsCreated, "observationsChanged": r.ObservationsChanged, "observationsSkipped": r.ObservationsSkipped,
+			"observationsCreated": r.ObservationsCreated, "observationsChanged": r.ObservationsChanged, "observationsSkipped": r.ObservationsSkipped, "observationsRetired": r.ObservationsRetired,
 			"membershipsOpened": r.MembershipsOpened, "membershipsClosed": r.MembershipsClosed, "membershipsSkipped": r.MembershipsSkipped,
 			"tombstonesSkipped": r.ManagementTombstonesSkipped, "providerFindingsRaised": r.ProviderFindingsRaised, "providerFindingsResolved": r.ProviderFindingsResolved,
 		}
@@ -83,9 +84,9 @@ func (s *Service) recordManagementSync(ctx context.Context, c Caller, action, pr
 // (the same one device ingestion takes, so runs never interleave; ErrSyncRunning when another holds it).
 // Filters and artifacts are upserted, an artifact's assignments keep an interval history (a changed
 // assignment closes its row and opens a new one, an unchanged one only refreshes freshness), the
-// provider's observations are stored with a history row only when the normalized state or raw status
+// provider's observations are stored with a history row only when the normalized state
 // changes, and device group memberships are intervals. For a Complete snapshot, artifacts, filters and
-// memberships it no longer lists are tombstoned or closed (never when that list is empty, and not when
+// memberships it no longer lists are tombstoned or closed and observations it no longer reports are retired (never when that list is empty, and not when
 // that would remove more than half of the provider's live ones). Observations and memberships refer to
 // Devices by provider external id: devices not ingested yet are skipped. Requires endpoints.manage.
 func (s *Service) IngestManagement(ctx context.Context, c Caller, p Principal, snap ManagementSnapshot) (ManagementResult, error) {
@@ -410,7 +411,7 @@ func (s *Service) ingestArtifactBatch(ctx context.Context, tx pgx.Tx, c Caller, 
 			aliasKeys = append(aliasKeys, NormalizeSoftwareName(in.Name))
 		}
 	}
-	filters, err := s.store.ResolveFiltersTx(ctx, tx, batch[0].Provider, filterRefs)
+	filters, err := s.store.ResolveFiltersTx(ctx, tx, batch[0].Provider, filterRefs, batch[0].SyncedAt)
 	if err != nil {
 		return err
 	}
@@ -432,7 +433,7 @@ func (s *Service) ingestArtifactBatch(ctx context.Context, tx pgx.Tx, c Caller, 
 				}
 				id, ok := filters[ref]
 				if !ok {
-					// A reference to a filter the provider did not report: the assignment cannot be stored faithfully.
+					// A reference to a filter the provider did not report in this run (or that was rejected): the assignment cannot be stored faithfully.
 					in.rejectedAssignments++
 					in.ReconcileAssignments = false
 					break
@@ -560,8 +561,10 @@ func (s *Service) reconcileAssignments(ctx context.Context, tx pgx.Tx, c Caller,
 // artifact) and the provider-reported-error findings of devices that had observations of them are re-evaluated.
 func (s *Service) tombstoneArtifacts(ctx context.Context, c Caller, snap ManagementSnapshot, runAt time.Time, keep []string, total *ManagementResult) error {
 	var got ManagementResult
+	var devices []string
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 		got = ManagementResult{}
+		devices = nil
 		ids, live, err := s.store.ArtifactTombstoneCandidatesTx(ctx, tx, snap.Provider, runAt, keep)
 		if err != nil || len(ids) == 0 {
 			return err
@@ -570,10 +573,11 @@ func (s *Service) tombstoneArtifacts(ctx context.Context, c Caller, snap Managem
 			got.ManagementTombstonesSkipped += len(ids)
 			return nil
 		}
-		closed, devices, err := s.store.TombstoneArtifactsTx(ctx, tx, ids, runAt)
+		closed, ds, err := s.store.TombstoneArtifactsTx(ctx, tx, ids, runAt)
 		if err != nil {
 			return err
 		}
+		devices = ds
 		got.ArtifactsTombstoned += len(ids)
 		for _, id := range ids {
 			n := closed[id]
@@ -586,10 +590,14 @@ func (s *Service) tombstoneArtifacts(ctx context.Context, c Caller, snap Managem
 				return err
 			}
 		}
-		return s.reconcileProviderErrors(ctx, tx, c, &got, devices)
+		return nil
 	})
+	if err != nil {
+		return err
+	}
 	total.add(got)
-	return err
+	// The tombstoning is committed; the findings of the affected devices follow in batches of their own.
+	return s.reconcileDevices(ctx, c, total, devices)
 }
 
 // ---- observations ----
@@ -630,33 +638,96 @@ func (s *Service) ingestObservations(ctx context.Context, c Caller, snap Managem
 		seen[pair{it.deviceExt, it.artifactExt}] = true
 		items = append(items, it)
 	}
+	touched := map[string]bool{}
 	for start := 0; start < len(items); start += ObservationBatchSize {
 		batch := items[start:min(start+ObservationBatchSize, len(items))]
 		var got ManagementResult
+		var devices []string
 		err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 			got = ManagementResult{}
-			return s.ingestObservationBatch(ctx, tx, c, &got, snap, batch, runAt)
+			var err error
+			devices, err = s.ingestObservationBatch(ctx, tx, c, &got, snap, batch, runAt)
+			return err
 		})
 		if err != nil {
 			return err
 		}
 		total.add(got)
+		for _, d := range devices {
+			touched[d] = true
+		}
 	}
-	return nil
+	if snap.Complete && len(items) > 0 {
+		retired, err := s.retireStaleObservations(ctx, snap, runAt, total)
+		if err != nil {
+			return err
+		}
+		for _, d := range retired {
+			touched[d] = true
+		}
+	}
+	// One reconciliation per device after all observation writes: the finding follows the device's whole
+	// current state, and a device in several batches is not evaluated repeatedly.
+	ids := make([]string, 0, len(touched))
+	for d := range touched {
+		ids = append(ids, d)
+	}
+	return s.reconcileDevices(ctx, c, total, ids)
 }
 
-func (s *Service) ingestObservationBatch(ctx context.Context, tx pgx.Tx, c Caller, run *ManagementResult, snap ManagementSnapshot, batch []observationItem, runAt time.Time) error {
+// retireStaleObservations retires, in chunks of separate transactions, the provider's active observations
+// that a complete snapshot did not report, unless that would retire more than half of them. It returns the
+// affected devices.
+func (s *Service) retireStaleObservations(ctx context.Context, snap ManagementSnapshot, runAt time.Time, total *ManagementResult) ([]string, error) {
+	var skip bool
+	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+		stale, live, err := s.store.StaleObservationsTx(ctx, tx, snap.Provider, runAt)
+		if err != nil || stale == 0 {
+			skip = true
+			return err
+		}
+		if guarded(stale, live) {
+			total.ManagementTombstonesSkipped += stale
+			skip = true
+		}
+		return nil
+	})
+	if err != nil || skip {
+		return nil, err
+	}
+	var devices []string
+	for {
+		var n int
+		var ds []string
+		err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			n, ds, err = s.store.RetireStaleObservationsTx(ctx, tx, snap.Provider, runAt, runAt, StaleChunkSize)
+			return err
+		})
+		if err != nil {
+			return devices, err
+		}
+		total.ObservationsRetired += n
+		devices = append(devices, ds...)
+		if n < StaleChunkSize {
+			return devices, nil
+		}
+	}
+}
+
+// ingestObservationBatch stores one batch and returns the live devices it touched.
+func (s *Service) ingestObservationBatch(ctx context.Context, tx pgx.Tx, c Caller, run *ManagementResult, snap ManagementSnapshot, batch []observationItem, runAt time.Time) ([]string, error) {
 	var devExt, artExt []string
 	for _, it := range batch {
 		devExt, artExt = append(devExt, it.deviceExt), append(artExt, it.artifactExt)
 	}
 	devices, err := s.store.ResolveDevicesTx(ctx, tx, snap.Provider, devExt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	artifacts, err := s.store.ResolveArtifactsTx(ctx, tx, snap.Provider, artExt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var in []ObservationInput
 	for _, it := range batch {
@@ -669,11 +740,11 @@ func (s *Service) ingestObservationBatch(ctx context.Context, tx pgx.Tx, c Calle
 		in = append(in, ObservationInput{ArtifactID: a.ID, DeviceID: d.ID, State: it.state, RawStatus: it.raw, ObservedAt: it.observedAt})
 	}
 	if len(in) == 0 {
-		return nil
+		return nil, nil
 	}
 	outcomes, err := s.store.UpsertObservationsTx(ctx, tx, in, snap.Source, runAt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var changed []ObservationInput
 	deviceSet := map[string]bool{}
@@ -695,12 +766,28 @@ func (s *Service) ingestObservationBatch(ctx context.Context, tx pgx.Tx, c Calle
 			deviceIDs = append(deviceIDs, o.DeviceID)
 		}
 	}
-	if err := s.store.AppendObservationHistoryTx(ctx, tx, changed, snap.Source); err != nil {
-		return err
+	return deviceIDs, s.store.AppendObservationHistoryTx(ctx, tx, changed, snap.Source)
+}
+
+// reconcileDevices reconciles the provider-reported-error findings of the devices in sorted batches, one
+// transaction per batch.
+func (s *Service) reconcileDevices(ctx context.Context, c Caller, total *ManagementResult, deviceIDs []string) error {
+	ids := slices.Clone(deviceIDs)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	for start := 0; start < len(ids); start += ReconcileBatchSize {
+		batch := ids[start:min(start+ReconcileBatchSize, len(ids))]
+		var got ManagementResult
+		err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+			got = ManagementResult{}
+			return s.reconcileProviderErrors(ctx, tx, c, &got, batch)
+		})
+		if err != nil {
+			return err
+		}
+		total.add(got)
 	}
-	// The finding follows the device's whole current state, not only this batch.
-	slices.Sort(deviceIDs)
-	return s.reconcileProviderErrors(ctx, tx, c, run, deviceIDs)
+	return nil
 }
 
 // reconcileProviderErrors raises or resolves each device's provider_reported_error finding from its
@@ -778,22 +865,38 @@ func (s *Service) ingestMemberships(ctx context.Context, snap ManagementSnapshot
 	if !snap.Complete || len(items) == 0 {
 		return nil
 	}
-	var got ManagementResult
+	skip := false
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		got = ManagementResult{}
 		stale, live, err := s.store.StaleMembershipsTx(ctx, tx, snap.Provider, runAt)
 		if err != nil || stale == 0 {
+			skip = true
 			return err
 		}
 		if guarded(stale, live) {
-			got.ManagementTombstonesSkipped += stale
+			total.ManagementTombstonesSkipped += stale
+			skip = true
+		}
+		return nil
+	})
+	if err != nil || skip {
+		return err
+	}
+	// Closed in chunks of separate transactions so a large provider does not hold one long transaction.
+	for {
+		var n int
+		err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+			var err error
+			n, err = s.store.CloseStaleMembershipsTx(ctx, tx, snap.Provider, runAt, runAt, StaleChunkSize)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		total.MembershipsClosed += n
+		if n < StaleChunkSize {
 			return nil
 		}
-		got.MembershipsClosed, err = s.store.CloseStaleMembershipsTx(ctx, tx, snap.Provider, runAt, runAt)
-		return err
-	})
-	total.add(got)
-	return err
+	}
 }
 
 // ---- reads ----
@@ -813,8 +916,10 @@ func (s *Service) ListArtifacts(ctx context.Context, p Principal, f ArtifactFilt
 	return s.store.ListArtifacts(ctx, f)
 }
 
-// GetArtifact returns an artifact with its assignments (current first, then closed) and the number of
-// live devices per observation state. Requires endpoint.management.view or endpoints.manage.
+// GetArtifact returns an artifact with its assignments (current first, then at most MaxClosedAssignments
+// of the most recently closed ones) and the number of live devices per active observation state. The
+// assignments' provider group ids are returned only to callers who also hold organization.directory.view.
+// Requires endpoint.management.view or endpoints.manage.
 func (s *Service) GetArtifact(ctx context.Context, p Principal, id string) (ArtifactDetail, error) {
 	if !p.canViewManagement() {
 		return ArtifactDetail{}, ErrForbidden
@@ -833,6 +938,12 @@ func (s *Service) GetArtifact(ctx context.Context, p Principal, id string) (Arti
 	counts, err := s.store.ArtifactObservationCounts(ctx, id)
 	if err != nil {
 		return ArtifactDetail{}, err
+	}
+	if !p.DirectoryView {
+		// Provider group ids reveal Directory data: only callers who may view Directory Groups see them.
+		for i := range as {
+			as[i].TargetGroupExternalID = nil
+		}
 	}
 	return ArtifactDetail{Artifact: a, Assignments: as, ObservationCounts: counts}, nil
 }

@@ -41,6 +41,15 @@ const (
 	// ObservationBatchSize and MembershipBatchSize are the rows written per transaction.
 	ObservationBatchSize = 500
 	MembershipBatchSize  = 1000
+	// ReconcileBatchSize is the devices whose provider-reported-error finding is reconciled per transaction.
+	ReconcileBatchSize = 500
+	// StaleChunkSize is the rows of stale memberships or observations closed or retired per transaction.
+	StaleChunkSize = 5000
+	// DefaultSyncCooldown is the minimum time between the end of one manual provider synchronization and
+	// the start of the next.
+	DefaultSyncCooldown = 30 * time.Second
+	// MaxClosedAssignments bounds the closed assignment rows an artifact read returns (most recent first).
+	MaxClosedAssignments = 200
 	// PlaceholderArtifactName replaces an artifact or filter name that is empty or unsafe.
 	PlaceholderArtifactName = "unnamed-object"
 )
@@ -94,9 +103,12 @@ type ManagementResult struct {
 	// snapshot but kept because the tombstone guard refused to remove more than half.
 	ManagementTombstonesSkipped int
 
+	// ObservationsRetired counts observations a complete snapshot no longer reported.
+	ObservationsRetired int
+
 	ProviderFindingsRaised   int
 	ProviderFindingsResolved int
-	// ManagementErrors counts reads of the management data that failed (Sync only).
+	// ManagementErrors counts reads or ingestions of the management data that failed (Sync only).
 	ManagementErrors int
 }
 
@@ -270,7 +282,9 @@ type ObservationInput struct {
 type ObservationOutcome struct {
 	ObservationInput
 	Created bool
-	// Changed is set when the row is new or its state or raw status differs from the stored one.
+	// Changed is set when the row is new or its normalized state changed to a newer observation. A newer
+	// raw status alone is stored on the current row but is not a change (and has no history row); an
+	// observation older than the stored one changes neither state nor raw status.
 	Changed bool
 }
 
@@ -291,8 +305,9 @@ type ManagementStore interface {
 	InsertFilterTx(ctx context.Context, tx pgx.Tx, n NewFilter) (Filter, bool, error)
 	UpdateFilterTx(ctx context.Context, tx pgx.Tx, f Filter) (Filter, error)
 	TouchFilterTx(ctx context.Context, tx pgx.Tx, id string, observedAt, syncedAt time.Time, source string) error
-	// ResolveFiltersTx returns provider external id -> filter id.
-	ResolveFiltersTx(ctx context.Context, tx pgx.Tx, provider string, externalIDs []string) (map[string]string, error)
+	// ResolveFiltersTx returns provider external id -> filter id of the live filters that were seen at or
+	// after since (the run's time): a filter rejected or not reported by this run is not returned.
+	ResolveFiltersTx(ctx context.Context, tx pgx.Tx, provider string, externalIDs []string, since time.Time) (map[string]string, error)
 	FilterTombstoneCandidatesTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time, keep []string) (ids []string, live int, err error)
 	TombstoneFiltersTx(ctx context.Context, tx pgx.Tx, ids []string, at time.Time) (int, error)
 
@@ -318,14 +333,19 @@ type ManagementStore interface {
 	// UpsertObservationsTx stores the observations (one row per artifact and device, no duplicates in in).
 	UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []ObservationInput, source string, syncedAt time.Time) ([]ObservationOutcome, error)
 	AppendObservationHistoryTx(ctx context.Context, tx pgx.Tx, rows []ObservationInput, source string) error
-	// ProviderErrorsTx returns, per device, the live failed/conflict observation counts (live artifacts only).
+	// StaleObservationsTx counts the provider's active (not retired) observations not seen since before and all active ones.
+	StaleObservationsTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time) (stale, live int, err error)
+	// RetireStaleObservationsTx retires up to limit of them and returns the ids of the live devices they belong to.
+	RetireStaleObservationsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time, limit int) (retired int, devices []string, err error)
+	// ProviderErrorsTx returns, per device, the live failed/conflict observation counts (live artifacts, active observations only).
 	ProviderErrorsTx(ctx context.Context, tx pgx.Tx, deviceIDs []string) (map[string]ProviderErrors, error)
 
 	// UpsertMembershipsTx opens the memberships that are not current and refreshes the ones that are.
 	UpsertMembershipsTx(ctx context.Context, tx pgx.Tx, provider, source string, in []MembershipInput, at time.Time) (opened int, err error)
 	// StaleMembershipsTx counts the provider's current memberships not seen since before and all current ones.
 	StaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time) (stale, live int, err error)
-	CloseStaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time) (int, error)
+	// CloseStaleMembershipsTx closes at most limit of them and returns how many.
+	CloseStaleMembershipsTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time, limit int) (int, error)
 
 	ListArtifacts(ctx context.Context, f ArtifactFilter) (ArtifactResult, error)
 	GetArtifact(ctx context.Context, id string) (Artifact, error)
