@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -214,13 +215,16 @@ func TestDirectoryGraphLookups(t *testing.T) {
 	f.member(child, u2, true) // ended
 	f.member(top, u1, false)
 
-	byExt, err := f.repo.GroupsByExternalIDs(ctx, []string{f.pfx + "-top", f.pfx + "-missing"})
-	if err != nil || len(byExt) != 1 || byExt[0].ID != top || byExt[0].DisplayName != f.pfx+"-top" {
-		t.Fatalf("by external id = %+v, %v", byExt, err)
+	byExt, trunc, err := f.repo.GroupsByExternalIDs(ctx, "test", []string{f.pfx + "-top", f.pfx + "-missing"}, 100)
+	if err != nil || trunc || len(byExt) != 1 || byExt[0].ID != top || byExt[0].DisplayName != f.pfx+"-top" {
+		t.Fatalf("by external id = %+v, %v, %v", byExt, trunc, err)
 	}
-	up, err := f.repo.NestingUp(ctx, []string{child}, 100)
-	if err != nil {
-		t.Fatal(err)
+	if other, _, err := f.repo.GroupsByExternalIDs(ctx, "other-provider", []string{f.pfx + "-top"}, 100); err != nil || len(other) != 0 {
+		t.Fatalf("another provider key must not see the group: %+v, %v", other, err)
+	}
+	up, trunc, err := f.repo.NestingUp(ctx, "test", []string{child}, 100)
+	if err != nil || trunc {
+		t.Fatalf("up: %v, truncated=%v", err, trunc)
 	}
 	parents := map[string]bool{}
 	for _, e := range up {
@@ -229,24 +233,68 @@ func TestDirectoryGraphLookups(t *testing.T) {
 	if !parents[mid] || !parents[top] || parents[gone] {
 		t.Errorf("up edges = %+v (ended edge must not count)", up)
 	}
-	down, err := f.repo.NestingDown(ctx, []string{top}, 100)
+	down, _, err := f.repo.NestingDown(ctx, "test", []string{top}, 100)
 	if err != nil || len(down) < 2 {
 		t.Fatalf("down edges = %+v, %v", down, err)
 	}
-	if limited, _ := f.repo.NestingUp(ctx, []string{child}, 1); len(limited) != 1 {
-		t.Errorf("limit not applied: %d", len(limited))
+	if limited, trunc, _ := f.repo.NestingUp(ctx, "test", []string{child}, 1); len(limited) != 1 || !trunc {
+		t.Errorf("limit not applied or truncation not reported: %d, %v", len(limited), trunc)
 	}
-	ms, err := f.repo.UserMemberships(ctx, []string{u1, u2}, 100)
-	if err != nil || len(ms) != 2 {
-		t.Fatalf("user memberships = %+v, %v (ended interval must not count)", ms, err)
+	if none, _, _ := f.repo.NestingUp(ctx, "other-provider", []string{child}, 100); len(none) != 0 {
+		t.Errorf("another provider key must not see nesting: %+v", none)
 	}
-	members, err := f.repo.GroupMembers(ctx, []string{child}, 100)
-	if err != nil || len(members) != 1 || members[0].UserID != u1 {
+	ms, trunc, err := f.repo.UserMemberships(ctx, "test", []string{u1, u2}, 100)
+	if err != nil || trunc || len(ms) != 2 {
+		t.Fatalf("user memberships = %+v, %v, %v (ended interval must not count)", ms, trunc, err)
+	}
+	if cutMs, trunc, _ := f.repo.UserMemberships(ctx, "test", []string{u1, u2}, 1); len(cutMs) != 1 || !trunc {
+		t.Errorf("membership limit: %d, truncated=%v", len(cutMs), trunc)
+	}
+	members, trunc, err := f.repo.GroupMembers(ctx, "test", []string{child}, 100)
+	if err != nil || trunc || len(members) != 1 || members[0].UserID != u1 {
 		t.Fatalf("group members = %+v, %v", members, err)
+	}
+	if cutMs, trunc, _ := f.repo.GroupMembers(ctx, "test", []string{child, top}, 1); len(cutMs) != 1 || !trunc {
+		t.Errorf("group member limit: %d, truncated=%v", len(cutMs), trunc)
 	}
 	// The public wrapper ignores malformed ids.
 	g := application.NewDirectoryGraph(f.repo)
-	if got, err := g.GroupsByIDs(ctx, []string{"not-a-uuid"}); err != nil || got != nil {
+	if got, trunc, err := g.GroupsByIDs(ctx, "test", []string{"not-a-uuid"}, 10); err != nil || got != nil || trunc {
 		t.Errorf("malformed id: %v, %v", got, err)
+	}
+}
+
+func TestDirectoryGraphDepthCapAndIdentity(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// A chain g0 <- g1 <- ... <- g12: walking up from g12 passes more than MaxNestingDepth levels.
+	var chain []string
+	for i := 0; i <= application.MaxNestingDepth+2; i++ {
+		chain = append(chain, f.group(fmt.Sprintf("%s-chain-%02d", f.pfx, i), nil))
+	}
+	for i := 1; i < len(chain); i++ {
+		f.nest(chain[i-1], chain[i], false) // chain[i-1] is the parent of chain[i]
+	}
+	up, trunc, err := f.repo.NestingUp(ctx, "test", []string{chain[len(chain)-1]}, 100)
+	if err != nil || !trunc || len(up) != application.MaxNestingDepth {
+		t.Fatalf("deep walk: %d edges, truncated=%v, %v; want %d edges and truncated", len(up), trunc, err, application.MaxNestingDepth)
+	}
+	shallow, trunc, err := f.repo.NestingUp(ctx, "test", []string{chain[3]}, 100)
+	if err != nil || trunc || len(shallow) != 3 {
+		t.Fatalf("shallow walk: %d edges, truncated=%v, %v", len(shallow), trunc, err)
+	}
+
+	withID, withoutID, gone := f.user(f.pfx+"-id", "active"), f.user(f.pfx+"-noid", "active"), f.user(f.pfx+"-idgone", "active")
+	f.insert(`INSERT INTO organization.external_identities(user_id, provider_key, external_subject, username) VALUES ($1,'test',$2,$3) RETURNING id::text`,
+		`DELETE FROM organization.external_identities WHERE id = $1`, withID, f.pfx+"-sub1", f.pfx+"-idname")
+	f.insert(`INSERT INTO organization.external_identities(user_id, provider_key, external_subject, username, deleted_observed_at) VALUES ($1,'test',$2,$3, now()) RETURNING id::text`,
+		`DELETE FROM organization.external_identities WHERE id = $1`, gone, f.pfx+"-sub2", f.pfx+"-idgonename")
+	g := application.NewDirectoryGraph(f.repo)
+	got, err := g.UsersWithIdentity(ctx, "test", []string{withID, withoutID, gone, "bad"})
+	if err != nil || !got[withID] || got[withoutID] || got[gone] {
+		t.Fatalf("users with identity = %v, %v", got, err)
+	}
+	if other, _ := g.UsersWithIdentity(ctx, "other-provider", []string{withID}); other[withID] {
+		t.Errorf("identity of another provider key must not count")
 	}
 }
