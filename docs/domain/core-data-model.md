@@ -52,7 +52,7 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **ServiceRequest** records catalog item, requester/requested-for, lifecycle and fulfillment context. Catalog-specific answers can use schema-defined structured values, but important relationships (requested Device/Product/User/etc.) are promoted to typed references rather than hidden JSON.
 
-**Approval** is shared and can apply to requests/changes/deployments/procurement.
+**Approval** is shared and can apply to requests/changes/deployments/procurement. Implemented (F3): `approvals.approvals` holds one decision per subject step (`subject_type`/`subject_id`, display label, step index, approver User or Team, excluded Users, immutable decision); `catalog.items` holds the validated definition ([ADR-0025](../decisions/ADR-0025-catalog-form-definitions.md)); `requests.service_requests` holds the human reference (`REQ-YYYY-NNNNNN`), the definition snapshot and the answers, with `request_references` (typed links from answers to Users/Products) and `request_tasks` (fulfillment tasks, mandatory or optional).
 
 ## Service desk
 

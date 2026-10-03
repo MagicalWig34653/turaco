@@ -30,6 +30,8 @@ import (
 	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
 	productsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/products/repository"
 	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
+	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
+	requeststransport "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
@@ -43,6 +45,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
 var version = "dev"
@@ -143,12 +146,13 @@ func main() {
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	productsRepo := productsrepository.New(pool)
+	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
 		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
-	categories, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)
+	categories, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
@@ -181,4 +185,11 @@ func main() {
 		logger.Error("http server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// allCategories lists the notification categories of every module that creates notifications.
+func allCategories() []notifications.Category {
+	out := tasksapp.NotificationCategories()
+	out = append(out, approvalsapp.NotificationCategories()...)
+	return append(out, requestsapp.NotificationCategories()...)
 }

@@ -19,6 +19,7 @@ import (
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -27,6 +28,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
+	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
 var version = "dev"
@@ -81,7 +83,7 @@ func main() {
 		logger.Error("load email configuration", "error", err)
 		os.Exit(1)
 	}
-	categories, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)
+	categories, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
@@ -165,7 +167,10 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		return err
 	}
 	approvalConsumers := approvalsapp.NewConsumers(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
-	return d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested)
+	if err := d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested); err != nil {
+		return err
+	}
+	return registerRequestConsumers(d, wiring.Requests(pool), notifier)
 }
 
 // orgContacts adapts the Organization work directory to the email sender.
@@ -240,4 +245,32 @@ func (a smtpMailer) Send(ctx context.Context, msg notifications.EmailMessage) er
 		return &notifications.PermanentEmailError{Err: err}
 	}
 	return err
+}
+
+// allCategories lists the notification categories of every module that creates notifications.
+func allCategories() []notifications.Category {
+	out := tasksapp.NotificationCategories()
+	out = append(out, approvalsapp.NotificationCategories()...)
+	return append(out, requestsapp.NotificationCategories()...)
+}
+
+// registerRequestConsumers registers the workflow and notification consumers of the Requests module.
+func registerRequestConsumers(d *events.Dispatcher, svc *requestsapp.Service, notifier *notifications.Service) error {
+	c := requestsapp.NewConsumers(svc, notifier)
+	for _, r := range []struct {
+		event, name string
+		fn          events.Consumer
+	}{
+		{"ApprovalDecided", "requests.advance-approval", c.OnApprovalDecided},
+		{"TaskCompleted", "requests.task-finished", c.OnTaskFinished},
+		{"TaskCancelled", "requests.task-finished", c.OnTaskFinished},
+		{"ServiceRequestApproved", "requests.notify-approved", c.OnRequestApproved},
+		{"ServiceRequestRejected", "requests.notify-rejected", c.OnRequestRejected},
+		{"ServiceRequestCompleted", "requests.notify-completed", c.OnRequestCompleted},
+	} {
+		if err := d.Register(r.event, r.name, r.fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }

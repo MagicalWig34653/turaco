@@ -272,3 +272,15 @@ func TestFieldErrorsMessageIsStable(t *testing.T) {
 		t.Errorf("message = %q", fe.Error())
 	}
 }
+
+func TestAnswersAgainstAStoredDefinitionWithoutMaxLength(t *testing.T) {
+	// A snapshot decoded from storage is not re-normalized; it must not crash.
+	d := Definition{Fields: []Field{{Key: "a", Type: FieldText, Label: "A"}, {Key: "b", Type: FieldLongText, Label: "B"}}}
+	if _, _, err := validate(t, d, map[string]any{"a": "ok", "b": "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := validate(t, d, map[string]any{"a": strings.Repeat("x", maxTextDefault+1)})
+	if got := fieldErrors(t, err); got["a"] != CodeTooLong {
+		t.Errorf("default limit not applied: %v", got)
+	}
+}

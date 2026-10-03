@@ -99,7 +99,7 @@ func (w *world) dispatch() { w.dispatchWith(false, w.everyone()) }
 func (w *world) dispatchWith(email bool, perms grants) {
 	w.t.Helper()
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
-		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: []string{"TaskAssigned", "TaskCompleted", "ApprovalRequested"},
+		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: allTestEventTypes,
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := registerConsumersWith(d, w.pool, testCategories(w.t), email, perms); err != nil {
 		w.t.Fatal(err)
@@ -347,7 +347,7 @@ func TestRepeatedAssignmentsDoNotFloodTheRecipient(t *testing.T) {
 
 func testCategories(t *testing.T) *notifications.Registry {
 	t.Helper()
-	r, err := notifications.NewRegistry(append(tasksapp.NotificationCategories(), approvalsapp.NotificationCategories()...)...)
+	r, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,4 +396,11 @@ func TestApprovalRequestedNotifiesApproversExceptTheExcluded(t *testing.T) {
 	if w.pendingEvents() != 0 {
 		t.Errorf("%d events left unprocessed", w.pendingEvents())
 	}
+}
+
+// decideApproval decides an approval as user through the approvals module.
+func decideApproval(w *world, user, approvalID, decision string) error {
+	svc := approvalsapp.NewService(approvalsrepository.New(w.pool), orgpublic.NewWorkDirectory(orgrepository.New(w.pool)), nil)
+	_, err := svc.Decide(context.Background(), approvalsapp.Caller{Actor: audit.UserActor(user), CorrelationID: w.corr}, approvalID, decision, "", nil)
+	return err
 }

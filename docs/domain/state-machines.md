@@ -44,6 +44,8 @@ Assignment creates/closes historical AssetAssignment records. `disposed` is norm
 
 Terminal alternatives: `rejected`, `cancelled`. `waiting_reason` is separate (`stock`, `supplier`, `requester`, `external_system`). Completion requires CatalogItem-defined fulfillment criteria.
 
+Implemented (F3, `modules/requests`): a request is created when submitted (there is no persisted `draft`). Without approval steps it enters `in_fulfillment` at once; with them it is `pending_approval` at step 0. Approving the last step starts fulfillment in the same transaction (`approved` is transient): the catalog's task templates are created as Tasks with typed context `service_request`, and a request without templates completes immediately. Approval steps are sequential and requested one at a time; a rejection ends the request as `rejected`. A request completes automatically when every mandatory task is completed and every optional task is completed or cancelled; a cancelled mandatory task blocks automatic completion and a manager completes the request manually with a reason. Operations: `cancel` (requester while approval is pending, `requests.manage` any time before a terminal state; cancels pending approvals and unfinished tasks), `hold` (`in_fulfillment → waiting` with a reason code), `resume`, `complete` (manual). The requester and the requested-for User can never decide an approval of their own request. Events: `ServiceRequestSubmitted`, `ServiceRequestApproved`, `ServiceRequestRejected`, `ServiceRequestCompleted`, `ServiceRequestCancelled`.
+
 ## Approval
 `pending → approved | rejected | cancelled | expired`. Decisions are immutable; changed decisions create a new approval/correction record.
 

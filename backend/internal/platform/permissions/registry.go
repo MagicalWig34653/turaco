@@ -24,6 +24,8 @@ var Registry = []Permission{
 	{Name: "products.view", Description: "View the product catalog: products, manufacturers and product categories.", Risk: "normal"},
 	{Name: "products.manage", Description: "Create and change products, manufacturers and product categories.", Risk: "elevated"},
 	{Name: "catalog.manage", Description: "Create and change Catalog Items: form definitions, approval steps and fulfillment task templates; activate and deactivate them.", Risk: "elevated"},
+	{Name: "requests.view", Description: "View all service requests, their answers, approvals and fulfillment tasks.", Risk: "elevated"},
+	{Name: "requests.manage", Description: "Cancel, put on hold, resume and complete any service request.", Risk: "elevated"},
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},
 	{Name: "endpoint.management.view", Description: "View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope.", Risk: "normal"},

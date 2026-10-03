@@ -172,7 +172,7 @@ func normalizeAnswer(f Field, raw any) (any, string) {
 		if s == "" {
 			return nil, CodeRequired
 		}
-		if utf8.RuneCountInString(s) > *f.MaxLength {
+		if utf8.RuneCountInString(s) > maxLength(f) {
 			return nil, CodeTooLong
 		}
 		if !utf8.ValidString(s) || safetext.ContainsUnsafe(s, f.Type == FieldLongText) {
@@ -223,4 +223,16 @@ func normalizeAnswer(f Field, raw any) (any, string) {
 		return strings.ToLower(s), ""
 	}
 	return nil, CodeType
+}
+
+// maxLength is the field's limit; a stored definition without one (older or
+// hand-written data) falls back to the type's default instead of failing.
+func maxLength(f Field) int {
+	if f.MaxLength != nil {
+		return *f.MaxLength
+	}
+	if f.Type == FieldLongText {
+		return maxLongTextDefault
+	}
+	return maxTextDefault
 }
