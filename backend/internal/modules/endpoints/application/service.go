@@ -34,6 +34,8 @@ type Service struct {
 	// dir and holders answer the Organization and Assets questions of the management views (WithViews).
 	dir     Directory
 	holders AssetHolders
+	// viewProvider is the provider whose Device groups, Directory Groups and assignments the views evaluate.
+	viewProvider string
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -45,13 +47,20 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}}
+	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey}
 }
 
 // WithViews connects the management views to the Organization directory graph and to the Asset holders.
 // Without it Users are unknown and no group nesting is known, so the views answer unknown where that matters.
 func (s *Service) WithViews(dir Directory, holders AssetHolders) *Service {
 	s.dir, s.holders = dir, holders
+	return s
+}
+
+// WithProviderKey sets the provider the management views evaluate (default intune.ProviderKey). Directory
+// Groups and identities are looked up under the same key.
+func (s *Service) WithProviderKey(key string) *Service {
+	s.viewProvider = key
 	return s
 }
 

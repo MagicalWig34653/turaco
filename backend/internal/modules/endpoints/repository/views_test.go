@@ -18,9 +18,33 @@ type fakeDir struct {
 	parents map[string][]string                   // child org id -> parent org ids
 	members map[string][]string                   // group org id -> user ids
 	users   map[string]string                     // user id -> name
+	// noIdentity lists Users without synced directory data; cutMemberships / cutNesting / cutMembers make the
+	// corresponding lookups report truncation.
+	noIdentity     map[string]bool
+	cutMemberships bool
+	cutNesting     bool
+	cutMembers     bool
+	keys           map[string]bool // provider keys the views asked for
 }
 
-func (f *fakeDir) GroupsByExternalIDs(_ context.Context, exts []string) ([]application.DirectoryGroup, error) {
+func (f *fakeDir) key(k string) {
+	if f.keys == nil {
+		f.keys = map[string]bool{}
+	}
+	f.keys[k] = true
+}
+
+func (f *fakeDir) UsersWithIdentity(_ context.Context, key string, users []string) (map[string]bool, error) {
+	f.key(key)
+	out := map[string]bool{}
+	for _, u := range users {
+		out[u] = !f.noIdentity[u]
+	}
+	return out, nil
+}
+
+func (f *fakeDir) GroupsByExternalIDs(_ context.Context, key string, exts []string) ([]application.DirectoryGroup, bool, error) {
+	f.key(key)
 	var out []application.DirectoryGroup
 	for _, g := range f.groups {
 		for _, x := range exts {
@@ -29,20 +53,22 @@ func (f *fakeDir) GroupsByExternalIDs(_ context.Context, exts []string) ([]appli
 			}
 		}
 	}
-	return out, nil
+	return out, false, nil
 }
 
-func (f *fakeDir) GroupsByIDs(_ context.Context, ids []string) ([]application.DirectoryGroup, error) {
+func (f *fakeDir) GroupsByIDs(_ context.Context, key string, ids []string) ([]application.DirectoryGroup, bool, error) {
+	f.key(key)
 	var out []application.DirectoryGroup
 	for _, id := range ids {
 		if g, ok := f.groups[id]; ok {
 			out = append(out, g)
 		}
 	}
-	return out, nil
+	return out, false, nil
 }
 
-func (f *fakeDir) NestingUp(_ context.Context, ids []string) ([]application.NestingEdge, error) {
+func (f *fakeDir) NestingUp(_ context.Context, key string, ids []string) ([]application.NestingEdge, bool, error) {
+	f.key(key)
 	var out []application.NestingEdge
 	seen := map[string]bool{}
 	queue := append([]string(nil), ids...)
@@ -58,10 +84,11 @@ func (f *fakeDir) NestingUp(_ context.Context, ids []string) ([]application.Nest
 			queue = append(queue, p)
 		}
 	}
-	return out, nil
+	return out, f.cutNesting, nil
 }
 
-func (f *fakeDir) NestingDown(_ context.Context, ids []string) ([]application.NestingEdge, error) {
+func (f *fakeDir) NestingDown(_ context.Context, key string, ids []string) ([]application.NestingEdge, bool, error) {
+	f.key(key)
 	var out []application.NestingEdge
 	seen := map[string]bool{}
 	queue := append([]string(nil), ids...)
@@ -81,10 +108,11 @@ func (f *fakeDir) NestingDown(_ context.Context, ids []string) ([]application.Ne
 			}
 		}
 	}
-	return out, nil
+	return out, f.cutNesting, nil
 }
 
-func (f *fakeDir) UserMemberships(_ context.Context, users []string) ([]application.UserMembership, error) {
+func (f *fakeDir) UserMemberships(_ context.Context, key string, users []string) ([]application.UserMembership, bool, error) {
+	f.key(key)
 	var out []application.UserMembership
 	for g, us := range f.members {
 		for _, u := range us {
@@ -95,17 +123,18 @@ func (f *fakeDir) UserMemberships(_ context.Context, users []string) ([]applicat
 			}
 		}
 	}
-	return out, nil
+	return out, f.cutMemberships, nil
 }
 
-func (f *fakeDir) GroupMembers(_ context.Context, groups []string, limit int) ([]application.UserMembership, error) {
+func (f *fakeDir) GroupMembers(_ context.Context, key string, groups []string, limit int) ([]application.UserMembership, bool, error) {
+	f.key(key)
 	var out []application.UserMembership
 	for _, g := range groups {
 		for _, u := range f.members[g] {
 			out = append(out, application.UserMembership{UserID: u, GroupID: g, ObservedAt: time.Now()})
 		}
 	}
-	return out, nil
+	return out, f.cutMembers, nil
 }
 
 func (f *fakeDir) UserNames(_ context.Context, ids []string) (map[string]string, error) {
@@ -153,7 +182,7 @@ func newViewEnv(t *testing.T) *viewEnv {
 	e := newEnv(t)
 	v := &viewEnv{env: e, dir: &fakeDir{groups: map[string]application.DirectoryGroup{}, parents: map[string][]string{}, members: map[string][]string{}, users: map[string]string{}},
 		holders: fakeHolders{held: map[string]string{}}}
-	e.svc.WithViews(v.dir, v.holders)
+	e.svc.WithViews(v.dir, v.holders).WithProviderKey(e.provider)
 	v.full = application.Principal{UserID: e.user, View: true, ManagementView: true, DirectoryView: true, AssetsView: true}
 	return v
 }
