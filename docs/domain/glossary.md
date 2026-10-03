@@ -75,11 +75,15 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Software Alias** — discovery/provider name mapped to canonical Software Product.
 - **Software Version** — known release/version; preserve raw source value.
 - **Software Installation** — observed installation on Endpoint; observation, not intent.
-- **Software Assignment** — desired/provider-side assignment; does not prove installation.
-- **Desired State** — intended configuration/software outcome.
+- **Software Assignment** — software-focused projection of a Management Assignment (provider-configured targeting); never Turaco rollout intent and does not prove installation.
+- **Desired State** — Turaco's intended configuration/software outcome; reached through a Deployment and distinct from the provider's Management Assignment.
 - **Observed State** — latest known state with source/freshness.
 - **Deployment** — managed operation attempting to establish Desired State on Targets.
-- **Deployment Target/Result/Attempt** — concrete resolved endpoint and execution history.
+- **Deployment Target/Result/Attempt** — concrete resolved endpoint and execution history. For provider-executed deployments the result is derived from fresh Management Observations (Software Installation corroborates), never from a package being published.
+- **Deployment Ring** *(planned, ADR-0027)* — ordered rollout stage of a Deployment (for example pilot, early, broad) with its own resolved Targets and a promotion gate (Approval, success threshold on fresh evidence, soak time, Maintenance Window). A Device is in at most one ring per Deployment. States: [state machines](state-machines.md#deployment).
+- **Software Management Provider** *(planned, ADR-0027)* — external system that packages a Software Version and publishes or updates it in a Management Provider (IntuneGet → Intune first). It manages no devices and owns no targeting or device results.
+- **Software Package** *(planned, ADR-0027)* — provider-built deployable package of one Software Version (provider reference, installer hash, publish status) linked to the Management Artifact it became once published.
+- **Software Approval Status** *(planned, ADR-0027)* — Turaco's decision whether a Software Product may be used (`candidate`, `approved`, `deprecated`, `retired`, `blocked`); deployable versions additionally need a version approval bound to the installer hash. The approved software list is the set of approved Software Products; it is not the Service Catalog. Vendor end-of-life is a separate observed fact.
 - **Management Provider** — external/internal endpoint-management provider such as Intune or Endpoint Agent.
 - **Management Artifact** — provider-managed assignable object such as an app, configuration profile, compliance policy, endpoint-security policy, script or remediation.
 - **Management Assignment** — provider intent linking a Management Artifact to a target scope, including intent/include/exclude/filter semantics.
@@ -93,6 +97,21 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 ## Security/knowledge
 - **Security Advisory** — vulnerability/update/threat information item.
 - **Vulnerability Finding** — assessment that a specific resource may be affected, with confidence and remediation state.
+
+## Remote access *(planned, ADR-0026)*
+- **Remote Access Provider** — external system that provides remote screen/input, terminal and file-transfer transport, NAT traversal and relays (HopToDesk first); integrated through a Connector, never through the Connector or Endpoint Agent.
+- **Remote Access Session** — Turaco's record of one authorized remote session on a Device: initiating User, optional Ticket, mode (attended/unattended), policy decision, consent outcome and provider session reference, with provider-reported session facts kept separately with source and freshness. "Remote Access" is the canonical term; its permissions use the `remote_access.*` namespace (formerly `remote_support.start`).
+
+## Workforce presence *(planned, ADR-0028)*
+- **Presence Entry** — time-bound statement about one User: planned work location (a Location, remote or travelling) or unavailable, with optional recurrence, source, freshness and visibility. Never carries an absence reason. Not an HR record.
+- **Operational Availability** — derived availability of a person for operational work: `available`, `limited`, `unavailable` or `unknown`, with source and freshness.
+- **Team Coverage** — derived count of operationally available Team members for a period against an optional per-Team minimum.
+
+## AI *(planned, ADR-0029)*
+- **Turaco AI** — the product's AI capability; distinct from AI assistants used to develop Turaco (ADR-0018).
+- **AI Provider** — external or local model runtime (for example Anthropic, OpenAI, Azure/Microsoft, GitHub Copilot, Ollama) integrated through a Connector and enabled per Turaco installation.
+- **AI Tool** — explicitly registered, typed Turaco application operation that AI may call, with schema, required permission, risk class (`read`, `write`, `high_impact`) and declared data egress; it runs as the requesting User.
+- **AI Proposal** — short-lived proposal of an exact write operation that executes only after the requesting User confirms it; not an Approval and not a business record.
 - **Knowledge Article** — reusable written knowledge.
 - **Procedure** — documented sequence of work.
 - **Runbook** — operational Procedure that can be instantiated as trackable work.
@@ -128,6 +147,12 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - Device != Endpoint: technical device vs endpoint-management participant.
 - Installation != Assignment: observed software reality vs configured intent.
 - Management Assignment != Management Applicability != Management Observation: configured targeting vs Turaco's expected evaluation vs provider-reported result.
+- Desired State/Deployment != Management Assignment: Turaco's rollout intent vs targeting configured in the provider (counted as Assigned only once sync reads it back).
+- Software Package != Management Artifact != Software Installation: provider-built package vs provider object it was published as vs observed installation.
+- Software Management Provider != Management Provider: packages and publishes software vs targets devices and reports their results.
+- Remote Access Session (Turaco-authorized) != provider-observed session: what Turaco authorized vs what the provider reports happened.
+- Operational Availability != Asset `available` != Available stock: a person's availability for work vs an Asset status vs a stock quantity.
+- AI Proposal confirmation != Approval: self-confirmation of a delegated action vs a recorded decision with separation of duties.
 - Desired State != Observed State: what should be true vs what was last seen.
 - Ticket != Task: support record vs concrete work.
 - Role Assignment != Assignment: access grant vs responsibility for work.

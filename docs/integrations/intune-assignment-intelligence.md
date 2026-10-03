@@ -368,3 +368,5 @@ High-volume provider polling must not produce unbounded event noise. Events repr
 - hiding provider-specific detail when it is necessary for troubleshooting.
 
 The first successful version should make Intune targeting **understandable and explainable**, not attempt to replace the Intune admin center.
+
+This model is the foundation for planned software rollout orchestration ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)), which adds Turaco's Desired State and Deployment Rings as a separate dimension in front of Assigned / Expected Applicable / Observed.

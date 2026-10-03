@@ -62,4 +62,8 @@ Turaco should support:
 
 ## Actions
 
-Future Intune actions are typed provider capabilities behind domain/application operations and explicit permissions. Read-only assignment intelligence is architecturally separate from privileged management/deployment actions.
+Future Intune actions are typed provider capabilities behind domain/application operations and explicit permissions. Read-only assignment intelligence is architecturally separate from privileged management/deployment actions. Write actions (for example ring assignments) will use a separate, disabled-by-default app registration from read-only sync.
+
+## Apps published by a Software Management Provider (planned)
+
+Software lifecycle orchestration ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)) uses IntuneGet to package WinGet software and upload it to Intune. The resulting Intune app is an ordinary Management Artifact ingested by this sync; Turaco links it to the Software Package and Software Version but never treats publication as assignment or installation. Intune remains the Management Provider that assigns, executes and reports.

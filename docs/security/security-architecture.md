@@ -10,9 +10,16 @@
 4. Hosted Platform ↔ Endpoint Agent using a separate authenticated management protocol.
 5. Tenant A data/security material is isolated from Tenant B.
 
+Planned boundaries (not implemented):
+
+6. Remote Access Provider client and relay on managed devices ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
+7. Software Management Provider (IntuneGet) and Turaco's separate Intune write credential, which together can run software on every managed device ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
+8. AI Providers receiving data selected by AI Tools; data sent to an external provider leaves the customer's data plane ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)).
+9. Presence sources (Microsoft 365, HR) supplying personal availability data ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
+
 ## Authorization
 
-Backend authorization uses Permission + Scope. Frontend hiding is never authorization. Implementation status: the `authorization` platform package enforces Permission checks per route and is default-deny when no valid session exists (`DenyAll` remains the fallback). Permissions come from roles assigned to the User directly or to its Directory Groups (including nested groups), evaluated on every request so revocations and membership changes apply immediately; only `global` scope exists so far. `platform.roles.manage` is administrator-equivalent. Whoever controls membership of a Directory Group with a role assignment controls that role in Turaco. The built-in `platform-administrator` role is immutable, and revoking the last User assignment of it is refused through the API (the CLI can recover access). See [identity and access design](identity-access-design.md). Listing Directory Group members requires both `organization.directory.view` and `organization.view` because members are user identities. High-impact actions (wipe, broad deployment, remote support, privileged config) require dedicated permissions and policy gates.
+Backend authorization uses Permission + Scope. Frontend hiding is never authorization. Implementation status: the `authorization` platform package enforces Permission checks per route and is default-deny when no valid session exists (`DenyAll` remains the fallback). Permissions come from roles assigned to the User directly or to its Directory Groups (including nested groups), evaluated on every request so revocations and membership changes apply immediately; only `global` scope exists so far. `platform.roles.manage` is administrator-equivalent. Whoever controls membership of a Directory Group with a role assignment controls that role in Turaco. The built-in `platform-administrator` role is immutable, and revoking the last User assignment of it is refused through the API (the CLI can recover access). See [identity and access design](identity-access-design.md). Listing Directory Group members requires both `organization.directory.view` and `organization.view` because members are user identities. High-impact actions (wipe, broad deployment and ring promotion beyond pilot, remote access, enabling Intune write access, AI Provider configuration, access to other Users' presence details, provider credentials, privileged config) require dedicated permissions and policy gates. Turaco AI never executes high-impact actions; it acts only through typed AI Tools as the requesting User ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)).
 
 ## Sessions
 

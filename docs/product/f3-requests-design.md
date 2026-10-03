@@ -4,7 +4,7 @@
 
 ## Scope decisions
 
-- **D1 Fulfillment is Tasks.** Stock reservation, procurement and asset assignment (F4), software deployment (F6) and access connectors do not exist. F3 fulfills requests with Tasks (typed context `service_request`) and records outcomes; the hooks for later automation are the typed references and the fulfillment templates.
+- **D1 Fulfillment is Tasks.** Stock reservation, procurement and asset assignment (F4), software deployment (planned for F9, provider-based since [ADR-0027](../decisions/ADR-0027-software-management-providers.md)) and access connectors do not exist. F3 fulfills requests with Tasks (typed context `service_request`) and records outcomes; the hooks for later automation are the typed references and the fulfillment templates.
 - **D2 Employees need no role.** Browsing the catalog, submitting a request and seeing one's own requests need only a signed-in active User (ownership is the rule, like notifications). IT staff use `requests.view`/`requests.manage`; definitions need `catalog.manage`; products need `products.view`/`products.manage`. Approvers decide the approvals assigned to them (user, or any member of an approver Team) and may read the request they decide.
 - **D3 The four workflows are catalog definitions** (ADR-0025). A development seed (`turaco-admin demo seed`) creates sample products, a catalog category and four example items.
 - **D4 No draft persistence.** A request is created when submitted; `draft` of the state machine is unused. Product Variants are not implemented (optional in the model, no need yet).

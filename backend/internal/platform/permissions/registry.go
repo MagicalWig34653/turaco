@@ -45,5 +45,12 @@ var Registry = []Permission{
 	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
-	{Name: "remote_support.start", Description: "Start a future remote-support session when enabled by policy.", Risk: "high"},
+	// Remote Access (ADR-0026): reserved, planned and not implemented; no route checks these yet.
+	{Name: "remote_access.view", Description: "Planned: see whether remote access is available for a Device or Ticket (provider mapping, supported modes); does not allow starting a session.", Risk: "normal"},
+	{Name: "remote_access.start_attended", Description: "Planned: start an attended remote-access session (user consent required) through a Remote Access Provider when policy allows it.", Risk: "high"},
+	{Name: "remote_access.start_unattended", Description: "Planned: start an unattended remote-access session on a Device named by an unattended-access policy record, with a linked Ticket.", Risk: "high"},
+	{Name: "remote_access.terminal", Description: "Planned: use the provider's terminal channel inside an authorized remote-access session.", Risk: "high"},
+	{Name: "remote_access.file_transfer", Description: "Planned: transfer files inside an authorized remote-access session.", Risk: "high"},
+	{Name: "remote_access.view_sessions", Description: "Planned: view all Remote Access Session records and their audit trail, including other technicians' sessions.", Risk: "elevated"},
+	{Name: "remote_access.admin", Description: "Planned: configure Remote Access Providers, their credentials and unattended-access policy records.", Risk: "high"},
 }

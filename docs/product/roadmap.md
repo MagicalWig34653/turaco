@@ -42,9 +42,16 @@
 - changes/initiatives/maintenance calendar
 - software normalization, vulnerability correlation, IT Briefing
 
-## Phase 5 — Endpoint Operations
-- Endpoint Agent inventory
-- desired software state
-- WinGet/other provider deployments
-- remediation/diagnostics
-- remote support only after a separate security design and production experience with the agent
+## Phase 5 — Endpoint Operations (provider-based)
+Revised 2026-10-03: Turaco integrates specialist providers instead of building a patch engine or a remote-desktop transport.
+- software lifecycle and patch orchestration: approved software, deployment rings, approvals and rollout state over IntuneGet → Intune ([ADR-0027](../decisions/ADR-0027-software-management-providers.md))
+- remote access through a Remote Access Provider, HopToDesk first, with Turaco-owned authorization, audit and ticket/device context ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md))
+- remediation/diagnostics as typed operations
+
+## Phase 6 — People and assistance
+- Workforce Presence: operational availability and team coverage, not HR ([ADR-0028](../decisions/ADR-0028-workforce-presence.md))
+- Turaco AI: provider-independent, tool-based, acting with the requesting user's permissions ([ADR-0029](../decisions/ADR-0029-turaco-ai.md))
+
+## Later / optional
+- Endpoint Agent inventory and typed operations
+- native WinGet or remote-access providers, each only with its own ADR

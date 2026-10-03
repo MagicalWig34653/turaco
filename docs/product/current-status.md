@@ -1,12 +1,12 @@
 # Current Implementation Status
 
-**Status date:** 2026-10-02
+**Status date:** 2026-10-03
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
-**F2 (Work Foundation, [design](f2-work-foundation-design.md)) is implemented:** the outbox dispatcher (slice 1); the Teams write API, Tasks and My Work with UI (slice 2); in-app notifications with UI (slice 3); the HTML email channel (slice 4); Recurring Task Definitions with UI (slice 5); manual IT Briefing publications with UI (slice 6). A Teams admin UI does not exist (Teams are managed through the API). F2 lives on the branch `f2-work-foundation` until it is merged.
+**F2 (Work Foundation, [design](f2-work-foundation-design.md)) is implemented:** the outbox dispatcher (slice 1); the Teams write API, Tasks and My Work with UI (slice 2); in-app notifications with UI (slice 3); the HTML email channel (slice 4); Recurring Task Definitions with UI (slice 5); manual IT Briefing publications with UI (slice 6). A Teams admin UI does not exist (Teams are managed through the API). F2 was merged to `main` (PR #8).
 
-**Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". F3 (Products, Catalog and Requests) is implemented on branch `f3-products-catalog-requests` (backend, UI and a development demo seed).
+**Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". F3 (Products, Catalog and Requests; backend, UI and a development demo seed), F4 (Inventory, Procurement and Assets), F5 (Service Desk, Knowledge, Major Incidents, Problems, Runbooks and the internal side of Autotask sync) and F6 slice 1 (Endpoint devices, software and findings) are merged to `main`. F6 slices 2–4 are next.
 
 ## Implemented in the bootstrap repository
 
@@ -93,16 +93,16 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 ## Planned capabilities (not implemented)
 
-- Service Catalog, Service Requests and Approvals.
-- Inventory, procurement and Asset application behavior.
-- Service Desk/Tickets/Major Incidents/Problems.
-- Knowledge Base/Runbooks.
-- Intune, Autotask and Teams integrations (the SMTP email channel exists, see above).
-- Intune Assignment Intelligence (Directory Group/User/Device views, normalized artifacts/assignments/filters, effective-applicability evaluation, Assignment Paths, reverse lookup/history/diff).
-- Endpoint intelligence/software normalization.
+Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Knowledge and Runbooks are implemented (see above); their remaining gaps are listed under "Explicit stubs".
+
+- Real Intune (Microsoft Graph), Autotask (REST client/webhook) and Teams integrations; the internal sides and the SMTP email channel exist (see above).
+- Intune Assignment Intelligence (F6 slices 2–4: normalized artifacts/assignments/filters, expected-applicability evaluation, Assignment Paths, Directory Group/User/Device views, reverse lookup/history/diff).
 - Infrastructure/CMDB/IPAM.
-- Change/Initiative implementation.
+- Change/Initiative implementation, platform targeting/dynamic groups and maintenance windows.
 - Security advisory ingestion/correlation and IT Briefing aggregation of other modules' records (F8).
-- Patch/deployment management.
-- Remote Support.
+- **PLANNED — Software Lifecycle and Patch Orchestration** (F9, [ADR-0027](../decisions/ADR-0027-software-management-providers.md)): approved software, Deployment Rings and rollout over IntuneGet → Intune. Not implemented: no Software Approval Status, Software Package, Deployment or IntuneGet code exists; `deployments.execute` and the `Deployment*` events are reserved only.
+- **PLANNED — Remote Access** (F10, [ADR-0026](../decisions/ADR-0026-remote-access-providers.md)): provider-based, HopToDesk first. Not implemented; the `remote_access.*` permissions are registered but checked by no route (migration 000039 renamed the earlier reserved `remote_support.start` to `remote_access.start_attended`, carrying existing grants over).
+- **PLANNED — Workforce Presence** (F11, [ADR-0028](../decisions/ADR-0028-workforce-presence.md)): operational availability and team coverage. Not implemented.
+- **PLANNED — Turaco AI** (F12, [ADR-0029](../decisions/ADR-0029-turaco-ai.md)): provider-independent, tool-based, user-delegated AI. Not implemented; Turaco contains no AI provider, tool or MCP code.
+- Endpoint Agent management (later/optional; the agent binary is a capability placeholder).
 

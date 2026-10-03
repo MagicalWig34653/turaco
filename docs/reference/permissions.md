@@ -33,7 +33,13 @@
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |
 | `products.manage` | elevated | Create and change products, manufacturers and product categories. |
 | `products.view` | normal | View the product catalog: products, manufacturers and product categories. |
-| `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
+| `remote_access.admin` | high | Planned: configure Remote Access Providers, their credentials and unattended-access policy records. |
+| `remote_access.file_transfer` | high | Planned: transfer files inside an authorized remote-access session. |
+| `remote_access.start_attended` | high | Planned: start an attended remote-access session (user consent required) through a Remote Access Provider when policy allows it. |
+| `remote_access.start_unattended` | high | Planned: start an unattended remote-access session on a Device named by an unattended-access policy record, with a linked Ticket. |
+| `remote_access.terminal` | high | Planned: use the provider's terminal channel inside an authorized remote-access session. |
+| `remote_access.view` | normal | Planned: see whether remote access is available for a Device or Ticket (provider mapping, supported modes); does not allow starting a session. |
+| `remote_access.view_sessions` | elevated | Planned: view all Remote Access Session records and their audit trail, including other technicians' sessions. |
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
 | `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |

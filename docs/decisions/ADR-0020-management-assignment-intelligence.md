@@ -1,6 +1,6 @@
 # ADR-0020 — Provider-Agnostic Management Assignment Intelligence
 
-**Status:** Accepted
+**Status:** Accepted. Extended by [ADR-0027](ADR-0027-software-management-providers.md) (Desired State and Deployment Rings for provider-published software); the three dimensions here are unchanged.
 
 ## Context
 

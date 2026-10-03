@@ -21,7 +21,9 @@ Turaco is designed for long-term AI-maintained development. The repository, test
 - Core architecture is a modular monolith. Cross-module access goes through public contracts/events, never another module's repository/private tables.
 - State changes use explicit domain operations, not generic `UpdateStatus` APIs.
 - Externally observed data must preserve source and freshness. Do not overwrite platform-owned data silently.
-- For endpoint-management providers, never collapse configured Assignment, Turaco-derived Expected Applicability and provider Observed result into one status.
+- For endpoint-management providers, never collapse Turaco Desired State/Deployment intent, configured Assignment, Turaco-derived Expected Applicability and provider Observed result into one status.
+- Build vs integrate: software packaging/patch mechanics, remote-desktop transport and AI model runtimes are integrated through domain-specific provider ports (ADR-0026, ADR-0027, ADR-0029). Do not build native ones without a new ADR, and do not create a generic plugin framework.
+- Turaco AI never gets database access; it acts only through typed AI Tools as the requesting user (ADR-0029).
 - Security-sensitive actions must be authorized, audited and designed for least privilege.
 - Connector Agent and Endpoint Agent are separate trust boundaries. Never turn either into an implicit arbitrary remote shell.
 - Documentation changes are part of implementation. Stale documentation is a defect.
