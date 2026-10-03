@@ -100,7 +100,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 
 ## Remote access *(planned, ADR-0026)*
 - **Remote Access Provider** — external system that provides remote screen/input, terminal and file-transfer transport, NAT traversal and relays (HopToDesk first); integrated through a Connector, never through the Connector or Endpoint Agent.
-- **Remote Access Session** — Turaco's record of one authorized remote session on a Device: initiating User, optional Ticket, mode (attended/unattended), policy decision, consent outcome and provider session reference, with provider-reported session facts kept separately with source and freshness. "Remote Access" is the canonical term; the reserved permission `remote_support.start` predates it.
+- **Remote Access Session** — Turaco's record of one authorized remote session on a Device: initiating User, optional Ticket, mode (attended/unattended), policy decision, consent outcome and provider session reference, with provider-reported session facts kept separately with source and freshness. "Remote Access" is the canonical term; its permissions use the `remote_access.*` namespace (formerly `remote_support.start`).
 
 ## Workforce presence *(planned, ADR-0028)*
 - **Presence Entry** — time-bound statement about one User: planned work location (a Location, remote or travelling) or unavailable, with optional recurrence, source, freshness and visibility. Never carries an absence reason. Not an HR record.

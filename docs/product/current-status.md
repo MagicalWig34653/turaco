@@ -101,7 +101,7 @@ Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Know
 - Change/Initiative implementation, platform targeting/dynamic groups and maintenance windows.
 - Security advisory ingestion/correlation and IT Briefing aggregation of other modules' records (F8).
 - **PLANNED — Software Lifecycle and Patch Orchestration** (F9, [ADR-0027](../decisions/ADR-0027-software-management-providers.md)): approved software, Deployment Rings and rollout over IntuneGet → Intune. Not implemented: no Software Approval Status, Software Package, Deployment or IntuneGet code exists; `deployments.execute` and the `Deployment*` events are reserved only.
-- **PLANNED — Remote Access** (F10, [ADR-0026](../decisions/ADR-0026-remote-access-providers.md)): provider-based, HopToDesk first. Not implemented; the permission `remote_support.start` is reserved only.
+- **PLANNED — Remote Access** (F10, [ADR-0026](../decisions/ADR-0026-remote-access-providers.md)): provider-based, HopToDesk first. Not implemented; the `remote_access.*` permissions are registered but checked by no route (migration 000039 renamed the earlier reserved `remote_support.start` to `remote_access.start_attended`, carrying existing grants over).
 - **PLANNED — Workforce Presence** (F11, [ADR-0028](../decisions/ADR-0028-workforce-presence.md)): operational availability and team coverage. Not implemented.
 - **PLANNED — Turaco AI** (F12, [ADR-0029](../decisions/ADR-0029-turaco-ai.md)): provider-independent, tool-based, user-delegated AI. Not implemented; Turaco contains no AI provider, tool or MCP code.
 - Endpoint Agent management (later/optional; the agent binary is a capability placeholder).
