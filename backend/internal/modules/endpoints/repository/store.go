@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ func (r *Repository) UpdateDeviceTx(ctx context.Context, tx pgx.Tx, d applicatio
 	out, err := scanDevice(tx.QueryRow(ctx, `
 		UPDATE endpoints.devices SET name = $2, serial_number = $3, asset_id = $4::uuid, asset_link_source = $5, auto_link_blocked = $6,
 			os_platform = $7, os_version = $8, manufacturer = $9, model = $10, ownership = $11, compliance_state = $12,
-			last_checkin_at = $13, source = $14, observed_at = $15, last_synced_at = $16, deleted_observed_at = $17,
+			last_checkin_at = $13, source = $14, observed_at = $15, last_synced_at = GREATEST(last_synced_at, $16), deleted_observed_at = $17,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+deviceColumns,
 		d.ID, d.Name, d.SerialNumber, d.AssetID, d.AssetLinkSource, d.AutoLinkBlocked,
@@ -100,20 +101,52 @@ func (r *Repository) UpdateDeviceTx(ctx context.Context, tx pgx.Tx, d applicatio
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Device{}, application.ErrNotFound
 	}
+	if pgCode(err) == "23505" {
+		// devices_asset_live_unique: the Asset already belongs to another live device.
+		return application.Device{}, application.ErrConflict
+	}
 	if err != nil {
 		return application.Device{}, fmt.Errorf("update device: %w", err)
 	}
 	return out, nil
 }
 
-func (r *Repository) TouchDeviceTx(ctx context.Context, tx pgx.Tx, id string, observedAt, syncedAt time.Time, lastCheckin *time.Time) error {
+func (r *Repository) TouchDeviceTx(ctx context.Context, tx pgx.Tx, id string, observedAt, syncedAt time.Time, lastCheckin *time.Time, source string) error {
 	_, err := tx.Exec(ctx, `
-		UPDATE endpoints.devices SET observed_at = $2, last_synced_at = $3, last_checkin_at = $4, deleted_observed_at = NULL
-		WHERE id = $1::uuid`, id, observedAt, syncedAt, lastCheckin)
+		UPDATE endpoints.devices SET observed_at = $2, last_synced_at = GREATEST(last_synced_at, $3), last_checkin_at = $4, source = $5
+		WHERE id = $1::uuid`, id, observedAt, syncedAt, lastCheckin, source)
 	if err != nil {
 		return fmt.Errorf("touch device: %w", err)
 	}
 	return nil
+}
+
+// TryLockProvider holds a session-level advisory lock on a connection of its own for the whole run,
+// so it survives the many short transactions of an ingestion.
+func (r *Repository) TryLockProvider(ctx context.Context, provider string) (func(), bool, error) {
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("acquire connection: %w", err)
+	}
+	var got bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtextextended('endpoints.ingest:' || $1, 0))`, provider).Scan(&got); err != nil {
+		conn.Release()
+		return nil, false, fmt.Errorf("lock provider: %w", err)
+	}
+	if !got {
+		conn.Release()
+		return nil, false, nil
+	}
+	return func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		var released bool
+		if err := conn.QueryRow(ctx, `SELECT pg_advisory_unlock(hashtextextended('endpoints.ingest:' || $1, 0))`, provider).Scan(&released); err != nil || !released {
+			// Never hand a connection that may still hold the lock back to the pool.
+			_ = conn.Conn().Close(ctx)
+		}
+		conn.Release()
+	}, true, nil
 }
 
 func (r *Repository) AppendHistoryTx(ctx context.Context, tx pgx.Tx, h application.History) error {
@@ -128,15 +161,81 @@ func (r *Repository) AppendHistoryTx(ctx context.Context, tx pgx.Tx, h applicati
 	return nil
 }
 
-func (r *Repository) TombstoneMissingTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time) ([]string, error) {
-	rows, err := tx.Query(ctx, `
-		UPDATE endpoints.devices SET deleted_observed_at = $3, version = version + 1, updated_at = now()
-		WHERE provider = $1 AND deleted_observed_at IS NULL AND last_synced_at < $2
-		RETURNING id::text`, provider, before, at)
-	if err != nil {
-		return nil, fmt.Errorf("tombstone devices: %w", err)
+func (r *Repository) TombstoneCandidatesTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time, keep []string) ([]string, int, error) {
+	var live int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM endpoints.devices WHERE provider = $1 AND deleted_observed_at IS NULL`, provider).Scan(&live); err != nil {
+		return nil, 0, fmt.Errorf("count live devices: %w", err)
 	}
-	return collectStrings(rows, "tombstone devices")
+	// Rows are locked in id order so concurrent writers cannot deadlock with the run.
+	rows, err := tx.Query(ctx, `
+		SELECT id::text FROM endpoints.devices
+		WHERE provider = $1 AND deleted_observed_at IS NULL AND last_synced_at < $2 AND external_id <> ALL($3::text[])
+		ORDER BY id FOR UPDATE`, provider, before, keep)
+	if err != nil {
+		return nil, 0, fmt.Errorf("tombstone candidates: %w", err)
+	}
+	ids, err := collectStrings(rows, "tombstone candidates")
+	return ids, live, err
+}
+
+func (r *Repository) TombstoneDevicesTx(ctx context.Context, tx pgx.Tx, ids []string, at time.Time) ([]application.Device, []application.Device, error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	// Serial-source links are only as good as the device being live; manual links stay (and are re-checked on revival).
+	prev, err := r.devicesByIDs(ctx, tx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := tx.Query(ctx, `
+		UPDATE endpoints.devices SET deleted_observed_at = $2, version = version + 1, updated_at = now(),
+			asset_id = CASE WHEN asset_link_source = 'serial' THEN NULL ELSE asset_id END,
+			asset_link_source = CASE WHEN asset_link_source = 'serial' THEN NULL ELSE asset_link_source END
+		WHERE id = ANY($1::uuid[]) AND deleted_observed_at IS NULL
+		RETURNING `+deviceColumns, ids, at)
+	if err != nil {
+		return nil, nil, fmt.Errorf("tombstone devices: %w", err)
+	}
+	defer rows.Close()
+	var out []application.Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, nil, fmt.Errorf("tombstone devices: scan: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("tombstone devices: %w", err)
+	}
+	rows.Close()
+	if _, err := tx.Exec(ctx, `UPDATE endpoints.software_installations SET deleted_observed_at = $2 WHERE device_id = ANY($1::uuid[]) AND deleted_observed_at IS NULL`, ids, at); err != nil {
+		return nil, nil, fmt.Errorf("tombstone installations of devices: %w", err)
+	}
+	var unlinked []application.Device
+	for _, p := range prev {
+		if p.AssetLinkSource != nil && *p.AssetLinkSource == application.LinkSerial {
+			unlinked = append(unlinked, p)
+		}
+	}
+	return out, unlinked, nil
+}
+
+func (r *Repository) devicesByIDs(ctx context.Context, tx pgx.Tx, ids []string) ([]application.Device, error) {
+	rows, err := tx.Query(ctx, `SELECT `+deviceColumns+` FROM endpoints.devices WHERE id = ANY($1::uuid[]) ORDER BY id`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("devices by ids: %w", err)
+	}
+	defer rows.Close()
+	var out []application.Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, fmt.Errorf("devices by ids: scan: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func collectStrings(rows pgx.Rows, what string) ([]string, error) {
@@ -155,14 +254,26 @@ func collectStrings(rows pgx.Rows, what string) ([]string, error) {
 	return out, nil
 }
 
-func (r *Repository) OtherLiveDevicesBySerialTx(ctx context.Context, tx pgx.Tx, serial, excludeID string) ([]string, error) {
+func (r *Repository) LiveDevicesBySerialTx(ctx context.Context, tx pgx.Tx, serial, excludeID string) ([]application.Device, error) {
+	if excludeID == "" {
+		excludeID = "00000000-0000-0000-0000-000000000000"
+	}
 	rows, err := tx.Query(ctx, `
-		SELECT id::text FROM endpoints.devices
-		WHERE lower(serial_number) = lower($1) AND id <> $2::uuid AND deleted_observed_at IS NULL ORDER BY id LIMIT 10`, serial, excludeID)
+		SELECT `+deviceColumns+` FROM endpoints.devices
+		WHERE lower(serial_number) = lower($1) AND id <> $2::uuid AND deleted_observed_at IS NULL ORDER BY id LIMIT 10 FOR UPDATE`, serial, excludeID)
 	if err != nil {
 		return nil, fmt.Errorf("devices by serial: %w", err)
 	}
-	return collectStrings(rows, "devices by serial")
+	defer rows.Close()
+	var out []application.Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, fmt.Errorf("devices by serial: scan: %w", err)
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) OtherLiveDevicesByAssetTx(ctx context.Context, tx pgx.Tx, assetID, excludeID string) ([]string, error) {
@@ -197,16 +308,25 @@ func (r *Repository) ResolveAliasesTx(ctx context.Context, tx pgx.Tx, aliases []
 	return out, rows.Err()
 }
 
-func (r *Repository) UpsertInstallationTx(ctx context.Context, tx pgx.Tx, deviceID string, productID *string, name, version string, publisher *string, observedAt, syncedAt time.Time) error {
+func (r *Repository) UpsertInstallationsTx(ctx context.Context, tx pgx.Tx, deviceID string, items []application.InstallationInput, observedAt, syncedAt time.Time) error {
+	if len(items) == 0 {
+		return nil
+	}
+	names, keys, versions := make([]string, len(items)), make([]string, len(items)), make([]string, len(items))
+	publishers, products := make([]*string, len(items)), make([]*string, len(items))
+	for i, it := range items {
+		names[i], keys[i], versions[i], publishers[i], products[i] = it.Name, it.Key, it.Version, it.Publisher, it.ProductID
+	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO endpoints.software_installations (device_id, software_product_id, raw_name, raw_version, raw_publisher, observed_at, last_synced_at)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7)
+		INSERT INTO endpoints.software_installations (device_id, software_product_id, raw_name, normalized_name, raw_version, raw_publisher, observed_at, last_synced_at)
+		SELECT $1::uuid, t.product::uuid, t.name, t.key, t.version, t.publisher, $7, $8
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS t(name, key, version, publisher, product)
 		ON CONFLICT (device_id, lower(raw_name), raw_version) DO UPDATE SET
 			software_product_id = EXCLUDED.software_product_id, raw_publisher = EXCLUDED.raw_publisher,
 			observed_at = EXCLUDED.observed_at, last_synced_at = EXCLUDED.last_synced_at, deleted_observed_at = NULL`,
-		deviceID, productID, name, version, publisher, observedAt, syncedAt)
+		deviceID, names, keys, versions, publishers, products, observedAt, syncedAt)
 	if err != nil {
-		return fmt.Errorf("upsert installation: %w", err)
+		return fmt.Errorf("upsert installations: %w", err)
 	}
 	return nil
 }
@@ -253,34 +373,48 @@ func (r *Repository) InsertProductTx(ctx context.Context, tx pgx.Tx, name string
 	return p, nil
 }
 
-func (r *Repository) RelinkInstallationsTx(ctx context.Context, tx pgx.Tx) (int, error) {
-	// Matching key = application.NormalizeSoftwareName: lower case, whitespace runs collapsed to one space.
-	tag, err := tx.Exec(ctx, `
+func (r *Repository) RelinkInstallationsTx(ctx context.Context, tx pgx.Tx) (int, []string, error) {
+	rows, err := tx.Query(ctx, `
 		UPDATE endpoints.software_installations i SET software_product_id = a.software_product_id
 		FROM endpoints.software_aliases a
-		WHERE i.software_product_id IS NULL AND i.deleted_observed_at IS NULL
-		  AND a.alias = lower(btrim(regexp_replace(i.raw_name, '\s+', ' ', 'g')))`)
+		WHERE i.software_product_id IS NULL AND i.deleted_observed_at IS NULL AND a.alias = i.normalized_name
+		RETURNING i.device_id::text`)
 	if err != nil {
-		return 0, fmt.Errorf("relink installations: %w", err)
+		return 0, nil, fmt.Errorf("relink installations: %w", err)
 	}
-	return int(tag.RowsAffected()), nil
+	all, err := collectStrings(rows, "relink installations")
+	if err != nil {
+		return 0, nil, err
+	}
+	seen := map[string]bool{}
+	var devices []string
+	for _, id := range all {
+		if !seen[id] {
+			seen[id] = true
+			devices = append(devices, id)
+		}
+	}
+	slices.Sort(devices)
+	return len(all), devices, nil
 }
 
 // ---- findings ----
 
 func (r *Repository) OpenFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string, detail json.RawMessage) (string, bool, error) {
 	var id string
+	var inserted bool
 	err := tx.QueryRow(ctx, `
 		INSERT INTO endpoints.findings (kind, device_id, detail) VALUES ($1, $2::uuid, $3::jsonb)
-		ON CONFLICT (kind, device_id) WHERE status = 'open' DO NOTHING
-		RETURNING id::text`, kind, deviceID, []byte(detail)).Scan(&id)
+		ON CONFLICT (kind, device_id) WHERE status = 'open' DO UPDATE SET detail = EXCLUDED.detail
+			WHERE endpoints.findings.detail IS DISTINCT FROM EXCLUDED.detail
+		RETURNING id::text, (xmax = 0)`, kind, deviceID, []byte(detail)).Scan(&id, &inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("open finding: %w", err)
 	}
-	return id, true, nil
+	return id, inserted, nil
 }
 
 func (r *Repository) ResolveFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string) (bool, error) {

@@ -62,6 +62,14 @@ const (
 	BatchSize = 100
 	// MaxSoftwarePerDevice bounds the installations kept per device.
 	MaxSoftwarePerDevice = 5000
+	// MaxBatchInstallations bounds the installations written per transaction; a single device that
+	// has more than that is ingested alone.
+	MaxBatchInstallations = 2000
+	// MaxSnapshotDevices bounds one snapshot; a larger one is refused.
+	MaxSnapshotDevices = 50000
+	// Tombstone guard: when more than MinGuardedDevices devices of a provider are live and a
+	// snapshot would tombstone more than half of them, no tombstone is applied (updates still are).
+	MinGuardedDevices = 10
 )
 
 // Device is a provider-observed endpoint identity.
@@ -124,11 +132,13 @@ type DeviceDetail struct {
 }
 
 // Principal is the caller's endpoint authority: View reads, Manage also changes (manual link,
-// import, sync). Endpoint data is not visible to anyone without one of them.
+// import, sync). Endpoint data is not visible to anyone without one of them. AssetsView is the
+// caller's assets.view permission: a manual link reveals and binds an Asset, so it needs it too.
 type Principal struct {
-	UserID string
-	View   bool
-	Manage bool
+	UserID     string
+	View       bool
+	Manage     bool
+	AssetsView bool
 }
 
 func (p Principal) canView() bool { return p.View || p.Manage }
@@ -156,8 +166,10 @@ var (
 	ErrVersionConflict = errors.New("endpoints: version conflict")
 	// ErrConflict means the operation contradicts current state (already linked elsewhere, not linked).
 	ErrConflict = errors.New("endpoints: conflict")
-	// ErrAssetInvalid means the Asset does not exist.
-	ErrAssetInvalid = errors.New("endpoints: asset does not exist")
+	// ErrAssetInvalid means the Asset does not exist or is disposed, lost or retired.
+	ErrAssetInvalid = errors.New("endpoints: asset does not exist or is not in use")
+	// ErrSyncRunning means another ingestion run of the same provider is in progress. It is a conflict.
+	ErrSyncRunning = fmt.Errorf("%w: another run for this provider is in progress", ErrConflict)
 	// ErrSyncDisabled means the provider synchronization is not enabled.
 	ErrSyncDisabled = errors.New("endpoints: provider synchronization is not enabled")
 )
@@ -218,6 +230,13 @@ type FindingResult struct {
 	NextCursor string
 }
 
+// InstallationInput is one installation to store; Key is NormalizeSoftwareName(Name).
+type InstallationInput struct {
+	Name, Version, Key string
+	Publisher          *string
+	ProductID          *string
+}
+
 // NewDevice is the input of Store.InsertDeviceTx.
 type NewDevice struct {
 	Provider, ExternalID, Name, OSPlatform, Ownership, ComplianceState, Source string
@@ -245,6 +264,14 @@ type ProductInfo struct {
 type AssetInfo struct {
 	ID           string
 	SerialNumber *string
+	// Status is the Asset's lifecycle status.
+	Status string
+}
+
+// Terminal reports whether the Asset left use (disposed, lost or retired); such an Asset is not
+// linked automatically or by hand.
+func (a AssetInfo) Terminal() bool {
+	return a.Status == "disposed" || a.Status == "lost" || a.Status == "retired"
 }
 
 // Assets is the port to the Assets module (adapter over assets/public).
@@ -252,8 +279,8 @@ type Assets interface {
 	// FindBySerial returns the single asset with this serial number: ErrAssetNotFound when none,
 	// ErrAssetAmbiguous when several share it.
 	FindBySerial(ctx context.Context, serial string) (AssetInfo, error)
-	// Exists reports whether the asset exists.
-	Exists(ctx context.Context, assetID string) (bool, error)
+	// ByID returns the asset and whether it exists.
+	ByID(ctx context.Context, assetID string) (AssetInfo, bool, error)
 }
 
 // Errors an Assets adapter returns from FindBySerial.
@@ -275,29 +302,38 @@ type Store interface {
 	InsertDeviceTx(ctx context.Context, tx pgx.Tx, n NewDevice) (Device, bool, error)
 	// UpdateDeviceTx stores every mutable column with version+1.
 	UpdateDeviceTx(ctx context.Context, tx pgx.Tx, d Device) (Device, error)
-	// TouchDeviceTx records a sighting without a meaningful change (freshness only; clears a tombstone).
-	TouchDeviceTx(ctx context.Context, tx pgx.Tx, id string, observedAt, syncedAt time.Time, lastCheckin *time.Time) error
+	// TouchDeviceTx records a sighting without a meaningful change (freshness only). It never moves
+	// last_synced_at backwards.
+	TouchDeviceTx(ctx context.Context, tx pgx.Tx, id string, observedAt, syncedAt time.Time, lastCheckin *time.Time, source string) error
 	AppendHistoryTx(ctx context.Context, tx pgx.Tx, h History) error
-	// TombstoneMissingTx tombstones the provider's live devices not seen since before and returns their ids.
-	TombstoneMissingTx(ctx context.Context, tx pgx.Tx, provider string, before, at time.Time) ([]string, error)
-	// OtherLiveDevicesBySerialTx returns ids of other live devices with the same serial number.
-	OtherLiveDevicesBySerialTx(ctx context.Context, tx pgx.Tx, serial, excludeID string) ([]string, error)
+	// TryLockProvider takes the per-provider ingestion lock on a dedicated connection. It reports
+	// false when another run holds it. unlock must be called when ok.
+	TryLockProvider(ctx context.Context, provider string) (unlock func(), ok bool, err error)
+	// TombstoneCandidatesTx locks (in id order) and returns the ids of the provider's live devices that
+	// were not seen since before and are not in keepExternalIDs, plus the number of live devices.
+	TombstoneCandidatesTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time, keepExternalIDs []string) (ids []string, live int, err error)
+	// TombstoneDevicesTx tombstones the devices (locked in id order) together with their installations,
+	// drops their serial-source links and returns the updated devices and the links dropped (before state).
+	TombstoneDevicesTx(ctx context.Context, tx pgx.Tx, ids []string, at time.Time) (tombstoned []Device, unlinked []Device, err error)
+	// LiveDevicesBySerialTx locks and returns the live devices with the serial number (case-insensitive) except excludeID.
+	LiveDevicesBySerialTx(ctx context.Context, tx pgx.Tx, serial, excludeID string) ([]Device, error)
 	// OtherLiveDevicesByAssetTx returns ids of other live devices linked to the asset.
 	OtherLiveDevicesByAssetTx(ctx context.Context, tx pgx.Tx, assetID, excludeID string) ([]string, error)
 
 	// ResolveAliasesTx returns normalized alias -> product id for the given aliases.
 	ResolveAliasesTx(ctx context.Context, tx pgx.Tx, aliases []string) (map[string]string, error)
-	// UpsertInstallationTx stores one observed installation (clearing a tombstone).
-	UpsertInstallationTx(ctx context.Context, tx pgx.Tx, deviceID string, productID *string, name, version string, publisher *string, observedAt, syncedAt time.Time) error
+	// UpsertInstallationsTx stores the observed installations in one statement (clearing tombstones).
+	UpsertInstallationsTx(ctx context.Context, tx pgx.Tx, deviceID string, items []InstallationInput, observedAt, syncedAt time.Time) error
 	// TombstoneInstallationsTx tombstones the device's live installations not seen since before.
 	TombstoneInstallationsTx(ctx context.Context, tx pgx.Tx, deviceID string, before, at time.Time) error
 	CountUnmatchedTx(ctx context.Context, tx pgx.Tx, deviceID string) (int, error)
 	// InsertProductTx creates a product and its aliases; ErrConflict when the product or an alias exists.
 	InsertProductTx(ctx context.Context, tx pgx.Tx, name string, publisher *string, aliases []string) (ProductInfo, error)
-	// RelinkInstallationsTx matches unmatched live installations against aliases and returns how many matched.
-	RelinkInstallationsTx(ctx context.Context, tx pgx.Tx) (int, error)
+	// RelinkInstallationsTx matches unmatched live installations against aliases and returns the
+	// number matched and the ids of the devices affected.
+	RelinkInstallationsTx(ctx context.Context, tx pgx.Tx) (int, []string, error)
 
-	// OpenFindingTx raises the finding unless one is already open; it reports whether it was raised.
+	// OpenFindingTx raises the finding, or refreshes the detail of the open one; it reports whether it was raised.
 	OpenFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string, detail json.RawMessage) (id string, raised bool, err error)
 	// ResolveFindingTx resolves the open finding, if any, and reports whether one was open.
 	ResolveFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string) (bool, error)

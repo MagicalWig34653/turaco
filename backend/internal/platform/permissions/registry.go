@@ -29,7 +29,7 @@ var Registry = []Permission{
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},
 	{Name: "endpoints.view", Description: "View provider-observed Devices, their installed software and endpoint data-quality findings.", Risk: "normal"},
-	{Name: "endpoints.manage", Description: "Link and unlink Devices to Assets by hand, register normalized software products and run the endpoint provider synchronization.", Risk: "elevated"},
+	{Name: "endpoints.manage", Description: "Link and unlink Devices to Assets by hand (also needs assets.view), register normalized software products and run the endpoint provider synchronization and snapshot ingestion (the sync is covered by this permission; no separate sync permission exists).", Risk: "elevated"},
 	{Name: "endpoint.management.view", Description: "View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope.", Risk: "normal"},
 	{Name: "integrations.intune.manage", Description: "Administer Intune integration configuration, credentials and synchronization controls.", Risk: "high"},
 	{Name: "procurement.view", Description: "View suppliers, procurement requests and purchase orders.", Risk: "normal"},

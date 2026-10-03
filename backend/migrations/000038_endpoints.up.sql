@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS endpoints.devices (
     CONSTRAINT devices_link_matches CHECK ((asset_id IS NULL) = (asset_link_source IS NULL))
 );
 CREATE INDEX IF NOT EXISTS devices_serial_idx ON endpoints.devices (lower(serial_number)) WHERE serial_number IS NOT NULL;
-CREATE INDEX IF NOT EXISTS devices_asset_idx ON endpoints.devices (asset_id) WHERE asset_id IS NOT NULL;
+-- Prefix search (the devices list) cannot use the equality index above in non-C collations.
+CREATE INDEX IF NOT EXISTS devices_serial_prefix_idx ON endpoints.devices (lower(serial_number) text_pattern_ops) WHERE serial_number IS NOT NULL;
+-- An Asset belongs to at most one live Device. Tombstoned devices do not hold the Asset.
+CREATE UNIQUE INDEX IF NOT EXISTS devices_asset_live_unique ON endpoints.devices (asset_id) WHERE asset_id IS NOT NULL AND deleted_observed_at IS NULL;
 CREATE INDEX IF NOT EXISTS devices_name_idx ON endpoints.devices (lower(name) text_pattern_ops);
 
 -- Append-only: one row per meaningful change of the normalized values (and one for the first sighting).
@@ -67,6 +70,9 @@ $$;
 DROP TRIGGER IF EXISTS device_observation_history_immutable ON endpoints.device_observation_history;
 CREATE TRIGGER device_observation_history_immutable BEFORE UPDATE OR DELETE ON endpoints.device_observation_history
     FOR EACH ROW EXECUTE FUNCTION endpoints.forbid_history_change();
+DROP TRIGGER IF EXISTS device_observation_history_no_truncate ON endpoints.device_observation_history;
+CREATE TRIGGER device_observation_history_no_truncate BEFORE TRUNCATE ON endpoints.device_observation_history
+    FOR EACH STATEMENT EXECUTE FUNCTION endpoints.forbid_history_change();
 
 -- Normalized software. Aliases map observed names (lower case, single spaces) to a product; a
 -- product's own name is registered as an alias too.
@@ -94,6 +100,8 @@ CREATE TABLE IF NOT EXISTS endpoints.software_installations (
     device_id uuid NOT NULL REFERENCES endpoints.devices(id) ON DELETE CASCADE,
     software_product_id uuid REFERENCES endpoints.software_products(id),
     raw_name text NOT NULL CHECK (raw_name = btrim(raw_name) AND length(raw_name) BETWEEN 1 AND 300),
+    -- Alias key of raw_name (lower case, single spaces), computed by the application.
+    normalized_name text NOT NULL CHECK (length(normalized_name) BETWEEN 1 AND 300),
     raw_version text NOT NULL DEFAULT '' CHECK (length(raw_version) <= 100),
     raw_publisher text CHECK (raw_publisher IS NULL OR length(raw_publisher) <= 200),
     observed_at timestamptz NOT NULL,
@@ -103,7 +111,7 @@ CREATE TABLE IF NOT EXISTS endpoints.software_installations (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS software_installations_unique ON endpoints.software_installations (device_id, lower(raw_name), raw_version);
 CREATE INDEX IF NOT EXISTS software_installations_product_idx ON endpoints.software_installations (software_product_id) WHERE software_product_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS software_installations_unmatched_idx ON endpoints.software_installations (lower(raw_name)) WHERE software_product_id IS NULL AND deleted_observed_at IS NULL;
+CREATE INDEX IF NOT EXISTS software_installations_unmatched_idx ON endpoints.software_installations (normalized_name) WHERE software_product_id IS NULL AND deleted_observed_at IS NULL;
 
 -- Data-quality findings about a device. At most one open finding per kind and device.
 CREATE TABLE IF NOT EXISTS endpoints.findings (
@@ -119,3 +127,4 @@ CREATE TABLE IF NOT EXISTS endpoints.findings (
 CREATE UNIQUE INDEX IF NOT EXISTS findings_one_open ON endpoints.findings (kind, device_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS findings_device_idx ON endpoints.findings (device_id, id DESC);
 CREATE INDEX IF NOT EXISTS findings_status_idx ON endpoints.findings (status, kind, id);
+CREATE INDEX IF NOT EXISTS findings_status_id_idx ON endpoints.findings (status, id);

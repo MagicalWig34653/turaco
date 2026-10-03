@@ -18,7 +18,9 @@ import (
 )
 
 // Service performs Endpoints operations. Audit actions: endpoints.device.linked,
-// endpoints.device.unlinked, endpoints.software_product.registered and endpoints.sync.completed.
+// endpoints.device.unlinked, endpoints.software_product.registered, endpoints.sync.completed and
+// endpoints.sync.failed. Links the synchronization derives are audited with the sync system as actor
+// and the triggering user in metadata.
 // Audit entries carry ids, enumerated codes and counts only; provider-reported text such as device
 // names and software names is never copied into audit.
 type Service struct {
@@ -58,8 +60,13 @@ func linkState(d *Device) any {
 }
 
 func (s *Service) recordLink(ctx context.Context, tx pgx.Tx, c Caller, action string, before, after *Device, meta map[string]any) error {
+	return s.recordLinkAs(ctx, tx, c.Actor, c, action, before, after, meta)
+}
+
+// recordLinkAs audits a link change made by actor (a person, or the sync system for derived changes).
+func (s *Service) recordLinkAs(ctx context.Context, tx pgx.Tx, actor audit.Actor, c Caller, action string, before, after *Device, meta map[string]any) error {
 	return audit.Record(ctx, tx, audit.Change{
-		Action: action, TargetType: "device", TargetID: after.ID, Actor: c.Actor,
+		Action: action, TargetType: "device", TargetID: after.ID, Actor: actor,
 		CorrelationID: c.CorrelationID, Before: linkState(before), After: linkState(after), Metadata: meta,
 	})
 }
@@ -124,8 +131,15 @@ func (s *Service) ManualLink(ctx context.Context, c Caller, p Principal, deviceI
 	if !p.Manage {
 		return Device{}, ErrForbidden
 	}
+	// Binding an Asset reveals that it exists and what state it is in, so assets.view is required too.
+	if !p.AssetsView {
+		return Device{}, ErrForbidden
+	}
 	if !slices.Contains(ReasonCodes, reason) {
 		return Device{}, invalid("reason must be one of %s", strings.Join(ReasonCodes, ", "))
+	}
+	if expectedVersion == nil {
+		return Device{}, invalid("expectedVersion is required")
 	}
 	if !validUUID(deviceID) {
 		return Device{}, ErrNotFound
@@ -133,11 +147,11 @@ func (s *Service) ManualLink(ctx context.Context, c Caller, p Principal, deviceI
 	if !validUUID(assetID) {
 		return Device{}, ErrAssetInvalid
 	}
-	exists, err := s.assets.Exists(ctx, assetID)
+	asset, exists, err := s.assets.ByID(ctx, assetID)
 	if err != nil {
 		return Device{}, fmt.Errorf("check asset: %w", err)
 	}
-	if !exists {
+	if !exists || asset.Terminal() {
 		return Device{}, ErrAssetInvalid
 	}
 	var out Device
@@ -146,7 +160,7 @@ func (s *Service) ManualLink(ctx context.Context, c Caller, p Principal, deviceI
 		if err != nil {
 			return err
 		}
-		if expectedVersion != nil && *expectedVersion != d.Version {
+		if *expectedVersion != d.Version {
 			return ErrVersionConflict
 		}
 		if d.DeletedObservedAt != nil {
@@ -199,6 +213,9 @@ func (s *Service) ManualUnlink(ctx context.Context, c Caller, p Principal, devic
 	if !slices.Contains(ReasonCodes, reason) {
 		return Device{}, invalid("reason must be one of %s", strings.Join(ReasonCodes, ", "))
 	}
+	if expectedVersion == nil {
+		return Device{}, invalid("expectedVersion is required")
+	}
 	if !validUUID(deviceID) {
 		return Device{}, ErrNotFound
 	}
@@ -208,7 +225,7 @@ func (s *Service) ManualUnlink(ctx context.Context, c Caller, p Principal, devic
 		if err != nil {
 			return err
 		}
-		if expectedVersion != nil && *expectedVersion != d.Version {
+		if *expectedVersion != d.Version {
 			return ErrVersionConflict
 		}
 		if d.AssetID == nil {
@@ -221,7 +238,10 @@ func (s *Service) ManualUnlink(ctx context.Context, c Caller, p Principal, devic
 			return err
 		}
 		out = updated
-		return s.recordLink(ctx, tx, c, "endpoints.device.unlinked", &before, &updated, map[string]any{"reason": reason})
+		if err := s.recordLink(ctx, tx, c, "endpoints.device.unlinked", &before, &updated, map[string]any{"method": LinkManual, "reason": reason}); err != nil {
+			return err
+		}
+		return publish(ctx, tx, c, "DeviceUnlinked", map[string]any{"deviceId": updated.ID, "assetId": before.AssetID, "method": LinkManual})
 	})
 	return out, err
 }
@@ -281,13 +301,25 @@ func (s *Service) RegisterSoftwareProduct(ctx context.Context, c Caller, p Princ
 		if err != nil {
 			return err
 		}
-		if relinked, err = s.store.RelinkInstallationsTx(ctx, tx); err != nil {
+		var devices []string
+		if relinked, devices, err = s.store.RelinkInstallationsTx(ctx, tx); err != nil {
 			return err
+		}
+		// Installations that matched may have cleared the devices' unmatched_software finding.
+		run := &counters{}
+		for _, id := range devices {
+			unmatched, err := s.store.CountUnmatchedTx(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if err := s.reconcileFinding(ctx, tx, c, run, FindingUnmatchedSoftware, id, unmatched > 0, map[string]any{"count": unmatched}); err != nil {
+				return err
+			}
 		}
 		out = prod
 		return audit.Record(ctx, tx, audit.Change{
 			Action: "endpoints.software_product.registered", TargetType: "software_product", TargetID: prod.ID, Actor: c.Actor,
-			CorrelationID: c.CorrelationID, Metadata: map[string]any{"aliasCount": len(keys), "relinkedInstallations": relinked},
+			CorrelationID: c.CorrelationID, Metadata: map[string]any{"aliasCount": len(keys), "relinkedInstallations": relinked, "affectedDevices": len(devices)},
 		})
 	})
 	return out, relinked, err

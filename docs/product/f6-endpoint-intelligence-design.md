@@ -59,3 +59,18 @@ Graph client, Intune actions, script/remediation execution, undocumented Intune 
 ## Slice 1 status
 
 Backend implemented (migration 000038). Link/unlink reasons are codes (`serial_confirmed|correction|duplicate|wrong_asset|other`), a manual unlink blocks automatic re-linking until a manual link, an empty snapshot tombstones nothing, `last_checkin_at` alone is not a meaningful change. The sync runs in the request (no job yet). Software Products are registered through `Service.RegisterSoftwareProduct` only.
+
+## Slice 1 review outcomes
+
+Fixed (migration 000038 edited in place, unreleased):
+
+- One ingestion run per provider: a session-level PostgreSQL advisory lock on a dedicated pooled connection; a second run (sync or import) answers 409 `endpoints.sync_running`. `last_synced_at` is written with `GREATEST`; tombstone candidates are locked in id order.
+- Partial snapshots: an invalid record with a valid external id counts as seen; an unsafe device name becomes the placeholder `unnamed-device`; `Snapshot.Complete` gates tombstoning (sync true, import as given); tombstone guard: more than 10 live devices and more than half missing means no tombstones, reported as `tombstonesSkipped` (updates still apply); at most 50000 devices per snapshot.
+- One live device per Asset (partial unique index; a lost race on auto-link becomes a `duplicate_device` finding, on manual link a 409). A tombstone drops a serial link (audited, history row) and keeps a manual link, which is re-validated on revival.
+- Installations: bulk `unnest` upsert, batches limited to 2000 installations, tombstoned with their device, indexed `normalized_name` computed in Go for relink. Registering a product reconciles `unmatched_software` findings immediately; findings refresh their detail; partners of tombstoned devices are re-checked.
+- Reappearing devices are a change (version bump, history row); a sighting sets the source. Serial-change, duplicate-serial, tombstone and revival unlinks are audited as `endpoints.device.unlinked` and published as the new `DeviceUnlinked` event (also for manual unlink).
+- Auto-link skips personal devices, placeholder serials and disposed/lost/retired Assets; devices sharing a serial get no link and all get `duplicate_device`. Manual link needs `assets.view` as well, an existing non-terminal Asset, and `expectedVersion` on link and unlink.
+- Audit: every run records `endpoints.sync.completed` or `endpoints.sync.failed` with counts; derived links use the actor `intune-sync` (or `endpoint-import`) with the triggering user in metadata `triggeredBy`.
+- Indexes: findings `(status, id)`, `text_pattern_ops` serial index, `BEFORE TRUNCATE` guard on the history.
+
+Accepted limitations: `endpoints.manage` stays the single permission and covers the sync (documented in the permission). Looking up Assets by serial number alone has no matching index in the Assets schema (its unique index starts with `product_id`); a forward migration in the Assets module should add one before large fleets. The manual-link `assets.view` check is done at the HTTP layer from the caller's permissions, not per Asset. Failed runs record counts up to the failure; applied batches are not rolled back (each run is idempotent).

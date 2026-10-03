@@ -12,7 +12,7 @@
 | `changes.approve` | high | Approve infrastructure/service changes according to policy. |
 | `deployments.execute` | high | Start endpoint software/remediation deployments. |
 | `endpoint.management.view` | normal | View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope. |
-| `endpoints.manage` | elevated | Link and unlink Devices to Assets by hand, register normalized software products and run the endpoint provider synchronization. |
+| `endpoints.manage` | elevated | Link and unlink Devices to Assets by hand (also needs assets.view), register normalized software products and run the endpoint provider synchronization and snapshot ingestion (the sync is covered by this permission; no separate sync permission exists). |
 | `endpoints.view` | normal | View provider-observed Devices, their installed software and endpoint data-quality findings. |
 | `integrations.intune.manage` | high | Administer Intune integration configuration, credentials and synchronization controls. |
 | `inventory.manage` | elevated | Manage warehouses and storage locations; issue, return, transfer, correct and dispose stock; reserve, release and fulfill reservations; post goods receipts. |

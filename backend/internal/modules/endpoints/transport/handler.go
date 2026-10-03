@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	permView   = "endpoints.view"
-	permManage = "endpoints.manage"
-	maxBody    = 4 << 10
+	permView       = "endpoints.view"
+	permManage     = "endpoints.manage"
+	permAssetsView = "assets.view"
+	maxBody        = 4 << 10
 )
 
 type handler struct {
@@ -55,12 +56,14 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusNotFound, "endpoints.not_found", "The requested resource was not found.")
 	case errors.Is(err, application.ErrForbidden):
 		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
+	case errors.Is(err, application.ErrSyncRunning):
+		httpx.WriteError(w, http.StatusConflict, "endpoints.sync_running", "Another synchronization of this provider is running; try again later.")
 	case errors.Is(err, application.ErrConflict):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.conflict", "The operation does not fit the device's current link state, or the asset is linked to another device.")
 	case errors.Is(err, application.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.version_conflict", "The device was changed by someone else; reload and try again.")
 	case errors.Is(err, application.ErrAssetInvalid):
-		httpx.WriteError(w, http.StatusBadRequest, "endpoints.asset_invalid", "The asset does not exist.")
+		httpx.WriteError(w, http.StatusBadRequest, "endpoints.asset_invalid", "The asset does not exist or is disposed, lost or retired.")
 	case errors.Is(err, application.ErrSyncDisabled):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.sync_disabled", "Provider synchronization is not enabled.")
 	case errors.Is(err, intune.ErrNotConfigured):
@@ -75,7 +78,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -295,7 +298,7 @@ func (h *handler) sync(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{
 		"devicesCreated": res.DevicesCreated, "devicesUpdated": res.DevicesUpdated, "devicesUnchanged": res.DevicesUnchanged,
-		"devicesTombstoned": res.DevicesTombstoned, "devicesRejected": res.DevicesRejected, "devicesLinked": res.DevicesLinked,
+		"devicesTombstoned": res.DevicesTombstoned, "tombstonesSkipped": res.TombstonesSkipped, "devicesRejected": res.DevicesRejected, "devicesLinked": res.DevicesLinked,
 		"softwareObserved": res.SoftwareObserved, "softwareSkipped": res.SoftwareSkipped, "softwareErrors": res.SoftwareErrors,
 		"findingsRaised": res.FindingsRaised, "findingsResolved": res.FindingsResolved,
 	})

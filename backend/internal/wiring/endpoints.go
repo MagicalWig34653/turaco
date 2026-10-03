@@ -25,16 +25,19 @@ func (l assetLookup) FindBySerial(ctx context.Context, serial string) (endpoints
 	case err != nil:
 		return endpointsapp.AssetInfo{}, err
 	}
-	return endpointsapp.AssetInfo{ID: a.ID, SerialNumber: a.SerialNumber}, nil
+	return endpointsapp.AssetInfo{ID: a.ID, SerialNumber: a.SerialNumber, Status: a.Status}, nil
 }
 
-func (l assetLookup) Exists(ctx context.Context, assetID string) (bool, error) {
+func (l assetLookup) ByID(ctx context.Context, assetID string) (endpointsapp.AssetInfo, bool, error) {
 	found, err := l.a.Assets(ctx, []string{assetID})
 	if err != nil {
-		return false, err
+		return endpointsapp.AssetInfo{}, false, err
 	}
-	_, ok := found[assetID]
-	return ok, nil
+	a, ok := found[assetID]
+	if !ok {
+		return endpointsapp.AssetInfo{}, false, nil
+	}
+	return endpointsapp.AssetInfo{ID: a.ID, SerialNumber: a.SerialNumber, Status: a.Status}, true, nil
 }
 
 // Endpoints builds the Endpoints service over the Assets public contract and the endpoint provider.

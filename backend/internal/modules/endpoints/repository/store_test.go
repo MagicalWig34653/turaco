@@ -22,6 +22,14 @@ type fakeAssets struct {
 	bySerial  map[string]string // lower serial -> asset id
 	ambiguous map[string]bool
 	existing  map[string]bool
+	status    map[string]string // asset id -> status (default "available")
+}
+
+func (f *fakeAssets) statusOf(id string) string {
+	if st, ok := f.status[id]; ok {
+		return st
+	}
+	return "available"
 }
 
 func (f *fakeAssets) FindBySerial(_ context.Context, serial string) (application.AssetInfo, error) {
@@ -30,12 +38,14 @@ func (f *fakeAssets) FindBySerial(_ context.Context, serial string) (application
 		return application.AssetInfo{}, application.ErrAssetAmbiguous
 	}
 	if id, ok := f.bySerial[k]; ok {
-		return application.AssetInfo{ID: id}, nil
+		return application.AssetInfo{ID: id, Status: f.statusOf(id)}, nil
 	}
 	return application.AssetInfo{}, application.ErrAssetNotFound
 }
 
-func (f *fakeAssets) Exists(_ context.Context, id string) (bool, error) { return f.existing[id], nil }
+func (f *fakeAssets) ByID(_ context.Context, id string) (application.AssetInfo, bool, error) {
+	return application.AssetInfo{ID: id, Status: f.statusOf(id)}, f.existing[id], nil
+}
 
 type env struct {
 	t        *testing.T
@@ -57,11 +67,11 @@ func newEnv(t *testing.T) *env {
 	_, _ = rand.Read(b)
 	suffix := hex.EncodeToString(b)
 	e := &env{t: t, pool: pool, provider: "t" + suffix, corr: "endpoints-" + suffix, clock: time.Now().UTC().Add(-time.Hour),
-		assets: &fakeAssets{bySerial: map[string]string{}, ambiguous: map[string]bool{}, existing: map[string]bool{}}}
+		assets: &fakeAssets{bySerial: map[string]string{}, ambiguous: map[string]bool{}, existing: map[string]bool{}, status: map[string]string{}}}
 	if err := pool.QueryRow(context.Background(), `SELECT uuidv7()::text`).Scan(&e.user); err != nil {
 		t.Fatal(err)
 	}
-	e.manage = application.Principal{UserID: e.user, Manage: true}
+	e.manage = application.Principal{UserID: e.user, Manage: true, AssetsView: true}
 	e.view = application.Principal{UserID: e.user, View: true}
 	e.svc = application.NewService(repository.New(pool), e.assets, nil, true, func() time.Time {
 		e.clock = e.clock.Add(time.Second)
@@ -102,7 +112,7 @@ func (e *env) newID() string {
 
 func (e *env) ingest(devs ...application.SnapshotDevice) application.IngestResult {
 	e.t.Helper()
-	res, err := e.svc.Ingest(context.Background(), e.caller(), e.manage, application.Snapshot{Provider: e.provider, Source: application.SourceSync, Devices: devs})
+	res, err := e.svc.Ingest(context.Background(), e.caller(), e.manage, application.Snapshot{Provider: e.provider, Source: application.SourceSync, Complete: true, Devices: devs})
 	if err != nil {
 		e.t.Fatalf("ingest: %v", err)
 	}
@@ -114,6 +124,25 @@ func dev(id, name, serial string) application.SnapshotDevice {
 		ExternalID: id, Name: name, SerialNumber: serial, OSPlatform: "windows", OSVersion: "11", Manufacturer: "Acme", Model: "X1",
 		Ownership: "corporate", ComplianceState: "compliant",
 	}}
+}
+
+// link and unlink send the device's current version, as the API requires.
+func (e *env) link(p application.Principal, deviceID, assetID, reason string) (application.Device, error) {
+	e.t.Helper()
+	d, err := repository.New(e.pool).GetDevice(context.Background(), deviceID)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return e.svc.ManualLink(context.Background(), e.caller(), p, deviceID, assetID, reason, &d.Version)
+}
+
+func (e *env) unlink(p application.Principal, deviceID, reason string) (application.Device, error) {
+	e.t.Helper()
+	d, err := repository.New(e.pool).GetDevice(context.Background(), deviceID)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return e.svc.ManualUnlink(context.Background(), e.caller(), p, deviceID, reason, &d.Version)
 }
 
 func (e *env) device(externalID string) application.Device {
@@ -212,10 +241,13 @@ func TestHistoryIsAppendOnly(t *testing.T) {
 func TestInvalidRecordsAreRejectedNotFatal(t *testing.T) {
 	e := newEnv(t)
 	bad := dev("", "no id", "SN")
-	unsafe := dev("d9", "name‮with bidi", "SN9")
-	res := e.ingest(bad, unsafe, dev("d1", "PC-1", "SN1"), dev("d1", "PC-1 again", "SN1"))
-	if res.DevicesCreated != 1 || res.DevicesRejected != 3 {
+	unsafeName := dev("d9", "name‮with bidi", "SN9")
+	res := e.ingest(bad, unsafeName, dev("d1", "PC-1", "SN1"), dev("d1", "PC-1 again", "SN1"))
+	if res.DevicesCreated != 2 || res.DevicesRejected != 2 {
 		t.Fatalf("res = %+v", res)
+	}
+	if d := e.device("d9"); d.Name != application.PlaceholderDeviceName {
+		t.Errorf("unsafe name was kept: %q", d.Name)
 	}
 	odd := dev("d2", "PC-2", "SN2")
 	odd.Record.OSPlatform, odd.Record.Ownership, odd.Record.ComplianceState = "beos", "x", "y"
@@ -331,22 +363,28 @@ func TestSerialConflictAndDuplicateDevices(t *testing.T) {
 	if d := e.device("d1"); d.AssetID != nil {
 		t.Errorf("ambiguous serial linked: %+v", d)
 	}
-	if e.device("d2").AssetID == nil {
-		t.Error("first device with the serial should link")
+	// Two devices share a serial number: neither links (no arbitrary winner), both are flagged.
+	for _, id := range []string{"d2", "d3"} {
+		if f := e.openFindings(e.device(id).ID); !f["duplicate_device"] || len(f) != 1 {
+			t.Errorf("%s findings = %v", id, f)
+		}
+		if e.device(id).AssetID != nil {
+			t.Errorf("%s was linked despite the shared serial number", id)
+		}
 	}
-	if f := e.openFindings(e.device("d3").ID); !f["duplicate_device"] || len(f) != 1 {
-		t.Errorf("d3 findings = %v", f)
-	}
-	if e.device("d3").AssetID != nil {
-		t.Error("duplicate was linked")
-	}
-	// The duplicate disappears: its finding goes away on the next run and nothing else changes.
+	// The duplicate disappears: the partner links and loses its finding, the tombstoned device keeps none.
 	res := e.ingest(dev("d1", "PC-1", "SN-Shared"), dev("d2", "PC-2", "SN-Dup"))
 	if res.DevicesTombstoned != 1 {
 		t.Fatalf("res = %+v", res)
 	}
 	if f := e.openFindings(e.device("d3").ID); len(f) != 0 {
 		t.Errorf("tombstoned device keeps findings: %v", f)
+	}
+	if f := e.openFindings(e.device("d2").ID); len(f) != 0 {
+		t.Errorf("partner keeps duplicate finding: %v", f)
+	}
+	if e.device("d2").AssetID == nil {
+		t.Error("partner should link once the duplicate is gone")
 	}
 }
 
@@ -400,13 +438,13 @@ func TestSoftwareIsNormalizedThroughAliases(t *testing.T) {
 		t.Fatalf("findings = %v", f)
 	}
 
-	// Registering the missing product relinks existing installations; the next run resolves the finding.
+	// Registering the missing product relinks existing installations and resolves the finding at once.
 	e.registerSoftware("Mystery Tool " + suffix)
-	if res := e.ingest(d); res.FindingsResolved != 1 || res.FindingsRaised != 0 {
-		t.Fatalf("after register = %+v", res)
-	}
 	if f := e.openFindings(detail.Device.ID); f["unmatched_software"] {
-		t.Errorf("findings = %v", f)
+		t.Errorf("findings after register = %v", f)
+	}
+	if res := e.ingest(d); res.FindingsResolved != 0 || res.FindingsRaised != 0 {
+		t.Fatalf("after register = %+v", res)
 	}
 
 	// An installation that disappears is tombstoned; repeating the same data adds no rows.
@@ -453,13 +491,13 @@ func TestManualLinkAndUnlink(t *testing.T) {
 		t.Fatalf("findings = %v", f)
 	}
 
-	if _, err := e.svc.ManualLink(ctx, e.caller(), e.view, d1.ID, asset, "correction", nil); !errors.Is(err, application.ErrForbidden) {
+	if _, err := e.link(e.view, d1.ID, asset, "correction"); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("view-only link = %v", err)
 	}
-	if _, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d1.ID, asset, "because I said so", nil); err == nil {
+	if _, err := e.link(e.manage, d1.ID, asset, "because I said so"); err == nil {
 		t.Error("free-text reason accepted")
 	}
-	if _, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d1.ID, e.newID(), "correction", nil); !errors.Is(err, application.ErrAssetInvalid) {
+	if _, err := e.link(e.manage, d1.ID, e.newID(), "correction"); !errors.Is(err, application.ErrAssetInvalid) {
 		t.Errorf("unknown asset = %v", err)
 	}
 	stale := d1.Version + 5
@@ -474,13 +512,13 @@ func TestManualLinkAndUnlink(t *testing.T) {
 		t.Errorf("findings after link = %v", f)
 	}
 	// Linking the same asset again is a no-op; another asset needs an unlink first; the asset cannot serve two devices.
-	if again, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d1.ID, asset, "correction", nil); err != nil || again.Version != linked.Version {
+	if again, err := e.link(e.manage, d1.ID, asset, "correction"); err != nil || again.Version != linked.Version {
 		t.Errorf("repeat = %+v %v", again, err)
 	}
-	if _, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d1.ID, other, "correction", nil); !errors.Is(err, application.ErrConflict) {
+	if _, err := e.link(e.manage, d1.ID, other, "correction"); !errors.Is(err, application.ErrConflict) {
 		t.Errorf("relink = %v", err)
 	}
-	if _, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d2.ID, asset, "correction", nil); !errors.Is(err, application.ErrConflict) {
+	if _, err := e.link(e.manage, d2.ID, asset, "correction"); !errors.Is(err, application.ErrConflict) {
 		t.Errorf("asset on two devices = %v", err)
 	}
 	if got := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'endpoints.device.linked' AND metadata->>'reason' = 'correction'`, e.corr); got != 1 {
@@ -489,14 +527,14 @@ func TestManualLinkAndUnlink(t *testing.T) {
 
 	// Unlinking is explicit, audited, and survives the next sync even though the serial would match.
 	e.assets.bySerial["sn1"] = asset
-	if _, err := e.svc.ManualUnlink(ctx, e.caller(), e.view, d1.ID, "wrong_asset", nil); !errors.Is(err, application.ErrForbidden) {
+	if _, err := e.unlink(e.view, d1.ID, "wrong_asset"); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("view-only unlink = %v", err)
 	}
-	unlinked, err := e.svc.ManualUnlink(ctx, e.caller(), e.manage, d1.ID, "wrong_asset", nil)
+	unlinked, err := e.unlink(e.manage, d1.ID, "wrong_asset")
 	if err != nil || unlinked.AssetID != nil || !unlinked.AutoLinkBlocked {
 		t.Fatalf("unlink = %+v %v", unlinked, err)
 	}
-	if _, err := e.svc.ManualUnlink(ctx, e.caller(), e.manage, d1.ID, "wrong_asset", nil); !errors.Is(err, application.ErrConflict) {
+	if _, err := e.unlink(e.manage, d1.ID, "wrong_asset"); !errors.Is(err, application.ErrConflict) {
 		t.Errorf("unlink twice = %v", err)
 	}
 	if got := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'endpoints.device.unlinked' AND target_id = $2`, e.corr, d1.ID); got != 1 {
@@ -510,7 +548,7 @@ func TestManualLinkAndUnlink(t *testing.T) {
 		t.Errorf("blocked device findings = %v", f)
 	}
 	// A manual link lifts the block.
-	if relinked, err := e.svc.ManualLink(ctx, e.caller(), e.manage, d1.ID, asset, "serial_confirmed", nil); err != nil || relinked.AutoLinkBlocked {
+	if relinked, err := e.link(e.manage, d1.ID, asset, "serial_confirmed"); err != nil || relinked.AutoLinkBlocked {
 		t.Errorf("relink = %+v %v", relinked, err)
 	}
 }
@@ -529,7 +567,7 @@ func TestChangedSerialDropsSerialLinkButKeepsManualLink(t *testing.T) {
 		t.Errorf("serial change should rematch: %+v", e.device("d1"))
 	}
 
-	if _, err := e.svc.ManualLink(context.Background(), e.caller(), e.manage, e.device("d2").ID, a1, "correction", nil); err != nil {
+	if _, err := e.link(e.manage, e.device("d2").ID, a1, "correction"); err != nil {
 		t.Fatal(err)
 	}
 	e.ingest(dev("d1", "PC-1", "SN2"), dev("d2", "PC-2", "SN-Y"))

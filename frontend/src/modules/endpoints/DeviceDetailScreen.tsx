@@ -131,7 +131,7 @@ export function DeviceDetailScreen({ id }: { id: string }) {
           can('endpoints.manage') && !d.deletedObservedAt ? (
             <>
               {!d.assetId ? (
-                <Button onClick={() => setDialog('link')}>{t('endpoints.link')}</Button>
+                can('assets.view') ? <Button onClick={() => setDialog('link')}>{t('endpoints.link')}</Button> : null
               ) : (
                 <>
                   <Button onClick={() => setDialog('unlink')}>{t('endpoints.unlink')}</Button>

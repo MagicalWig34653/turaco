@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -43,7 +44,9 @@ type assets struct{ existing map[string]bool }
 func (assets) FindBySerial(context.Context, string) (application.AssetInfo, error) {
 	return application.AssetInfo{}, application.ErrAssetNotFound
 }
-func (a assets) Exists(_ context.Context, id string) (bool, error) { return a.existing[id], nil }
+func (a assets) ByID(_ context.Context, id string) (application.AssetInfo, bool, error) {
+	return application.AssetInfo{ID: id, Status: "available"}, a.existing[id], nil
+}
 
 const (
 	admin = "00000000-0000-7000-8000-0000000000c3"
@@ -115,7 +118,7 @@ func TestSyncLinkAndUnlinkOverHTTP(t *testing.T) {
 	fake := intune.NewFake()
 	fake.SetDevices(intune.DeviceRecord{ExternalID: "http-1", Name: "HTTP-PC", SerialNumber: "HTTP-SN", OSPlatform: "windows"})
 	fake.SetSoftware("http-1", intune.SoftwareRecord{Name: "Unknown Http Tool", Version: "1"})
-	manage := serve(t, as(admin, "endpoints.manage"), fake, true)
+	manage := serve(t, as(admin, "endpoints.manage", "assets.view"), fake, true)
 
 	rec := do(manage, "POST", "/api/v1/endpoint-sync", `{}`)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"devicesCreated":1`) {
@@ -146,24 +149,37 @@ func TestSyncLinkAndUnlinkOverHTTP(t *testing.T) {
 		t.Errorf("bad kind = %d", rec.Code)
 	}
 
-	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"`+asset+`","reason":"free text"}`); rec.Code != http.StatusBadRequest {
+	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"`+asset+`","reason":"free text","expectedVersion":1}`); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad reason = %d", rec.Code)
+	}
+	// expectedVersion is required on link and unlink.
+	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"`+asset+`","reason":"correction"}`); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), "endpoints.invalid_request") {
+		t.Errorf("link without version = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/unlink", `{"reason":"correction"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("unlink without version = %d", rec.Code)
+	}
+	// Linking needs assets.view as well as endpoints.manage.
+	noAssets := serve(t, as(admin, "endpoints.manage"), fake, true)
+	if rec := do(noAssets, "POST", "/api/v1/devices/"+id+"/link", fmt.Sprintf(`{"assetId":"%s","reason":"correction","expectedVersion":%d}`, asset, list.Items[0].Version)); rec.Code != http.StatusForbidden {
+		t.Errorf("link without assets.view = %d", rec.Code)
 	}
 	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"`+asset+`","reason":"correction","expectedVersion":99}`); rec.Code != http.StatusConflict {
 		t.Errorf("stale version = %d", rec.Code)
 	}
-	rec = do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"`+asset+`","reason":"correction"}`)
+	rec = do(manage, "POST", "/api/v1/devices/"+id+"/link", fmt.Sprintf(`{"assetId":"%s","reason":"correction","expectedVersion":%d}`, asset, list.Items[0].Version))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"assetLinkSource":"manual"`) {
 		t.Fatalf("link = %d %s", rec.Code, rec.Body)
 	}
-	rec = do(manage, "POST", "/api/v1/devices/"+id+"/unlink", `{"reason":"wrong_asset"}`)
+	rec = do(manage, "POST", "/api/v1/devices/"+id+"/unlink", fmt.Sprintf(`{"reason":"wrong_asset","expectedVersion":%d}`, list.Items[0].Version+1))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"autoLinkBlocked":true`) {
 		t.Fatalf("unlink = %d %s", rec.Code, rec.Body)
 	}
-	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/unlink", `{"reason":"wrong_asset"}`); rec.Code != http.StatusConflict {
+	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/unlink", fmt.Sprintf(`{"reason":"wrong_asset","expectedVersion":%d}`, list.Items[0].Version+2)); rec.Code != http.StatusConflict {
 		t.Errorf("unlink twice = %d", rec.Code)
 	}
-	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", `{"assetId":"00000000-0000-7000-8000-0000000000ff","reason":"correction"}`); rec.Code != http.StatusBadRequest {
+	if rec := do(manage, "POST", "/api/v1/devices/"+id+"/link", fmt.Sprintf(`{"assetId":"00000000-0000-7000-8000-0000000000ff","reason":"correction","expectedVersion":%d}`, list.Items[0].Version+2)); rec.Code != http.StatusBadRequest {
 		t.Errorf("unknown asset = %d", rec.Code)
 	}
 }
