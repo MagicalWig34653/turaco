@@ -14,6 +14,10 @@ type WorkDirectoryStore interface {
 	ActiveTeams(ctx context.Context, ids []string) (map[string]bool, error)
 	// TeamNames returns id -> name for existing Teams.
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
+	// ActiveLocations returns id -> true for each id that is an active Location.
+	ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
+	// LocationNames returns id -> name for existing Locations.
+	LocationNames(ctx context.Context, ids []string) (map[string]string, error)
 	// CurrentTeamIDs returns the active Teams the User currently belongs to.
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
 	// Contacts returns id -> Contact for existing Users.
@@ -82,6 +86,22 @@ func (w *WorkDirectory) TeamNames(ctx context.Context, ids []string) (map[string
 		return map[string]string{}, nil
 	}
 	return w.store.TeamNames(ctx, valid)
+}
+
+func (w *WorkDirectory) ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error) {
+	valid := validIDs(ids)
+	if len(valid) == 0 {
+		return map[string]bool{}, nil
+	}
+	return w.store.ActiveLocations(ctx, valid)
+}
+
+func (w *WorkDirectory) LocationNames(ctx context.Context, ids []string) (map[string]string, error) {
+	valid := validIDs(ids)
+	if len(valid) == 0 {
+		return map[string]string{}, nil
+	}
+	return w.store.LocationNames(ctx, valid)
 }
 
 func (w *WorkDirectory) CurrentTeamIDs(ctx context.Context, userID string) ([]string, error) {

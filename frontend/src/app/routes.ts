@@ -18,6 +18,20 @@ export type RouteId =
   | 'products'
   | 'catalogAdmin'
   | 'allRequests'
+  | 'myAssets'
+  | 'assets'
+  | 'assetNew'
+  | 'assetDetail'
+  | 'stock'
+  | 'warehouses'
+  | 'reservations'
+  | 'ledger'
+  | 'receipts'
+  | 'receiptNew'
+  | 'orders'
+  | 'orderDetail'
+  | 'procurementRequests'
+  | 'suppliers'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -32,7 +46,7 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit';
 
-export type NavGroup = 'main' | 'admin';
+export type NavGroup = 'main' | 'logistics' | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -83,6 +97,90 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/briefing/:id',
     titleKey: 'briefing.detail.title',
     requiresAny: ['briefing.view', 'briefing.manage'],
+  },
+  { id: 'myAssets', pattern: '/my-assets', titleKey: 'nav.myAssets', nav: 'main' },
+  {
+    id: 'assets',
+    pattern: '/assets',
+    titleKey: 'nav.assets',
+    requiresAny: ['assets.view', 'assets.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'assetNew',
+    pattern: '/assets/new',
+    titleKey: 'assets.create.title',
+    requires: ['assets.manage'],
+  },
+  // A holder reads the asset assigned to them: the server decides (404 otherwise).
+  { id: 'assetDetail', pattern: '/assets/:id', titleKey: 'assets.detail.title' },
+  {
+    id: 'stock',
+    pattern: '/inventory',
+    titleKey: 'nav.stock',
+    requiresAny: ['inventory.view', 'inventory.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'warehouses',
+    pattern: '/inventory/warehouses',
+    titleKey: 'nav.warehouses',
+    requiresAny: ['inventory.view', 'inventory.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'reservations',
+    pattern: '/inventory/reservations',
+    titleKey: 'nav.reservations',
+    requiresAny: ['inventory.view', 'inventory.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'ledger',
+    pattern: '/inventory/ledger',
+    titleKey: 'nav.ledger',
+    requiresAny: ['inventory.view', 'inventory.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'receipts',
+    pattern: '/inventory/receipts',
+    titleKey: 'nav.receipts',
+    requiresAny: ['inventory.view', 'inventory.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'receiptNew',
+    pattern: '/inventory/receipts/new',
+    titleKey: 'inventory.receipt.new',
+    requires: ['inventory.manage'],
+  },
+  {
+    id: 'orders',
+    pattern: '/procurement/orders',
+    titleKey: 'nav.purchaseOrders',
+    requiresAny: ['procurement.view', 'procurement.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'orderDetail',
+    pattern: '/procurement/orders/:id',
+    titleKey: 'nav.purchaseOrders',
+    requiresAny: ['procurement.view', 'procurement.manage'],
+  },
+  {
+    id: 'procurementRequests',
+    pattern: '/procurement/requests',
+    titleKey: 'nav.procurementRequests',
+    requiresAny: ['procurement.view', 'procurement.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'suppliers',
+    pattern: '/procurement/suppliers',
+    titleKey: 'nav.suppliers',
+    requiresAny: ['procurement.view', 'procurement.manage'],
+    nav: 'logistics',
   },
   {
     id: 'tasks',

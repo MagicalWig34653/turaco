@@ -26,6 +26,19 @@ import { RequestFormScreen } from '../modules/catalog/RequestFormScreen';
 import { ProductsScreen } from '../modules/products/ProductsScreen';
 import { RequestDetailScreen } from '../modules/requests/RequestDetailScreen';
 import { RequestsScreen } from '../modules/requests/RequestsScreen';
+import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
+import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
+import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
+import { LedgerScreen } from '../modules/inventory/LedgerScreen';
+import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
+import { ReceiptsScreen } from '../modules/inventory/ReceiptsScreen';
+import { ReservationsScreen } from '../modules/inventory/ReservationsScreen';
+import { StockScreen } from '../modules/inventory/StockScreen';
+import { WarehousesScreen } from '../modules/inventory/WarehousesScreen';
+import { NeedsScreen } from '../modules/procurement/NeedsScreen';
+import { OrderDetailScreen } from '../modules/procurement/OrderDetailScreen';
+import { OrdersScreen } from '../modules/procurement/OrdersScreen';
+import { SuppliersScreen } from '../modules/procurement/SuppliersScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -75,6 +88,34 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <CatalogAdminScreen />;
     case 'allRequests':
       return <RequestsScreen scope="all" />;
+    case 'myAssets':
+      return <MyAssetsScreen />;
+    case 'assets':
+      return <AssetsScreen />;
+    case 'assetNew':
+      return <AssetCreateScreen />;
+    case 'assetDetail':
+      return <AssetDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'stock':
+      return <StockScreen />;
+    case 'warehouses':
+      return <WarehousesScreen />;
+    case 'reservations':
+      return <ReservationsScreen />;
+    case 'ledger':
+      return <LedgerScreen />;
+    case 'receipts':
+      return <ReceiptsScreen />;
+    case 'receiptNew':
+      return <ReceiptCreateScreen />;
+    case 'orders':
+      return <OrdersScreen />;
+    case 'orderDetail':
+      return <OrderDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'procurementRequests':
+      return <NeedsScreen />;
+    case 'suppliers':
+      return <SuppliersScreen />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

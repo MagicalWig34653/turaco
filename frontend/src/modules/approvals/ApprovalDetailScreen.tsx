@@ -5,6 +5,7 @@ import { asApiError, useAsync } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
+import { useSession } from '../../platform/session/SessionProvider';
 import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
@@ -77,8 +78,10 @@ function DecisionDialog({
 
 export function ApprovalDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
+  const { can } = useSession();
   const approval = useAsync((signal) => approvalsApi.get(id, signal), [id]);
-  const subjectId = approval.data?.subjectId;
+  const subjectId =
+    approval.data?.subjectType === 'service_request' ? approval.data.subjectId : undefined;
   const request = useAsync(
     (signal) => (subjectId ? requestsApi.get(subjectId, signal) : Promise.resolve(undefined)),
     [subjectId],
@@ -134,6 +137,17 @@ export function ApprovalDetailScreen({ id }: { id: string }) {
           </>
         ) : null}
       </dl>
+      {current.subjectType === 'purchase_order' ? (
+        <p>
+          {can('procurement.view') || can('procurement.manage') ? (
+            <Link to={`/procurement/orders/${encodeURIComponent(current.subjectId)}`}>
+              {t('approvals.openOrder')}
+            </Link>
+          ) : (
+            t('approvals.orderNoAccess')
+          )}
+        </p>
+      ) : null}
       {request.error ? <ApiErrorAlert error={request.error} onRetry={request.reload} /> : null}
       {request.data ? <RequestDetail request={request.data} onChanged={request.reload} /> : null}
       {dialog ? (

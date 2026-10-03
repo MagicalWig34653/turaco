@@ -32,6 +32,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **AssetAssignment**: historical assignment to User/Team/Location/resource with validity/source. Exclusive primary assignments enforce domain rules.
 
+*Implemented shape (migration 000026, schema `assets`):* `assets.assets` (reference `AST-NNNNNN`, product id, serial number unique per product, asset tag unique, lifecycle status with reason, provisioning status, ownership type `owned|leased|loaned`, supplier/location ids without foreign keys, provenance `source_type/source_id` for goods receipts, purchase/warranty dates, version) and `assets.asset_assignments` (user, team or location assignee, assigned_at/returned_at, one active row per asset).
+
 **Device** specializes Asset with technical identity such as hostname/device type/hardware UUID without duplicating Asset fields.
 
 **DeviceIdentity** stores source identities (serial, BIOS UUID, Intune ID, Agent ID, hardware hash) with first/last seen and confidence, allowing reconciliation into one canonical Device. Ambiguous merges create data-quality findings rather than silent merges.
@@ -40,11 +42,17 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **Warehouse** and **StorageLocation** define inventory placement.
 
+*Implemented shape (migration 000027, schema `inventory`):* `warehouses` (optional Organization Location id), `storage_locations`, `stock_balances` (primary key product + storage location; `on_hand`, `reserved`; check constraints `on_hand >= 0` and `0 <= reserved <= on_hand`), `inventory_transactions` (append-only ledger guarded by a trigger; `on_hand_delta`, `reserved_delta`, group id, reservation, origin, actor, correlation id) and `reservations` (kind quantity or asset, one active reservation per asset by partial unique index). Balances are only changed together with ledger rows in the same transaction; tests reconcile the sums.
+
 **InventoryTransaction** is immutable (`goods_receipt`, `reservation`, `release`, `issue`, `return`, `transfer`, `correction`, `disposal`). Current non-serialized stock balance is a materialized/reconciled view of transactions. Serialized Assets use placement + lifecycle instead of fake quantity rows.
 
 **Reservation** may reserve stock quantity or a serialized Asset for a Service Request/Onboarding/Change/etc. It prevents over-reservation atomically.
 
+*Implemented shape (migration 000028, schema `procurement`):* `suppliers` (name unique case-insensitively, account reference), `procurement_requests` (product, quantity, status, optional origin), `purchase_orders` (reference, supplier, status, currency, sent/closed times) and `purchase_order_lines` (line number, product, quantity, unit price in cents, received quantity bounded by the check `received_quantity <= quantity`, optional procurement request with a unique index so a need is on one line only).
+
 **ProcurementRequest** represents acquisition need. **PurchaseOrder** and **PurchaseOrderLine** record supplier, status, quantities/prices and links to originating needs. Goods Receipt reconciles deliveries and may create Assets.
+
+*Implemented shape (migration 000029):* `inventory.goods_receipts` (reference `GR-NNNNNN`, order and supplier ids, delivery note), `goods_receipt_lines` (order line, product, quantity, storage location for stock) and `goods_receipt_assets`; all three are immutable (trigger).
 
 ## Catalog/requests
 

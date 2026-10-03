@@ -36,6 +36,16 @@ func (w *WorkDirectory) TeamNames(ctx context.Context, ids []string) (map[string
 	return w.app.TeamNames(ctx, ids)
 }
 
+// ActiveLocations returns id -> true for each id that is an active Location.
+func (w *WorkDirectory) ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error) {
+	return w.app.ActiveLocations(ctx, ids)
+}
+
+// LocationNames returns id -> name; unknown ids are absent.
+func (w *WorkDirectory) LocationNames(ctx context.Context, ids []string) (map[string]string, error) {
+	return w.app.LocationNames(ctx, ids)
+}
+
 // CurrentTeamIDs returns the ids of the active Teams the User currently belongs to.
 func (w *WorkDirectory) CurrentTeamIDs(ctx context.Context, userID string) ([]string, error) {
 	return w.app.CurrentTeamIDs(ctx, userID)

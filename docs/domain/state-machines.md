@@ -39,6 +39,8 @@ Endpoint management is separate: `unmanaged | enrollment_pending | managed | man
 
 Assignment creates/closes historical AssetAssignment records. `disposed` is normally terminal.
 
+Implemented (F4, `modules/assets`): an asset exists once goods are received (`ordered` is not a status); manual registration starts in `available` or `received`. Explicit operations and where they start: `make_available` (received, returned), `reserve` / `release_reservation` / `assign_reserved` (only through the Inventory contract; available→reserved, reserved→available, reserved→assigned), `assign` (available), `reassign` (assigned→assigned, closes the old assignment), `return` (assigned→returned), `send_to_repair` (available, returned, assigned; closes an assignment; reason), `finish_repair` (in_repair→available), `retire` (available, returned; reason), `dispose` (retired→disposed; reason; terminal), `mark_lost` (any live status except retired; closes an assignment; reason), `recover` (lost→available; reason). A reason is stored while the asset is in_repair, retired, disposed or lost. At most one assignment is active per asset (partial unique index); every operation is audited and emits `AssetAssigned` (assign, reassign), `AssetReturned` (return) or `AssetStatusChanged`.
+
 ## Service Request
 `draft → submitted → pending_approval? → approved → in_fulfillment ↔ waiting → completed`
 
@@ -61,8 +63,12 @@ Implemented (F3, `modules/requests`): a request is created when submitted (there
 ## Reservation
 `active → fulfilled | released | expired | cancelled`. Terminal reservations are never rewound; create a new reservation.
 
+Implemented (F4, `modules/inventory`): `release` (stock becomes available again / the asset becomes `available`) and `fulfill` (stock is issued / the asset is assigned) from `active`; `expired` and `cancelled` are not produced yet (no expiry, and cancelling by origin arrives with the request integration). Reserving checks availability atomically; an asset has at most one active reservation.
+
 ## Purchase Order
 `draft → approved → sent → acknowledged? → partially_received → received → closed`, with `cancelled` where supplier state allows. Posted Goods Receipt is immutable; corrections use reversal/correction transactions.
+
+Implemented (F4, `modules/procurement`): `submit` (draft → pending_approval, one approver User or Team, creator and submitter excluded), approval via the Approvals module (approved → `approved`; rejected → back to `draft` with the reason `approval_rejected`), `send` (approved → sent), `acknowledge` (sent → acknowledged), receipts booked by Goods Receipt (sent, acknowledged or partially_received → `partially_received` or `received` when every line is complete), `close` (received; or partially_received with a reason, which reopens the procurement requests of undelivered lines) and `cancel` (draft, pending_approval, approved, sent or acknowledged, reason required; reopens linked requests, cancels a pending approval). Lines are edited in `draft` only. A Procurement Request goes `open → ordered` when a line takes it, `ordered → fulfilled` when that line is fully received, back to `open` when the order is cancelled or closed short or the line removed, and `open → cancelled` by hand.
 
 ## Task
 `open → in_progress | blocked | completed | cancelled`; `blocked → open/in_progress`; completed reopen is explicit and audited. Assignment is not state.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatJson,
+  formatMoney,
+  parseMoneyToCents,
   groupPermissions,
   isoToLocalInput,
   isValidRoleKey,
@@ -89,5 +91,23 @@ describe('isoToLocalInput', () => {
     expect(isoToLocalInput(undefined)).toBe('');
     expect(isoToLocalInput('')).toBe('');
     expect(isoToLocalInput('garbage')).toBe('');
+  });
+});
+
+describe('money', () => {
+  it('parses amounts into minor units and rejects anything ambiguous', () => {
+    expect(parseMoneyToCents('12,50')).toBe(1250);
+    expect(parseMoneyToCents('12.5')).toBe(1250);
+    expect(parseMoneyToCents(' 7 ')).toBe(700);
+    expect(parseMoneyToCents('0.05')).toBe(5);
+    for (const bad of ['', 'abc', '-1', '1.234', '1,2,3', '1e5', '1234567890']) {
+      expect(parseMoneyToCents(bad), bad).toBeUndefined();
+    }
+  });
+
+  it('formats minor units with the currency', () => {
+    expect(formatMoney('en', 123456, 'EUR')).toContain('1,234.56');
+    expect(formatMoney('de', 123456, 'EUR')).toContain('1.234,56');
+    expect(formatMoney('en', 100, 'not-a-code')).toBe('1.00 not-a-code');
   });
 });

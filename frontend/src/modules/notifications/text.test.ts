@@ -43,7 +43,7 @@ describe('notificationLink', () => {
     expect(notificationLink({ ...base, linkId: 'a/b' })).toBe('/tasks/a%2Fb');
   });
   it('has no link for unknown targets', () => {
-    expect(notificationLink({ ...base, linkType: 'asset' })).toBeUndefined();
+    expect(notificationLink({ ...base, linkType: 'mystery' })).toBeUndefined();
     expect(notificationLink({ ...base, linkType: null, linkId: null })).toBeUndefined();
   });
 });
