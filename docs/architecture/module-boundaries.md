@@ -15,7 +15,7 @@ The core is a modular monolith. Each domain owns its model, application operatio
 - events/outbox/background job foundations;
 - object/file storage abstraction;
 - notifications/channels/templates/preferences;
-- relationships;
+- relationships (`platform/relationships`: registry of allowed triples registered by modules, bounded traversal; imports no module);
 - global search contracts;
 - secrets/encryption abstractions;
 - tasks/My Work primitives;
@@ -44,7 +44,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Security | advisories, findings, remediation tracking |
 | Infrastructure (`infrastructure`, implemented F7a backend) | buildings/rooms/racks/rack placements/VMs; Sites are Organization Locations referenced by id; Assets are referenced through the `assets` public contract; exposes `infrastructure/public.WhereIs` |
 | Network/IPAM | optional native VLAN/prefix/IP/interface model; decision remains separate |
-| Services | service ownership, criticality, service relationships/status |
+| Services (`services`, implemented F7b backend) | service ownership, criticality, status and dependencies (Relationships `Service DEPENDS_ON ...`); impact view; derives `VM RUNS_ON Asset` from Infrastructure's `VirtualMachineChanged`; uses `infrastructure/public`, `assets/public` and Organization contracts |
 | Changes | changes, risk, approvals, execution/review |
 | Planning | initiatives/modernization/milestones |
 | Briefing | presentation/editorial aggregation; underlying entities remain authoritative |
