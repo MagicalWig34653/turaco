@@ -157,6 +157,7 @@ func main() {
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
+	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)
 	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)

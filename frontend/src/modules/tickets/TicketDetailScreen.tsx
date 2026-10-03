@@ -15,6 +15,7 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
+import { problemsApi } from '../problems/api';
 import { ticketsApi } from './api';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
@@ -113,6 +114,11 @@ export function TicketDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can, session } = useSession();
   const loaded = useAsync((signal) => ticketsApi.get(id, signal), [id]);
+  const staffReader = can('tickets.view') || can('tickets.manage');
+  const known = useAsync(
+    async (signal) => (staffReader ? (await problemsApi.knownErrors(id, signal)).items : []),
+    [id, staffReader],
+  );
   const [dialog, setDialog] = useState<{
     kind: 'text' | 'wait' | 'assign';
     op?: TicketOperation;
@@ -266,6 +272,21 @@ export function TicketDetailScreen({ id }: { id: string }) {
         <dt>{t('tickets.fact.created')}</dt>
         <dd>{formatDateTime(locale, ticket.createdAt)}</dd>
       </dl>
+      {known.data && known.data.length > 0 ? (
+        <section>
+          <h2>{t('tickets.section.knownErrors')}</h2>
+          <ul className="plain-list">
+            {known.data.map((k) => (
+              <li key={k.id}>
+                <Link to={`/problems/${encodeURIComponent(k.id)}`}>
+                  {k.reference} · {k.title}
+                </Link>
+                <p className="preline">{k.workaround}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {ticket.description ? (
         <section>
           <h2>{t('tickets.field.description')}</h2>

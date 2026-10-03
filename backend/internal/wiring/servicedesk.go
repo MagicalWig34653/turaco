@@ -32,6 +32,11 @@ func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
 	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool))
 }
 
+// Problems builds the Problem service.
+func Problems(pool *pgxpool.Pool) *servicedeskapp.ProblemService {
+	return servicedeskapp.NewProblemService(servicedeskrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)))
+}
+
 // ServiceDesk builds the ticket service over the other modules' public contracts.
 func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))

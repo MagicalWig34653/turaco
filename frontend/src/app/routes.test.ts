@@ -234,3 +234,12 @@ describe('incidents', () => {
     expect(matchRoute(appRoutes, '/incidents/7')?.route.id).toBe('incidentDetail');
   });
 });
+
+describe('problems', () => {
+  it('shows problems to ticket staff and matches the detail route', () => {
+    expect(ids([], 'logistics')).toEqual([]);
+    expect(ids(['tickets.view'], 'logistics')).toContain('problems');
+    expect(ids(['problems.manage'], 'logistics')).toEqual(['problems']);
+    expect(matchRoute(appRoutes, '/problems/7')?.route.id).toBe('problemDetail');
+  });
+});

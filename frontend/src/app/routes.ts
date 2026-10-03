@@ -42,6 +42,8 @@ export type RouteId =
   | 'articleDetail'
   | 'incidents'
   | 'incidentDetail'
+  | 'problems'
+  | 'problemDetail'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -219,6 +221,19 @@ export const appRoutes: readonly AppRoute[] = [
   { id: 'articleDetail', pattern: '/knowledge/:id', titleKey: 'knowledge.detail.title' },
   { id: 'incidents', pattern: '/incidents', titleKey: 'nav.incidents', nav: 'main' },
   { id: 'incidentDetail', pattern: '/incidents/:id', titleKey: 'incidents.detail.title' },
+  {
+    id: 'problems',
+    pattern: '/problems',
+    titleKey: 'nav.problems',
+    requiresAny: ['tickets.view', 'tickets.manage', 'problems.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'problemDetail',
+    pattern: '/problems/:id',
+    titleKey: 'problems.detail.title',
+    requiresAny: ['tickets.view', 'tickets.manage', 'problems.manage'],
+  },
   {
     id: 'tasks',
     pattern: '/tasks',

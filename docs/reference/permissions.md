@@ -26,6 +26,7 @@
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
+| `problems.manage` | elevated | Open Problems, record cause, workaround and resolution, mark Known Errors and link tickets. Reading problems needs tickets.view or tickets.manage. |
 | `procurement.manage` | elevated | Manage suppliers and procurement requests; create, submit for approval, send, cancel and close purchase orders. |
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |
 | `products.manage` | elevated | Create and change products, manufacturers and product categories. |
