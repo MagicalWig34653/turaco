@@ -14,6 +14,10 @@ type Product struct {
 	Name       string
 	Active     bool
 	CategoryID *string
+	// Serialized products become one Asset per unit; StockManaged and AssetManaged say how a unit is tracked.
+	Serialized   bool
+	StockManaged bool
+	AssetManaged bool
 }
 
 // Reader loads products by id (implemented by the repository).
@@ -38,7 +42,8 @@ func (d *Directory) Products(ctx context.Context, ids []string) (map[string]Prod
 	}
 	byID := make(map[string]Product, len(found))
 	for _, p := range found {
-		byID[p.ID] = Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID}
+		byID[p.ID] = Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID,
+			Serialized: p.Serialized, StockManaged: p.StockManaged, AssetManaged: p.AssetManaged}
 	}
 	// Callers look products up by the id they passed in, whatever its letter case.
 	out := make(map[string]Product, len(ids))

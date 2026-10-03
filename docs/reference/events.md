@@ -6,8 +6,10 @@
 |---|---:|---|---|
 | `ApprovalDecided` | 1 | approvals | An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision. |
 | `ApprovalRequested` | 1 | approvals | An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex. |
-| `AssetAssigned` | 1 | assets | An asset assignment became active. |
-| `AssetCreated` | 1 | assets | A new asset was registered. |
+| `AssetAssigned` | 1 | assets | An asset assignment became active. Payload: assetId, status, operation, assigneeType, assigneeId. |
+| `AssetCreated` | 1 | assets | A new asset was registered. Payload: assetId, productId. |
+| `AssetReturned` | 1 | assets | An assigned asset was returned. Payload: assetId, status, operation, assigneeType, assigneeId (previous assignee). |
+| `AssetStatusChanged` | 1 | assets | An asset changed lifecycle status other than by assignment or return. Payload: assetId, status, operation. |
 | `BriefingItemPublished` | 1 | briefing | A manual IT Briefing item was published. Payload: itemId, severity. |
 | `ChangeScheduled` | 1 | changes | A change received an execution schedule. |
 | `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |

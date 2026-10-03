@@ -55,6 +55,26 @@ func (r *Repository) ActiveTeams(ctx context.Context, ids []string) (map[string]
 	return out, nil
 }
 
+func (r *Repository) ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM organization.locations WHERE id = ANY($1::text[]::uuid[]) AND active`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("active locations: %w", err)
+	}
+	active, err := collectStrings(rows, "active locations")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(active))
+	for _, id := range active {
+		out[id] = true
+	}
+	return out, nil
+}
+
+func (r *Repository) LocationNames(ctx context.Context, ids []string) (map[string]string, error) {
+	return r.idNameMap(ctx, `SELECT id::text, name FROM organization.locations WHERE id = ANY($1::text[]::uuid[])`, "location names", ids)
+}
+
 func (r *Repository) CurrentTeamIDs(ctx context.Context, userID string) ([]string, error) {
 	var rows pgx.Rows
 	rows, err := r.pool.Query(ctx, `

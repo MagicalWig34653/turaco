@@ -32,6 +32,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **AssetAssignment**: historical assignment to User/Team/Location/resource with validity/source. Exclusive primary assignments enforce domain rules.
 
+*Implemented shape (migration 000026, schema `assets`):* `assets.assets` (reference `AST-NNNNNN`, product id, serial number unique per product, asset tag unique, lifecycle status with reason, provisioning status, ownership type `owned|leased|loaned`, supplier/location ids without foreign keys, provenance `source_type/source_id` for goods receipts, purchase/warranty dates, version) and `assets.asset_assignments` (user, team or location assignee, assigned_at/returned_at, one active row per asset).
+
 **Device** specializes Asset with technical identity such as hostname/device type/hardware UUID without duplicating Asset fields.
 
 **DeviceIdentity** stores source identities (serial, BIOS UUID, Intune ID, Agent ID, hardware hash) with first/last seen and confidence, allowing reconciliation into one canonical Device. Ambiguous merges create data-quality findings rather than silent merges.

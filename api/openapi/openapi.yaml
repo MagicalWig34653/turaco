@@ -1632,6 +1632,450 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /assets:
+    get:
+      operationId: listAssets
+      summary: List assets.
+      description: "Needs `assets.view` or `assets.manage`. Filters combine; `q` matches the reference, serial number or asset tag by prefix. Keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [received, available, reserved, assigned, returned, in_repair, retired, disposed, lost]}
+        - name: productId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: assigneeId
+          in: query
+          description: Active assignment to this User, Team or Location
+          schema: {type: string, format: uuid}
+        - name: locationId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetList'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createAsset
+      summary: Register an asset.
+      description: "Needs `assets.manage`. Registers existing equipment (status `available`, or `received` to still check it). The product must be active and asset-managed; serialized products need a serial number. Audited (assets.asset.created); emits AssetCreated."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetCreate'
+      responses:
+        '201':
+          description: The created asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/lookup:
+    get:
+      operationId: lookupAsset
+      summary: Find an asset by a scanned code.
+      description: "Needs `assets.view` or `assets.manage`. Matches the asset tag, serial number or reference exactly (case-insensitive). 409 assets.conflict when a serial number is shared by several products."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: code
+          in: query
+          schema: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '200':
+          description: The asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /my-assets:
+    get:
+      operationId: listMyAssets
+      summary: List the assets assigned to me.
+      description: "Any signed-in user; ownership is the rule. Lists assets with an active assignment to the caller."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetList'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}:
+    get:
+      operationId: getAsset
+      summary: Get an asset.
+      description: "With `assets.view` any asset, with assignment history. The User an asset is currently assigned to also reads it (current assignment only, no allowed operations); everybody else gets 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetDetail'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateAsset
+      summary: Change descriptive fields.
+      description: "Needs `assets.manage`. `expectedVersion` is required. Not for disposed assets. Notes are not copied into the audit log."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetUpdate'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/provisioning:
+    post:
+      operationId: setAssetProvisioning
+      summary: Set the provisioning status.
+      description: "Needs `assets.manage`. Provisioning is separate from the lifecycle."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetProvisioning'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/make-available:
+    post:
+      operationId: makeAssetAvailable
+      summary: Make available.
+      description: "Needs `assets.manage`. Allowed from: received or returned. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/assign:
+    post:
+      operationId: assignAsset
+      summary: Assign.
+      description: "Needs `assets.manage`. Allowed from: available; needs assigneeType and assigneeId. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/reassign:
+    post:
+      operationId: reassignAsset
+      summary: Reassign.
+      description: "Needs `assets.manage`. Allowed from: assigned; closes the current assignment and opens a new one. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/return:
+    post:
+      operationId: returnAsset
+      summary: Return.
+      description: "Needs `assets.manage`. Allowed from: assigned; closes the assignment. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/send-to-repair:
+    post:
+      operationId: sendAssetToRepair
+      summary: Send to repair.
+      description: "Needs `assets.manage`. Allowed from: available, returned or assigned; reason required; closes an assignment. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/finish-repair:
+    post:
+      operationId: finishAssetRepair
+      summary: Finish repair.
+      description: "Needs `assets.manage`. Allowed from: in_repair. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/retire:
+    post:
+      operationId: retireAsset
+      summary: Retire.
+      description: "Needs `assets.manage`. Allowed from: available or returned; reason required. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/dispose:
+    post:
+      operationId: disposeAsset
+      summary: Dispose.
+      description: "Needs `assets.manage`. Allowed from: retired; reason required; terminal. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/mark-lost:
+    post:
+      operationId: markAssetLost
+      summary: Mark lost.
+      description: "Needs `assets.manage`. Allowed from: any live status except retired; reason required; closes an assignment. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/recover:
+    post:
+      operationId: recoverAsset
+      summary: Recover a lost asset.
+      description: "Needs `assets.manage`. Allowed from: lost; reason required. Audited (assets.asset.*) with the reason; emits AssetAssigned, AssetReturned or AssetStatusChanged. 409 assets.invalid_transition otherwise."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetTransition'
+      responses:
+        '200':
+          description: The updated asset.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Asset'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '404': {$ref: '#/components/responses/AssetsNotFound'}
+        '409': {$ref: '#/components/responses/AssetsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -2566,6 +3010,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    AssetsInvalid:
+      description: Invalid input (assets.invalid_request, assets.assignee_invalid, assets.product_invalid, assets.invalid_reference, assets.invalid_cursor, assets.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AssetsNotFound:
+      description: Not found or not visible to the caller (assets.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AssetsConflict:
+      description: Conflict (assets.conflict, assets.invalid_transition, assets.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -3190,6 +3652,113 @@ components:
         actions:
           type: array
           items: {type: string, enum: [cancel, put_on_hold, resume, complete]}
+    Asset:
+      type: object
+      additionalProperties: false
+      required: [id, reference, productId, serialNumber, assetTag, status, statusReason, provisioningStatus, ownershipType, supplierId, purchasedAt, warrantyUntil, locationId, notes, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as AST-000001."}
+        productId: {type: string, format: uuid}
+        serialNumber: {type: [string, "null"]}
+        assetTag: {type: [string, "null"]}
+        status: {type: string, enum: [received, available, reserved, assigned, returned, in_repair, retired, disposed, lost]}
+        statusReason: {type: [string, "null"]}
+        provisioningStatus: {type: string, enum: [not_required, not_started, pending, in_progress, ready, failed]}
+        ownershipType: {type: string, enum: [owned, leased, loaned]}
+        supplierId: {type: [string, "null"], format: uuid}
+        purchasedAt: {type: [string, "null"], format: date}
+        warrantyUntil: {type: [string, "null"], format: date}
+        locationId: {type: [string, "null"], format: uuid}
+        notes: {type: [string, "null"]}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AssetList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Asset'}
+        nextCursor: {type: string}
+    AssetAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, assigneeType, assigneeId, assignedAt, assignedBy, returnedAt, note]
+      properties:
+        id: {type: string, format: uuid}
+        assigneeType: {type: string, enum: [user, team, location]}
+        assigneeId: {type: string, format: uuid}
+        assignedAt: {type: string, format: date-time}
+        assignedBy: {type: [string, "null"], format: uuid}
+        returnedAt: {type: [string, "null"], format: date-time}
+        note: {type: [string, "null"]}
+    AssetDetail:
+      allOf:
+        - $ref: '#/components/schemas/Asset'
+        - type: object
+          required: [assignments, allowedOperations, names]
+          properties:
+            assignments:
+              type: array
+              items: {$ref: '#/components/schemas/AssetAssignment'}
+            allowedOperations:
+              type: array
+              items: {type: string}
+              description: "Lifecycle operations the caller may perform in the current status (empty without assets.manage)."
+            names:
+              type: object
+              additionalProperties: {type: string}
+              description: "Display names of the users, teams and locations referenced."
+    AssetCreate:
+      type: object
+      additionalProperties: false
+      required: [productId]
+      properties:
+        productId: {type: string, format: uuid}
+        serialNumber: {type: string, maxLength: 100}
+        assetTag: {type: string, maxLength: 50}
+        ownershipType: {type: string, enum: [owned, leased, loaned]}
+        status: {type: string, enum: [available, received]}
+        supplierId: {type: string, format: uuid}
+        purchasedAt: {type: string, format: date}
+        warrantyUntil: {type: string, format: date}
+        locationId: {type: string, format: uuid}
+        notes: {type: string, maxLength: 2000}
+    AssetUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        serialNumber: {type: string, maxLength: 100, description: "Empty clears (not for serialized products)."}
+        assetTag: {type: string, maxLength: 50, description: "Empty clears."}
+        ownershipType: {type: string, enum: [owned, leased, loaned]}
+        purchasedAt: {type: string, format: date}
+        clearPurchasedAt: {type: boolean}
+        warrantyUntil: {type: string, format: date}
+        clearWarrantyUntil: {type: boolean}
+        locationId: {type: string, format: uuid}
+        clearLocation: {type: boolean}
+        notes: {type: string, maxLength: 2000}
+    AssetProvisioning:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [not_required, not_started, pending, in_progress, ready, failed]}
+        expectedVersion: {type: integer, minimum: 1}
+    AssetTransition:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, maxLength: 500}
+        note: {type: string, maxLength: 500}
+        assigneeType: {type: string, enum: [user, team, location]}
+        assigneeId: {type: string, format: uuid}
     TaskCreate:
       type: object
       additionalProperties: false

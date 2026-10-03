@@ -26,11 +26,13 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Endpoint** — Device eligible for endpoint-management capabilities.
 - **Peripheral** — product/asset used with another device; may be serialized or quantity-based.
 - **Asset Tag** — organization-assigned identifier, distinct from manufacturer Serial Number.
+- **Asset Reference** — Turaco's own human identifier of an Asset (`AST-000001`), distinct from serial number and asset tag.
 
 ## Inventory/procurement
 - **Warehouse** — logical inventory boundary.
 - **Storage Location** — specific place within a Warehouse.
 - **Stock Item/Balance** — current quantity view for non-serialized products.
+- **Available stock** — on-hand quantity minus reserved quantity of a Product at a Storage Location.
 - **Inventory Transaction** — immutable stock movement/correction record.
 - **Reservation** — temporary allocation of stock/serialized Asset for future use.
 - **Goods Receipt** — process/record of delivered goods entering inventory.

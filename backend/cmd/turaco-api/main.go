@@ -15,6 +15,8 @@ import (
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	approvalstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/transport"
+	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
+	assetstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/transport"
 	briefingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
 	briefingrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/repository"
 	briefingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/transport"
@@ -147,6 +149,7 @@ func main() {
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
+	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
 		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
@@ -191,5 +194,6 @@ func main() {
 func allCategories() []notifications.Category {
 	out := tasksapp.NotificationCategories()
 	out = append(out, approvalsapp.NotificationCategories()...)
-	return append(out, requestsapp.NotificationCategories()...)
+	out = append(out, requestsapp.NotificationCategories()...)
+	return append(out, assetsapp.NotificationCategories()...)
 }

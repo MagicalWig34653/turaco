@@ -17,6 +17,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
+	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
+	assetsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
@@ -170,6 +172,10 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested); err != nil {
 		return err
 	}
+	assetConsumers := assetsapp.NewConsumers(assetsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	if err := d.Register("AssetAssigned", "assets.notify-assigned", assetConsumers.OnAssetAssigned); err != nil {
+		return err
+	}
 	return registerRequestConsumers(d, wiring.Requests(pool), notifier)
 }
 
@@ -251,7 +257,8 @@ func (a smtpMailer) Send(ctx context.Context, msg notifications.EmailMessage) er
 func allCategories() []notifications.Category {
 	out := tasksapp.NotificationCategories()
 	out = append(out, approvalsapp.NotificationCategories()...)
-	return append(out, requestsapp.NotificationCategories()...)
+	out = append(out, requestsapp.NotificationCategories()...)
+	return append(out, assetsapp.NotificationCategories()...)
 }
 
 // registerRequestConsumers registers the workflow and notification consumers of the Requests module.

@@ -39,6 +39,8 @@ Endpoint management is separate: `unmanaged | enrollment_pending | managed | man
 
 Assignment creates/closes historical AssetAssignment records. `disposed` is normally terminal.
 
+Implemented (F4, `modules/assets`): an asset exists once goods are received (`ordered` is not a status); manual registration starts in `available` or `received`. Explicit operations and where they start: `make_available` (received, returned), `reserve` / `release_reservation` / `assign_reserved` (only through the Inventory contract; available→reserved, reserved→available, reserved→assigned), `assign` (available), `reassign` (assigned→assigned, closes the old assignment), `return` (assigned→returned), `send_to_repair` (available, returned, assigned; closes an assignment; reason), `finish_repair` (in_repair→available), `retire` (available, returned; reason), `dispose` (retired→disposed; reason; terminal), `mark_lost` (any live status except retired; closes an assignment; reason), `recover` (lost→available; reason). A reason is stored while the asset is in_repair, retired, disposed or lost. At most one assignment is active per asset (partial unique index); every operation is audited and emits `AssetAssigned` (assign, reassign), `AssetReturned` (return) or `AssetStatusChanged`.
+
 ## Service Request
 `draft → submitted → pending_approval? → approved → in_fulfillment ↔ waiting → completed`
 
