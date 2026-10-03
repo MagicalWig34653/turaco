@@ -210,7 +210,7 @@ func (r *Repository) StatusesTx(ctx context.Context, tx pgx.Tx, ids []string) (m
 	if len(valid) == 0 {
 		return out, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text, status FROM platform.tasks WHERE id = ANY($1::text[]::uuid[])`, valid)
+	rows, err := tx.Query(ctx, `SELECT id::text, status FROM platform.tasks WHERE id = ANY($1::text[]::uuid[]) ORDER BY id FOR SHARE`, valid)
 	if err != nil {
 		return nil, fmt.Errorf("task statuses: %w", err)
 	}

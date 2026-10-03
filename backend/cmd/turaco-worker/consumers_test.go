@@ -375,8 +375,15 @@ func TestApprovalRequestedNotifiesApproversExceptTheExcluded(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Step 0: a single approver. Step 1: the Team (members: member, inactive, creator); the creator is excluded.
+	// A single approver for one subject and the Team (members: member, inactive, creator) for another;
+	// the creator is excluded. A subject has only one pending step at a time.
 	request(0, approvalsapp.RequestInput{ApproverUserID: &w.assignee, ExcludedUserIDs: []string{w.creator}})
+	if err := w.pool.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&subject); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM approvals.approvals WHERE subject_id = $1::uuid`, subject)
+	})
 	request(1, approvalsapp.RequestInput{ApproverTeamID: &w.team, ExcludedUserIDs: []string{w.creator}})
 	w.dispatch()
 

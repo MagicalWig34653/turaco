@@ -39,10 +39,36 @@ func scan(row pgx.Row) (application.Item, error) {
 	return it, nil
 }
 
-// auditState holds neither title nor definition.
+// auditState holds neither title nor definition text, but the approvers and
+// task assignees (ids only): who may approve or receive work is the part of a
+// definition that changes who can get access, so changing it must be
+// reconstructable.
 func auditState(it application.Item) map[string]any {
+	approvers := make([]string, 0, len(it.Definition.Approvals))
+	for _, a := range it.Definition.Approvals {
+		switch {
+		case a.ApproverUserID != nil:
+			approvers = append(approvers, "user:"+*a.ApproverUserID)
+		case a.ApproverTeamID != nil:
+			approvers = append(approvers, "team:"+*a.ApproverTeamID)
+		default:
+			approvers = append(approvers, a.Approver)
+		}
+	}
+	assignees := make([]string, 0, len(it.Definition.Fulfillment))
+	for _, t := range it.Definition.Fulfillment {
+		switch {
+		case t.AssignedUserID != nil:
+			assignees = append(assignees, "user:"+*t.AssignedUserID)
+		case t.AssignedTeamID != nil:
+			assignees = append(assignees, "team:"+*t.AssignedTeamID)
+		default:
+			assignees = append(assignees, "")
+		}
+	}
 	return map[string]any{"key": it.Key, "active": it.Active, "version": it.Version, "fields": len(it.Definition.Fields),
-		"approvalSteps": len(it.Definition.Approvals), "fulfillmentTasks": len(it.Definition.Fulfillment)}
+		"approvalSteps": len(it.Definition.Approvals), "fulfillmentTasks": len(it.Definition.Fulfillment),
+		"approvers": approvers, "assignees": assignees}
 }
 
 func record(ctx context.Context, tx pgx.Tx, c application.Caller, action, id string, before, after any, meta map[string]any) error {

@@ -450,3 +450,70 @@ func TestSubmitValidation(t *testing.T) {
 		t.Errorf("approver = %s, want the requester's manager", approver)
 	}
 }
+
+func (f *flow) userFieldDef(approvals string) string {
+	return fmt.Sprintf(`{"fields":[{"key":"target","type":"user","label":"Beneficiary","required":true}],"approvals":[%s],"fulfillment":[]}`, approvals)
+}
+
+func (f *flow) submitErr(user, itemID string, a map[string]any) error {
+	_, err := f.svc.Submit(context.Background(), requestsapp.Caller{Actor: audit.UserActor(user), CorrelationID: f.corr},
+		requestsapp.SubmitInput{CatalogItemID: itemID, Answers: a})
+	return err
+}
+
+func TestUsersNamedInAnswersNeverApprove(t *testing.T) {
+	f := newFlow(t)
+	// The approver named themselves as the beneficiary: nobody else could decide, so it is refused.
+	own := f.item("selfaccess", f.userFieldDef(fmt.Sprintf(`{"approverUserId":"%s"}`, f.assignee)))
+	if err := f.submitErr(f.creator, own, map[string]any{"target": f.assignee}); !errors.Is(err, requestsapp.ErrNoEligibleApprover) {
+		t.Errorf("approver named as beneficiary: %v", err)
+	}
+	// A Team whose only eligible members are the requester and the named User cannot decide either.
+	team := f.item("teamaccess", f.userFieldDef(fmt.Sprintf(`{"approverTeamId":"%s"}`, f.team)))
+	if err := f.submitErr(f.creator, team, map[string]any{"target": f.member}); !errors.Is(err, requestsapp.ErrNoEligibleApprover) {
+		t.Errorf("team without an eligible member: %v", err)
+	}
+	// Naming someone else who is not an approver is fine.
+	if err := f.submitErr(f.creator, own, map[string]any{"target": f.outsider}); err != nil {
+		t.Errorf("unrelated beneficiary: %v", err)
+	}
+}
+
+func TestOnePersonCannotDecideTwoSteps(t *testing.T) {
+	f := newFlow(t)
+	approvals := fmt.Sprintf(`{"approverUserId":"%s"},{"approverUserId":"%s"}`, f.assignee, f.assignee)
+	item := f.item("twice", f.def(approvals, `{"title":"Provision"}`))
+	r := f.submit(f.creator, item, answers())
+	f.decide(f.assignee, r.ID, 0, "approve")
+	f.dispatch()
+	// Step 2 has nobody left who may decide: the request ends rejected with a recorded cause
+	// instead of hanging in pending_approval.
+	d := f.get(f.creator, r.ID, false)
+	if d.Request.Status != requestsapp.StatusRejected || d.Request.StatusReason == nil || *d.Request.StatusReason != "no_eligible_approver" {
+		t.Fatalf("request = %+v", d.Request)
+	}
+	if f.notified(f.creator, "request.rejected") != 1 {
+		t.Error("the requester must be told")
+	}
+	var open int
+	_ = f.pool.QueryRow(context.Background(), `SELECT count(*) FROM approvals.approvals WHERE subject_id = $1::uuid AND status = 'pending'`, r.ID).Scan(&open)
+	if open != 0 {
+		t.Errorf("%d approvals still pending", open)
+	}
+}
+
+func TestLongCatalogTitleDoesNotBreakSubmission(t *testing.T) {
+	f := newFlow(t)
+	item := f.item("long", f.def(fmt.Sprintf(`{"approverUserId":"%s"}`, f.assignee), ""))
+	long := make([]rune, 200)
+	for i := range long {
+		long[i] = 'x'
+	}
+	if _, err := f.pool.Exec(context.Background(), `UPDATE catalog.items SET title = $2 WHERE id = $1::uuid`, item, string(long)); err != nil {
+		t.Fatal(err)
+	}
+	r := f.submit(f.creator, item, answers())
+	if r.Status != requestsapp.StatusPendingApproval {
+		t.Errorf("status = %s", r.Status)
+	}
+}

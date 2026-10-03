@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -83,6 +84,19 @@ func (s *Service) RequestInTx(ctx context.Context, tx pgx.Tx, c Caller, in Reque
 			return Approval{}, fmt.Errorf("check approver: %w", err)
 		}
 		if !active[*in.ApproverTeamID] {
+			return Approval{}, ErrApproverInvalid
+		}
+		// A Team nobody in could decide (empty, or only excluded Users) would strand the subject.
+		members, err := s.dir.CurrentMemberIDs(ctx, *in.ApproverTeamID)
+		if err != nil {
+			return Approval{}, fmt.Errorf("check approver team members: %w", err)
+		}
+		candidates := slices.DeleteFunc(slices.Clone(members), func(id string) bool { return slices.Contains(in.ExcludedUserIDs, id) })
+		activeMembers, err := s.dir.ActiveUsers(ctx, candidates)
+		if err != nil {
+			return Approval{}, fmt.Errorf("check approver team members: %w", err)
+		}
+		if !slices.ContainsFunc(candidates, func(id string) bool { return activeMembers[id] }) {
 			return Approval{}, ErrApproverInvalid
 		}
 	}

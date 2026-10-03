@@ -66,7 +66,16 @@ func (r Request) Terminal() bool {
 }
 
 // Label is the short display text used in approvals and notifications.
-func (r Request) Label() string { return r.Reference + " · " + r.CatalogItemTitle }
+func (r Request) Label() string {
+	label := r.Reference + " · " + r.CatalogItemTitle
+	if runes := []rune(label); len(runes) > maxLabel {
+		return string(runes[:maxLabel-1]) + "…"
+	}
+	return label
+}
+
+// maxLabel is the longest subject label the Approvals module accepts.
+const maxLabel = 200
 
 // NewRequest is the input of Store.InsertTx.
 type NewRequest struct {

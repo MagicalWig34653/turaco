@@ -3,7 +3,7 @@ package public
 
 import (
 	"context"
-	"errors"
+	"strings"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
 )
@@ -18,7 +18,7 @@ type Product struct {
 
 // Reader loads products by id (implemented by the repository).
 type Reader interface {
-	GetProduct(ctx context.Context, id string) (application.Product, error)
+	ProductsByIDs(ctx context.Context, ids []string) ([]application.Product, error)
 	ListProducts(ctx context.Context, f application.ProductFilter) (application.Result[application.Product], error)
 	CategoriesByIDs(ctx context.Context, ids []string) (map[string]bool, error)
 }
@@ -32,19 +32,20 @@ func NewDirectory(r Reader) *Directory { return &Directory{r: r} }
 // Products returns id -> Product for existing products; unknown or malformed
 // ids are absent.
 func (d *Directory) Products(ctx context.Context, ids []string) (map[string]Product, error) {
-	out := map[string]Product{}
+	found, err := d.r.ProductsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]Product, len(found))
+	for _, p := range found {
+		byID[p.ID] = Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID}
+	}
+	// Callers look products up by the id they passed in, whatever its letter case.
+	out := make(map[string]Product, len(ids))
 	for _, id := range ids {
-		if _, seen := out[id]; seen {
-			continue
+		if p, ok := byID[strings.ToLower(id)]; ok {
+			out[id] = p
 		}
-		p, err := d.r.GetProduct(ctx, id)
-		if errors.Is(err, application.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		out[id] = Product{ID: p.ID, Name: p.Name, Active: p.Active, CategoryID: p.CategoryID}
 	}
 	return out, nil
 }

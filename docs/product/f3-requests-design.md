@@ -56,6 +56,20 @@ Answers can contain personal data: visible only to the requester, requested-for 
 
 Eligibility/visibility rules per item, cost-based or conditional approvals, approval expiry/delegation, product variants, stock reservation, procurement, asset assignment, software deployment, access connectors, request search beyond list filters.
 
+## 11a. Review outcomes and known limitations (2026-10-03)
+
+Fixed after the security and database reviews: every User named in a `user` answer and everyone who decided an earlier step is excluded from deciding later steps; an approver Team needs at least one active eligible member; only the next approval step is resolved when a step is approved and a step nobody could decide rejects the request with the cause `no_eligible_approver` (audited) instead of failing the event; transient errors retry normally; long catalog titles no longer break the approval label; the reference number no longer truncates after 999,999; submissions record the catalog item and requested-for User in the audit trail; catalog changes record approvers and task assignees (ids); product lookups are batched; one pending approval per subject and a task context index are enforced by migration 000025; the pool has a minimum size because workflows read through the pool while holding a transaction.
+
+Accepted, documented limitations:
+
+- `TaskCompleted` feeds the task notification and the request completion in one claim transaction (ADR-0024): a permanently failing consumer blocks both for that event.
+- A request whose advance event fails after all attempts stays `pending_approval`; there is no reconciliation job yet (only `requests.manage` can cancel it).
+- Requesters and requested-for Users see the approval steps (approver ids, comments) and fulfillment task titles of their own request; this is intended transparency, not a reduced view.
+- No per-user submit rate limit; a Team-approved item notifies up to 500 members per submission.
+- Request lists load the stored definition and answers although only a summary is shown.
+- Reopening a task of a completed or cancelled request creates orphan work that nothing reacts to.
+- `platform/safetext` does not yet block every invisible format character.
+
 ## 12. Slices
 
 0. Notification category registry. 1. Products. 2. Tasks creation contract and task context. 3. Approvals. 4. Catalog. 5. Requests. 6. UI (catalog admin, employee catalog and request form, my requests, approval inbox, request management). 7. Demo seed and example definitions. Then reviews.

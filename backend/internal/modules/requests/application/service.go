@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -104,33 +105,44 @@ type resolvedStep struct {
 	team *string
 }
 
-// resolveSteps reduces every approval step of the snapshot to a concrete
-// approver and refuses steps nobody eligible could decide (the requester and
-// the requested-for User never decide).
-func (s *Service) resolveSteps(ctx context.Context, d catalogpublic.Definition, requester, requestedFor string) ([]resolvedStep, error) {
-	steps := make([]resolvedStep, 0, len(d.Approvals))
-	for i, st := range d.Approvals {
-		switch {
-		case st.ApproverTeamID != nil:
-			steps = append(steps, resolvedStep{team: st.ApproverTeamID})
-		case st.ApproverUserID != nil:
-			if *st.ApproverUserID == requester || *st.ApproverUserID == requestedFor {
-				return nil, fmt.Errorf("%w: step %d approver is the requester", ErrNoEligibleApprover, i+1)
-			}
-			steps = append(steps, resolvedStep{user: st.ApproverUserID})
-		case st.Approver == "manager":
-			m, err := s.dir.ManagerIDs(ctx, []string{requestedFor})
-			if err != nil {
-				return nil, fmt.Errorf("resolve manager: %w", err)
-			}
-			manager, ok := m[requestedFor]
-			if !ok || manager == requester || manager == requestedFor {
-				return nil, fmt.Errorf("%w: step %d needs a manager other than the requester", ErrNoEligibleApprover, i+1)
-			}
-			steps = append(steps, resolvedStep{user: &manager})
-		default:
-			return nil, fmt.Errorf("%w: step %d has no approver", ErrNoEligibleApprover, i+1)
+// resolveStep reduces one approval step of the snapshot to a concrete
+// approver and refuses a step nobody eligible could decide. Excluded Users
+// (requester, requested-for, Users named in answers, earlier deciders) never
+// decide.
+func (s *Service) resolveStep(ctx context.Context, d catalogpublic.Definition, i int, requestedFor string, excluded []string) (resolvedStep, error) {
+	st := d.Approvals[i]
+	switch {
+	case st.ApproverTeamID != nil:
+		return resolvedStep{team: st.ApproverTeamID}, nil
+	case st.ApproverUserID != nil:
+		if slices.Contains(excluded, *st.ApproverUserID) {
+			return resolvedStep{}, fmt.Errorf("%w: step %d approver may not decide this request", ErrNoEligibleApprover, i+1)
 		}
+		return resolvedStep{user: st.ApproverUserID}, nil
+	case st.Approver == "manager":
+		m, err := s.dir.ManagerIDs(ctx, []string{requestedFor})
+		if err != nil {
+			return resolvedStep{}, fmt.Errorf("resolve manager: %w", err)
+		}
+		manager, ok := m[requestedFor]
+		if !ok || slices.Contains(excluded, manager) {
+			return resolvedStep{}, fmt.Errorf("%w: step %d needs a manager who may decide this request", ErrNoEligibleApprover, i+1)
+		}
+		return resolvedStep{user: &manager}, nil
+	}
+	return resolvedStep{}, fmt.Errorf("%w: step %d has no approver", ErrNoEligibleApprover, i+1)
+}
+
+// resolveAll checks every step at submission so an impossible chain is
+// refused up front; later steps are resolved again when they start.
+func (s *Service) resolveAll(ctx context.Context, d catalogpublic.Definition, requestedFor string, excluded []string) ([]resolvedStep, error) {
+	steps := make([]resolvedStep, 0, len(d.Approvals))
+	for i := range d.Approvals {
+		st, err := s.resolveStep(ctx, d, i, requestedFor, excluded)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, st)
 	}
 	return steps, nil
 }
@@ -175,7 +187,8 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 	if err != nil {
 		return Request{}, err
 	}
-	steps, err := s.resolveSteps(ctx, sub.Definition, requester, requestedFor)
+	excluded := excludedUsers(requester, requestedFor, refs, nil)
+	steps, err := s.resolveAll(ctx, sub.Definition, requestedFor, excluded)
 	if err != nil {
 		return Request{}, err
 	}
@@ -197,14 +210,14 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 		if err := s.store.AddReferencesTx(ctx, tx, r.ID, refs); err != nil {
 			return err
 		}
-		if err := s.record(ctx, tx, c, "requests.request.submitted", nil, &r, nil); err != nil {
+		if err := s.record(ctx, tx, c, "requests.request.submitted", nil, &r, map[string]any{"catalogItemId": sub.ID, "requestedForId": requestedFor}); err != nil {
 			return err
 		}
 		if err := publish(ctx, tx, c, "ServiceRequestSubmitted", map[string]any{"requestId": r.ID}); err != nil {
 			return err
 		}
 		if len(steps) > 0 {
-			if err := s.requestApproval(ctx, tx, c, r, 0, steps[0]); err != nil {
+			if err := s.requestApproval(ctx, tx, c, r, 0, steps[0], excluded); err != nil {
 				return err
 			}
 			out = r
@@ -219,21 +232,41 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 	return out, nil
 }
 
-func (s *Service) requestApproval(ctx context.Context, tx pgx.Tx, c Caller, r Request, step int, st resolvedStep) error {
+func (s *Service) requestApproval(ctx context.Context, tx pgx.Tx, c Caller, r Request, step int, st resolvedStep, excluded []string) error {
 	requester := r.RequesterID
 	_, err := s.approvals.RequestInTx(ctx, tx, approvalsCaller(c), approvalspublic.Request{
 		SubjectType: SubjectType, SubjectID: r.ID, SubjectLabel: r.Label(), StepIndex: step,
 		ApproverUserID: st.user, ApproverTeamID: st.team,
-		ExcludedUserIDs: excludedUsers(r), RequestedBy: &requester,
+		ExcludedUserIDs: excluded, RequestedBy: &requester,
 	})
+	var invalid *approvalspublic.InvalidInputError
+	if errors.Is(err, approvalspublic.ErrApproverInvalid) || errors.As(err, &invalid) {
+		return fmt.Errorf("%w: %v", ErrNoEligibleApprover, err)
+	}
 	return err
 }
 
-func excludedUsers(r Request) []string {
-	if r.RequestedForID == r.RequesterID {
-		return []string{r.RequesterID}
+// excludedUsers lists everyone who may never decide an approval of the
+// request: the requester, the requested-for User, every User named in an
+// answer (so nobody approves their own access through a "target user" field)
+// and everyone who decided an earlier step (four eyes across steps).
+func excludedUsers(requester, requestedFor string, refs []catalogpublic.Reference, decidedEarlier []string) []string {
+	out := []string{requester}
+	add := func(id string) {
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
 	}
-	return []string{r.RequesterID, r.RequestedForID}
+	add(requestedFor)
+	for _, ref := range refs {
+		if ref.Type == "user" {
+			add(strings.ToLower(ref.ID))
+		}
+	}
+	for _, id := range decidedEarlier {
+		add(id)
+	}
+	return out
 }
 
 // startFulfillment moves an approved (or approval-free) request into
@@ -293,6 +326,9 @@ func (s *Service) startFulfillment(ctx context.Context, tx pgx.Tx, c Caller, r R
 		return Request{}, err
 	}
 	meta := map[string]any{"tasks": len(r.Definition.Fulfillment)}
+	if len(r.Definition.Approvals) == 0 {
+		meta["cause"] = "no_approval_steps"
+	}
 	if err := s.record(ctx, tx, Caller{Actor: systemActor, CorrelationID: c.CorrelationID}, "requests.request.approved", &before, &out, meta); err != nil {
 		return Request{}, err
 	}
@@ -338,36 +374,89 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 		return nil
 	}
 	c := Caller{Actor: systemActor, CorrelationID: ev.CorrelationID}
-	before := r
-	if p.Decision == "reject" {
-		r.Status, r.CurrentStep = StatusRejected, nil
-		out, err := s.store.UpdateTx(ctx, tx, r)
-		if err != nil {
-			return err
-		}
-		if err := s.record(ctx, tx, c, "requests.request.rejected", &before, &out, nil); err != nil {
-			return err
-		}
-		return publish(ctx, tx, c, "ServiceRequestRejected", map[string]any{"requestId": r.ID})
+	switch p.Decision {
+	case "reject":
+		return s.reject(ctx, tx, c, r, "")
+	case "approve":
+	default:
+		return events.Permanent(fmt.Errorf("approval decision %q of %s is unknown", p.Decision, r.Reference))
 	}
 	next := p.StepIndex + 1
 	if next >= len(r.Definition.Approvals) {
 		_, err := s.startFulfillment(ctx, tx, c, r)
 		return err
 	}
-	steps, err := s.resolveSteps(ctx, r.Definition, r.RequesterID, r.RequestedForID)
+	excluded, err := s.excludedForNextStep(ctx, r)
 	if err != nil {
-		return events.Permanent(fmt.Errorf("resolve next approval step of %s: %w", r.Reference, err))
+		return err
 	}
+	step, err := s.resolveStep(ctx, r.Definition, next, r.RequestedForID, excluded)
+	if errors.Is(err, ErrNoEligibleApprover) {
+		return s.reject(ctx, tx, c, r, "no_eligible_approver")
+	}
+	if err != nil {
+		return err
+	}
+	before := r
 	r.CurrentStep = &next
 	out, err := s.store.UpdateTx(ctx, tx, r)
 	if err != nil {
 		return err
 	}
-	if err := s.requestApproval(ctx, tx, c, out, next, steps[next]); err != nil {
-		return events.Permanent(fmt.Errorf("request next approval step of %s: %w", r.Reference, err))
+	if err := s.requestApproval(ctx, tx, c, out, next, step, excluded); err != nil {
+		if errors.Is(err, ErrNoEligibleApprover) {
+			// Approvals refused the step before writing, so rejecting the updated row is consistent.
+			return s.reject(ctx, tx, c, out, "no_eligible_approver")
+		}
+		return err
 	}
 	return s.record(ctx, tx, c, "requests.request.approval_step_advanced", &before, &out, map[string]any{"step": next})
+}
+
+// excludedForNextStep reads the answers' User references and the deciders of
+// the earlier steps.
+func (s *Service) excludedForNextStep(ctx context.Context, r Request) ([]string, error) {
+	refs, err := s.store.References(ctx, r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load references: %w", err)
+	}
+	approvals, err := s.approvals.ForSubject(ctx, SubjectType, r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load approvals: %w", err)
+	}
+	var decided []string
+	for _, a := range approvals {
+		if a.DecidedByUserID != nil {
+			decided = append(decided, strings.ToLower(*a.DecidedByUserID))
+		}
+	}
+	return excludedUsers(r.RequesterID, r.RequestedForID, refs, decided), nil
+}
+
+// reject ends a pending request. cause is empty for a rejection by an
+// approver; otherwise the system rejects it and records why (for example no
+// eligible approver for a later step), so the request never gets stuck.
+func (s *Service) reject(ctx context.Context, tx pgx.Tx, c Caller, r Request, cause string) error {
+	before := r
+	r.Status, r.CurrentStep = StatusRejected, nil
+	meta := map[string]any(nil)
+	if cause != "" {
+		r.StatusReason = &cause
+		meta = map[string]any{"cause": cause}
+	}
+	out, err := s.store.UpdateTx(ctx, tx, r)
+	if err != nil {
+		return err
+	}
+	if cause != "" {
+		if _, err := s.approvals.CancelBySubjectInTx(ctx, tx, approvalsCaller(c), SubjectType, r.ID); err != nil {
+			return err
+		}
+	}
+	if err := s.record(ctx, tx, c, "requests.request.rejected", &before, &out, meta); err != nil {
+		return err
+	}
+	return publish(ctx, tx, c, "ServiceRequestRejected", map[string]any{"requestId": r.ID})
 }
 
 // ApprovalDecidedPayload is the payload of the ApprovalDecided event.
@@ -499,7 +588,7 @@ func (s *Service) Cancel(ctx context.Context, c Caller, p Principal, id string, 
 		if _, err := s.approvals.CancelBySubjectInTx(ctx, tx, approvalsCaller(c), SubjectType, r.ID); err != nil {
 			return Request{}, fmt.Errorf("cancel approvals: %w", err)
 		}
-		if _, err := s.tasks.CancelByContextInTx(ctx, tx, tasksCaller(c), SubjectType, r.ID, "request cancelled: "+reason); err != nil {
+		if _, err := s.tasks.CancelByContextInTx(ctx, tx, tasksCaller(c), SubjectType, r.ID, "request cancelled: "+truncateRunes(reason, 400)); err != nil {
 			return Request{}, fmt.Errorf("cancel tasks: %w", err)
 		}
 		r.Status, r.CurrentStep, r.WaitingReason, r.StatusReason = StatusCancelled, nil, nil, &reason
@@ -562,13 +651,19 @@ func (s *Service) Resume(ctx context.Context, c Caller, p Principal, id string, 
 		if err != nil {
 			return Request{}, err
 		}
+		if err := s.record(ctx, tx, c, "requests.request.resumed", &before, &out, nil); err != nil {
+			return Request{}, err
+		}
 		if done, err := s.fulfillmentDone(ctx, tx, out); err != nil {
 			return Request{}, err
 		} else if done {
 			// Tasks finished while the request waited: nothing reacted, so complete now.
-			return out, s.complete(ctx, tx, Caller{Actor: systemActor, CorrelationID: c.CorrelationID}, out, map[string]any{"cause": "tasks_completed"})
+			if err := s.complete(ctx, tx, Caller{Actor: systemActor, CorrelationID: c.CorrelationID}, out, map[string]any{"cause": "tasks_completed"}); err != nil {
+				return Request{}, err
+			}
+			return s.store.LockTx(ctx, tx, r.ID)
 		}
-		return out, s.record(ctx, tx, c, "requests.request.resumed", &before, &out, nil)
+		return out, nil
 	})
 }
 
@@ -616,11 +711,17 @@ func (s *Service) Complete(ctx context.Context, c Caller, p Principal, id string
 			}
 			meta["reason"] = cleaned
 		}
-		before := r
-		_ = before
 		if err := s.complete(ctx, tx, c, r, meta); err != nil {
 			return Request{}, err
 		}
 		return s.store.LockTx(ctx, tx, r.ID)
 	})
+}
+
+// truncateRunes shortens text to at most n runes so a prefixed reason stays within the Tasks limit.
+func truncateRunes(text string, n int) string {
+	if runes := []rune(text); len(runes) > n {
+		return string(runes[:n])
+	}
+	return text
 }

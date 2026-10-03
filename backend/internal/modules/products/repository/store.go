@@ -276,6 +276,33 @@ func (r *Repository) InsertProduct(ctx context.Context, c application.Caller, n 
 	return out, err
 }
 
+// ProductsByIDs returns the existing products among ids in one query; malformed ids are skipped.
+func (r *Repository) ProductsByIDs(ctx context.Context, ids []string) ([]application.Product, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+productCols+` FROM products.products WHERE id = ANY($1::text[]::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("products by ids: %w", err)
+	}
+	defer rows.Close()
+	var out []application.Product
+	for rows.Next() {
+		p, err := scanProduct(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan product: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) GetProduct(ctx context.Context, id string) (application.Product, error) {
 	if !validUUID(id) {
 		return application.Product{}, application.ErrNotFound
