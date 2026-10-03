@@ -1383,6 +1383,10 @@ export const en = {
   'management.reason.filter_missing': 'Filter missing',
   'management.reason.filter_input_missing': 'Filter input missing',
   'management.reason.inputs_stale': 'Inputs stale',
+  'management.reason.memberships_unknown': 'Group memberships not synced',
+  'management.reason.inputs_truncated': 'Inputs truncated at the lookup limit',
+  'management.reason.mixed_origin_exclusion':
+    'Exclusion of a different origin (User vs. Device group)',
 } as const;
 
 export type MessageKey = keyof typeof en;

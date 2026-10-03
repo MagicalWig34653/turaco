@@ -8085,7 +8085,7 @@ components:
     UserManagementView:
       type: object
       additionalProperties: false
-      required: [userId, name, items, devicesShown, devicesTruncated]
+      required: [userId, name, items, devicesShown, devicesTruncated, truncated]
       properties:
         userId: {type: string, format: uuid}
         name: {type: string}
@@ -8093,6 +8093,7 @@ components:
         nextCursor: {type: string}
         devicesShown: {type: boolean}
         devicesTruncated: {type: boolean}
+        truncated: {type: boolean, description: "True when the User's memberships or the group nesting were cut; the artifact list may be incomplete and group-targeted results are unknown."}
     ArtifactTargetsView:
       type: object
       additionalProperties: false

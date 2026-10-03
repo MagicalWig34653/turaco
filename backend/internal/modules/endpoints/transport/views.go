@@ -256,7 +256,9 @@ func (h *handler) userManagement(w http.ResponseWriter, r *http.Request) {
 		NextCursor       string `json:"nextCursor,omitempty"`
 		DevicesShown     bool   `json:"devicesShown"`
 		DevicesTruncated bool   `json:"devicesTruncated"`
-	}{UserID: u.UserID, Name: u.Name, Items: make([]item, 0, len(u.Items)), NextCursor: u.NextCursor, DevicesShown: u.DevicesShown, DevicesTruncated: u.DevicesTruncated}
+		Truncated        bool   `json:"truncated"`
+	}{UserID: u.UserID, Name: u.Name, Items: make([]item, 0, len(u.Items)), NextCursor: u.NextCursor, DevicesShown: u.DevicesShown, DevicesTruncated: u.DevicesTruncated,
+		Truncated: u.Truncated}
 	for _, it := range u.Items {
 		d := item{Artifact: toArtifact(it.Artifact), Targeting: toAssignedTargets(it.Targeting), UserResult: it.UserResult, Devices: make([]device, 0, len(it.Devices))}
 		for _, x := range it.Devices {

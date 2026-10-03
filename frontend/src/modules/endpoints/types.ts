@@ -301,6 +301,7 @@ export type UserManagement = {
   nextCursor?: string;
   devicesShown: boolean;
   devicesTruncated: boolean;
+  truncated: boolean;
 };
 export type ArtifactTargets = {
   artifact: ManagementArtifact;

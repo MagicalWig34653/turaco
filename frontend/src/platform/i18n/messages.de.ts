@@ -1407,4 +1407,8 @@ export const de: Record<MessageKey, string> = {
   'management.reason.filter_missing': 'Filter fehlt',
   'management.reason.filter_input_missing': 'Filtereingabe fehlt',
   'management.reason.inputs_stale': 'Eingaben veraltet',
+  'management.reason.memberships_unknown': 'Gruppenmitgliedschaften nicht synchronisiert',
+  'management.reason.inputs_truncated': 'Eingaben am Abfragelimit abgeschnitten',
+  'management.reason.mixed_origin_exclusion':
+    'Ausschluss anderer Herkunft (Benutzer- vs. Gerätegruppe)',
 };

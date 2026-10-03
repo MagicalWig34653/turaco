@@ -97,7 +97,7 @@ Accepted limitations: the provider read loads the whole snapshot into memory, so
 
 ## Slice 3 status
 
-Backend implemented (no migration, no new tables, no frontend, no provider calls). Everything is computed on demand from local normalized data.
+Backend implemented (migration 000041 only adds read indexes; no new tables, no frontend, no provider calls). Everything is computed on demand from local normalized data.
 
 - Evaluator: pure package `endpoints/application/evaluation`, table-tested. Inputs: current assignments, the Device's provider-group memberships, the Device's primary User (holder of the linked Asset, via the Assets public contract `UserHolders`), the User's Directory Group memberships and group nesting (Organization public contract `DirectoryGraph`, bounded lookups, current intervals only). Include/exclude with exclusion winning, `all_devices`, `all_users`, nested groups (shortest trace), origin `device` vs `user`. Results: `applicable`, `excluded`, `not_applicable`, `unknown`; confidence `high|medium|low`; reasons are stable codes (`included_by_assignment`, `exclusion_overrides_include`, `user_unknown`, `inputs_stale`, `filter_unsupported`, ...). Unknown input (no User, unsupported/missing filter, missing filter input) yields `unknown`, never `not_applicable`. Inputs older than 48 h lower confidence to `low` and add `inputs_stale`.
 - Filters: only a deterministic subset of the Intune rule language (`device.platform`, `ownership`, `manufacturer`, `model`, `osVersion` with `-eq`, `-ne`, `-startsWith`, `-contains`, `-in`, combined with `and`/`or` and parentheses); anything else is `filter_unsupported` and the applicability is unknown.
@@ -105,3 +105,20 @@ Backend implemented (no migration, no new tables, no frontend, no provider calls
 - Redaction: without `organization.directory.view` a group reference is `{redacted: true}` (no external id, no name); the Assignment Path keeps User origin but anonymizes the User. Without device access the counts/examples of the reverse lookup are not shown (`evaluation.shown=false`). Unknown or malformed ids answer 404.
 - Bounds: at most 500 candidate Devices are evaluated per request (`evaluation.truncated`, `candidatesTruncated`), 10 examples, 50 artifacts per Directory Group/User page, 20 Devices per User artifact. Truncation is always reported, never silent.
 - Not done: finding kind `assignment_ineffective`, history/diff views, frontend, caching of evaluations.
+
+### Slice 3 review outcomes
+
+Fixed (results never look certain when inputs are missing or cut):
+
+- Truncation is explicit end to end. Every Organization `DirectoryGraph` lookup fetches one row more than asked and returns a `truncated` flag (row limit, or a nesting walk deeper than 10 levels); the Endpoints adapter passes it on. A cut membership, nesting or group lookup makes the affected Devices/Users `unknown` (reason `inputs_truncated`, only where no group was found; a found membership stays a positive hit) and sets `truncated` (Device view), `candidatesTruncated` (Directory Group view), `evaluation.truncated` (reverse lookup) or `truncated` (User view, new response field). Candidate Device selection reports truncation for more than 500 Devices, members or held Assets.
+- "Memberships known" is modelled. A User without a current directory identity of the provider, or a Device that never had a synced membership row (current or closed), evaluates group targets as `unknown` with reason `memberships_unknown` instead of `not_applicable`; artifacts with any group target are then listed in the Device/User views. Accepted limitation: a Device that is truly in no group stays `unknown` until its first membership is synced (an empty membership list is never authoritative in a snapshot); a provider group not present as a Directory Group has no known parents (its nesting is not walked).
+- Mixed-origin exclusion: when the include and the exclude that decide reach the Device through different origins (User group vs Device group, or `all_devices` vs a User group) the result is `unknown` with reason `mixed_origin_exclusion`, because Intune does not apply such mixes reliably.
+- `Assigned` requires an include assignment; `assigned_not_observed` is based on an include whose scope (target and filter) covers the Device, so a Device filtered out by an assignment filter is not flagged.
+- Without `assets.view` the Asset holder is not loaded: the User is unknown (`user_unknown`), no User origin appears in paths or assignment origins.
+- Directory lookups (groups, nesting, memberships, identities) and assignment/membership queries are limited to the endpoint provider's key, so external ids of different providers are never confused. Operational note: the groups used for evaluation must be synced under that key.
+- Closures (Device and User group reach) are computed once per request and reused for all artifacts.
+- Database: nesting walk stops early (outer `LIMIT`) with a depth cap of 10 and is deduplicated and sorted in Go; group members are ordered by `(group_id, user_id)` like the unique index; migration 000041 adds the partial current indexes; `ReachableArtifacts` is a union of index-driven branches that each apply the live/kind filter and keyset bound; the Device view only returns `nextCursor` when another match exists.
+- Read consistency: the Endpoints reads of one view run in one `READ ONLY REPEATABLE READ` transaction. Reads of the Organization and Assets contracts are separate and only eventually consistent with it.
+- Assets `UserHolders`/`AssetsHeldByUsers` ignore malformed ids and cap the row limit.
+
+Accepted limitations: the User view shows at most 20 Devices of a User and looks at 200 of their Assets; the Directory Group view evaluates at most 500 candidate Devices; a truncation flag does not say which Devices/Users were affected (all of the request are treated as affected); evaluations are not cached.

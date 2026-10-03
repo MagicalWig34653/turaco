@@ -660,7 +660,9 @@ export function UserManagementScreen({ id }: { id: string }) {
       {summary.data && !summary.data.devicesShown ? (
         <p>{t('management.evaluationHidden')}</p>
       ) : null}
-      {summary.data?.devicesTruncated ? <p>{t('management.truncated')}</p> : null}
+      {summary.data?.devicesTruncated || summary.data?.truncated ? (
+        <p>{t('management.truncated')}</p>
+      ) : null}
       <DataTable
         caption={t('management.userPage')}
         rows={list.items}
