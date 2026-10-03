@@ -20,6 +20,12 @@ export type RouteId =
   | 'allRequests'
   | 'myAssets'
   | 'assets'
+  | 'infrastructureTree'
+  | 'infrastructureBuilding'
+  | 'infrastructureRoom'
+  | 'infrastructureRack'
+  | 'infrastructureVMs'
+  | 'infrastructureVM'
   | 'devices'
   | 'deviceDetail'
   | 'deviceManagementDiff'
@@ -72,7 +78,7 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit';
 
-export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'admin';
+export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -190,6 +196,44 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'management.userPage',
     requires: ['organization.directory.view'],
     requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'infrastructureTree',
+    pattern: '/infrastructure',
+    titleKey: 'infra.tree',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
+    nav: 'infrastructure',
+  },
+  {
+    id: 'infrastructureBuilding',
+    pattern: '/infrastructure/buildings/:id',
+    titleKey: 'infra.building',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
+  },
+  {
+    id: 'infrastructureRoom',
+    pattern: '/infrastructure/rooms/:id',
+    titleKey: 'infra.room',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
+  },
+  {
+    id: 'infrastructureRack',
+    pattern: '/infrastructure/racks/:id',
+    titleKey: 'infra.rack',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
+  },
+  {
+    id: 'infrastructureVMs',
+    pattern: '/infrastructure/virtual-machines',
+    titleKey: 'infra.vms',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
+    nav: 'infrastructure',
+  },
+  {
+    id: 'infrastructureVM',
+    pattern: '/infrastructure/virtual-machines/:id',
+    titleKey: 'infra.vm.detail',
+    requiresAny: ['infrastructure.view', 'infrastructure.manage'],
   },
   { id: 'myAssets', pattern: '/my-assets', titleKey: 'nav.myAssets', nav: 'main' },
   {

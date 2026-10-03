@@ -31,3 +31,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - ADR-0027 Software Lifecycle and Patch Orchestration Through Software Management Providers
 - ADR-0028 Workforce Presence for Operational Availability
 - ADR-0029 Turaco AI — Provider-Independent, Tool-Based and User-Delegated
+- ADR-0030 Network/IPAM is integrated, not rebuilt

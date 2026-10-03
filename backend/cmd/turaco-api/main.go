@@ -27,6 +27,7 @@ import (
 	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
 	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
 	endpointstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/transport"
+	infrastructuretransport "github.com/MagicalWig34653/turaco/backend/internal/modules/infrastructure/transport"
 	inventorytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/inventory/transport"
 	knowledgetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/knowledge/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
@@ -166,6 +167,7 @@ func main() {
 	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)
 	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
+	infrastructuretransport.Register(mux, wiring.Infrastructure(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),

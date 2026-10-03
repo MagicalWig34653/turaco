@@ -1,3 +1,4 @@
+import { infrastructureApi } from '../infrastructure/api';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -170,6 +171,14 @@ export function AssetDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
   const loaded = useAsync((signal) => assetsApi.get(id, signal), [id]);
+  const canSeeLocation =
+    (can('infrastructure.view') || can('infrastructure.manage')) &&
+    (can('assets.view') || can('assets.manage'));
+  const location = useAsync(
+    (signal) =>
+      canSeeLocation ? infrastructureApi.assetLocation(id, signal) : Promise.resolve(undefined),
+    [id, canSeeLocation],
+  );
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busyOp, setBusyOp] = useState<string | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
@@ -289,6 +298,33 @@ export function AssetDetailScreen({ id }: { id: string }) {
           </>
         ) : null}
       </dl>
+      {canSeeLocation && (
+        <section>
+          <h2>{t('infra.assetLocation')}</h2>
+          {location.error && <ApiErrorAlert error={location.error} onRetry={location.reload} />}
+          {location.data &&
+            (location.data.placed ? (
+              <p>
+                {location.data.siteName} →{' '}
+                <Link to={`/infrastructure/buildings/${location.data.buildingId}`}>
+                  {location.data.buildingName}
+                </Link>{' '}
+                →{' '}
+                <Link to={`/infrastructure/rooms/${location.data.roomId}`}>
+                  {location.data.roomName}
+                </Link>{' '}
+                →{' '}
+                <Link to={`/infrastructure/racks/${location.data.rackId}`}>
+                  {location.data.rackName}
+                </Link>{' '}
+                · {location.data.uPosition} U ·{' '}
+                {t(location.data.face === 'rear' ? 'infra.rear' : 'infra.front')}
+              </p>
+            ) : (
+              <p>{t('infra.unplaced')}</p>
+            ))}
+        </section>
+      )}
       <section>
         <h2>{t('assets.section.assignments')}</h2>
         {asset.assignments.length === 0 ? (

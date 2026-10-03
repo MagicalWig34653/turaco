@@ -26,6 +26,13 @@ import { RequestFormScreen } from '../modules/catalog/RequestFormScreen';
 import { ProductsScreen } from '../modules/products/ProductsScreen';
 import { RequestDetailScreen } from '../modules/requests/RequestDetailScreen';
 import { RequestsScreen } from '../modules/requests/RequestsScreen';
+import {
+  SiteTreeScreen,
+  BuildingScreen,
+  RoomScreen,
+  RackScreen,
+} from '../modules/infrastructure/TopologyScreens';
+import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreens';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
 import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
@@ -134,6 +141,18 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UserManagementScreen key={params.id} id={params.id ?? ''} />;
     case 'managementFilters':
       return <ManagementFiltersScreen />;
+    case 'infrastructureTree':
+      return <SiteTreeScreen />;
+    case 'infrastructureBuilding':
+      return <BuildingScreen key={params.id} id={params.id ?? ''} />;
+    case 'infrastructureRoom':
+      return <RoomScreen key={params.id} id={params.id ?? ''} />;
+    case 'infrastructureRack':
+      return <RackScreen key={params.id} id={params.id ?? ''} />;
+    case 'infrastructureVMs':
+      return <VMListScreen />;
+    case 'infrastructureVM':
+      return <VMDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'assets':
       return <AssetsScreen />;
     case 'assetNew':
