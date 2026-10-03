@@ -93,12 +93,13 @@ type EmailSender struct {
 	contacts ContactResolver
 	baseURL  string
 	locale   string
+	cats     *Registry
 }
 
 // NewEmailSender creates the handler of EmailJobType. baseURL is the web
 // application's address used for links; locale is "en" or "de".
-func NewEmailSender(pool *pgxpool.Pool, mailer Mailer, contacts ContactResolver, baseURL, locale string) *EmailSender {
-	return &EmailSender{pool: pool, mailer: mailer, contacts: contacts, baseURL: baseURL, locale: locale}
+func NewEmailSender(pool *pgxpool.Pool, mailer Mailer, contacts ContactResolver, categories *Registry, baseURL, locale string) *EmailSender {
+	return &EmailSender{pool: pool, mailer: mailer, contacts: contacts, cats: categories, baseURL: baseURL, locale: locale}
 }
 
 // Handle sends one delivery. It is idempotent: a delivery that is already
@@ -133,7 +134,7 @@ func (e *EmailSender) Handle(ctx context.Context, job jobs.Job) error {
 	} else if !enabled {
 		return e.finish(ctx, d, "cancelled", "recipient opted out")
 	}
-	rendered, err := renderEmail(e.locale, e.baseURL, n)
+	rendered, err := e.cats.renderEmail(e.locale, e.baseURL, n)
 	if err != nil {
 		return e.release(ctx, d, err, true)
 	}

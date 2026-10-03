@@ -9,13 +9,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
+	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
+	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 type world struct {
@@ -93,9 +99,9 @@ func (w *world) dispatch() { w.dispatchWith(false, w.everyone()) }
 func (w *world) dispatchWith(email bool, perms grants) {
 	w.t.Helper()
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
-		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: []string{"TaskAssigned", "TaskCompleted"},
+		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: allTestEventTypes,
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := registerConsumersWith(d, w.pool, email, perms); err != nil {
+	if err := registerConsumersWith(d, w.pool, testCategories(w.t), email, perms); err != nil {
 		w.t.Fatal(err)
 	}
 	for i := 0; i < 1000; i++ {
@@ -337,4 +343,71 @@ func TestRepeatedAssignmentsDoNotFloodTheRecipient(t *testing.T) {
 	if n := w.notified(w.assignee, "task.assigned"); n != 1 {
 		t.Errorf("assignee received %d notifications for one task within the window, want 1", n)
 	}
+}
+
+func testCategories(t *testing.T) *notifications.Registry {
+	t.Helper()
+	r, err := notifications.NewRegistry(allCategories()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestApprovalRequestedNotifiesApproversExceptTheExcluded(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	var subject string
+	if err := w.pool.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&subject); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM approvals.approvals WHERE subject_id = $1::uuid`, subject)
+	})
+	svc := approvalsapp.NewService(approvalsrepository.New(w.pool), orgpublic.NewWorkDirectory(orgrepository.New(w.pool)), nil)
+	request := func(step int, in approvalsapp.RequestInput) {
+		in.SubjectType, in.SubjectID, in.SubjectLabel, in.StepIndex = "service_request", subject, "REQ-1 · Laptop", step
+		err := pgx.BeginFunc(ctx, w.pool, func(tx pgx.Tx) error {
+			_, err := svc.RequestInTx(ctx, tx, approvalsapp.Caller{Actor: audit.UserActor(w.creator), CorrelationID: w.corr}, in)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A single approver for one subject and the Team (members: member, inactive, creator) for another;
+	// the creator is excluded. A subject has only one pending step at a time.
+	request(0, approvalsapp.RequestInput{ApproverUserID: &w.assignee, ExcludedUserIDs: []string{w.creator}})
+	if err := w.pool.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&subject); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM approvals.approvals WHERE subject_id = $1::uuid`, subject)
+	})
+	request(1, approvalsapp.RequestInput{ApproverTeamID: &w.team, ExcludedUserIDs: []string{w.creator}})
+	w.dispatch()
+
+	var title, linkType string
+	if err := w.pool.QueryRow(ctx, `SELECT params->>'title', link_type FROM platform.notifications WHERE recipient_user_id = $1::uuid AND category = 'approval.requested'`, w.assignee).Scan(&title, &linkType); err != nil || title != "REQ-1 · Laptop" || linkType != "approval" {
+		t.Errorf("approver notification = %q %q %v", title, linkType, err)
+	}
+	if w.notified(w.member, "approval.requested") != 1 {
+		t.Error("the Team approver must be notified (no task permission needed)")
+	}
+	if w.notified(w.creator, "approval.requested") != 0 {
+		t.Error("the excluded requester must not be notified about approving their own request")
+	}
+	if w.notified(w.inactive, "approval.requested") != 0 || w.notified(w.outsider, "approval.requested") != 0 {
+		t.Error("inactive users and non-members must not be notified")
+	}
+	if w.pendingEvents() != 0 {
+		t.Errorf("%d events left unprocessed", w.pendingEvents())
+	}
+}
+
+// decideApproval decides an approval as user through the approvals module.
+func decideApproval(w *world, user, approvalID, decision string) error {
+	svc := approvalsapp.NewService(approvalsrepository.New(w.pool), orgpublic.NewWorkDirectory(orgrepository.New(w.pool)), nil)
+	_, err := svc.Decide(context.Background(), approvalsapp.Caller{Actor: audit.UserActor(user), CorrelationID: w.corr}, approvalID, decision, "", nil)
+	return err
 }

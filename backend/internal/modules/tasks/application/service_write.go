@@ -271,6 +271,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 				"taskId": cur.ID, "completedByUserId": nx.CompletedByUserID,
 			}})
 		}
+		if op == OpCancel {
+			events = append(events, Event{Type: "TaskCancelled", Payload: map[string]any{"taskId": cur.ID}})
+		}
 		return Change{Next: nx, Action: "tasks.task." + auditSuffix[op], Metadata: meta, Events: events}, nil
 	})
 	if err != nil {
@@ -325,4 +328,43 @@ func equalTimePtr(a, b *time.Time) bool {
 		return a == b
 	}
 	return a.Equal(*b)
+}
+
+// TaskDraft is the unvalidated input of NormalizeNewTask.
+type TaskDraft struct {
+	Title          string
+	Description    string
+	Priority       string // empty means normal
+	DueAt          *time.Time
+	AssignedUserID *string
+	AssignedTeamID *string
+}
+
+// NormalizeNewTask validates and normalizes a task draft (title, description,
+// priority, due date in UTC); it does not check assignees.
+func NormalizeNewTask(d TaskDraft) (NewTask, error) {
+	title, err := cleanTitle(d.Title)
+	if err != nil {
+		return NewTask{}, err
+	}
+	desc, err := cleanDescription(d.Description)
+	if err != nil {
+		return NewTask{}, err
+	}
+	priority := d.Priority
+	if priority == "" {
+		priority = PriorityNormal
+	}
+	if err := validPriority(priority); err != nil {
+		return NewTask{}, err
+	}
+	return NewTask{
+		Title: title, Description: desc, Priority: priority, DueAt: utc(d.DueAt),
+		AssignedUserID: d.AssignedUserID, AssignedTeamID: d.AssignedTeamID,
+	}, nil
+}
+
+// CheckAssignees verifies that the referenced User and Team are active.
+func CheckAssignees(ctx context.Context, dir Directory, userID, teamID *string) error {
+	return checkAssignees(ctx, dir, userID, teamID)
 }

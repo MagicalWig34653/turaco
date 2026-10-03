@@ -15,7 +15,7 @@ const taskID = "0192b6c0-0000-7000-8000-000000000001"
 
 func TestRenderEmailLocalizesAndLinks(t *testing.T) {
 	n := notif("task.assigned", map[string]any{"title": "Replace toner"}, sp("task"), sp(taskID))
-	en, err := renderEmail("en", "https://turaco.example.org/", n)
+	en, err := testReg(t).renderEmail("en", "https://turaco.example.org/", n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,18 +23,18 @@ func TestRenderEmailLocalizesAndLinks(t *testing.T) {
 		!strings.Contains(en.HTML, `href="https://turaco.example.org/tasks/`+taskID+`"`) {
 		t.Errorf("en = %+v", en)
 	}
-	de, err := renderEmail("de", "https://turaco.example.org", n)
+	de, err := testReg(t).renderEmail("de", "https://turaco.example.org", n)
 	if err != nil || de.Subject != "Aufgabe zugewiesen: Replace toner" || !strings.Contains(de.Text, "Aufgabe öffnen") {
 		t.Errorf("de = %+v %v", de, err)
 	}
-	if fb, _ := renderEmail("fr", "https://x.example", n); fb.Subject != en.Subject {
+	if fb, _ := testReg(t).renderEmail("fr", "https://x.example", n); fb.Subject != en.Subject {
 		t.Errorf("unknown locale must fall back to English: %q", fb.Subject)
 	}
 }
 
 func TestRenderEmailEscapesUserText(t *testing.T) {
 	evil := `<script>alert(1)</script> & "quotes"`
-	r, err := renderEmail("en", "https://turaco.example.org", notif("task.assigned", map[string]any{"title": evil}, sp("task"), sp(taskID)))
+	r, err := testReg(t).renderEmail("en", "https://turaco.example.org", notif("task.assigned", map[string]any{"title": evil}, sp("task"), sp(taskID)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestRenderEmailEscapesUserText(t *testing.T) {
 }
 
 func TestRenderEmailNeutralizesControlCharactersAndLongTitles(t *testing.T) {
-	r, err := renderEmail("en", "https://turaco.example.org", notif("task.assigned",
+	r, err := testReg(t).renderEmail("en", "https://turaco.example.org", notif("task.assigned",
 		map[string]any{"title": "Hi\r\nBcc: x@example.org\x00" + strings.Repeat("é", 500)}, nil, nil))
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestRenderEmailLinksOnlyKnownTargets(t *testing.T) {
 		"malformed id":      notif("task.assigned", map[string]any{"title": "t"}, sp("task"), sp("../../admin")),
 		"no link":           notif("task.assigned", map[string]any{"title": "t"}, nil, nil),
 	} {
-		r, err := renderEmail("en", "https://turaco.example.org", n)
+		r, err := testReg(t).renderEmail("en", "https://turaco.example.org", n)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -77,21 +77,64 @@ func TestRenderEmailLinksOnlyKnownTargets(t *testing.T) {
 }
 
 func TestRenderEmailRejectsUnknownCategory(t *testing.T) {
-	if _, err := renderEmail("en", "https://x.example", notif("nope", nil, nil, nil)); err == nil {
+	if _, err := testReg(t).renderEmail("en", "https://x.example", notif("nope", nil, nil, nil)); err == nil {
 		t.Error("an unknown category has no template")
 	}
 }
 
-func TestEveryRegisteredCategoryHasTemplatesInAllLocales(t *testing.T) {
-	for locale, tpls := range emailTemplates {
-		for _, c := range Categories {
-			tpl, ok := tpls[c]
-			if !ok || tpl.subject == "" || tpl.intro == "" || tpl.action == "" || !strings.Contains(tpl.subject, "%s") {
-				t.Errorf("locale %s category %s: incomplete template %+v", locale, c, tpl)
-			}
+func testReg(t *testing.T) *Registry {
+	t.Helper()
+	text := func(subject, intro, action string) EmailText {
+		return EmailText{Subject: subject, Intro: intro, Action: action}
+	}
+	r, err := NewRegistry(
+		Category{Name: "task.assigned", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: map[string]EmailText{
+			"en": text("Task assigned: %s", "A task was assigned to you:", "Open task"),
+			"de": text("Aufgabe zugewiesen: %s", "Dir wurde eine Aufgabe zugewiesen:", "Aufgabe öffnen"),
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestRegistryValidation(t *testing.T) {
+	ok := EmailText{Subject: "S %s", Intro: "I", Action: "A"}
+	both := map[string]EmailText{"en": ok, "de": ok}
+	good := Category{Name: "task.assigned", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: both}
+	if _, err := NewRegistry(good); err != nil {
+		t.Fatal(err)
+	}
+	bad := map[string][]Category{
+		"bad name":             {{Name: "Task", Owner: "x", Email: both}},
+		"no owner":             {{Name: "a.b", Email: both}},
+		"missing german":       {{Name: "a.b", Owner: "x", Email: map[string]EmailText{"en": ok}}},
+		"subject without %s":   {{Name: "a.b", Owner: "x", Email: map[string]EmailText{"en": ok, "de": {Subject: "S", Intro: "I", Action: "A"}}}},
+		"empty action":         {{Name: "a.b", Owner: "x", Email: map[string]EmailText{"en": ok, "de": {Subject: "S %s", Intro: "I"}}}},
+		"duplicate":            {good, good},
+		"link type only":       {{Name: "a.b", Owner: "x", Email: both, LinkType: "t"}},
+		"path without id":      {{Name: "a.b", Owner: "x", Email: both, LinkType: "t", LinkPath: "/t"}},
+		"path not absolute":    {{Name: "a.b", Owner: "x", Email: both, LinkType: "t", LinkPath: "t/{id}"}},
+		"conflicting link map": {good, {Name: "a.c", Owner: "x", Email: both, LinkType: "task", LinkPath: "/other/{id}"}},
+	}
+	for name, cats := range bad {
+		if _, err := NewRegistry(cats...); err == nil {
+			t.Errorf("%s: want error", name)
 		}
 	}
-	if len(emailTemplates["en"]) != len(emailTemplates["de"]) {
-		t.Error("EN and DE templates differ")
+	r, _ := NewRegistry(good, Category{Name: "a.b", Owner: "x", Email: both})
+	if !r.Valid("a.b") || r.Valid("a.c") || len(r.Names()) != 2 || r.Names()[0] != "a.b" {
+		t.Errorf("registry lookups: %v", r.Names())
+	}
+}
+
+func TestLinkPathsComeFromTheRegistry(t *testing.T) {
+	r := testReg(t)
+	if got := r.linkPath("task", taskID); got != "/tasks/"+taskID {
+		t.Errorf("path = %q", got)
+	}
+	if r.linkPath("asset", taskID) != "" || r.linkPath("task", "../x") != "" {
+		t.Error("unknown link types and malformed ids must have no path")
 	}
 }

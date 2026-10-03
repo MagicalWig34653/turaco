@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from '../../platform/i18n/i18n';
+import { registerModuleNotifications } from '../../app/notificationCategories';
 import { categoryLabel, notificationLink, notificationText, unreadLabel } from './text';
 import type { AppNotification } from './types';
+
+registerModuleNotifications();
 
 const base: AppNotification = {
   id: '1',

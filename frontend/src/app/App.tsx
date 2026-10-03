@@ -18,6 +18,14 @@ import {
   BriefingCreateScreen,
   BriefingDetailScreen,
 } from '../modules/briefing/BriefingItemScreens';
+import { ApprovalDetailScreen } from '../modules/approvals/ApprovalDetailScreen';
+import { ApprovalsScreen } from '../modules/approvals/ApprovalsScreen';
+import { CatalogAdminScreen } from '../modules/catalog/CatalogAdminScreen';
+import { CatalogScreen } from '../modules/catalog/CatalogScreen';
+import { RequestFormScreen } from '../modules/catalog/RequestFormScreen';
+import { ProductsScreen } from '../modules/products/ProductsScreen';
+import { RequestDetailScreen } from '../modules/requests/RequestDetailScreen';
+import { RequestsScreen } from '../modules/requests/RequestsScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -49,6 +57,24 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <BriefingDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'notifications':
       return <NotificationsScreen />;
+    case 'catalog':
+      return <CatalogScreen />;
+    case 'catalogRequest':
+      return <RequestFormScreen key={params.id} id={params.id ?? ''} />;
+    case 'requests':
+      return <RequestsScreen scope="mine" />;
+    case 'requestDetail':
+      return <RequestDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'approvals':
+      return <ApprovalsScreen />;
+    case 'approvalDetail':
+      return <ApprovalDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'products':
+      return <ProductsScreen />;
+    case 'catalogAdmin':
+      return <CatalogAdminScreen />;
+    case 'allRequests':
+      return <RequestsScreen scope="all" />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

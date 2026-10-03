@@ -41,7 +41,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	pool := dbtest.Pool(t)
-	e := &env{t: t, pool: pool, svc: notifications.NewService(pool)}
+	e := &env{t: t, pool: pool, svc: notifications.NewService(pool, testRegistry(t))}
 	for _, dst := range []*string{&e.a, &e.b} {
 		if err := pool.QueryRow(context.Background(), `SELECT uuidv7()::text`).Scan(dst); err != nil {
 			t.Fatal(err)
@@ -188,7 +188,7 @@ func TestPreferencesRoundTrip(t *testing.T) {
 		} `json:"items"`
 	}
 	rec := e.do(a, "GET", "/api/v1/notifications/preferences", "")
-	if json.Unmarshal(rec.Body.Bytes(), &prefs) != nil || len(prefs.Items) != len(notifications.Categories) {
+	if json.Unmarshal(rec.Body.Bytes(), &prefs) != nil || len(prefs.Items) != 2 {
 		t.Fatalf("prefs = %s", rec.Body)
 	}
 	for _, p := range prefs.Items {
@@ -200,4 +200,18 @@ func TestPreferencesRoundTrip(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"enabled":false`) {
 		t.Errorf("another user's preference leaked: %s", rec.Body)
 	}
+}
+
+func testRegistry(t *testing.T) *notifications.Registry {
+	t.Helper()
+	text := notifications.EmailText{Subject: "S: %s", Intro: "I", Action: "A"}
+	both := map[string]notifications.EmailText{"en": text, "de": text}
+	r, err := notifications.NewRegistry(
+		notifications.Category{Name: "task.assigned", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: both},
+		notifications.Category{Name: "task.completed", Owner: "tasks", LinkType: "task", LinkPath: "/tasks/{id}", Email: both},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
 }

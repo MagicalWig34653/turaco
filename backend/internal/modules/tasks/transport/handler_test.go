@@ -35,9 +35,10 @@ func with(perms ...string) fakeAuth {
 
 // stubStore records what the service asks and returns one fixed task.
 type stubStore struct {
-	task  application.Task
-	calls int
-	query application.ListQuery
+	application.Store // the transactional methods are not used by these tests
+	task              application.Task
+	calls             int
+	query             application.ListQuery
 }
 
 func (s *stubStore) Insert(_ context.Context, _ application.Caller, n application.NewTask) (application.Task, error) {

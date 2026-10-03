@@ -18,3 +18,6 @@ tmp/
 .claude/settings.local.json
 *.tsbuildinfo
 .claude/worktrees/
+
+# Duplicate copies created by file-sync tools (for example "name 2.go")
+* 2.*

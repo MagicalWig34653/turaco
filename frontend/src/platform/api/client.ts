@@ -3,8 +3,19 @@ export type ApiErrorBody = {
     code: string;
     message: string;
     requestId?: string;
+    fields?: unknown;
   };
 };
+
+/** Keeps only string-to-string entries of a validation `fields` object. */
+export function parseFields(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, code] of Object.entries(value)) {
+    if (typeof code === 'string') out[key] = code;
+  }
+  return out;
+}
 
 export const NETWORK_ERROR_CODE = 'platform.network_error';
 export const INVALID_RESPONSE_CODE = 'platform.invalid_response';
@@ -16,6 +27,8 @@ export class ApiError extends Error {
   readonly code: string;
   readonly requestId: string | undefined;
   readonly retryAfterSeconds: number | undefined;
+  /** Per-field validation codes of a 422 response (field key to code); empty otherwise. */
+  readonly fields: Readonly<Record<string, string>>;
 
   constructor(init: {
     status: number;
@@ -23,6 +36,7 @@ export class ApiError extends Error {
     message: string;
     requestId?: string | undefined;
     retryAfterSeconds?: number | undefined;
+    fields?: Record<string, string> | undefined;
   }) {
     super(init.message);
     this.name = 'ApiError';
@@ -30,6 +44,7 @@ export class ApiError extends Error {
     this.code = init.code;
     this.requestId = init.requestId;
     this.retryAfterSeconds = init.retryAfterSeconds;
+    this.fields = init.fields ?? {};
   }
 }
 
@@ -164,7 +179,14 @@ export async function toApiError(response: Response): Promise<ApiError> {
       ? envelope.message
       : `Request failed with status ${response.status}`;
   const requestId = typeof envelope?.requestId === 'string' ? envelope.requestId : undefined;
-  return new ApiError({ status: response.status, code, message, requestId, retryAfterSeconds });
+  return new ApiError({
+    status: response.status,
+    code,
+    message,
+    requestId,
+    retryAfterSeconds,
+    fields: parseFields(envelope?.fields),
+  });
 }
 
 export const api = new ApiClient();

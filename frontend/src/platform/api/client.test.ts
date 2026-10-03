@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiClient, ApiError, buildQuery, parseRetryAfter } from './client';
+import {
+  ApiClient,
+  ApiError,
+  buildQuery,
+  parseFields,
+  parseRetryAfter,
+  toApiError,
+} from './client';
 import { errorMessageKey } from './errorMessages';
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
@@ -112,5 +119,35 @@ describe('errorMessageKey', () => {
 
   it('does not know feature codes until the module registers them', () => {
     expect(errorMessageKey({ code: 'unregistered.code', status: 409 })).toBe('error.generic');
+  });
+});
+
+describe('validation fields', () => {
+  it('keeps string entries of an error response fields object', async () => {
+    const response = new Response(
+      JSON.stringify({
+        error: {
+          code: 'requests.invalid_answers',
+          message: 'x',
+          fields: { reason: 'required', n: 5 },
+        },
+      }),
+      { status: 422 },
+    );
+    const error = await toApiError(response);
+    expect(error.fields).toEqual({ reason: 'required' });
+  });
+
+  it('is empty without fields and ignores non-objects', async () => {
+    expect(
+      (
+        await toApiError(
+          new Response(JSON.stringify({ error: { code: 'a', message: 'b' } }), { status: 400 }),
+        )
+      ).fields,
+    ).toEqual({});
+    expect(parseFields(['x'])).toBeUndefined();
+    expect(parseFields(null)).toBeUndefined();
+    expect(parseFields('x')).toBeUndefined();
   });
 });

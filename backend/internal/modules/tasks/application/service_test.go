@@ -14,6 +14,7 @@ import (
 // memStore is an in-memory Store: it applies the same contract as the
 // PostgreSQL store (decide on the current state, version bump, NoChange).
 type memStore struct {
+	Store   // the transactional methods are not used by these tests
 	tasks   map[string]Task
 	seq     int
 	changes []Change

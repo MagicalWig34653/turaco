@@ -15,8 +15,11 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -25,6 +28,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
+	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
 var version = "dev"
@@ -79,8 +83,13 @@ func main() {
 		logger.Error("load email configuration", "error", err)
 		os.Exit(1)
 	}
+	categories, err := notifications.NewRegistry(allCategories()...)
+	if err != nil {
+		logger.Error("register notification categories", "error", err)
+		os.Exit(1)
+	}
 	if smtpCfg.Enabled() {
-		if err := registerEmail(runner, pool, smtpCfg); err != nil {
+		if err := registerEmail(runner, pool, smtpCfg, categories); err != nil {
 			logger.Error("configure email notifications", "error", err)
 			os.Exit(1)
 		}
@@ -90,7 +99,7 @@ func main() {
 		logger.Error("configure recurring tasks", "error", err)
 		os.Exit(1)
 	}
-	if err := registerConsumers(dispatcher, pool, smtpCfg.Enabled()); err != nil {
+	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
 	}
@@ -137,15 +146,15 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 	})
 }
 
-func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, email bool) error {
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
 	orgReader := orgrepository.New(pool)
-	return registerConsumersWith(d, pool, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
 }
 
 // registerConsumersWith registers the outbox consumers; perms decides which
 // Users hold task permissions and may therefore be notified about tasks.
-func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, email bool, perms tasksapp.PermissionResolver) error {
-	notifier := notifications.NewService(pool)
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver) error {
+	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
 	}
@@ -154,7 +163,14 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, email bool,
 	if err := d.Register("TaskAssigned", "tasks.notify-assigned", taskConsumers.OnTaskAssigned); err != nil {
 		return err
 	}
-	return d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted)
+	if err := d.Register("TaskCompleted", "tasks.notify-completed", taskConsumers.OnTaskCompleted); err != nil {
+		return err
+	}
+	approvalConsumers := approvalsapp.NewConsumers(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	if err := d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested); err != nil {
+		return err
+	}
+	return registerRequestConsumers(d, wiring.Requests(pool), notifier)
 }
 
 // orgContacts adapts the Organization work directory to the email sender.
@@ -169,7 +185,7 @@ func (o orgContacts) EmailContact(ctx context.Context, userID string) (string, s
 	return c.Email, c.DisplayName, ok && c.Active && c.Email != "", nil
 }
 
-func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig) error {
+func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfig, categories *notifications.Registry) error {
 	mailerCfg := smtp.Config{
 		Host: cfg.Host, Port: cfg.Port, Security: smtp.Security(cfg.Security), Username: cfg.Username,
 		From: cfg.From, Timeout: cfg.Timeout,
@@ -200,7 +216,7 @@ func registerEmail(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.SMTPConfi
 		return err
 	}
 	sender := notifications.NewEmailSender(pool, smtpMailer{mailer},
-		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, cfg.BaseURL, cfg.DefaultLocale)
+		orgContacts{orgpublic.NewWorkDirectory(orgrepository.New(pool))}, categories, cfg.BaseURL, cfg.DefaultLocale)
 	return runner.Register(notifications.EmailJobType, notifications.EmailJobTimeout, sender.Handle)
 }
 
@@ -229,4 +245,32 @@ func (a smtpMailer) Send(ctx context.Context, msg notifications.EmailMessage) er
 		return &notifications.PermanentEmailError{Err: err}
 	}
 	return err
+}
+
+// allCategories lists the notification categories of every module that creates notifications.
+func allCategories() []notifications.Category {
+	out := tasksapp.NotificationCategories()
+	out = append(out, approvalsapp.NotificationCategories()...)
+	return append(out, requestsapp.NotificationCategories()...)
+}
+
+// registerRequestConsumers registers the workflow and notification consumers of the Requests module.
+func registerRequestConsumers(d *events.Dispatcher, svc *requestsapp.Service, notifier *notifications.Service) error {
+	c := requestsapp.NewConsumers(svc, notifier)
+	for _, r := range []struct {
+		event, name string
+		fn          events.Consumer
+	}{
+		{"ApprovalDecided", "requests.advance-approval", c.OnApprovalDecided},
+		{"TaskCompleted", "requests.task-finished", c.OnTaskFinished},
+		{"TaskCancelled", "requests.task-finished", c.OnTaskFinished},
+		{"ServiceRequestApproved", "requests.notify-approved", c.OnRequestApproved},
+		{"ServiceRequestRejected", "requests.notify-rejected", c.OnRequestRejected},
+		{"ServiceRequestCompleted", "requests.notify-completed", c.OnRequestCompleted},
+	} {
+		if err := d.Register(r.event, r.name, r.fn); err != nil {
+			return err
+		}
+	}
+	return nil
 }

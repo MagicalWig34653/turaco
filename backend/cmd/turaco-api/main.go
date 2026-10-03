@@ -12,13 +12,26 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
+	approvalstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/transport"
 	briefingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
 	briefingrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/repository"
 	briefingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/transport"
+	catalogapp "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/application"
+	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
+	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
+	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
+	productsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
+	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
+	productsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/products/repository"
+	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
+	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
+	requeststransport "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
@@ -32,6 +45,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
 var version = "dev"
@@ -130,9 +144,20 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
+	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
+	productsRepo := productsrepository.New(pool)
+	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
+	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
+	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
+		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
 	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
-	notificationstransport.Register(mux, notifications.NewService(pool), sessionAuth, logger)
+	categories, err := notifications.NewRegistry(allCategories()...)
+	if err != nil {
+		logger.Error("register notification categories", "error", err)
+		os.Exit(1)
+	}
+	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
 
@@ -160,4 +185,11 @@ func main() {
 		logger.Error("http server failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// allCategories lists the notification categories of every module that creates notifications.
+func allCategories() []notifications.Category {
+	out := tasksapp.NotificationCategories()
+	out = append(out, approvalsapp.NotificationCategories()...)
+	return append(out, requestsapp.NotificationCategories()...)
 }

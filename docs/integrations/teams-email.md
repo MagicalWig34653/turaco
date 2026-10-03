@@ -12,6 +12,10 @@ Templates are tenant-brandable and localized. Delivery state/retries are separat
 
 Teams is a user interaction/notification channel, never the authoritative source for Tickets, Tasks or Approvals.
 
+## Categories
+
+A notification category (`area.event`, for example `task.assigned`) is owned and registered by the module that creates it (`notifications.Registry`): name, owner, the English and German email texts and the link type with its in-app path. The platform has no knowledge of its producers; `turaco-api` and `turaco-worker` build the same registry from the modules' category lists. The frontend maps categories to localized texts and links in `app/notificationCategories.ts`.
+
 ## Email channel
 
 Only `turaco-worker` sends email; `turaco-api` never talks to the relay. Email is disabled unless `SMTP_HOST` is set (see the generated [configuration reference](../reference/configuration.md): `SMTP_*`, `EMAIL_BASE_URL`, `EMAIL_DEFAULT_LOCALE`).

@@ -902,6 +902,736 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /manufacturers:
+    get:
+      operationId: listManufacturers
+      summary: List manufacturers.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManufacturerList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createManufacturer
+      summary: Create a manufacturer.
+      description: "Requires `products.manage`. Names are unique case-insensitively. Audited (products.manufacturer.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManufacturerCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Manufacturer'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /manufacturers/{id}:
+    patch:
+      operationId: renameManufacturer
+      summary: Rename a manufacturer.
+      description: "Requires `products.manage`. Audited (products.manufacturer.renamed). `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManufacturerRename'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Manufacturer'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /product-categories:
+    get:
+      operationId: listProductCategorys
+      summary: List productcategorys.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategoryList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProductCategory
+      summary: Create a productcategory.
+      description: "Requires `products.manage`. Optional `parentId` (fixed at creation, so the tree has no cycles); names are unique per parent. Audited (products.category.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCategoryCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategory'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /product-categories/{id}:
+    patch:
+      operationId: renameProductCategory
+      summary: Rename a productcategory.
+      description: "Requires `products.manage`. Audited (products.category.renamed). `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCategoryRename'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductCategory'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products:
+    get:
+      operationId: listProducts
+      summary: List products.
+      description: "Requires `products.view` or `products.manage`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          description: Case-insensitive name prefix.
+          schema: {type: string}
+        - name: categoryId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: manufacturerId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: active
+          in: query
+          description: true or false
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductList'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProduct
+      summary: Create a product.
+      description: "Requires `products.manage`. Audited (products.product.created). `stockManaged` defaults to true. Internal part numbers are unique case-insensitively."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}:
+    get:
+      operationId: getProduct
+      summary: Get a product.
+      description: "Requires `products.view` or `products.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateProduct
+      summary: Change a product.
+      description: "Requires `products.manage`. `expectedVersion` is required; an empty part number clears it. Audited (products.product.updated; changed field names only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdate'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '400': {$ref: '#/components/responses/ProductsInvalid'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}/activate:
+    post:
+      operationId: activateProduct
+      summary: Activate a product.
+      description: "Requires `products.manage`. Deactivated products are kept for history but not offered. Idempotent. Audited (products.product.activated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /products/{id}/deactivate:
+    post:
+      operationId: deactivateProduct
+      summary: Deactivate a product.
+      description: "Requires `products.manage`. Deactivated products are kept for history but not offered. Idempotent. Audited (products.product.deactivated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Product'}
+        '404': {$ref: '#/components/responses/ProductsNotFound'}
+        '409': {$ref: '#/components/responses/ProductsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals:
+    get:
+      operationId: listApprovals
+      summary: List my approvals.
+      description: "Any signed-in user; access is by assignment: only the approvals assigned to the caller (directly or through a Team) or decided by the caller. `status=pending` (default) lists approvals the caller may decide now (not those of their own requests); `status=decided` lists those the caller decided. Newest first, keyset paginated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [pending, decided]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApprovalList'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}:
+    get:
+      operationId: getApproval
+      summary: Get an approval.
+      description: "Any signed-in user; access is by assignment: only the approvals assigned to the caller (directly or through a Team) or decided by the caller. Approvals of others are 404."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}/approve:
+    post:
+      operationId: approveApproval
+      summary: Approve.
+      description: "Only an approver (the assigned User, or any member of the assigned Team) who is not excluded (the requester and the requested-for User never decide) may decide a pending approval; the first decision wins and is immutable (409 approvals.not_pending afterwards). Audited (approvals.approval.approved); emits ApprovalDecided."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '409': {$ref: '#/components/responses/ApprovalsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /approvals/{id}/reject:
+    post:
+      operationId: rejectApproval
+      summary: Reject.
+      description: "Only an approver (the assigned User, or any member of the assigned Team) who is not excluded (the requester and the requested-for User never decide) may decide a pending approval; the first decision wins and is immutable (409 approvals.not_pending afterwards). Audited (approvals.approval.rejected); emits ApprovalDecided."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Approval'}
+        '400': {$ref: '#/components/responses/ApprovalsInvalid'}
+        '404': {$ref: '#/components/responses/ApprovalsNotFound'}
+        '409': {$ref: '#/components/responses/ApprovalsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items:
+    get:
+      operationId: listCatalogItems
+      summary: List catalog items.
+      description: "Any signed-in user sees active items; `catalog.manage` also sees inactive ones and may filter with `status`. Keyset paginated by id."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          description: Managers only; ignored for others.
+          schema: {type: string, enum: [active, inactive]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItemList'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createCatalogItem
+      summary: Create a catalog item.
+      description: "Requires `catalog.manage`. The definition is validated against the closed schema of ADR-0025 (field types, limits, references to users, teams, products and categories must exist and be active). Audited (catalog.item.created, without title or definition)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogItemCreate'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}:
+    get:
+      operationId: getCatalogItem
+      summary: Get a catalog item with its form.
+      description: "Any signed-in user gets the form of an active item (fields, with the active products of product fields resolved to `productOptions`); approval steps and fulfillment tasks are never shown to employees. `catalog.manage` also gets inactive items and the full `definition`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogForm'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateCatalogItem
+      summary: Change a catalog item.
+      description: "Requires `catalog.manage`. Changing the definition affects only requests submitted afterwards. `expectedVersion` is required. Audited (catalog.item.updated; changed parts only)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogItemUpdate'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '400': {$ref: '#/components/responses/CatalogInvalid'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}/activate:
+    post:
+      operationId: activateCatalogItem
+      summary: Activate a catalog item.
+      description: "Requires `catalog.manage`. Inactive items are not offered; existing requests keep their snapshot. Idempotent. Audited (catalog.item.activated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-items/{id}/deactivate:
+    post:
+      operationId: deactivateCatalogItem
+      summary: Deactivate a catalog item.
+      description: "Requires `catalog.manage`. Inactive items are not offered; existing requests keep their snapshot. Idempotent. Audited (catalog.item.deactivated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogItem'}
+        '404': {$ref: '#/components/responses/CatalogNotFound'}
+        '409': {$ref: '#/components/responses/CatalogConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests:
+    post:
+      operationId: submitServiceRequest
+      summary: Submit a service request.
+      description: "Any signed-in User. The answers are validated against the catalog item's definition; the definition and the answers are snapshotted. With approval steps the request starts as `pending_approval` and the first approver is notified; without them it enters fulfillment at once (its fulfillment tasks are created; with none it completes immediately). The requester and the requested-for User can never approve it. Audited (requests.request.submitted, without answers); emits ServiceRequestSubmitted."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequestSubmit'
+      responses:
+        '201':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequest'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '409': {$ref: '#/components/responses/RequestsConflict'}
+        '422':
+          description: Some answers are invalid (requests.invalid_answers); `error.fields` maps each field key to a code (required, invalid_type, too_long, out_of_range, invalid_choice, unknown_field, not_found, invalid_date, invalid_characters, not_allowed, not_active).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    get:
+      operationId: listServiceRequests
+      summary: List service requests.
+      description: "Any signed-in User. Default `scope=mine`: requests the caller made or that are for the caller, newest first. `scope=all` needs `requests.view` or `requests.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: scope
+          in: query
+          schema: {type: string, enum: [mine, all]}
+        - name: status
+          in: query
+          schema: {type: string, enum: [pending_approval, in_fulfillment, waiting, completed, rejected, cancelled]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequestList'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests/{id}:
+    get:
+      operationId: getServiceRequest
+      summary: Get a service request.
+      description: "Any signed-in User. Visible to the requester, the requested-for User, approvers of its steps and holders of `requests.view`/`requests.manage`; everybody else gets 404. Includes the answers with the form labels, approvals, fulfillment tasks, resolved names and the `actions` the caller may perform now. Approval and fulfillment definitions of the snapshot are not exposed."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequestDetail'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests/{id}/cancel:
+    post:
+      operationId: cancelServiceRequest
+      summary: Cancel a request.
+      description: "The requester may cancel while approval is pending; `requests.manage` may cancel any unfinished request. A reason is required. Pending approvals and unfinished tasks are cancelled with it. Audited (requests.request.cancelled); emits ServiceRequestCancelled."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequestReason'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequest'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '409': {$ref: '#/components/responses/RequestsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests/{id}/hold:
+    post:
+      operationId: holdServiceRequest
+      summary: Put a request on hold.
+      description: "Requires `requests.manage`. `reason` is the waiting reason: stock, supplier, requester or external_system. In fulfillment only. Audited (requests.request.put_on_hold)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequestReason'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequest'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '409': {$ref: '#/components/responses/RequestsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests/{id}/resume:
+    post:
+      operationId: resumeServiceRequest
+      summary: Resume a request.
+      description: "Requires `requests.manage`. Only a waiting request; it completes at once when its tasks finished meanwhile. Audited (requests.request.resumed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskVersion'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequest'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '409': {$ref: '#/components/responses/RequestsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-requests/{id}/complete:
+    post:
+      operationId: completeServiceRequest
+      summary: Complete a request manually.
+      description: "Requires `requests.manage`. Every fulfillment task must be finished; when a mandatory task was cancelled, a `reason` is required. Audited (requests.request.completed); emits ServiceRequestCompleted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceRequestReason'
+      responses:
+        '200':
+          description: The request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceRequest'}
+        '400': {$ref: '#/components/responses/RequestsInvalid'}
+        '404': {$ref: '#/components/responses/RequestsNotFound'}
+        '409': {$ref: '#/components/responses/RequestsConflict'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -1764,6 +2494,78 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ProductsInvalid:
+      description: Invalid input (products.invalid_request, products.invalid_reference, products.invalid_cursor, products.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProductsNotFound:
+      description: Not found (products.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProductsConflict:
+      description: Conflict (products.conflict, products.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApprovalsInvalid:
+      description: Invalid input (approvals.invalid_request, approvals.invalid_cursor, approvals.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApprovalsNotFound:
+      description: Not found or not visible to the caller (approvals.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApprovalsConflict:
+      description: Conflict (approvals.not_pending, approvals.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogInvalid:
+      description: Invalid input (catalog.invalid_request, catalog.invalid_reference, catalog.invalid_cursor, catalog.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogNotFound:
+      description: Not found or not visible to the caller (catalog.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    CatalogConflict:
+      description: Conflict (catalog.conflict, catalog.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RequestsInvalid:
+      description: Invalid input (requests.invalid_request, requests.requested_for_invalid, requests.invalid_cursor, requests.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RequestsNotFound:
+      description: Not found or not visible to the caller (requests.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RequestsConflict:
+      description: Conflict (requests.invalid_transition, requests.version_conflict, requests.item_inactive, requests.no_eligible_approver).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -2023,6 +2825,371 @@ components:
         severity: {type: string, enum: [info, warning, critical]}
         validUntil: {type: string, format: date-time}
         clearValidUntil: {type: boolean}
+    Manufacturer:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ManufacturerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Manufacturer'}
+        nextCursor: {type: string}
+    ManufacturerRename:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        expectedVersion: {type: integer, minimum: 1}
+    ProductCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        parentId: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProductCategoryList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ProductCategory'}
+        nextCursor: {type: string}
+    ProductCategoryRename:
+      type: object
+      additionalProperties: false
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        expectedVersion: {type: integer, minimum: 1}
+    ManufacturerCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+    ProductCategoryCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        parentId: {type: [string, "null"], format: uuid}
+    Product:
+      type: object
+      additionalProperties: false
+      required: [id, name, manufacturerId, categoryId, manufacturerPartNumber, internalPartNumber, serialized, stockManaged, assetManaged, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        manufacturerId: {type: [string, "null"], format: uuid}
+        categoryId: {type: [string, "null"], format: uuid}
+        manufacturerPartNumber: {type: [string, "null"]}
+        internalPartNumber: {type: [string, "null"]}
+        serialized: {type: boolean}
+        stockManaged: {type: boolean}
+        assetManaged: {type: boolean}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProductList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Product'}
+        nextCursor: {type: string}
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        manufacturerId: {type: [string, "null"], format: uuid}
+        categoryId: {type: [string, "null"], format: uuid}
+        manufacturerPartNumber: {type: string, maxLength: 100}
+        internalPartNumber: {type: string, maxLength: 100}
+        serialized: {type: boolean, default: false}
+        stockManaged: {type: boolean, default: true}
+        assetManaged: {type: boolean, default: false}
+    ProductUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 200}
+        manufacturerId: {type: string, format: uuid}
+        clearManufacturer: {type: boolean}
+        categoryId: {type: string, format: uuid}
+        clearCategory: {type: boolean}
+        manufacturerPartNumber: {type: string, maxLength: 100, description: "Empty clears."}
+        internalPartNumber: {type: string, maxLength: 100, description: "Empty clears."}
+        serialized: {type: boolean}
+        stockManaged: {type: boolean}
+        assetManaged: {type: boolean}
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [id, subjectType, subjectId, subjectLabel, stepIndex, status, approverUserId, approverTeamId, decidedByUserId, decidedAt, decisionComment, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        subjectType: {type: string, description: "Kind of record the approval is about, for example service_request."}
+        subjectId: {type: string, format: uuid}
+        subjectLabel: {type: string}
+        stepIndex: {type: integer, minimum: 0}
+        status: {type: string, enum: [pending, approved, rejected, cancelled]}
+        approverUserId: {type: [string, "null"], format: uuid}
+        approverTeamId: {type: [string, "null"], format: uuid}
+        decidedByUserId: {type: [string, "null"], format: uuid}
+        decidedAt: {type: [string, "null"], format: date-time}
+        decisionComment: {type: [string, "null"]}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+    ApprovalList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Approval'}
+        nextCursor: {type: string}
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        comment: {type: string, maxLength: 1000}
+        expectedVersion: {type: integer, minimum: 1}
+    CatalogItem:
+      type: object
+      additionalProperties: false
+      required: [id, key, title, description, active, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, description: "Stable identifier, fixed at creation."}
+        title: {type: string}
+        description: {type: string}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    CatalogItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogItem'}
+        nextCursor: {type: string}
+    CatalogFormField:
+      type: object
+      additionalProperties: false
+      required: [key, type, label, required]
+      properties:
+        key: {type: string}
+        type: {type: string, enum: [text, longtext, number, boolean, date, select, user, product]}
+        label: {type: string}
+        help: {type: string}
+        required: {type: boolean}
+        maxLength: {type: integer}
+        min: {type: integer}
+        max: {type: integer}
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [value, label]
+            properties:
+              value: {type: string}
+              label: {type: string}
+        categoryId: {type: string, format: uuid, description: "Managers only."}
+        productIds:
+          type: array
+          description: "Managers only."
+          items: {type: string, format: uuid}
+        productOptions:
+          type: array
+          description: "Active products offered by a product field."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+    CatalogForm:
+      type: object
+      required: [id, key, title, description, active, version, updatedAt, allowRequestedFor, fields]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        title: {type: string}
+        description: {type: string}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+        allowRequestedFor: {type: boolean, description: "The requester may pick another User the request is for."}
+        fields:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogFormField'}
+        definition:
+          type: object
+          description: "Managers only: the full definition (fields, allowRequestedFor, approvals, fulfillment)."
+    CatalogItemCreate:
+      type: object
+      additionalProperties: false
+      required: [key, title, definition]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9-]{1,62}$'}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        definition:
+          type: object
+          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager), fulfillment (at most 20 task templates)."
+    CatalogItemUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        definition: {type: object}
+    ServiceRequest:
+      type: object
+      additionalProperties: false
+      required: [id, reference, catalogItemId, catalogItemTitle, requesterId, requestedForId, status, waitingReason, statusReason, currentApprovalStep, submittedAt, completedAt, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as REQ-2026-000001."}
+        catalogItemId: {type: string, format: uuid}
+        catalogItemTitle: {type: string}
+        requesterId: {type: string, format: uuid}
+        requestedForId: {type: string, format: uuid}
+        status: {type: string, enum: [pending_approval, in_fulfillment, waiting, completed, rejected, cancelled]}
+        waitingReason: {type: [string, "null"], enum: [stock, supplier, requester, external_system, null]}
+        statusReason: {type: [string, "null"], description: "The reason given when the request was cancelled."}
+        currentApprovalStep: {type: [integer, "null"], description: "Set exactly while pending_approval."}
+        submittedAt: {type: string, format: date-time}
+        completedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    ServiceRequestList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ServiceRequest'}
+        nextCursor: {type: string}
+    ServiceRequestSubmit:
+      type: object
+      additionalProperties: false
+      required: [catalogItemId, answers]
+      properties:
+        catalogItemId: {type: string, format: uuid}
+        requestedForId: {type: [string, "null"], format: uuid, description: "Only when the item allows requesting for others; defaults to the requester."}
+        answers: {type: object, additionalProperties: true, description: "Answers keyed by field key."}
+    ServiceRequestReason:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 500}
+        expectedVersion: {type: integer, minimum: 1}
+    ServiceRequestDetail:
+      type: object
+      required: [id, reference, status, version, allowRequestedFor, fields, answers, references, approvals, tasks, names, actions]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string}
+        catalogItemId: {type: string, format: uuid}
+        catalogItemTitle: {type: string}
+        requesterId: {type: string, format: uuid}
+        requestedForId: {type: string, format: uuid}
+        status: {type: string}
+        waitingReason: {type: [string, "null"]}
+        statusReason: {type: [string, "null"]}
+        currentApprovalStep: {type: [integer, "null"]}
+        submittedAt: {type: string, format: date-time}
+        completedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        allowRequestedFor: {type: boolean}
+        fields:
+          type: array
+          description: "The form fields as submitted (key, type, label, select options)."
+          items: {type: object, additionalProperties: true}
+        answers: {type: object, additionalProperties: true}
+        references:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [fieldKey, type, id]
+            properties:
+              fieldKey: {type: string}
+              type: {type: string, enum: [user, product]}
+              id: {type: string, format: uuid}
+        approvals:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, stepIndex, status, approverUserId, approverTeamId, decidedByUserId, decidedAt, decisionComment]
+            properties:
+              id: {type: string, format: uuid}
+              stepIndex: {type: integer}
+              status: {type: string, enum: [pending, approved, rejected, cancelled]}
+              approverUserId: {type: [string, "null"], format: uuid}
+              approverTeamId: {type: [string, "null"], format: uuid}
+              decidedByUserId: {type: [string, "null"], format: uuid}
+              decidedAt: {type: [string, "null"], format: date-time}
+              decisionComment: {type: [string, "null"]}
+        tasks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, title, status, priority, mandatory, dueAt, assignedUserId, assignedTeamId]
+            properties:
+              id: {type: string, format: uuid}
+              title: {type: string}
+              status: {type: string}
+              priority: {type: string}
+              mandatory: {type: boolean}
+              dueAt: {type: [string, "null"], format: date-time}
+              assignedUserId: {type: [string, "null"], format: uuid}
+              assignedTeamId: {type: [string, "null"], format: uuid}
+        names:
+          type: object
+          additionalProperties: {type: string}
+          description: "Display names of the Users and Teams that appear in the request, by id."
+        actions:
+          type: array
+          items: {type: string, enum: [cancel, put_on_hold, resume, complete]}
     TaskCreate:
       type: object
       additionalProperties: false

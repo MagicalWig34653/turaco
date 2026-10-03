@@ -55,3 +55,8 @@ func (w *WorkDirectory) Contacts(ctx context.Context, ids []string) (map[string]
 func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error) {
 	return w.app.CurrentMemberIDs(ctx, teamID)
 }
+
+// ManagerIDs returns user id -> manager user id for Users that have a manager.
+func (w *WorkDirectory) ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error) {
+	return w.app.ManagerIDs(ctx, userIDs)
+}

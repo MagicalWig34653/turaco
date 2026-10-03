@@ -8,6 +8,7 @@
 | `assets.view` | normal | View assets and device context within authorized scope. |
 | `briefing.manage` | elevated | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |
 | `briefing.view` | normal | View published IT Briefing items. |
+| `catalog.manage` | elevated | Create and change Catalog Items: form definitions, approval steps and fulfillment task templates; activate and deactivate them. |
 | `changes.approve` | high | Approve infrastructure/service changes according to policy. |
 | `deployments.execute` | high | Start endpoint software/remediation deployments. |
 | `endpoint.management.view` | normal | View normalized endpoint-management artifacts, assignments, applicability and observations within authorized scope. |
@@ -21,7 +22,11 @@
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
+| `products.manage` | elevated | Create and change products, manufacturers and product categories. |
+| `products.view` | normal | View the product catalog: products, manufacturers and product categories. |
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
+| `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
+| `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |

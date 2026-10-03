@@ -23,8 +23,9 @@ type Preference struct {
 // Preferences returns the User's email preference for every registered
 // category (enabled unless the User opted out), sorted by category.
 func (s *Service) Preferences(ctx context.Context, userID string) ([]Preference, error) {
-	out := make([]Preference, 0, len(Categories))
-	for _, c := range Categories {
+	names := s.categories.Names()
+	out := make([]Preference, 0, len(names))
+	for _, c := range names {
 		out = append(out, Preference{Category: c, Channel: ChannelEmail, Enabled: true})
 	}
 	if validUUID(userID) {
@@ -62,7 +63,7 @@ func (s *Service) SetEmailPreference(ctx context.Context, userID, category strin
 	if !validUUID(userID) {
 		return errors.New("notifications: user id is required")
 	}
-	if !validCategory(category) {
+	if !s.categories.Valid(category) {
 		return ErrUnknownCategory
 	}
 	_, err := s.pool.Exec(ctx, `
