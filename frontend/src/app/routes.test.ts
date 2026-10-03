@@ -18,6 +18,7 @@ describe('visibleNavItems', () => {
       'myAssets',
       'myTickets',
       'knowledge',
+      'incidents',
     ]);
     expect(ids([], 'admin')).toEqual([]);
   });
@@ -40,6 +41,7 @@ describe('visibleNavItems', () => {
         'myAssets',
         'myTickets',
         'knowledge',
+        'incidents',
         'tasks',
       ]);
     }
@@ -53,6 +55,7 @@ describe('visibleNavItems', () => {
       'myAssets',
       'myTickets',
       'knowledge',
+      'incidents',
     ]);
   });
 
@@ -68,6 +71,7 @@ describe('visibleNavItems', () => {
       'myAssets',
       'myTickets',
       'knowledge',
+      'incidents',
     ]);
     expect(ids(['briefing.manage'], 'main')).toEqual([
       'home',
@@ -80,6 +84,7 @@ describe('visibleNavItems', () => {
       'myAssets',
       'myTickets',
       'knowledge',
+      'incidents',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
@@ -207,7 +212,7 @@ describe('support', () => {
   });
 });
 
-describe('knowledge', () => {
+describe('knowledge', 'incidents', () => {
   it('lists articles for everyone and keeps authoring behind knowledge.manage', () => {
     expect(ids([], 'main')).toContain('knowledge');
     const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;

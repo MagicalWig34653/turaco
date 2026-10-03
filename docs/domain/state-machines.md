@@ -62,6 +62,8 @@ Implemented (F5, `modules/servicedesk`): one ticket kind `incident`. `new` becom
 ## Major Incident
 `identified → investigating → mitigating → monitoring → resolved → closed`.
 
+Implemented (F5, `modules/servicedesk`): operations `investigate` (from identified), `mitigate` (identified, investigating), `monitor` (investigating, mitigating), `resolve` (any active status; a message is required) and `close` (resolved). Every step and every `PostUpdate` writes a public timeline entry and replaces the public summary. Subscribing and linking tickets are only possible while the incident is active.
+
 ## Problem
 `new → under_investigation → cause_identified → known_error → resolution_planned → resolved → closed`.
 

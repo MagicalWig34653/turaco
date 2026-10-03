@@ -27,6 +27,11 @@ func (d deviceAdapter) Snapshot(ctx context.Context, assetID, holder string) (ma
 	return map[string]any{"reference": s.Reference, "product": s.Product, "serialNumber": s.SerialNumber, "assetTag": s.AssetTag, "status": s.Status}, nil
 }
 
+// MajorIncidents builds the Major Incident service.
+func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
+	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool))
+}
+
 // ServiceDesk builds the ticket service over the other modules' public contracts.
 func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))

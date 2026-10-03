@@ -176,10 +176,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	}
 	sdStore := servicedeskrepository.New(pool)
 	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	majorConsumers := servicedeskapp.NewMajorConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	for _, r := range []struct {
 		event, name string
 		fn          events.Consumer
 	}{
+		{"MajorIncidentUpdated", "servicedesk.notify-major", majorConsumers.OnMajorIncidentUpdated},
 		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
 		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},

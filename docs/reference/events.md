@@ -17,6 +17,8 @@
 | `DeploymentTargetFailed` | 1 | endpoint | A deployment target attempt failed. |
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |
+| `MajorIncidentDeclared` | 1 | service-desk | A Major Incident was declared. Payload: majorIncidentId, status. |
+| `MajorIncidentUpdated` | 1 | service-desk | A Major Incident changed status or got a public update. Payload: majorIncidentId, status. |
 | `ManagementApplicabilityChanged` | 1 | endpoint | Turaco's expected applicability evaluation meaningfully changed for a managed target. |
 | `ManagementAssignmentChanged` | 1 | endpoint | A normalized management-provider assignment meaningfully changed. |
 | `PurchaseOrderApproved` | 1 | procurement | A purchase order was approved. Payload: orderId, supplierId. |

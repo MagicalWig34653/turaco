@@ -3774,6 +3774,290 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents:
+    get:
+      operationId: listMajorIncidents
+      summary: List Major Incidents.
+      description: "Any signed-in user. `active=true` hides resolved and closed incidents. Newest first."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: active
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncidentList'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: declareMajorIncident
+      summary: Declare a Major Incident.
+      description: "Needs `majorincidents.manage`. The message becomes the first public update. Emits MajorIncidentDeclared."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentDeclare'
+      responses:
+        '201':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}:
+    get:
+      operationId: getMajorIncident
+      summary: Get a Major Incident with its public timeline.
+      description: "Any signed-in user. `allowedOperations` is filled for `majorincidents.manage` only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncidentDetail'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/updates:
+    post:
+      operationId: postMajorIncidentUpdate
+      summary: Post a public status message.
+      description: "Needs `majorincidents.manage`; not for closed incidents. Subscribers are notified."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentMessage'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/tickets:
+    post:
+      operationId: linkTicketToMajorIncident
+      summary: Link a ticket to an active incident.
+      description: "Needs `majorincidents.manage`. The ticket's reporter and affected user are subscribed."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentLink'
+      responses:
+        '204':
+          description: Linked.
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/subscribe:
+    post:
+      operationId: subscribeMajorIncident
+      summary: Subscribe.
+      description: "Any signed-in user. Follow an active incident instead of reporting it again."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Done.
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/unsubscribe:
+    post:
+      operationId: unsubscribeMajorIncident
+      summary: Unsubscribe.
+      description: "Any signed-in user. Stop following an incident."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Done.
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/investigate:
+    post:
+      operationId: investigateMajorIncident
+      summary: Investigate.
+      description: "Needs `majorincidents.manage`. Allowed from: identified. The optional message becomes the public summary. Emits MajorIncidentUpdated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/mitigate:
+    post:
+      operationId: mitigateMajorIncident
+      summary: Mitigate.
+      description: "Needs `majorincidents.manage`. Allowed from: identified or investigating. The optional message becomes the public summary. Emits MajorIncidentUpdated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/monitor:
+    post:
+      operationId: monitorMajorIncident
+      summary: Monitor.
+      description: "Needs `majorincidents.manage`. Allowed from: investigating or mitigating. The optional message becomes the public summary. Emits MajorIncidentUpdated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/resolve:
+    post:
+      operationId: resolveMajorIncident
+      summary: Resolve.
+      description: "Needs `majorincidents.manage`. Allowed from: any active status; the message is required. The optional message becomes the public summary. Emits MajorIncidentUpdated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/close:
+    post:
+      operationId: closeMajorIncident
+      summary: Close.
+      description: "Needs `majorincidents.manage`. Allowed from: resolved. The optional message becomes the public summary. Emits MajorIncidentUpdated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -6050,7 +6334,7 @@ components:
     Ticket:
       type: object
       additionalProperties: false
-      required: [id, reference, title, description, status, waitingReason, statusReason, resolution, priority, reporterId, affectedUserId, queueTeamId, assigneeId, assetId, deviceSnapshot, resolvedAt, closedAt, version, createdAt, updatedAt]
+      required: [id, reference, title, description, status, waitingReason, statusReason, resolution, priority, reporterId, affectedUserId, queueTeamId, assigneeId, assetId, majorIncidentId, deviceSnapshot, resolvedAt, closedAt, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string, description: "Human reference such as TKT-000001."}
@@ -6066,6 +6350,7 @@ components:
         queueTeamId: {type: [string, "null"], format: uuid, description: "Only returned to people with tickets.view."}
         assigneeId: {type: [string, "null"], format: uuid}
         assetId: {type: [string, "null"], format: uuid}
+        majorIncidentId: {type: [string, "null"], format: uuid}
         deviceSnapshot: {type: [object, "null"], description: "What the device looked like when the ticket was created."}
         resolvedAt: {type: [string, "null"], format: date-time}
         closedAt: {type: [string, "null"], format: date-time}
@@ -6183,6 +6468,77 @@ components:
       additionalProperties: false
       properties:
         expectedVersion: {type: integer, minimum: 1}
+    MajorIncident:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, summary, status, resolvedAt, closedAt, subscribed, linkedTickets, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as MI-000001."}
+        title: {type: string}
+        summary: {type: string, description: "The current public message."}
+        status: {type: string, enum: [identified, investigating, mitigating, monitoring, resolved, closed]}
+        resolvedAt: {type: [string, "null"], format: date-time}
+        closedAt: {type: [string, "null"], format: date-time}
+        subscribed: {type: boolean, description: "Whether the caller follows the incident."}
+        linkedTickets: {type: integer, minimum: 0}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    MajorIncidentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/MajorIncident'}
+        nextCursor: {type: string}
+    MajorIncidentDetail:
+      allOf:
+        - $ref: '#/components/schemas/MajorIncident'
+        - type: object
+          required: [updates, allowedOperations]
+          properties:
+            updates:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, status, body, createdAt]
+                properties:
+                  id: {type: string, format: uuid}
+                  status: {type: string}
+                  body: {type: string}
+                  createdAt: {type: string, format: date-time}
+            allowedOperations:
+              type: array
+              items: {type: string}
+    MajorIncidentDeclare:
+      type: object
+      additionalProperties: false
+      required: [title, message]
+      properties:
+        title: {type: string, maxLength: 200}
+        message: {type: string, maxLength: 2000}
+    MajorIncidentMessage:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: {type: string, maxLength: 2000}
+    MajorIncidentLink:
+      type: object
+      additionalProperties: false
+      required: [ticketId]
+      properties:
+        ticketId: {type: string, format: uuid}
+    MajorIncidentTransition:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        message: {type: string, maxLength: 2000}
     TaskCreate:
       type: object
       additionalProperties: false

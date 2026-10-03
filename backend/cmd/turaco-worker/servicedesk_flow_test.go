@@ -61,3 +61,37 @@ func TestTicketNotificationsFollowWhoActed(t *testing.T) {
 		t.Errorf("%d events left unprocessed", w.pendingEvents())
 	}
 }
+
+func TestMajorIncidentUpdatesReachSubscribersOnly(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	svc := wiring.MajorIncidents(w.pool)
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, w.assignee)
+	})
+	c := func(u string) servicedeskapp.Caller {
+		return servicedeskapp.Caller{Actor: audit.UserActor(u), CorrelationID: w.corr}
+	}
+	m, err := svc.Declare(ctx, c(w.assignee), true, "VPN outage", "The VPN gateway is unreachable.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{w.creator, w.assignee} {
+		if err := svc.Subscribe(ctx, c(u), u, m.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.PostUpdate(ctx, c(w.assignee), true, m.ID, "A fix is rolling out."); err != nil {
+		t.Fatal(err)
+	}
+	w.dispatch()
+	if w.notified(w.creator, "majorincident.update") != 1 {
+		t.Error("the subscriber must hear about the update")
+	}
+	if w.notified(w.assignee, "majorincident.update") != 0 {
+		t.Error("the author is not notified about their own update")
+	}
+	if w.notified(w.member, "majorincident.update") != 0 {
+		t.Error("people who did not subscribe are not notified")
+	}
+}

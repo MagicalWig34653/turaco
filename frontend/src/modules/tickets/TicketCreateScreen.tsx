@@ -9,6 +9,7 @@ import { Button } from '../../platform/ui/Button';
 import { Select, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { assetsApi } from '../assets/api';
+import { IncidentBanner } from '../incidents/IncidentBanner';
 import { Suggestions } from '../knowledge/Suggestions';
 import { ticketsApi } from './api';
 
@@ -46,6 +47,7 @@ export function TicketCreateScreen() {
       <p>
         <Link to="/support">{t('tickets.back')}</Link>
       </p>
+      <IncidentBanner />
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
         <TextField

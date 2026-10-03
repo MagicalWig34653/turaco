@@ -45,6 +45,8 @@ import { TicketsScreen } from '../modules/tickets/TicketsScreen';
 import { ArticleDetailScreen } from '../modules/knowledge/ArticleDetailScreen';
 import { ArticleEditScreen } from '../modules/knowledge/ArticleEditScreen';
 import { ArticlesScreen } from '../modules/knowledge/ArticlesScreen';
+import { IncidentDetailScreen } from '../modules/incidents/IncidentDetailScreen';
+import { IncidentsScreen } from '../modules/incidents/IncidentsScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -138,6 +140,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ArticleEditScreen key={params.id} id={params.id ?? ''} />;
     case 'articleDetail':
       return <ArticleDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'incidents':
+      return <IncidentsScreen />;
+    case 'incidentDetail':
+      return <IncidentDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

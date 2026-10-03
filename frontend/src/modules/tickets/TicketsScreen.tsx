@@ -7,6 +7,7 @@ import { Badge } from '../../platform/ui/Alert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { IncidentBanner } from '../incidents/IncidentBanner';
 import { ticketsApi } from './api';
 import { ticketStatuses, type Ticket, type TicketStatus } from './types';
 
@@ -73,6 +74,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           </Link>
         }
       />
+      {scope === 'mine' ? <IncidentBanner /> : null}
       <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
         <Select
           label={t('tickets.col.status')}

@@ -44,27 +44,28 @@ const (
 
 // Ticket is a tracked support record.
 type Ticket struct {
-	ID             string
-	Reference      string
-	Kind           string
-	Title          string
-	Description    *string
-	Status         string
-	WaitingReason  *string
-	StatusReason   *string
-	Resolution     *string
-	Priority       string
-	ReporterID     string
-	AffectedUserID string
-	QueueTeamID    *string
-	AssigneeID     *string
-	AssetID        *string
-	DeviceSnapshot map[string]any
-	ResolvedAt     *time.Time
-	ClosedAt       *time.Time
-	Version        int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID              string
+	Reference       string
+	Kind            string
+	Title           string
+	Description     *string
+	Status          string
+	WaitingReason   *string
+	StatusReason    *string
+	Resolution      *string
+	Priority        string
+	ReporterID      string
+	AffectedUserID  string
+	QueueTeamID     *string
+	AssigneeID      *string
+	AssetID         *string
+	MajorIncidentID *string
+	DeviceSnapshot  map[string]any
+	ResolvedAt      *time.Time
+	ClosedAt        *time.Time
+	Version         int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Comment is a note on a ticket.

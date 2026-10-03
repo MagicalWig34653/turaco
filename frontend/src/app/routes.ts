@@ -40,6 +40,8 @@ export type RouteId =
   | 'articleNew'
   | 'articleEdit'
   | 'articleDetail'
+  | 'incidents'
+  | 'incidentDetail'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -215,6 +217,8 @@ export const appRoutes: readonly AppRoute[] = [
     requires: ['knowledge.manage'],
   },
   { id: 'articleDetail', pattern: '/knowledge/:id', titleKey: 'knowledge.detail.title' },
+  { id: 'incidents', pattern: '/incidents', titleKey: 'nav.incidents', nav: 'main' },
+  { id: 'incidentDetail', pattern: '/incidents/:id', titleKey: 'incidents.detail.title' },
   {
     id: 'tasks',
     pattern: '/tasks',

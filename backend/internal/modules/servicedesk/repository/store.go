@@ -22,14 +22,14 @@ var _ application.Store = (*Repository)(nil)
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const columns = `id::text, reference, kind, title, description, status, waiting_reason, status_reason, resolution, priority,
-	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, device_snapshot,
+	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, major_incident_id::text, device_snapshot,
 	resolved_at, closed_at, version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Ticket, error) {
 	var t application.Ticket
 	var snap []byte
 	err := row.Scan(&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
-		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return t, err
 	}

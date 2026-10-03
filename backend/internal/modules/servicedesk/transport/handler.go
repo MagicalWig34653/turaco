@@ -100,32 +100,33 @@ func tsPtr(t *time.Time) *string {
 }
 
 type ticketDTO struct {
-	ID             string         `json:"id"`
-	Reference      string         `json:"reference"`
-	Title          string         `json:"title"`
-	Description    *string        `json:"description"`
-	Status         string         `json:"status"`
-	WaitingReason  *string        `json:"waitingReason"`
-	StatusReason   *string        `json:"statusReason"`
-	Resolution     *string        `json:"resolution"`
-	Priority       string         `json:"priority"`
-	ReporterID     string         `json:"reporterId"`
-	AffectedUserID string         `json:"affectedUserId"`
-	QueueTeamID    *string        `json:"queueTeamId"`
-	AssigneeID     *string        `json:"assigneeId"`
-	AssetID        *string        `json:"assetId"`
-	DeviceSnapshot map[string]any `json:"deviceSnapshot"`
-	ResolvedAt     *string        `json:"resolvedAt"`
-	ClosedAt       *string        `json:"closedAt"`
-	Version        int            `json:"version"`
-	CreatedAt      string         `json:"createdAt"`
-	UpdatedAt      string         `json:"updatedAt"`
+	ID              string         `json:"id"`
+	Reference       string         `json:"reference"`
+	Title           string         `json:"title"`
+	Description     *string        `json:"description"`
+	Status          string         `json:"status"`
+	WaitingReason   *string        `json:"waitingReason"`
+	StatusReason    *string        `json:"statusReason"`
+	Resolution      *string        `json:"resolution"`
+	Priority        string         `json:"priority"`
+	ReporterID      string         `json:"reporterId"`
+	AffectedUserID  string         `json:"affectedUserId"`
+	QueueTeamID     *string        `json:"queueTeamId"`
+	AssigneeID      *string        `json:"assigneeId"`
+	AssetID         *string        `json:"assetId"`
+	MajorIncidentID *string        `json:"majorIncidentId"`
+	DeviceSnapshot  map[string]any `json:"deviceSnapshot"`
+	ResolvedAt      *string        `json:"resolvedAt"`
+	ClosedAt        *string        `json:"closedAt"`
+	Version         int            `json:"version"`
+	CreatedAt       string         `json:"createdAt"`
+	UpdatedAt       string         `json:"updatedAt"`
 }
 
 func toTicket(t application.Ticket) ticketDTO {
 	return ticketDTO{ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason,
 		StatusReason: t.StatusReason, Resolution: t.Resolution, Priority: t.Priority, ReporterID: t.ReporterID, AffectedUserID: t.AffectedUserID,
-		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
+		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, MajorIncidentID: t.MajorIncidentID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
 		ClosedAt: tsPtr(t.ClosedAt), Version: t.Version, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
 }
 
