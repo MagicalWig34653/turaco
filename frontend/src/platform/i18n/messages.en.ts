@@ -33,6 +33,13 @@ export const en = {
   'infra.rear': 'Rear',
   'infra.face': 'Face (front or rear)',
   'infra.free': 'Free',
+  'infra.occupied': 'Occupied',
+  'infra.truncated': 'The list is limited; not all sites or buildings are shown.',
+  'infra.warnings.title': 'Placements of assets that are gone',
+  'infra.warnings.hint':
+    'These assets are disposed, lost or retired (or missing) but still occupy rack units. Remove the placement.',
+  'infra.warnings.position': 'U{u}, {height} U, {face}',
+  'infra.warnings.truncated': 'More placements may be affected than shown.',
   'infra.assetId': 'Asset ID',
   'infra.rackId': 'Rack ID',
   'infra.reason': 'Reason',

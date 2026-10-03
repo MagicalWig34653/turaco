@@ -35,6 +35,13 @@ export const de: Record<MessageKey, string> = {
   'infra.rear': 'Hinten',
   'infra.face': 'Seite (front oder rear)',
   'infra.free': 'Frei',
+  'infra.occupied': 'Belegt',
+  'infra.truncated': 'Die Liste ist begrenzt; nicht alle Standorte oder Gebäude werden angezeigt.',
+  'infra.warnings.title': 'Platzierungen von nicht mehr vorhandenen Assets',
+  'infra.warnings.hint':
+    'Diese Assets sind entsorgt, verloren oder ausgemustert (oder fehlen), belegen aber weiterhin Höheneinheiten. Entfernen Sie die Platzierung.',
+  'infra.warnings.position': 'HE {u}, {height} HE, {face}',
+  'infra.warnings.truncated': 'Möglicherweise sind mehr Platzierungen betroffen als angezeigt.',
   'infra.assetId': 'Asset-ID',
   'infra.rackId': 'Rack-ID',
   'infra.reason': 'Grund',

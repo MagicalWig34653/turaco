@@ -5953,6 +5953,22 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /infrastructure/placement-warnings:
+    get:
+      operationId: listPlacementWarnings
+      summary: listPlacementWarnings.
+      description: "Requires infrastructure.view (or manage) and assets.view (or manage); 403 otherwise. Lists active rack placements whose asset is disposed, lost or retired (or missing): placing never changes an asset, so these keep their units until removed. Bounded: at most 5000 active placements are checked and 100 returned; `truncated` says so. Responses are no-store."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Placement warnings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PlacementWarningList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /buildings:
     get:
       operationId: listBuildings
@@ -6049,7 +6065,7 @@ paths:
     post:
       operationId: archiveBuilding
       summary: archiveBuilding.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6075,7 +6091,7 @@ paths:
     post:
       operationId: unarchiveBuilding
       summary: unarchiveBuilding.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6195,7 +6211,7 @@ paths:
     post:
       operationId: archiveRoom
       summary: archiveRoom.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6221,7 +6237,7 @@ paths:
     post:
       operationId: unarchiveRoom
       summary: unarchiveRoom.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6297,7 +6313,7 @@ paths:
     get:
       operationId: getRack
       summary: getRack.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. Without assets.view the placements omit assetId and assetReference (occupied units only)."
       security:
         - sessionAuth: []
       parameters:
@@ -6341,7 +6357,7 @@ paths:
     post:
       operationId: archiveRack
       summary: archiveRack.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6367,7 +6383,7 @@ paths:
     post:
       operationId: unarchiveRack
       summary: unarchiveRack.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required."
       security:
         - sessionAuth: []
       parameters:
@@ -6393,7 +6409,7 @@ paths:
     get:
       operationId: listRackPlacements
       summary: listRackPlacements.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. Without assets.view the items omit assetId and assetReference and assetReferences is empty."
       security:
         - sessionAuth: []
       parameters:
@@ -6418,7 +6434,7 @@ paths:
     post:
       operationId: createRackPlacement
       summary: createRackPlacement.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. Without assets.view the response omits assetId and assetReference."
       security:
         - sessionAuth: []
       requestBody:
@@ -6441,7 +6457,7 @@ paths:
     get:
       operationId: getRackPlacement
       summary: getRackPlacement.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. Without assets.view the response omits assetId and assetReference."
       security:
         - sessionAuth: []
       parameters:
@@ -6460,7 +6476,7 @@ paths:
     post:
       operationId: moveRackPlacement
       summary: moveRackPlacement.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required (400 infrastructure.invalid_request when missing). The asset must still be usable (400 infrastructure.asset_invalid)."
       security:
         - sessionAuth: []
       parameters:
@@ -6486,7 +6502,7 @@ paths:
     post:
       operationId: removeRackPlacement
       summary: removeRackPlacement.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required (400 infrastructure.invalid_request when missing). Repeating a successful removal with the same reason returns the current record."
       security:
         - sessionAuth: []
       parameters:
@@ -6626,7 +6642,7 @@ paths:
     post:
       operationId: changeVirtualMachineState
       summary: changeVirtualMachineState.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required (400 infrastructure.invalid_request when missing)."
       security:
         - sessionAuth: []
       parameters:
@@ -6652,7 +6668,7 @@ paths:
     post:
       operationId: assignVirtualMachineHypervisor
       summary: assignVirtualMachineHypervisor.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required (400 infrastructure.invalid_request when missing)."
       security:
         - sessionAuth: []
       parameters:
@@ -6678,7 +6694,7 @@ paths:
     post:
       operationId: decommissionVirtualMachine
       summary: decommissionVirtualMachine.
-      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store. `expectedVersion` is required (400 infrastructure.invalid_request when missing). Repeating a successful decommission with the same reason returns the current record."
       security:
         - sessionAuth: []
       parameters:
@@ -7074,12 +7090,13 @@ components:
         updatedAt: {type: string, format: date-time}
     RackPlacement:
       type: object
-      required: [id, rackId, assetId, uPosition, heightU, face, placedAt, version]
+      required: [id, rackId, uPosition, heightU, face, placedAt, version]
+      description: "assetId and assetReference are only present for callers who also have assets.view or assets.manage; others see the units as occupied (position and height only)."
       properties:
         id: {type: string}
         rackId: {type: string}
-        assetId: {type: string}
-        assetReference: {type: [string, 'null']}
+        assetId: {type: string, description: "Omitted without assets.view or assets.manage."}
+        assetReference: {type: [string, 'null'], description: "Omitted without assets.view or assets.manage."}
         uPosition: {type: integer}
         heightU: {type: integer}
         face: {type: string, enum: [front, rear]}
@@ -7151,6 +7168,7 @@ components:
         updatedAt: {type: string, format: date-time}
     InfrastructureVersion:
       type: object
+      required: [expectedVersion]
       properties:
         expectedVersion: {type: integer}
     BuildingCreate:
@@ -7203,7 +7221,7 @@ components:
         face: {type: string, enum: [front, rear]}
     RackPlacementMove:
       type: object
-      required: [rackId, uPosition, heightU, face]
+      required: [rackId, uPosition, heightU, face, expectedVersion]
       properties:
         rackId: {type: string}
         uPosition: {type: integer}
@@ -7212,7 +7230,7 @@ components:
         expectedVersion: {type: integer}
     RackPlacementRemove:
       type: object
-      required: [reason]
+      required: [reason, expectedVersion]
       properties:
         reason: {type: string, enum: [relocated, replaced, decommissioned, error_correction, other]}
         expectedVersion: {type: integer}
@@ -7241,18 +7259,19 @@ components:
         notes: {type: [string, 'null']}
     VirtualMachineStateChange:
       type: object
-      required: [state]
+      required: [state, expectedVersion]
       properties:
         state: {type: string, enum: [running, stopped, unknown, decommissioned]}
         expectedVersion: {type: integer}
     VirtualMachineHypervisorChange:
       type: object
+      required: [expectedVersion]
       properties:
         assetId: {type: [string, 'null']}
         expectedVersion: {type: integer}
     VirtualMachineDecommission:
       type: object
-      required: [reason]
+      required: [reason, expectedVersion]
       properties:
         reason: {type: string, enum: [retired, migrated, deleted, other]}
         expectedVersion: {type: integer}
@@ -7297,9 +7316,30 @@ components:
             placements: {type: array, items: {$ref: '#/components/schemas/RackPlacement'}}
     InfrastructureTree:
       type: object
-      required: [items]
+      required: [items, truncated]
       properties:
         items: {type: array, items: {$ref: '#/components/schemas/InfrastructureSite'}}
+        truncated: {type: boolean, description: "True when more sites (limit 500) or buildings (limit 10000) exist than were returned."}
+    PlacementWarning:
+      type: object
+      required: [placementId, rackId, rackName, assetId, assetStatus, uPosition, heightU, face, placedAt]
+      properties:
+        placementId: {type: string}
+        rackId: {type: string}
+        rackName: {type: string}
+        assetId: {type: string}
+        assetReference: {type: string}
+        assetStatus: {type: string, description: "disposed, lost, retired or missing (the asset no longer exists)."}
+        uPosition: {type: integer}
+        heightU: {type: integer}
+        face: {type: string, enum: [front, rear]}
+        placedAt: {type: string, format: date-time}
+    PlacementWarningList:
+      type: object
+      required: [items, truncated]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/PlacementWarning'}}
+        truncated: {type: boolean, description: "True when the scan limit (5000 active placements) or the list limit (100) stopped the check."}
     AuthSession:
       type: object
       additionalProperties: false

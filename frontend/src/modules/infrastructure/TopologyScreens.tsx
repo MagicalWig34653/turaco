@@ -270,6 +270,29 @@ function RoomChildren({ id }: { id: string }) {
     </>
   );
 }
+function PlacementWarningList() {
+  const { t } = useI18n();
+  const loaded = useAsync((signal) => api.placementWarnings(signal), []);
+  if (loaded.error) return <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />;
+  const items = loaded.data?.items ?? [];
+  if (items.length === 0) return null;
+  return (
+    <section>
+      <h2>{t('infra.warnings.title')}</h2>
+      <p>{t('infra.warnings.hint')}</p>
+      <ul>
+        {items.map((w) => (
+          <li key={w.placementId}>
+            <Link to={`/assets/${w.assetId}`}>{w.assetReference ?? w.assetId}</Link> (
+            {w.assetStatus}) · <Link to={`/infrastructure/racks/${w.rackId}`}>{w.rackName}</Link> ·{' '}
+            {t('infra.warnings.position', { u: w.uPosition, height: w.heightU, face: w.face })}
+          </li>
+        ))}
+      </ul>
+      {loaded.data?.truncated && <p role="status">{t('infra.warnings.truncated')}</p>}
+    </section>
+  );
+}
 export function SiteTreeScreen() {
   const { t } = useI18n();
   const { can } = useSession();
@@ -290,6 +313,8 @@ export function SiteTreeScreen() {
       {loaded.error && <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />}
       {loaded.loading && <p>{t('state.loading')}</p>}
       {loaded.data?.items.length === 0 && <p>{t('infra.empty')}</p>}
+      {loaded.data?.truncated && <p role="status">{t('infra.truncated')}</p>}
+      {(can('assets.view') || can('assets.manage')) && <PlacementWarningList />}
       {loaded.data?.items.map((site) => (
         <section key={site.locationId}>
           <h2>{site.name}</h2>
@@ -624,9 +649,13 @@ export function RackScreen({ id }: { id: string }) {
                       <td key={face}>
                         {placement ? (
                           <>
-                            <Link to={`/assets/${placement.assetId}`}>
-                              {placement.assetReference ?? placement.assetId}
-                            </Link>{' '}
+                            {placement.assetId ? (
+                              <Link to={`/assets/${placement.assetId}`}>
+                                {placement.assetReference ?? placement.assetId}
+                              </Link>
+                            ) : (
+                              t('infra.occupied')
+                            )}{' '}
                             {manage && row.unit === placement.uPosition && (
                               <>
                                 <Button

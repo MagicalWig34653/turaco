@@ -26,7 +26,8 @@ export type Rack = {
 export type Placement = {
   id: string;
   rackId: string;
-  assetId: string;
+  /** Omitted when the caller lacks assets.view: the units then only show as occupied. */
+  assetId?: string;
   assetReference?: string;
   uPosition: number;
   heightU: number;
@@ -54,7 +55,20 @@ export type Site = {
   placedAssets: number;
   buildingItems: BuildingSummary[];
 };
-export type Tree = { items: Site[] };
+export type Tree = { items: Site[]; truncated: boolean };
+export type PlacementWarning = {
+  placementId: string;
+  rackId: string;
+  rackName: string;
+  assetId: string;
+  assetReference?: string;
+  assetStatus: string;
+  uPosition: number;
+  heightU: number;
+  face: 'front' | 'rear';
+  placedAt: string;
+};
+export type PlacementWarnings = { items: PlacementWarning[]; truncated: boolean };
 export type AssetLocation = {
   placed: boolean;
   rackId?: string;

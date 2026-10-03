@@ -5,6 +5,7 @@ import type {
   Building,
   Page,
   Placement,
+  PlacementWarnings,
   Rack,
   RackDetail,
   Room,
@@ -33,6 +34,8 @@ registerErrorResolver((error) =>
 export const infrastructureApi = {
   tree: (includeArchived = false, signal?: AbortSignal) =>
     api.get<Tree>('/infrastructure/tree', { query: { includeArchived }, signal }),
+  placementWarnings: (signal?: AbortSignal) =>
+    api.get<PlacementWarnings>('/infrastructure/placement-warnings', { signal }),
   buildings: (siteLocationId: string, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<Building>>('/buildings', {
       query: { siteLocationId, cursor, limit: 200, includeArchived: true },
