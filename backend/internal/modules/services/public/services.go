@@ -48,3 +48,62 @@ func (x *Assets) Assets(ctx context.Context, ids []string) (map[string]applicati
 	}
 	return out, nil
 }
+
+// ServiceInfo is what other modules may know about a Service: identity,
+// lifecycle and the people responsible for it.
+type ServiceInfo struct {
+	ID            string
+	Reference     string
+	Name          string
+	Status        string
+	OwnerUserID   *string
+	OwnerTeamID   *string
+	SupportTeamID *string
+}
+
+// Retired reports that the Service is a tombstone.
+func (s ServiceInfo) Retired() bool { return s.Status == application.StatusRetired }
+
+// Impact types are the Services impact traversal as other modules see it.
+type (
+	// ImpactCaller says what the caller may see, as the Services transport derives it.
+	ImpactCaller = application.Principal
+	ImpactInput  = application.ImpactInput
+	ImpactResult = application.ImpactResult
+	ImpactNode   = application.ImpactNode
+	NodeInfo     = application.NodeInfo
+	PathEdge     = application.PathEdge
+)
+
+// Impact errors a caller may need to recognize.
+var (
+	ErrImpactBusy = application.ErrImpactBusy
+	ErrNotFound   = application.ErrNotFound
+)
+
+// Services is the Services module's public service for other modules.
+type Services struct{ app *application.App }
+
+func New(app *application.App) *Services { return &Services{app: app} }
+
+// Lookup returns id -> Service information for the existing Services among ids
+// (at most 500), retired ones included. It performs no permission check.
+func (s *Services) Lookup(ctx context.Context, ids []string) (map[string]ServiceInfo, error) {
+	found, err := s.app.Lookup(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]ServiceInfo, len(found))
+	for id, v := range found {
+		out[id] = ServiceInfo{ID: v.ID, Reference: v.Reference, Name: v.Name, Status: v.Status,
+			OwnerUserID: v.OwnerUserID, OwnerTeamID: v.OwnerTeamID, SupportTeamID: v.SupportTeamID}
+	}
+	return out, nil
+}
+
+// Impact runs the bounded impact traversal for the caller (see application.App.Impact);
+// the caller's Services, infrastructure and assets visibility decides what is
+// shown, so the redaction rules are those of the Services impact view.
+func (s *Services) Impact(ctx context.Context, p ImpactCaller, in ImpactInput) (ImpactResult, error) {
+	return s.app.Impact(ctx, p, in)
+}

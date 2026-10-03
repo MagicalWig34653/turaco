@@ -20,6 +20,7 @@ import (
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
 	assetsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/repository"
+	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
@@ -107,6 +108,10 @@ func main() {
 	}
 	if err := registerServicesBackfill(ctx, runner, pool); err != nil {
 		logger.Error("configure service link backfill", "error", err)
+		os.Exit(1)
+	}
+	if err := registerChangeReminders(ctx, runner, pool, categories, smtpCfg.Enabled()); err != nil {
+		logger.Error("configure change reminders", "error", err)
 		os.Exit(1)
 	}
 	if cfg.AutotaskSync {
@@ -217,6 +222,20 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalDecided", "procurement.order-approval", procurementSvc.OnApprovalDecided); err != nil {
 		return err
 	}
+	changeNotes := wiring.ChangeNotifications(pool, notifier)
+	for _, r := range []struct{ event, name string }{
+		{"ChangeApproved", "changes.notify-state"}, {"ChangeRejected", "changes.notify-state"}, {"ChangeFailed", "changes.notify-state"},
+	} {
+		if err := d.Register(r.event, r.name, changeNotes.OnChangeState); err != nil {
+			return err
+		}
+	}
+	if err := d.Register("ChangeScheduled", "changes.notify-scheduled", changeNotes.OnChangeScheduled); err != nil {
+		return err
+	}
+	if err := d.Register("ApprovalDecided", "changes.approval", wiring.Changes(pool).OnApprovalDecided); err != nil {
+		return err
+	}
 	if err := d.Register("VirtualMachineChanged", "services.sync-vm-hypervisor-link", wiring.ServiceVMLinks(pool).OnVirtualMachineChanged); err != nil {
 		return err
 	}
@@ -296,6 +315,22 @@ func registerServicesBackfill(ctx context.Context, runner *jobs.Runner, pool *pg
 	return servicesapp.EnqueueBackfill(ctx, pool)
 }
 
+// registerChangeReminders registers the "starts soon" reminder job of scheduled Changes and
+// schedules it. The job is idempotent per Change and maintenance window; the schedule's
+// dedupe key keeps several workers from enqueueing it twice.
+func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+	notifier := notifications.NewService(pool, categories)
+	if email {
+		notifier = notifier.WithEmail()
+	}
+	if err := runner.Register(changesapp.ReminderJobType, changesapp.ReminderJobTimeout, wiring.ChangeNotifications(pool, notifier).HandleReminders); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{
+		JobType: changesapp.ReminderJobType, DedupeKey: changesapp.ReminderJobType, Interval: changesapp.ReminderInterval, MaxAttempts: 3,
+	})
+}
+
 // smtpMailer adapts the SMTP integration to the notification service's
 // Mailer port and maps its permanent errors.
 type smtpMailer struct{ m smtp.Mailer }
@@ -314,6 +349,7 @@ func allCategories() []notifications.Category {
 	out = append(out, approvalsapp.NotificationCategories()...)
 	out = append(out, requestsapp.NotificationCategories()...)
 	out = append(out, assetsapp.NotificationCategories()...)
+	out = append(out, changesapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 
