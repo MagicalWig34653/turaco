@@ -9,6 +9,12 @@ import type {
   FindingFilters,
   ReasonCode,
   SyncCounts,
+  ArtifactFilters,
+  ManagementArtifact,
+  ManagementArtifactDetail,
+  ManagementFilter,
+  ManagementFilterFilters,
+  ManagementObservation,
 } from './types';
 
 registerErrorMessages({
@@ -18,6 +24,7 @@ registerErrorMessages({
   'endpoints.version_conflict': 'error.endpointsVersionConflict',
   'endpoints.asset_invalid': 'error.endpointsAssetInvalid',
   'endpoints.sync_disabled': 'error.endpointsSyncDisabled',
+  'endpoints.sync_running': 'error.endpointsSyncRunning',
   'endpoints.provider_not_configured': 'error.endpointsProviderNotConfigured',
   'endpoints.invalid_cursor': 'error.invalidRequest',
   'endpoints.invalid_limit': 'error.invalidRequest',
@@ -37,6 +44,23 @@ export const endpointsApi = {
     api.get<Page<Finding>>('/endpoint-findings', {
       signal,
       query: { ...filters, limit: 50, cursor },
+    }),
+  artifacts: (filters: ArtifactFilters, cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<ManagementArtifact>>('/management-artifacts', {
+      signal,
+      query: { ...filters, limit: 50, cursor },
+    }),
+  artifact: (id: string, signal?: AbortSignal) =>
+    api.get<ManagementArtifactDetail>(`/management-artifacts/${enc(id)}`, { signal }),
+  managementFilters: (filters: ManagementFilterFilters, cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<ManagementFilter>>('/management-filters', {
+      signal,
+      query: { ...filters, limit: 50, cursor },
+    }),
+  observations: (id: string, cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<ManagementObservation>>(`/devices/${enc(id)}/management-observations`, {
+      signal,
+      query: { limit: 50, cursor },
     }),
   sync: () => api.post<SyncCounts>('/endpoint-sync', {}),
 };

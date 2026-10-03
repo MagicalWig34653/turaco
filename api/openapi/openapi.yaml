@@ -4732,6 +4732,11 @@ paths:
         '400': {$ref: '#/components/responses/EndpointsInvalid'}
         '404': {$ref: '#/components/responses/EndpointsNotFound'}
         '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '429':
+          description: endpoints.sync_cooldown - the provider was synchronized less than 30 seconds ago.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -4792,11 +4797,114 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /management-artifacts:
+    get:
+      operationId: listManagementArtifacts
+      summary: List provider management artifacts.
+      description: "Needs `endpoint.management.view` or `endpoints.manage`. The search is a name prefix of at most 100 characters."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: kind
+          in: query
+          schema: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+        - name: platform
+          in: query
+          schema: {type: string}
+        - name: includeDeleted
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page of artifacts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagementArtifactList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /management-artifacts/{id}:
+    get:
+      operationId: getManagementArtifact
+      summary: Get an artifact with assignment history and current observation counts.
+      description: "Needs `endpoint.management.view` or `endpoints.manage`. Assignments are all current ones plus at most the 200 most recently closed intervals (older history is not returned). `targetGroupExternalId` is returned only to callers who also hold `organization.directory.view`, otherwise it is null. Observation counts cover active observations of live devices; observations a complete snapshot no longer reported are retired and not counted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Artifact detail.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagementArtifactDetail'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /management-filters:
+    get:
+      operationId: listManagementFilters
+      summary: List provider assignment filters.
+      description: "Needs `endpoint.management.view` or `endpoints.manage`. Rules are provider data and are not evaluated here."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+        - name: platform
+          in: query
+          schema: {type: string}
+        - name: includeDeleted
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page of filters.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagementFilterList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/management-observations:
+    get:
+      operationId: listDeviceManagementObservations
+      summary: List a device's current provider management observations.
+      description: "Needs (`endpoint.management.view` or `endpoints.manage`) and (`endpoints.view` or `endpoints.manage`)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of observations.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagementObservationList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /endpoint-sync:
     post:
       operationId: runEndpointSync
-      summary: Ingest the provider's current device snapshot.
-      description: "Needs `endpoints.manage` (it also covers the synchronization). 409 endpoints.sync_disabled when INTUNE_SYNC is off, 409 endpoints.provider_not_configured while no provider client exists, 409 endpoints.sync_running while another run of the provider is in progress. Every run is audited (endpoints.sync.completed or endpoints.sync.failed). Devices missing from the snapshot are tombstoned unless that would tombstone more than half of more than 10 live devices (reported as tombstonesSkipped)."
+      summary: Ingest the provider's current device and management snapshots.
+      description: "Needs `endpoints.manage` (it also covers the synchronization). 409 endpoints.sync_disabled when INTUNE_SYNC is off, 409 endpoints.provider_not_configured while no provider client exists, 409 endpoints.sync_running while another run of the provider is in progress. Every run is audited (endpoints.sync.completed or endpoints.sync.failed). Devices missing from the snapshot are tombstoned unless that would tombstone more than half of more than 10 live devices (reported as tombstonesSkipped). Management ingestion follows device ingestion; a management read or ingestion failure increments managementErrors (HTTP 200) without failing the device part. 429 endpoints.sync_cooldown when the provider's last completed sync finished less than 30 seconds ago."
       security:
         - sessionAuth: []
       responses:
@@ -7532,7 +7640,7 @@ components:
       required: [id, kind, deviceId, deviceName, status, detail, raisedAt, resolvedAt]
       properties:
         id: {type: string, format: uuid}
-        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software]}
+        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error]}
         deviceId: {type: string, format: uuid}
         deviceName: {type: string}
         status: {type: string, enum: [open, resolved]}
@@ -7569,10 +7677,129 @@ components:
       properties:
         reason: {type: string, enum: [serial_confirmed, correction, duplicate, wrong_asset, other]}
         expectedVersion: {type: integer}
+    ManagementArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalId, kind, name, platform, softwareProductId, revision, source, observedAt, lastSyncedAt, deletedObservedAt, version]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        externalId: {type: string}
+        kind: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        name: {type: string}
+        platform: {type: string}
+        softwareProductId: {type: [string, "null"], format: uuid}
+        revision: {type: [string, "null"]}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        deletedObservedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+    ManagementArtifactList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ManagementArtifact'}}
+        nextCursor: {type: string}
+    ManagementFilterSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, platform, rule, deleted]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        platform: {type: string}
+        rule: {type: string}
+        deleted: {type: boolean}
+    ManagementAssignment:
+      type: object
+      additionalProperties: false
+      required: [id, providerAssignmentId, targetKind, targetGroupExternalId, mode, intent, filterMode, filter, current, source, observedAt, lastSyncedAt, validFrom, validUntil]
+      properties:
+        id: {type: string, format: uuid}
+        providerAssignmentId: {type: string}
+        targetKind: {type: string, enum: [group, all_devices, all_users]}
+        targetGroupExternalId: {type: [string, "null"]}
+        mode: {type: string, enum: [include, exclude]}
+        intent: {type: string, enum: [required, available, uninstall, none]}
+        filterMode: {type: string, enum: [include, exclude, none]}
+        filter: {oneOf: [{$ref: '#/components/schemas/ManagementFilterSummary'}, {type: 'null'}]}
+        current: {type: boolean}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        validFrom: {type: string, format: date-time}
+        validUntil: {type: [string, "null"], format: date-time}
+    ManagementArtifactDetail:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalId, kind, name, platform, softwareProductId, revision, source, observedAt, lastSyncedAt, deletedObservedAt, version, assignments, observationCounts]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        externalId: {type: string}
+        kind: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        name: {type: string}
+        platform: {type: string}
+        softwareProductId: {type: [string, "null"], format: uuid}
+        revision: {type: [string, "null"]}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        deletedObservedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignment'}}
+        observationCounts: {type: object, additionalProperties: {type: integer}, description: "Current live-device counts by normalized state."}
+    ManagementFilter:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalId, name, platform, rule, revision, source, observedAt, lastSyncedAt, deletedObservedAt]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        externalId: {type: string}
+        name: {type: string}
+        platform: {type: string}
+        rule: {type: string}
+        revision: {type: [string, "null"]}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        deletedObservedAt: {type: [string, "null"], format: date-time}
+    ManagementFilterList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ManagementFilter'}}
+        nextCursor: {type: string}
+    ManagementObservation:
+      type: object
+      additionalProperties: false
+      required: [id, artifactId, artifactName, artifactKind, artifactDeleted, normalizedState, rawStatus, source, observedAt, lastSyncedAt]
+      properties:
+        id: {type: string, format: uuid}
+        artifactId: {type: string, format: uuid}
+        artifactName: {type: string}
+        artifactKind: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        artifactDeleted: {type: boolean}
+        normalizedState: {type: string, enum: [applied, pending, failed, conflict, not_applicable, unknown]}
+        rawStatus: {type: string}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+    ManagementObservationList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ManagementObservation'}}
+        nextCursor: {type: string}
     EndpointSyncResult:
       type: object
       additionalProperties: {type: integer}
-      description: Counts of the run such as devicesCreated, devicesUpdated, devicesUnchanged, devicesTombstoned, tombstonesSkipped, devicesRejected, devicesLinked, softwareObserved, findingsRaised and findingsResolved.
+      description: Counts of the run such as devicesCreated, devicesUpdated, devicesUnchanged, devicesTombstoned, tombstonesSkipped, devicesRejected, devicesLinked, softwareObserved, findingsRaised and findingsResolved; management counts use filters*, artifacts*, assignments*, observations*, memberships*, plus managementTombstonesSkipped, providerFindingsRaised, providerFindingsResolved and managementErrors.
     TaskCreate:
       type: object
       additionalProperties: false

@@ -81,7 +81,13 @@ func newEnv(t *testing.T) *env {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1`, e.corr)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE correlation_id = $1`, e.corr)
+		// Observations and memberships restrict the deletion of their device or artifact.
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_observations WHERE device_id IN (SELECT id FROM endpoints.devices WHERE provider = $1)`, e.provider)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.device_group_memberships WHERE provider = $1`, e.provider)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = $1`, e.provider)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_assignments WHERE artifact_id IN (SELECT id FROM endpoints.management_artifacts WHERE provider = $1)`, e.provider)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE provider = $1`, e.provider)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_filters WHERE provider = $1`, e.provider)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.software_aliases WHERE alias LIKE $1`, "%"+suffix+"%")
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.software_products WHERE name LIKE $1`, "%"+suffix+"%")
 	})
@@ -610,11 +616,11 @@ func TestSyncReadsTheProvider(t *testing.T) {
 	fake.SetDevices(intune.DeviceRecord{ExternalID: "x1", Name: "PC-X", SerialNumber: "SNX", OSPlatform: "macos"})
 	fake.SetSoftware("x1", intune.SoftwareRecord{Name: "Some App " + e.provider, Version: "1"})
 
-	off := application.NewService(repository.New(e.pool), e.assets, fake, false, nil)
+	off := application.NewService(repository.New(e.pool), e.assets, fake, false, nil).WithSyncCooldown(0)
 	if _, err := off.Sync(ctx, e.caller(), e.manage); !errors.Is(err, application.ErrSyncDisabled) {
 		t.Fatalf("disabled sync = %v", err)
 	}
-	on := application.NewService(repository.New(e.pool), e.assets, fake, true, nil)
+	on := application.NewService(repository.New(e.pool), e.assets, fake, true, nil).WithSyncCooldown(0)
 	res, err := on.Sync(ctx, e.caller(), e.manage)
 	if err != nil || res.DevicesCreated != 1 || res.SoftwareObserved != 1 {
 		t.Fatalf("sync = %+v %v", res, err)

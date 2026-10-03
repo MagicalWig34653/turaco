@@ -45,12 +45,81 @@ type SoftwareRecord struct {
 	Publisher string
 }
 
-// Provider reads a complete snapshot of devices and their discovered software.
+// FilterRecord is one assignment filter. Platform is one of windows, macos, ios, android, linux, other.
+// Rule is the provider's rule expression as reported; Turaco displays it and evaluates only a small
+// deterministic subset later, never executes it.
+type FilterRecord struct {
+	ExternalID string
+	Name       string
+	Platform   string
+	Rule       string
+	// Revision is the provider's etag or version where it reports one.
+	Revision string
+}
+
+// AssignmentRecord is one assignment of an artifact, already normalized: TargetKind is one of group,
+// all_devices, all_users; Mode include or exclude; Intent required, available, uninstall or none;
+// FilterMode include, exclude or none (empty means none). TargetGroupExternalID is the provider's
+// external id of the Directory Group (group targets only); FilterExternalID refers to a FilterRecord.
+type AssignmentRecord struct {
+	ProviderAssignmentID  string
+	TargetKind            string
+	TargetGroupExternalID string
+	Mode                  string
+	Intent                string
+	FilterExternalID      string
+	FilterMode            string
+}
+
+// ArtifactRecord is one assignable management object. Kind is one of application,
+// configuration_profile, compliance_policy, endpoint_security_policy, script, remediation; Platform one
+// of the device platforms. AssignmentsKnown is false when the assignments could not be read: the
+// previous assignments are then left untouched.
+type ArtifactRecord struct {
+	ExternalID       string
+	Kind             string
+	Name             string
+	Platform         string
+	Revision         string
+	AssignmentsKnown bool
+	Assignments      []AssignmentRecord
+}
+
+// ObservationRecord is the provider's result for one artifact on one device. State is one of applied,
+// pending, failed, conflict, not_applicable, unknown (anything else is treated as unknown); RawStatus
+// is the provider's own status text, kept for troubleshooting.
+type ObservationRecord struct {
+	ExternalDeviceID   string
+	ArtifactExternalID string
+	RawStatus          string
+	State              string
+	ObservedAt         time.Time
+}
+
+// DeviceGroupMembershipRecord states that a device is a member of a provider group.
+type DeviceGroupMembershipRecord struct {
+	ExternalDeviceID string
+	GroupExternalID  string
+}
+
+// ManagementSnapshot is the provider's management data: filters, artifacts with their assignments,
+// observations and device group memberships.
+type ManagementSnapshot struct {
+	Filters      []FilterRecord
+	Artifacts    []ArtifactRecord
+	Observations []ObservationRecord
+	Memberships  []DeviceGroupMembershipRecord
+}
+
+// Provider reads a complete snapshot of devices and their discovered software, and the management data.
 type Provider interface {
 	// Devices returns every managed device.
 	Devices(ctx context.Context) ([]DeviceRecord, error)
 	// Software returns the applications discovered on one device.
 	Software(ctx context.Context, externalDeviceID string) ([]SoftwareRecord, error)
+	// Management returns every filter, artifact (with assignments), observation and device group
+	// membership the provider reports.
+	Management(ctx context.Context) (ManagementSnapshot, error)
 }
 
 // NotConfigured is the placeholder provider: every call fails with ErrNotConfigured.
@@ -64,12 +133,18 @@ func (NotConfigured) Software(context.Context, string) ([]SoftwareRecord, error)
 	return nil, ErrNotConfigured
 }
 
+func (NotConfigured) Management(context.Context) (ManagementSnapshot, error) {
+	return ManagementSnapshot{}, ErrNotConfigured
+}
+
 // Fake is an in-memory provider for tests and local development.
 type Fake struct {
 	mu       sync.Mutex
 	devices  []DeviceRecord
 	software map[string][]SoftwareRecord
+	mgmt     ManagementSnapshot
 	err      error
+	mgmtErr  error
 }
 
 func NewFake() *Fake { return &Fake{software: map[string][]SoftwareRecord{}} }
@@ -111,4 +186,44 @@ func (f *Fake) Software(_ context.Context, id string) ([]SoftwareRecord, error) 
 		return nil, f.err
 	}
 	return append([]SoftwareRecord(nil), f.software[id]...), nil
+}
+
+// SetManagement replaces the reported management data.
+func (f *Fake) SetManagement(m ManagementSnapshot) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mgmt = cloneManagement(m)
+}
+
+// FailManagementWith makes only Management fail with err; nil restores normal behavior.
+func (f *Fake) FailManagementWith(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mgmtErr = err
+}
+
+func (f *Fake) Management(context.Context) (ManagementSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return ManagementSnapshot{}, f.err
+	}
+	if f.mgmtErr != nil {
+		return ManagementSnapshot{}, f.mgmtErr
+	}
+	return cloneManagement(f.mgmt), nil
+}
+
+func cloneManagement(m ManagementSnapshot) ManagementSnapshot {
+	out := ManagementSnapshot{
+		Filters:      append([]FilterRecord(nil), m.Filters...),
+		Observations: append([]ObservationRecord(nil), m.Observations...),
+		Memberships:  append([]DeviceGroupMembershipRecord(nil), m.Memberships...),
+		Artifacts:    make([]ArtifactRecord, len(m.Artifacts)),
+	}
+	for i, a := range m.Artifacts {
+		a.Assignments = append([]AssignmentRecord(nil), a.Assignments...)
+		out.Artifacts[i] = a
+	}
+	return out
 }

@@ -94,6 +94,8 @@ Native Network/IPAM may model VRF, VLAN, Prefix, IPAddress and NetworkInterface,
 
 In the implementation (schema `endpoints`) a Device is `endpoints.devices` (provider identity, optional Asset link by id without foreign key, tombstone instead of delete), `endpoints.device_observation_history` is append-only and written only when normalized values change, installed software is `endpoints.software_installations` with raw name/version kept next to the optional normalized `software_products`/`software_aliases`.
 
+The management model (F6 slice 2) adds `endpoints.management_artifacts` and `management_filters` (provider identity, tombstone, revision), `management_assignments` (interval history: `valid_from`/`valid_until`, denormalized `provider`, one current row per artifact and provider assignment id; the group target is the Directory Group's provider external id without foreign key), `management_observations` (one current row per artifact and device, `retired_at` when a Complete snapshot stops reporting it) with append-only `management_observation_history`, and `device_group_memberships` (observed intervals, one current row per device and group), plus `provider_sync_state` (last completed sync, for the sync cooldown).
+
 **ManagementArtifact** is a normalized provider-managed assignable object such as an application, configuration profile, compliance policy, endpoint-security policy, script or remediation. It retains provider/external identity and may link to canonical SoftwareProduct where appropriate.
 
 **ManagementAssignment** records provider targeting intent: artifact, target scope, include/exclude semantics, application intent where relevant, optional ManagementFilter, provider IDs and revision/freshness.

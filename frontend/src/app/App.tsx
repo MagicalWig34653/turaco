@@ -32,6 +32,11 @@ import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
 import { DevicesScreen } from '../modules/endpoints/DevicesScreen';
 import { DeviceDetailScreen } from '../modules/endpoints/DeviceDetailScreen';
 import { FindingsScreen } from '../modules/endpoints/FindingsScreen';
+import {
+  ManagementArtifactsScreen,
+  ManagementArtifactDetailScreen,
+  ManagementFiltersScreen,
+} from '../modules/endpoints/ManagementScreens';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
 import { ReceiptsScreen } from '../modules/inventory/ReceiptsScreen';
@@ -112,6 +117,12 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <DeviceDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'endpointFindings':
       return <FindingsScreen />;
+    case 'managementArtifacts':
+      return <ManagementArtifactsScreen />;
+    case 'managementArtifactDetail':
+      return <ManagementArtifactDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'managementFilters':
+      return <ManagementFiltersScreen />;
     case 'assets':
       return <AssetsScreen />;
     case 'assetNew':

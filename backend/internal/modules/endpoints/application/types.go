@@ -37,7 +37,7 @@ const (
 )
 
 // FindingKinds lists every finding kind.
-var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware}
+var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware, FindingProviderReportedError}
 
 // Asset link sources.
 const (
@@ -134,14 +134,22 @@ type DeviceDetail struct {
 // Principal is the caller's endpoint authority: View reads, Manage also changes (manual link,
 // import, sync). Endpoint data is not visible to anyone without one of them. AssetsView is the
 // caller's assets.view permission: a manual link reveals and binds an Asset, so it needs it too.
+//
+// ManagementView is endpoint.management.view: it reads Management Artifacts, Assignments and Filters.
+// A Device's observations need device access as well (canView).
 type Principal struct {
-	UserID     string
-	View       bool
-	Manage     bool
-	AssetsView bool
+	UserID         string
+	View           bool
+	Manage         bool
+	AssetsView     bool
+	ManagementView bool
+	// DirectoryView is organization.directory.view: it reveals provider group ids in assignments.
+	DirectoryView bool
 }
 
 func (p Principal) canView() bool { return p.View || p.Manage }
+
+func (p Principal) canViewManagement() bool { return p.ManagementView || p.Manage }
 
 // Caller identifies who performs a mutation and the request it belongs to.
 type Caller struct {
@@ -170,6 +178,8 @@ var (
 	ErrAssetInvalid = errors.New("endpoints: asset does not exist or is not in use")
 	// ErrSyncRunning means another ingestion run of the same provider is in progress. It is a conflict.
 	ErrSyncRunning = fmt.Errorf("%w: another run for this provider is in progress", ErrConflict)
+	// ErrSyncCooldown means the provider's last synchronization finished too recently.
+	ErrSyncCooldown = errors.New("endpoints: the provider was synchronized a moment ago")
 	// ErrSyncDisabled means the provider synchronization is not enabled.
 	ErrSyncDisabled = errors.New("endpoints: provider synchronization is not enabled")
 )
@@ -292,6 +302,7 @@ var (
 // Store is the persistence port. Mutating methods run in the caller's transaction so state, audit
 // and events commit together.
 type Store interface {
+	ManagementStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.
@@ -309,6 +320,10 @@ type Store interface {
 	// TryLockProvider takes the per-provider ingestion lock on a dedicated connection. It reports
 	// false when another run holds it. unlock must be called when ok.
 	TryLockProvider(ctx context.Context, provider string) (unlock func(), ok bool, err error)
+	// LastSyncCompleted returns when the provider's last manual synchronization completed (nil if never);
+	// MarkSyncCompleted records it.
+	LastSyncCompleted(ctx context.Context, provider string) (*time.Time, error)
+	MarkSyncCompleted(ctx context.Context, provider string, at time.Time) error
 	// TombstoneCandidatesTx locks (in id order) and returns the ids of the provider's live devices that
 	// were not seen since before and are not in keepExternalIDs, plus the number of live devices.
 	TombstoneCandidatesTx(ctx context.Context, tx pgx.Tx, provider string, before time.Time, keepExternalIDs []string) (ids []string, live int, err error)

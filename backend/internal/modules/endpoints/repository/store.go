@@ -149,6 +149,27 @@ func (r *Repository) TryLockProvider(ctx context.Context, provider string) (func
 	}, true, nil
 }
 
+func (r *Repository) LastSyncCompleted(ctx context.Context, provider string) (*time.Time, error) {
+	var at time.Time
+	err := r.pool.QueryRow(ctx, `SELECT last_completed_at FROM endpoints.provider_sync_state WHERE provider = $1`, provider).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("last sync completed: %w", err)
+	}
+	return &at, nil
+}
+
+func (r *Repository) MarkSyncCompleted(ctx context.Context, provider string, at time.Time) error {
+	_, err := r.pool.Exec(ctx, `INSERT INTO endpoints.provider_sync_state (provider, last_completed_at) VALUES ($1, $2)
+		ON CONFLICT (provider) DO UPDATE SET last_completed_at = EXCLUDED.last_completed_at`, provider, at)
+	if err != nil {
+		return fmt.Errorf("mark sync completed: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) AppendHistoryTx(ctx context.Context, tx pgx.Tx, h application.History) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO endpoints.device_observation_history (device_id, name, serial_number, os_platform, os_version, manufacturer, model,

@@ -10,7 +10,98 @@ export const findingKinds = [
   'serial_conflict',
   'duplicate_device',
   'unmatched_software',
+  'provider_reported_error',
 ] as const;
+export const artifactKinds = [
+  'application',
+  'configuration_profile',
+  'compliance_policy',
+  'endpoint_security_policy',
+  'script',
+  'remediation',
+] as const;
+export const observationStates = [
+  'applied',
+  'pending',
+  'failed',
+  'conflict',
+  'not_applicable',
+  'unknown',
+] as const;
+export type ArtifactFilters = {
+  kind: string;
+  q: string;
+  platform: string;
+  includeDeleted: boolean;
+};
+export type ManagementFilterFilters = { q: string; platform: string; includeDeleted: boolean };
+export type ManagementArtifact = {
+  id: string;
+  provider: string;
+  externalId: string;
+  kind: string;
+  name: string;
+  platform: string;
+  softwareProductId: string | null;
+  revision: string | null;
+  source: string;
+  observedAt: string;
+  lastSyncedAt: string;
+  deletedObservedAt: string | null;
+  version: number;
+};
+export type ManagementFilter = {
+  id: string;
+  provider: string;
+  externalId: string;
+  name: string;
+  platform: string;
+  rule: string;
+  revision: string | null;
+  source: string;
+  observedAt: string;
+  lastSyncedAt: string;
+  deletedObservedAt: string | null;
+};
+export type FilterSummary = {
+  id: string;
+  name: string;
+  platform: string;
+  rule: string;
+  deleted: boolean;
+};
+export type ManagementAssignment = {
+  id: string;
+  providerAssignmentId: string;
+  targetKind: string;
+  targetGroupExternalId: string | null;
+  mode: string;
+  intent: string;
+  filterMode: string;
+  filter: FilterSummary | null;
+  current: boolean;
+  source: string;
+  observedAt: string;
+  lastSyncedAt: string;
+  validFrom: string;
+  validUntil: string | null;
+};
+export type ManagementArtifactDetail = ManagementArtifact & {
+  assignments: ManagementAssignment[];
+  observationCounts: Record<string, number>;
+};
+export type ManagementObservation = {
+  id: string;
+  artifactId: string;
+  artifactName: string;
+  artifactKind: string;
+  artifactDeleted: boolean;
+  normalizedState: string;
+  rawStatus: string;
+  source: string;
+  observedAt: string;
+  lastSyncedAt: string;
+};
 export const reasonCodes = [
   'serial_confirmed',
   'correction',
@@ -82,4 +173,31 @@ export type SyncCounts = {
   softwareErrors: number;
   findingsRaised: number;
   findingsResolved: number;
+  filtersCreated: number;
+  filtersUpdated: number;
+  filtersUnchanged: number;
+  filtersTombstoned: number;
+  filtersRejected: number;
+  artifactsCreated: number;
+  artifactsUpdated: number;
+  artifactsUnchanged: number;
+  artifactsTombstoned: number;
+  artifactsRejected: number;
+  artifactsLinked: number;
+  assignmentsOpened: number;
+  assignmentsClosed: number;
+  assignmentsUnchanged: number;
+  assignmentsRejected: number;
+  observationsCreated: number;
+  observationsChanged: number;
+  observationsUnchanged: number;
+  observationsSkipped: number;
+  membershipsOpened: number;
+  membershipsClosed: number;
+  membershipsUnchanged: number;
+  membershipsSkipped: number;
+  managementTombstonesSkipped: number;
+  providerFindingsRaised: number;
+  providerFindingsResolved: number;
+  managementErrors: number;
 };
