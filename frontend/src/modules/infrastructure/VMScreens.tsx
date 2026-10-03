@@ -1,3 +1,4 @@
+import { impactUrl } from '../services/helpers';
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import type { ApiError } from '../../platform/api/client';
@@ -245,6 +246,11 @@ export function VMDetailScreen({ id }: { id: string }) {
           <p>
             <Link to="/infrastructure/virtual-machines">{t('infra.back')}</Link>
           </p>
+          {(can('services.view') || can('services.manage')) && (
+            <p>
+              <Link to={impactUrl('vm', vm.id)}>{t('services.impact')}</Link>
+            </p>
+          )}
           <dl className="facts">
             <dt>{t('infra.vm.state')}</dt>
             <dd>{t(`infra.vm.state.${vm.state}`)}</dd>

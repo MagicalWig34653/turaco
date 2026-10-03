@@ -6716,6 +6716,247 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/InfrastructureConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /services:
+    get:
+      operationId: listServices
+      summary: List services.
+      description: "Requires services.view or services.manage. Retired services are excluded by default. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: status, in: query, schema: {type: string, enum: [operational, degraded, outage, planned, retired]}}
+        - {name: criticality, in: query, schema: {type: string, enum: [low, medium, high, critical]}}
+        - {name: ownerUserId, in: query, schema: {type: string}}
+        - {name: teamId, in: query, schema: {type: string}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: includeRetired, in: query, schema: {type: boolean, default: false}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List services.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceList'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createService
+      summary: Create a service.
+      description: "Requires services.manage. Name is unique among live services; status defaults to operational. Audited."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceCreate'}
+      responses:
+        '201':
+          description: Create a service.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /services/{id}:
+    get:
+      operationId: getService
+      summary: Get a service.
+      description: "Requires services.view or services.manage. Dependencies and dependents include the first 200 links and optional next cursors for further pages. Records the caller cannot view have hidden: true, a response-local placeholder id, and only their type."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get a service.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceDetail'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateService
+      summary: Update service details.
+      description: "Requires services.manage and expectedVersion. Empty strings clear optional details. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceUpdate'}
+      responses:
+        '200':
+          description: Update service details.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /services/{id}/status:
+    post:
+      operationId: changeServiceStatus
+      summary: Change service status.
+      description: "Requires services.manage and expectedVersion. Retiring uses the retire operation. Reason is a code. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceStatusChange'}
+      responses:
+        '200':
+          description: Change service status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /services/{id}/retire:
+    post:
+      operationId: retireService
+      summary: Retire a service.
+      description: "Requires services.manage and expectedVersion. Terminal; ends both outgoing and incoming DEPENDS_ON links for this service. Reason is a code. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceRetire'}
+      responses:
+        '200':
+          description: Retire a service.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /services/{id}/dependencies:
+    get:
+      operationId: listServiceDependencies
+      summary: List a service's dependencies or dependents.
+      description: "Requires services.view or services.manage. Direction out (default) lists dependencies; in lists dependents. Hidden nodes have a placeholder id and only their type. Use nextCursor to fetch the next page."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: direction, in: query, schema: {type: string, enum: [out, in], default: out}}
+        - $ref: '#/components/parameters/Cursor'
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}, description: "Page size; defaults to 50. Values above 200 are clamped."}
+      responses:
+        '200':
+          description: A page of links.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceLinkList'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: addServiceDependency
+      summary: Add a service dependency.
+      description: "Requires services.manage. Target is service, vm, asset or location. VM and Location targets require infrastructure.view; Asset targets require assets.view, otherwise 400 services.invalid_reference. Duplicate additions return 200; new links return 201. Service cycles return 409 services.dependency_cycle; graph limits and timed-out cycle checks return 409 services.dependency_graph_too_large. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceDependencyAdd'}
+      responses:
+        '200':
+          description: Existing dependency.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceLink'}
+        '201':
+          description: Add a service dependency.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceLink'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '503': {$ref: '#/components/responses/ServicesBusy'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /services/{id}/dependencies/{dependencyId}:
+    delete:
+      operationId: removeServiceDependency
+      summary: Remove a service dependency.
+      description: "Requires services.manage. Reason code is required in the query string. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: dependencyId, in: path, required: true, schema: {type: string}}
+        - {name: reason, in: query, required: true, schema: {type: string, enum: [no_longer_needed, replaced, error_correction, other]}}
+      responses:
+        '204': {description: Dependency removed.}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '409': {$ref: '#/components/responses/ServicesConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /impact:
+    get:
+      operationId: getImpact
+      summary: Analyze impact.
+      description: "Requires services.view or services.manage. Downstream shows what is affected if X is down (dependents); upstream shows what X depends on. VM and Location names require infrastructure.view; Asset references and statuses require assets.view. A hidden start type returns 404. Traversal is bounded to depth 6 and 500 nodes; truncated, depthLimited and nodeLimited report limits."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: type, in: query, required: true, schema: {type: string, enum: [service, vm, asset, location]}}
+        - {name: id, in: query, required: true, schema: {type: string}}
+        - {name: direction, in: query, schema: {type: string, enum: [downstream, upstream], default: downstream}}
+        - {name: depth, in: query, schema: {type: integer, minimum: 1, maximum: 6}}
+      responses:
+        '200':
+          description: Analyze impact.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Impact'}
+        '400': {$ref: '#/components/responses/ServicesInvalid'}
+        '404': {$ref: '#/components/responses/ServicesNotFound'}
+        '429': {$ref: '#/components/responses/ServicesImpactBusy'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -6760,6 +7001,31 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   responses:
+    ServicesNotFound:
+      description: Service or impact start record not found (services.not_found).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ServicesInvalid:
+      description: Invalid input, inaccessible or unknown reference, cursor or limit (services.invalid_request, services.invalid_reference, services.invalid_cursor, services.invalid_limit).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ServicesConflict:
+      description: Duplicate, stale, retired or cyclic dependency (services.conflict, services.version_conflict, services.retired, services.dependency_cycle, services.dependency_graph_too_large).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ServicesBusy:
+      description: Dependency graph lock timed out (services.busy).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ServicesImpactBusy:
+      description: An impact traversal is already running for this user (services.impact_busy).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     InfrastructureInvalid:
       description: Invalid infrastructure input, cursor, limit or reference.
       content:
@@ -7052,6 +7318,143 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    Service:
+      type: object
+      required: [id, reference, name, criticality, status, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        reference: {type: string}
+        name: {type: string}
+        description: {type: [string, 'null']}
+        ownerUserId: {type: [string, 'null']}
+        ownerTeamId: {type: [string, 'null']}
+        supportTeamId: {type: [string, 'null']}
+        criticality: {type: string, enum: [low, medium, high, critical]}
+        status: {type: string, enum: [operational, degraded, outage, planned, retired]}
+        statusReason: {type: [string, 'null']}
+        retiredAt: {type: [string, 'null'], format: date-time}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ServiceList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Service'}}
+        nextCursor: {type: string}
+    ServiceNode:
+      type: object
+      required: [type, id]
+      description: When hidden is true, id is a response-local placeholder (hidden-N); only type, id and hidden are set. Do not use the placeholder as a record link.
+      properties:
+        type: {type: string, enum: [service, vm, asset, location]}
+        id: {type: string}
+        name: {type: string}
+        reference: {type: string}
+        status: {type: string}
+        criticality: {type: string}
+        missing: {type: boolean}
+        hidden: {type: boolean}
+    ServiceLink:
+      type: object
+      required: [relationshipId, type, confidence, since, node]
+      properties:
+        relationshipId: {type: string}
+        type: {type: string, enum: [DEPENDS_ON, RUNS_ON]}
+        confidence: {type: string, enum: [declared, derived, observed]}
+        since: {type: string, format: date-time}
+        node: {$ref: '#/components/schemas/ServiceNode'}
+    ServiceDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Service'}
+        - type: object
+          required: [dependencies, dependents, dependenciesTruncated, dependentsTruncated]
+          properties:
+            dependencies: {type: array, items: {$ref: '#/components/schemas/ServiceLink'}}
+            dependents: {type: array, items: {$ref: '#/components/schemas/ServiceLink'}}
+            dependenciesTruncated: {type: boolean}
+            dependentsTruncated: {type: boolean}
+            dependenciesNextCursor: {type: string}
+            dependentsNextCursor: {type: string}
+    ServiceLinkList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ServiceLink'}}
+        nextCursor: {type: string}
+    ServiceCreate:
+      type: object
+      required: [name, criticality]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        ownerUserId: {type: string}
+        ownerTeamId: {type: string}
+        supportTeamId: {type: string}
+        criticality: {type: string, enum: [low, medium, high, critical]}
+        status: {type: string, enum: [operational, planned]}
+    ServiceUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        ownerUserId: {type: string}
+        ownerTeamId: {type: string}
+        supportTeamId: {type: string}
+        criticality: {type: string, enum: [low, medium, high, critical]}
+    ServiceStatusChange:
+      type: object
+      required: [status, reason, expectedVersion]
+      properties:
+        status: {type: string, enum: [operational, degraded, outage, planned]}
+        reason: {type: string, enum: [incident, maintenance, recovered, rollout, correction, other]}
+        expectedVersion: {type: integer}
+    ServiceRetire:
+      type: object
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [replaced, decommissioned, merged, error_correction, other]}
+        expectedVersion: {type: integer}
+    ServiceDependencyAdd:
+      type: object
+      required: [targetType, targetId]
+      properties:
+        targetType: {type: string, enum: [service, vm, asset, location]}
+        targetId: {type: string}
+    ImpactEdge:
+      type: object
+      required: [relationshipId, fromType, fromId, toType, toId, type, confidence]
+      description: Relationship and endpoint ids may be response-local placeholders when an endpoint is hidden.
+      properties:
+        relationshipId: {type: string}
+        fromType: {type: string}
+        fromId: {type: string}
+        toType: {type: string}
+        toId: {type: string}
+        type: {type: string}
+        confidence: {type: string}
+    ImpactNode:
+      allOf:
+        - {$ref: '#/components/schemas/ServiceNode'}
+        - type: object
+          required: [depth, confidence, path]
+          properties:
+            depth: {type: integer}
+            confidence: {type: string}
+            path: {type: array, items: {$ref: '#/components/schemas/ImpactEdge'}}
+    Impact:
+      type: object
+      required: [start, direction, maxDepth, items, truncated, depthLimited, nodeLimited]
+      properties:
+        start: {$ref: '#/components/schemas/ServiceNode'}
+        direction: {type: string, enum: [downstream, upstream]}
+        maxDepth: {type: integer}
+        items: {type: array, items: {$ref: '#/components/schemas/ImpactNode'}}
+        truncated: {type: boolean}
+        depthLimited: {type: boolean}
+        nodeLimited: {type: boolean}
     Building:
       type: object
       required: [id, siteLocationId, name, active, version, createdAt, updatedAt]

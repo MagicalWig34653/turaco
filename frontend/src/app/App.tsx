@@ -32,6 +32,11 @@ import {
   RoomScreen,
   RackScreen,
 } from '../modules/infrastructure/TopologyScreens';
+import {
+  ServicesListScreen,
+  ServiceDetailScreen,
+  ImpactScreen,
+} from '../modules/services/ServicesScreens';
 import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreens';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
@@ -141,6 +146,12 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UserManagementScreen key={params.id} id={params.id ?? ''} />;
     case 'managementFilters':
       return <ManagementFiltersScreen />;
+    case 'services':
+      return <ServicesListScreen />;
+    case 'serviceDetail':
+      return <ServiceDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'impact':
+      return <ImpactScreen />;
     case 'infrastructureTree':
       return <SiteTreeScreen />;
     case 'infrastructureBuilding':

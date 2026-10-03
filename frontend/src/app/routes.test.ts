@@ -5,7 +5,7 @@ import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes'
 
 const ids = (
   permissions: string[],
-  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'admin',
+  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'admin',
 ) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
@@ -330,5 +330,15 @@ describe('infrastructure routes', () => {
       'infrastructureTree',
       'infrastructureVMs',
     ]);
+  });
+});
+
+describe('services routes', () => {
+  it('gates navigation and matches detail and impact routes', () => {
+    expect(ids([], 'services')).toEqual([]);
+    expect(ids(['services.view'], 'services')).toEqual(['services']);
+    expect(ids(['services.manage'], 'services')).toEqual(['services']);
+    expect(matchRoute(appRoutes, '/services/abc')?.route.id).toBe('serviceDetail');
+    expect(matchRoute(appRoutes, '/impact')?.route.id).toBe('impact');
   });
 });
