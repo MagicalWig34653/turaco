@@ -22,6 +22,8 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
+	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -172,6 +174,20 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested); err != nil {
 		return err
 	}
+	sdStore := servicedeskrepository.New(pool)
+	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	for _, r := range []struct {
+		event, name string
+		fn          events.Consumer
+	}{
+		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
+		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
+		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
+	} {
+		if err := d.Register(r.event, r.name, r.fn); err != nil {
+			return err
+		}
+	}
 	procurementSvc := wiring.Procurement(pool)
 	assetConsumers := assetsapp.NewConsumers(assetsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	if err := d.Register("AssetAssigned", "assets.notify-assigned", assetConsumers.OnAssetAssigned); err != nil {
@@ -262,7 +278,8 @@ func allCategories() []notifications.Category {
 	out := tasksapp.NotificationCategories()
 	out = append(out, approvalsapp.NotificationCategories()...)
 	out = append(out, requestsapp.NotificationCategories()...)
-	return append(out, assetsapp.NotificationCategories()...)
+	out = append(out, assetsapp.NotificationCategories()...)
+	return append(out, servicedeskapp.NotificationCategories()...)
 }
 
 // registerRequestConsumers registers the workflow and notification consumers of the Requests module.

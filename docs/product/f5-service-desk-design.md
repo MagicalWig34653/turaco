@@ -1,6 +1,6 @@
 # F5 Service Desk and Knowledge — Feature Design
 
-**Status:** Draft 2026-10-03, waiting for decisions S1–S3. Describes the target design; [current status](current-status.md) is authoritative for what is implemented. Related: [employee incident workflow](../workflows/employee-incident.md), [Autotask integration](../integrations/autotask.md), [state machines](../domain/state-machines.md), [F4 design](f4-inventory-design.md).
+**Status:** Draft 2026-10-03. Decisions S1–S3 were not answered; the proposals below were adopted as defaults (the user asked to continue autonomously) and can be revised. Describes the target design; [current status](current-status.md) is authoritative for what is implemented. Related: [employee incident workflow](../workflows/employee-incident.md), [Autotask integration](../integrations/autotask.md), [state machines](../domain/state-machines.md), [F4 design](f4-inventory-design.md).
 
 ## Open decisions
 

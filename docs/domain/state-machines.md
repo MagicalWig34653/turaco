@@ -54,6 +54,8 @@ Implemented (F3, `modules/requests`): a request is created when submitted (there
 ## Ticket
 `new → open → in_progress ↔ waiting → resolved → closed`, with `cancelled` alternative. Waiting reason is separate (`customer`, `vendor`, `external_service`, `scheduled_change`, `hardware`). Reopen is explicit, permissioned, reasoned and audited.
 
+Implemented (F5, `modules/servicedesk`): one ticket kind `incident`. `new` becomes `open` when assigned; operations `start` (new/open → in_progress, assigns the caller when nobody is), `wait(reason)` (open/in_progress → waiting), `resume`, `resolve(resolution)` (any open status), `close` (resolved), `reopen(reason)` (resolved/closed → open) and `cancel(reason)` (before resolution). `tickets.manage` may do all; the reporter and the affected User may close, reopen and cancel while the ticket is new or open. A public reply from the reporter on a ticket waiting for the customer resumes it. Closed and cancelled tickets accept no comments. Events: `TicketCreated`, `TicketAssigned`, `TicketResolved`, `TicketCommentAdded`.
+
 ## Major Incident
 `identified → investigating → mitigating → monitoring → resolved → closed`.
 
