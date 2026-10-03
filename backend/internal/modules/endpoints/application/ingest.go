@@ -98,6 +98,8 @@ type IngestResult struct {
 	FindingsResolved int
 	// SoftwareErrors counts devices whose software could not be read (Sync only).
 	SoftwareErrors int
+	// Management is the result of the management ingestion that Sync runs after the devices.
+	Management ManagementResult
 }
 
 func resultOf(c counters) IngestResult {
@@ -184,6 +186,21 @@ func (s *Service) Sync(ctx context.Context, c Caller, p Principal) (IngestResult
 	}
 	res, err := s.ingestLocked(ctx, c, snap)
 	res.SoftwareErrors = softwareErrors
+	if err != nil {
+		return res, err
+	}
+	// The management data refers to the devices just ingested; the same lock is still held.
+	mg, err := s.provider.Management(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			_ = s.recordManagementSync(ctx, c, auditManagementFailed, snap.Provider, snap.Source, true, ManagementResult{}, "canceled")
+			return res, ctx.Err()
+		}
+		_ = s.recordManagementSync(ctx, c, auditManagementFailed, snap.Provider, snap.Source, true, ManagementResult{}, "provider_read_failed")
+		res.Management.ManagementErrors++
+		return res, nil
+	}
+	res.Management, err = s.ingestManagementLocked(ctx, c, ManagementSnapshot{Provider: snap.Provider, Source: snap.Source, Complete: true, ManagementSnapshot: mg})
 	return res, err
 }
 

@@ -37,7 +37,7 @@ const (
 )
 
 // FindingKinds lists every finding kind.
-var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware}
+var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware, FindingProviderReportedError}
 
 // Asset link sources.
 const (
@@ -134,14 +134,20 @@ type DeviceDetail struct {
 // Principal is the caller's endpoint authority: View reads, Manage also changes (manual link,
 // import, sync). Endpoint data is not visible to anyone without one of them. AssetsView is the
 // caller's assets.view permission: a manual link reveals and binds an Asset, so it needs it too.
+//
+// ManagementView is endpoint.management.view: it reads Management Artifacts, Assignments and Filters.
+// A Device's observations need device access as well (canView).
 type Principal struct {
-	UserID     string
-	View       bool
-	Manage     bool
-	AssetsView bool
+	UserID         string
+	View           bool
+	Manage         bool
+	AssetsView     bool
+	ManagementView bool
 }
 
 func (p Principal) canView() bool { return p.View || p.Manage }
+
+func (p Principal) canViewManagement() bool { return p.ManagementView || p.Manage }
 
 // Caller identifies who performs a mutation and the request it belongs to.
 type Caller struct {
@@ -292,6 +298,7 @@ var (
 // Store is the persistence port. Mutating methods run in the caller's transaction so state, audit
 // and events commit together.
 type Store interface {
+	ManagementStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.

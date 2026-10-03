@@ -23,6 +23,7 @@ const (
 	permView       = "endpoints.view"
 	permManage     = "endpoints.manage"
 	permAssetsView = "assets.view"
+	permMgmtView   = "endpoint.management.view"
 	maxBody        = 4 << 10
 )
 
@@ -45,6 +46,12 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/devices/{id}/unlink", write, h.unlink)
 	route("GET /api/v1/endpoint-findings", read, h.findings)
 	route("POST /api/v1/endpoint-sync", write, h.sync)
+	mgmt := authorization.RequireAny(auth, permMgmtView, permManage)
+	route("GET /api/v1/management-artifacts", mgmt, h.listArtifacts)
+	route("GET /api/v1/management-artifacts/{id}", mgmt, h.getArtifact)
+	route("GET /api/v1/management-filters", mgmt, h.listFilters)
+	// Device observations reveal the device: the service also requires endpoints.view or endpoints.manage.
+	route("GET /api/v1/devices/{id}/management-observations", mgmt, h.deviceObservations)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -78,7 +85,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -296,8 +303,17 @@ func (h *handler) sync(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	m := res.Management
 	httpx.JSON(w, http.StatusOK, map[string]int{
-		"devicesCreated": res.DevicesCreated, "devicesUpdated": res.DevicesUpdated, "devicesUnchanged": res.DevicesUnchanged,
+		"filtersCreated": m.FiltersCreated, "filtersUpdated": m.FiltersUpdated, "filtersUnchanged": m.FiltersUnchanged, "filtersTombstoned": m.FiltersTombstoned, "filtersRejected": m.FiltersRejected,
+		"artifactsCreated": m.ArtifactsCreated, "artifactsUpdated": m.ArtifactsUpdated, "artifactsUnchanged": m.ArtifactsUnchanged, "artifactsTombstoned": m.ArtifactsTombstoned,
+		"artifactsRejected": m.ArtifactsRejected, "artifactsLinked": m.ArtifactsLinked,
+		"assignmentsOpened": m.AssignmentsOpened, "assignmentsClosed": m.AssignmentsClosed, "assignmentsUnchanged": m.AssignmentsUnchanged, "assignmentsRejected": m.AssignmentsRejected,
+		"observationsCreated": m.ObservationsCreated, "observationsChanged": m.ObservationsChanged, "observationsUnchanged": m.ObservationsUnchanged, "observationsSkipped": m.ObservationsSkipped,
+		"membershipsOpened": m.MembershipsOpened, "membershipsClosed": m.MembershipsClosed, "membershipsUnchanged": m.MembershipsUnchanged, "membershipsSkipped": m.MembershipsSkipped,
+		"managementTombstonesSkipped": m.ManagementTombstonesSkipped, "providerFindingsRaised": m.ProviderFindingsRaised, "providerFindingsResolved": m.ProviderFindingsResolved,
+		"managementErrors": m.ManagementErrors,
+		"devicesCreated":   res.DevicesCreated, "devicesUpdated": res.DevicesUpdated, "devicesUnchanged": res.DevicesUnchanged,
 		"devicesTombstoned": res.DevicesTombstoned, "tombstonesSkipped": res.TombstonesSkipped, "devicesRejected": res.DevicesRejected, "devicesLinked": res.DevicesLinked,
 		"softwareObserved": res.SoftwareObserved, "softwareSkipped": res.SoftwareSkipped, "softwareErrors": res.SoftwareErrors,
 		"findingsRaised": res.FindingsRaised, "findingsResolved": res.FindingsResolved,

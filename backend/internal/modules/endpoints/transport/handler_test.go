@@ -194,3 +194,86 @@ func TestSyncDisabledAndNotConfigured(t *testing.T) {
 		t.Errorf("not configured = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestManagementEndpointsOverHTTP(t *testing.T) {
+	fake := intune.NewFake()
+	fake.SetDevices(intune.DeviceRecord{ExternalID: "http-m1", Name: "HTTP-MGMT", SerialNumber: "HTTP-MSN", OSPlatform: "windows"})
+	fake.SetManagement(intune.ManagementSnapshot{
+		Filters: []intune.FilterRecord{{ExternalID: "http-f1", Name: "Http Filter", Platform: "windows", Rule: `(device.model -eq "X")`}},
+		Artifacts: []intune.ArtifactRecord{{ExternalID: "http-a1", Kind: "configuration_profile", Name: "Http Profile", Platform: "windows", AssignmentsKnown: true,
+			Assignments: []intune.AssignmentRecord{{ProviderAssignmentID: "x1", TargetKind: "group", TargetGroupExternalID: "g1", Mode: "include", FilterExternalID: "http-f1", FilterMode: "include"}}}},
+		Observations: []intune.ObservationRecord{{ExternalDeviceID: "http-m1", ArtifactExternalID: "http-a1", State: "failed", RawStatus: "Error"}},
+	})
+	defer func() {
+		pool := dbtest.Pool(t)
+		ctx := context.Background()
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.devices WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_assignments WHERE artifact_id IN (SELECT id FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id LIKE 'http-%')`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_filters WHERE provider = 'intune' AND external_id LIKE 'http-%'`)
+	}()
+	manage := serve(t, as(admin, "endpoints.manage"), fake, true)
+	rec := do(manage, "POST", "/api/v1/endpoint-sync", `{}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"artifactsCreated":1`) || !strings.Contains(rec.Body.String(), `"assignmentsOpened":1`) ||
+		!strings.Contains(rec.Body.String(), `"observationsCreated":1`) || !strings.Contains(rec.Body.String(), `"providerFindingsRaised":1`) {
+		t.Fatalf("sync = %d %s", rec.Code, rec.Body)
+	}
+	rec = do(manage, "GET", "/api/v1/management-artifacts?q=http%20pro&kind=configuration_profile&platform=windows", "")
+	var list struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &list)
+	if rec.Code != http.StatusOK || len(list.Items) != 1 {
+		t.Fatalf("list = %d %s", rec.Code, rec.Body)
+	}
+	id := list.Items[0].ID
+	view := serve(t, as(admin, "endpoint.management.view"), fake, true)
+	rec = do(view, "GET", "/api/v1/management-artifacts/"+id, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"current":true`) || !strings.Contains(rec.Body.String(), `"targetGroupExternalId":"g1"`) ||
+		!strings.Contains(rec.Body.String(), `"name":"Http Filter"`) || !strings.Contains(rec.Body.String(), `"failed":1`) {
+		t.Fatalf("get = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(view, "GET", "/api/v1/management-filters?q=http", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"rule":"(device.model -eq \"X\")"`) {
+		t.Errorf("filters = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(view, "GET", "/api/v1/management-artifacts?kind=bogus", ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad kind = %d", rec.Code)
+	}
+	if rec := do(view, "GET", "/api/v1/management-artifacts/00000000-0000-7000-8000-0000000000e5", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown artifact = %d", rec.Code)
+	}
+	// Device observations need device access as well.
+	rec = do(manage, "GET", "/api/v1/devices?q=HTTP-MGMT", "")
+	var devs struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &devs)
+	if len(devs.Items) != 1 {
+		t.Fatalf("devices = %s", rec.Body)
+	}
+	path := "/api/v1/devices/" + devs.Items[0].ID + "/management-observations"
+	if rec := do(view, "GET", path, ""); rec.Code != http.StatusForbidden {
+		t.Errorf("management view without device access = %d", rec.Code)
+	}
+	if rec := do(serve(t, as(admin, "endpoints.view"), fake, true), "GET", path, ""); rec.Code != http.StatusForbidden {
+		t.Errorf("device view without management access = %d", rec.Code)
+	}
+	if rec := do(serve(t, as(admin, "endpoints.view", "endpoint.management.view"), fake, true), "GET", path, ""); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"normalizedState":"failed"`) || !strings.Contains(rec.Body.String(), `"artifactName":"Http Profile"`) {
+		t.Errorf("observations = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(manage, "GET", "/api/v1/devices/00000000-0000-7000-8000-0000000000e5/management-observations", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown device = %d", rec.Code)
+	}
+	// Without any permission nothing is readable.
+	none := serve(t, as(admin), fake, true)
+	for _, p := range []string{"/api/v1/management-artifacts", "/api/v1/management-artifacts/" + id, "/api/v1/management-filters", path} {
+		if rec := do(none, "GET", p, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("no permission: GET %s = %d", p, rec.Code)
+		}
+	}
+}
