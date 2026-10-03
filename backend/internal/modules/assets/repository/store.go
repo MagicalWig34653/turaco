@@ -318,9 +318,23 @@ func validUUID(s string) bool {
 	return true
 }
 
+// validUUIDs drops malformed ids so a bad id never turns into a cast error for the whole lookup.
+func validUUIDs(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		if validUUID(id) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// MaxHeldAssetsRows bounds AssetsHeldByUsers whatever the caller asks for.
+const MaxHeldAssetsRows = 5000
+
 func (r *Repository) UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error) {
 	out := map[string]string{}
-	if len(assetIDs) == 0 {
+	if assetIDs = validUUIDs(assetIDs); len(assetIDs) == 0 {
 		return out, nil
 	}
 	rows, err := r.pool.Query(ctx, `
@@ -342,9 +356,10 @@ func (r *Repository) UserHolders(ctx context.Context, assetIDs []string) (map[st
 
 func (r *Repository) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
 	out := map[string][]string{}
-	if len(userIDs) == 0 {
+	if userIDs = validUUIDs(userIDs); len(userIDs) == 0 || limit <= 0 {
 		return out, nil
 	}
+	limit = min(limit, MaxHeldAssetsRows)
 	rows, err := r.pool.Query(ctx, `
 		SELECT assignee_id::text, asset_id::text FROM assets.asset_assignments
 		WHERE assignee_id = ANY($1::uuid[]) AND returned_at IS NULL AND assignee_type = 'user'

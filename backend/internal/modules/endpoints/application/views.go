@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application/evaluation"
 )
 
@@ -18,19 +19,26 @@ import (
 
 type emptyDirectory struct{}
 
-func (emptyDirectory) GroupsByExternalIDs(context.Context, []string) ([]DirectoryGroup, error) {
-	return nil, nil
+func (emptyDirectory) GroupsByExternalIDs(context.Context, string, []string) ([]DirectoryGroup, bool, error) {
+	return nil, false, nil
 }
-func (emptyDirectory) GroupsByIDs(context.Context, []string) ([]DirectoryGroup, error) {
-	return nil, nil
+func (emptyDirectory) GroupsByIDs(context.Context, string, []string) ([]DirectoryGroup, bool, error) {
+	return nil, false, nil
 }
-func (emptyDirectory) NestingUp(context.Context, []string) ([]NestingEdge, error)   { return nil, nil }
-func (emptyDirectory) NestingDown(context.Context, []string) ([]NestingEdge, error) { return nil, nil }
-func (emptyDirectory) UserMemberships(context.Context, []string) ([]UserMembership, error) {
-	return nil, nil
+func (emptyDirectory) NestingUp(context.Context, string, []string) ([]NestingEdge, bool, error) {
+	return nil, false, nil
 }
-func (emptyDirectory) GroupMembers(context.Context, []string, int) ([]UserMembership, error) {
-	return nil, nil
+func (emptyDirectory) NestingDown(context.Context, string, []string) ([]NestingEdge, bool, error) {
+	return nil, false, nil
+}
+func (emptyDirectory) UserMemberships(context.Context, string, []string) ([]UserMembership, bool, error) {
+	return nil, false, nil
+}
+func (emptyDirectory) GroupMembers(context.Context, string, []string, int) ([]UserMembership, bool, error) {
+	return nil, false, nil
+}
+func (emptyDirectory) UsersWithIdentity(context.Context, string, []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
 }
 func (emptyDirectory) UserNames(context.Context, []string) (map[string]string, error) {
 	return map[string]string{}, nil
@@ -45,15 +53,54 @@ func (noHolders) AssetsHeldByUsers(context.Context, []string, int) (map[string][
 	return map[string][]string{}, nil
 }
 
+// viewProvider is the provider whose Device groups, Directory Groups and assignments the views evaluate. Directory
+// lookups are limited to it so external ids of different providers are never confused.
+const viewProvider = intune.ProviderKey
+
+// Read consistency: the reads of the Endpoints tables of one view run in one READ ONLY REPEATABLE READ
+// transaction (Store.ReadSnapshot). Reads of the Organization and Assets contracts are separate and only
+// eventually consistent with it; a User or group changing mid-request can make the answer one change old, which
+// the freshness fields show.
+func inSnapshot[T any](ctx context.Context, s *Service, fn func(ctx context.Context) (T, error)) (T, error) {
+	var out T
+	err := s.store.ReadSnapshot(ctx, func(ctx context.Context) error {
+		var err error
+		out, err = fn(ctx)
+		return err
+	})
+	return out, err
+}
+
 // ---- evaluation context ----
 
+// evalCtx holds everything the evaluator needs for the Devices (and Users) of one request. Closures are computed
+// once per Device/User and reused for every artifact.
 type evalCtx struct {
-	now     time.Time
-	nesting map[string][]string
-	devMem  map[string][]evaluation.Membership
-	userOf  map[string]string
-	userMem map[string][]evaluation.Membership
+	now        time.Time
+	nesting    map[string][]string
+	devMem     map[string][]evaluation.Membership
+	userOf     map[string]string
+	userMem    map[string][]evaluation.Membership
+	devClosure map[string]evaluation.Closure
+	usrClosure map[string]evaluation.Closure
+	// devMemUnknown / usrMemUnknown: no synced membership data at all for the Device / User.
+	devMemUnknown map[string]bool
+	usrMemUnknown map[string]bool
+	// nestingCut: group resolution or nesting was truncated (affects every Device and User of the request).
+	nestingCut bool
+	// userCut: the User membership lookup was truncated (affects every User of the request).
+	userCut bool
 }
+
+type evalOpts struct {
+	// holders loads the primary User of each Device from the Asset holder. Without it every Device's User is unknown.
+	holders bool
+	// users are extra Users whose memberships are needed (the viewed User of the User view).
+	users []string
+}
+
+// truncated reports whether any bounded directory input behind the context was cut.
+func (c *evalCtx) truncated() bool { return c.nestingCut || c.userCut }
 
 func uniq(in []string) []string {
 	seen := make(map[string]bool, len(in))
@@ -76,11 +123,15 @@ func ids(ds []Device) []string {
 }
 
 // newEvalCtx loads everything the evaluator needs for the devices: their group memberships, their primary
-// Users (the holder of the linked Asset), the Users' directory memberships and the group nesting.
-func (s *Service) newEvalCtx(ctx context.Context, devices []Device) (*evalCtx, error) {
+// Users (the holder of the linked Asset, only with o.holders), the Users' directory memberships and the group
+// nesting. Inputs that are missing or were cut are remembered so the evaluator answers unknown, not not_applicable.
+func (s *Service) newEvalCtx(ctx context.Context, devices []Device, o evalOpts) (*evalCtx, error) {
 	c := &evalCtx{now: s.now(), nesting: map[string][]string{}, devMem: map[string][]evaluation.Membership{},
-		userOf: map[string]string{}, userMem: map[string][]evaluation.Membership{}}
-	mems, err := s.store.DeviceMemberships(ctx, ids(devices))
+		userOf: map[string]string{}, userMem: map[string][]evaluation.Membership{},
+		devClosure: map[string]evaluation.Closure{}, usrClosure: map[string]evaluation.Closure{},
+		devMemUnknown: map[string]bool{}, usrMemUnknown: map[string]bool{}}
+	devIDs := ids(devices)
+	mems, err := s.store.DeviceMemberships(ctx, devIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -89,34 +140,56 @@ func (s *Service) newEvalCtx(ctx context.Context, devices []Device) (*evalCtx, e
 		c.devMem[m.DeviceID] = append(c.devMem[m.DeviceID], evaluation.Membership{GroupExternalID: m.GroupExternalID, ObservedAt: m.LastSyncedAt})
 		devExts = append(devExts, m.GroupExternalID)
 	}
-	var assetIDs []string
-	deviceOfAsset := map[string][]string{}
-	for _, d := range devices {
-		if d.AssetID != nil {
-			assetIDs = append(assetIDs, *d.AssetID)
-			deviceOfAsset[*d.AssetID] = append(deviceOfAsset[*d.AssetID], d.ID)
-		}
-	}
-	holders, err := s.holders.UserHolders(ctx, uniq(assetIDs))
+	hist, err := s.store.DevicesWithMembershipHistory(ctx, viewProvider, devIDs)
 	if err != nil {
 		return nil, err
 	}
-	var users []string
-	for asset, user := range holders {
-		for _, dev := range deviceOfAsset[asset] {
-			c.userOf[dev] = user
-		}
-		users = append(users, user)
+	for _, id := range devIDs {
+		c.devMemUnknown[id] = true
 	}
-	users = uniq(users)
+	for _, id := range hist {
+		delete(c.devMemUnknown, id)
+	}
+
+	var users []string
+	if o.holders {
+		var assetIDs []string
+		deviceOfAsset := map[string][]string{}
+		for _, d := range devices {
+			if d.AssetID != nil {
+				assetIDs = append(assetIDs, *d.AssetID)
+				deviceOfAsset[*d.AssetID] = append(deviceOfAsset[*d.AssetID], d.ID)
+			}
+		}
+		holders, err := s.holders.UserHolders(ctx, uniq(assetIDs))
+		if err != nil {
+			return nil, err
+		}
+		for asset, user := range holders {
+			for _, dev := range deviceOfAsset[asset] {
+				c.userOf[dev] = user
+			}
+			users = append(users, user)
+		}
+	}
+	users = uniq(append(users, o.users...))
+
 	userGroups := map[string][]string{} // user -> org group ids
 	userObserved := map[string]map[string]time.Time{}
 	var orgIDs []string
 	if len(users) > 0 {
-		ums, err := s.dir.UserMemberships(ctx, users)
+		identity, err := s.dir.UsersWithIdentity(ctx, viewProvider, users)
 		if err != nil {
 			return nil, err
 		}
+		for _, u := range users {
+			c.usrMemUnknown[u] = !identity[u]
+		}
+		ums, cut, err := s.dir.UserMemberships(ctx, viewProvider, users)
+		if err != nil {
+			return nil, err
+		}
+		c.userCut = cut
 		for _, m := range ums {
 			userGroups[m.UserID] = append(userGroups[m.UserID], m.GroupID)
 			if userObserved[m.UserID] == nil {
@@ -127,19 +200,20 @@ func (s *Service) newEvalCtx(ctx context.Context, devices []Device) (*evalCtx, e
 		}
 	}
 	if len(devExts) > 0 {
-		gs, err := s.dir.GroupsByExternalIDs(ctx, uniq(devExts))
+		gs, cut, err := s.dir.GroupsByExternalIDs(ctx, viewProvider, uniq(devExts))
 		if err != nil {
 			return nil, err
 		}
+		c.nestingCut = c.nestingCut || cut
 		for _, g := range gs {
 			orgIDs = append(orgIDs, g.ID)
 		}
 	}
-	orgIDs = uniq(orgIDs)
-	extOf, err := s.nestingUp(ctx, orgIDs, c.nesting)
+	extOf, cut, err := s.nestingUp(ctx, uniq(orgIDs), c.nesting)
 	if err != nil {
 		return nil, err
 	}
+	c.nestingCut = c.nestingCut || cut
 	for u, gids := range userGroups {
 		for _, gid := range gids {
 			if ext, ok := extOf[gid]; ok {
@@ -147,27 +221,33 @@ func (s *Service) newEvalCtx(ctx context.Context, devices []Device) (*evalCtx, e
 			}
 		}
 	}
+	for _, d := range devices {
+		c.devClosure[d.ID] = evaluation.NewClosure(evaluation.OriginDevice, c.devMem[d.ID], c.nesting)
+	}
+	for _, u := range users {
+		c.usrClosure[u] = evaluation.NewClosure(evaluation.OriginUser, c.userMem[u], c.nesting)
+	}
 	return c, nil
 }
 
 // nestingUp fills nesting (child external id -> parent external ids) for the ancestors of the groups and returns
-// the external id of every group id it saw.
-func (s *Service) nestingUp(ctx context.Context, orgIDs []string, nesting map[string][]string) (map[string]string, error) {
+// the external id of every group id it saw; truncated says that the nesting or the group lookup was cut.
+func (s *Service) nestingUp(ctx context.Context, orgIDs []string, nesting map[string][]string) (map[string]string, bool, error) {
 	extOf := map[string]string{}
 	if len(orgIDs) == 0 {
-		return extOf, nil
+		return extOf, false, nil
 	}
-	edges, err := s.dir.NestingUp(ctx, orgIDs)
+	edges, cutEdges, err := s.dir.NestingUp(ctx, viewProvider, orgIDs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	all := append([]string(nil), orgIDs...)
 	for _, e := range edges {
 		all = append(all, e.ChildID, e.ParentID)
 	}
-	gs, err := s.dir.GroupsByIDs(ctx, uniq(all))
+	gs, cutGroups, err := s.dir.GroupsByIDs(ctx, viewProvider, uniq(all))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	for _, g := range gs {
 		extOf[g.ID] = g.ExternalID
@@ -179,7 +259,7 @@ func (s *Service) nestingUp(ctx context.Context, orgIDs []string, nesting map[st
 			nesting[child] = append(nesting[child], parent)
 		}
 	}
-	return extOf, nil
+	return extOf, cutEdges || cutGroups, nil
 }
 
 func evalDevice(d Device) evaluation.Device {
@@ -208,19 +288,38 @@ func evalAssignments(as []Assignment) []evaluation.Assignment {
 	return out
 }
 
+// userInput fills the User side of an evaluator input for a known User.
+func (c *evalCtx) userInput(in *evaluation.Input, user string) {
+	in.UserKnown = true
+	in.UserMemberships = c.userMem[user]
+	in.UserClosure = c.usrClosure[user]
+	in.UserMembershipsUnknown = c.usrMemUnknown[user]
+	in.UserInputsTruncated = c.nestingCut || c.userCut
+}
+
 func (c *evalCtx) evaluate(d Device, as []Assignment) evaluation.Result {
-	user, known := c.userOf[d.ID]
-	return evaluation.Evaluate(evaluation.Input{Now: c.now, Device: evalDevice(d), DeviceMemberships: c.devMem[d.ID],
-		UserKnown: known, UserMemberships: c.userMem[user], Nesting: c.nesting, Assignments: evalAssignments(as)})
+	in := evaluation.Input{Now: c.now, Device: evalDevice(d), DeviceMemberships: c.devMem[d.ID], DeviceClosure: c.devClosure[d.ID],
+		DeviceMembershipsUnknown: c.devMemUnknown[d.ID], DeviceInputsTruncated: c.nestingCut, Nesting: c.nesting, Assignments: evalAssignments(as)}
+	if user, known := c.userOf[d.ID]; known {
+		c.userInput(&in, user)
+	}
+	return evaluation.Evaluate(in)
 }
 
 // groupsOf returns every group external id the Device or its User reaches, nesting included.
 func (c *evalCtx) groupsOf(d Device) []string {
-	out := evaluation.Groups(c.devMem[d.ID], c.nesting)
+	out := c.devClosure[d.ID].Groups()
 	if user, ok := c.userOf[d.ID]; ok {
-		out = append(out, evaluation.Groups(c.userMem[user], c.nesting)...)
+		out = append(out, c.usrClosure[user].Groups()...)
 	}
 	return uniq(out)
+}
+
+// anyGroupPossible reports whether the Device might be reached by a group target that its known groups do not
+// show: its User, or the memberships of the Device or its User, are unknown or were cut.
+func (c *evalCtx) anyGroupPossible(d Device) bool {
+	user, known := c.userOf[d.ID]
+	return !known || c.usrMemUnknown[user] || c.devMemUnknown[d.ID] || c.truncated()
 }
 
 // ---- group references ----
@@ -236,7 +335,7 @@ func (s *Service) resolveNames(ctx context.Context, p Principal, exts []string) 
 	if !g.visible || len(exts) == 0 {
 		return g, nil
 	}
-	gs, err := s.dir.GroupsByExternalIDs(ctx, uniq(exts))
+	gs, _, err := s.dir.GroupsByExternalIDs(ctx, viewProvider, uniq(exts))
 	if err != nil {
 		return g, err
 	}
@@ -308,15 +407,20 @@ func (s *Service) observedState(o *Observation) *ObservedState {
 		Stale: s.now().Sub(o.LastSyncedAt) > StaleObservation}
 }
 
-func mismatchOf(as []AssignedTarget, exp string, obs *ObservedState) string {
-	assigned := false
-	for _, a := range as {
-		if a.Mode == evaluation.ModeInclude && a.Match == string(evaluation.Yes) {
-			assigned = true
+// includeHit reports whether an include assignment covers the subject (target and filter), i.e. the
+// configuration says the artifact is meant to be there.
+func includeHit(as []Assignment, res evaluation.Result) bool {
+	for i, a := range as {
+		if a.Mode == evaluation.ModeInclude && res.Assignments[i].Hit == evaluation.Yes {
+			return true
 		}
 	}
+	return false
+}
+
+func mismatchOf(includeHit bool, exp string, obs *ObservedState) string {
 	switch {
-	case assigned && obs == nil && exp != ExpectedExcluded:
+	case includeHit && obs == nil && exp != ExpectedExcluded:
 		return MismatchAssignedNotObserved
 	case exp == ExpectedApplicable && obs != nil && obs.State != "applied":
 		return MismatchExpectedNotApplied
@@ -348,7 +452,8 @@ func (p Principal) canSeeDevices() bool { return p.canView() }
 const deviceViewBatch = 200
 
 // DeviceManagement lists the Management Artifacts relevant to a Device with Assigned, Expected Applicable and
-// Observed kept apart. Needs management access and device access.
+// Observed kept apart. Needs management access and device access. Without assets.view the Device's User is not
+// looked up and so unknown: user-targeted assignments evaluate to unknown, never to a result that would reveal the User.
 func (s *Service) DeviceManagement(ctx context.Context, p Principal, deviceID string, f DeviceManagementFilter) (DeviceManagement, error) {
 	if !p.canViewManagement() || !p.canView() {
 		return DeviceManagement{}, ErrForbidden
@@ -372,18 +477,23 @@ func (s *Service) DeviceManagement(ctx context.Context, p Principal, deviceID st
 	if page.Cursor != "" && !validUUID(page.Cursor) {
 		return DeviceManagement{}, ErrInvalidCursor
 	}
+	return inSnapshot(ctx, s, func(ctx context.Context) (DeviceManagement, error) {
+		return s.deviceManagement(ctx, p, deviceID, f, page)
+	})
+}
+
+func (s *Service) deviceManagement(ctx context.Context, p Principal, deviceID string, f DeviceManagementFilter, page Page) (DeviceManagement, error) {
 	d, err := s.store.GetDevice(ctx, deviceID)
 	if err != nil {
 		return DeviceManagement{}, err
 	}
-	ec, err := s.newEvalCtx(ctx, []Device{d})
+	ec, err := s.newEvalCtx(ctx, []Device{d}, evalOpts{holders: p.AssetsView})
 	if err != nil {
 		return DeviceManagement{}, err
 	}
-	_, userKnown := ec.userOf[d.ID]
-	q := ReachQuery{DeviceID: d.ID, Kind: f.Kind, GroupExternalIDs: ec.groupsOf(d), AllDevices: true, AllUsers: true, AnyGroup: !userKnown,
-		AfterID: page.Cursor, Limit: deviceViewBatch}
-	out := DeviceManagement{Items: []DeviceArtifactStatus{}}
+	q := ReachQuery{Provider: viewProvider, DeviceID: d.ID, Kind: f.Kind, GroupExternalIDs: ec.groupsOf(d), AllDevices: true, AllUsers: true,
+		AnyGroup: ec.anyGroupPossible(d), AfterID: page.Cursor, Limit: deviceViewBatch}
+	out := DeviceManagement{Items: []DeviceArtifactStatus{}, Truncated: ec.truncated()}
 	scanned := 0
 	for {
 		arts, err := s.store.ReachableArtifacts(ctx, q)
@@ -413,28 +523,33 @@ func (s *Service) DeviceManagement(ctx context.Context, p Principal, deviceID st
 			res := ec.evaluate(d, assigns[a.ID])
 			st := DeviceArtifactStatus{Artifact: a, Expected: expected(res, ec.now), Assignments: assignedTargets(names, assigns[a.ID], res)}
 			for _, t := range st.Assignments {
-				st.Assigned = st.Assigned || t.Match == string(evaluation.Yes)
+				st.Assigned = st.Assigned || (t.Mode == evaluation.ModeInclude && t.Match == string(evaluation.Yes))
 			}
 			if o, ok := obsMap[obsKey{a.ID, d.ID}]; ok {
 				st.Observed = s.observedState(&o)
 			}
-			st.Mismatch = mismatchOf(st.Assignments, res.Result, st.Observed)
+			st.Mismatch = mismatchOf(includeHit(assigns[a.ID], res), res.Result, st.Observed)
 			q.AfterID = a.ID
 			scanned++
 			if !deviceItemMatches(f, st) {
 				continue
 			}
-			out.Items = append(out.Items, st)
 			if len(out.Items) == page.Limit {
-				out.NextCursor = a.ID
+				// One more match proves there is a next page; the cursor is the last item returned.
+				out.NextCursor = out.Items[len(out.Items)-1].Artifact.ID
 				return out, nil
 			}
+			out.Items = append(out.Items, st)
 		}
 		if len(arts) < q.Limit {
 			return out, nil
 		}
 		if scanned >= MaxViewScan {
-			out.Truncated, out.NextCursor = true, q.AfterID
+			out.Truncated = true
+			out.NextCursor = q.AfterID
+			if len(out.Items) == page.Limit {
+				out.NextCursor = out.Items[len(out.Items)-1].Artifact.ID
+			}
 			return out, nil
 		}
 	}
@@ -460,8 +575,9 @@ func deviceItemMatches(f DeviceManagementFilter, st DeviceArtifactStatus) bool {
 // ---- Assignment Path ----
 
 // AssignmentPath explains why an artifact is (not) expected to apply to a Device. Needs management access and
-// device access; Directory Group and User details only with organization.directory.view (the User also needs
-// assets.view, because it is derived from the Asset's holder).
+// device access; Directory Group and User details only with organization.directory.view. The User is derived from
+// the Asset's holder and so only looked up with assets.view; without it the User is unknown (reason user_unknown),
+// the path carries no User origin and user-origin steps are anonymized.
 func (s *Service) AssignmentPath(ctx context.Context, p Principal, deviceID, artifactID string) (AssignmentPathView, error) {
 	if !p.canViewManagement() || !p.canView() {
 		return AssignmentPathView{}, ErrForbidden
@@ -469,6 +585,12 @@ func (s *Service) AssignmentPath(ctx context.Context, p Principal, deviceID, art
 	if !validUUID(deviceID) || !validUUID(artifactID) {
 		return AssignmentPathView{}, ErrNotFound
 	}
+	return inSnapshot(ctx, s, func(ctx context.Context) (AssignmentPathView, error) {
+		return s.assignmentPath(ctx, p, deviceID, artifactID)
+	})
+}
+
+func (s *Service) assignmentPath(ctx context.Context, p Principal, deviceID, artifactID string) (AssignmentPathView, error) {
 	d, err := s.store.GetDevice(ctx, deviceID)
 	if err != nil {
 		return AssignmentPathView{}, err
@@ -480,7 +602,7 @@ func (s *Service) AssignmentPath(ctx context.Context, p Principal, deviceID, art
 	if art.DeletedObservedAt != nil {
 		return AssignmentPathView{}, ErrNotFound
 	}
-	ec, err := s.newEvalCtx(ctx, []Device{d})
+	ec, err := s.newEvalCtx(ctx, []Device{d}, evalOpts{holders: p.AssetsView})
 	if err != nil {
 		return AssignmentPathView{}, err
 	}
@@ -503,6 +625,9 @@ func (s *Service) AssignmentPath(ctx context.Context, p Principal, deviceID, art
 	for _, st := range res.Path {
 		ps := PathStep{Kind: st.Kind, Origin: st.Origin, AssignmentID: st.AssignmentID, Mode: st.Mode, Intent: st.Intent, TargetKind: st.TargetKind,
 			FilterResult: st.FilterResult, Result: st.Result}
+		if ps.Origin == evaluation.OriginUser && !p.AssetsView {
+			ps.Origin = "" // no User is looked up without assets.view; do not hint at one
+		}
 		if st.GroupExternalID != "" {
 			ps.Group = names.ref(st.GroupExternalID)
 		}
@@ -534,7 +659,7 @@ func (s *Service) AssignmentPath(ctx context.Context, p Principal, deviceID, art
 
 // evaluateDevices evaluates the artifact on the devices and counts results and observed states.
 func (s *Service) evaluateDevices(ec *evalCtx, devices []Device, as []Assignment, artifactID string, obs map[obsKey]Observation, candidatesTruncated bool) Evaluation {
-	ev := Evaluation{Shown: true, Evaluated: len(devices), Truncated: candidatesTruncated, Expected: ResultCounts{}, Observed: map[string]int{}}
+	ev := Evaluation{Shown: true, Evaluated: len(devices), Truncated: candidatesTruncated || ec.truncated(), Expected: ResultCounts{}, Observed: map[string]int{}}
 	perResult := map[string]int{}
 	for _, d := range devices {
 		res := ec.evaluate(d, as)
@@ -574,40 +699,44 @@ func mergeDevices(lists ...[]Device) (out []Device, truncated bool) {
 	return out, truncated
 }
 
-// descendants returns the organization group ids and external ids of the groups and everything nested below them.
-func (s *Service) descendants(ctx context.Context, orgIDs []string) (allIDs, exts []string, err error) {
-	edges, err := s.dir.NestingDown(ctx, orgIDs)
+// descendants returns the organization group ids and external ids of the groups and everything nested below them;
+// truncated says the nesting or group lookup was cut, so groups (and so Devices) may be missing.
+func (s *Service) descendants(ctx context.Context, orgIDs []string) (allIDs, exts []string, truncated bool, err error) {
+	edges, cutEdges, err := s.dir.NestingDown(ctx, viewProvider, orgIDs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	allIDs = append(allIDs, orgIDs...)
 	for _, e := range edges {
 		allIDs = append(allIDs, e.ChildID, e.ParentID)
 	}
 	allIDs = uniq(allIDs)
-	gs, err := s.dir.GroupsByIDs(ctx, allIDs)
+	gs, cutGroups, err := s.dir.GroupsByIDs(ctx, viewProvider, allIDs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	for _, g := range gs {
 		exts = append(exts, g.ExternalID)
 	}
-	return allIDs, uniq(exts), nil
+	return allIDs, uniq(exts), cutEdges || cutGroups, nil
 }
 
 // candidateDevices returns the live Devices that belong to the groups (external ids) directly or whose primary
-// User is a member of one of the groups (orgIDs); the latter only when withUsers.
+// User is a member of one of the groups (orgIDs); the latter only when withUsers. truncated is set when any step
+// had more than MaxEvalDevices rows (devices, members, held Assets) or the directory lookup was cut.
 func (s *Service) candidateDevices(ctx context.Context, exts, orgIDs []string, withUsers bool) ([]Device, bool, error) {
-	byGroup, err := s.store.LiveDevicesInGroups(ctx, exts, MaxEvalDevices+1)
+	byGroup, err := s.store.LiveDevicesInGroups(ctx, viewProvider, exts, MaxEvalDevices+1)
 	if err != nil {
 		return nil, false, err
 	}
+	truncated := len(byGroup) > MaxEvalDevices
 	var byUser []Device
 	if withUsers && len(orgIDs) > 0 {
-		members, err := s.dir.GroupMembers(ctx, orgIDs, MaxEvalDevices+1)
+		members, cut, err := s.dir.GroupMembers(ctx, viewProvider, orgIDs, MaxEvalDevices)
 		if err != nil {
 			return nil, false, err
 		}
+		truncated = truncated || cut
 		var users []string
 		for _, m := range members {
 			users = append(users, m.UserID)
@@ -621,13 +750,16 @@ func (s *Service) candidateDevices(ctx context.Context, exts, orgIDs []string, w
 			for _, a := range held {
 				assets = append(assets, a...)
 			}
-			if byUser, err = s.store.LiveDevicesByAssetIDs(ctx, uniq(assets), MaxEvalDevices+1); err != nil {
+			assets = uniq(assets)
+			truncated = truncated || len(assets) > MaxEvalDevices
+			if byUser, err = s.store.LiveDevicesByAssetIDs(ctx, assets, MaxEvalDevices+1); err != nil {
 				return nil, false, err
 			}
+			truncated = truncated || len(byUser) > MaxEvalDevices
 		}
 	}
 	out, trunc := mergeDevices(byGroup, byUser)
-	return out, trunc || len(byGroup) > MaxEvalDevices || len(byUser) > MaxEvalDevices, nil
+	return out, truncated || trunc, nil
 }
 
 // ---- Directory Group view ----
@@ -650,7 +782,13 @@ func (s *Service) GroupManagement(ctx context.Context, p Principal, groupID stri
 	if page.Cursor != "" && !validUUID(page.Cursor) {
 		return GroupManagement{}, ErrInvalidCursor
 	}
-	gs, err := s.dir.GroupsByIDs(ctx, []string{groupID})
+	return inSnapshot(ctx, s, func(ctx context.Context) (GroupManagement, error) {
+		return s.groupManagement(ctx, p, groupID, page)
+	})
+}
+
+func (s *Service) groupManagement(ctx context.Context, p Principal, groupID string, page Page) (GroupManagement, error) {
+	gs, _, err := s.dir.GroupsByIDs(ctx, viewProvider, []string{groupID})
 	if err != nil {
 		return GroupManagement{}, err
 	}
@@ -659,17 +797,16 @@ func (s *Service) GroupManagement(ctx context.Context, p Principal, groupID stri
 	}
 	g := gs[0]
 	nesting := map[string][]string{}
-	extOf, err := s.nestingUp(ctx, []string{g.ID}, nesting)
+	_, nestingCut, err := s.nestingUp(ctx, []string{g.ID}, nesting)
 	if err != nil {
 		return GroupManagement{}, err
 	}
-	targetExts := evaluation.Groups([]evaluation.Membership{{GroupExternalID: g.ExternalID}}, nesting)
-	_ = extOf
-	arts, err := s.store.ArtifactsTargetingGroups(ctx, targetExts, page.Cursor, page.Limit+1)
+	targetExts := evaluation.NewClosure(evaluation.OriginDevice, []evaluation.Membership{{GroupExternalID: g.ExternalID}}, nesting).Groups()
+	arts, err := s.store.ArtifactsTargetingGroups(ctx, viewProvider, targetExts, page.Cursor, page.Limit+1)
 	if err != nil {
 		return GroupManagement{}, err
 	}
-	out := GroupManagement{GroupID: g.ID, ExternalID: g.ExternalID, Name: g.Name, Items: []GroupArtifact{}}
+	out := GroupManagement{GroupID: g.ID, ExternalID: g.ExternalID, Name: g.Name, Items: []GroupArtifact{}, CandidatesTruncated: nestingCut}
 	if len(arts) > page.Limit {
 		arts = arts[:page.Limit]
 		out.NextCursor = arts[page.Limit-1].ID
@@ -678,18 +815,21 @@ func (s *Service) GroupManagement(ctx context.Context, p Principal, groupID stri
 	var ec *evalCtx
 	showDevices := p.canSeeDevices()
 	if showDevices {
-		orgIDs, exts, err := s.descendants(ctx, []string{g.ID})
+		orgIDs, exts, cut, err := s.descendants(ctx, []string{g.ID})
 		if err != nil {
 			return GroupManagement{}, err
 		}
-		devices, out.CandidatesTruncated, err = s.candidateDevices(ctx, exts, orgIDs, p.AssetsView)
+		var candTrunc bool
+		devices, candTrunc, err = s.candidateDevices(ctx, exts, orgIDs, p.AssetsView)
 		if err != nil {
 			return GroupManagement{}, err
 		}
+		out.CandidatesTruncated = out.CandidatesTruncated || cut || candTrunc
 		out.CandidateDevices = len(devices)
-		if ec, err = s.newEvalCtx(ctx, devices); err != nil {
+		if ec, err = s.newEvalCtx(ctx, devices, evalOpts{holders: p.AssetsView}); err != nil {
 			return GroupManagement{}, err
 		}
+		out.CandidatesTruncated = out.CandidatesTruncated || ec.truncated()
 	}
 	artIDs := make([]string, 0, len(arts))
 	for _, a := range arts {
@@ -705,12 +845,11 @@ func (s *Service) GroupManagement(ctx context.Context, p Principal, groupID stri
 			return GroupManagement{}, err
 		}
 	}
-	names := groupNames{visible: true, byExt: map[string]DirectoryGroup{g.ExternalID: g}}
-	if more, err := s.resolveNames(ctx, p, assignmentGroups(assigns)); err == nil {
-		names = more
-	} else {
+	names, err := s.resolveNames(ctx, p, assignmentGroups(assigns))
+	if err != nil {
 		return GroupManagement{}, err
 	}
+	names.byExt[g.ExternalID] = g
 	for _, a := range arts {
 		item := GroupArtifact{Artifact: a}
 		for _, as := range assigns[a.ID] {
@@ -733,7 +872,8 @@ func (s *Service) GroupManagement(ctx context.Context, p Principal, groupID stri
 
 // UserManagement lists the artifacts that reach a User through User targeting (their groups, nesting included, or
 // all users) and, separately, the expected and observed result on each Device of the User. It needs management
-// access and organization.directory.view; the Devices need device access and assets.view.
+// access and organization.directory.view; the Devices need device access and assets.view. A User without synced
+// directory data has unknown memberships: group targets then evaluate to unknown, not to not_applicable.
 func (s *Service) UserManagement(ctx context.Context, p Principal, userID string, page Page) (UserManagement, error) {
 	if !p.canViewManagement() || !p.DirectoryView {
 		return UserManagement{}, ErrForbidden
@@ -748,6 +888,12 @@ func (s *Service) UserManagement(ctx context.Context, p Principal, userID string
 	if page.Cursor != "" && !validUUID(page.Cursor) {
 		return UserManagement{}, ErrInvalidCursor
 	}
+	return inSnapshot(ctx, s, func(ctx context.Context) (UserManagement, error) {
+		return s.userManagement(ctx, p, userID, page)
+	})
+}
+
+func (s *Service) userManagement(ctx context.Context, p Principal, userID string, page Page) (UserManagement, error) {
 	names, err := s.dir.UserNames(ctx, []string{userID})
 	if err != nil {
 		return UserManagement{}, err
@@ -758,27 +904,35 @@ func (s *Service) UserManagement(ctx context.Context, p Principal, userID string
 	}
 	out := UserManagement{UserID: userID, Name: name, Items: []UserArtifact{}, DevicesShown: p.canSeeDevices() && p.AssetsView}
 
-	ums, err := s.dir.UserMemberships(ctx, []string{userID})
-	if err != nil {
-		return UserManagement{}, err
-	}
-	var gids []string
-	for _, m := range ums {
-		gids = append(gids, m.GroupID)
-	}
-	nesting := map[string][]string{}
-	extOf, err := s.nestingUp(ctx, uniq(gids), nesting)
-	if err != nil {
-		return UserManagement{}, err
-	}
-	var direct []evaluation.Membership
-	for _, m := range ums {
-		if ext, ok := extOf[m.GroupID]; ok {
-			direct = append(direct, evaluation.Membership{GroupExternalID: ext, ObservedAt: m.ObservedAt})
+	// The User's own context first (memberships, nesting); then the Devices, whose context reuses the same lookups.
+	var devices []Device
+	if out.DevicesShown {
+		held, err := s.holders.AssetsHeldByUsers(ctx, []string{userID}, MaxUserViewAssets+1)
+		if err != nil {
+			return UserManagement{}, err
+		}
+		assets := uniq(held[userID])
+		out.DevicesTruncated = len(assets) > MaxUserViewAssets
+		if len(assets) > MaxUserViewAssets {
+			assets = assets[:MaxUserViewAssets]
+		}
+		devices, err = s.store.LiveDevicesByAssetIDs(ctx, assets, MaxUserViewDevices+1)
+		if err != nil {
+			return UserManagement{}, err
+		}
+		if len(devices) > MaxUserViewDevices {
+			devices, out.DevicesTruncated = devices[:MaxUserViewDevices], true
 		}
 	}
-	userGroups := evaluation.Groups(direct, nesting)
-	arts, err := s.store.ReachableArtifacts(ctx, ReachQuery{GroupExternalIDs: userGroups, AllUsers: true, AfterID: page.Cursor, Limit: page.Limit + 1})
+	ec, err := s.newEvalCtx(ctx, devices, evalOpts{holders: out.DevicesShown, users: []string{userID}})
+	if err != nil {
+		return UserManagement{}, err
+	}
+	out.Truncated = ec.truncated()
+	direct := ec.userMem[userID]
+	userGroups := ec.usrClosure[userID].Groups()
+	anyGroup := ec.usrMemUnknown[userID] || ec.truncated()
+	arts, err := s.store.ReachableArtifacts(ctx, ReachQuery{Provider: viewProvider, GroupExternalIDs: userGroups, AllUsers: true, AnyGroup: anyGroup, AfterID: page.Cursor, Limit: page.Limit + 1})
 	if err != nil {
 		return UserManagement{}, err
 	}
@@ -798,30 +952,12 @@ func (s *Service) UserManagement(ctx context.Context, p Principal, userID string
 	if err != nil {
 		return UserManagement{}, err
 	}
-
-	var devices []Device
-	var ec *evalCtx
 	var obs map[obsKey]Observation
 	if out.DevicesShown {
-		held, err := s.holders.AssetsHeldByUsers(ctx, []string{userID}, MaxUserViewDevices+1)
-		if err != nil {
-			return UserManagement{}, err
-		}
-		devices, err = s.store.LiveDevicesByAssetIDs(ctx, uniq(held[userID]), MaxUserViewDevices+1)
-		if err != nil {
-			return UserManagement{}, err
-		}
-		if len(devices) > MaxUserViewDevices {
-			devices, out.DevicesTruncated = devices[:MaxUserViewDevices], true
-		}
-		if ec, err = s.newEvalCtx(ctx, devices); err != nil {
-			return UserManagement{}, err
-		}
 		if obs, err = s.observationMap(ctx, artIDs, ids(devices)); err != nil {
 			return UserManagement{}, err
 		}
 	}
-	now := s.now()
 	for _, a := range arts {
 		// User targeting only: device targets and device filters do not describe the User.
 		var userAs []Assignment
@@ -833,7 +969,9 @@ func (s *Service) UserManagement(ctx context.Context, p Principal, userID string
 			c.Filter, c.FilterMode, c.FilterID = nil, "none", nil
 			userAs = append(userAs, c)
 		}
-		res := evaluation.Evaluate(evaluation.Input{Now: now, UserKnown: true, UserMemberships: direct, Nesting: nesting, Assignments: evalAssignments(userAs)})
+		in := evaluation.Input{Now: ec.now, UserMemberships: direct, Nesting: ec.nesting, Assignments: evalAssignments(userAs)}
+		ec.userInput(&in, userID)
+		res := evaluation.Evaluate(in)
 		item := UserArtifact{Artifact: a, UserResult: res.Result}
 		for _, t := range assignedTargets(gn, userAs, res) {
 			// Show the filter the provider configured even though it does not take part in the User result.
@@ -869,6 +1007,12 @@ func (s *Service) ArtifactTargets(ctx context.Context, p Principal, artifactID s
 	if !validUUID(artifactID) {
 		return ArtifactTargets{}, ErrNotFound
 	}
+	return inSnapshot(ctx, s, func(ctx context.Context) (ArtifactTargets, error) {
+		return s.artifactTargets(ctx, p, artifactID)
+	})
+}
+
+func (s *Service) artifactTargets(ctx context.Context, p Principal, artifactID string) (ArtifactTargets, error) {
 	art, err := s.store.GetArtifact(ctx, artifactID)
 	if err != nil {
 		return ArtifactTargets{}, err
@@ -923,7 +1067,7 @@ func (s *Service) ArtifactTargets(ctx context.Context, p Principal, artifactID s
 		devices, truncated = mergeDevices(first)
 		truncated = truncated || len(first) > MaxEvalDevices
 	} else if len(includeExts) > 0 {
-		roots, err := s.dir.GroupsByExternalIDs(ctx, uniq(includeExts))
+		roots, cutRoots, err := s.dir.GroupsByExternalIDs(ctx, viewProvider, uniq(includeExts))
 		if err != nil {
 			return ArtifactTargets{}, err
 		}
@@ -931,16 +1075,18 @@ func (s *Service) ArtifactTargets(ctx context.Context, p Principal, artifactID s
 		for _, g := range roots {
 			rootIDs = append(rootIDs, g.ID)
 		}
-		orgIDs, exts, err := s.descendants(ctx, uniq(rootIDs))
+		orgIDs, exts, cut, err := s.descendants(ctx, uniq(rootIDs))
 		if err != nil {
 			return ArtifactTargets{}, err
 		}
-		devices, truncated, err = s.candidateDevices(ctx, uniq(append(exts, includeExts...)), orgIDs, p.AssetsView)
+		var candTrunc bool
+		devices, candTrunc, err = s.candidateDevices(ctx, uniq(append(exts, includeExts...)), orgIDs, p.AssetsView)
 		if err != nil {
 			return ArtifactTargets{}, err
 		}
+		truncated = cutRoots || cut || candTrunc
 	}
-	ec, err := s.newEvalCtx(ctx, devices)
+	ec, err := s.newEvalCtx(ctx, devices, evalOpts{holders: p.AssetsView})
 	if err != nil {
 		return ArtifactTargets{}, err
 	}

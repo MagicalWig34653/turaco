@@ -599,7 +599,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, f application.ArtifactFi
 }
 
 func (r *Repository) GetArtifact(ctx context.Context, id string) (application.Artifact, error) {
-	a, err := scanArtifact(r.pool.QueryRow(ctx, `SELECT `+artifactColumns+` FROM endpoints.management_artifacts WHERE id = $1::uuid`, id))
+	a, err := scanArtifact(r.q(ctx).QueryRow(ctx, `SELECT `+artifactColumns+` FROM endpoints.management_artifacts WHERE id = $1::uuid`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Artifact{}, application.ErrNotFound
 	}
@@ -641,7 +641,7 @@ func (r *Repository) ArtifactAssignments(ctx context.Context, artifactID string)
 }
 
 func (r *Repository) ArtifactObservationCounts(ctx context.Context, artifactID string) (map[string]int, error) {
-	rows, err := r.pool.Query(ctx, `
+	rows, err := r.q(ctx).Query(ctx, `
 		SELECT o.normalized_state, count(*) FROM endpoints.management_observations o
 		JOIN endpoints.devices d ON d.id = o.device_id AND d.deleted_observed_at IS NULL
 		WHERE o.artifact_id = $1::uuid AND o.retired_at IS NULL GROUP BY o.normalized_state`, artifactID)

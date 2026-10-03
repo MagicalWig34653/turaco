@@ -36,16 +36,23 @@ const (
 
 // Reason codes, in the order they are reported.
 const (
-	ReasonIncluded          = "included_by_assignment"
-	ReasonExcluded          = "excluded_by_assignment"
-	ReasonExclusionWins     = "exclusion_overrides_include"
-	ReasonNoAssignments     = "no_assignments"
-	ReasonNoMatch           = "no_matching_assignment"
-	ReasonTargetAllDevices  = "target_all_devices"
-	ReasonTargetAllUsers    = "target_all_users"
-	ReasonMemberNested      = "member_via_nested_group"
-	ReasonMemberViaUser     = "membership_via_user"
-	ReasonUserUnknown       = "user_unknown"
+	ReasonIncluded         = "included_by_assignment"
+	ReasonExcluded         = "excluded_by_assignment"
+	ReasonExclusionWins    = "exclusion_overrides_include"
+	ReasonNoAssignments    = "no_assignments"
+	ReasonNoMatch          = "no_matching_assignment"
+	ReasonTargetAllDevices = "target_all_devices"
+	ReasonTargetAllUsers   = "target_all_users"
+	ReasonMemberNested     = "member_via_nested_group"
+	ReasonMemberViaUser    = "membership_via_user"
+	ReasonUserUnknown      = "user_unknown"
+	// ReasonMembershipsUnknown: the Device or its User has no synced membership data at all, so "not a member" is not known.
+	ReasonMembershipsUnknown = "memberships_unknown"
+	// ReasonInputsTruncated: a bounded input lookup (memberships, nesting) was cut, so the membership picture may be incomplete.
+	ReasonInputsTruncated = "inputs_truncated"
+	// ReasonMixedOrigin: the include and the exclude that would decide reach the Device through different origins
+	// (a User group and a Device group). Intune does not apply such mixes reliably, so Turaco does not claim a result.
+	ReasonMixedOrigin       = "mixed_origin_exclusion"
 	ReasonFilterMatched     = "filter_matched"
 	ReasonFilterNotMatched  = "filter_not_matched"
 	ReasonFilterUnsupported = "filter_unsupported"
@@ -54,8 +61,8 @@ const (
 	ReasonInputsStale       = "inputs_stale"
 )
 
-var reasonOrder = []string{ReasonIncluded, ReasonExcluded, ReasonExclusionWins, ReasonNoAssignments, ReasonNoMatch, ReasonTargetAllDevices,
-	ReasonTargetAllUsers, ReasonMemberNested, ReasonMemberViaUser, ReasonUserUnknown, ReasonFilterMatched, ReasonFilterNotMatched,
+var reasonOrder = []string{ReasonIncluded, ReasonExcluded, ReasonExclusionWins, ReasonMixedOrigin, ReasonNoAssignments, ReasonNoMatch, ReasonTargetAllDevices,
+	ReasonTargetAllUsers, ReasonMemberNested, ReasonMemberViaUser, ReasonUserUnknown, ReasonMembershipsUnknown, ReasonInputsTruncated, ReasonFilterMatched, ReasonFilterNotMatched,
 	ReasonFilterUnsupported, ReasonFilterMissing, ReasonFilterUnknown, ReasonInputsStale}
 
 // FreshnessLimit is the age after which an input lowers the confidence to low.
@@ -134,6 +141,20 @@ type Input struct {
 	UserMemberships []Membership
 	Nesting         map[string][]string
 	Assignments     []Assignment
+
+	// DeviceMembershipsUnknown: the Device has no synced membership data (an empty list is then not "member of nothing").
+	DeviceMembershipsUnknown bool
+	// UserMembershipsUnknown: the User (when known) has no synced directory data.
+	UserMembershipsUnknown bool
+	// DeviceInputsTruncated / UserInputsTruncated: a bounded lookup behind the Device's / User's memberships or
+	// the nesting was cut; a missing group then proves nothing.
+	DeviceInputsTruncated bool
+	UserInputsTruncated   bool
+
+	// DeviceClosure and UserClosure are optional precomputed closures (see NewClosure); callers evaluating many
+	// artifacts for the same Device reuse them. Nil means: compute from the memberships and the nesting.
+	DeviceClosure Closure
+	UserClosure   Closure
 }
 
 // Trace explains how a Device or User reaches a target group: Chain starts at the group the member
@@ -193,7 +214,25 @@ type Result struct {
 	Path        []Step
 }
 
-type closure map[string]Trace
+// Closure maps every group a subject reaches (directly or through nesting) to the shortest trace.
+type Closure map[string]Trace
+
+type closure = Closure
+
+// NewClosure expands direct memberships over the nesting edges.
+func NewClosure(origin string, direct []Membership, nesting map[string][]string) Closure {
+	return expand(origin, direct, nesting)
+}
+
+// Groups returns the sorted external ids of the groups of the closure.
+func (c Closure) Groups() []string {
+	out := make([]string, 0, len(c))
+	for g := range c {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // expand returns, for every group reachable from the direct memberships over the nesting edges, the shortest trace.
 func expand(origin string, direct []Membership, nesting map[string][]string) closure {
@@ -241,11 +280,16 @@ func Groups(direct []Membership, nesting map[string][]string) []string {
 
 // Evaluate derives the expected applicability of the artifact whose current assignments are in.Assignments.
 func Evaluate(in Input) Result {
-	dev := expand(OriginDevice, in.DeviceMemberships, in.Nesting)
-	var usr closure
-	if in.UserKnown {
+	dev := in.DeviceClosure
+	if dev == nil {
+		dev = expand(OriginDevice, in.DeviceMemberships, in.Nesting)
+	}
+	usr := in.UserClosure
+	if usr == nil && in.UserKnown {
 		usr = expand(OriginUser, in.UserMemberships, in.Nesting)
 	}
+	gaps := memberGaps{devUnknown: in.DeviceMembershipsUnknown, devTruncated: in.DeviceInputsTruncated,
+		usrUnknown: in.UserKnown && in.UserMembershipsUnknown, usrTruncated: in.UserKnown && in.UserInputsTruncated}
 
 	res := Result{}
 	reasons := map[string]bool{}
@@ -267,7 +311,7 @@ func Evaluate(in Input) Result {
 
 	for _, a := range in.Assignments {
 		markStale(a.LastSyncedAt)
-		res.Assignments = append(res.Assignments, evaluateAssignment(a, in.Device, dev, usr, in.UserKnown))
+		res.Assignments = append(res.Assignments, evaluateAssignment(a, in.Device, dev, usr, in.UserKnown, gaps))
 	}
 
 	// Aggregate: exclude beats include.
@@ -291,6 +335,11 @@ func Evaluate(in Input) Result {
 	case len(in.Assignments) == 0:
 		res.Result = NotApplicable
 		reasons[ReasonNoAssignments] = true
+	case len(excYes) > 0 && len(incYes) > 0 && !shareOrigin(res.Assignments, incYes, excYes):
+		// Intune does not apply an exclusion of a User group to a Device-group include (or the reverse) reliably.
+		res.Result = UnknownResult
+		decisive = append(append(decisive, incYes...), excYes...)
+		reasons[ReasonExcluded], reasons[ReasonMixedOrigin] = true, true
 	case len(excYes) > 0 && len(incYes) > 0:
 		res.Result = Excluded
 		decisive = append(append(decisive, incYes...), excYes...)
@@ -371,7 +420,30 @@ func Evaluate(in Input) Result {
 	return res
 }
 
-func evaluateAssignment(a Assignment, dev Device, devC, usrC closure, userKnown bool) AssignmentResult {
+// memberGaps says why a missing group membership of the Device or its User proves nothing.
+type memberGaps struct{ devUnknown, devTruncated, usrUnknown, usrTruncated bool }
+
+// shareOrigin reports whether an include and an exclude that both hit reach the subject through a common origin.
+func shareOrigin(rs []AssignmentResult, inc, exc []int) bool {
+	origins := func(idx []int) map[string]bool {
+		m := map[string]bool{}
+		for _, i := range idx {
+			for _, t := range rs[i].Traces {
+				m[t.Origin] = true
+			}
+		}
+		return m
+	}
+	incO, excO := origins(inc), origins(exc)
+	for o := range incO {
+		if excO[o] {
+			return true
+		}
+	}
+	return false
+}
+
+func evaluateAssignment(a Assignment, dev Device, devC, usrC closure, userKnown bool, gaps memberGaps) AssignmentResult {
 	r := AssignmentResult{AssignmentID: a.ID, Filter: FilterNone}
 	add := func(rs ...string) { r.Reasons = append(r.Reasons, rs...) }
 	switch a.TargetKind {
@@ -406,11 +478,22 @@ func evaluateAssignment(a Assignment, dev Device, devC, usrC closure, userKnown 
 					add(ReasonMemberViaUser)
 				}
 			}
-		case !userKnown:
-			r.Target = Unknown
-			add(ReasonUserUnknown)
 		default:
-			r.Target = No
+			// No trace: "not a member" is only known when every input behind it is complete.
+			if !userKnown {
+				add(ReasonUserUnknown)
+			}
+			if gaps.devUnknown || gaps.usrUnknown {
+				add(ReasonMembershipsUnknown)
+			}
+			if gaps.devTruncated || gaps.usrTruncated {
+				add(ReasonInputsTruncated)
+			}
+			if len(r.Reasons) > 0 {
+				r.Target = Unknown
+			} else {
+				r.Target = No
+			}
 		}
 	default:
 		r.Target = Unknown

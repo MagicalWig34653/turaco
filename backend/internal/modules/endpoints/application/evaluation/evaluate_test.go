@@ -1,6 +1,7 @@
 package evaluation
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -61,11 +62,56 @@ func TestEvaluate(t *testing.T) {
 			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "g2", ModeExclude)}
 		}, Excluded, ConfidenceHigh, []string{ReasonExcluded, ReasonExclusionWins}, []string{StepMembership, StepAssignment, StepMembership, StepAssignment, StepFinal}},
 		{"exclude via nested group of user", func(i *Input) {
-			i.DeviceMemberships = mem("g1")
-			i.UserMemberships = mem("kid")
+			i.UserMemberships = mem("g1", "kid")
 			i.Nesting = map[string][]string{"kid": {"blocked"}}
 			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "blocked", ModeExclude)}
 		}, Excluded, ConfidenceMedium, []string{ReasonExcluded, ReasonExclusionWins, ReasonMemberNested, ReasonMemberViaUser}, nil},
+		{"device include with user group exclude is mixed origin", func(i *Input) {
+			i.DeviceMemberships = mem("g1")
+			i.UserMemberships = mem("blocked")
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "blocked", ModeExclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonExcluded, ReasonMixedOrigin, ReasonMemberViaUser}, nil},
+		{"user include with device group exclude is mixed origin", func(i *Input) {
+			i.DeviceMemberships = mem("blocked")
+			i.UserMemberships = mem("g1")
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "blocked", ModeExclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonExcluded, ReasonMixedOrigin, ReasonMemberViaUser}, nil},
+		{"all devices include with user group exclude is mixed origin", func(i *Input) {
+			i.UserMemberships = mem("blocked")
+			i.Assignments = []Assignment{{ID: "a1", TargetKind: TargetAllDevices, Mode: ModeInclude, FilterMode: FilterModeNone, LastSyncedAt: now.Add(-time.Hour)}, grp("a2", "blocked", ModeExclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonExcluded, ReasonMixedOrigin, ReasonTargetAllDevices, ReasonMemberViaUser}, nil},
+		{"device and user include with device exclude share the device origin", func(i *Input) {
+			i.DeviceMemberships = mem("g1", "blocked")
+			i.UserMemberships = mem("g1")
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "blocked", ModeExclude)}
+		}, Excluded, ConfidenceMedium, []string{ReasonExcluded, ReasonExclusionWins, ReasonMemberViaUser}, nil},
+		{"unknown device memberships do not read as not applicable", func(i *Input) {
+			i.DeviceMembershipsUnknown = true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonMembershipsUnknown}, nil},
+		{"unknown user memberships do not read as not applicable", func(i *Input) {
+			i.DeviceMemberships = mem("other")
+			i.UserMembershipsUnknown = true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonMembershipsUnknown}, nil},
+		{"unknown memberships do not hide a positive hit", func(i *Input) {
+			i.DeviceMemberships = mem("g1")
+			i.UserMembershipsUnknown = true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, Applicable, ConfidenceHigh, []string{ReasonIncluded}, nil},
+		{"truncated inputs do not read as not applicable", func(i *Input) {
+			i.DeviceMemberships = mem("other")
+			i.UserInputsTruncated = true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonInputsTruncated}, nil},
+		{"truncated device inputs", func(i *Input) {
+			i.DeviceInputsTruncated = true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonInputsTruncated}, nil},
+		{"truncated user inputs are ignored when the user is unknown", func(i *Input) {
+			i.UserKnown, i.UserInputsTruncated = false, true
+			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude)}
+		}, UnknownResult, ConfidenceLow, []string{ReasonUserUnknown}, nil},
 		{"exclude without include is not applicable", func(i *Input) {
 			i.DeviceMemberships = mem("g2")
 			i.Assignments = []Assignment{grp("a1", "g1", ModeInclude), grp("a2", "g2", ModeExclude)}
@@ -258,5 +304,23 @@ func TestFilterSubset(t *testing.T) {
 	}
 	if _, ok := EvalFilter(string(make([]byte, 2001)), d); ok {
 		t.Error("an over-long rule must be unsupported")
+	}
+}
+
+func TestPrecomputedClosuresGiveTheSameResult(t *testing.T) {
+	in := base()
+	in.DeviceMemberships = mem("child")
+	in.UserMemberships = mem("kid")
+	in.Nesting = map[string][]string{"child": {"mid"}, "mid": {"top"}, "kid": {"blocked"}}
+	in.Assignments = []Assignment{grp("a1", "top", ModeInclude), grp("a2", "blocked", ModeExclude)}
+	want := Evaluate(in)
+	in.DeviceClosure = NewClosure(OriginDevice, in.DeviceMemberships, in.Nesting)
+	in.UserClosure = NewClosure(OriginUser, in.UserMemberships, in.Nesting)
+	in.DeviceMemberships, in.UserMemberships, in.Nesting = nil, nil, nil // must not be read again
+	if got := Evaluate(in); !reflect.DeepEqual(got, want) {
+		t.Fatalf("closure reuse changed the result:\n got %+v\nwant %+v", got, want)
+	}
+	if g := in.DeviceClosure.Groups(); !slices.Equal(g, []string{"child", "mid", "top"}) {
+		t.Errorf("closure groups = %v", g)
 	}
 }

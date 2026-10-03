@@ -19,6 +19,9 @@ const (
 	MaxGroupViewArtifacts = 50
 	// MaxUserViewDevices bounds the Devices of one User shown beside each artifact.
 	MaxUserViewDevices = 20
+	// MaxUserViewAssets bounds the Assets of a User looked at to find those Devices (a User also holds
+	// monitors and phones that are not endpoint Devices).
+	MaxUserViewAssets = 200
 	// StaleObservation is the age after which an observation or input is shown as stale.
 	StaleObservation = evaluation.FreshnessLimit
 )
@@ -64,14 +67,19 @@ type UserMembership struct {
 }
 
 // Directory answers the Organization questions the management views ask: Directory Groups, nesting, User
-// memberships and User display names. It authorizes nothing; the service decides what may be shown.
+// memberships and User display names. It authorizes nothing; the service decides what may be shown. Every lookup
+// is limited to the groups and identities of one provider key (the endpoint provider), is bounded, and reports
+// truncated=true when rows were cut: the caller must then not treat the answer as complete.
 type Directory interface {
-	GroupsByExternalIDs(ctx context.Context, externalIDs []string) ([]DirectoryGroup, error)
-	GroupsByIDs(ctx context.Context, ids []string) ([]DirectoryGroup, error)
-	NestingUp(ctx context.Context, groupIDs []string) ([]NestingEdge, error)
-	NestingDown(ctx context.Context, groupIDs []string) ([]NestingEdge, error)
-	UserMemberships(ctx context.Context, userIDs []string) ([]UserMembership, error)
-	GroupMembers(ctx context.Context, groupIDs []string, limit int) ([]UserMembership, error)
+	GroupsByExternalIDs(ctx context.Context, providerKey string, externalIDs []string) ([]DirectoryGroup, bool, error)
+	GroupsByIDs(ctx context.Context, providerKey string, ids []string) ([]DirectoryGroup, bool, error)
+	NestingUp(ctx context.Context, providerKey string, groupIDs []string) ([]NestingEdge, bool, error)
+	NestingDown(ctx context.Context, providerKey string, groupIDs []string) ([]NestingEdge, bool, error)
+	UserMemberships(ctx context.Context, providerKey string, userIDs []string) ([]UserMembership, bool, error)
+	GroupMembers(ctx context.Context, providerKey string, groupIDs []string, limit int) ([]UserMembership, bool, error)
+	// UsersWithIdentity tells which Users have synced directory data of the provider at all; for the others
+	// memberships are unknown, not empty.
+	UsersWithIdentity(ctx context.Context, providerKey string, userIDs []string) (map[string]bool, error)
 	// UserNames returns id -> display name for existing Users.
 	UserNames(ctx context.Context, ids []string) (map[string]string, error)
 }
@@ -91,6 +99,8 @@ type DeviceMembership struct {
 // ReachQuery selects the live artifacts that have a current assignment reaching the given targets, or (with
 // DeviceID) an active observation on that Device. Keyset: ascending id after AfterID.
 type ReachQuery struct {
+	// Provider is the management provider whose assignments are looked at.
+	Provider         string
 	DeviceID         string
 	Kind             string
 	GroupExternalIDs []string
@@ -104,13 +114,20 @@ type ReachQuery struct {
 
 // ViewStore is the read port of the management views.
 type ViewStore interface {
+	// ReadSnapshot runs fn with a ctx under which every ViewStore read (and GetDevice, GetArtifact and
+	// ArtifactObservationCounts) shares one READ ONLY REPEATABLE READ transaction, so one view sees one consistent
+	// state of the Endpoints tables. Reads of other modules are not part of it (eventually consistent).
+	ReadSnapshot(ctx context.Context, fn func(ctx context.Context) error) error
 	DevicesByIDs(ctx context.Context, ids []string) ([]Device, error)
 	LiveDevicesByAssetIDs(ctx context.Context, assetIDs []string, limit int) ([]Device, error)
-	LiveDevicesInGroups(ctx context.Context, groupExternalIDs []string, limit int) ([]Device, error)
+	LiveDevicesInGroups(ctx context.Context, provider string, groupExternalIDs []string, limit int) ([]Device, error)
 	LiveDevicesFirst(ctx context.Context, limit int) ([]Device, error)
 	DeviceMemberships(ctx context.Context, deviceIDs []string) ([]DeviceMembership, error)
+	// DevicesWithMembershipHistory returns the Devices that ever had a synced group membership of the provider
+	// (current or closed). For the others memberships are unknown, not empty.
+	DevicesWithMembershipHistory(ctx context.Context, provider string, deviceIDs []string) ([]string, error)
 	ReachableArtifacts(ctx context.Context, q ReachQuery) ([]Artifact, error)
-	ArtifactsTargetingGroups(ctx context.Context, groupExternalIDs []string, afterID string, limit int) ([]Artifact, error)
+	ArtifactsTargetingGroups(ctx context.Context, provider string, groupExternalIDs []string, afterID string, limit int) ([]Artifact, error)
 	// CurrentAssignmentsOf returns the current assignments (with filter summaries) per artifact id.
 	CurrentAssignmentsOf(ctx context.Context, artifactIDs []string) (map[string][]Assignment, error)
 	// ObservationsOf returns the active observations of the artifacts on the devices.
@@ -195,7 +212,8 @@ type DeviceManagementFilter struct {
 type DeviceManagement struct {
 	Items      []DeviceArtifactStatus
 	NextCursor string
-	// Truncated is set when the scan limit ended the page early; NextCursor then continues the scan.
+	// Truncated is set when the result may be incomplete: the scan limit ended the page early (NextCursor then
+	// continues the scan) or a bounded directory input (memberships, nesting) was cut.
 	Truncated bool
 }
 
@@ -264,7 +282,9 @@ type GroupManagement struct {
 	Items      []GroupArtifact
 	NextCursor string
 	// CandidateDevices is the number of Devices reached by the group (members, nested groups, members' Devices), capped.
-	CandidateDevices    int
+	CandidateDevices int
+	// CandidatesTruncated is set when any bounded input was cut (candidate Devices, members, group nesting): the
+	// artifact list and the counts may then be incomplete.
 	CandidatesTruncated bool
 }
 
@@ -293,6 +313,8 @@ type UserManagement struct {
 	Items            []UserArtifact
 	NextCursor       string
 	DevicesTruncated bool
+	// Truncated is set when the User's memberships or the group nesting were cut: the artifact list may be incomplete.
+	Truncated bool
 	// DevicesShown is false when the caller may not see the User's Devices.
 	DevicesShown bool
 }

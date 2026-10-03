@@ -488,4 +488,15 @@ func TestUserHoldersAndHeldAssets(t *testing.T) {
 	if err != nil || len(byUser[e.holder]) != 1 || byUser[e.holder][0] != held.ID || len(byUser[e.other]) != 0 {
 		t.Fatalf("held = %v, %v", byUser, err)
 	}
+	// Malformed ids are ignored instead of failing the lookup; the row limit is applied.
+	if got, err := repo.UserHolders(ctx, []string{"not-a-uuid", held.ID}); err != nil || got[held.ID] != e.holder {
+		t.Fatalf("holders with a malformed id = %v, %v", got, err)
+	}
+	if got, err := repo.AssetsHeldByUsers(ctx, []string{"nope", e.holder}, 10); err != nil || len(got[e.holder]) != 1 {
+		t.Fatalf("held with a malformed id = %v, %v", got, err)
+	}
+	more := e.mustOp(mk("h2"), application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+	if got, err := repo.AssetsHeldByUsers(ctx, []string{e.holder}, 1); err != nil || len(got[e.holder]) != 1 {
+		t.Fatalf("limit 1 = %v, %v (asset %s)", got, err, more.ID)
+	}
 }

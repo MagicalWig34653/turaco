@@ -43,7 +43,7 @@ func (l assetLookup) ByID(ctx context.Context, assetID string) (endpointsapp.Ass
 }
 
 // directoryLookup adapts the Organization directory graph and work directory contracts to the questions the
-// management views ask. All lookups are bounded by the Organization contract.
+// management views ask. All lookups are bounded by the Organization contract and report truncation.
 type directoryLookup struct {
 	graph *orgpublic.DirectoryGraph
 	names *orgpublic.WorkDirectory
@@ -57,14 +57,14 @@ func (d directoryLookup) groups(in []orgpublic.DirectoryGroupRef) []endpointsapp
 	return out
 }
 
-func (d directoryLookup) GroupsByExternalIDs(ctx context.Context, ids []string) ([]endpointsapp.DirectoryGroup, error) {
-	g, err := d.graph.GroupsByExternalIDs(ctx, ids)
-	return d.groups(g), err
+func (d directoryLookup) GroupsByExternalIDs(ctx context.Context, providerKey string, ids []string) ([]endpointsapp.DirectoryGroup, bool, error) {
+	g, cut, err := d.graph.GroupsByExternalIDs(ctx, providerKey, ids, orgpublic.MaxGraphRows)
+	return d.groups(g), cut, err
 }
 
-func (d directoryLookup) GroupsByIDs(ctx context.Context, ids []string) ([]endpointsapp.DirectoryGroup, error) {
-	g, err := d.graph.GroupsByIDs(ctx, ids)
-	return d.groups(g), err
+func (d directoryLookup) GroupsByIDs(ctx context.Context, providerKey string, ids []string) ([]endpointsapp.DirectoryGroup, bool, error) {
+	g, cut, err := d.graph.GroupsByIDs(ctx, providerKey, ids, orgpublic.MaxGraphRows)
+	return d.groups(g), cut, err
 }
 
 func edges(in []orgpublic.GroupNestingEdge) []endpointsapp.NestingEdge {
@@ -75,14 +75,14 @@ func edges(in []orgpublic.GroupNestingEdge) []endpointsapp.NestingEdge {
 	return out
 }
 
-func (d directoryLookup) NestingUp(ctx context.Context, ids []string) ([]endpointsapp.NestingEdge, error) {
-	e, err := d.graph.NestingUp(ctx, ids, orgpublic.MaxGraphRows)
-	return edges(e), err
+func (d directoryLookup) NestingUp(ctx context.Context, providerKey string, ids []string) ([]endpointsapp.NestingEdge, bool, error) {
+	e, cut, err := d.graph.NestingUp(ctx, providerKey, ids, orgpublic.MaxGraphRows)
+	return edges(e), cut, err
 }
 
-func (d directoryLookup) NestingDown(ctx context.Context, ids []string) ([]endpointsapp.NestingEdge, error) {
-	e, err := d.graph.NestingDown(ctx, ids, orgpublic.MaxGraphRows)
-	return edges(e), err
+func (d directoryLookup) NestingDown(ctx context.Context, providerKey string, ids []string) ([]endpointsapp.NestingEdge, bool, error) {
+	e, cut, err := d.graph.NestingDown(ctx, providerKey, ids, orgpublic.MaxGraphRows)
+	return edges(e), cut, err
 }
 
 func memberships(in []orgpublic.GroupUserMembership) []endpointsapp.UserMembership {
@@ -93,14 +93,18 @@ func memberships(in []orgpublic.GroupUserMembership) []endpointsapp.UserMembersh
 	return out
 }
 
-func (d directoryLookup) UserMemberships(ctx context.Context, ids []string) ([]endpointsapp.UserMembership, error) {
-	m, err := d.graph.UserMemberships(ctx, ids, orgpublic.MaxGraphRows)
-	return memberships(m), err
+func (d directoryLookup) UserMemberships(ctx context.Context, providerKey string, ids []string) ([]endpointsapp.UserMembership, bool, error) {
+	m, cut, err := d.graph.UserMemberships(ctx, providerKey, ids, orgpublic.MaxGraphRows)
+	return memberships(m), cut, err
 }
 
-func (d directoryLookup) GroupMembers(ctx context.Context, ids []string, limit int) ([]endpointsapp.UserMembership, error) {
-	m, err := d.graph.GroupMembers(ctx, ids, limit)
-	return memberships(m), err
+func (d directoryLookup) GroupMembers(ctx context.Context, providerKey string, ids []string, limit int) ([]endpointsapp.UserMembership, bool, error) {
+	m, cut, err := d.graph.GroupMembers(ctx, providerKey, ids, limit)
+	return memberships(m), cut, err
+}
+
+func (d directoryLookup) UsersWithIdentity(ctx context.Context, providerKey string, ids []string) (map[string]bool, error) {
+	return d.graph.UsersWithIdentity(ctx, providerKey, ids)
 }
 
 func (d directoryLookup) UserNames(ctx context.Context, ids []string) (map[string]string, error) {
