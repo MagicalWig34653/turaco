@@ -3,8 +3,10 @@ import { matchRoute } from '../platform/router/routing';
 import { createCan } from '../platform/session/permissions';
 import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes';
 
-const ids = (permissions: string[], group: 'main' | 'logistics' | 'endpoints' | 'admin') =>
-  visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
+const ids = (
+  permissions: string[],
+  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'admin',
+) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
   it('always shows the main entries and hides admin entries without permission', () => {
@@ -314,5 +316,19 @@ describe('endpoints', () => {
     expect(canViewRoute(createCan({ permissions: ['endpoint.management.view'] }), groupDiff)).toBe(
       false,
     );
+  });
+});
+
+describe('infrastructure routes', () => {
+  it('shows navigation with view or manage permission', () => {
+    expect(ids([], 'infrastructure')).toEqual([]);
+    expect(ids(['infrastructure.view'], 'infrastructure')).toEqual([
+      'infrastructureTree',
+      'infrastructureVMs',
+    ]);
+    expect(ids(['infrastructure.manage'], 'infrastructure')).toEqual([
+      'infrastructureTree',
+      'infrastructureVMs',
+    ]);
   });
 });

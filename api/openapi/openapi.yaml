@@ -5932,6 +5932,774 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /infrastructure/tree:
+    get:
+      operationId: getInfrastructureTree
+      summary: getInfrastructureTree.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: includeArchived
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InfrastructureTree'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /buildings:
+    get:
+      operationId: listBuildings
+      summary: listBuildings.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: siteLocationId
+          in: query
+          schema: {type: string}
+        - name: includeArchived
+          in: query
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BuildingList'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createBuilding
+      summary: createBuilding.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BuildingCreate'}
+      responses:
+        '201':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Building'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /buildings/{id}:
+    get:
+      operationId: getBuilding
+      summary: getBuilding.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Building'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateBuilding
+      summary: updateBuilding.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BuildingUpdate'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Building'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /buildings/{id}/archive:
+    post:
+      operationId: archiveBuilding
+      summary: archiveBuilding.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Building'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /buildings/{id}/unarchive:
+    post:
+      operationId: unarchiveBuilding
+      summary: unarchiveBuilding.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Building'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /buildings/{id}/rooms:
+    get:
+      operationId: listBuildingRooms
+      summary: listBuildingRooms.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: includeArchived
+          in: query
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoomList'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRoom
+      summary: createRoom.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoomCreate'}
+      responses:
+        '201':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Room'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rooms/{id}:
+    get:
+      operationId: getRoom
+      summary: getRoom.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Room'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRoom
+      summary: updateRoom.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RoomUpdate'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Room'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rooms/{id}/archive:
+    post:
+      operationId: archiveRoom
+      summary: archiveRoom.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Room'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rooms/{id}/unarchive:
+    post:
+      operationId: unarchiveRoom
+      summary: unarchiveRoom.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Room'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rooms/{id}/racks:
+    get:
+      operationId: listRoomRacks
+      summary: listRoomRacks.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: includeArchived
+          in: query
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackList'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRack
+      summary: createRack.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RackCreate'}
+      responses:
+        '201':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Rack'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /racks/{id}:
+    get:
+      operationId: getRack
+      summary: getRack.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackDetail'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: renameRack
+      summary: renameRack.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RackRename'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Rack'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /racks/{id}/archive:
+    post:
+      operationId: archiveRack
+      summary: archiveRack.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Rack'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /racks/{id}/unarchive:
+    post:
+      operationId: unarchiveRack
+      summary: unarchiveRack.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InfrastructureVersion'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Rack'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /racks/{id}/placements:
+    get:
+      operationId: listRackPlacements
+      summary: listRackPlacements.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: includeRemoved
+          in: query
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackPlacementList'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rack-placements:
+    post:
+      operationId: createRackPlacement
+      summary: createRackPlacement.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RackPlacementCreate'}
+      responses:
+        '201':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackPlacement'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rack-placements/{id}:
+    get:
+      operationId: getRackPlacement
+      summary: getRackPlacement.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackPlacement'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rack-placements/{id}/move:
+    post:
+      operationId: moveRackPlacement
+      summary: moveRackPlacement.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RackPlacementMove'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackPlacement'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /rack-placements/{id}/remove:
+    post:
+      operationId: removeRackPlacement
+      summary: removeRackPlacement.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RackPlacementRemove'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RackPlacement'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /assets/{id}/location:
+    get:
+      operationId: getAssetInfrastructureLocation
+      summary: getAssetInfrastructureLocation.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetInfrastructureLocation'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /virtual-machines:
+    get:
+      operationId: listVirtualMachines
+      summary: listVirtualMachines.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema: {type: string}
+        - name: hypervisorAssetId
+          in: query
+          schema: {type: string}
+        - name: q
+          in: query
+          schema: {type: string}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachineList'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createVirtualMachine
+      summary: createVirtualMachine.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualMachineCreate'}
+      responses:
+        '201':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /virtual-machines/{id}:
+    get:
+      operationId: getVirtualMachine
+      summary: getVirtualMachine.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateVirtualMachine
+      summary: updateVirtualMachine.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualMachineUpdate'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /virtual-machines/{id}/state:
+    post:
+      operationId: changeVirtualMachineState
+      summary: changeVirtualMachineState.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualMachineStateChange'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /virtual-machines/{id}/hypervisor:
+    post:
+      operationId: assignVirtualMachineHypervisor
+      summary: assignVirtualMachineHypervisor.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualMachineHypervisorChange'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /virtual-machines/{id}/decommission:
+    post:
+      operationId: decommissionVirtualMachine
+      summary: decommissionVirtualMachine.
+      description: "Requires infrastructure.view or infrastructure.manage for reads, infrastructure.manage for writes; Asset location also requires assets.view or assets.manage. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VirtualMachineDecommission'}
+      responses:
+        '200':
+          description: Requested record or list.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VirtualMachine'}
+        '400': {$ref: '#/components/responses/InfrastructureInvalid'}
+        '404': {$ref: '#/components/responses/InfrastructureNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/InfrastructureConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -5976,6 +6744,21 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   responses:
+    InfrastructureInvalid:
+      description: Invalid infrastructure input, cursor, limit or reference.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InfrastructureNotFound:
+      description: Infrastructure record or Asset not found.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    InfrastructureConflict:
+      description: Duplicate, stale, archived, occupied or otherwise conflicting record.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     InvalidRequest:
       description: Invalid limit, cursor, query, status or provider key (organization.invalid_limit, organization.invalid_cursor, organization.invalid_query, organization.invalid_status, organization.invalid_provider_key).
       content:
@@ -6253,6 +7036,270 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    Building:
+      type: object
+      required: [id, siteLocationId, name, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        siteLocationId: {type: string}
+        name: {type: string}
+        addressNote: {type: [string, 'null']}
+        active: {type: boolean}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    Room:
+      type: object
+      required: [id, buildingId, name, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        buildingId: {type: string}
+        name: {type: string}
+        floor: {type: [string, 'null']}
+        active: {type: boolean}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    Rack:
+      type: object
+      required: [id, roomId, name, heightU, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        roomId: {type: string}
+        name: {type: string}
+        heightU: {type: integer}
+        active: {type: boolean}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RackPlacement:
+      type: object
+      required: [id, rackId, assetId, uPosition, heightU, face, placedAt, version]
+      properties:
+        id: {type: string}
+        rackId: {type: string}
+        assetId: {type: string}
+        assetReference: {type: [string, 'null']}
+        uPosition: {type: integer}
+        heightU: {type: integer}
+        face: {type: string, enum: [front, rear]}
+        placedBy: {type: [string, 'null']}
+        placedAt: {type: string, format: date-time}
+        removedAt: {type: [string, 'null']}
+        removalReason: {type: [string, 'null']}
+        previousPlacementId: {type: [string, 'null']}
+        version: {type: integer}
+    AssetInfrastructureLocation:
+      type: object
+      required: [placed, uPosition, heightU, face]
+      properties:
+        placed: {type: boolean}
+        placementId: {type: [string, 'null']}
+        rackId: {type: [string, 'null']}
+        rackName: {type: [string, 'null']}
+        roomId: {type: [string, 'null']}
+        roomName: {type: [string, 'null']}
+        floor: {type: [string, 'null']}
+        buildingId: {type: [string, 'null']}
+        buildingName: {type: [string, 'null']}
+        siteLocationId: {type: [string, 'null']}
+        siteName: {type: [string, 'null']}
+        uPosition: {type: integer}
+        heightU: {type: integer}
+        face: {type: string, enum: [front, rear]}
+        placedAt: {type: [string, 'null']}
+    InfrastructureSite:
+      type: object
+      required: [locationId, name, buildings, rooms, racks, placedAssets, buildingItems]
+      properties:
+        locationId: {type: string}
+        name: {type: string}
+        buildings: {type: integer}
+        rooms: {type: integer}
+        racks: {type: integer}
+        placedAssets: {type: integer}
+        buildingItems: {type: array, items: {$ref: '#/components/schemas/InfrastructureBuildingSummary'}}
+    InfrastructureBuildingSummary:
+      type: object
+      required: [id, name, active, rooms, racks, placedAssets, version]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        active: {type: boolean}
+        rooms: {type: integer}
+        racks: {type: integer}
+        placedAssets: {type: integer}
+        version: {type: integer}
+    VirtualMachine:
+      type: object
+      required: [id, name, state, vcpu, memoryMb, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        state: {type: string, enum: [running, stopped, unknown, decommissioned]}
+        hypervisorAssetId: {type: [string, 'null']}
+        hypervisorAssetReference: {type: [string, 'null']}
+        vcpu: {type: integer}
+        memoryMb: {type: integer}
+        managementAddress: {type: [string, 'null']}
+        networkNote: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
+        decommissionReason: {type: [string, 'null']}
+        decommissionedAt: {type: [string, 'null']}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    InfrastructureVersion:
+      type: object
+      properties:
+        expectedVersion: {type: integer}
+    BuildingCreate:
+      type: object
+      required: [siteLocationId, name]
+      properties:
+        siteLocationId: {type: string}
+        name: {type: string}
+        addressNote: {type: [string, 'null']}
+    BuildingUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+        name: {type: [string, 'null']}
+        addressNote: {type: [string, 'null']}
+    RoomCreate:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        floor: {type: [string, 'null']}
+    RoomUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+        name: {type: [string, 'null']}
+        floor: {type: [string, 'null']}
+    RackCreate:
+      type: object
+      required: [name, heightU]
+      properties:
+        name: {type: string}
+        heightU: {type: integer}
+    RackRename:
+      type: object
+      required: [name, expectedVersion]
+      properties:
+        name: {type: string}
+        expectedVersion: {type: integer}
+    RackPlacementCreate:
+      type: object
+      required: [rackId, assetId, uPosition, heightU, face]
+      properties:
+        rackId: {type: string}
+        assetId: {type: string}
+        uPosition: {type: integer}
+        heightU: {type: integer}
+        face: {type: string, enum: [front, rear]}
+    RackPlacementMove:
+      type: object
+      required: [rackId, uPosition, heightU, face]
+      properties:
+        rackId: {type: string}
+        uPosition: {type: integer}
+        heightU: {type: integer}
+        face: {type: string, enum: [front, rear]}
+        expectedVersion: {type: integer}
+    RackPlacementRemove:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, enum: [relocated, replaced, decommissioned, error_correction, other]}
+        expectedVersion: {type: integer}
+    VirtualMachineCreate:
+      type: object
+      required: [name, state, vcpu, memoryMb]
+      properties:
+        name: {type: string}
+        state: {type: string, enum: [running, stopped, unknown, decommissioned]}
+        hypervisorAssetId: {type: [string, 'null']}
+        vcpu: {type: integer}
+        memoryMb: {type: integer}
+        managementAddress: {type: [string, 'null']}
+        networkNote: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
+    VirtualMachineUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+        name: {type: [string, 'null']}
+        vcpu: {type: integer}
+        memoryMb: {type: integer}
+        managementAddress: {type: [string, 'null']}
+        networkNote: {type: [string, 'null']}
+        notes: {type: [string, 'null']}
+    VirtualMachineStateChange:
+      type: object
+      required: [state]
+      properties:
+        state: {type: string, enum: [running, stopped, unknown, decommissioned]}
+        expectedVersion: {type: integer}
+    VirtualMachineHypervisorChange:
+      type: object
+      properties:
+        assetId: {type: [string, 'null']}
+        expectedVersion: {type: integer}
+    VirtualMachineDecommission:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string, enum: [retired, migrated, deleted, other]}
+        expectedVersion: {type: integer}
+    BuildingList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Building'}}
+        nextCursor: {type: string}
+    RoomList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Room'}}
+        nextCursor: {type: string}
+    RackList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Rack'}}
+        nextCursor: {type: string}
+    RackPlacementList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/RackPlacement'}}
+        nextCursor: {type: string}
+        assetReferences: {type: object, additionalProperties: {type: string}}
+    VirtualMachineList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/VirtualMachine'}}
+        nextCursor: {type: string}
+        assetReferences: {type: object, additionalProperties: {type: string}}
+    RackDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Rack'}
+        - type: object
+          required: [placements]
+          properties:
+            placements: {type: array, items: {$ref: '#/components/schemas/RackPlacement'}}
+    InfrastructureTree:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/InfrastructureSite'}}
     AuthSession:
       type: object
       additionalProperties: false
