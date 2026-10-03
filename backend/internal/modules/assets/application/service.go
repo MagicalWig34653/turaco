@@ -586,7 +586,17 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 		d.Allowed = AllowedOperations(a.Status)
 	}
 	d.Names, err = s.names(ctx, a, assignments)
-	return d, err
+	if err != nil {
+		return Detail{}, err
+	}
+	pn, err := s.ProductNames(ctx, []Asset{a})
+	if err != nil {
+		return Detail{}, err
+	}
+	for id, name := range pn {
+		d.Names[id] = name
+	}
+	return d, nil
 }
 
 func (s *Service) names(ctx context.Context, a Asset, as []Assignment) (map[string]string, error) {
@@ -644,6 +654,26 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, erro
 // modules that authorized the caller themselves).
 func (s *Service) GetPlain(ctx context.Context, id string) (Asset, error) {
 	return s.store.Get(ctx, id)
+}
+
+// ProductNames returns id -> name of the products of the given assets.
+func (s *Service) ProductNames(ctx context.Context, assets []Asset) (map[string]string, error) {
+	ids := make([]string, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ProductID)
+	}
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	found, err := s.products.Products(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load product names: %w", err)
+	}
+	for id, p := range found {
+		out[id] = p.Name
+	}
+	return out, nil
 }
 
 // Mine returns the assets currently assigned to the caller (no permission needed).

@@ -49,13 +49,15 @@ func orderState(o *Order) any {
 
 // Detail is an order with its lines, totals and the operations its status allows.
 type Detail struct {
-	Order         Order
-	Lines         []Line
-	TotalCents    int64
-	SupplierName  string
-	ProductNames  map[string]string
-	AllowedOps    []string
-	LinesEditable bool
+	Order        Order
+	Lines        []Line
+	TotalCents   int64
+	SupplierName string
+	ProductNames map[string]string
+	// ProductTracking maps a product to "asset", "stock" or "none" (how goods are tracked once received).
+	ProductTracking map[string]string
+	AllowedOps      []string
+	LinesEditable   bool
 }
 
 // ---- create and edit ----
@@ -660,7 +662,7 @@ func (s *Service) GetOrder(ctx context.Context, p Principal, id string) (Detail,
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Order: o, Lines: lines, ProductNames: map[string]string{}, LinesEditable: o.Status == POStatusDraft}
+	d := Detail{Order: o, Lines: lines, ProductNames: map[string]string{}, ProductTracking: map[string]string{}, LinesEditable: o.Status == POStatusDraft}
 	if p.Manage {
 		d.AllowedOps = AllowedOperations(o.Status)
 	} else {
@@ -681,6 +683,7 @@ func (s *Service) GetOrder(ctx context.Context, p Principal, id string) (Detail,
 		}
 		for id, pr := range found {
 			d.ProductNames[id] = pr.Name
+			d.ProductTracking[id] = pr.Tracking()
 		}
 	}
 	return d, nil

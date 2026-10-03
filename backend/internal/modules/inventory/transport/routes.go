@@ -174,7 +174,17 @@ func (h *handler) listStock(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toBalance))
+	out := toList(res, toBalance)
+	var products, locations []string
+	for _, b := range res.Items {
+		products, locations = append(products, b.ProductID), append(locations, b.StorageLocationID)
+	}
+	out, err = withNames(h, r, out, products, locations)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) listTransactions(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +201,17 @@ func (h *handler) listTransactions(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toTransaction))
+	out := toList(res, toTransaction)
+	var products, locations []string
+	for _, t := range res.Items {
+		products, locations = append(products, t.ProductID), append(locations, t.StorageLocationID)
+	}
+	out, err = withNames(h, r, out, products, locations)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 type moveBody struct {
@@ -302,7 +322,20 @@ func (h *handler) listReservations(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toReservation))
+	out := toList(res, toReservation)
+	var products, locations []string
+	for _, x := range res.Items {
+		products = append(products, x.ProductID)
+		if x.StorageLocationID != nil {
+			locations = append(locations, *x.StorageLocationID)
+		}
+	}
+	out, err = withNames(h, r, out, products, locations)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) getReservation(w http.ResponseWriter, r *http.Request) {

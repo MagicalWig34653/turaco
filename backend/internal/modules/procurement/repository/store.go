@@ -176,6 +176,32 @@ func (r *Repository) GetSupplier(ctx context.Context, id string) (application.Su
 	return get(ctx, r, "procurement.suppliers", supplierCols, id, scanSupplier)
 }
 
+func (r *Repository) SupplierNames(ctx context.Context, ids []string) (map[string]string, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	out := map[string]string{}
+	if len(valid) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT id::text, name FROM procurement.suppliers WHERE id = ANY($1::text[]::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("supplier names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("supplier names: scan: %w", err)
+		}
+		out[id] = name
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ActiveSuppliersTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]bool, error) {
 	valid := make([]string, 0, len(ids))
 	for _, id := range ids {

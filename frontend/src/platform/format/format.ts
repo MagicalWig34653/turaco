@@ -13,6 +13,23 @@ export function formatDateTime(locale: Locale, iso: string | null | undefined): 
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(date);
 }
 
+/** Money from minor units (cents) with the currency; falls back to a plain number for unknown codes. */
+export function formatMoney(locale: Locale, cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency}`;
+  }
+}
+
+/** Parses a user-entered decimal amount ("12,50" or "12.5") into minor units; undefined when invalid. */
+export function parseMoneyToCents(input: string): number | undefined {
+  const text = input.trim().replace(',', '.');
+  if (!/^\d{1,9}(\.\d{1,2})?$/.test(text)) return undefined;
+  const [whole, fraction = ''] = text.split('.');
+  return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+}
+
 /** Converts a <input type="datetime-local"> value (local time) to an RFC 3339 UTC string. */
 export function localInputToIso(value: string): string | undefined {
   if (value.trim() === '') return undefined;

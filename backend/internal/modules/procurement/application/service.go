@@ -376,3 +376,32 @@ func (s *Service) GetNeed(ctx context.Context, p Principal, id string) (Need, er
 	}
 	return s.store.GetNeed(ctx, id)
 }
+
+// Names are the display names that make ids in lists readable.
+type Names struct {
+	Products  map[string]string
+	Suppliers map[string]string
+}
+
+// NamesFor resolves product and supplier names. It performs no permission
+// check: callers use it for ids they already returned.
+func (s *Service) NamesFor(ctx context.Context, productIDs, supplierIDs []string) (Names, error) {
+	out := Names{Products: map[string]string{}, Suppliers: map[string]string{}}
+	if len(productIDs) > 0 {
+		found, err := s.products.Products(ctx, productIDs)
+		if err != nil {
+			return Names{}, fmt.Errorf("load product names: %w", err)
+		}
+		for id, p := range found {
+			out.Products[id] = p.Name
+		}
+	}
+	if len(supplierIDs) > 0 {
+		names, err := s.store.SupplierNames(ctx, supplierIDs)
+		if err != nil {
+			return Names{}, err
+		}
+		out.Suppliers = names
+	}
+	return out, nil
+}

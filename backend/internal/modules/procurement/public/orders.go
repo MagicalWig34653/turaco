@@ -108,7 +108,7 @@ func (p *Products) Products(ctx context.Context, ids []string) (map[string]appli
 	}
 	out := make(map[string]application.ProductInfo, len(found))
 	for id, pr := range found {
-		out[id] = application.ProductInfo{ID: pr.ID, Name: pr.Name, Active: pr.Active}
+		out[id] = application.ProductInfo{ID: pr.ID, Name: pr.Name, Active: pr.Active, Serialized: pr.Serialized, StockManaged: pr.StockManaged, AssetManaged: pr.AssetManaged}
 	}
 	return out, nil
 }

@@ -273,6 +273,8 @@ type Store interface {
 	LockLocationTx(ctx context.Context, tx pgx.Tx, id string) (StorageLocation, error)
 	UpdateLocationTx(ctx context.Context, tx pgx.Tx, l StorageLocation) (StorageLocation, error)
 	GetLocation(ctx context.Context, id string) (StorageLocation, error)
+	// LocationLabels returns id -> "Warehouse / Storage location" for existing storage locations.
+	LocationLabels(ctx context.Context, ids []string) (map[string]string, error)
 	// ActiveLocationsTx returns id -> true for active storage locations of active warehouses.
 	ActiveLocationsTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]bool, error)
 	ListLocations(ctx context.Context, warehouseID string, includeInactive bool, page Page) (Result[StorageLocation], error)

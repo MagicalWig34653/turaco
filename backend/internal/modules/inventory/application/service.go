@@ -415,3 +415,32 @@ func (s *Service) GetReservation(ctx context.Context, p Principal, id string) (R
 	}
 	return s.store.GetReservation(ctx, id)
 }
+
+// Names are the display names that make ids in lists readable.
+type Names struct {
+	Products         map[string]string
+	StorageLocations map[string]string
+}
+
+// NamesFor resolves product names and "Warehouse / Storage location" labels.
+// It performs no permission check: callers use it for ids they already returned.
+func (s *Service) NamesFor(ctx context.Context, productIDs, locationIDs []string) (Names, error) {
+	out := Names{Products: map[string]string{}, StorageLocations: map[string]string{}}
+	if len(productIDs) > 0 {
+		found, err := s.products.Products(ctx, productIDs)
+		if err != nil {
+			return Names{}, fmt.Errorf("load product names: %w", err)
+		}
+		for id, p := range found {
+			out.Products[id] = p.Name
+		}
+	}
+	if len(locationIDs) > 0 {
+		labels, err := s.store.LocationLabels(ctx, locationIDs)
+		if err != nil {
+			return Names{}, err
+		}
+		out.StorageLocations = labels
+	}
+	return out, nil
+}

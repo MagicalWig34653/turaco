@@ -190,16 +190,21 @@ type detailDTO struct {
 }
 
 type listResponse struct {
-	Items      []assetDTO `json:"items"`
-	NextCursor string     `json:"nextCursor,omitempty"`
+	Items        []assetDTO        `json:"items"`
+	NextCursor   string            `json:"nextCursor,omitempty"`
+	ProductNames map[string]string `json:"productNames"`
 }
 
-func toList(res application.Result) listResponse {
-	out := listResponse{Items: make([]assetDTO, 0, len(res.Items)), NextCursor: res.NextCursor}
+func (h *handler) toList(r *http.Request, res application.Result) (listResponse, error) {
+	names, err := h.svc.ProductNames(r.Context(), res.Items)
+	if err != nil {
+		return listResponse{}, err
+	}
+	out := listResponse{Items: make([]assetDTO, 0, len(res.Items)), NextCursor: res.NextCursor, ProductNames: names}
 	for _, a := range res.Items {
 		out.Items = append(out.Items, toAsset(a))
 	}
-	return out
+	return out, nil
 }
 
 func parsePage(w http.ResponseWriter, r *http.Request) (application.Page, bool) {
@@ -237,7 +242,12 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	out, err := h.toList(r, res)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) mine(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +260,12 @@ func (h *handler) mine(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	out, err := h.toList(r, res)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) lookup(w http.ResponseWriter, r *http.Request) {

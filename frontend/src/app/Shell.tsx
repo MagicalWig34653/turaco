@@ -10,7 +10,13 @@ import { isNavActive, visibleNavItems, type AppRoute, type NavGroup } from './ro
 import { organizationApi } from '../modules/organization/api';
 import { UnreadIndicator } from '../modules/notifications/UnreadIndicator';
 
-function NavSection({ group, labelKey }: { group: NavGroup; labelKey?: 'nav.admin' }) {
+function NavSection({
+  group,
+  labelKey,
+}: {
+  group: NavGroup;
+  labelKey?: 'nav.admin' | 'nav.logistics';
+}) {
   const { t } = useI18n();
   const { can } = useSession();
   const { pathname } = useLocation();
@@ -82,6 +88,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
         <div className="brand">{t('app.name')}</div>
         <nav aria-label={t('nav.primary')}>
           <NavSection group="main" />
+          <NavSection group="logistics" labelKey="nav.logistics" />
           <NavSection group="admin" labelKey="nav.admin" />
         </nav>
       </aside>

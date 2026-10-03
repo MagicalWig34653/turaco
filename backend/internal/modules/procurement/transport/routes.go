@@ -149,7 +149,17 @@ func (h *handler) listNeeds(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toNeed))
+	out := toList(res, toNeed)
+	var products []string
+	for _, n := range res.Items {
+		products = append(products, n.ProductID)
+	}
+	out, err = withNames(h, r, out, products, nil)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) getNeed(w http.ResponseWriter, r *http.Request) {

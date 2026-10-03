@@ -50,6 +50,7 @@ type orderDetailDTO struct {
 	TotalCents        int64             `json:"totalCents"`
 	SupplierName      string            `json:"supplierName"`
 	ProductNames      map[string]string `json:"productNames"`
+	ProductTracking   map[string]string `json:"productTracking"`
 	AllowedOperations []string          `json:"allowedOperations"`
 	LinesEditable     bool              `json:"linesEditable"`
 }
@@ -65,7 +66,17 @@ func (h *handler) listOrders(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toOrder))
+	out := toList(res, toOrder)
+	var suppliers []string
+	for _, o := range res.Items {
+		suppliers = append(suppliers, o.SupplierID)
+	}
+	out, err = withNames(h, r, out, nil, suppliers)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) getOrder(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +86,7 @@ func (h *handler) getOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := orderDetailDTO{orderDTO: toOrder(d.Order), Lines: make([]lineDTO, 0, len(d.Lines)), TotalCents: d.TotalCents,
-		SupplierName: d.SupplierName, ProductNames: d.ProductNames, AllowedOperations: d.AllowedOps, LinesEditable: d.LinesEditable && principal(r).Manage}
+		SupplierName: d.SupplierName, ProductNames: d.ProductNames, ProductTracking: d.ProductTracking, AllowedOperations: d.AllowedOps, LinesEditable: d.LinesEditable && principal(r).Manage}
 	for _, l := range d.Lines {
 		out.Lines = append(out.Lines, toLine(l))
 	}

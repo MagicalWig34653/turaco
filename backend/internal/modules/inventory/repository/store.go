@@ -165,6 +165,34 @@ func (r *Repository) GetLocation(ctx context.Context, id string) (application.St
 	return l, nil
 }
 
+func (r *Repository) LocationLabels(ctx context.Context, ids []string) (map[string]string, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	out := map[string]string{}
+	if len(valid) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT l.id::text, w.name || ' / ' || l.name FROM inventory.storage_locations l JOIN inventory.warehouses w ON w.id = l.warehouse_id
+		WHERE l.id = ANY($1::text[]::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("storage location labels: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, label string
+		if err := rows.Scan(&id, &label); err != nil {
+			return nil, fmt.Errorf("storage location labels: scan: %w", err)
+		}
+		out[id] = label
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ActiveLocationsTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]bool, error) {
 	valid := make([]string, 0, len(ids))
 	for _, id := range ids {

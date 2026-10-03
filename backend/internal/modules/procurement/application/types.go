@@ -223,6 +223,8 @@ type Store interface {
 	LockSupplierTx(ctx context.Context, tx pgx.Tx, id string) (Supplier, error)
 	UpdateSupplierTx(ctx context.Context, tx pgx.Tx, s Supplier) (Supplier, error)
 	GetSupplier(ctx context.Context, id string) (Supplier, error)
+	// SupplierNames returns id -> name for existing suppliers.
+	SupplierNames(ctx context.Context, ids []string) (map[string]string, error)
 	ActiveSuppliersTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]bool, error)
 	ListSuppliers(ctx context.Context, prefix string, includeInactive bool, page Page) (Result[Supplier], error)
 
@@ -260,6 +262,21 @@ type ProductInfo struct {
 	ID     string
 	Name   string
 	Active bool
+	// Serialized, StockManaged and AssetManaged say how goods of this product are tracked once received.
+	Serialized   bool
+	StockManaged bool
+	AssetManaged bool
+}
+
+// Tracking says how received goods of a product are tracked.
+func (p ProductInfo) Tracking() string {
+	switch {
+	case p.Serialized && p.AssetManaged:
+		return "asset"
+	case p.StockManaged && !p.Serialized:
+		return "stock"
+	}
+	return "none"
 }
 
 // Products answers the Products questions procurement needs (adapter over products/public).

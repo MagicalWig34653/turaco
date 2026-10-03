@@ -121,9 +121,25 @@ func tsPtr(t *time.Time) *string {
 	return &s
 }
 
+type namesDTO struct {
+	Products  map[string]string `json:"products"`
+	Suppliers map[string]string `json:"suppliers"`
+}
+
 type listResponse[T any] struct {
-	Items      []T    `json:"items"`
-	NextCursor string `json:"nextCursor,omitempty"`
+	Items      []T       `json:"items"`
+	NextCursor string    `json:"nextCursor,omitempty"`
+	Names      *namesDTO `json:"names,omitempty"`
+}
+
+// withNames adds the display names of the products and suppliers a list refers to.
+func withNames[T any](h *handler, r *http.Request, out listResponse[T], products, suppliers []string) (listResponse[T], error) {
+	n, err := h.svc.NamesFor(r.Context(), products, suppliers)
+	if err != nil {
+		return out, err
+	}
+	out.Names = &namesDTO{Products: n.Products, Suppliers: n.Suppliers}
+	return out, nil
 }
 
 func toList[A, T any](res application.Result[A], conv func(A) T) listResponse[T] {

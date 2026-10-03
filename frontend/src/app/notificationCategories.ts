@@ -17,6 +17,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.task.completed',
       labelKey: 'notifications.category.task.completed',
     },
+    'asset.assigned': {
+      textKey: 'notifications.asset.assigned',
+      labelKey: 'notifications.category.asset.assigned',
+    },
     'approval.requested': {
       textKey: 'notifications.approval.requested',
       labelKey: 'notifications.category.approval.requested',
@@ -34,6 +38,7 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink('asset', (id) => `/assets/${encodeURIComponent(id)}`);
   registerNotificationLink('approval', (id) => `/approvals/${encodeURIComponent(id)}`);
   registerNotificationLink('service_request', (id) => `/requests/${encodeURIComponent(id)}`);
   registerNotificationLink('task', (id) => `/tasks/${encodeURIComponent(id)}`);

@@ -52,7 +52,22 @@ func (h *handler) listReceipts(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res, toReceipt))
+	out := toList(res, toReceipt)
+	var products, locations []string
+	for _, g := range res.Items {
+		for _, l := range g.Lines {
+			products = append(products, l.ProductID)
+			if l.StorageLocationID != nil {
+				locations = append(locations, *l.StorageLocationID)
+			}
+		}
+	}
+	out, err = withNames(h, r, out, products, locations)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) getReceipt(w http.ResponseWriter, r *http.Request) {

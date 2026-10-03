@@ -3,7 +3,7 @@ import { matchRoute } from '../platform/router/routing';
 import { createCan } from '../platform/session/permissions';
 import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes';
 
-const ids = (permissions: string[], group: 'main' | 'admin') =>
+const ids = (permissions: string[], group: 'main' | 'logistics' | 'admin') =>
   visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
@@ -15,6 +15,7 @@ describe('visibleNavItems', () => {
       'catalog',
       'requests',
       'approvals',
+      'myAssets',
     ]);
     expect(ids([], 'admin')).toEqual([]);
   });
@@ -34,6 +35,7 @@ describe('visibleNavItems', () => {
         'catalog',
         'requests',
         'approvals',
+        'myAssets',
         'tasks',
       ]);
     }
@@ -44,6 +46,7 @@ describe('visibleNavItems', () => {
       'catalog',
       'requests',
       'approvals',
+      'myAssets',
     ]);
   });
 
@@ -56,6 +59,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'briefing',
+      'myAssets',
     ]);
     expect(ids(['briefing.manage'], 'main')).toEqual([
       'home',
@@ -65,6 +69,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'briefing',
+      'myAssets',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
@@ -132,5 +137,48 @@ describe('catalog, requests and approvals', () => {
     expect(matchRoute(appRoutes, '/requests/7')?.route.id).toBe('requestDetail');
     expect(matchRoute(appRoutes, '/approvals/7')?.route.id).toBe('approvalDetail');
     expect(matchRoute(appRoutes, '/admin/requests')?.route.id).toBe('allRequests');
+  });
+});
+
+describe('equipment and procurement', () => {
+  it('shows My equipment to everyone and the logistics group by permission', () => {
+    expect(ids([], 'main')).toContain('myAssets');
+    expect(ids([], 'logistics')).toEqual([]);
+    expect(ids(['assets.view'], 'logistics')).toEqual(['assets']);
+    expect(ids(['inventory.view'], 'logistics')).toEqual([
+      'stock',
+      'warehouses',
+      'reservations',
+      'ledger',
+      'receipts',
+    ]);
+    expect(ids(['procurement.manage'], 'logistics')).toEqual([
+      'orders',
+      'procurementRequests',
+      'suppliers',
+    ]);
+  });
+
+  it('keeps creation screens behind the manage permissions', () => {
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['assets.view'] }), route('assetNew'))).toBe(
+      false,
+    );
+    expect(canViewRoute(createCan({ permissions: ['assets.manage'] }), route('assetNew'))).toBe(
+      true,
+    );
+    expect(canViewRoute(createCan({ permissions: ['inventory.view'] }), route('receiptNew'))).toBe(
+      false,
+    );
+    expect(
+      canViewRoute(createCan({ permissions: ['inventory.manage'] }), route('receiptNew')),
+    ).toBe(true);
+  });
+
+  it('matches static routes before parameterised ones', () => {
+    expect(matchRoute(appRoutes, '/assets/new')?.route.id).toBe('assetNew');
+    expect(matchRoute(appRoutes, '/assets/7')?.route.id).toBe('assetDetail');
+    expect(matchRoute(appRoutes, '/inventory/receipts/new')?.route.id).toBe('receiptNew');
+    expect(matchRoute(appRoutes, '/procurement/orders/7')?.route.id).toBe('orderDetail');
   });
 });
