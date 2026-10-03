@@ -178,6 +178,23 @@ func (r *Repository) Lookup(ctx context.Context, code string) (application.Asset
 	return application.Asset{}, application.ErrConflict
 }
 
+func (r *Repository) BySerial(ctx context.Context, serial string) ([]application.Asset, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM assets.assets WHERE lower(serial_number) = lower($1) ORDER BY id LIMIT 2`, serial)
+	if err != nil {
+		return nil, fmt.Errorf("assets by serial: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Asset{}
+	for rows.Next() {
+		a, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("assets by serial: scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func prefixPattern(q string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
 }

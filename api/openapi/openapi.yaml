@@ -4652,6 +4652,163 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /devices:
+    get:
+      operationId: listDevices
+      summary: List endpoint devices.
+      description: "Needs `endpoints.view` or `endpoints.manage`; callers without either get 403."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: platform
+          in: query
+          schema: {type: string}
+        - name: compliance
+          in: query
+          schema: {type: string}
+        - name: q
+          in: query
+          description: Name or serial number, at most 100 characters.
+          schema: {type: string}
+        - name: linked
+          in: query
+          schema: {type: boolean}
+        - name: includeDeleted
+          in: query
+          description: Include devices the provider no longer reports.
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}:
+    get:
+      operationId: getDevice
+      summary: Get a device with its software and open findings.
+      description: "Needs `endpoints.view` or `endpoints.manage`; callers without either get 403."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceDetail'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/link:
+    post:
+      operationId: linkDevice
+      summary: Link a device to an asset.
+      description: "Needs `endpoints.manage` and `assets.view`. `expectedVersion` is required (400 endpoints.invalid_request when missing). The asset must exist and not be disposed, lost or retired; one live device per asset (409 endpoints.conflict). Audited; clears the automatic-link block. `reason` is a code, not free text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceLink'
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Device'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/unlink:
+    post:
+      operationId: unlinkDevice
+      summary: Remove the asset link.
+      description: "Needs `endpoints.manage`. `expectedVersion` is required (400 endpoints.invalid_request when missing). Audited; blocks automatic re-linking until a manual link."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUnlink'
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Device'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /endpoint-findings:
+    get:
+      operationId: listEndpointFindings
+      summary: List data-quality findings.
+      description: "Needs `endpoints.view` or `endpoints.manage`; callers without either get 403."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: kind
+          in: query
+          schema: {type: string}
+        - name: status
+          in: query
+          description: Defaults to open.
+          schema: {type: string, enum: [open, resolved]}
+        - name: deviceId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EndpointFindingList'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /endpoint-sync:
+    post:
+      operationId: runEndpointSync
+      summary: Ingest the provider's current device snapshot.
+      description: "Needs `endpoints.manage` (it also covers the synchronization). 409 endpoints.sync_disabled when INTUNE_SYNC is off, 409 endpoints.provider_not_configured while no provider client exists, 409 endpoints.sync_running while another run of the provider is in progress. Every run is audited (endpoints.sync.completed or endpoints.sync.failed). Devices missing from the snapshot are tombstoned unless that would tombstone more than half of more than 10 live devices (reported as tombstonesSkipped)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Counts.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EndpointSyncResult'}
+        '409': {$ref: '#/components/responses/EndpointsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -5677,6 +5834,24 @@ components:
             $ref: '#/components/schemas/Error'
     KnowledgeConflict:
       description: Conflict (knowledge.invalid_transition, knowledge.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    EndpointsNotFound:
+      description: Not found, or no endpoint permission (endpoints.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    EndpointsInvalid:
+      description: Invalid input (endpoints.invalid_request, endpoints.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    EndpointsConflict:
+      description: Conflict (endpoints.version_conflict, endpoints.sync_disabled, endpoints.sync_running, endpoints.provider_not_configured).
       content:
         application/json:
           schema:
@@ -7307,6 +7482,97 @@ components:
         lastSyncedAt: {type: [string, "null"], format: date-time}
         externalUpdatedAt: {type: [string, "null"], format: date-time}
         attempts: {type: integer, minimum: 0}
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, provider, externalId, name, serialNumber, assetId, assetLinkSource, autoLinkBlocked, osPlatform, osVersion, manufacturer, model, ownership, complianceState, lastCheckinAt, source, observedAt, lastSyncedAt, deletedObservedAt, version]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        externalId: {type: string}
+        name: {type: string}
+        serialNumber: {type: [string, "null"]}
+        assetId: {type: [string, "null"], format: uuid}
+        assetLinkSource: {type: [string, "null"], enum: [serial, manual, null]}
+        autoLinkBlocked: {type: boolean}
+        osPlatform: {type: string}
+        osVersion: {type: [string, "null"]}
+        manufacturer: {type: [string, "null"]}
+        model: {type: [string, "null"]}
+        ownership: {type: string}
+        complianceState: {type: string}
+        lastCheckinAt: {type: [string, "null"], format: date-time}
+        source: {type: string, description: "Where the data came from (sync or import)."}
+        observedAt: {type: string, format: date-time}
+        lastSyncedAt: {type: string, format: date-time}
+        deletedObservedAt: {type: [string, "null"], format: date-time, description: "Set when the provider stopped reporting the device."}
+        version: {type: integer}
+    DeviceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Device'}}
+        nextCursor: {type: string}
+    SoftwareInstallation:
+      type: object
+      additionalProperties: false
+      required: [id, softwareProductId, productName, rawName, rawVersion, rawPublisher, observedAt]
+      properties:
+        id: {type: string, format: uuid}
+        softwareProductId: {type: [string, "null"], format: uuid}
+        productName: {type: [string, "null"]}
+        rawName: {type: string}
+        rawVersion: {type: string}
+        rawPublisher: {type: [string, "null"]}
+        observedAt: {type: string, format: date-time}
+    EndpointFinding:
+      type: object
+      additionalProperties: false
+      required: [id, kind, deviceId, deviceName, status, detail, raisedAt, resolvedAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software]}
+        deviceId: {type: string, format: uuid}
+        deviceName: {type: string}
+        status: {type: string, enum: [open, resolved]}
+        detail: {type: object, additionalProperties: true}
+        raisedAt: {type: string, format: date-time}
+        resolvedAt: {type: [string, "null"], format: date-time}
+    EndpointFindingList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/EndpointFinding'}}
+        nextCursor: {type: string}
+    DeviceDetail:
+      type: object
+      additionalProperties: false
+      required: [device, software, findings]
+      properties:
+        device: {$ref: '#/components/schemas/Device'}
+        software: {type: array, items: {$ref: '#/components/schemas/SoftwareInstallation'}}
+        findings: {type: array, items: {$ref: '#/components/schemas/EndpointFinding'}}
+    DeviceLink:
+      type: object
+      additionalProperties: false
+      required: [assetId, reason, expectedVersion]
+      properties:
+        assetId: {type: string, format: uuid}
+        reason: {type: string, enum: [serial_confirmed, correction, duplicate, wrong_asset, other]}
+        expectedVersion: {type: integer}
+    DeviceUnlink:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [serial_confirmed, correction, duplicate, wrong_asset, other]}
+        expectedVersion: {type: integer}
+    EndpointSyncResult:
+      type: object
+      additionalProperties: {type: integer}
+      description: Counts of the run such as devicesCreated, devicesUpdated, devicesUnchanged, devicesTombstoned, tombstonesSkipped, devicesRejected, devicesLinked, softwareObserved, findingsRaised and findingsResolved.
     TaskCreate:
       type: object
       additionalProperties: false

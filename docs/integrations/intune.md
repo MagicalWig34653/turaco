@@ -1,6 +1,6 @@
 # Intune Integration
 
-**Status:** Planned integration; not implemented in the bootstrap repository.
+**Status:** Internal side of device and software ingestion implemented (F6 slice 1): `integrations/intune` defines the normalized `Provider` contract with an in-memory Fake and a `NotConfigured` placeholder; the `endpoints` module ingests snapshots idempotently. Not implemented: the Microsoft Graph client (authentication, paging, delta, throttling), the `turaco-admin endpoints import` command, management artifacts, assignments and assignment intelligence (F6 slices 2–4). Permissions: `endpoints.view`/`endpoints.manage` cover devices and software; `endpoint.management.view` and `integrations.intune.manage` are reserved for management artifacts and integration administration.
 
 Intune is a Management Provider/Data Source, not the Turaco Asset database. Turaco keeps one canonical Device/Asset identity and synchronizes the Intune context required for operations, search, history and troubleshooting.
 

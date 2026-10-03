@@ -70,6 +70,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **VLAN / VRF / Prefix / IP Address** — canonical network/IPAM concepts if natively modeled.
 
 ## Endpoint/software
+- **Endpoint Finding** — data-quality observation about a Device or its software (for example no matching Asset); distinct from Security Findings and provider-reported errors.
 - **Software Product** — canonical normalized software identity.
 - **Software Alias** — discovery/provider name mapped to canonical Software Product.
 - **Software Version** — known release/version; preserve raw source value.

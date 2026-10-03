@@ -92,6 +92,8 @@ Native Network/IPAM may model VRF, VLAN, Prefix, IPAddress and NetworkInterface,
 
 **DeviceObservation** captures source/observed-at categories such as hardware, OS, compliance and management health. Current HardwareProfile/OperatingSystemState preserve provenance as needed.
 
+In the implementation (schema `endpoints`) a Device is `endpoints.devices` (provider identity, optional Asset link by id without foreign key, tombstone instead of delete), `endpoints.device_observation_history` is append-only and written only when normalized values change, installed software is `endpoints.software_installations` with raw name/version kept next to the optional normalized `software_products`/`software_aliases`.
+
 **ManagementArtifact** is a normalized provider-managed assignable object such as an application, configuration profile, compliance policy, endpoint-security policy, script or remediation. It retains provider/external identity and may link to canonical SoftwareProduct where appropriate.
 
 **ManagementAssignment** records provider targeting intent: artifact, target scope, include/exclude semantics, application intent where relevant, optional ManagementFilter, provider IDs and revision/freshness.

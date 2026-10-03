@@ -153,3 +153,13 @@ type DeviceSnapshot = application.DeviceSnapshot
 func (a *Assets) Snapshot(ctx context.Context, assetID, holderUserID string) (DeviceSnapshot, error) {
 	return a.svc.SnapshotFor(ctx, assetID, holderUserID)
 }
+
+// FindBySerial returns the asset with exactly this serial number. ErrNotFound when none matches,
+// ErrConflict when the serial number is shared by several assets (ambiguous).
+func (a *Assets) FindBySerial(ctx context.Context, serial string) (Asset, error) {
+	got, err := a.svc.FindBySerial(ctx, serial)
+	if err != nil {
+		return Asset{}, err
+	}
+	return view(got), nil
+}

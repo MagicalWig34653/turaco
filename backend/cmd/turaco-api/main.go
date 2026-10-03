@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -25,6 +26,7 @@ import (
 	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
 	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
 	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
+	endpointstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/transport"
 	inventorytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/inventory/transport"
 	knowledgetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/knowledge/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
@@ -156,6 +158,7 @@ func main() {
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
+	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)

@@ -107,6 +107,9 @@ Advisory: `new → analyzing → applicable | not_applicable → remediation_pla
 
 Finding: `open → investigating/accepted → remediation_planned → remediating → remediated`, or `false_positive` / `risk_accepted` (reason, actor and review/expiry where policy requires).
 
+## Endpoint Finding (data quality)
+`open → resolved`. Raised by device ingestion (`no_asset_match`, `serial_conflict`, `duplicate_device`, `unmatched_software`), resolved automatically when a later ingestion no longer finds the condition; one open finding per kind and device. Provider-reported and security findings are separate concepts.
+
 ## Briefing Item
 `draft → published → withdrawn`. Operations (F2, `modules/briefing`): `publish` (draft → published; an expired draft cannot be published; emits `BriefingItemPublished`), `withdraw` (published → withdrawn). Only drafts can be edited or deleted; published and withdrawn items are immutable history, so what readers saw stays traceable (correct a published item by withdrawing it and creating a new one). Viewers (`briefing.view`) see published, unexpired items only; managers (`briefing.manage`) see all. Plain text; titles and bodies are never audited.
 

@@ -211,6 +211,8 @@ type Store interface {
 	// Lookup finds one asset by exact asset tag, serial number or reference (case-insensitive).
 	// A serial number shared by several products is ambiguous and reported as ErrConflict.
 	Lookup(ctx context.Context, code string) (Asset, error)
+	// BySerial returns up to two assets with exactly this serial number (case-insensitive).
+	BySerial(ctx context.Context, serial string) ([]Asset, error)
 	List(ctx context.Context, f Filter) (Result, error)
 	Assignments(ctx context.Context, assetID string) ([]Assignment, error)
 	// InTx runs fn in one transaction.
