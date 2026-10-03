@@ -243,3 +243,18 @@ describe('problems', () => {
     expect(matchRoute(appRoutes, '/problems/7')?.route.id).toBe('problemDetail');
   });
 });
+
+describe('runbooks', () => {
+  it('shows runbooks to readers and executors, authoring only to knowledge.manage', () => {
+    expect(ids([], 'logistics')).not.toContain('runbooks');
+    expect(ids(['knowledge.view'], 'logistics')).toContain('runbooks');
+    expect(ids(['runbooks.execute'], 'logistics')).toContain('runbooks');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(
+      canViewRoute(createCan({ permissions: ['runbooks.execute'] }), route('runbookNew')),
+    ).toBe(false);
+    expect(matchRoute(appRoutes, '/runbooks/new')?.route.id).toBe('runbookNew');
+    expect(matchRoute(appRoutes, '/runbooks/7/edit')?.route.id).toBe('runbookEdit');
+    expect(matchRoute(appRoutes, '/runbooks/7')?.route.id).toBe('runbookDetail');
+  });
+});

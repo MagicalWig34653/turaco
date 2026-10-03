@@ -34,6 +34,8 @@ var Registry = []Definition{
 	{Name: "KnowledgeArticlePublished", Version: 1, Owner: "knowledge", Description: "A knowledge article was published. Payload: articleId, audience."},
 	{Name: "MajorIncidentDeclared", Version: 1, Owner: "service-desk", Description: "A Major Incident was declared. Payload: majorIncidentId, status."},
 	{Name: "MajorIncidentUpdated", Version: 1, Owner: "service-desk", Description: "A Major Incident changed status or got a public update. Payload: majorIncidentId, status."},
+	{Name: "RunbookExecutionStarted", Version: 1, Owner: "knowledge", Description: "A runbook execution started and created its tasks. Payload: executionId, runbookId."},
+	{Name: "RunbookExecutionCompleted", Version: 1, Owner: "knowledge", Description: "Every task of a runbook execution finished. Payload: executionId, runbookId."},
 	{Name: "TicketCreated", Version: 1, Owner: "service-desk", Description: "A ticket was created. Payload: ticketId, reporterId, affectedUserId."},
 	{Name: "TicketAssigned", Version: 1, Owner: "service-desk", Description: "A ticket was assigned to a user. Payload: ticketId, assigneeId."},
 	{Name: "TicketResolved", Version: 1, Owner: "service-desk", Description: "A ticket was resolved. Payload: ticketId, reporterId, affectedUserId."},

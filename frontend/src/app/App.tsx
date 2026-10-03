@@ -49,6 +49,9 @@ import { IncidentDetailScreen } from '../modules/incidents/IncidentDetailScreen'
 import { IncidentsScreen } from '../modules/incidents/IncidentsScreen';
 import { ProblemDetailScreen } from '../modules/problems/ProblemDetailScreen';
 import { ProblemsScreen } from '../modules/problems/ProblemsScreen';
+import { RunbookDetailScreen } from '../modules/runbooks/RunbookDetailScreen';
+import { RunbookEditScreen } from '../modules/runbooks/RunbookEditScreen';
+import { RunbooksScreen } from '../modules/runbooks/RunbooksScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -150,6 +153,14 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ProblemsScreen />;
     case 'problemDetail':
       return <ProblemDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'runbooks':
+      return <RunbooksScreen />;
+    case 'runbookNew':
+      return <RunbookEditScreen />;
+    case 'runbookEdit':
+      return <RunbookEditScreen key={params.id} id={params.id ?? ''} />;
+    case 'runbookDetail':
+      return <RunbookDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

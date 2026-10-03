@@ -4374,6 +4374,249 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks:
+    get:
+      operationId: listRunbooks
+      summary: List runbooks.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: active
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookList'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRunbook
+      summary: Define a runbook.
+      description: "Needs `knowledge.manage`. 1-30 ordered steps; a step may name an active team its task is assigned to."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookInput'
+      responses:
+        '201':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}:
+    get:
+      operationId: getRunbook
+      summary: Get a runbook.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRunbook
+      summary: Change a runbook.
+      description: "Needs `knowledge.manage`; `expectedVersion` is required. Executions already started keep their steps."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookInput'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/activate:
+    post:
+      operationId: activateRunbook
+      summary: Activate a runbook.
+      description: "Needs `knowledge.manage`. Inactive runbooks cannot be started."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/deactivate:
+    post:
+      operationId: deactivateRunbook
+      summary: Deactivate a runbook.
+      description: "Needs `knowledge.manage`. Inactive runbooks cannot be started."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/executions:
+    post:
+      operationId: startRunbook
+      summary: Start a runbook.
+      description: "Needs `runbooks.execute`. Creates one task per step (typed context runbook_execution), optionally on behalf of a ticket. The execution completes when all its tasks are completed or cancelled. Emits RunbookExecutionStarted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookStart'
+      responses:
+        '201':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions:
+    get:
+      operationId: listRunbookExecutions
+      summary: List runbook executions.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: runbookId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: ticketId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecutionList'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions/{id}:
+    get:
+      operationId: getRunbookExecution
+      summary: Get an execution.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions/{id}/cancel:
+    post:
+      operationId: cancelRunbookExecution
+      summary: Cancel a running execution.
+      description: "Needs `runbooks.execute`; a reason is required; unfinished tasks are cancelled."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookCancel'
+      responses:
+        '200':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -6932,6 +7175,91 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         text: {type: string, maxLength: 5000}
+    RunbookStep:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, maxLength: 150}
+        description: {type: string, maxLength: 2000}
+        teamId: {type: string, format: uuid}
+    Runbook:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, description, steps, active, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as RB-000001."}
+        title: {type: string}
+        description: {type: string}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookStep'}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    RunbookList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Runbook'}
+        nextCursor: {type: string}
+    RunbookInput:
+      type: object
+      additionalProperties: false
+      required: [title, steps]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: "Required when editing."}
+        title: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: {$ref: '#/components/schemas/RunbookStep'}
+    RunbookStart:
+      type: object
+      additionalProperties: false
+      properties:
+        ticketId: {type: string, format: uuid}
+    RunbookCancel:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, maxLength: 500}
+    RunbookExecution:
+      type: object
+      additionalProperties: false
+      required: [id, runbookId, runbookTitle, steps, contextType, contextId, status, taskIds, finishedAt, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        runbookId: {type: string, format: uuid}
+        runbookTitle: {type: string}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookStep'}
+        contextType: {type: [string, "null"], enum: [ticket, null]}
+        contextId: {type: [string, "null"], format: uuid}
+        status: {type: string, enum: [running, completed, cancelled]}
+        taskIds:
+          type: array
+          items: {type: string, format: uuid}
+        finishedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+    RunbookExecutionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookExecution'}
+        nextCursor: {type: string}
     TaskCreate:
       type: object
       additionalProperties: false

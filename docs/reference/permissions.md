@@ -34,6 +34,7 @@
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
+| `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |

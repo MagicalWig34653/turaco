@@ -272,6 +272,13 @@ export function TicketDetailScreen({ id }: { id: string }) {
         <dt>{t('tickets.fact.created')}</dt>
         <dd>{formatDateTime(locale, ticket.createdAt)}</dd>
       </dl>
+      {can('runbooks.execute') ? (
+        <p>
+          <Link to={`/runbooks?ticket=${encodeURIComponent(ticket.id)}`}>
+            {t('tickets.action.runbook')}
+          </Link>
+        </p>
+      ) : null}
       {known.data && known.data.length > 0 ? (
         <section>
           <h2>{t('tickets.section.knownErrors')}</h2>

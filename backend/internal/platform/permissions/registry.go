@@ -38,6 +38,7 @@ var Registry = []Permission{
 	{Name: "knowledge.manage", Description: "Write, publish and retire knowledge articles and read drafts and retired articles.", Risk: "elevated"},
 	{Name: "majorincidents.manage", Description: "Declare Major Incidents, post public status updates, move them through their lifecycle and link tickets.", Risk: "elevated"},
 	{Name: "problems.manage", Description: "Open Problems, record cause, workaround and resolution, mark Known Errors and link tickets. Reading problems needs tickets.view or tickets.manage.", Risk: "elevated"},
+	{Name: "runbooks.execute", Description: "Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission.", Risk: "elevated"},
 	{Name: "tickets.view", Description: "View all tickets and their internal comments. Every signed-in user can raise tickets and read their own.", Risk: "normal"},
 	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},

@@ -190,6 +190,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 			return err
 		}
 	}
+	runbooks := wiring.Runbooks(pool)
+	for _, event := range []string{"TaskCompleted", "TaskCancelled"} {
+		if err := d.Register(event, "knowledge.runbook-task-finished", runbooks.OnTaskEvent); err != nil {
+			return err
+		}
+	}
 	procurementSvc := wiring.Procurement(pool)
 	assetConsumers := assetsapp.NewConsumers(assetsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	if err := d.Register("AssetAssigned", "assets.notify-assigned", assetConsumers.OnAssetAssigned); err != nil {
