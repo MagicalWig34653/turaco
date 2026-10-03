@@ -2667,6 +2667,554 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      summary: List suppliers.
+      description: "Needs `procurement.view` or `procurement.manage`. `q` filters by name prefix."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: includeInactive
+          in: query
+          schema: {type: boolean}
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SupplierList'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createSupplier
+      summary: Create a supplier.
+      description: "Needs `procurement.manage`. Audited (procurement.supplier.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierCreate'
+      responses:
+        '201':
+          description: The supplier.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Supplier'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /suppliers/{id}:
+    get:
+      operationId: getSupplier
+      summary: Get a supplier.
+      description: "Needs `procurement.view` or `procurement.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The supplier.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Supplier'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateSupplier
+      summary: Change a supplier.
+      description: "Needs `procurement.manage`. `expectedVersion` is required; an empty `accountReference` clears it."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierUpdate'
+      responses:
+        '200':
+          description: The supplier.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Supplier'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /suppliers/{id}/activate:
+    post:
+      operationId: activateSupplier
+      summary: Activate a supplier.
+      description: "Needs `procurement.manage`. Orders can only be created for active suppliers."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementVersion'
+      responses:
+        '200':
+          description: The supplier.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Supplier'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /suppliers/{id}/deactivate:
+    post:
+      operationId: deactivateSupplier
+      summary: Deactivate a supplier.
+      description: "Needs `procurement.manage`. Orders can only be created for active suppliers."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementVersion'
+      responses:
+        '200':
+          description: The supplier.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Supplier'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /procurement-requests:
+    get:
+      operationId: listProcurementRequests
+      summary: List procurement requests.
+      description: "Needs `procurement.view` or `procurement.manage`. A procurement request is an internal need to acquire something; newest first."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [open, ordered, fulfilled, cancelled]}
+        - name: productId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: contextType
+          in: query
+          schema: {type: string}
+        - name: contextId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProcurementRequestList'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProcurementRequest
+      summary: Record an acquisition need.
+      description: "Needs `procurement.manage`. An optional origin links it to a record such as a service request."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementRequestCreate'
+      responses:
+        '201':
+          description: The procurement request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProcurementRequest'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /procurement-requests/{id}:
+    get:
+      operationId: getProcurementRequest
+      summary: Get a procurement request.
+      description: "Needs `procurement.view` or `procurement.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The procurement request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProcurementRequest'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /procurement-requests/{id}/cancel:
+    post:
+      operationId: cancelProcurementRequest
+      summary: Cancel an open need.
+      description: "Needs `procurement.manage`. Only `open` needs; a reason is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementReason'
+      responses:
+        '200':
+          description: The procurement request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProcurementRequest'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders:
+    get:
+      operationId: listPurchaseOrders
+      summary: List purchase orders.
+      description: "Needs `procurement.view` or `procurement.manage`. Newest first."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [draft, pending_approval, approved, sent, acknowledged, partially_received, received, closed, cancelled]}
+        - name: supplierId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrderList'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createPurchaseOrder
+      summary: Create a draft purchase order.
+      description: "Needs `procurement.manage`. For an active supplier; currency defaults to EUR. Audited (procurement.order.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderCreate'
+      responses:
+        '201':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrder
+      summary: Get a purchase order with its lines.
+      description: "Needs `procurement.view` or `procurement.manage`. Money is in minor currency units (cents)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrderDetail'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updatePurchaseOrder
+      summary: Change a draft order.
+      description: "Needs `procurement.manage`. Supplier, currency and notes; only in `draft`. `expectedVersion` is required."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderUpdate'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/lines:
+    post:
+      operationId: addPurchaseOrderLine
+      summary: Add a line to a draft order.
+      description: "Needs `procurement.manage`. With `requestId` the line satisfies that open procurement request (same product, quantity defaults to the requested quantity and may not be below it); the request becomes `ordered`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderLineCreate'
+      responses:
+        '201':
+          description: The line.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrderLine'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/lines/{lineId}:
+    patch:
+      operationId: updatePurchaseOrderLine
+      summary: Change quantity and price of a line of a draft order.
+      description: "Needs `procurement.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/LineId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderLineUpdate'
+      responses:
+        '200':
+          description: The line.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrderLine'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: removePurchaseOrderLine
+      summary: Remove a line of a draft order.
+      description: "Needs `procurement.manage`. A linked procurement request becomes open again."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/LineId'
+      responses:
+        '204':
+          description: Removed.
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/submit:
+    post:
+      operationId: submitPurchaseOrder
+      summary: Submit an order for approval.
+      description: "Needs `procurement.manage`. The order needs at least one line and exactly one approver (user or team). Creates an Approval; the creator and the submitter can never approve it. An approval makes the order `approved`, a rejection returns it to `draft` with the reason `approval_rejected`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderSubmit'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/send:
+    post:
+      operationId: sendPurchaseOrder
+      summary: Mark an approved order as sent.
+      description: "Needs `procurement.manage`. Only `approved` orders."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementReason'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/acknowledge:
+    post:
+      operationId: acknowledgePurchaseOrder
+      summary: Record the supplier's confirmation.
+      description: "Needs `procurement.manage`. Only `sent` orders."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementReason'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/cancel:
+    post:
+      operationId: cancelPurchaseOrder
+      summary: Cancel an order.
+      description: "Needs `procurement.manage`. Before anything was received; a reason is required. A pending approval is cancelled and linked procurement requests become open again."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementReason'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /purchase-orders/{id}/close:
+    post:
+      operationId: closePurchaseOrder
+      summary: Close an order.
+      description: "Needs `procurement.manage`. `received` orders, or `partially_received` ones when the missing quantity is accepted (reason required; the requests for what never arrived become open again)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcurementReason'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PurchaseOrder'}
+        '400': {$ref: '#/components/responses/ProcurementInvalid'}
+        '404': {$ref: '#/components/responses/ProcurementNotFound'}
+        '409': {$ref: '#/components/responses/ProcurementConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -3438,6 +3986,11 @@ components:
       name: turaco_session
       description: Opaque server-side session token in an HttpOnly, SameSite=Lax cookie. The token is accepted from the cookie only.
   parameters:
+    LineId:
+      name: lineId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
     Id:
       name: id
       in: path
@@ -3633,6 +4186,24 @@ components:
             $ref: '#/components/schemas/Error'
     InventoryConflict:
       description: Conflict (inventory.conflict, inventory.insufficient_stock, inventory.asset_unavailable, inventory.invalid_transition, inventory.version_conflict).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProcurementInvalid:
+      description: Invalid input (procurement.invalid_request, procurement.product_invalid, procurement.supplier_invalid, procurement.invalid_cursor, procurement.invalid_limit).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProcurementNotFound:
+      description: Not found (procurement.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ProcurementConflict:
+      description: Conflict (procurement.conflict, procurement.invalid_transition, procurement.version_conflict, procurement.request_unavailable, procurement.no_eligible_approver).
       content:
         application/json:
           schema:
@@ -4568,6 +5139,190 @@ components:
         note: {type: string, maxLength: 500}
         assigneeType: {type: string, enum: [user, team, location]}
         assigneeId: {type: string, format: uuid}
+    Supplier:
+      type: object
+      additionalProperties: false
+      required: [id, name, accountReference, active, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        accountReference: {type: [string, "null"], description: "Our customer number at the supplier."}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    SupplierList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Supplier'}
+        nextCursor: {type: string}
+    SupplierCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 150}
+        accountReference: {type: string, maxLength: 100}
+    SupplierUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, maxLength: 150}
+        accountReference: {type: string, maxLength: 100}
+    ProcurementVersion:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    ProcurementReason:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, maxLength: 500}
+    ProcurementRequest:
+      type: object
+      additionalProperties: false
+      required: [id, reference, productId, quantity, status, statusReason, contextType, contextId, notes, requestedBy, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as PRQ-000001."}
+        productId: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1}
+        status: {type: string, enum: [open, ordered, fulfilled, cancelled]}
+        statusReason: {type: [string, "null"]}
+        contextType: {type: [string, "null"]}
+        contextId: {type: [string, "null"], format: uuid}
+        notes: {type: [string, "null"]}
+        requestedBy: {type: [string, "null"], format: uuid}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProcurementRequestList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ProcurementRequest'}
+        nextCursor: {type: string}
+    ProcurementRequestCreate:
+      type: object
+      additionalProperties: false
+      required: [productId, quantity]
+      properties:
+        productId: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1, maximum: 1000000}
+        originType: {type: string}
+        originId: {type: string, format: uuid}
+        notes: {type: string, maxLength: 2000}
+    PurchaseOrder:
+      type: object
+      additionalProperties: false
+      required: [id, reference, supplierId, status, statusReason, currency, notes, createdBy, sentAt, closedAt, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as PO-000001."}
+        supplierId: {type: string, format: uuid}
+        status: {type: string, enum: [draft, pending_approval, approved, sent, acknowledged, partially_received, received, closed, cancelled]}
+        statusReason: {type: [string, "null"]}
+        currency: {type: string, pattern: "^[A-Z]{3}$"}
+        notes: {type: [string, "null"]}
+        createdBy: {type: [string, "null"], format: uuid}
+        sentAt: {type: [string, "null"], format: date-time}
+        closedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    PurchaseOrderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PurchaseOrder'}
+        nextCursor: {type: string}
+    PurchaseOrderLine:
+      type: object
+      additionalProperties: false
+      required: [id, lineNo, productId, quantity, unitPriceCents, receivedQuantity, requestId]
+      properties:
+        id: {type: string, format: uuid}
+        lineNo: {type: integer, minimum: 1}
+        productId: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1}
+        unitPriceCents: {type: integer, minimum: 0, description: "Minor currency units."}
+        receivedQuantity: {type: integer, minimum: 0}
+        requestId: {type: [string, "null"], format: uuid}
+    PurchaseOrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/PurchaseOrder'
+        - type: object
+          required: [lines, totalCents, supplierName, productNames, allowedOperations, linesEditable]
+          properties:
+            lines:
+              type: array
+              items: {$ref: '#/components/schemas/PurchaseOrderLine'}
+            totalCents: {type: integer}
+            supplierName: {type: string}
+            productNames:
+              type: object
+              additionalProperties: {type: string}
+            allowedOperations:
+              type: array
+              items: {type: string}
+              description: "Operations the caller may perform in the current status (empty without procurement.manage)."
+            linesEditable: {type: boolean}
+    PurchaseOrderCreate:
+      type: object
+      additionalProperties: false
+      required: [supplierId]
+      properties:
+        supplierId: {type: string, format: uuid}
+        currency: {type: string, pattern: "^[A-Z]{3}$"}
+        notes: {type: string, maxLength: 2000}
+    PurchaseOrderUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        supplierId: {type: string, format: uuid}
+        currency: {type: string, pattern: "^[A-Z]{3}$"}
+        notes: {type: string, maxLength: 2000}
+    PurchaseOrderLineCreate:
+      type: object
+      additionalProperties: false
+      required: [productId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        productId: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1, maximum: 1000000}
+        unitPriceCents: {type: integer, minimum: 0}
+        requestId: {type: string, format: uuid}
+    PurchaseOrderLineUpdate:
+      type: object
+      additionalProperties: false
+      required: [quantity, unitPriceCents]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        quantity: {type: integer, minimum: 1, maximum: 1000000}
+        unitPriceCents: {type: integer, minimum: 0}
+    PurchaseOrderSubmit:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        approverUserId: {type: string, format: uuid}
+        approverTeamId: {type: string, format: uuid}
     TaskCreate:
       type: object
       additionalProperties: false

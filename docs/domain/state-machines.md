@@ -68,6 +68,8 @@ Implemented (F4, `modules/inventory`): `release` (stock becomes available again 
 ## Purchase Order
 `draft → approved → sent → acknowledged? → partially_received → received → closed`, with `cancelled` where supplier state allows. Posted Goods Receipt is immutable; corrections use reversal/correction transactions.
 
+Implemented (F4, `modules/procurement`): `submit` (draft → pending_approval, one approver User or Team, creator and submitter excluded), approval via the Approvals module (approved → `approved`; rejected → back to `draft` with the reason `approval_rejected`), `send` (approved → sent), `acknowledge` (sent → acknowledged), receipts booked by Goods Receipt (sent, acknowledged or partially_received → `partially_received` or `received` when every line is complete), `close` (received; or partially_received with a reason, which reopens the procurement requests of undelivered lines) and `cancel` (draft, pending_approval, approved, sent or acknowledged, reason required; reopens linked requests, cancels a pending approval). Lines are edited in `draft` only. A Procurement Request goes `open → ordered` when a line takes it, `ordered → fulfilled` when that line is fully received, back to `open` when the order is cancelled or closed short or the line removed, and `open → cancelled` by hand.
+
 ## Task
 `open → in_progress | blocked | completed | cancelled`; `blocked → open/in_progress`; completed reopen is explicit and audited. Assignment is not state.
 

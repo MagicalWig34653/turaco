@@ -48,6 +48,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **Reservation** may reserve stock quantity or a serialized Asset for a Service Request/Onboarding/Change/etc. It prevents over-reservation atomically.
 
+*Implemented shape (migration 000028, schema `procurement`):* `suppliers` (name unique case-insensitively, account reference), `procurement_requests` (product, quantity, status, optional origin), `purchase_orders` (reference, supplier, status, currency, sent/closed times) and `purchase_order_lines` (line number, product, quantity, unit price in cents, received quantity bounded by the check `received_quantity <= quantity`, optional procurement request with a unique index so a need is on one line only).
+
 **ProcurementRequest** represents acquisition need. **PurchaseOrder** and **PurchaseOrderLine** record supplier, status, quantities/prices and links to originating needs. Goods Receipt reconciles deliveries and may create Assets.
 
 ## Catalog/requests

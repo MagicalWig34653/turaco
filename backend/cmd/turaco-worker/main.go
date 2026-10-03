@@ -172,8 +172,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalRequested", "approvals.notify-requested", approvalConsumers.OnApprovalRequested); err != nil {
 		return err
 	}
+	procurementSvc := wiring.Procurement(pool)
 	assetConsumers := assetsapp.NewConsumers(assetsrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	if err := d.Register("AssetAssigned", "assets.notify-assigned", assetConsumers.OnAssetAssigned); err != nil {
+		return err
+	}
+	if err := d.Register("ApprovalDecided", "procurement.order-approval", procurementSvc.OnApprovalDecided); err != nil {
 		return err
 	}
 	return registerRequestConsumers(d, wiring.Requests(pool), notifier)

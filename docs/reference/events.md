@@ -18,6 +18,9 @@
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `ManagementApplicabilityChanged` | 1 | endpoint | Turaco's expected applicability evaluation meaningfully changed for a managed target. |
 | `ManagementAssignmentChanged` | 1 | endpoint | A normalized management-provider assignment meaningfully changed. |
+| `PurchaseOrderApproved` | 1 | procurement | A purchase order was approved. Payload: orderId, supplierId. |
+| `PurchaseOrderReceived` | 1 | procurement | Every line of a purchase order was received. Payload: orderId, supplierId. |
+| `PurchaseOrderSent` | 1 | procurement | A purchase order was sent to the supplier. Payload: orderId, supplierId. |
 | `ReservationFulfilled` | 1 | inventory | A reservation was fulfilled: stock was issued or the reserved asset was assigned. Payload as StockReserved. |
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
 | `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
