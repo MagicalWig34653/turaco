@@ -180,7 +180,7 @@ type viewEnv struct {
 
 func newViewEnv(t *testing.T) *viewEnv {
 	e := newEnv(t)
-	v := &viewEnv{env: e, dir: &fakeDir{groups: map[string]application.DirectoryGroup{}, parents: map[string][]string{}, members: map[string][]string{}, users: map[string]string{}},
+	v := &viewEnv{env: e, dir: &fakeDir{groups: map[string]application.DirectoryGroup{}, parents: map[string][]string{}, members: map[string][]string{}, users: map[string]string{}, noIdentity: map[string]bool{}},
 		holders: fakeHolders{held: map[string]string{}}}
 	e.svc.WithViews(v.dir, v.holders).WithProviderKey(e.provider)
 	v.full = application.Principal{UserID: e.user, View: true, ManagementView: true, DirectoryView: true, AssetsView: true}
