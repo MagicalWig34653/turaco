@@ -1,6 +1,6 @@
 # Intune Assignment Intelligence
 
-**Status:** Planned product capability; not implemented in the bootstrap repository.
+**Status:** Partly implemented. F6 slice 2 ingests the normalized model; slice 3 adds the evaluator, Assignment Paths and the Device, Directory Group, User and reverse-lookup read views (backend, local data only, see [F6 design](../product/f6-endpoint-intelligence-design.md#slice-3-status)). History/diff views, the frontend, the Graph client and the `assignment_ineffective` finding are planned.
 
 Turaco should turn Intune's distributed assignment/configuration information into an explainable operational view for **Directory Groups, Users and Devices**. The goal is not to mirror the Intune portal. The goal is to answer quickly:
 
