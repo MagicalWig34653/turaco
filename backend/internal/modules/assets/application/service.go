@@ -692,6 +692,44 @@ func (s *Service) ProductNames(ctx context.Context, assets []Asset) (map[string]
 	return out, nil
 }
 
+// DeviceSnapshot is the part of an asset a ticket remembers.
+type DeviceSnapshot struct {
+	AssetID      string
+	Reference    string
+	Product      string
+	SerialNumber *string
+	AssetTag     *string
+	Status       string
+}
+
+// SnapshotFor returns a snapshot of an asset for another module. With a holder
+// the asset must currently be assigned to that User (ErrNotFound otherwise, so
+// nobody learns about foreign assets). It performs no permission check.
+func (s *Service) SnapshotFor(ctx context.Context, assetID, holderUserID string) (DeviceSnapshot, error) {
+	a, err := s.store.Get(ctx, assetID)
+	if err != nil {
+		return DeviceSnapshot{}, err
+	}
+	if holderUserID != "" {
+		assignments, err := s.store.Assignments(ctx, a.ID)
+		if err != nil {
+			return DeviceSnapshot{}, err
+		}
+		held := false
+		for _, as := range assignments {
+			held = held || (as.ReturnedAt == nil && as.AssigneeType == AssigneeUser && as.AssigneeID == holderUserID)
+		}
+		if !held {
+			return DeviceSnapshot{}, ErrNotFound
+		}
+	}
+	names, err := s.ProductNames(ctx, []Asset{a})
+	if err != nil {
+		return DeviceSnapshot{}, err
+	}
+	return DeviceSnapshot{AssetID: a.ID, Reference: a.Reference, Product: names[a.ProductID], SerialNumber: a.SerialNumber, AssetTag: a.AssetTag, Status: a.Status}, nil
+}
+
 // Mine returns the assets currently assigned to the caller (no permission needed).
 func (s *Service) Mine(ctx context.Context, p Principal, page Page) (Result, error) {
 	if p.UserID == "" {

@@ -39,6 +39,14 @@ import { NeedsScreen } from '../modules/procurement/NeedsScreen';
 import { OrderDetailScreen } from '../modules/procurement/OrderDetailScreen';
 import { OrdersScreen } from '../modules/procurement/OrdersScreen';
 import { SuppliersScreen } from '../modules/procurement/SuppliersScreen';
+import { TicketCreateScreen } from '../modules/tickets/TicketCreateScreen';
+import { TicketDetailScreen } from '../modules/tickets/TicketDetailScreen';
+import { TicketsScreen } from '../modules/tickets/TicketsScreen';
+import { ArticleDetailScreen } from '../modules/knowledge/ArticleDetailScreen';
+import { ArticleEditScreen } from '../modules/knowledge/ArticleEditScreen';
+import { ArticlesScreen } from '../modules/knowledge/ArticlesScreen';
+import { IncidentDetailScreen } from '../modules/incidents/IncidentDetailScreen';
+import { IncidentsScreen } from '../modules/incidents/IncidentsScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -116,6 +124,26 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <NeedsScreen />;
     case 'suppliers':
       return <SuppliersScreen />;
+    case 'myTickets':
+      return <TicketsScreen scope="mine" />;
+    case 'ticketNew':
+      return <TicketCreateScreen />;
+    case 'ticketDetail':
+      return <TicketDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'ticketQueue':
+      return <TicketsScreen scope="all" />;
+    case 'knowledge':
+      return <ArticlesScreen />;
+    case 'articleNew':
+      return <ArticleEditScreen />;
+    case 'articleEdit':
+      return <ArticleEditScreen key={params.id} id={params.id ?? ''} />;
+    case 'articleDetail':
+      return <ArticleDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'incidents':
+      return <IncidentsScreen />;
+    case 'incidentDetail':
+      return <IncidentDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

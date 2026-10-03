@@ -63,7 +63,7 @@ dev:
 test: test-go test-frontend
 
 test-go:
-	@./scripts/with-env.sh go test -count=1 $(GO_PACKAGES)
+	@./scripts/with-env.sh go test -count=1 -p 1 $(GO_PACKAGES)
 
 test-frontend:
 	@cd frontend && npm test

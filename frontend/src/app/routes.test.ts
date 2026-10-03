@@ -16,6 +16,9 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myAssets',
+      'myTickets',
+      'knowledge',
+      'incidents',
     ]);
     expect(ids([], 'admin')).toEqual([]);
   });
@@ -36,6 +39,9 @@ describe('visibleNavItems', () => {
         'requests',
         'approvals',
         'myAssets',
+        'myTickets',
+        'knowledge',
+        'incidents',
         'tasks',
       ]);
     }
@@ -47,6 +53,9 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myAssets',
+      'myTickets',
+      'knowledge',
+      'incidents',
     ]);
   });
 
@@ -60,6 +69,9 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myAssets',
+      'myTickets',
+      'knowledge',
+      'incidents',
     ]);
     expect(ids(['briefing.manage'], 'main')).toEqual([
       'home',
@@ -70,6 +82,9 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myAssets',
+      'myTickets',
+      'knowledge',
+      'incidents',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
@@ -180,5 +195,42 @@ describe('equipment and procurement', () => {
     expect(matchRoute(appRoutes, '/assets/7')?.route.id).toBe('assetDetail');
     expect(matchRoute(appRoutes, '/inventory/receipts/new')?.route.id).toBe('receiptNew');
     expect(matchRoute(appRoutes, '/procurement/orders/7')?.route.id).toBe('orderDetail');
+  });
+});
+
+describe('support', () => {
+  it('offers My tickets to everyone and the queue to ticket staff', () => {
+    expect(ids([], 'main')).toContain('myTickets');
+    expect(ids([], 'logistics')).toEqual([]);
+    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue']);
+    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue']);
+  });
+
+  it('matches the static ticket route before the parameterised one', () => {
+    expect(matchRoute(appRoutes, '/support/new')?.route.id).toBe('ticketNew');
+    expect(matchRoute(appRoutes, '/support/7')?.route.id).toBe('ticketDetail');
+  });
+});
+
+describe('knowledge', () => {
+  it('lists articles for everyone and keeps authoring behind knowledge.manage', () => {
+    expect(ids([], 'main')).toContain('knowledge');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(canViewRoute(createCan({ permissions: ['knowledge.view'] }), route('articleNew'))).toBe(
+      false,
+    );
+    expect(
+      canViewRoute(createCan({ permissions: ['knowledge.manage'] }), route('articleEdit')),
+    ).toBe(true);
+    expect(matchRoute(appRoutes, '/knowledge/new')?.route.id).toBe('articleNew');
+    expect(matchRoute(appRoutes, '/knowledge/7/edit')?.route.id).toBe('articleEdit');
+    expect(matchRoute(appRoutes, '/knowledge/7')?.route.id).toBe('articleDetail');
+  });
+});
+
+describe('incidents', () => {
+  it('shows known issues to everyone and matches the detail route', () => {
+    expect(ids([], 'main')).toContain('incidents');
+    expect(matchRoute(appRoutes, '/incidents/7')?.route.id).toBe('incidentDetail');
   });
 });

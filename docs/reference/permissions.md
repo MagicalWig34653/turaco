@@ -15,6 +15,9 @@
 | `integrations.intune.manage` | high | Administer Intune integration configuration, credentials and synchronization controls. |
 | `inventory.manage` | elevated | Manage warehouses and storage locations; issue, return, transfer, correct and dispose stock; reserve, release and fulfill reservations; post goods receipts. |
 | `inventory.view` | normal | View warehouses, stock balances, the inventory ledger and reservations. |
+| `knowledge.manage` | elevated | Write, publish and retire knowledge articles and read drafts and retired articles. |
+| `knowledge.view` | normal | Read published internal knowledge articles (published employee articles are readable by every signed-in user). |
+| `majorincidents.manage` | elevated | Declare Major Incidents, post public status updates, move them through their lifecycle and link tickets. |
 | `organization.directory.sync` | elevated | Request an immediate directory synchronization run. |
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.teams.manage` | elevated | Create, rename and deactivate Teams and manage their members. Team membership determines which tasks a user with tasks.work can see and which notifications they receive, so this permission indirectly controls task access. |
@@ -34,5 +37,5 @@
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |
 | `tasks.work` | normal | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
-| `tickets.manage` | normal | Work service-desk records within authorized scope. |
-| `tickets.view` | normal | View service-desk records within authorized scope. |
+| `tickets.manage` | elevated | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
+| `tickets.view` | normal | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. |

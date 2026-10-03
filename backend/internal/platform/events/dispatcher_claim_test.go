@@ -31,7 +31,7 @@ func TestUnfilteredDispatcherClaimsDueEvents(t *testing.T) {
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := InsertOutbox(ctx, tx, OutboxEvent{
-			ID: id, EventType: "TicketCreated", EventVersion: 1, OccurredAt: time.Now(),
+			ID: id, EventType: "GoodsReceived", EventVersion: 1, OccurredAt: time.Now(),
 			CorrelationID: "corr-unfiltered", Payload: []byte(`{}`),
 		}); err != nil {
 			return err

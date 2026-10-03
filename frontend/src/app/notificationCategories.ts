@@ -17,6 +17,22 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.task.completed',
       labelKey: 'notifications.category.task.completed',
     },
+    'ticket.assigned': {
+      textKey: 'notifications.ticket.assigned',
+      labelKey: 'notifications.category.ticket.assigned',
+    },
+    'ticket.comment': {
+      textKey: 'notifications.ticket.comment',
+      labelKey: 'notifications.category.ticket.comment',
+    },
+    'ticket.resolved': {
+      textKey: 'notifications.ticket.resolved',
+      labelKey: 'notifications.category.ticket.resolved',
+    },
+    'majorincident.update': {
+      textKey: 'notifications.majorincident.update',
+      labelKey: 'notifications.category.majorincident.update',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',
@@ -38,6 +54,8 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
+  registerNotificationLink('ticket', (id) => `/support/${encodeURIComponent(id)}`);
   registerNotificationLink('asset', (id) => `/assets/${encodeURIComponent(id)}`);
   registerNotificationLink('approval', (id) => `/approvals/${encodeURIComponent(id)}`);
   registerNotificationLink('service_request', (id) => `/requests/${encodeURIComponent(id)}`);

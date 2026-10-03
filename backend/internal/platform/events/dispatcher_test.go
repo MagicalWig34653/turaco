@@ -20,7 +20,7 @@ import (
 
 // Tests share one database with other packages, so they use an event type no
 // production code emits yet and restrict the dispatcher to it.
-const testEventType = "TicketCreated"
+const testEventType = "GoodsReceived"
 
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 

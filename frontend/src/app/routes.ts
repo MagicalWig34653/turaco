@@ -32,6 +32,16 @@ export type RouteId =
   | 'orderDetail'
   | 'procurementRequests'
   | 'suppliers'
+  | 'myTickets'
+  | 'ticketNew'
+  | 'ticketDetail'
+  | 'ticketQueue'
+  | 'knowledge'
+  | 'articleNew'
+  | 'articleEdit'
+  | 'articleDetail'
+  | 'incidents'
+  | 'incidentDetail'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -182,6 +192,33 @@ export const appRoutes: readonly AppRoute[] = [
     requiresAny: ['procurement.view', 'procurement.manage'],
     nav: 'logistics',
   },
+  { id: 'myTickets', pattern: '/support', titleKey: 'nav.myTickets', nav: 'main' },
+  { id: 'ticketNew', pattern: '/support/new', titleKey: 'tickets.create.title' },
+  // The server decides who may read a ticket (reporter, affected user, tickets.view).
+  { id: 'ticketDetail', pattern: '/support/:id', titleKey: 'tickets.detail.title' },
+  {
+    id: 'ticketQueue',
+    pattern: '/service-desk',
+    titleKey: 'nav.ticketQueue',
+    requiresAny: ['tickets.view', 'tickets.manage'],
+    nav: 'logistics',
+  },
+  { id: 'knowledge', pattern: '/knowledge', titleKey: 'nav.knowledge', nav: 'main' },
+  {
+    id: 'articleNew',
+    pattern: '/knowledge/new',
+    titleKey: 'knowledge.new',
+    requires: ['knowledge.manage'],
+  },
+  {
+    id: 'articleEdit',
+    pattern: '/knowledge/:id/edit',
+    titleKey: 'knowledge.edit',
+    requires: ['knowledge.manage'],
+  },
+  { id: 'articleDetail', pattern: '/knowledge/:id', titleKey: 'knowledge.detail.title' },
+  { id: 'incidents', pattern: '/incidents', titleKey: 'nav.incidents', nav: 'main' },
+  { id: 'incidentDetail', pattern: '/incidents/:id', titleKey: 'incidents.detail.title' },
   {
     id: 'tasks',
     pattern: '/tasks',

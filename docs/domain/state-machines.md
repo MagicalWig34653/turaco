@@ -54,8 +54,15 @@ Implemented (F3, `modules/requests`): a request is created when submitted (there
 ## Ticket
 `new → open → in_progress ↔ waiting → resolved → closed`, with `cancelled` alternative. Waiting reason is separate (`customer`, `vendor`, `external_service`, `scheduled_change`, `hardware`). Reopen is explicit, permissioned, reasoned and audited.
 
+Implemented (F5, `modules/servicedesk`): one ticket kind `incident`. `new` becomes `open` when assigned; operations `start` (new/open → in_progress, assigns the caller when nobody is), `wait(reason)` (open/in_progress → waiting), `resume`, `resolve(resolution)` (any open status), `close` (resolved), `reopen(reason)` (resolved/closed → open) and `cancel(reason)` (before resolution). `tickets.manage` may do all; the reporter and the affected User may close, reopen and cancel while the ticket is new or open. A public reply from the reporter on a ticket waiting for the customer resumes it. Closed and cancelled tickets accept no comments. Events: `TicketCreated`, `TicketAssigned`, `TicketResolved`, `TicketCommentAdded`.
+
+## Knowledge Article
+`draft → published → retired`, and `retired → published` (republish). Editing is possible in `draft` and `published`; a retired article is read-only until republished. Visibility: employee articles are readable by every signed-in user once published, internal ones need `knowledge.view`, drafts and retired articles need `knowledge.manage`.
+
 ## Major Incident
 `identified → investigating → mitigating → monitoring → resolved → closed`.
+
+Implemented (F5, `modules/servicedesk`): operations `investigate` (from identified), `mitigate` (identified, investigating), `monitor` (investigating, mitigating), `resolve` (any active status; a message is required) and `close` (resolved). Every step and every `PostUpdate` writes a public timeline entry and replaces the public summary. Subscribing and linking tickets are only possible while the incident is active.
 
 ## Problem
 `new → under_investigation → cause_identified → known_error → resolution_planned → resolved → closed`.

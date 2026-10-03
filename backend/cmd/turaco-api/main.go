@@ -25,6 +25,7 @@ import (
 	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
 	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
 	inventorytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/inventory/transport"
+	knowledgetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/knowledge/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
@@ -36,6 +37,8 @@ import (
 	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	requeststransport "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/transport"
+	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	servicedesktransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
@@ -152,6 +155,9 @@ func main() {
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
+	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
+	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
+	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
@@ -199,5 +205,6 @@ func allCategories() []notifications.Category {
 	out := tasksapp.NotificationCategories()
 	out = append(out, approvalsapp.NotificationCategories()...)
 	out = append(out, requestsapp.NotificationCategories()...)
-	return append(out, assetsapp.NotificationCategories()...)
+	out = append(out, assetsapp.NotificationCategories()...)
+	return append(out, servicedeskapp.NotificationCategories()...)
 }

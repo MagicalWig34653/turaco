@@ -145,3 +145,11 @@ func (p *Products) Products(ctx context.Context, ids []string) (map[string]appli
 	}
 	return out, nil
 }
+
+// DeviceSnapshot is what another module (service desk) remembers about an asset.
+type DeviceSnapshot = application.DeviceSnapshot
+
+// Snapshot returns a snapshot of an asset; with a holder it must currently be assigned to that User.
+func (a *Assets) Snapshot(ctx context.Context, assetID, holderUserID string) (DeviceSnapshot, error) {
+	return a.svc.SnapshotFor(ctx, assetID, holderUserID)
+}
