@@ -88,6 +88,7 @@ func newEnv(t *testing.T) *env {
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_assignments WHERE artifact_id IN (SELECT id FROM endpoints.management_artifacts WHERE provider = $1)`, e.provider)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_artifacts WHERE provider = $1`, e.provider)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.management_filters WHERE provider = $1`, e.provider)
+		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider = $1`, e.provider)
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.software_aliases WHERE alias LIKE $1`, "%"+suffix+"%")
 		_, _ = pool.Exec(ctx, `DELETE FROM endpoints.software_products WHERE name LIKE $1`, "%"+suffix+"%")
 	})
@@ -166,7 +167,12 @@ func (e *env) device(externalID string) application.Device {
 
 func (e *env) openFindings(deviceID string) map[string]bool {
 	e.t.Helper()
-	d, err := e.svc.GetDevice(context.Background(), e.view, deviceID)
+	return e.openFindingsAs(e.manage, deviceID)
+}
+
+func (e *env) openFindingsAs(p application.Principal, deviceID string) map[string]bool {
+	e.t.Helper()
+	d, err := e.svc.GetDevice(context.Background(), p, deviceID)
 	if err != nil {
 		e.t.Fatal(err)
 	}

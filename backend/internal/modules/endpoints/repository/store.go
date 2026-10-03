@@ -150,7 +150,7 @@ func (r *Repository) TryLockProvider(ctx context.Context, provider string) (func
 }
 
 func (r *Repository) LastSyncCompleted(ctx context.Context, provider string) (*time.Time, error) {
-	var at time.Time
+	var at *time.Time // NULL while only the finding cursor has been stored
 	err := r.pool.QueryRow(ctx, `SELECT last_completed_at FROM endpoints.provider_sync_state WHERE provider = $1`, provider).Scan(&at)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -158,7 +158,7 @@ func (r *Repository) LastSyncCompleted(ctx context.Context, provider string) (*t
 	if err != nil {
 		return nil, fmt.Errorf("last sync completed: %w", err)
 	}
-	return &at, nil
+	return at, nil
 }
 
 func (r *Repository) MarkSyncCompleted(ctx context.Context, provider string, at time.Time) error {
@@ -591,6 +591,9 @@ func (r *Repository) ListFindings(ctx context.Context, f application.FindingFilt
 	}
 	if f.Kind != "" {
 		add("f.kind = $%d", f.Kind)
+	}
+	if len(f.ExcludeKinds) > 0 {
+		add("NOT (f.kind = ANY($%d::text[]))", f.ExcludeKinds)
 	}
 	if f.DeviceID != "" {
 		add("f.device_id = $%d::uuid", f.DeviceID)

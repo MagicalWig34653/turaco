@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application/evaluation"
 )
 
@@ -136,7 +138,7 @@ type ViewStore interface {
 	ObservationsOf(ctx context.Context, artifactIDs, deviceIDs []string) ([]Observation, error)
 
 	// History reads (F6 slice 4). Every method returns at most limit rows newest first, strictly before the cursor.
-	AssignmentEvents(ctx context.Context, q AssignmentEventQuery) ([]AssignmentEventRow, error)
+	AssignmentEvents(ctx context.Context, q AssignmentEventQuery) (rows []AssignmentEventRow, scopeTruncated bool, err error)
 	ObservationEvents(ctx context.Context, deviceID string, after *HistoryCursor, limit int) ([]ObservationEventRow, error)
 	MembershipEvents(ctx context.Context, deviceID string, after *HistoryCursor, limit int) ([]MembershipEventRow, error)
 
@@ -145,8 +147,13 @@ type ViewStore interface {
 	CountLiveDevicesAfter(ctx context.Context, provider, afterID string) (int, error)
 	// ArtifactsWithObservations returns the ids among artifactIDs for which the provider reports an active observation on any Device.
 	ArtifactsWithObservations(ctx context.Context, artifactIDs []string) (map[string]bool, error)
-	// ObservationStateSince returns, per artifact id, when the Device's current observed state began (the newest history row).
-	ObservationStateSince(ctx context.Context, deviceID string, artifactIDs []string) (map[string]time.Time, error)
+	// ObservationStateSince returns, per pair, when the current observed state began (the newest history row).
+	ObservationStateSince(ctx context.Context, pairs []ObsPair) (map[ObsPair]time.Time, error)
+	// ObservationsRetiredAt returns, per pair, when its observation was retired (pairs without a retired observation are absent).
+	ObservationsRetiredAt(ctx context.Context, pairs []ObsPair) (map[ObsPair]time.Time, error)
+	// IneffectiveCursor is the id after which the next assignment_ineffective pass starts ("" = from the beginning).
+	IneffectiveCursor(ctx context.Context, provider string) (string, error)
+	SaveIneffectiveCursorTx(ctx context.Context, tx pgx.Tx, provider, cursor string) error
 }
 
 // ---- view results ----
@@ -342,3 +349,6 @@ type ArtifactTargets struct {
 	// ObservedTotal counts the live Devices per observed state over all Devices, not only the evaluated ones.
 	ObservedTotal map[string]int
 }
+
+// ObsPair identifies the observation of an artifact on a Device.
+type ObsPair struct{ ArtifactID, DeviceID string }

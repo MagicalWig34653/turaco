@@ -20,6 +20,8 @@ import (
 const (
 	auditManagementCompleted = "endpoints.management_sync.completed"
 	auditManagementFailed    = "endpoints.management_sync.failed"
+	// auditFindingsReconcileFailed: the derived-finding pass failed after the management data was committed.
+	auditFindingsReconcileFailed = "endpoints.findings_reconcile.failed"
 )
 
 func (r *ManagementResult) add(o ManagementResult) {
@@ -143,8 +145,10 @@ func (s *Service) ingestManagementLocked(ctx context.Context, c Caller, snap Man
 	if err := s.ingestMemberships(ctx, snap, runAt, &total); err != nil {
 		return fail("membership_error", err)
 	}
+	// The management data is committed at this point. A failure of the derived-finding pass is audited on its own and
+	// does not turn the run into a failed one; the pass continues behind its cursor in the next run.
 	if err := s.reconcileIneffective(ctx, c, snap.Provider, &total); err != nil {
-		return fail("finding_error", err)
+		_ = s.recordManagementSync(ctx, c, auditFindingsReconcileFailed, snap.Provider, snap.Source, snap.Complete, ManagementResult{}, "finding_error")
 	}
 	if err := s.recordManagementSync(ctx, c, auditManagementCompleted, snap.Provider, snap.Source, snap.Complete, total, ""); err != nil {
 		return total, err

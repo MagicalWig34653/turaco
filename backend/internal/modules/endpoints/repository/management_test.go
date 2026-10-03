@@ -379,7 +379,7 @@ func TestProviderReportedErrorFindingIsRaisedAndResolved(t *testing.T) {
 		t.Errorf("tombstoned artifact = %+v findings %v", res, e.openFindings(d.ID))
 	}
 	// The finding list filters by the new kind.
-	if _, err := e.svc.ListFindings(context.Background(), e.view, application.FindingFilter{Kind: application.FindingProviderReportedError}); err != nil {
+	if _, err := e.svc.ListFindings(context.Background(), e.manage, application.FindingFilter{Kind: application.FindingProviderReportedError}); err != nil {
 		t.Errorf("list by kind: %v", err)
 	}
 }

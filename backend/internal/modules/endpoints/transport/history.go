@@ -120,7 +120,8 @@ func (h *handler) deviceHistory(w http.ResponseWriter, r *http.Request) {
 		AssignmentScope string            `json:"assignmentScope"`
 		Items           []historyEntryDTO `json:"items"`
 		NextCursor      string            `json:"nextCursor,omitempty"`
-	}{DeviceID: res.DeviceID, AssignmentScope: res.AssignmentScope, Items: toHistory(res.Items), NextCursor: res.NextCursor})
+		Truncated       bool              `json:"truncated"`
+	}{DeviceID: res.DeviceID, AssignmentScope: res.AssignmentScope, Items: toHistory(res.Items), NextCursor: res.NextCursor, Truncated: res.Truncated})
 }
 
 func parseDiffFilter(w http.ResponseWriter, r *http.Request) (application.DiffFilter, bool) {

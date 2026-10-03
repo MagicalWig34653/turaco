@@ -25,8 +25,12 @@ func TestClassifyDevices(t *testing.T) {
 		{"different observed", side(true, false, ExpectedApplicable, "applied"), side(true, false, ExpectedApplicable, "failed"), DiffDifferent, false, DimSame},
 		{"different expected", side(true, false, ExpectedApplicable, "applied"), side(true, false, ExpectedExcluded, "applied"), DiffDifferent, false, DimDifferent},
 		// An unknown never makes the sides equal or different: the dimension is unknown and the item uncertain.
-		{"unknown expected", side(true, false, ExpectedApplicable, "applied"), side(true, false, ExpectedUnknown, "applied"), DiffSame, true, DimUnknown},
-		{"both unknown", side(false, false, ExpectedUnknown, ""), side(false, false, ExpectedUnknown, ""), DiffSame, true, DimUnknown},
+		{"unknown expected", side(true, false, ExpectedApplicable, "applied"), side(true, false, ExpectedUnknown, "applied"), DiffUnknown, true, DimUnknown},
+		{"both unknown", side(false, false, ExpectedUnknown, ""), side(false, false, ExpectedUnknown, ""), DiffUnknown, true, DimUnknown},
+		// An unknown Observed state is uncertain too and never "same".
+		{"unknown observed", side(true, false, ExpectedApplicable, "applied"), side(true, false, ExpectedApplicable, "unknown"), DiffUnknown, true, DimSame},
+		{"unknown observed both", side(true, false, ExpectedApplicable, "unknown"), side(true, false, ExpectedApplicable, "unknown"), DiffUnknown, true, DimSame},
+		{"unknown assigned only", side(false, true, ExpectedNotApplicable, ""), side(false, false, ExpectedNotApplicable, ""), DiffUnknown, true, DimSame},
 		{"unknown but observed differs", side(true, false, ExpectedApplicable, "applied"), side(false, true, ExpectedUnknown, ""), DiffDifferent, true, DimUnknown},
 	}
 	for _, c := range cases {
@@ -58,6 +62,9 @@ func TestClassifyGroups(t *testing.T) {
 		{"same", []AssignedTarget{inc}, []AssignedTarget{inc}, DiffSame, nil},
 		{"intent", []AssignedTarget{inc}, []AssignedTarget{target("include", "available", "none", "")}, DiffDifferent, []string{"intent"}},
 		{"mode and filter", []AssignedTarget{inc}, []AssignedTarget{target("exclude", "required", "include", "f1")}, DiffDifferent, []string{"mode", "filter"}},
+		// Per-property value sets are equal ({include,exclude} x {a,b}) but the tuples are not.
+		{"crossed tuples", []AssignedTarget{target("include", "required", "none", ""), target("exclude", "available", "none", "")},
+			[]AssignedTarget{target("include", "available", "none", ""), target("exclude", "required", "none", "")}, DiffDifferent, []string{"assignments"}},
 		{"other filter", []AssignedTarget{target("include", "required", "include", "f1")}, []AssignedTarget{target("include", "required", "include", "f2")}, DiffDifferent, []string{"filter"}},
 	}
 	for _, c := range cases {

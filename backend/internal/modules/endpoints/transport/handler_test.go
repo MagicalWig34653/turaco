@@ -388,8 +388,12 @@ func TestHistoryDiffAndListFilterRoutes(t *testing.T) {
 	if rec := do(both, "GET", paths[2]+"&differences=maybe", ""); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad differences = %d", rec.Code)
 	}
-	if rec := do(both, "GET", "/api/v1/devices/"+id+"/management/diff", ""); rec.Code != http.StatusNotFound {
-		t.Errorf("missing otherDeviceId = %d", rec.Code)
+	for _, q := range []string{"/api/v1/devices/" + id + "/management/diff", "/api/v1/devices/" + id + "/management/diff?otherDeviceId=zz",
+		"/api/v1/directory-groups/" + id + "/management/diff", "/api/v1/directory-groups/" + id + "/management/diff?otherGroupId=zz"} {
+		rec := do(withDir, "GET", q, "")
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "endpoints.invalid_request") {
+			t.Errorf("%q = %d %s", q, rec.Code, rec.Body.String())
+		}
 	}
 	// List filters.
 	for _, q := range []string{"managementState=applied", "hasFinding=x", "lastCheckinOlderThanDays=0", "lastCheckinOlderThanDays=abc"} {

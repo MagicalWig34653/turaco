@@ -94,6 +94,9 @@ type AssignmentValues struct {
 	FilterName *string
 }
 
+// MaxHistoryArtifacts bounds the artifacts whose assignment history a Device history reads.
+const MaxHistoryArtifacts = 500
+
 // AssignmentEventQuery selects assignment events newest first. ArtifactID selects one artifact; DeviceID (with
 // Provider) the artifacts that address the Device. Exactly one of them is set.
 type AssignmentEventQuery struct {
@@ -210,4 +213,7 @@ type DeviceHistory struct {
 	Items           []HistoryEntry
 	NextCursor      string
 	AssignmentScope string
+	// Truncated is set when the artifacts that address the Device were cut at MaxHistoryArtifacts (in id order):
+	// the assignment entries of the others are missing.
+	Truncated bool
 }

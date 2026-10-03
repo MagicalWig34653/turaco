@@ -7,6 +7,8 @@ const (
 	DiffDifferent = "different"
 	DiffOnlyLeft  = "only_left"
 	DiffOnlyRight = "only_right"
+	// DiffUnknown: no dimension is known to differ, but at least one is unknown, so the sides cannot be shown equal.
+	DiffUnknown = "unknown"
 )
 
 // Dimension results of a Device diff item.
@@ -39,7 +41,9 @@ type DiffSide struct {
 	Mismatch        string
 }
 
-// DiffDimensions compares the three states of the two sides. Expected is unknown when either side is unknown.
+// DiffDimensions compares the three states of the two sides. A dimension is unknown when either side is unknown
+// (Assigned: user-targeted assignment without a known User; Expected: evaluator result unknown; Observed: the
+// provider state is unknown).
 type DiffDimensions struct {
 	Assigned string
 	Expected string

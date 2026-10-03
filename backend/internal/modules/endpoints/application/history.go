@@ -29,7 +29,7 @@ func (s *Service) ArtifactHistory(ctx context.Context, p Principal, artifactID s
 		if err != nil {
 			return ArtifactHistory{}, err
 		}
-		rows, err := s.store.AssignmentEvents(ctx, AssignmentEventQuery{ArtifactID: art.ID, After: cur, Limit: page.Limit + 1})
+		rows, _, err := s.store.AssignmentEvents(ctx, AssignmentEventQuery{ArtifactID: art.ID, After: cur, Limit: page.Limit + 1})
 		if err != nil {
 			return ArtifactHistory{}, err
 		}
@@ -72,7 +72,7 @@ func (s *Service) DeviceHistory(ctx context.Context, p Principal, deviceID strin
 			return DeviceHistory{}, err
 		}
 		limit := page.Limit + 1
-		arows, err := s.store.AssignmentEvents(ctx, AssignmentEventQuery{DeviceID: d.ID, Provider: s.viewProvider, After: cur, Limit: limit})
+		arows, truncated, err := s.store.AssignmentEvents(ctx, AssignmentEventQuery{DeviceID: d.ID, Provider: s.viewProvider, After: cur, Limit: limit})
 		if err != nil {
 			return DeviceHistory{}, err
 		}
@@ -107,7 +107,7 @@ func (s *Service) DeviceHistory(ctx context.Context, p Principal, deviceID strin
 		if err != nil {
 			return DeviceHistory{}, err
 		}
-		return DeviceHistory{DeviceID: d.ID, Items: items, NextCursor: next, AssignmentScope: AssignmentScopeDevice}, nil
+		return DeviceHistory{DeviceID: d.ID, Items: items, NextCursor: next, AssignmentScope: AssignmentScopeDevice, Truncated: truncated}, nil
 	})
 }
 

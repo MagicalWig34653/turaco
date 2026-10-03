@@ -128,7 +128,7 @@ func TestAssignmentIneffectiveFindingIsRaisedResolvedAndIdempotent(t *testing.T)
 		t.Error("finding of a tombstoned device is still open")
 	}
 	// The kind is listable and validated.
-	if _, err := s.svc.ListFindings(context.Background(), s.view, application.FindingFilter{Kind: application.FindingAssignmentIneffective, Status: application.FindingResolved}); err != nil {
+	if _, err := s.svc.ListFindings(context.Background(), s.manage, application.FindingFilter{Kind: application.FindingAssignmentIneffective, Status: application.FindingResolved}); err != nil {
 		t.Errorf("list by kind: %v", err)
 	}
 }

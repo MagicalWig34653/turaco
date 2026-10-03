@@ -79,8 +79,16 @@ func TestDeviceDiffClassifiesAndKeepsUnknownsUnknown(t *testing.T) {
 	if _, err := v.svc.DeviceDiff(ctx, v.full, d1, v.newID(), application.DiffFilter{}); !errors.Is(err, application.ErrNotFound) {
 		t.Errorf("unknown other device = %v", err)
 	}
-	if _, err := v.svc.DeviceDiff(ctx, v.full, d1, "zz", application.DiffFilter{}); !errors.Is(err, application.ErrNotFound) {
-		t.Errorf("malformed other device = %v", err)
+	// A missing or malformed otherDeviceId is a bad request, not a missing resource.
+	for _, other := range []string{"zz", ""} {
+		_, err := v.svc.DeviceDiff(ctx, v.full, d1, other, application.DiffFilter{})
+		var inv *application.InvalidInputError
+		if !errors.As(err, &inv) {
+			t.Errorf("other device %q = %v", other, err)
+		}
+	}
+	if _, err := v.svc.DeviceDiff(ctx, v.full, "zz", d2, application.DiffFilter{}); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("malformed path device = %v", err)
 	}
 	if _, err := v.svc.DeviceDiff(ctx, v.full, d1, d2, application.DiffFilter{Kind: "x"}); err == nil {
 		t.Error("invalid kind accepted")

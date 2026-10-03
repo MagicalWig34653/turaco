@@ -36,6 +36,9 @@ const (
 	FindingResolved = "resolved"
 )
 
+// ManagementFindingKinds are the findings derived from management data; reading them needs management access.
+var ManagementFindingKinds = []string{FindingProviderReportedError, FindingAssignmentIneffective}
+
 // FindingKinds lists every finding kind.
 var FindingKinds = []string{FindingNoAssetMatch, FindingSerialConflict, FindingDuplicateDevice, FindingUnmatchedSoftware, FindingProviderReportedError, FindingAssignmentIneffective}
 
@@ -239,10 +242,12 @@ type DeviceFilter struct {
 
 // FindingFilter selects findings; Status defaults to open.
 type FindingFilter struct {
-	Kind     string
-	Status   string
-	DeviceID string
-	Page     Page
+	Kind string
+	// ExcludeKinds leaves out findings of these kinds (set by the service, never by the caller).
+	ExcludeKinds []string
+	Status       string
+	DeviceID     string
+	Page         Page
 }
 
 // DeviceResult and FindingResult are one page; NextCursor is empty on the last page.

@@ -57,8 +57,11 @@ func (s *Service) DeviceDiff(ctx context.Context, p Principal, leftID, rightID s
 	if f.Kind != "" && !slices.Contains(ArtifactKinds, f.Kind) {
 		return DeviceDiff{}, invalid("kind must be one of %s", strings.Join(ArtifactKinds, ", "))
 	}
-	if !validUUID(leftID) || !validUUID(rightID) {
+	if !validUUID(leftID) {
 		return DeviceDiff{}, ErrNotFound
+	}
+	if !validUUID(rightID) {
+		return DeviceDiff{}, invalid("otherDeviceId is required and must be a device id")
 	}
 	if leftID == rightID {
 		return DeviceDiff{}, invalid("otherDeviceId must differ from the device")
@@ -186,12 +189,13 @@ func (d DiffSide) observedValue() string {
 }
 
 // classifyDevices compares two sides. An unknown input never makes two sides equal or different: the dimension is
-// unknown and the item uncertain.
+// unknown and the item uncertain. An item without a differing dimension but with an unknown one is class unknown,
+// never same.
 func classifyDevices(l, r DiffSide) (class string, dims DiffDimensions, uncertain bool) {
 	dims.Assigned = compareValue(l.assignedValue(), r.assignedValue())
 	dims.Expected = compareValue(l.Expected.Result, r.Expected.Result)
 	dims.Observed = compareValue(l.observedValue(), r.observedValue())
-	uncertain = dims.Assigned == DimUnknown || dims.Expected == DimUnknown
+	uncertain = dims.Assigned == DimUnknown || dims.Expected == DimUnknown || dims.Observed == DimUnknown
 	switch {
 	case l.absent() && r.absent():
 		return DiffSame, dims, false
@@ -201,8 +205,10 @@ func classifyDevices(l, r DiffSide) (class string, dims DiffDimensions, uncertai
 		return DiffOnlyRight, dims, uncertain
 	case dims.Assigned == DimDifferent || dims.Expected == DimDifferent || dims.Observed == DimDifferent:
 		return DiffDifferent, dims, uncertain
+	case uncertain:
+		return DiffUnknown, dims, true
 	}
-	return DiffSame, dims, uncertain
+	return DiffSame, dims, false
 }
 
 func compareValue(l, r string) string {
@@ -228,8 +234,11 @@ func (s *Service) GroupDiff(ctx context.Context, p Principal, leftID, rightID st
 	if f.Kind != "" && !slices.Contains(ArtifactKinds, f.Kind) {
 		return GroupDiff{}, invalid("kind must be one of %s", strings.Join(ArtifactKinds, ", "))
 	}
-	if !validUUID(leftID) || !validUUID(rightID) {
+	if !validUUID(leftID) {
 		return GroupDiff{}, ErrNotFound
+	}
+	if !validUUID(rightID) {
+		return GroupDiff{}, invalid("otherGroupId is required and must be a group id")
 	}
 	if leftID == rightID {
 		return GroupDiff{}, invalid("otherGroupId must differ from the group")
@@ -370,10 +379,29 @@ func classifyGroups(l, r []AssignedTarget) (string, []string) {
 			diffs = append(diffs, name)
 		}
 	}
+	// The sets of (mode, intent, filter) tuples are compared as well: {include/a, exclude/b} differs from
+	// {include/b, exclude/a} although each single property has the same value set.
+	if len(diffs) == 0 && !slices.Equal(tupleSet(l), tupleSet(r)) {
+		diffs = append(diffs, "assignments")
+	}
 	if len(diffs) == 0 {
 		return DiffSame, nil
 	}
 	return DiffDifferent, diffs
+}
+
+// tupleSet is the sorted, de-duplicated set of (mode, intent, filter) tuples of the assignments.
+func tupleSet(as []AssignedTarget) []string {
+	var out []string
+	for _, a := range as {
+		f := a.FilterMode
+		if a.Filter != nil {
+			f += ":" + a.Filter.ID
+		}
+		out = append(out, a.Mode+"|"+a.Intent+"|"+f)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func valueSet(as []AssignedTarget, f func(AssignedTarget) string) []string {
