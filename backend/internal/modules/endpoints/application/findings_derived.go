@@ -101,12 +101,8 @@ func (s *Service) reconcileIneffective(ctx context.Context, c Caller, provider s
 		}
 		total.IneffectiveDevicesSkipped += skipped
 	}
-	// Devices that vanished no longer have evidence.
-	return s.store.InTx(ctx, func(tx pgx.Tx) error {
-		n, err := s.store.ResolveFindingsOfRemovedDevicesTx(ctx, tx, FindingAssignmentIneffective)
-		total.IneffectiveFindingsResolved += n
-		return err
-	})
+	// A tombstoned Device had its findings resolved by the device ingestion.
+	return nil
 }
 
 // deviceIneffective counts the artifacts that are assigned and expected on the Device but absent or

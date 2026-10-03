@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 )
 
@@ -234,16 +232,4 @@ func (r *Repository) ObservationStateSince(ctx context.Context, deviceID string,
 		out[id] = at
 	}
 	return out, rows.Err()
-}
-
-// ResolveFindingsOfRemovedDevicesTx resolves the open findings of the kind that belong to tombstoned Devices.
-func (r *Repository) ResolveFindingsOfRemovedDevicesTx(ctx context.Context, tx pgx.Tx, kind string) (int, error) {
-	tag, err := tx.Exec(ctx, `
-		UPDATE endpoints.findings f SET status = 'resolved', resolved_at = now()
-		FROM endpoints.devices d
-		WHERE f.kind = $1 AND f.status = 'open' AND d.id = f.device_id AND d.deleted_observed_at IS NOT NULL`, kind)
-	if err != nil {
-		return 0, fmt.Errorf("resolve findings of removed devices: %w", err)
-	}
-	return int(tag.RowsAffected()), nil
 }

@@ -369,8 +369,6 @@ type Store interface {
 	OpenFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string, detail json.RawMessage) (id string, raised bool, err error)
 	// ResolveFindingTx resolves the open finding, if any, and reports whether one was open.
 	ResolveFindingTx(ctx context.Context, tx pgx.Tx, kind, deviceID string) (bool, error)
-	// ResolveFindingsOfRemovedDevicesTx resolves the open findings of the kind whose Device is tombstoned and returns how many.
-	ResolveFindingsOfRemovedDevicesTx(ctx context.Context, tx pgx.Tx, kind string) (int, error)
 
 	GetDevice(ctx context.Context, id string) (Device, error)
 	ListDevices(ctx context.Context, f DeviceFilter) (DeviceResult, error)
