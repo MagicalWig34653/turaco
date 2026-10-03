@@ -119,8 +119,8 @@ func (c *Consumers) OnTicketResolved(ctx context.Context, tx pgx.Tx, ev events.O
 		return err
 	}
 	t, ok, err := c.load(ctx, p.TicketID)
-	if err != nil || !ok {
-		return err
+	if err != nil || !ok || (t.Status != StatusResolved && t.Status != StatusClosed) {
+		return err // reopened meanwhile: the news is stale
 	}
 	return c.notify(ctx, tx, ev, "ticket.resolved", t, []string{t.ReporterID, t.AffectedUserID})
 }
@@ -179,7 +179,9 @@ func NewMajorConsumers(store MajorStore, dir Directory, notifier Notifier) *Majo
 // incident's current title; the latest message is read in the app.
 func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
-		ID string `json:"majorIncidentId"`
+		ID     string `json:"majorIncidentId"`
+		Status string `json:"status"`
+		After  string `json:"after"`
 	}
 	if err := decodePayload(ev, &p); err != nil {
 		return err
@@ -187,7 +189,7 @@ func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, 
 	if !validEventID(p.ID) {
 		return events.Permanent(fmt.Errorf("invalid incident id in %s", ev.EventType))
 	}
-	subs, err := c.store.Subscribers(ctx, tx, p.ID)
+	subs, err := c.store.Subscribers(ctx, tx, p.ID, p.After, majorChunk+1)
 	if err != nil || len(subs) == 0 {
 		return err
 	}
@@ -197,6 +199,20 @@ func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, 
 	}
 	if err != nil {
 		return fmt.Errorf("load incident title: %w", err)
+	}
+	// Large audiences are notified in chunks: the rest follows in a new event, so one claim
+	// transaction stays short and nobody is silently left out.
+	if len(subs) > majorChunk {
+		subs = subs[:majorChunk]
+		var actor *string
+		if ev.ActorID != nil {
+			a := *ev.ActorID
+			actor = &a
+		}
+		if err := events.Publish(ctx, tx, events.Publication{Type: "MajorIncidentUpdated", ActorID: actor, CorrelationID: ev.CorrelationID,
+			Payload: map[string]any{"majorIncidentId": p.ID, "status": p.Status, "after": subs[len(subs)-1]}}); err != nil {
+			return fmt.Errorf("continue fan-out: %w", err)
+		}
 	}
 	var ids []string
 	for _, id := range subs {
@@ -221,5 +237,8 @@ func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, 
 	}
 	return nil
 }
+
+// majorChunk is how many subscribers one consumer run notifies.
+const majorChunk = 500
 
 func validEventID(s string) bool { return len(s) == 36 }

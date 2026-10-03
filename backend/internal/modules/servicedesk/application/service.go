@@ -69,6 +69,13 @@ func cleanText(s string, limit int, required bool, what string) (string, error) 
 	return s, nil
 }
 
+func samePtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
@@ -226,12 +233,15 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 	}
 	var out Ticket
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.locked(ctx, tx, id, expected)
+		cur, err := s.store.LockTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		if !p.staff() && !s.isOwner(cur, p) {
 			return ErrNotFound
+		}
+		if expected != nil && *expected != cur.Version {
+			return ErrVersionConflict
 		}
 		if !slices.Contains(AllowedOperations(cur, p), op) {
 			if !p.Manage && !(s.isOwner(cur, p) && r.ownerMay) {
@@ -327,7 +337,7 @@ func (s *Service) Assign(ctx context.Context, c Caller, p Principal, id string, 
 		if next.AssigneeID != nil && next.Status == StatusNew {
 			next.Status = StatusOpen
 		}
-		if next.AssigneeID == cur.AssigneeID && next.QueueTeamID == cur.QueueTeamID {
+		if samePtr(next.AssigneeID, cur.AssigneeID) && samePtr(next.QueueTeamID, cur.QueueTeamID) && next.Status == cur.Status {
 			out = cur
 			return nil
 		}
@@ -338,7 +348,7 @@ func (s *Service) Assign(ctx context.Context, c Caller, p Principal, id string, 
 		if err := record(ctx, tx, c, "servicedesk.ticket.assigned", &cur, &out, nil); err != nil {
 			return err
 		}
-		if out.AssigneeID != nil && (cur.AssigneeID == nil || *cur.AssigneeID != *out.AssigneeID) {
+		if out.AssigneeID != nil && !samePtr(cur.AssigneeID, out.AssigneeID) {
 			return publish(ctx, tx, c, "TicketAssigned", map[string]any{"ticketId": out.ID, "assigneeId": *out.AssigneeID})
 		}
 		return nil
@@ -408,7 +418,7 @@ func (s *Service) AddComment(ctx context.Context, c Caller, p Principal, id, bod
 		if cur.Status == StatusCancelled || cur.Status == StatusClosed {
 			return &InvalidTransitionError{Operation: "comment", From: cur.Status}
 		}
-		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: id, AuthorID: p.UserID, Body: b, Internal: internal})
+		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: cur.ID, AuthorID: p.UserID, Body: b, Internal: internal})
 		if err != nil {
 			return err
 		}
@@ -423,11 +433,11 @@ func (s *Service) AddComment(ctx context.Context, c Caller, p Principal, id, bod
 				return err
 			}
 		}
-		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.comment_added", TargetType: "ticket", TargetID: id, Actor: c.Actor,
+		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.comment_added", TargetType: "ticket", TargetID: cur.ID, Actor: c.Actor,
 			CorrelationID: c.CorrelationID, Metadata: map[string]any{"commentId": out.ID, "internal": internal}}); err != nil {
 			return err
 		}
-		return publish(ctx, tx, c, "TicketCommentAdded", map[string]any{"ticketId": id, "commentId": out.ID, "internal": internal, "authorId": p.UserID})
+		return publish(ctx, tx, c, "TicketCommentAdded", map[string]any{"ticketId": cur.ID, "commentId": out.ID, "internal": internal, "authorId": p.UserID})
 	})
 	return out, err
 }

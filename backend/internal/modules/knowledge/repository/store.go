@@ -95,8 +95,12 @@ func (r *Repository) List(ctx context.Context, q application.Query) (application
 	if q.Text != "" {
 		args = append(args, q.Text)
 		n := len(args)
-		conds = append(conds, fmt.Sprintf("search @@ websearch_to_tsquery('simple', $%d)", n))
-		order = fmt.Sprintf("ts_rank(search, websearch_to_tsquery('simple', $%d)) DESC, id DESC", n)
+		tsq := fmt.Sprintf("websearch_to_tsquery('simple', $%d)", n)
+		if q.Any {
+			tsq = fmt.Sprintf("replace(websearch_to_tsquery('simple', $%d)::text, '&', '|')::tsquery", n)
+		}
+		conds = append(conds, "search @@ "+tsq)
+		order = fmt.Sprintf("ts_rank(search, %s) DESC, id DESC", tsq)
 	} else if page.Cursor != "" {
 		if !validUUID(page.Cursor) {
 			return application.Result{}, application.ErrInvalidCursor

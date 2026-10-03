@@ -165,8 +165,12 @@ func (r *Repository) UnsubscribeTx(ctx context.Context, tx pgx.Tx, id, userID st
 	return nil
 }
 
-func (r *Repository) Subscribers(ctx context.Context, tx pgx.Tx, id string) ([]string, error) {
-	rows, err := tx.Query(ctx, `SELECT user_id::text FROM servicedesk.major_incident_subscriptions WHERE major_incident_id = $1::uuid ORDER BY user_id LIMIT 5000`, id)
+func (r *Repository) Subscribers(ctx context.Context, tx pgx.Tx, id, after string, limit int) ([]string, error) {
+	if after == "" {
+		after = "00000000-0000-0000-0000-000000000000"
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id::text FROM servicedesk.major_incident_subscriptions
+		WHERE major_incident_id = $1::uuid AND user_id > $2::uuid ORDER BY user_id LIMIT $3`, id, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list subscribers: %w", err)
 	}
@@ -189,10 +193,22 @@ func (r *Repository) LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticke
 	var reporter, affected string
 	err := tx.QueryRow(ctx, `
 		UPDATE servicedesk.tickets SET major_incident_id = $1::uuid, version = version + 1, updated_at = now()
-		WHERE id = $2::uuid AND status NOT IN ('closed', 'cancelled') AND (major_incident_id IS NULL OR major_incident_id = $1::uuid)
+		WHERE id = $2::uuid AND status NOT IN ('closed', 'cancelled') AND major_incident_id IS NULL
 		RETURNING reporter_user_id::text, affected_user_id::text`, majorID, ticketID).Scan(&reporter, &affected)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", application.ErrNotFound
+		// Already linked to this incident is a no-op; anything else is not linkable.
+		var current *string
+		qerr := tx.QueryRow(ctx, `SELECT major_incident_id::text, reporter_user_id::text, affected_user_id::text FROM servicedesk.tickets WHERE id = $1::uuid AND status NOT IN ('closed', 'cancelled')`, ticketID).Scan(&current, &reporter, &affected)
+		if errors.Is(qerr, pgx.ErrNoRows) {
+			return "", "", application.ErrNotFound
+		}
+		if qerr != nil {
+			return "", "", fmt.Errorf("link ticket: %w", qerr)
+		}
+		if current != nil && *current == majorID {
+			return reporter, affected, application.ErrAlreadyLinked
+		}
+		return "", "", &application.InvalidTransitionError{Operation: "link_ticket", From: "linked_elsewhere"}
 	}
 	if err != nil {
 		return "", "", fmt.Errorf("link ticket: %w", err)

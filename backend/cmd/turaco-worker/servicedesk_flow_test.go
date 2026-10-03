@@ -95,3 +95,41 @@ func TestMajorIncidentUpdatesReachSubscribersOnly(t *testing.T) {
 		t.Error("people who did not subscribe are not notified")
 	}
 }
+
+func TestLargeIncidentAudiencesAreNotifiedInChunks(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	svc := wiring.MajorIncidents(w.pool)
+	var id string
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, w.assignee)
+	})
+	c := func(u string) servicedeskapp.Caller {
+		return servicedeskapp.Caller{Actor: audit.UserActor(u), CorrelationID: w.corr}
+	}
+	m, err := svc.Declare(ctx, c(w.assignee), true, "Chunked", "msg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id = m.ID
+	// 520 subscribers (more than one chunk of 500): the 500th-plus must not be dropped. Only the four
+	// real users can receive notifications; the rest are inactive/unknown ids that are skipped.
+	if _, err := w.pool.Exec(ctx, `INSERT INTO servicedesk.major_incident_subscriptions(major_incident_id, user_id)
+		SELECT $1::uuid, uuidv7() FROM generate_series(1, 520)`, id); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []string{w.creator, w.member, w.outsider} {
+		if err := svc.Subscribe(ctx, c(u), u, id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.PostUpdate(ctx, c(w.assignee), true, id, "news"); err != nil {
+		t.Fatal(err)
+	}
+	w.dispatch()
+	for _, u := range []string{w.creator, w.member, w.outsider} {
+		if w.notified(u, "majorincident.update") != 1 {
+			t.Errorf("user %s was not notified exactly once", u)
+		}
+	}
+}

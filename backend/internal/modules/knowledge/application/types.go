@@ -121,6 +121,8 @@ type Result struct {
 // Query selects articles; the repository applies the visibility the service computed.
 type Query struct {
 	Text string
+	// Any matches articles containing any of the words (suggestions) instead of all of them.
+	Any bool
 	// Statuses and Audiences restrict what may be returned (the caller's visibility).
 	Statuses  []string
 	Audiences []string

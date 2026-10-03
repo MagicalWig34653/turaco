@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -64,7 +65,8 @@ type MajorStore interface {
 	Updates(ctx context.Context, id string) ([]MajorUpdate, error)
 	SubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
 	UnsubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
-	Subscribers(ctx context.Context, tx pgx.Tx, id string) ([]string, error)
+	// Subscribers returns up to limit subscribers after the given user id, in id order.
+	Subscribers(ctx context.Context, tx pgx.Tx, id, after string, limit int) ([]string, error)
 	// MajorTitle returns "reference · title" of an incident, or ErrNotFound.
 	MajorTitle(ctx context.Context, tx pgx.Tx, id string) (string, error)
 	// LinkTicketTx attaches a ticket (once); it reports the ticket's reporter and affected users.
@@ -315,11 +317,14 @@ func (s *MajorService) LinkTicket(ctx context.Context, c Caller, manage bool, id
 			return &InvalidTransitionError{Operation: "link_ticket", From: cur.Status}
 		}
 		reporter, affected, err := s.store.LinkTicketTx(ctx, tx, id, ticketID)
+		if errors.Is(err, ErrAlreadyLinked) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
-		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.major_incident_linked", TargetType: "ticket", TargetID: ticketID,
-			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"majorIncidentId": id}}); err != nil {
+		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.major_incident_linked", TargetType: "ticket", TargetID: strings.ToLower(ticketID),
+			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"majorIncidentId": cur.ID}}); err != nil {
 			return err
 		}
 		for _, u := range []string{reporter, affected} {
@@ -327,7 +332,7 @@ func (s *MajorService) LinkTicket(ctx context.Context, c Caller, manage bool, id
 				return err
 			}
 		}
-		return audit.Record(ctx, tx, audit.Change{Action: "servicedesk.major_incident.ticket_linked", TargetType: "major_incident", TargetID: id,
+		return audit.Record(ctx, tx, audit.Change{Action: "servicedesk.major_incident.ticket_linked", TargetType: "major_incident", TargetID: cur.ID,
 			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"ticketId": ticketID}})
 	})
 }

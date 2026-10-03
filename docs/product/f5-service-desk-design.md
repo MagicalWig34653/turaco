@@ -47,6 +47,8 @@ Accepted limitations:
 
 - A ticket can be assigned to any active User; a User without ticket permissions would be notified but cannot open it. Assign only to people who work tickets.
 - `majorincidents.manage` can link any open ticket to an incident without holding ticket permissions.
-- Incident subscribers beyond the first 5000 are not notified; subscribing is not audited (a personal preference).
+- Incident updates are fanned out to subscribers in chunks of 500 (each chunk continues in a follow-up event); subscribing is not audited (a personal preference).
 - Roles that already granted `tickets.view` now read all tickets and internal comments; review role assignments when upgrading.
 - There is no rate limit or idempotency key on ticket creation.
+
+Database review fixes: a ticket links to one incident only (a repeated link is a no-op, moving it is refused); assigning the same values again changes nothing; visibility is checked before the version; canonical ids in audit and events; a "resolved" notification is dropped when the ticket was reopened meanwhile; suggestions match any word (`match=any`, ranked) while normal search needs all words; status and timestamp invariants are database constraints (migration 000034). Search returns one ranked page without a cursor.

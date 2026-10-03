@@ -115,3 +115,33 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 }
 
 func (e *env) carol() string { return e.viewer }
+
+func TestLinkingIsOnceAndNeverMovesATicket(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	svc := application.NewMajorService(repository.New(e.pool))
+	t.Cleanup(func() {
+		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
+		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)
+	})
+	one, _ := svc.Declare(ctx, e.c(e.agent), true, "One", "first")
+	two, _ := svc.Declare(ctx, e.c(e.agent), true, "Two", "second")
+	tk := e.raise()
+	if err := svc.LinkTicket(ctx, e.c(e.agent), true, one.ID, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := e.svc.Get(ctx, e.user(), tk.ID)
+	if err := svc.LinkTicket(ctx, e.c(e.agent), true, one.ID, tk.ID); err != nil {
+		t.Errorf("linking again to the same incident is a no-op: %v", err)
+	}
+	after, _ := e.svc.Get(ctx, e.user(), tk.ID)
+	if after.Ticket.Version != before.Ticket.Version {
+		t.Error("a repeated link must not change the ticket")
+	}
+	if err := svc.LinkTicket(ctx, e.c(e.agent), true, two.ID, tk.ID); err == nil {
+		t.Error("a ticket was moved to another incident")
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.major_incident.ticket_linked'`, e.corr) != 1 {
+		t.Error("only the first link is audited")
+	}
+}

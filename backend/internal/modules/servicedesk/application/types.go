@@ -114,8 +114,10 @@ var (
 	ErrVersionConflict = errors.New("servicedesk: version conflict")
 	ErrUserInvalid     = errors.New("servicedesk: user does not exist or is not active")
 	ErrTeamInvalid     = errors.New("servicedesk: team does not exist or is not active")
-	ErrCommentLimit    = errors.New("servicedesk: this ticket has reached the comment limit")
-	ErrDeviceInvalid   = errors.New("servicedesk: the device does not exist or is not assigned to the affected user")
+	// ErrAlreadyLinked means the ticket already belongs to the incident (a no-op).
+	ErrAlreadyLinked = errors.New("servicedesk: ticket already linked")
+	ErrCommentLimit  = errors.New("servicedesk: this ticket has reached the comment limit")
+	ErrDeviceInvalid = errors.New("servicedesk: the device does not exist or is not assigned to the affected user")
 )
 
 // InvalidTransitionError reports an operation the ticket's status does not allow.

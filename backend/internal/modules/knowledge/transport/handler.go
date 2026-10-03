@@ -113,7 +113,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.URL.Query()
-	res, err := h.svc.List(r.Context(), principal(r), v.Get("q"), v.Get("status"), application.Page{Limit: limit, Cursor: v.Get("cursor")})
+	res, err := h.svc.List(r.Context(), principal(r), v.Get("q"), v.Get("status"), application.Page{Limit: limit, Cursor: v.Get("cursor")}, v.Get("match") == "any")
 	if err != nil {
 		h.fail(w, r, err)
 		return

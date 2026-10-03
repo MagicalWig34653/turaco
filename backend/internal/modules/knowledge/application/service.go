@@ -253,11 +253,11 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Article, err
 
 // List searches or lists articles the caller may read. Text is matched with full-text
 // search; status filters further. Drafts and retired articles need knowledge.manage.
-func (s *Service) List(ctx context.Context, p Principal, text, status string, page Page) (Result, error) {
+func (s *Service) List(ctx context.Context, p Principal, text, status string, page Page, any ...bool) (Result, error) {
 	if p.UserID == "" {
 		return Result{}, ErrForbidden
 	}
-	q := Query{Text: strings.TrimSpace(text), Page: page.Normalize()}
+	q := Query{Text: strings.TrimSpace(text), Page: page.Normalize(), Any: len(any) > 0 && any[0]}
 	if utf8.RuneCountInString(q.Text) > 200 || !utf8.ValidString(q.Text) || strings.ContainsRune(q.Text, 0) {
 		return Result{}, invalid("the search text is invalid")
 	}
