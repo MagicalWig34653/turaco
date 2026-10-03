@@ -43,6 +43,8 @@ var Registry = []Definition{
 	{Name: "TicketCommentAdded", Version: 1, Owner: "service-desk", Description: "A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId."},
 	{Name: "RackPlacementChanged", Version: 1, Owner: "infrastructure", Description: "An Asset was placed into, moved within or removed from a Rack. Payload: placementId, rackId, assetId, operation (placed, moved, removed), uPosition, heightU, face; removals also reason."},
 	{Name: "VirtualMachineChanged", Version: 1, Owner: "infrastructure", Description: "A Virtual Machine was created, changed, moved to another state or hypervisor, or decommissioned. Payload: virtualMachineId, operation, state, hypervisorAssetId; decommissioning also reason."},
+	{Name: "ServiceCreated", Version: 1, Owner: "services", Description: "A Service was created. Payload: serviceId, criticality, status."},
+	{Name: "ServiceStatusChanged", Version: 1, Owner: "services", Description: "A Service changed status or was retired. Payload: serviceId, operation (status_changed, retired), status, previousStatus, reason."},
 	{Name: "ChangeScheduled", Version: 1, Owner: "changes", Description: "A change received an execution schedule."},
 	{Name: "DeviceLinked", Version: 1, Owner: "endpoints", Description: "A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method."},
 	{Name: "DeviceUnlinked", Version: 1, Owner: "endpoints", Description: "A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method."},

@@ -406,3 +406,15 @@ func (s *Service) GetVM(ctx context.Context, p Principal, id string) (VirtualMac
 	}
 	return s.store.GetVM(ctx, id)
 }
+
+// MaxLookupIDs bounds the ids of one public lookup.
+const MaxLookupIDs = 500
+
+// VMsByIDs returns the existing VMs among ids for other modules' contracts. It
+// authorizes nothing.
+func (s *Service) VMsByIDs(ctx context.Context, ids []string) ([]VirtualMachine, error) {
+	if len(ids) > MaxLookupIDs {
+		return nil, invalid("at most %d ids per lookup", MaxLookupIDs)
+	}
+	return s.store.VMsByIDs(ctx, ids)
+}

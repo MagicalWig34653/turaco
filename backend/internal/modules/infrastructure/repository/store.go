@@ -461,6 +461,32 @@ func (r *Repository) GetVM(ctx context.Context, id string) (application.VirtualM
 	return getByID(ctx, r, id, "infrastructure.virtual_machines", vmCols, scanVM)
 }
 
+func (r *Repository) VMsByIDs(ctx context.Context, ids []string) ([]application.VirtualMachine, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+vmCols+` FROM infrastructure.virtual_machines WHERE id = ANY($1::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("virtual machines by id: %w", err)
+	}
+	defer rows.Close()
+	var out []application.VirtualMachine
+	for rows.Next() {
+		v, err := scanVM(rows)
+		if err != nil {
+			return nil, fmt.Errorf("virtual machines by id: scan: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func likeEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
