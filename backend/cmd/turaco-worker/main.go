@@ -323,7 +323,7 @@ func registerRequestConsumers(d *events.Dispatcher, svc *requestsapp.Service, no
 // request a push and the job that performs it. The gateway is the placeholder until a REST client exists.
 func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpool.Pool) error {
 	sync := wiring.ExternalSync(pool, autotask.NotConfigured{}, true)
-	for _, event := range []string{"TicketCreated", "TicketAssigned", "TicketResolved"} {
+	for _, event := range []string{"TicketCreated", "TicketAssigned", "TicketResolved", "TicketStatusChanged"} {
 		if err := d.Register(event, "servicedesk.external-sync", sync.OnTicketChange); err != nil {
 			return err
 		}

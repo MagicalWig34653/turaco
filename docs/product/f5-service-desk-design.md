@@ -56,3 +56,7 @@ Database review fixes: a ticket links to one incident only (a repeated link is a
 ## Part 2 status (2026-10-03)
 
 Implemented: Problems and Known Errors, Runbooks with tracked executions, and the internal side of the Autotask integration (decision S1). Decision S3 holds: tickets and incidents are one `incident` kind. Not implemented: routing rules (staff set queue and priority by hand), the Autotask REST client and webhook, probabilistic device detection (F6).
+
+### Review outcomes (part 2)
+
+Fixed: a push that overlapped a change is detected in one statement and repeated through its own job; inbound events are claimed before they are applied; reopen, close and cancel are pushed; malformed ids on the sync state return 404; a duplicate external id fails permanently. Accepted: `problems.manage` also reads problems and linked ticket summaries; `knowledge.view` reads runbook executions; `runbooks.execute` effectively lets the executor create tasks for the teams named in a runbook (tasks are created by a system actor, correlated by `runbook:<execution>`); an execution whose tasks were all cancelled is reported as completed and does not return to running when a task is reopened; starting a runbook does not lock it against a concurrent deactivation; the inbound resolution text is English.

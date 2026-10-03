@@ -47,8 +47,8 @@ func TestExternalSyncPushStateRetryAndInbound(t *testing.T) {
 	req()
 	var queued int
 	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM platform.jobs WHERE job_type = $1 AND payload->>'ticketId' = $2`, application.PushJobType, tk.ID).Scan(&queued)
-	if queued != 1 {
-		t.Errorf("%d push jobs queued, want 1 (deduplicated)", queued)
+	if queued != 2 {
+		t.Errorf("%d push jobs queued, want one per requested version", queued)
 	}
 	if err := sync.HandlePush(ctx, job); err != nil {
 		t.Fatal(err)
@@ -64,10 +64,15 @@ func TestExternalSyncPushStateRetryAndInbound(t *testing.T) {
 		t.Errorf("an employee reads the sync state: %v", err)
 	}
 
-	// A second push updates the same external ticket; a failure is visible and permanent errors are not retried.
+	// A job for an already pushed version does nothing; a new request updates the same external ticket.
+	if err := sync.HandlePush(ctx, job); err != nil || len(fake.Tickets) != 1 {
+		t.Errorf("redundant push = %v, %d external tickets", err, len(fake.Tickets))
+	}
+	req()
 	if err := sync.HandlePush(ctx, job); err != nil || len(fake.Tickets) != 1 {
 		t.Errorf("second push = %v, %d external tickets", err, len(fake.Tickets))
 	}
+	req()
 	fake.Fail = &autotask.Error{Message: "rejected by Autotask", Permanent: true}
 	err = sync.HandlePush(ctx, job)
 	if !jobs.IsPermanent(err) {
@@ -88,6 +93,24 @@ func TestExternalSyncPushStateRetryAndInbound(t *testing.T) {
 	}
 	if err := sync.Retry(ctx, e.c(e.agent), e.staff(), tk.ID); err != nil {
 		t.Fatal(err)
+	}
+	if err := sync.HandlePush(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+
+	// A change during a push is detected: the stale push leaves the reference pending.
+	ref, _ := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", tk.ID)
+	if _, err := externalrefs.MarkPending(ctx, e.pool, ref.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := externalrefs.MarkSynced(ctx, e.pool, ref.ID, *st.ExternalID, ref.Version); !errors.Is(err, externalrefs.ErrStale) {
+		t.Errorf("a push that overlapped a change: %v", err)
+	}
+	if st, _ := sync.StateOf(ctx, e.staff(), tk.ID); st.SyncState != "pending" {
+		t.Errorf("state after a stale push = %s, want pending", st.SyncState)
+	}
+	if _, err := sync.StateOf(ctx, e.staff(), "not-a-uuid"); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("malformed ticket id: %v", err)
 	}
 	if err := sync.HandlePush(ctx, job); err != nil {
 		t.Fatal(err)
@@ -114,6 +137,16 @@ func TestExternalSyncPushStateRetryAndInbound(t *testing.T) {
 	}
 	if st, _ := sync.StateOf(ctx, e.staff(), tk.ID); st.ExternalUpdatedAt == nil {
 		t.Error("the external update time is recorded")
+	}
+	// A replay after the reporter reopened the ticket must not resolve it again.
+	if _, err := e.svc.Transition(ctx, e.c(e.alice), application.Principal{UserID: e.alice}, tk.ID, nil, application.OpReopen, application.Params{Reason: "still broken"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sync.ApplyInbound(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := e.svc.Get(ctx, e.staff(), tk.ID); d.Ticket.Status == "resolved" {
+		t.Error("a replayed event undid the reopen")
 	}
 	if err := sync.ApplyInbound(ctx, application.InboundEvent{ExternalID: ext}); err == nil {
 		t.Error("an event without an id was accepted")

@@ -39,6 +39,7 @@ var Registry = []Definition{
 	{Name: "TicketCreated", Version: 1, Owner: "service-desk", Description: "A ticket was created. Payload: ticketId, reporterId, affectedUserId."},
 	{Name: "TicketAssigned", Version: 1, Owner: "service-desk", Description: "A ticket was assigned to a user. Payload: ticketId, assigneeId."},
 	{Name: "TicketResolved", Version: 1, Owner: "service-desk", Description: "A ticket was resolved. Payload: ticketId, reporterId, affectedUserId."},
+	{Name: "TicketStatusChanged", Version: 1, Owner: "service-desk", Description: "A ticket was reopened, closed or cancelled. Payload: ticketId, operation."},
 	{Name: "TicketCommentAdded", Version: 1, Owner: "service-desk", Description: "A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId."},
 	{Name: "ChangeScheduled", Version: 1, Owner: "changes", Description: "A change received an execution schedule."},
 	{Name: "ManagementAssignmentChanged", Version: 1, Owner: "endpoint", Description: "A normalized management-provider assignment meaningfully changed."},

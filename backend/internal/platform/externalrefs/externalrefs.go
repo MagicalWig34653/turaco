@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Sync states.
@@ -96,6 +97,9 @@ func ByExternalID(ctx context.Context, q Querier, system, entityType, externalID
 // ErrStale means the mapping changed while a push was running (a newer push is needed).
 var ErrStale = errors.New("externalrefs: the reference changed during the push")
 
+// ErrExternalIDTaken means the external record is already mapped to another record.
+var ErrExternalIDTaken = errors.New("externalrefs: the external id is already mapped to another record")
+
 // MarkSynced records a successful push of the state seen at expectedVersion; externalID is set
 // once and never changed afterwards. When the mapping was marked pending again in the meantime
 // (a newer local change) ErrStale is returned and the external id is still recorded.
@@ -105,16 +109,22 @@ func MarkSynced(ctx context.Context, q Querier, id, externalID string, expectedV
 		return errors.New("externalrefs: the external id must be 1-200 characters")
 	}
 	var got string
+	var matched bool
 	err := q.QueryRow(ctx, `
-		UPDATE platform.external_references
-		SET external_id = coalesce(external_id, $2),
-		    sync_state = CASE WHEN version = $3 THEN 'synced' ELSE sync_state END,
-		    last_error = CASE WHEN version = $3 THEN NULL ELSE last_error END,
-		    last_synced_at = now(), attempts = CASE WHEN version = $3 THEN 0 ELSE attempts END,
-		    version = CASE WHEN version = $3 THEN version + 1 ELSE version END, updated_at = now()
-		WHERE id = $1::uuid RETURNING external_id`, id, externalID, expectedVersion).Scan(&got)
+		WITH old AS (SELECT id, version FROM platform.external_references WHERE id = $1::uuid FOR UPDATE)
+		UPDATE platform.external_references r
+		SET external_id = coalesce(r.external_id, $2),
+		    sync_state = CASE WHEN old.version = $3 THEN 'synced' ELSE r.sync_state END,
+		    last_error = CASE WHEN old.version = $3 THEN NULL ELSE r.last_error END,
+		    last_synced_at = now(), attempts = CASE WHEN old.version = $3 THEN 0 ELSE r.attempts END,
+		    version = CASE WHEN old.version = $3 THEN r.version + 1 ELSE r.version END, updated_at = now()
+		FROM old WHERE r.id = old.id RETURNING r.external_id, old.version = $3`, id, externalID, expectedVersion).Scan(&got, &matched)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return ErrExternalIDTaken
 	}
 	if err != nil {
 		return fmt.Errorf("mark external reference synced: %w", err)
@@ -122,11 +132,7 @@ func MarkSynced(ctx context.Context, q Querier, id, externalID string, expectedV
 	if got != externalID {
 		return fmt.Errorf("externalrefs: reference %s is already mapped to a different external record", id)
 	}
-	var current int
-	if err := q.QueryRow(ctx, `SELECT version FROM platform.external_references WHERE id = $1::uuid`, id).Scan(&current); err != nil {
-		return fmt.Errorf("mark external reference synced: %w", err)
-	}
-	if current != expectedVersion+1 {
+	if !matched {
 		return ErrStale
 	}
 	return nil
@@ -151,17 +157,17 @@ func MarkFailed(ctx context.Context, q Querier, id, reason string) error {
 	return nil
 }
 
-// MarkPending asks for another push (after a local change or a manual retry).
-func MarkPending(ctx context.Context, q Querier, id string) error {
-	var got string
-	err := q.QueryRow(ctx, `UPDATE platform.external_references SET sync_state = 'pending', version = version + 1, updated_at = now() WHERE id = $1::uuid RETURNING id::text`, id).Scan(&got)
+// MarkPending asks for another push (after a local change or a manual retry) and returns the new version.
+func MarkPending(ctx context.Context, q Querier, id string) (int, error) {
+	var version int
+	err := q.QueryRow(ctx, `UPDATE platform.external_references SET sync_state = 'pending', version = version + 1, updated_at = now() WHERE id = $1::uuid RETURNING version`, id).Scan(&version)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
+		return 0, ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("mark external reference pending: %w", err)
+		return 0, fmt.Errorf("mark external reference pending: %w", err)
 	}
-	return nil
+	return version, nil
 }
 
 // TouchExternal records when the external system last changed its record.
@@ -195,4 +201,14 @@ func ClaimEvent(ctx context.Context, q Querier, system, eventID string) (bool, e
 		return false, fmt.Errorf("claim external event: %w", err)
 	}
 	return true, nil
+}
+
+// ReleaseEvent forgets a claimed event after its processing failed, so that the redelivery is applied.
+func ReleaseEvent(ctx context.Context, q Querier, system, eventID string) error {
+	var got string
+	err := q.QueryRow(ctx, `DELETE FROM platform.external_events WHERE system = $1 AND event_id = $2 RETURNING event_id`, system, strings.TrimSpace(eventID)).Scan(&got)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("release external event: %w", err)
+	}
+	return nil
 }

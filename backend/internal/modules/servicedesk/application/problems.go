@@ -146,6 +146,7 @@ type ProblemPrincipal struct {
 	Manage bool
 }
 
+// problems.manage also reads problems and the summaries of the tickets linked to them.
 func (p ProblemPrincipal) canRead() bool { return p.Staff || p.Manage }
 
 // CreateProblem opens a problem. Requires problems.manage.

@@ -100,11 +100,14 @@ func (s *ExternalSync) request(ctx context.Context, tx pgx.Tx, ticketID string) 
 	if err != nil {
 		return err
 	}
-	if err := externalrefs.MarkPending(ctx, tx, ref.ID); err != nil {
+	version, err := externalrefs.MarkPending(ctx, tx, ref.ID)
+	if err != nil {
 		return err
 	}
+	// One job per reference version: a change that arrives while a push runs gets its own job instead
+	// of being merged into the running one. Jobs for older versions find the reference synced and stop.
 	_, _, err = jobs.Enqueue(ctx, tx, jobs.EnqueueRequest{Type: PushJobType, Payload: map[string]string{"ticketId": ticketID},
-		DedupeKey: PushJobType + ":" + ticketID, MaxAttempts: 6})
+		DedupeKey: fmt.Sprintf("%s:%s:%d", PushJobType, ticketID, version), MaxAttempts: 6})
 	return err
 }
 
@@ -128,14 +131,25 @@ func (s *ExternalSync) HandlePush(ctx context.Context, job jobs.Job) error {
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
 		return jobs.Permanent(fmt.Errorf("decode push job: %w", err))
 	}
-	t, err := s.store.Get(ctx, p.TicketID)
-	if errors.Is(err, ErrNotFound) {
+	if !validUUID(p.TicketID) {
+		return jobs.Permanent(errors.New("push job without a valid ticket id"))
+	}
+	// The reference (and its version) is read before the ticket: a change in between leaves the
+	// reference at a newer version, so the push is recognised as stale and repeated.
+	ref, err := externalrefs.ForEntity(ctx, s.q, ExternalSystem, ExternalEntity, p.TicketID)
+	if errors.Is(err, externalrefs.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	ref, err := externalrefs.ForEntity(ctx, s.q, ExternalSystem, ExternalEntity, t.ID)
+	if ref.SyncState == "synced" {
+		return nil // a job for a newer version already pushed this state
+	}
+	t, err := s.store.Get(ctx, p.TicketID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -156,14 +170,18 @@ func (s *ExternalSync) HandlePush(ctx context.Context, job jobs.Job) error {
 		return perr
 	}
 	if err := externalrefs.MarkSynced(ctx, s.q, ref.ID, got, ref.Version); err != nil {
+		if errors.Is(err, externalrefs.ErrExternalIDTaken) {
+			_ = externalrefs.MarkFailed(ctx, s.q, ref.ID, err.Error())
+			return jobs.Permanent(err)
+		}
 		return err // ErrStale: the ticket changed during the push; the retry pushes the newer state
 	}
 	return nil
 }
 
 // ApplyInbound applies a change reported by the external service. Replays and events for unknown
-// external records change nothing. Applying is idempotent (a ticket that is already resolved
-// ignores a second "resolved"), so the event is claimed after it was applied.
+// external records change nothing. Events are not ordered against local changes: an older "resolved"
+// event that is delivered for the first time after a reopen still resolves the ticket.
 func (s *ExternalSync) ApplyInbound(ctx context.Context, ev InboundEvent) error {
 	if !s.enabled {
 		return ErrSyncDisabled
@@ -178,11 +196,22 @@ func (s *ExternalSync) ApplyInbound(ctx context.Context, ev InboundEvent) error 
 	if err != nil {
 		return err
 	}
+	// The event is claimed first: a replay (also after the reporter reopened the ticket) changes nothing.
+	// A failure below releases the claim so that the redelivery is applied.
+	fresh, err := externalrefs.ClaimEvent(ctx, s.q, ExternalSystem, ev.EventID)
+	if err != nil {
+		return err
+	}
+	if !fresh {
+		return nil
+	}
+	now := time.Now().UTC()
 	at := ev.OccurredAt
-	if at.IsZero() {
-		at = time.Now().UTC()
+	if at.IsZero() || at.After(now) {
+		at = now
 	}
 	if err := externalrefs.TouchExternal(ctx, s.q, ref.ID, at); err != nil {
+		_ = externalrefs.ReleaseEvent(ctx, s.q, ExternalSystem, ev.EventID)
 		return err
 	}
 	if ev.Status == "resolved" || ev.Status == "closed" {
@@ -190,11 +219,11 @@ func (s *ExternalSync) ApplyInbound(ctx context.Context, ev InboundEvent) error 
 		_, err := s.tickets.Transition(ctx, c, Principal{Manage: true}, ref.EntityID, nil, OpResolve, Params{Reason: "Resolved in the external service desk."})
 		var tr *InvalidTransitionError
 		if err != nil && !errors.As(err, &tr) {
+			_ = externalrefs.ReleaseEvent(ctx, s.q, ExternalSystem, ev.EventID)
 			return err
 		}
 	}
-	_, err = externalrefs.ClaimEvent(ctx, s.q, ExternalSystem, ev.EventID)
-	return err
+	return nil
 }
 
 // ExternalState is the synchronization state shown to staff.
@@ -210,7 +239,7 @@ type ExternalState struct {
 
 // StateOf returns the synchronization state of a ticket (staff only; no state when never synced).
 func (s *ExternalSync) StateOf(ctx context.Context, p Principal, ticketID string) (ExternalState, error) {
-	if !p.staff() {
+	if !p.staff() || !validUUID(ticketID) {
 		return ExternalState{}, ErrNotFound
 	}
 	st := ExternalState{Enabled: s.enabled}
@@ -248,4 +277,21 @@ func (s *ExternalSync) Retry(ctx context.Context, c Caller, p Principal, ticketI
 		return audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.external_sync_requested", TargetType: "ticket", TargetID: t.ID,
 			Actor: c.Actor, CorrelationID: c.CorrelationID})
 	})
+}
+
+func validUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if r != '-' {
+				return false
+			}
+		case !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'):
+			return false
+		}
+	}
+	return true
 }
