@@ -64,6 +64,7 @@ func seedDemo(ctx context.Context, e env) error {
 	if err != nil {
 		return err
 	}
+	ids := map[string]string{}
 	for _, p := range []struct {
 		name, mpn, ipn, category string
 		serialized, asset        bool
@@ -74,9 +75,14 @@ func seedDemo(ctx context.Context, e env) error {
 		{"Docking station", "EH-DOCK", "DOCK-1", peripherals, true, true},
 		{"Wireless mouse", "EH-MOUSE", "MOUSE-1", peripherals, false, false},
 	} {
-		if err := d.product(ctx, vendor, p.category, p.name, p.mpn, p.ipn, p.serialized, p.asset); err != nil {
+		id, err := d.product(ctx, vendor, p.category, p.name, p.mpn, p.ipn, p.serialized, p.asset)
+		if err != nil {
 			return err
 		}
+		ids[p.ipn] = id
+	}
+	if err := d.logistics(ctx, ids); err != nil {
+		return err
 	}
 	for _, item := range demoItems(laptops, monitors, peripherals) {
 		created, err := d.item(ctx, item)
@@ -125,16 +131,25 @@ func (d *demoSeeder) category(ctx context.Context, name string) (string, error) 
 	return c.ID, err
 }
 
-func (d *demoSeeder) product(ctx context.Context, manufacturerID, categoryID, name, mpn, ipn string, serialized, asset bool) error {
+// product creates a product or returns the existing one of that name.
+func (d *demoSeeder) product(ctx context.Context, manufacturerID, categoryID, name, mpn, ipn string, serialized, asset bool) (string, error) {
 	stock := !serialized
-	_, err := d.products.CreateProduct(ctx, d.pc, d.manage(), productsapp.ProductInput{
+	p, err := d.products.CreateProduct(ctx, d.pc, d.manage(), productsapp.ProductInput{
 		Name: name, ManufacturerID: &manufacturerID, CategoryID: &categoryID,
 		ManufacturerPartNumber: mpn, InternalPartNumber: ipn, Serialized: serialized, StockManaged: &stock, AssetManaged: asset,
 	})
 	if errors.Is(err, productsapp.ErrConflict) {
-		return nil
+		list, lerr := d.products.ListProducts(ctx, d.manage(), productsapp.ProductFilter{TitlePrefix: name, Page: productsapp.Page{Limit: 50}})
+		if lerr != nil {
+			return "", lerr
+		}
+		for _, x := range list.Items {
+			if x.Name == name {
+				return x.ID, nil
+			}
+		}
 	}
-	return err
+	return p.ID, err
 }
 
 // item creates a catalog item unless its key exists; it reports whether it was created.

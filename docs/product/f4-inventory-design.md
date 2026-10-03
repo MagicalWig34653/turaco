@@ -76,6 +76,6 @@ Product Variants, supplier invoices and three-way match, budgets and cost center
 
 None: no new framework, database or major dependency. The append-only trigger and the balance check constraints are documented here and in the data model.
 
-## 15. Slices
+## 15. Slices (all implemented; see [current status](current-status.md))
 
 1. Assets backend. 2. Inventory backend (warehouses, ledger, balances, reservations). 3. Procurement backend (suppliers, needs, purchase orders, approval). 4. Goods receipt. 5. UI. 6. Demo seed, reviews, PR.
