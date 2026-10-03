@@ -811,3 +811,24 @@ func TestTreeIsBoundedAndReportsTruncation(t *testing.T) {
 		t.Fatalf("truncated=%v sites=%d", tree.Truncated, len(tree.Sites))
 	}
 }
+
+func TestPublicVMsLookup(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	hv := e.newAsset("assigned")
+	vm, err := e.svc.CreateVM(ctx, e.caller(), e.manage, application.VMInput{Name: e.corr + "-lookup", VCPU: 1, MemoryMB: 1, HypervisorAssetID: &hv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := public.New(e.svc)
+	got, err := pub.VMs(ctx, []string{vm.ID, e.uuid(), "not-a-uuid"})
+	if err != nil || len(got) != 1 || got[vm.ID].Name != vm.Name || got[vm.ID].HypervisorAssetID == nil || *got[vm.ID].HypervisorAssetID != hv {
+		t.Fatalf("lookup: %+v %v", got, err)
+	}
+	if got[vm.ID].Decommissioned() {
+		t.Fatal("running VM is not decommissioned")
+	}
+	if _, err := pub.VMs(ctx, make([]string, application.MaxLookupIDs+1)); err == nil {
+		t.Fatal("lookup must be bounded")
+	}
+}
