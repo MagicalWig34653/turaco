@@ -79,6 +79,19 @@ func newEnv(t *testing.T) *env {
 	return e
 }
 
+// otherSubject returns a second subject id whose approvals are removed with the test.
+func (e *env) otherSubject() string {
+	e.t.Helper()
+	var id string
+	if err := e.pool.QueryRow(context.Background(), `SELECT uuidv7()::text`).Scan(&id); err != nil {
+		e.t.Fatal(err)
+	}
+	e.t.Cleanup(func() {
+		_, _ = e.pool.Exec(context.Background(), `DELETE FROM approvals.approvals WHERE subject_id = $1::uuid`, id)
+	})
+	return id
+}
+
 func (e *env) caller(user string) application.Caller {
 	return application.Caller{Actor: audit.UserActor(user), CorrelationID: e.corr}
 }
@@ -143,7 +156,7 @@ func TestRequestDecideAndAudit(t *testing.T) {
 func TestStepsAreUniquePerSubjectAndInOrder(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	e.request(0, nil)
+	first := e.request(0, nil)
 	err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
 		_, err := e.svc.RequestInTx(ctx, tx, e.caller(e.requester), application.RequestInput{
 			SubjectType: "service_request", SubjectID: e.subject, SubjectLabel: "x", StepIndex: 0, ApproverUserID: &e.approver,
@@ -152,6 +165,18 @@ func TestStepsAreUniquePerSubjectAndInOrder(t *testing.T) {
 	})
 	if !errors.Is(err, application.ErrConflict) {
 		t.Errorf("a repeated step: %v", err)
+	}
+	// A subject has one pending step at a time: the next step follows the decision.
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		_, err := e.svc.RequestInTx(ctx, tx, e.caller(e.requester), application.RequestInput{
+			SubjectType: "service_request", SubjectID: e.subject, SubjectLabel: "x", StepIndex: 1, ApproverUserID: &e.approver,
+		})
+		return err
+	}); !errors.Is(err, application.ErrConflict) {
+		t.Errorf("a second pending step: %v", err)
+	}
+	if _, err := e.svc.Decide(ctx, e.caller(e.approver), first.ID, "approve", "", nil); err != nil {
+		t.Fatal(err)
 	}
 	e.request(1, func(r *application.RequestInput) { r.ApproverUserID, r.ApproverTeamID = nil, &e.team })
 	list, err := e.svc.ForSubject(ctx, "service_request", e.subject)
@@ -164,7 +189,10 @@ func TestInboxFollowsAssignmentAndExclusion(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	direct := e.request(0, nil)
-	viaTeam := e.request(1, func(r *application.RequestInput) { r.ApproverUserID, r.ApproverTeamID = nil, &e.team })
+	other := e.otherSubject()
+	viaTeam := e.request(0, func(r *application.RequestInput) {
+		r.SubjectID, r.ApproverUserID, r.ApproverTeamID = other, nil, &e.team
+	})
 
 	ids := func(user, status string) map[string]bool {
 		res, err := e.svc.Inbox(ctx, user, status, application.Page{Limit: 200})
@@ -248,10 +276,10 @@ func TestCancelBySubjectAndIsApprover(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	first := e.request(0, nil)
-	e.request(1, func(r *application.RequestInput) { r.ApproverUserID, r.ApproverTeamID = nil, &e.team })
 	if _, err := e.svc.Decide(ctx, e.caller(e.approver), first.ID, "approve", "", nil); err != nil {
 		t.Fatal(err)
 	}
+	e.request(1, func(r *application.RequestInput) { r.ApproverUserID, r.ApproverTeamID = nil, &e.team })
 	var n int
 	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
 		var err error
