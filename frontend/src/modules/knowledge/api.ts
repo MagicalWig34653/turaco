@@ -18,8 +18,18 @@ registerErrorResolver((error) =>
 export type ArticleInput = { title: string; summary: string; body: string; audience: Audience };
 
 export const knowledgeApi = {
-  list: (q: string, status: ArticleStatus | '', cursor?: string, signal?: Signal, limit = 50, any = false) =>
-    api.get<Page<Article>>('/knowledge-articles', { signal, query: { q, status, limit, cursor, ...(any ? { match: 'any' } : {}) } }),
+  list: (
+    q: string,
+    status: ArticleStatus | '',
+    cursor?: string,
+    signal?: Signal,
+    limit = 50,
+    any = false,
+  ) =>
+    api.get<Page<Article>>('/knowledge-articles', {
+      signal,
+      query: { q, status, limit, cursor, ...(any ? { match: 'any' } : {}) },
+    }),
   get: (id: string, signal?: Signal) =>
     api.get<Article>(`/knowledge-articles/${enc(id)}`, { signal }),
   create: (body: ArticleInput) => api.post<Article>('/knowledge-articles', body),
