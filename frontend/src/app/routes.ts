@@ -32,6 +32,10 @@ export type RouteId =
   | 'orderDetail'
   | 'procurementRequests'
   | 'suppliers'
+  | 'myTickets'
+  | 'ticketNew'
+  | 'ticketDetail'
+  | 'ticketQueue'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -180,6 +184,17 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/procurement/suppliers',
     titleKey: 'nav.suppliers',
     requiresAny: ['procurement.view', 'procurement.manage'],
+    nav: 'logistics',
+  },
+  { id: 'myTickets', pattern: '/support', titleKey: 'nav.myTickets', nav: 'main' },
+  { id: 'ticketNew', pattern: '/support/new', titleKey: 'tickets.create.title' },
+  // The server decides who may read a ticket (reporter, affected user, tickets.view).
+  { id: 'ticketDetail', pattern: '/support/:id', titleKey: 'tickets.detail.title' },
+  {
+    id: 'ticketQueue',
+    pattern: '/service-desk',
+    titleKey: 'nav.ticketQueue',
+    requiresAny: ['tickets.view', 'tickets.manage'],
     nav: 'logistics',
   },
   {

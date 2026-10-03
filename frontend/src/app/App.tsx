@@ -39,6 +39,9 @@ import { NeedsScreen } from '../modules/procurement/NeedsScreen';
 import { OrderDetailScreen } from '../modules/procurement/OrderDetailScreen';
 import { OrdersScreen } from '../modules/procurement/OrdersScreen';
 import { SuppliersScreen } from '../modules/procurement/SuppliersScreen';
+import { TicketCreateScreen } from '../modules/tickets/TicketCreateScreen';
+import { TicketDetailScreen } from '../modules/tickets/TicketDetailScreen';
+import { TicketsScreen } from '../modules/tickets/TicketsScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
@@ -116,6 +119,14 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <NeedsScreen />;
     case 'suppliers':
       return <SuppliersScreen />;
+    case 'myTickets':
+      return <TicketsScreen scope="mine" />;
+    case 'ticketNew':
+      return <TicketCreateScreen />;
+    case 'ticketDetail':
+      return <TicketDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'ticketQueue':
+      return <TicketsScreen scope="all" />;
     case 'tasks':
       return <TasksScreen />;
     case 'taskNew':

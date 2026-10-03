@@ -16,6 +16,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myAssets',
+      'myTickets',
     ]);
     expect(ids([], 'admin')).toEqual([]);
   });
@@ -36,6 +37,7 @@ describe('visibleNavItems', () => {
         'requests',
         'approvals',
         'myAssets',
+        'myTickets',
         'tasks',
       ]);
     }
@@ -47,6 +49,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myAssets',
+      'myTickets',
     ]);
   });
 
@@ -60,6 +63,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myAssets',
+      'myTickets',
     ]);
     expect(ids(['briefing.manage'], 'main')).toEqual([
       'home',
@@ -70,6 +74,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myAssets',
+      'myTickets',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
@@ -180,5 +185,19 @@ describe('equipment and procurement', () => {
     expect(matchRoute(appRoutes, '/assets/7')?.route.id).toBe('assetDetail');
     expect(matchRoute(appRoutes, '/inventory/receipts/new')?.route.id).toBe('receiptNew');
     expect(matchRoute(appRoutes, '/procurement/orders/7')?.route.id).toBe('orderDetail');
+  });
+});
+
+describe('support', () => {
+  it('offers My tickets to everyone and the queue to ticket staff', () => {
+    expect(ids([], 'main')).toContain('myTickets');
+    expect(ids([], 'logistics')).toEqual([]);
+    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue']);
+    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue']);
+  });
+
+  it('matches the static ticket route before the parameterised one', () => {
+    expect(matchRoute(appRoutes, '/support/new')?.route.id).toBe('ticketNew');
+    expect(matchRoute(appRoutes, '/support/7')?.route.id).toBe('ticketDetail');
   });
 });

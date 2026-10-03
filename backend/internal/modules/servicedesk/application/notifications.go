@@ -17,7 +17,7 @@ import (
 func NotificationCategories() []notifications.Category {
 	cat := func(name, enSubject, enIntro, deSubject, deIntro string) notifications.Category {
 		return notifications.Category{
-			Name: name, Owner: "servicedesk", LinkType: "ticket", LinkPath: "/tickets/{id}",
+			Name: name, Owner: "servicedesk", LinkType: "ticket", LinkPath: "/support/{id}",
 			Email: map[string]notifications.EmailText{
 				"en": {Subject: enSubject, Intro: enIntro, Action: "Open ticket"},
 				"de": {Subject: deSubject, Intro: deIntro, Action: "Ticket öffnen"},
