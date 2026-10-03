@@ -98,8 +98,8 @@ type ReachQuery struct {
 	AllUsers         bool
 	// AnyGroup also selects artifacts with any group target (used when the Device's User, and so its groups, is unknown).
 	AnyGroup bool
-	AfterID          string
-	Limit            int
+	AfterID  string
+	Limit    int
 }
 
 // ViewStore is the read port of the management views.

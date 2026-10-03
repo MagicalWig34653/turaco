@@ -53,6 +53,12 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/management-filters", mgmt, h.listFilters)
 	// Device observations reveal the device: the service also requires endpoints.view or endpoints.manage.
 	route("GET /api/v1/devices/{id}/management-observations", mgmt, h.deviceObservations)
+	// Views: the service additionally checks device access (endpoints.view), organization.directory.view and assets.view where needed.
+	route("GET /api/v1/devices/{id}/management", mgmt, h.deviceManagement)
+	route("GET /api/v1/devices/{id}/management/{artifactId}/path", mgmt, h.assignmentPath)
+	route("GET /api/v1/directory-groups/{id}/management", mgmt, h.groupManagement)
+	route("GET /api/v1/users/{id}/management", mgmt, h.userManagement)
+	route("GET /api/v1/management-artifacts/{id}/targets", mgmt, h.artifactTargets)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
