@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Dialog } from '../../platform/ui/Dialog';
+import { useSession } from '../../platform/session/SessionProvider';
 import { useAsync, usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -10,6 +12,7 @@ import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
+import { orderedCounts, visibleGroupName } from './viewHelpers';
 import {
   artifactKinds,
   observationStates,
@@ -18,7 +21,12 @@ import {
   type ManagementAssignment,
   type ManagementFilter,
   type ManagementFilterFilters,
-  type ManagementObservation,
+  type DeviceManagementItem,
+  type DeviceManagementFilters,
+  type Expected,
+  type Observed,
+  type AssignedTarget,
+  type Evaluation,
 } from './types';
 
 const artifactInitial: ArtifactFilters = { kind: '', q: '', platform: '', includeDeleted: false };
@@ -196,6 +204,7 @@ export function ManagementFiltersScreen() {
 export function ManagementArtifactDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const loaded = useAsync((signal) => endpointsApi.artifact(id, signal), [id]);
+  const targets = useAsync((signal) => endpointsApi.artifactTargets(id, signal), [id]);
   if (loaded.error) return <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />;
   const artifact = loaded.data;
   if (!artifact)
@@ -295,6 +304,7 @@ export function ManagementArtifactDetailScreen({ id }: { id: string }) {
           ))}
         </dl>
       </section>
+      <TargetsSection data={targets.data} error={targets.error} reload={targets.reload} />
       <section>
         <h2>{t('management.assignments')}</h2>
         <DataTable
@@ -309,54 +319,264 @@ export function ManagementArtifactDetailScreen({ id }: { id: string }) {
   );
 }
 
-export function DeviceManagementSection({ id }: { id: string }) {
-  const { t, locale } = useI18n();
-  const list = usePagedList(
-    (cursor, signal) => endpointsApi.observations(id, cursor, signal),
-    [id],
+const resultKeys = ['applicable', 'excluded', 'not_applicable', 'unknown'];
+const stateKeys = [...observationStates, 'none'];
+const mismatches = ['assigned_not_observed', 'expected_not_applied', 'observed_not_expected'];
+const label = (t: ReturnType<typeof useI18n>['t'], prefix: string, value: string) =>
+  t(`${prefix}.${value}` as MessageKey);
+
+function ExpectedView({ value }: { value: Expected }) {
+  const { t } = useI18n();
+  return (
+    <div>
+      <Badge tone={value.result === 'applicable' ? 'success' : 'neutral'}>
+        {label(t, 'management.result', value.result)}
+      </Badge>{' '}
+      {label(t, 'management.confidence', value.confidence)}
+      <br />
+      {value.reasons.map((reason) => label(t, 'management.reason', reason)).join(', ') || '–'}
+    </div>
   );
-  const columns: Column<ManagementObservation>[] = [
+}
+function ObservedView({ value }: { value: Observed | null }) {
+  const { t, locale } = useI18n();
+  if (!value) return <span>{t('management.state.none')}</span>;
+  return (
+    <span>
+      {label(t, 'management.state', value.state)} · {value.rawStatus} · {value.source}
+      <br />
+      {formatDateTime(locale, value.observedAt)} · {formatDateTime(locale, value.lastSyncedAt)} ·{' '}
+      {t(value.stale ? 'management.stale' : 'management.fresh')}
+    </span>
+  );
+}
+function AssignedView({
+  assigned,
+  assignments,
+}: {
+  assigned: boolean;
+  assignments: AssignedTarget[];
+}) {
+  const { t } = useI18n();
+  return (
+    <div>
+      {t(assigned ? 'management.yes' : 'management.no')}
+      {assignments.map((a) => (
+        <div key={a.assignmentId}>
+          {label(t, 'management.target', a.targetKind)} · {label(t, 'management.mode', a.mode)}
+          {visibleGroupName(a.group) ? ` · ${visibleGroupName(a.group)}` : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+function EvaluationView({ value }: { value: Evaluation }) {
+  const { t } = useI18n();
+  return (
+    <div>
+      {value.shown ? (
+        <>
+          <div>
+            {t('management.evaluated')}: {value.evaluated}
+          </div>
+          <div>
+            {t('management.expected')}:{' '}
+            {orderedCounts(resultKeys, value.expected)
+              .map(({ key, count }) => `${label(t, 'management.result', key)} ${count}`)
+              .join(' · ')}
+          </div>
+          <div>
+            {t('management.observed')}:{' '}
+            {stateKeys
+              .map((k) => `${label(t, 'management.state', k)} ${value.observed[k] ?? 0}`)
+              .join(' · ')}
+          </div>
+          {value.examples.map((x) => (
+            <div key={x.deviceId}>
+              <Link to={`/devices/${encodeURIComponent(x.deviceId)}`}>{x.name}</Link> ·{' '}
+              {label(t, 'management.result', x.result)} ·{' '}
+              {label(t, 'management.confidence', x.confidence)} ·{' '}
+              {label(t, 'management.state', x.observed)}
+            </div>
+          ))}
+          {value.truncated ? <p>{t('management.truncated')}</p> : null}
+        </>
+      ) : (
+        t('management.evaluationHidden')
+      )}
+    </div>
+  );
+}
+function TargetsSection({
+  data,
+  error,
+  reload,
+}: {
+  data: Awaited<ReturnType<typeof endpointsApi.artifactTargets>> | undefined;
+  error: Parameters<typeof ApiErrorAlert>[0]['error'] | undefined;
+  reload: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <section>
+      <h2>{t('management.targets')}</h2>
+      {error ? <ApiErrorAlert error={error} onRetry={reload} /> : null}
+      {data ? (
+        <>
+          <h3>{t('management.assigned')}</h3>
+          {data.assignments.length ? (
+            data.assignments.map((a) => (
+              <p key={a.assignmentId}>
+                <AssignedView assigned assignments={[a]} />
+              </p>
+            ))
+          ) : (
+            <p>{t('management.assignmentsEmpty')}</p>
+          )}
+          <h3>{t('management.expected')}</h3>
+          <EvaluationView value={data.evaluation} />
+          <h3>{t('management.observedTotal')}</h3>
+          <p>
+            {stateKeys
+              .map((k) => `${label(t, 'management.state', k)} ${data.observedTotal[k] ?? 0}`)
+              .join(' · ')}
+          </p>
+        </>
+      ) : null}
+    </section>
+  );
+}
+function WhyDialog({
+  deviceId,
+  artifactId,
+  onClose,
+}: {
+  deviceId: string;
+  artifactId: string;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const loaded = useAsync(
+    (signal) => endpointsApi.assignmentPath(deviceId, artifactId, signal),
+    [deviceId, artifactId],
+  );
+  return (
+    <Dialog title={t('management.why')} onClose={onClose} wide>
+      {loaded.error ? <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} /> : null}
+      {loaded.data ? (
+        <>
+          <ExpectedView value={loaded.data.expected} />
+          <ol>
+            {loaded.data.path.map((step, i) => (
+              <li key={i}>
+                {label(t, 'management.step', step.kind)}
+                {visibleGroupName(step.group) ? ` · ${visibleGroupName(step.group)}` : ''}
+                {step.targetKind ? ` · ${label(t, 'management.target', step.targetKind)}` : ''}
+                {step.mode ? ` · ${label(t, 'management.mode', step.mode)}` : ''}
+                {step.filterResult ? ` · ${step.filterResult}` : ''}
+                {step.result ? ` · ${label(t, 'management.result', step.result)}` : ''}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+      <button type="button" onClick={onClose}>
+        {t('action.close')}
+      </button>
+    </Dialog>
+  );
+}
+export function DeviceManagementSection({ id }: { id: string }) {
+  const { t } = useI18n();
+  const [filters, setFilters] = useState<DeviceManagementFilters>({
+    kind: '',
+    state: '',
+    mismatch: '',
+  });
+  const [why, setWhy] = useState<string | null>(null);
+  const summary = useAsync(
+    (signal) => endpointsApi.deviceManagement(id, filters, undefined, signal),
+    [id, filters],
+  );
+  const list = usePagedList(
+    (cursor, signal) => endpointsApi.deviceManagement(id, filters, cursor, signal),
+    [id, filters],
+  );
+  const columns: Column<DeviceManagementItem>[] = [
     {
       key: 'artifact',
       header: t('management.artifact'),
-      render: (o) => (
-        <Link to={`/management-artifacts/${encodeURIComponent(o.artifactId)}`}>
-          {o.artifactName}
+      render: (x) => (
+        <Link to={`/management-artifacts/${encodeURIComponent(x.artifact.id)}`}>
+          {x.artifact.name}
         </Link>
       ),
     },
     {
-      key: 'state',
-      header: t('management.state'),
-      render: (o) => (
-        <Badge
-          tone={
-            o.normalizedState === 'applied'
-              ? 'success'
-              : o.normalizedState === 'failed' || o.normalizedState === 'conflict'
-                ? 'danger'
-                : 'neutral'
-          }
-        >
-          {t(`management.state.${o.normalizedState}` as MessageKey)}
-        </Badge>
+      key: 'assigned',
+      header: t('management.assigned'),
+      render: (x) => <AssignedView assigned={x.assigned} assignments={x.assignments} />,
+    },
+    {
+      key: 'expected',
+      header: t('management.expected'),
+      render: (x) => (
+        <>
+          <ExpectedView value={x.expected} />
+          <button type="button" onClick={() => setWhy(x.artifact.id)}>
+            {t('management.why')}
+          </button>
+        </>
       ),
     },
-    { key: 'raw', header: t('management.rawStatus'), render: (o) => o.rawStatus },
     {
       key: 'observed',
-      header: t('endpoints.observedAt'),
-      render: (o) => formatDateTime(locale, o.observedAt),
+      header: t('management.observed'),
+      render: (x) => <ObservedView value={x.observed} />,
+    },
+    {
+      key: 'mismatch',
+      header: t('management.mismatch'),
+      render: (x) => (x.mismatch ? label(t, 'management.mismatch', x.mismatch) : '–'),
     },
   ];
   return (
     <section>
       <h2>{t('management.section')}</h2>
+      <div className="filters">
+        <Select
+          label={t('management.kind')}
+          value={filters.kind}
+          onChange={(e) => setFilters({ ...filters, kind: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...artifactKinds.map((k) => ({ value: k, label: label(t, 'management.kind', k) })),
+          ]}
+        />
+        <Select
+          label={t('management.observed')}
+          value={filters.state}
+          onChange={(e) => setFilters({ ...filters, state: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...stateKeys.map((k) => ({ value: k, label: label(t, 'management.state', k) })),
+          ]}
+        />
+        <Select
+          label={t('management.mismatch')}
+          value={filters.mismatch}
+          onChange={(e) => setFilters({ ...filters, mismatch: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...mismatches.map((k) => ({ value: k, label: label(t, 'management.mismatch', k) })),
+          ]}
+        />
+      </div>
       <DataTable
         caption={t('management.section')}
         columns={columns}
         rows={list.items}
-        rowKey={(o) => o.id}
+        rowKey={(x) => x.artifact.id}
         loading={list.loading}
         error={list.error}
         onRetry={list.reload}
@@ -366,6 +586,133 @@ export function DeviceManagementSection({ id }: { id: string }) {
         loadMoreError={list.loadMoreError}
         onLoadMore={list.loadMore}
       />
+      {summary.data?.truncated ? <p>{t('management.truncated')}</p> : null}
+      {why ? <WhyDialog deviceId={id} artifactId={why} onClose={() => setWhy(null)} /> : null}
     </section>
+  );
+}
+export function DirectoryGroupManagementScreen({ id }: { id: string }) {
+  const { t } = useI18n();
+  const summary = useAsync((signal) => endpointsApi.groupManagement(id, undefined, signal), [id]);
+  const list = usePagedList(
+    (cursor, signal) => endpointsApi.groupManagement(id, cursor, signal),
+    [id],
+  );
+  return (
+    <>
+      <PageHeader title={summary.data?.name ?? t('management.groupPage')} />
+      {summary.data ? (
+        <p>
+          {t('management.candidateDevices')}: {summary.data.candidateDevices}
+          {summary.data.candidatesTruncated ? ` · ${t('management.truncated')}` : ''}
+        </p>
+      ) : null}
+      <DataTable
+        caption={t('management.groupPage')}
+        rows={list.items}
+        rowKey={(x) => x.artifact.id}
+        columns={[
+          {
+            key: 'artifact',
+            header: t('management.artifact'),
+            render: (x) => (
+              <Link to={`/management-artifacts/${encodeURIComponent(x.artifact.id)}`}>
+                {x.artifact.name}
+              </Link>
+            ),
+          },
+          {
+            key: 'assigned',
+            header: t('management.assigned'),
+            render: (x) => (
+              <AssignedView assigned={x.assignments.length > 0} assignments={x.assignments} />
+            ),
+          },
+          {
+            key: 'evaluation',
+            header: t('management.expected'),
+            render: (x) => <EvaluationView value={x.evaluation} />,
+          },
+        ]}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('management.artifactsEmpty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
+    </>
+  );
+}
+export function UserManagementScreen({ id }: { id: string }) {
+  const { t } = useI18n();
+  const { can } = useSession();
+  const summary = useAsync((signal) => endpointsApi.userManagement(id, undefined, signal), [id]);
+  const list = usePagedList(
+    (cursor, signal) => endpointsApi.userManagement(id, cursor, signal),
+    [id],
+  );
+  return (
+    <>
+      <PageHeader title={summary.data?.name ?? t('management.userPage')} />
+      {summary.data && !summary.data.devicesShown ? (
+        <p>{t('management.evaluationHidden')}</p>
+      ) : null}
+      {summary.data?.devicesTruncated ? <p>{t('management.truncated')}</p> : null}
+      <DataTable
+        caption={t('management.userPage')}
+        rows={list.items}
+        rowKey={(x) => x.artifact.id}
+        columns={[
+          {
+            key: 'artifact',
+            header: t('management.artifact'),
+            render: (x) => (
+              <Link to={`/management-artifacts/${encodeURIComponent(x.artifact.id)}`}>
+                {x.artifact.name}
+              </Link>
+            ),
+          },
+          {
+            key: 'assigned',
+            header: t('management.assigned'),
+            render: (x) => (
+              <AssignedView assigned={x.targeting.length > 0} assignments={x.targeting} />
+            ),
+          },
+          {
+            key: 'userResult',
+            header: t('management.expected'),
+            render: (x) => label(t, 'management.result', x.userResult),
+          },
+          {
+            key: 'devices',
+            header: t('management.devices'),
+            render: (x) =>
+              x.devices.map((d) => (
+                <div key={d.deviceId}>
+                  {can('endpoints.view') || can('endpoints.manage') ? (
+                    <Link to={`/devices/${encodeURIComponent(d.deviceId)}`}>{d.name}</Link>
+                  ) : (
+                    d.name
+                  )}
+                  <ExpectedView value={d.expected} />
+                  <ObservedView value={d.observed} />
+                </div>
+              )),
+          },
+        ]}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('management.artifactsEmpty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
+    </>
   );
 }
