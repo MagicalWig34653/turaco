@@ -65,6 +65,8 @@ type MajorStore interface {
 	SubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
 	UnsubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
 	Subscribers(ctx context.Context, tx pgx.Tx, id string) ([]string, error)
+	// MajorTitle returns "reference · title" of an incident, or ErrNotFound.
+	MajorTitle(ctx context.Context, tx pgx.Tx, id string) (string, error)
 	// LinkTicketTx attaches a ticket (once); it reports the ticket's reporter and affected users.
 	LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (reporter, affected string, err error)
 }
@@ -316,6 +318,10 @@ func (s *MajorService) LinkTicket(ctx context.Context, c Caller, manage bool, id
 		if err != nil {
 			return err
 		}
+		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.major_incident_linked", TargetType: "ticket", TargetID: ticketID,
+			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"majorIncidentId": id}}); err != nil {
+			return err
+		}
 		for _, u := range []string{reporter, affected} {
 			if err := s.store.SubscribeTx(ctx, tx, id, u); err != nil {
 				return err
@@ -334,16 +340,18 @@ func (s *MajorService) Subscribe(ctx context.Context, c Caller, user string, id 
 	if user == "" {
 		return ErrForbidden
 	}
+	// Following is a personal preference: no row lock, so a rush of subscribers during an
+	// outage does not queue up behind the staff's status updates.
+	cur, err := s.store.GetMajor(ctx, id, user)
+	if err != nil {
+		return err
+	}
+	if on && !cur.Active() {
+		return &InvalidTransitionError{Operation: "subscribe", From: cur.Status}
+	}
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.store.LockMajorTx(ctx, tx, id)
-		if err != nil {
-			return err
-		}
 		if !on {
 			return s.store.UnsubscribeTx(ctx, tx, id, user)
-		}
-		if !cur.Active() {
-			return &InvalidTransitionError{Operation: "subscribe", From: cur.Status}
 		}
 		return s.store.SubscribeTx(ctx, tx, id, user)
 	})

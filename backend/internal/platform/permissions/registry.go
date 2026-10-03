@@ -38,7 +38,7 @@ var Registry = []Permission{
 	{Name: "knowledge.manage", Description: "Write, publish and retire knowledge articles and read drafts and retired articles.", Risk: "elevated"},
 	{Name: "majorincidents.manage", Description: "Declare Major Incidents, post public status updates, move them through their lifecycle and link tickets.", Risk: "elevated"},
 	{Name: "tickets.view", Description: "View all tickets and their internal comments. Every signed-in user can raise tickets and read their own.", Risk: "normal"},
-	{Name: "tickets.manage", Description: "Work tickets: assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "normal"},
+	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
 	{Name: "remote_support.start", Description: "Start a future remote-support session when enabled by policy.", Risk: "high"},

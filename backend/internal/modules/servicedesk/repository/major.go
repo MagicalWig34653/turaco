@@ -134,8 +134,8 @@ func (r *Repository) Updates(ctx context.Context, id string) ([]application.Majo
 	if !validUUID(id) {
 		return []application.MajorUpdate{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT id::text, author_user_id::text, status, body, created_at FROM servicedesk.major_incident_updates
-		WHERE major_incident_id = $1::uuid ORDER BY id LIMIT 500`, id)
+	rows, err := r.pool.Query(ctx, `SELECT * FROM (SELECT id::text, author_user_id::text, status, body, created_at FROM servicedesk.major_incident_updates
+		WHERE major_incident_id = $1::uuid ORDER BY id DESC LIMIT 500) newest ORDER BY id`, id)
 	if err != nil {
 		return nil, fmt.Errorf("list major incident updates: %w", err)
 	}
@@ -189,7 +189,8 @@ func (r *Repository) LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticke
 	var reporter, affected string
 	err := tx.QueryRow(ctx, `
 		UPDATE servicedesk.tickets SET major_incident_id = $1::uuid, version = version + 1, updated_at = now()
-		WHERE id = $2::uuid RETURNING reporter_user_id::text, affected_user_id::text`, majorID, ticketID).Scan(&reporter, &affected)
+		WHERE id = $2::uuid AND status NOT IN ('closed', 'cancelled') AND (major_incident_id IS NULL OR major_incident_id = $1::uuid)
+		RETURNING reporter_user_id::text, affected_user_id::text`, majorID, ticketID).Scan(&reporter, &affected)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", application.ErrNotFound
 	}
@@ -197,4 +198,16 @@ func (r *Repository) LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticke
 		return "", "", fmt.Errorf("link ticket: %w", err)
 	}
 	return reporter, affected, nil
+}
+
+func (r *Repository) MajorTitle(ctx context.Context, tx pgx.Tx, id string) (string, error) {
+	var title string
+	err := tx.QueryRow(ctx, `SELECT reference || ' · ' || title FROM servicedesk.major_incidents WHERE id = $1::uuid`, id).Scan(&title)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", application.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("major incident title: %w", err)
+	}
+	return title, nil
 }

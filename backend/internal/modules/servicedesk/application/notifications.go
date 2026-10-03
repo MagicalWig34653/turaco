@@ -191,11 +191,11 @@ func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, 
 	if err != nil || len(subs) == 0 {
 		return err
 	}
-	var title string
-	if err := tx.QueryRow(ctx, `SELECT reference || ' · ' || title FROM servicedesk.major_incidents WHERE id = $1::uuid`, p.ID).Scan(&title); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
+	title, err := c.store.MajorTitle(ctx, tx, p.ID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("load incident title: %w", err)
 	}
 	var ids []string

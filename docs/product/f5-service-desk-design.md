@@ -38,3 +38,15 @@ Ticket text is user-authored and untrusted (safetext, escaped rendering, no HTML
 ## ADR
 
 None expected; the Autotask adapter follows the existing integration rules.
+
+## Review outcomes and known limitations (part 1, 2026-10-03)
+
+Fixed after the security review: a device can only be attached when the affected User holds it (staff included), so ticket handling cannot read arbitrary assets; a conversation is capped at 300 comments and the newest 500 comments or incident updates are returned; the queue and assignee are redacted in every employee response and cannot be probed through filters; linking a ticket to a Major Incident refuses closed tickets and tickets that belong to another incident and is audited on the ticket; following an incident takes no row lock; a published article's audience can only change through retire and publish; `tickets.manage` is now an elevated permission and also implies reading all tickets.
+
+Accepted limitations:
+
+- A ticket can be assigned to any active User; a User without ticket permissions would be notified but cannot open it. Assign only to people who work tickets.
+- `majorincidents.manage` can link any open ticket to an incident without holding ticket permissions.
+- Incident subscribers beyond the first 5000 are not notified; subscribing is not audited (a personal preference).
+- Roles that already granted `tickets.view` now read all tickets and internal comments; review role assignments when upgrading.
+- There is no rate limit or idempotency key on ticket creation.

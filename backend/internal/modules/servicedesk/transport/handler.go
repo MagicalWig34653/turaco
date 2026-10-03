@@ -57,6 +57,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
 	case errors.Is(err, application.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "tickets.version_conflict", "The ticket was changed by someone else; reload and try again.")
+	case errors.Is(err, application.ErrCommentLimit):
+		httpx.WriteError(w, http.StatusConflict, "tickets.comment_limit", "This ticket has reached the comment limit.")
 	case errors.Is(err, application.ErrUserInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.user_invalid", "The user does not exist or is not active.")
 	case errors.Is(err, application.ErrTeamInvalid):

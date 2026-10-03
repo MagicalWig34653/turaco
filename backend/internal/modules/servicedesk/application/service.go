@@ -147,11 +147,9 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 		return Ticket{}, ErrUserInvalid
 	}
 	if in.AssetID != nil {
-		holder := t.AffectedUserID
-		if p.Manage {
-			holder = ""
-		}
-		snap, err := s.device.Snapshot(ctx, *in.AssetID, holder)
+		// Everybody, staff included, can only attach a device the affected User holds: ticket
+		// handling must not become a way to read arbitrary assets.
+		snap, err := s.device.Snapshot(ctx, *in.AssetID, t.AffectedUserID)
 		if err != nil {
 			return Ticket{}, ErrDeviceInvalid
 		}
@@ -263,6 +261,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		out, err = s.store.UpdateTx(ctx, tx, next)
 		if err != nil {
 			return err
+		}
+		if !p.staff() {
+			defer func() { out.QueueTeamID = nil }()
 		}
 		meta := map[string]any{"operation": op}
 		if op == OpWait || op == OpReopen || op == OpCancel {
@@ -496,6 +497,10 @@ func (s *Service) List(ctx context.Context, p Principal, all bool, f Filter) (Re
 		}
 	} else {
 		f.UserID = p.UserID
+		if !p.staff() {
+			// Routing is not visible to employees, so it cannot be probed through filters either.
+			f.QueueID, f.AssigneeID = "", ""
+		}
 	}
 	f.Page = f.Page.Normalize()
 	res, err := s.store.List(ctx, f)

@@ -40,6 +40,8 @@ const (
 	maxTitle     = 200
 	maxText      = 5000
 	maxReason    = 500
+	// MaxComments bounds a ticket's conversation so it stays readable and cannot be flooded.
+	MaxComments = 300
 )
 
 // Ticket is a tracked support record.
@@ -112,6 +114,7 @@ var (
 	ErrVersionConflict = errors.New("servicedesk: version conflict")
 	ErrUserInvalid     = errors.New("servicedesk: user does not exist or is not active")
 	ErrTeamInvalid     = errors.New("servicedesk: team does not exist or is not active")
+	ErrCommentLimit    = errors.New("servicedesk: this ticket has reached the comment limit")
 	ErrDeviceInvalid   = errors.New("servicedesk: the device does not exist or is not assigned to the affected user")
 )
 

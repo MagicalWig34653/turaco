@@ -171,8 +171,13 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {
 	err := tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal) VALUES ($1::uuid, $2::uuid, $3, $4)
-		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal).Scan(&c.ID, &c.CreatedAt)
+		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal)
+		SELECT $1::uuid, $2::uuid, $3, $4
+		WHERE (SELECT count(*) FROM servicedesk.ticket_comments WHERE ticket_id = $1::uuid) < $5
+		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal, application.MaxComments).Scan(&c.ID, &c.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Comment{}, application.ErrCommentLimit
+	}
 	if err != nil {
 		return application.Comment{}, fmt.Errorf("insert comment: %w", err)
 	}
@@ -184,8 +189,10 @@ func (r *Repository) Comments(ctx context.Context, ticketID string, includeInter
 		return []application.Comment{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at FROM servicedesk.ticket_comments
-		WHERE ticket_id = $1::uuid AND ($2 OR NOT internal) ORDER BY id LIMIT 500`, ticketID, includeInternal)
+		SELECT * FROM (
+			SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at FROM servicedesk.ticket_comments
+			WHERE ticket_id = $1::uuid AND ($2 OR NOT internal) ORDER BY id DESC LIMIT 500
+		) newest ORDER BY created_at, id`, ticketID, includeInternal)
 	if err != nil {
 		return nil, fmt.Errorf("list comments: %w", err)
 	}

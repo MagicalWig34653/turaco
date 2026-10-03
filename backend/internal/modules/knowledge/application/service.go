@@ -156,6 +156,11 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 			out = cur
 			return nil
 		}
+		if cur.Status == StatusPublished && cur.Audience != in.Audience {
+			// Widening or narrowing who can read a live article is a publication decision: retire it,
+			// change the audience and publish it again.
+			return &InvalidTransitionError{Operation: "change_audience", From: cur.Status}
+		}
 		next.Title, next.Summary, next.Body, next.Audience = in.Title, in.Summary, in.Body, in.Audience
 		out, err = s.store.UpdateTx(ctx, tx, next)
 		if err != nil {

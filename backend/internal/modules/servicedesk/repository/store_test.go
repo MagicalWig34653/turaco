@@ -309,3 +309,46 @@ func TestCancelRulesAndConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestStaffCannotReadForeignDevicesCommentCapAndRedaction(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	// Staff raising a ticket for alice may only attach alice's device, not bob's.
+	if _, err := e.svc.Create(ctx, e.c(e.agent), e.staff(), application.CreateInput{Title: "x", AffectedUserID: &e.alice, AssetID: &e.otherBook}); !errors.Is(err, application.ErrDeviceInvalid) {
+		t.Errorf("staff attaching someone else's device: %v", err)
+	}
+	if _, err := e.svc.Create(ctx, e.c(e.agent), e.staff(), application.CreateInput{Title: "x", AffectedUserID: &e.alice, AssetID: &e.myBook}); err != nil {
+		t.Errorf("staff attaching the affected user's device: %v", err)
+	}
+	tk := e.raise()
+	if _, err := e.svc.Assign(ctx, e.c(e.agent), e.staff(), tk.ID, nil, nil, &e.team); err != nil {
+		t.Fatal(err)
+	}
+	// The queue stays hidden in every response an employee gets.
+	closed, err := e.op(tk, e.user(), "cancel", "not needed")
+	if err != nil || closed.QueueTeamID != nil {
+		t.Errorf("cancel response leaks the queue: %+v %v", closed, err)
+	}
+	probe, err := e.svc.List(ctx, e.user(), false, application.Filter{QueueID: e.team})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range probe.Items {
+		if x.QueueTeamID != nil {
+			t.Error("list leaks the queue")
+		}
+	}
+	// A conversation is capped.
+	t2 := e.raise()
+	for i := 0; i < application.MaxComments; i++ {
+		if _, err := e.svc.AddComment(ctx, e.c(e.alice), e.user(), t2.ID, "again", false); err != nil {
+			t.Fatalf("comment %d: %v", i, err)
+		}
+	}
+	if _, err := e.svc.AddComment(ctx, e.c(e.alice), e.user(), t2.ID, "one more", false); !errors.Is(err, application.ErrCommentLimit) {
+		t.Errorf("comment above the cap: %v", err)
+	}
+	if _, err := e.svc.AddComment(ctx, e.c(e.agent), e.staff(), t2.ID, "staff can no longer answer either", false); !errors.Is(err, application.ErrCommentLimit) {
+		t.Errorf("the cap holds for staff too: %v", err)
+	}
+}

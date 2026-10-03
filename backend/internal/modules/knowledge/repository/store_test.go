@@ -118,6 +118,10 @@ func TestArticleLifecycleVisibilityAndSearch(t *testing.T) {
 	if _, err := svc.Update(ctx, c(editor), manage, public.ID, 2, application.Input{Title: "x", Body: "y"}); !errors.Is(err, application.ErrVersionConflict) {
 		t.Errorf("stale update: %v", err)
 	}
+	// Changing who can read a live article needs a new publication.
+	if _, err := svc.Update(ctx, c(editor), manage, public.ID, 3, application.Input{Title: tag + " Connect to guest wifi", Body: "Updated steps.", Audience: "internal"}); !errors.As(err, &tr) {
+		t.Errorf("narrowing the audience of a published article: %v", err)
+	}
 	if _, err := svc.Retire(ctx, c(editor), manage, public.ID, nil); err != nil {
 		t.Fatal(err)
 	}
