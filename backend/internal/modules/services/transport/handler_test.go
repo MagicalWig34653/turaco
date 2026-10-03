@@ -79,6 +79,8 @@ func (infra) VMs(_ context.Context, ids []string) (map[string]application.VMInfo
 	return out, nil
 }
 
+func (infra) VMIDsWithHypervisor(context.Context, string, int) ([]string, error) { return nil, nil }
+
 type assets struct{}
 
 func (assets) Assets(_ context.Context, ids []string) (map[string]application.AssetInfo, error) {
@@ -182,7 +184,8 @@ func TestPermissionsAndNotFound(t *testing.T) {
 }
 
 func TestServiceFlowAndImpactRedaction(t *testing.T) {
-	h := serve(t, as(admin, "services.manage"))
+	h := serve(t, as(admin, "services.manage", "infrastructure.view"))
+	manageOnly := serve(t, as(admin, "services.manage"))
 	code, b := call(t, h, "POST", "/api/v1/services", map[string]any{"name": "http-Billing", "criticality": "high", "ownerUserId": admin, "description": "Invoices"})
 	if code != http.StatusCreated || b["reference"] == nil || b["version"].(float64) != 1 {
 		t.Fatalf("create: %d %v", code, b)
@@ -216,9 +219,9 @@ func TestServiceFlowAndImpactRedaction(t *testing.T) {
 	if code != http.StatusCreated || l["confidence"] != "declared" {
 		t.Fatalf("add dependency: %d %v", code, l)
 	}
-	// The manage-only caller has no infrastructure.view: the VM name stays hidden.
-	if node := l["node"].(map[string]any); node["name"] != nil || node["id"] != vmID {
-		t.Fatalf("redacted node: %v", node)
+	// A caller without infrastructure.view cannot add a VM dependency (and cannot probe which VMs exist).
+	if code, b := call(t, manageOnly, "POST", "/api/v1/services/"+id+"/dependencies", dep); code != http.StatusBadRequest || errCode(b) != "services.invalid_reference" {
+		t.Fatalf("add vm without infrastructure.view: %d %v", code, b)
 	}
 	if code, _ := call(t, h, "POST", "/api/v1/services/"+id+"/dependencies", dep); code != http.StatusOK {
 		t.Fatalf("duplicate dependency: %d", code)
@@ -247,9 +250,32 @@ func TestServiceFlowAndImpactRedaction(t *testing.T) {
 	if code != http.StatusOK || len(deps) != 1 || len(dependents) != 1 || dependents[0].(map[string]any)["node"].(map[string]any)["name"] != "http-Portal" {
 		t.Fatalf("detail: %d %v", code, d)
 	}
+	// Without infrastructure.view the VM is shown under a placeholder id, with no name, and its real id appears nowhere.
+	code, d = call(t, manageOnly, "GET", "/api/v1/services/"+id, nil)
+	node := d["dependencies"].([]any)[0].(map[string]any)["node"].(map[string]any)
+	if code != http.StatusOK || node["id"] != "hidden-1" || node["hidden"] != true || node["name"] != nil || node["type"] != "vm" {
+		t.Fatalf("hidden dependency node: %d %v", code, node)
+	}
+	if raw, _ := json.Marshal(d); strings.Contains(string(raw), vmID) {
+		t.Fatalf("real vm id leaked: %s", raw)
+	}
 	// Impact of the VM needs infrastructure.view: manage-only gets 404, a full reader sees names.
-	if code, _ := call(t, h, "GET", "/api/v1/impact?type=vm&id="+vmID, nil); code != http.StatusNotFound {
+	if code, _ := call(t, manageOnly, "GET", "/api/v1/impact?type=vm&id="+vmID, nil); code != http.StatusNotFound {
 		t.Fatalf("impact without infrastructure.view: %d", code)
+	}
+	// Paging the dependencies of a service.
+	code, pg := call(t, h, "GET", "/api/v1/services/"+id+"/dependencies?direction=out&limit=1", nil)
+	if code != http.StatusOK || len(pg["items"].([]any)) != 1 || pg["nextCursor"] != nil {
+		t.Fatalf("dependencies page: %d %v", code, pg)
+	}
+	if code, pg = call(t, h, "GET", "/api/v1/services/"+id+"/dependencies?direction=in", nil); code != http.StatusOK || len(pg["items"].([]any)) != 1 {
+		t.Fatalf("dependents page: %d %v", code, pg)
+	}
+	if code, _ := call(t, h, "GET", "/api/v1/services/"+id+"/dependencies?direction=sideways", nil); code != http.StatusBadRequest {
+		t.Fatalf("bad direction: %d", code)
+	}
+	if code, b := call(t, h, "GET", "/api/v1/services/"+id+"/dependencies?cursor=nope", nil); code != http.StatusBadRequest || errCode(b) != "services.invalid_cursor" {
+		t.Fatalf("bad cursor: %d %v", code, b)
 	}
 	full := serve(t, as(admin, "services.view", "infrastructure.view", "assets.view"))
 	code, imp := call(t, full, "GET", "/api/v1/impact?type=vm&id="+vmID, nil)
@@ -305,4 +331,10 @@ func TestServiceFlowAndImpactRedaction(t *testing.T) {
 	if strings.Contains(list["items"].([]any)[0].(map[string]any)["name"].(string), "secret") {
 		t.Fatal("unexpected content")
 	}
+}
+
+func errCode(b map[string]any) string {
+	e, _ := b["error"].(map[string]any)
+	c, _ := e["code"].(string)
+	return c
 }

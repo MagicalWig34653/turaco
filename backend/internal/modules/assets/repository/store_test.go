@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
+	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/assets/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
@@ -498,5 +500,23 @@ func TestUserHoldersAndHeldAssets(t *testing.T) {
 	more := e.mustOp(mk("h2"), application.OpAssign, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
 	if got, err := repo.AssetsHeldByUsers(ctx, []string{e.holder}, 1); err != nil || len(got[e.holder]) != 1 {
 		t.Fatalf("limit 1 = %v, %v (asset %s)", got, err, more.ID)
+	}
+}
+
+func TestAssetsByIDsIsBoundedAndTolerant(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := e.create(application.CreateInput{ProductID: e.laptop, SerialNumber: "bi1" + e.corr, AssetTag: "TBI1" + e.corr, Status: "received"})
+	b := e.create(application.CreateInput{ProductID: e.laptop, SerialNumber: "bi2" + e.corr, AssetTag: "TBI2" + e.corr, Status: "received"})
+	pub := assetspublic.New(e.svc)
+	got, err := pub.AssetsByIDs(ctx, []string{a.ID, strings.ToUpper(b.ID), "not-a-uuid", "00000000-0000-7000-8000-000000000001"})
+	if err != nil || len(got) != 2 || got[a.ID].Reference != a.Reference || got[b.ID].ID != b.ID {
+		t.Fatalf("lookup: %+v %v", got, err)
+	}
+	if got, err := pub.AssetsByIDs(ctx, nil); err != nil || len(got) != 0 {
+		t.Fatalf("empty lookup: %+v %v", got, err)
+	}
+	if _, err := pub.AssetsByIDs(ctx, make([]string, application.MaxLookupIDs+1)); err == nil {
+		t.Fatal("lookup must be bounded")
 	}
 }

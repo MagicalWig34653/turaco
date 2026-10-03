@@ -28,15 +28,21 @@ const (
 	RelRunsOn    = "RUNS_ON"
 )
 
+// RelationshipOwner owns every triple of this module in the relationship
+// registry. Other modules that later write DEPENDS_ON must go through the
+// Services application and take the dependency graph lock (Store.LockDependencyGraphTx)
+// for service-to-service links, or cycles become possible.
+const RelationshipOwner = "services"
+
 // Triples are the relationships this module registers: a Service depends on
 // another Service, a Virtual Machine, an Asset or a Location (Site); a Virtual
 // Machine runs on an Asset (its hypervisor).
 var Triples = []relationships.Triple{
-	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeService},
-	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeVM},
-	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeAsset},
-	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeLocation},
-	{SourceType: NodeVM, Type: RelRunsOn, TargetType: NodeAsset},
+	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeService, Owner: RelationshipOwner},
+	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeVM, Owner: RelationshipOwner},
+	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeAsset, Owner: RelationshipOwner},
+	{SourceType: NodeService, Type: RelDependsOn, TargetType: NodeLocation, Owner: RelationshipOwner},
+	{SourceType: NodeVM, Type: RelRunsOn, TargetType: NodeAsset, Owner: RelationshipOwner},
 }
 
 // DependencyTargets are the record types a Service may depend on.
@@ -154,6 +160,10 @@ type NodeInfo struct {
 	Status      *string
 	Criticality *string
 	Missing     bool
+	// Hidden means the caller may not see records of this type: ID is an opaque
+	// placeholder (hidden-1, ...), stable within one response, and nothing but
+	// Type is filled in.
+	Hidden bool
 }
 
 // Link is one dependency edge with the record on its other end.
@@ -165,15 +175,23 @@ type Link struct {
 	Node           NodeInfo
 }
 
-// Detail is a Service with its dependencies and dependents (at most
-// MaxDependencyList each; the flags say when more exist).
+// Detail is a Service with its dependencies and dependents (the first
+// MaxDependencyList of each; a next cursor says when more exist and is used with
+// ListDependencies).
 type Detail struct {
-	Service            Service
-	Dependencies       []Link
-	Dependents         []Link
-	DependenciesCutOff bool
-	DependentsCutOff   bool
+	Service          Service
+	Dependencies     []Link
+	Dependents       []Link
+	DependenciesNext string
+	DependentsNext   string
 }
+
+// Directions of ListDependencies: Out lists the dependencies of the Service,
+// In the Services that depend on it.
+const (
+	DepOut = "out"
+	DepIn  = "in"
+)
 
 // PathEdge is one step on the path from the start of an impact walk.
 type PathEdge struct {
@@ -224,6 +242,17 @@ type ImpactResult struct {
 	NodeLimited  bool
 }
 
+// hides reports that the caller may not see records of the type.
+func (p Principal) hides(nodeType string) bool {
+	switch nodeType {
+	case NodeVM, NodeLocation:
+		return !p.InfraView
+	case NodeAsset:
+		return !p.AssetsView
+	}
+	return false
+}
+
 // Principal is the caller's authority. View/Manage are services.view and
 // services.manage. InfraView (infrastructure.view|manage) shows names of
 // Virtual Machines and Locations, AssetsView (assets.view|manage) Asset
@@ -271,6 +300,10 @@ var (
 	ErrReferenceInvalid = errors.New("services: referenced record does not exist or is not usable")
 	ErrDependencyCycle  = errors.New("services: the dependency would create a cycle")
 	ErrCycleCheck       = errors.New("services: the dependency graph is too large to check for cycles")
+	// ErrBusy means another dependency change held the dependency graph lock too long; retry.
+	ErrBusy = errors.New("services: the dependency graph is busy")
+	// ErrImpactBusy means the caller already has an impact traversal running.
+	ErrImpactBusy = errors.New("services: an impact traversal is already running for this user")
 )
 
 // InvalidInputError carries a user-safe validation message.
@@ -326,6 +359,8 @@ func (v VMInfo) Decommissioned() bool { return v.State == "decommissioned" }
 // Infrastructure is what Services asks the Infrastructure module (public contract).
 type Infrastructure interface {
 	VMs(ctx context.Context, ids []string) (map[string]VMInfo, error)
+	// VMIDsWithHypervisor lists ids (ascending, after afterID) of Virtual Machines that have a hypervisor Asset.
+	VMIDsWithHypervisor(ctx context.Context, afterID string, limit int) ([]string, error)
 }
 
 // AssetInfo is what Services needs to know about an Asset.
@@ -358,6 +393,8 @@ type Store interface {
 
 	InsertTx(ctx context.Context, tx pgx.Tx, s Service) (Service, error)
 	LockTx(ctx context.Context, tx pgx.Tx, id string) (Service, error)
+	// ShareLockTx reads a Service with FOR SHARE: it cannot be changed (retired) until the transaction ends.
+	ShareLockTx(ctx context.Context, tx pgx.Tx, id string) (Service, error)
 	UpdateTx(ctx context.Context, tx pgx.Tx, s Service) (Service, error)
 	// LockDependencyGraphTx serializes service-to-service dependency changes
 	// until the transaction ends, so two concurrent additions cannot close a cycle.

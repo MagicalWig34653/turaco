@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 )
@@ -14,8 +15,11 @@ import (
 // checkTarget verifies that the record a Service wants to depend on exists
 // and can still be depended on, and returns its normalized (lower-case) id.
 // Existence is checked through the owning modules' public contracts. A failing
-// lookup is an internal error, an unusable target ErrReferenceInvalid.
-func (s *App) checkTarget(ctx context.Context, serviceID, targetType, targetID string) (string, error) {
+// lookup is an internal error, an unusable target ErrReferenceInvalid. A target
+// of a type the caller may not see (Virtual Machine and Location need
+// infrastructure.view, Asset assets.view) is ErrReferenceInvalid without any
+// lookup, so adding a dependency never confirms hidden records exist.
+func (s *App) checkTarget(ctx context.Context, p Principal, serviceID, targetType, targetID string) (string, error) {
 	if !oneOf(targetType, DependencyTargets) {
 		return "", invalid("targetType must be one of %s", strings.Join(DependencyTargets, ", "))
 	}
@@ -23,6 +27,9 @@ func (s *App) checkTarget(ctx context.Context, serviceID, targetType, targetID s
 		return "", err
 	}
 	id := strings.ToLower(targetID)
+	if p.hides(targetType) {
+		return "", ErrReferenceInvalid
+	}
 	switch targetType {
 	case NodeService:
 		if id == serviceID {
@@ -83,7 +90,7 @@ func (s *App) AddDependency(ctx context.Context, c Caller, p Principal, serviceI
 		return Link{}, false, ErrNotFound
 	}
 	serviceID = strings.ToLower(serviceID)
-	targetID, err = s.checkTarget(ctx, serviceID, targetType, targetID)
+	targetID, err = s.checkTarget(ctx, p, serviceID, targetType, targetID)
 	if err != nil {
 		return Link{}, false, err
 	}
@@ -92,6 +99,13 @@ func (s *App) AddDependency(ctx context.Context, c Caller, p Principal, serviceI
 	var rel relationships.Relationship
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		if targetType == NodeService {
+			// Bound how long this transaction may wait for the graph lock and
+			// work on the cycle check, so a slow walk cannot stall every
+			// other dependency change.
+			if _, err := tx.Exec(ctx, `SELECT set_config('lock_timeout', $1, true), set_config('statement_timeout', $2, true)`,
+				fmt.Sprintf("%dms", s.lockTimeout.Milliseconds()), fmt.Sprintf("%dms", s.statementTimeout.Milliseconds())); err != nil {
+				return fmt.Errorf("set dependency timeouts: %w", err)
+			}
 			if err := s.store.LockDependencyGraphTx(ctx, tx); err != nil {
 				return err
 			}
@@ -104,8 +118,22 @@ func (s *App) AddDependency(ctx context.Context, c Caller, p Principal, serviceI
 			return ErrRetired
 		}
 		if targetType == NodeService {
-			// Adding src -> dst closes a cycle when src is already reachable from dst.
-			reaches, err := s.graph.Reaches(ctx, tx, dst, src, relationships.Forward, []string{RelDependsOn})
+			// Re-read the target under a share lock, after the graph lock: it
+			// may have been retired since the first check, and a retire that
+			// starts now waits for this transaction (and then ends the new link).
+			t, err := s.store.ShareLockTx(ctx, tx, dst.ID)
+			if errors.Is(err, ErrNotFound) {
+				return ErrReferenceInvalid
+			}
+			if err != nil {
+				return err
+			}
+			if t.Status == StatusRetired {
+				return ErrReferenceInvalid
+			}
+			// Adding src -> dst closes a cycle when src is already reachable
+			// from dst. The walk only follows DEPENDS_ON between Services.
+			reaches, err := s.graph.Reaches(ctx, tx, dst, src, relationships.Forward, []string{RelDependsOn}, []string{NodeService})
 			switch {
 			case errors.Is(err, relationships.ErrTooLarge):
 				return ErrCycleCheck
@@ -116,7 +144,7 @@ func (s *App) AddDependency(ctx context.Context, c Caller, p Principal, serviceI
 			}
 		}
 		rel, created, err = s.graph.Link(ctx, tx, relationships.LinkInput{
-			Source: src, Type: RelDependsOn, Target: dst, Confidence: relationships.ConfidenceDeclared,
+			Owner: RelationshipOwner, Source: src, Type: RelDependsOn, Target: dst, Confidence: relationships.ConfidenceDeclared,
 			CreatedBy: c.Actor.UserID, RecordedBy: "services",
 		})
 		if err != nil {
@@ -129,13 +157,29 @@ func (s *App) AddDependency(ctx context.Context, c Caller, p Principal, serviceI
 			map[string]any{"relationshipId": rel.ID, "targetType": targetType, "targetId": targetID})
 	})
 	if err != nil {
-		return Link{}, false, err
+		return Link{}, false, mapDependencyError(err)
 	}
 	info, err := s.describe(ctx, p, []relationships.Node{dst})
 	if err != nil {
 		return Link{}, false, err
 	}
 	return link(rel, dst, info), created, nil
+}
+
+// mapDependencyError turns the database timeouts set for service-to-service
+// changes into domain errors: waiting too long for the graph lock is ErrBusy,
+// a cycle check cut off by the statement timeout ErrCycleCheck.
+func mapDependencyError(err error) error {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		switch {
+		case pg.Code == "55P03":
+			return ErrBusy
+		case pg.Code == "57014" && strings.Contains(pg.Message, "statement timeout"):
+			return ErrCycleCheck
+		}
+	}
+	return err
 }
 
 // RemoveDependency ends a Service dependency with a reason code. Repeating it
@@ -170,7 +214,7 @@ func (s *App) RemoveDependency(ctx context.Context, c Caller, p Principal, servi
 		if rel.Source.Type != NodeService || rel.Source.ID != serviceID || rel.Type != RelDependsOn {
 			return ErrNotFound
 		}
-		_, ended, err := s.graph.Unlink(ctx, tx, rel.ID, reason, c.Actor.UserID)
+		_, ended, err := s.graph.Unlink(ctx, tx, RelationshipOwner, rel.ID, reason, c.Actor.UserID)
 		if err != nil {
 			return fmt.Errorf("unlink dependency: %w", err)
 		}
@@ -180,6 +224,31 @@ func (s *App) RemoveDependency(ctx context.Context, c Caller, p Principal, servi
 		return recordAudit(ctx, tx, c, "services.dependency.removed", "service", serviceID, nil, nil,
 			map[string]any{"relationshipId": rel.ID, "targetType": rel.Target.Type, "targetId": rel.Target.ID, "reason": reason})
 	})
+}
+
+// masker replaces the ids of records the caller may not see with opaque
+// placeholders (hidden-1, hidden-2, ...), numbered in order of first use, so a
+// response keeps its shape (paths still connect) without disclosing real ids.
+type masker struct {
+	ids map[string]string
+}
+
+func newMasker() *masker { return &masker{ids: map[string]string{}} }
+
+func (m *masker) id(real string) string {
+	ph, ok := m.ids[real]
+	if !ok {
+		ph = fmt.Sprintf("hidden-%d", len(m.ids)+1)
+		m.ids[real] = ph
+	}
+	return ph
+}
+
+func (m *masker) node(n NodeInfo) NodeInfo {
+	if n.Hidden {
+		n.ID = m.id(n.ID)
+	}
+	return n
 }
 
 // describe resolves nodes to what the caller may see. Services need
@@ -197,7 +266,7 @@ func (s *App) describe(ctx context.Context, p Principal, nodes []relationships.N
 		}
 		seen[n] = true
 		byType[n.Type] = append(byType[n.Type], n.ID)
-		out[n] = NodeInfo{Type: n.Type, ID: n.ID}
+		out[n] = NodeInfo{Type: n.Type, ID: n.ID, Hidden: p.hides(n.Type)}
 	}
 	chunks := func(ids []string, fn func([]string) error) error {
 		for len(ids) > 0 {
@@ -335,9 +404,14 @@ func (s *App) Impact(ctx context.Context, p Principal, in ImpactInput) (ImpactRe
 		return ImpactResult{}, ErrNotFound
 	}
 	start := relationships.Node{Type: in.Type, ID: strings.ToLower(in.ID)}
-	if (in.Type == NodeVM || in.Type == NodeLocation) && !p.InfraView || in.Type == NodeAsset && !p.AssetsView {
+	if p.hides(in.Type) {
 		return ImpactResult{}, ErrNotFound
 	}
+	// One traversal per user at a time (per process): it is the expensive read.
+	if !s.acquireImpact(p.UserID) {
+		return ImpactResult{}, ErrImpactBusy
+	}
+	defer s.releaseImpact(p.UserID)
 	startInfo, err := s.describe(ctx, p, []relationships.Node{start})
 	if err != nil {
 		return ImpactResult{}, err
@@ -364,10 +438,24 @@ func (s *App) Impact(ctx context.Context, p Principal, in ImpactInput) (ImpactRe
 	res := ImpactResult{Start: startInfo[start], Direction: in.Direction, MaxDepth: in.Depth,
 		Truncated: walk.Truncated, DepthLimited: walk.DepthLimited, NodeLimited: walk.NodeLimited,
 		Nodes: make([]ImpactNode, 0, len(walk.Nodes))}
+	// Hidden records stay in the walk (their dependents still matter) but
+	// appear under placeholder ids, on the node and on every path edge.
+	m := newMasker()
+	hidden := func(n relationships.Node) bool { return p.hides(n.Type) }
 	for _, w := range walk.Nodes {
-		n := ImpactNode{NodeInfo: info[w.Node], Depth: w.Depth, Path: make([]PathEdge, len(w.Path))}
+		n := ImpactNode{NodeInfo: m.node(info[w.Node]), Depth: w.Depth, Path: make([]PathEdge, len(w.Path))}
 		for i, e := range w.Path {
-			n.Path[i] = PathEdge{RelationshipID: e.RelationshipID, FromType: e.From.Type, FromID: e.From.ID, ToType: e.To.Type, ToID: e.To.ID, Type: e.Type, Confidence: e.Confidence}
+			pe := PathEdge{RelationshipID: e.RelationshipID, FromType: e.From.Type, FromID: e.From.ID, ToType: e.To.Type, ToID: e.To.ID, Type: e.Type, Confidence: e.Confidence}
+			if hidden(e.From) {
+				pe.FromID = m.id(e.From.ID)
+			}
+			if hidden(e.To) {
+				pe.ToID = m.id(e.To.ID)
+			}
+			if hidden(e.From) || hidden(e.To) {
+				pe.RelationshipID = m.id(e.RelationshipID)
+			}
+			n.Path[i] = pe
 		}
 		if len(w.Path) > 0 {
 			n.Confidence = w.Path[len(w.Path)-1].Confidence
@@ -375,4 +463,20 @@ func (s *App) Impact(ctx context.Context, p Principal, in ImpactInput) (ImpactRe
 		res.Nodes = append(res.Nodes, n)
 	}
 	return res, nil
+}
+
+func (s *App) acquireImpact(user string) bool {
+	s.impactMu.Lock()
+	defer s.impactMu.Unlock()
+	if s.impactRunning[user] {
+		return false
+	}
+	s.impactRunning[user] = true
+	return true
+}
+
+func (s *App) releaseImpact(user string) {
+	s.impactMu.Lock()
+	delete(s.impactRunning, user)
+	s.impactMu.Unlock()
 }

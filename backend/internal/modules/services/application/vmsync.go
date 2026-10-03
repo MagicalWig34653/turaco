@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 )
 
@@ -43,7 +45,10 @@ func (v *VMLinks) OnVirtualMachineChanged(ctx context.Context, tx pgx.Tx, ev eve
 // live VM with a hypervisor has exactly one derived link to that Asset; a VM
 // without hypervisor, decommissioned or unknown has none. Concurrent syncs of
 // the same VM are serialized by a transaction-scoped lock taken before the VM
-// is read.
+// is read. The VM is read through the Infrastructure contract on its own pool
+// connection while the caller's transaction holds another one, so the worker's
+// consumer concurrency must stay below the pool size (the dispatcher handles
+// events sequentially per worker).
 func (v *VMLinks) Sync(ctx context.Context, tx pgx.Tx, vmID, correlationID string) error {
 	if err := v.store.LockVMLinkTx(ctx, tx, vmID); err != nil {
 		return err
@@ -63,30 +68,19 @@ func (v *VMLinks) Sync(ctx context.Context, tx pgx.Tx, vmID, correlationID strin
 		want = &l
 	}
 	node := relationships.Node{Type: NodeVM, ID: vmID}
-	current, _, err := v.graph.Outgoing(ctx, tx, node, []string{RelRunsOn}, 10)
-	if err != nil {
-		return fmt.Errorf("read vm links: %w", err)
-	}
-	var keep bool
 	changed := map[string]any{}
-	for _, r := range current {
-		if want != nil && r.Target.Type == NodeAsset && r.Target.ID == *want {
-			keep = true
-			continue
+	if want == nil {
+		n, err := v.graph.UnlinkAll(ctx, tx, RelationshipOwner, node, relationships.Forward, reason, "")
+		if err != nil {
+			return fmt.Errorf("end vm links: %w", err)
 		}
-		why := reason
-		if want != nil {
-			why = reasonVMLinkChanged
+		if n > 0 {
+			changed["endedLinks"] = n
 		}
-		if _, ended, err := v.graph.Unlink(ctx, tx, r.ID, why, ""); err != nil {
-			return fmt.Errorf("end vm link: %w", err)
-		} else if ended {
-			changed["endedAssetId"] = r.Target.ID
-		}
-	}
-	if want != nil && !keep {
+	} else {
+		target := relationships.Node{Type: NodeAsset, ID: *want}
 		rel, created, err := v.graph.Link(ctx, tx, relationships.LinkInput{
-			Source: node, Type: RelRunsOn, Target: relationships.Node{Type: NodeAsset, ID: *want},
+			Owner: RelationshipOwner, Source: node, Type: RelRunsOn, Target: target,
 			Confidence: relationships.ConfidenceDerived, RecordedBy: "infrastructure",
 		})
 		if err != nil {
@@ -96,6 +90,14 @@ func (v *VMLinks) Sync(ctx context.Context, tx pgx.Tx, vmID, correlationID strin
 			changed["linkedAssetId"] = *want
 			changed["relationshipId"] = rel.ID
 		}
+		// Every other current RUNS_ON of the VM is stale, however many there are.
+		n, err := v.graph.UnlinkAllExcept(ctx, tx, RelationshipOwner, node, relationships.Forward, target, reasonVMLinkChanged, "")
+		if err != nil {
+			return fmt.Errorf("end stale vm links: %w", err)
+		}
+		if n > 0 {
+			changed["endedLinks"] = n
+		}
 	}
 	if len(changed) == 0 {
 		return nil
@@ -104,4 +106,43 @@ func (v *VMLinks) Sync(ctx context.Context, tx pgx.Tx, vmID, correlationID strin
 		Action: "services.vm_link.synced", TargetType: "virtual_machine", TargetID: vmID,
 		Actor: audit.SystemActor("services"), CorrelationID: correlationID, Metadata: changed,
 	})
+}
+
+// Backfill job: Virtual Machines that got a hypervisor before F7b (or while the
+// consumer was not running) have no RUNS_ON link yet. The job syncs every VM
+// that has a hypervisor; Sync is idempotent and audits only real changes, so
+// running it at every worker start is safe and converges after a crash.
+const (
+	BackfillJobType    = "services.vm_link_backfill"
+	BackfillJobTimeout = 10 * time.Minute
+	backfillBatch      = 200
+)
+
+// EnqueueBackfill enqueues the backfill job; at most one is pending or running at a time.
+func EnqueueBackfill(ctx context.Context, q jobs.Querier) error {
+	_, _, err := jobs.Enqueue(ctx, q, jobs.EnqueueRequest{Type: BackfillJobType, DedupeKey: BackfillJobType, MaxAttempts: 3})
+	return err
+}
+
+// HandleBackfill is the job handler of BackfillJobType. Every VM is synced in
+// its own transaction, in id order, so a failure resumes cheaply on retry.
+func (v *VMLinks) HandleBackfill(ctx context.Context, job jobs.Job) error {
+	after := ""
+	for {
+		ids, err := v.infra.VMIDsWithHypervisor(ctx, after, backfillBatch)
+		if err != nil {
+			return fmt.Errorf("list virtual machines with hypervisor: %w", err)
+		}
+		for _, id := range ids {
+			id = strings.ToLower(id)
+			err := v.store.InTx(ctx, func(tx pgx.Tx) error { return v.Sync(ctx, tx, id, "vm-link-backfill:"+job.ID) })
+			if err != nil {
+				return fmt.Errorf("backfill vm link %s: %w", id, err)
+			}
+		}
+		if len(ids) < backfillBatch {
+			return nil
+		}
+		after = ids[len(ids)-1]
+	}
 }

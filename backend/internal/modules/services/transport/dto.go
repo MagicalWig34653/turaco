@@ -39,10 +39,12 @@ type nodeDTO struct {
 	Status      *string `json:"status,omitempty"`
 	Criticality *string `json:"criticality,omitempty"`
 	Missing     bool    `json:"missing,omitempty"`
+	// Hidden: the caller may not see this record type; id is a placeholder (hidden-N).
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 func toNode(n application.NodeInfo) nodeDTO {
-	return nodeDTO{Type: n.Type, ID: n.ID, Name: n.Name, Reference: n.Reference, Status: n.Status, Criticality: n.Criticality, Missing: n.Missing}
+	return nodeDTO{Type: n.Type, ID: n.ID, Name: n.Name, Reference: n.Reference, Status: n.Status, Criticality: n.Criticality, Missing: n.Missing, Hidden: n.Hidden}
 }
 
 type linkDTO struct {
@@ -63,6 +65,14 @@ type detailDTO struct {
 	Dependents            []linkDTO `json:"dependents"`
 	DependenciesTruncated bool      `json:"dependenciesTruncated"`
 	DependentsTruncated   bool      `json:"dependentsTruncated"`
+	// Cursors for GET /services/{id}/dependencies?direction=out|in&cursor=...
+	DependenciesNextCursor string `json:"dependenciesNextCursor,omitempty"`
+	DependentsNextCursor   string `json:"dependentsNextCursor,omitempty"`
+}
+
+type linkListDTO struct {
+	Items      []linkDTO `json:"items"`
+	NextCursor string    `json:"nextCursor,omitempty"`
 }
 
 type pathEdgeDTO struct {

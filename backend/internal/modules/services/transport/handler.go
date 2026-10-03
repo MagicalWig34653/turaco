@@ -1,7 +1,8 @@
 // Package transport exposes the Services HTTP API under /api/v1. Reads need
 // services.view or services.manage, writes services.manage. The impact view
 // shows Virtual Machine and Location names only with infrastructure.view and
-// Asset references only with assets.view.
+// Asset references only with assets.view; records of types the caller may not
+// see appear with placeholder ids (hidden-N) and "hidden": true.
 package transport
 
 import (
@@ -47,6 +48,7 @@ func Register(mux *http.ServeMux, app *application.App, auth authorization.Authe
 	route("POST /api/v1/services/{id}/retire", write, h.retire)
 	route("POST /api/v1/services/{id}/dependencies", write, h.addDependency)
 	route("DELETE /api/v1/services/{id}/dependencies/{dependencyId}", write, h.removeDependency)
+	route("GET /api/v1/services/{id}/dependencies", read, h.listDependencies)
 	route("GET /api/v1/impact", read, h.impact)
 }
 
@@ -69,6 +71,10 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "services.dependency_cycle", "The dependency would create a cycle between services.")
 	case errors.Is(err, application.ErrCycleCheck):
 		httpx.WriteError(w, http.StatusConflict, "services.dependency_graph_too_large", "The dependency graph is too large to check for cycles.")
+	case errors.Is(err, application.ErrBusy):
+		httpx.WriteError(w, http.StatusServiceUnavailable, "services.busy", "Another dependency change is in progress; try again shortly.")
+	case errors.Is(err, application.ErrImpactBusy):
+		httpx.WriteError(w, http.StatusTooManyRequests, "services.impact_busy", "An impact view is already being calculated for you; try again when it has finished.")
 	case errors.Is(err, application.ErrReferenceInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "services.invalid_reference", "A referenced user, team, service, virtual machine, asset or location does not exist or cannot be used.")
 	case errors.Is(err, application.ErrInvalidCursor):
@@ -141,12 +147,37 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailDTO{serviceDTO: toService(d.Service), Dependencies: make([]linkDTO, 0, len(d.Dependencies)), Dependents: make([]linkDTO, 0, len(d.Dependents)),
-		DependenciesTruncated: d.DependenciesCutOff, DependentsTruncated: d.DependentsCutOff}
+		DependenciesTruncated: d.DependenciesNext != "", DependentsTruncated: d.DependentsNext != "",
+		DependenciesNextCursor: d.DependenciesNext, DependentsNextCursor: d.DependentsNext}
 	for _, l := range d.Dependencies {
 		out.Dependencies = append(out.Dependencies, toLink(l))
 	}
 	for _, l := range d.Dependents {
 		out.Dependents = append(out.Dependents, toLink(l))
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+// listDependencies pages the dependencies (direction=out, default) or dependents (direction=in) of a Service.
+func (h *handler) listDependencies(w http.ResponseWriter, r *http.Request) {
+	limit, err := httpx.ParseLimit(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "services.invalid_limit", "The limit must be a positive integer.")
+		return
+	}
+	q := r.URL.Query()
+	direction := q.Get("direction")
+	if direction == "" {
+		direction = application.DepOut
+	}
+	res, err := h.app.ListDependencies(r.Context(), principal(r), r.PathValue("id"), direction, q.Get("cursor"), limit)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := linkListDTO{Items: make([]linkDTO, 0, len(res.Items)), NextCursor: res.NextCursor}
+	for _, l := range res.Items {
+		out.Items = append(out.Items, toLink(l))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }

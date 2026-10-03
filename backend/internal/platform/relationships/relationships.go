@@ -3,7 +3,8 @@
 // two records of any module, stored in platform.relationships.
 //
 // Modules register the (source type, relationship type, target type) triples
-// they own in a Registry at startup; Link refuses any other triple. Records
+// they own in a Registry at startup; Link refuses any other triple and
+// Link/Unlink refuse a module that does not own the triple. Records
 // are referenced by id only (no foreign keys), so the module that links is
 // responsible for checking that both records exist and may be linked. Domain
 // invariants and history (assignments, placements) stay in module tables;
@@ -62,7 +63,8 @@ const (
 )
 
 var (
-	// ErrNotAllowed means the (source type, type, target type) triple is not registered.
+	// ErrNotAllowed means the (source type, type, target type) triple is not
+	// registered, or not owned by the module that tries to change it.
 	ErrNotAllowed = errors.New("relationships: the relationship is not allowed between these record types")
 	// ErrInvalid means an argument is malformed (bad id, type, confidence or reason).
 	ErrInvalid = errors.New("relationships: invalid argument")
@@ -85,40 +87,69 @@ type Node struct {
 	ID   string
 }
 
-// Triple is an allowed relationship shape.
+// Triple is an allowed relationship shape. Owner names the module that may
+// create and end relationships of this shape (e.g. "services"); a module that
+// later writes the same shape from elsewhere must go through the owner.
 type Triple struct {
 	SourceType string
 	Type       string
 	TargetType string
+	Owner      string
 }
 
-// Registry holds the allowed triples. It is safe for concurrent use.
+type shape struct{ source, typ, target string }
+
+// Registry holds the allowed triples and their owners. It is safe for concurrent use.
 type Registry struct {
 	mu      sync.RWMutex
-	allowed map[Triple]struct{}
+	allowed map[shape]string // shape -> owner
 }
 
-func NewRegistry() *Registry { return &Registry{allowed: map[Triple]struct{}{}} }
+func NewRegistry() *Registry { return &Registry{allowed: map[shape]string{}} }
 
 // Register adds allowed triples; registering one twice is harmless. It
-// panics on malformed names: triples are compile-time decisions of modules.
+// panics on malformed names, a missing owner or a second owner for the same
+// shape: triples are compile-time decisions of modules.
 func (r *Registry) Register(triples ...Triple) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, t := range triples {
-		if !typePattern.MatchString(t.SourceType) || !typePattern.MatchString(t.TargetType) || !relPattern.MatchString(t.Type) {
+		if !typePattern.MatchString(t.SourceType) || !typePattern.MatchString(t.TargetType) || !relPattern.MatchString(t.Type) || !typePattern.MatchString(t.Owner) {
 			panic(fmt.Sprintf("relationships: malformed triple %+v", t))
 		}
-		r.allowed[t] = struct{}{}
+		k := shape{t.SourceType, t.Type, t.TargetType}
+		if o, ok := r.allowed[k]; ok && o != t.Owner {
+			panic(fmt.Sprintf("relationships: triple %+v is already owned by %q", t, o))
+		}
+		r.allowed[k] = t.Owner
 	}
 }
 
 // Allowed reports whether the triple is registered.
 func (r *Registry) Allowed(sourceType, typ, targetType string) bool {
+	_, ok := r.Owner(sourceType, typ, targetType)
+	return ok
+}
+
+// Owner returns the module that owns the triple.
+func (r *Registry) Owner(sourceType, typ, targetType string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	_, ok := r.allowed[Triple{sourceType, typ, targetType}]
-	return ok
+	o, ok := r.allowed[shape{sourceType, typ, targetType}]
+	return o, ok
+}
+
+// ownedBy returns the shapes of an owner as parallel arrays for SQL.
+func (r *Registry) ownedBy(owner string) (sources, types, targets []string) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	sources, types, targets = []string{}, []string{}, []string{}
+	for k, o := range r.allowed {
+		if o == owner {
+			sources, types, targets = append(sources, k.source), append(types, k.typ), append(targets, k.target)
+		}
+	}
+	return
 }
 
 // Types lists the registered relationship types, sorted.
@@ -127,7 +158,7 @@ func (r *Registry) Types() []string {
 	defer r.mu.RUnlock()
 	seen := map[string]struct{}{}
 	for t := range r.allowed {
-		seen[t.Type] = struct{}{}
+		seen[t.typ] = struct{}{}
 	}
 	out := make([]string, 0, len(seen))
 	for t := range seen {
@@ -162,8 +193,10 @@ type Relationship struct {
 // Current reports whether the relationship has not ended.
 func (r Relationship) Current() bool { return r.ValidUntil == nil }
 
-// LinkInput describes a relationship to create.
+// LinkInput describes a relationship to create. Owner must be the module that
+// owns the triple.
 type LinkInput struct {
+	Owner      string
 	Source     Node
 	Type       string
 	Target     Node
@@ -190,11 +223,13 @@ func scan(row pgx.Row) (Relationship, error) {
 	return r, err
 }
 
-func validNode(n Node) error {
+// checkNode validates a node and returns it with a lower-case id, the form
+// PostgreSQL returns, so comparisons and visited sets agree.
+func checkNode(n Node) (Node, error) {
 	if !typePattern.MatchString(n.Type) || !uuidPattern.MatchString(n.ID) {
-		return fmt.Errorf("%w: node must have a type and a UUID", ErrInvalid)
+		return Node{}, fmt.Errorf("%w: node must have a type and a UUID", ErrInvalid)
 	}
-	return nil
+	return Node{Type: n.Type, ID: strings.ToLower(n.ID)}, nil
 }
 
 func isUnique(err error) bool {
@@ -207,23 +242,31 @@ func isUnique(err error) bool {
 // Duplicate links, also concurrent ones, therefore end with one row. Pass a
 // transaction to link atomically with the change that causes the link.
 func (g *Graph) Link(ctx context.Context, q Querier, in LinkInput) (rel Relationship, created bool, err error) {
-	if err := validNode(in.Source); err != nil {
+	src, err := checkNode(in.Source)
+	if err != nil {
 		return Relationship{}, false, err
 	}
-	if err := validNode(in.Target); err != nil {
+	dst, err := checkNode(in.Target)
+	if err != nil {
 		return Relationship{}, false, err
 	}
-	if !g.reg.Allowed(in.Source.Type, in.Type, in.Target.Type) {
+	owner, ok := g.reg.Owner(src.Type, in.Type, dst.Type)
+	if !ok || owner != in.Owner {
 		return Relationship{}, false, ErrNotAllowed
 	}
 	if in.Confidence != ConfidenceDeclared && in.Confidence != ConfidenceDerived && in.Confidence != ConfidenceObserved {
 		return Relationship{}, false, fmt.Errorf("%w: unknown confidence", ErrInvalid)
 	}
-	if strings.EqualFold(in.Source.ID, in.Target.ID) && in.Source.Type == in.Target.Type {
+	if src == dst {
 		return Relationship{}, false, fmt.Errorf("%w: a record cannot be linked to itself", ErrInvalid)
 	}
-	if in.CreatedBy != "" && !uuidPattern.MatchString(in.CreatedBy) {
-		return Relationship{}, false, fmt.Errorf("%w: created by must be a UUID", ErrInvalid)
+	var createdBy *string
+	if in.CreatedBy != "" {
+		if !uuidPattern.MatchString(in.CreatedBy) {
+			return Relationship{}, false, fmt.Errorf("%w: created by must be a UUID", ErrInvalid)
+		}
+		c := strings.ToLower(in.CreatedBy)
+		createdBy = &c
 	}
 	var recorded *string
 	if in.RecordedBy != "" {
@@ -232,31 +275,34 @@ func (g *Graph) Link(ctx context.Context, q Querier, in LinkInput) (rel Relation
 		}
 		recorded = &in.RecordedBy
 	}
-	var createdBy *string
-	if in.CreatedBy != "" {
-		createdBy = &in.CreatedBy
+	// A conflicting current row may end between the insert and the read-back
+	// (another transaction unlinks it); then the insert is simply retried once.
+	for attempt := 0; attempt < 2; attempt++ {
+		rel, err = scan(q.QueryRow(ctx, `
+			INSERT INTO platform.relationships (source_type, source_id, type, target_type, target_id, confidence, created_by, source)
+			VALUES ($1, $2::uuid, $3, $4, $5::uuid, $6, $7::uuid, $8)
+			ON CONFLICT (source_type, source_id, type, target_type, target_id) WHERE valid_until IS NULL DO NOTHING
+			RETURNING `+cols, src.Type, src.ID, in.Type, dst.Type, dst.ID, in.Confidence, createdBy, recorded))
+		if err == nil {
+			return rel, true, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return Relationship{}, false, fmt.Errorf("link relationship: %w", err)
+		}
+		// A current row exists (possibly committed by a concurrent transaction
+		// that ON CONFLICT waited for).
+		rel, err = scan(q.QueryRow(ctx, `
+			SELECT `+cols+` FROM platform.relationships
+			WHERE source_type = $1 AND source_id = $2::uuid AND type = $3 AND target_type = $4 AND target_id = $5::uuid AND valid_until IS NULL`,
+			src.Type, src.ID, in.Type, dst.Type, dst.ID))
+		if err == nil {
+			return rel, false, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return Relationship{}, false, fmt.Errorf("read existing relationship: %w", err)
+		}
 	}
-	rel, err = scan(q.QueryRow(ctx, `
-		INSERT INTO platform.relationships (source_type, source_id, type, target_type, target_id, confidence, created_by, source)
-		VALUES ($1, $2::uuid, $3, $4, $5::uuid, $6, $7::uuid, $8)
-		ON CONFLICT (source_type, source_id, type, target_type, target_id) WHERE valid_until IS NULL DO NOTHING
-		RETURNING `+cols, in.Source.Type, in.Source.ID, in.Type, in.Target.Type, in.Target.ID, in.Confidence, createdBy, recorded))
-	if err == nil {
-		return rel, true, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return Relationship{}, false, fmt.Errorf("link relationship: %w", err)
-	}
-	// A current row exists (possibly committed by a concurrent transaction
-	// that ON CONFLICT waited for).
-	rel, err = scan(q.QueryRow(ctx, `
-		SELECT `+cols+` FROM platform.relationships
-		WHERE source_type = $1 AND source_id = $2::uuid AND type = $3 AND target_type = $4 AND target_id = $5::uuid AND valid_until IS NULL`,
-		in.Source.Type, in.Source.ID, in.Type, in.Target.Type, in.Target.ID))
-	if err != nil {
-		return Relationship{}, false, fmt.Errorf("read existing relationship: %w", err)
-	}
-	return rel, false, nil
+	return Relationship{}, false, errors.New("link relationship: the current relationship kept changing")
 }
 
 func checkReason(reason string) error {
@@ -273,13 +319,23 @@ func actorArg(endedBy string) (*string, error) {
 	if !uuidPattern.MatchString(endedBy) {
 		return nil, fmt.Errorf("%w: ended by must be a UUID", ErrInvalid)
 	}
-	return &endedBy, nil
+	b := strings.ToLower(endedBy)
+	return &b, nil
 }
 
-// Unlink ends the relationship with a reason code. Ending an ended
-// relationship returns it unchanged (ended is false), so retries are safe.
-// ErrNotFound when no such relationship exists.
-func (g *Graph) Unlink(ctx context.Context, q Querier, id, reason, endedBy string) (rel Relationship, ended bool, err error) {
+// ownedFilter restricts an UPDATE to the triples the owner owns.
+const ownedFilter = `(source_type, type, target_type) IN (SELECT * FROM unnest(%s::text[], %s::text[], %s::text[]))`
+
+// The end timestamp is clock_timestamp() (never earlier than valid_from): now()
+// is the transaction start and can precede a valid_from committed by another
+// transaction while this one waited for a lock.
+const endSet = `valid_until = greatest(clock_timestamp(), valid_from)`
+
+// Unlink ends the relationship with a reason code; owner must own its triple
+// (else ErrNotAllowed). Ending an ended relationship returns it unchanged
+// (ended is false), so retries are safe. ErrNotFound when no such
+// relationship exists.
+func (g *Graph) Unlink(ctx context.Context, q Querier, owner, id, reason, endedBy string) (rel Relationship, ended bool, err error) {
 	if !uuidPattern.MatchString(id) {
 		return Relationship{}, false, ErrNotFound
 	}
@@ -290,9 +346,11 @@ func (g *Graph) Unlink(ctx context.Context, q Querier, id, reason, endedBy strin
 	if err != nil {
 		return Relationship{}, false, err
 	}
+	srcs, typs, tgts := g.reg.ownedBy(owner)
 	rel, err = scan(q.QueryRow(ctx, `
-		UPDATE platform.relationships SET valid_until = now(), end_reason = $2, ended_by = $3::uuid
-		WHERE id = $1::uuid AND valid_until IS NULL RETURNING `+cols, id, reason, by))
+		UPDATE platform.relationships SET `+endSet+`, end_reason = $2, ended_by = $3::uuid
+		WHERE id = $1::uuid AND valid_until IS NULL AND `+fmt.Sprintf(ownedFilter, "$4", "$5", "$6")+` RETURNING `+cols,
+		strings.ToLower(id), reason, by, srcs, typs, tgts))
 	if err == nil {
 		return rel, true, nil
 	}
@@ -300,20 +358,31 @@ func (g *Graph) Unlink(ctx context.Context, q Querier, id, reason, endedBy strin
 		return Relationship{}, false, fmt.Errorf("unlink relationship: %w", err)
 	}
 	rel, err = g.Get(ctx, q, id)
-	return rel, false, err
+	if err != nil {
+		return Relationship{}, false, err
+	}
+	if o, ok := g.reg.Owner(rel.Source.Type, rel.Type, rel.Target.Type); !ok || o != owner {
+		return Relationship{}, false, ErrNotAllowed
+	}
+	return rel, false, nil
 }
 
 // UnlinkTriple ends the current relationship of a triple; ended is false when
 // there is none.
-func (g *Graph) UnlinkTriple(ctx context.Context, q Querier, source Node, typ string, target Node, reason, endedBy string) (ended bool, err error) {
-	if err := validNode(source); err != nil {
+func (g *Graph) UnlinkTriple(ctx context.Context, q Querier, owner string, source Node, typ string, target Node, reason, endedBy string) (ended bool, err error) {
+	source, err = checkNode(source)
+	if err != nil {
 		return false, err
 	}
-	if err := validNode(target); err != nil {
+	target, err = checkNode(target)
+	if err != nil {
 		return false, err
 	}
 	if err := checkReason(reason); err != nil {
 		return false, err
+	}
+	if o, ok := g.reg.Owner(source.Type, typ, target.Type); !ok || o != owner {
+		return false, ErrNotAllowed
 	}
 	by, err := actorArg(endedBy)
 	if err != nil {
@@ -321,7 +390,7 @@ func (g *Graph) UnlinkTriple(ctx context.Context, q Querier, source Node, typ st
 	}
 	var id string
 	err = q.QueryRow(ctx, `
-		UPDATE platform.relationships SET valid_until = now(), end_reason = $6, ended_by = $7::uuid
+		UPDATE platform.relationships SET `+endSet+`, end_reason = $6, ended_by = $7::uuid
 		WHERE source_type = $1 AND source_id = $2::uuid AND type = $3 AND target_type = $4 AND target_id = $5::uuid AND valid_until IS NULL
 		RETURNING id::text`, source.Type, source.ID, typ, target.Type, target.ID, reason, by).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -333,10 +402,25 @@ func (g *Graph) UnlinkTriple(ctx context.Context, q Querier, source Node, typ st
 	return true, nil
 }
 
-// UnlinkAll ends every current relationship of a node in the given direction
-// (Forward: node is the source) and returns how many ended.
-func (g *Graph) UnlinkAll(ctx context.Context, q Querier, node Node, dir Direction, reason, endedBy string) (int, error) {
-	if err := validNode(node); err != nil {
+// UnlinkAll ends every current relationship of the owner's triples at a node
+// in the given direction (Forward: node is the source) and returns how many
+// ended.
+func (g *Graph) UnlinkAll(ctx context.Context, q Querier, owner string, node Node, dir Direction, reason, endedBy string) (int, error) {
+	return g.unlinkAll(ctx, q, owner, node, dir, nil, reason, endedBy)
+}
+
+// UnlinkAllExcept is UnlinkAll but keeps the relationship whose other end is keep.
+func (g *Graph) UnlinkAllExcept(ctx context.Context, q Querier, owner string, node Node, dir Direction, keep Node, reason, endedBy string) (int, error) {
+	k, err := checkNode(keep)
+	if err != nil {
+		return 0, err
+	}
+	return g.unlinkAll(ctx, q, owner, node, dir, &k, reason, endedBy)
+}
+
+func (g *Graph) unlinkAll(ctx context.Context, q Querier, owner string, node Node, dir Direction, keep *Node, reason, endedBy string) (int, error) {
+	node, err := checkNode(node)
+	if err != nil {
 		return 0, err
 	}
 	if err := checkReason(reason); err != nil {
@@ -346,13 +430,21 @@ func (g *Graph) UnlinkAll(ctx context.Context, q Querier, node Node, dir Directi
 	if err != nil {
 		return 0, err
 	}
-	side := "source"
+	near, far := "source", "target"
 	if dir == Reverse {
-		side = "target"
+		near, far = "target", "source"
+	}
+	srcs, typs, tgts := g.reg.ownedBy(owner)
+	args := []any{node.Type, node.ID, reason, by, srcs, typs, tgts}
+	keepCond := ""
+	if keep != nil {
+		args = append(args, keep.Type, keep.ID)
+		keepCond = ` AND NOT (` + far + `_type = $8 AND ` + far + `_id = $9::uuid)`
 	}
 	rows, err := q.Query(ctx, `
-		UPDATE platform.relationships SET valid_until = now(), end_reason = $3, ended_by = $4::uuid
-		WHERE `+side+`_type = $1 AND `+side+`_id = $2::uuid AND valid_until IS NULL RETURNING id::text`, node.Type, node.ID, reason, by)
+		UPDATE platform.relationships SET `+endSet+`, end_reason = $3, ended_by = $4::uuid
+		WHERE `+near+`_type = $1 AND `+near+`_id = $2::uuid AND valid_until IS NULL AND `+fmt.Sprintf(ownedFilter, "$5", "$6", "$7")+keepCond+`
+		RETURNING id::text`, args...)
 	if err != nil {
 		return 0, fmt.Errorf("unlink relationships: %w", err)
 	}
@@ -407,50 +499,68 @@ func clampLimit(limit int) int {
 	return limit
 }
 
+// Page is one keyset page of relationships, ordered by id. NextCursor is
+// empty on the last page; pass it as afterID for the next one.
+type Page struct {
+	Items      []Relationship
+	NextCursor string
+}
+
 // Outgoing lists the current relationships whose source is the node, oldest
-// id first, at most limit (default 100, maximum 500). truncated reports that
-// more exist. Empty types means every registered type.
-func (g *Graph) Outgoing(ctx context.Context, q Querier, node Node, types []string, limit int) ([]Relationship, bool, error) {
-	return g.adjacent(ctx, q, node, types, limit, "source")
+// id first, after afterID (empty: from the start), at most limit (default 100,
+// maximum 500). Empty types means every registered type.
+func (g *Graph) Outgoing(ctx context.Context, q Querier, node Node, types []string, afterID string, limit int) (Page, error) {
+	return g.adjacent(ctx, q, node, types, afterID, limit, "source")
 }
 
 // Incoming lists the current relationships whose target is the node.
-func (g *Graph) Incoming(ctx context.Context, q Querier, node Node, types []string, limit int) ([]Relationship, bool, error) {
-	return g.adjacent(ctx, q, node, types, limit, "target")
+func (g *Graph) Incoming(ctx context.Context, q Querier, node Node, types []string, afterID string, limit int) (Page, error) {
+	return g.adjacent(ctx, q, node, types, afterID, limit, "target")
 }
 
-func (g *Graph) adjacent(ctx context.Context, q Querier, node Node, types []string, limit int, side string) ([]Relationship, bool, error) {
-	if err := validNode(node); err != nil {
-		return nil, false, err
-	}
-	types, err := g.checkTypes(types)
+func (g *Graph) adjacent(ctx context.Context, q Querier, node Node, types []string, afterID string, limit int, side string) (Page, error) {
+	node, err := checkNode(node)
 	if err != nil {
-		return nil, false, err
+		return Page{}, err
+	}
+	types, err = g.checkTypes(types)
+	if err != nil {
+		return Page{}, err
+	}
+	var after *string
+	if afterID != "" {
+		if !uuidPattern.MatchString(afterID) {
+			return Page{}, fmt.Errorf("%w: cursor must be a UUID", ErrInvalid)
+		}
+		a := strings.ToLower(afterID)
+		after = &a
 	}
 	limit = clampLimit(limit)
 	rows, err := q.Query(ctx, `
 		SELECT `+cols+` FROM platform.relationships
 		WHERE `+side+`_type = $1 AND `+side+`_id = $2::uuid AND type = ANY($3::text[]) AND valid_until IS NULL
-		ORDER BY id LIMIT $4`, node.Type, node.ID, types, limit+1)
+		  AND ($5::uuid IS NULL OR id > $5::uuid)
+		ORDER BY id LIMIT $4`, node.Type, node.ID, types, limit+1, after)
 	if err != nil {
-		return nil, false, fmt.Errorf("list relationships: %w", err)
+		return Page{}, fmt.Errorf("list relationships: %w", err)
 	}
 	defer rows.Close()
 	var out []Relationship
 	for rows.Next() {
 		r, err := scan(rows)
 		if err != nil {
-			return nil, false, fmt.Errorf("list relationships: %w", err)
+			return Page{}, fmt.Errorf("list relationships: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list relationships: %w", err)
+		return Page{}, fmt.Errorf("list relationships: %w", err)
 	}
 	if len(out) > limit {
-		return out[:limit], true, nil
+		out = out[:limit]
+		return Page{Items: out, NextCursor: out[limit-1].ID}, nil
 	}
-	return out, false, nil
+	return Page{Items: out}, nil
 }
 
 // Edge is one relationship on a traversal path, in the direction it was
@@ -480,6 +590,9 @@ type TraverseInput struct {
 	MaxNodes  int
 	// Types restricts the relationship types followed; empty means all registered types.
 	Types []string
+	// NodeTypes restricts the record types the walk reaches (and continues
+	// from); empty means all. Relationships to other types are not read at all.
+	NodeTypes []string
 }
 
 // TraverseResult lists the reached nodes (without the start) in breadth-first
@@ -508,13 +621,14 @@ func (g *Graph) Traverse(ctx context.Context, q Querier, in TraverseInput) (Trav
 }
 
 // Reaches reports whether target is reachable from start in the direction,
-// searching deeper than Traverse. ErrTooLarge when the search limit was hit
-// without finding it.
-func (g *Graph) Reaches(ctx context.Context, q Querier, start, target Node, dir Direction, types []string) (bool, error) {
-	if err := validNode(target); err != nil {
+// searching deeper than Traverse and only through records of nodeTypes (empty:
+// all). ErrTooLarge when the search limit was hit without finding it.
+func (g *Graph) Reaches(ctx context.Context, q Querier, start, target Node, dir Direction, types, nodeTypes []string) (bool, error) {
+	target, err := checkNode(target)
+	if err != nil {
 		return false, err
 	}
-	res, found, err := g.walk(ctx, q, TraverseInput{Start: start, Direction: dir, MaxDepth: reachDepth, MaxNodes: reachNodes, Types: types}, &target)
+	res, found, err := g.walk(ctx, q, TraverseInput{Start: start, Direction: dir, MaxDepth: reachDepth, MaxNodes: reachNodes, Types: types, NodeTypes: nodeTypes}, &target)
 	if err != nil {
 		return false, err
 	}
@@ -528,16 +642,27 @@ func (g *Graph) Reaches(ctx context.Context, q Querier, start, target Node, dir 
 }
 
 func (g *Graph) walk(ctx context.Context, q Querier, in TraverseInput, find *Node) (TraverseResult, bool, error) {
-	if err := validNode(in.Start); err != nil {
+	start, err := checkNode(in.Start)
+	if err != nil {
 		return TraverseResult{}, false, err
 	}
+	in.Start = start
 	types, err := g.checkTypes(in.Types)
 	if err != nil {
 		return TraverseResult{}, false, err
 	}
-	near := "source" // Forward: the frontier is the source side
+	for _, t := range in.NodeTypes {
+		if !typePattern.MatchString(t) {
+			return TraverseResult{}, false, fmt.Errorf("%w: unknown node type", ErrInvalid)
+		}
+	}
+	nodeTypes := in.NodeTypes
+	if nodeTypes == nil {
+		nodeTypes = []string{}
+	}
+	near, far := "source", "target" // Forward: the frontier is the source side
 	if in.Direction == Reverse {
-		near = "target"
+		near, far = "target", "source"
 	}
 	visited := map[Node]bool{in.Start: true}
 	paths := map[Node][]Edge{in.Start: nil}
@@ -552,7 +677,8 @@ func (g *Graph) walk(ctx context.Context, q Querier, in TraverseInput, find *Nod
 			SELECT `+cols+` FROM platform.relationships
 			WHERE (`+near+`_type, `+near+`_id) IN (SELECT * FROM unnest($1::text[], $2::uuid[]))
 			  AND type = ANY($3::text[]) AND valid_until IS NULL
-			ORDER BY id LIMIT $4`, fTypes, fIDs, types, edgeScanLimit+1)
+			  AND (cardinality($5::text[]) = 0 OR `+far+`_type = ANY($5::text[]))
+			ORDER BY id LIMIT $4`, fTypes, fIDs, types, edgeScanLimit+1, nodeTypes)
 		if err != nil {
 			return TraverseResult{}, false, fmt.Errorf("traverse relationships: %w", err)
 		}

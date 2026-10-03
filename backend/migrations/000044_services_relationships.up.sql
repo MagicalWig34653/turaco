@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS platform.relationships (
     target_id uuid NOT NULL,
     -- declared by a person, derived by Turaco from its own data, observed from an integration.
     confidence text NOT NULL CHECK (confidence IN ('declared', 'derived', 'observed')),
-    valid_from timestamptz NOT NULL DEFAULT now(),
+    -- clock_timestamp(), not now(): a row committed after a lock wait must not start before
+    -- the transaction that ends it began.
+    valid_from timestamptz NOT NULL DEFAULT clock_timestamp(),
     valid_until timestamptz,
     -- Reason code for ending a relationship; set exactly when it is ended.
     end_reason text CHECK (end_reason IS NULL OR end_reason ~ '^[a-z][a-z_]{0,39}$'),
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS platform.relationships (
     source text CHECK (source IS NULL OR (source = btrim(source) AND length(source) BETWEEN 1 AND 50)),
     CHECK ((valid_until IS NULL) = (end_reason IS NULL)),
     CHECK (valid_until IS NULL OR valid_until >= valid_from),
+    CHECK (ended_by IS NULL OR valid_until IS NOT NULL),
     CHECK (NOT (source_type = target_type AND source_id = target_id))
 );
 -- One current relationship per (source, type, target).

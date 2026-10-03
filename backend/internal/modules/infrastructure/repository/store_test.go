@@ -832,3 +832,60 @@ func TestPublicVMsLookup(t *testing.T) {
 		t.Fatal("lookup must be bounded")
 	}
 }
+
+func TestPublicVMIDsWithHypervisorPages(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	mine := map[string]bool{}
+	for i, withHV := range []bool{true, true, true, false} {
+		in := application.VMInput{Name: e.corr + "-page-" + string(rune('a'+i)), VCPU: 1, MemoryMB: 1}
+		if withHV {
+			hv := e.newAsset("assigned")
+			in.HypervisorAssetID = &hv
+		}
+		vm, err := e.svc.CreateVM(ctx, e.caller(), e.manage, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mine[vm.ID] = withHV
+	}
+	pub := public.New(e.svc)
+	var got []string
+	after := ""
+	for {
+		ids, err := pub.VMIDsWithHypervisor(ctx, after, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			if id <= after {
+				t.Fatalf("ids must ascend: %s after %s", id, after)
+			}
+		}
+		if len(ids) == 0 {
+			break
+		}
+		got, after = append(got, ids...), ids[len(ids)-1]
+	}
+	found := 0
+	for _, id := range got {
+		if hv, ok := mine[id]; ok {
+			if !hv {
+				t.Fatalf("VM without hypervisor listed: %s", id)
+			}
+			found++
+		}
+	}
+	if found != 3 {
+		t.Fatalf("expected the 3 VMs with a hypervisor, found %d", found)
+	}
+	if _, err := pub.VMIDsWithHypervisor(ctx, "", 0); err == nil {
+		t.Fatal("limit must be positive")
+	}
+	if _, err := pub.VMIDsWithHypervisor(ctx, "nope", 10); err == nil {
+		t.Fatal("cursor must be a UUID")
+	}
+	if _, err := pub.VMIDsWithHypervisor(ctx, "", application.MaxLookupIDs+1); err == nil {
+		t.Fatal("limit must be bounded")
+	}
+}

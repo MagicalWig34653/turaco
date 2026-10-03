@@ -88,6 +88,13 @@ func (r *Repository) LockTx(ctx context.Context, tx pgx.Tx, id string) (applicat
 	return one(tx.QueryRow(ctx, `SELECT `+cols+` FROM services.services WHERE id = $1::uuid FOR UPDATE`, id), "lock service")
 }
 
+func (r *Repository) ShareLockTx(ctx context.Context, tx pgx.Tx, id string) (application.Service, error) {
+	if !validUUID(id) {
+		return application.Service{}, application.ErrNotFound
+	}
+	return one(tx.QueryRow(ctx, `SELECT `+cols+` FROM services.services WHERE id = $1::uuid FOR SHARE`, id), "share-lock service")
+}
+
 func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, s application.Service) (application.Service, error) {
 	return one(tx.QueryRow(ctx, `
 		UPDATE services.services SET name = $2, description = $3, owner_user_id = $4::uuid, owner_team_id = $5::uuid, support_team_id = $6::uuid,

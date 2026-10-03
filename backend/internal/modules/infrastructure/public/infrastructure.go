@@ -61,6 +61,13 @@ func (i *Infrastructure) VMs(ctx context.Context, ids []string) (map[string]VM, 
 	return out, nil
 }
 
+// VMIDsWithHypervisor lists the ids (ascending, after afterID, at most 500) of
+// Virtual Machines that have a hypervisor Asset, for modules that derive links
+// from them. It authorizes nothing.
+func (i *Infrastructure) VMIDsWithHypervisor(ctx context.Context, afterID string, limit int) ([]string, error) {
+	return i.svc.VMIDsWithHypervisor(ctx, afterID, limit)
+}
+
 // Assets adapts the Assets contract to the questions Infrastructure asks.
 type Assets struct{ a *assetspublic.Assets }
 

@@ -6,10 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +22,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 )
 
@@ -55,9 +59,32 @@ func (d fakeDir) LocationNames(_ context.Context, ids []string) (map[string]stri
 type fakeInfra struct {
 	mu  sync.Mutex
 	vms map[string]application.VMInfo
+	// block, when set, makes VMs signal on entered and wait until block is closed.
+	block   chan struct{}
+	entered chan struct{}
+}
+
+func (f *fakeInfra) VMIDsWithHypervisor(_ context.Context, afterID string, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var ids []string
+	for id, v := range f.vms {
+		if v.HypervisorAssetID != nil && id > afterID {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids, nil
 }
 
 func (f *fakeInfra) VMs(_ context.Context, ids []string) (map[string]application.VMInfo, error) {
+	if f.block != nil {
+		f.entered <- struct{}{}
+		<-f.block
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := map[string]application.VMInfo{}
@@ -84,6 +111,7 @@ func (f fakeAssets) Assets(_ context.Context, ids []string) (map[string]applicat
 type env struct {
 	t      *testing.T
 	pool   *pgxpool.Pool
+	store  *repository.Repository
 	app    *application.App
 	links  *application.VMLinks
 	graph  *relationships.Graph
@@ -112,6 +140,7 @@ func newEnv(t *testing.T) *env {
 	e.user, e.team, e.site = e.uuid(), e.uuid(), e.uuid()
 	e.dir = fakeDir{users: map[string]string{e.user: "U"}, teams: map[string]string{e.team: "T"}, locations: map[string]string{e.site: "Headquarters"}}
 	store := repository.New(pool)
+	e.store = store
 	e.app = application.NewApp(store, e.graph, e.dir, e.infra, e.assets)
 	e.links = application.NewVMLinks(store, e.graph, e.infra)
 	e.manage = application.Principal{UserID: e.user, Manage: true, InfraView: true, AssetsView: true}
@@ -119,7 +148,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.relationships WHERE source_id = ANY($1::uuid[]) OR target_id = ANY($1::uuid[])`, e.ids)
-		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1`, e.corr)
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1 OR correlation_id = 'vm-link-backfill:' || $1`, e.corr)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE correlation_id = $1`, e.corr)
 		_, _ = pool.Exec(ctx, `DELETE FROM services.services WHERE name LIKE $1`, e.prefix+"%")
 	})
@@ -279,10 +308,13 @@ func TestUpdateDetailsStatusAndRetire(t *testing.T) {
 	if err != nil || r.Status != "retired" || r.RetiredAt == nil {
 		t.Fatalf("retire: %+v %v", r, err)
 	}
-	out, _, _ := e.graph.Outgoing(ctx, e.pool, relationships.Node{Type: "service", ID: s.ID}, nil, 10)
-	in, _, _ := e.graph.Incoming(ctx, e.pool, relationships.Node{Type: "service", ID: s.ID}, nil, 10)
-	if len(out) != 0 || len(in) != 1 {
-		t.Fatalf("retire ends own dependencies only: out=%d in=%d", len(out), len(in))
+	out, _ := e.graph.Outgoing(ctx, e.pool, relationships.Node{Type: "service", ID: s.ID}, nil, "", 10)
+	in, _ := e.graph.Incoming(ctx, e.pool, relationships.Node{Type: "service", ID: s.ID}, nil, "", 10)
+	if len(out.Items) != 0 || len(in.Items) != 0 {
+		t.Fatalf("retire ends dependencies and dependents: out=%d in=%d", len(out.Items), len(in.Items))
+	}
+	if e.count(`SELECT count(*) FROM platform.relationships WHERE end_reason = 'service_retired' AND (source_id = $1::uuid OR target_id = $1::uuid) AND ended_by = $2::uuid`, s.ID, e.user) != 2 {
+		t.Fatal("ended links keep their reason and actor as history")
 	}
 	// A retried retire (same reason, version from before) is a no-op; other operations are refused.
 	if again, err := e.app.Retire(ctx, e.caller(), e.manage, s.ID, ver(d), "replaced"); err != nil || again.Version != r.Version {
@@ -637,7 +669,7 @@ func TestImpactTraversalRedactionAndCaps(t *testing.T) {
 	site := e.uuid()
 	e.dir.locations[site] = "Big site"
 	for i := 0; i < 510; i++ {
-		if _, _, err := e.graph.Link(ctx, e.pool, relationships.LinkInput{Source: relationships.Node{Type: "service", ID: e.uuid()}, Type: "DEPENDS_ON",
+		if _, _, err := e.graph.Link(ctx, e.pool, relationships.LinkInput{Owner: "services", Source: relationships.Node{Type: "service", ID: e.uuid()}, Type: "DEPENDS_ON",
 			Target: relationships.Node{Type: "location", ID: site}, Confidence: "declared"}); err != nil {
 			t.Fatal(err)
 		}
@@ -659,11 +691,11 @@ func (e *env) syncVM(vm string) error {
 }
 
 func (e *env) runsOn(vm string) []relationships.Relationship {
-	out, _, err := e.graph.Outgoing(context.Background(), e.pool, relationships.Node{Type: "vm", ID: vm}, []string{"RUNS_ON"}, 10)
+	out, err := e.graph.Outgoing(context.Background(), e.pool, relationships.Node{Type: "vm", ID: vm}, []string{"RUNS_ON"}, "", 10)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	return out
+	return out.Items
 }
 
 func TestVMLinkSyncIsIdempotentAndFollowsState(t *testing.T) {
@@ -752,5 +784,396 @@ func TestVMLinkConsumerPayloadAndConcurrency(t *testing.T) {
 	}
 	if e.audits("services.vm_link.synced") != 1 {
 		t.Fatalf("audits: %d", e.audits("services.vm_link.synced"))
+	}
+}
+
+func TestHiddenNodesGetPlaceholderIDs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	hv := e.asset("assigned")
+	vm := e.vm("running", &hv)
+	if err := e.syncVM(vm); err != nil {
+		t.Fatal(err)
+	}
+	db, web := e.service("DB"), e.service("Web")
+	if err := e.dep(db.ID, "vm", vm); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.dep(web.ID, "service", db.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.dep(web.ID, "location", e.site); err != nil {
+		t.Fatal(err)
+	}
+	vmRel := e.count(`SELECT count(*) FROM platform.relationships WHERE source_id = $1::uuid`, vm) // the RUNS_ON edge
+	if vmRel != 1 {
+		t.Fatal("setup")
+	}
+	var runsOnID string
+	if err := e.pool.QueryRow(ctx, `SELECT id::text FROM platform.relationships WHERE source_id = $1::uuid`, vm).Scan(&runsOnID); err != nil {
+		t.Fatal(err)
+	}
+	secrets := []string{vm, e.site, runsOnID}
+
+	// A reader with assets.view but no infrastructure.view walks down from the hypervisor: the VM is hidden but traversed.
+	noInfra := application.Principal{UserID: e.user, View: true, AssetsView: true}
+	res, err := e.app.Impact(ctx, noInfra, application.ImpactInput{Type: "asset", ID: hv})
+	if err != nil || len(res.Nodes) != 3 {
+		t.Fatalf("impact: %+v %v", res, err)
+	}
+	if raw := fmt.Sprintf("%+v", res); containsAny(raw, secrets) {
+		t.Fatalf("hidden ids leaked: %s", raw)
+	}
+	vmNode := res.Nodes[0]
+	if vmNode.Type != "vm" || !vmNode.Hidden || vmNode.ID != "hidden-1" || vmNode.Name != nil || vmNode.Status != nil || vmNode.Missing {
+		t.Fatalf("hidden vm node: %+v", vmNode)
+	}
+	if p := vmNode.Path[0]; p.ToID != "hidden-1" || p.RelationshipID == runsOnID || p.FromID != hv {
+		t.Fatalf("hidden edge: %+v", p)
+	}
+	dbNode := res.Nodes[1]
+	if dbNode.ID != db.ID || dbNode.Path[1].FromID != "hidden-1" || dbNode.Path[1].ToID != db.ID {
+		t.Fatalf("path continues through the placeholder: %+v", dbNode.Path)
+	}
+	// The placeholders are stable within a response and restart per response.
+	again, _ := e.app.Impact(ctx, noInfra, application.ImpactInput{Type: "asset", ID: hv})
+	if again.Nodes[0].ID != "hidden-1" {
+		t.Fatalf("placeholder numbering must be per response: %+v", again.Nodes[0])
+	}
+
+	// Upstream from the top service: VM, location (both hidden) and the hypervisor (assets.view).
+	up, _ := e.app.Impact(ctx, noInfra, application.ImpactInput{Type: "service", ID: web.ID, Direction: "upstream"})
+	if raw := fmt.Sprintf("%+v", up); containsAny(raw, secrets) {
+		t.Fatalf("upstream leak: %s", raw)
+	}
+	seen := map[string]bool{}
+	for _, n := range up.Nodes {
+		if n.Hidden {
+			if seen[n.ID] {
+				t.Fatalf("two hidden records share a placeholder: %s", n.ID)
+			}
+			seen[n.ID] = true
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("expected two hidden records, got %v", seen)
+	}
+
+	// Detail: dependencies of the service show the VM as hidden; relationship ids stay usable for removal.
+	d, err := e.app.Get(ctx, noInfra, db.ID)
+	if err != nil || len(d.Dependencies) != 1 || !d.Dependencies[0].Node.Hidden || d.Dependencies[0].Node.ID != "hidden-1" || d.Dependencies[0].RelationshipID == "" {
+		t.Fatalf("detail: %+v %v", d, err)
+	}
+	if raw := fmt.Sprintf("%+v", d); containsAny(raw, secrets) {
+		t.Fatalf("detail leak: %s", raw)
+	}
+	// A full reader sees real ids and names.
+	full, _ := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "asset", ID: hv})
+	if full.Nodes[0].ID != vm || full.Nodes[0].Hidden || full.Nodes[0].Name == nil {
+		t.Fatalf("full reader: %+v", full.Nodes[0])
+	}
+}
+
+func containsAny(s string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAddDependencyNeedsViewPermissionOfTargetType(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s := e.service("Core")
+	vm, asset := e.vm("running", nil), e.asset("assigned")
+	noInfra := application.Principal{UserID: e.user, Manage: true, AssetsView: true}
+	noAssets := application.Principal{UserID: e.user, Manage: true, InfraView: true}
+	for _, c := range []struct {
+		p       application.Principal
+		typ, id string
+	}{{noInfra, "vm", vm}, {noInfra, "location", e.site}, {noAssets, "asset", asset}, {noInfra, "vm", e.uuid()}} {
+		if _, _, err := e.app.AddDependency(ctx, e.caller(), c.p, s.ID, c.typ, c.id); !errors.Is(err, application.ErrReferenceInvalid) {
+			t.Errorf("%s without view permission: %v", c.typ, err)
+		}
+	}
+	// The answer is identical for existing and unknown records, so nothing is disclosed.
+	if _, _, err := e.app.AddDependency(ctx, e.caller(), noInfra, s.ID, "asset", asset); err != nil {
+		t.Errorf("asset with assets.view: %v", err)
+	}
+	if _, _, err := e.app.AddDependency(ctx, e.caller(), noAssets, s.ID, "vm", vm); err != nil {
+		t.Errorf("vm with infrastructure.view: %v", err)
+	}
+	// Services need no extra permission.
+	if _, _, err := e.app.AddDependency(ctx, e.caller(), application.Principal{UserID: e.user, Manage: true}, s.ID, "service", e.service("Other").ID); err != nil {
+		t.Errorf("service target: %v", err)
+	}
+}
+
+func TestAddDependencyRechecksRetiredTargetUnderLock(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	src, target := e.service("Src"), e.service("Target")
+	// A retire of the target is in flight (row locked, retired, not yet committed): the first check
+	// still sees the target as live, the in-transaction re-read must wait and then refuse it.
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	cur, err := e.store.LockTx(ctx, tx, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur.Status = "retired"
+	reason := "replaced"
+	cur.StatusReason = &reason
+	if _, err := e.store.UpdateTx(ctx, tx, cur); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- e.dep(src.ID, "service", target.ID) }()
+	select {
+	case err := <-done:
+		t.Fatalf("add must wait for the retire to finish: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, application.ErrReferenceInvalid) {
+		t.Fatalf("dependency on a service retired meanwhile: %v", err)
+	}
+	if e.count(`SELECT count(*) FROM platform.relationships WHERE source_id = $1::uuid`, src.ID) != 0 {
+		t.Fatal("no link may be created to a retired service")
+	}
+}
+
+func TestCycleCheckIgnoresNonServiceNodes(t *testing.T) {
+	e := newEnv(t)
+	a, b := e.service("A"), e.service("B")
+	// A service hub with many non-service dependencies must not make the cycle check "too large".
+	for i := 0; i < 20; i++ {
+		if err := e.dep(b.ID, "asset", e.asset("assigned")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := e.dep(a.ID, "service", b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.dep(b.ID, "service", a.ID); !errors.Is(err, application.ErrDependencyCycle) {
+		t.Fatalf("cycle: %v", err)
+	}
+}
+
+func TestDependencyGraphTimeouts(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, b := e.service("A"), e.service("B")
+	e.app.WithTimeouts(200*time.Millisecond, 5*time.Second)
+	// Another transaction holds the dependency graph lock: the change gives up with ErrBusy instead of queueing forever.
+	tx, err := e.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := e.store.LockDependencyGraphTx(ctx, tx); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := e.dep(a.ID, "service", b.ID); !errors.Is(err, application.ErrBusy) {
+		t.Fatalf("lock wait: %v", err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatal("lock timeout not applied")
+	}
+	// Non-service dependencies do not take the graph lock at all.
+	if err := e.dep(a.ID, "asset", e.asset("assigned")); err != nil {
+		t.Fatalf("asset dependency must not wait: %v", err)
+	}
+	_ = tx.Rollback(ctx)
+
+	// A statement stuck for longer than the statement timeout (a row lock on the source) fails as a cycle-check error.
+	e.app.WithTimeouts(5*time.Second, 300*time.Millisecond)
+	tx2, err := e.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx2.Rollback(ctx) }()
+	if _, err := e.store.LockTx(ctx, tx2, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.dep(a.ID, "service", b.ID); !errors.Is(err, application.ErrCycleCheck) {
+		t.Fatalf("statement timeout: %v", err)
+	}
+}
+
+func TestListDependenciesPagesWithCursor(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s := e.service("Hub")
+	for i := 0; i < 5; i++ {
+		if err := e.dep(s.ID, "asset", e.asset("assigned")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var seen []string
+	cursor := ""
+	for pages := 0; pages < 5; pages++ {
+		res, err := e.app.ListDependencies(ctx, e.view, s.ID, "out", cursor, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range res.Items {
+			seen = append(seen, l.RelationshipID)
+		}
+		if cursor = res.NextCursor; cursor == "" {
+			break
+		}
+	}
+	uniq := map[string]bool{}
+	for _, id := range seen {
+		uniq[id] = true
+	}
+	if len(seen) != 5 || len(uniq) != 5 {
+		t.Fatalf("pages must cover every dependency once: %v", seen)
+	}
+	if d, _ := e.app.Get(ctx, e.view, s.ID); d.DependenciesNext != "" || len(d.Dependencies) != 5 {
+		t.Fatalf("detail: %+v", d)
+	}
+	in, err := e.app.ListDependencies(ctx, e.view, s.ID, "in", "", 10)
+	if err != nil || len(in.Items) != 0 {
+		t.Fatalf("dependents: %+v %v", in, err)
+	}
+	if _, err := e.app.ListDependencies(ctx, e.view, s.ID, "out", "nope", 10); !errors.Is(err, application.ErrInvalidCursor) {
+		t.Errorf("bad cursor: %v", err)
+	}
+	var inv *application.InvalidInputError
+	if _, err := e.app.ListDependencies(ctx, e.view, s.ID, "up", "", 10); !errors.As(err, &inv) {
+		t.Errorf("bad direction: %v", err)
+	}
+	if _, err := e.app.ListDependencies(ctx, e.view, e.uuid(), "out", "", 10); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("unknown service: %v", err)
+	}
+	if _, err := e.app.ListDependencies(ctx, application.Principal{}, s.ID, "out", "", 10); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("no permission: %v", err)
+	}
+}
+
+func TestImpactAllowsOneTraversalPerUser(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	vm := e.vm("running", nil)
+	other := e.service("Other")
+	e.infra.block, e.infra.entered = make(chan struct{}), make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		_, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "vm", ID: vm})
+		done <- err
+	}()
+	<-e.infra.entered // the first traversal is running
+	if _, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: other.ID}); !errors.Is(err, application.ErrImpactBusy) {
+		t.Fatalf("second traversal of the same user: %v", err)
+	}
+	second := e.view
+	second.UserID = e.uuid()
+	if _, err := e.app.Impact(ctx, second, application.ImpactInput{Type: "service", ID: other.ID}); err != nil {
+		t.Fatalf("another user must not be blocked: %v", err)
+	}
+	close(e.infra.block)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	e.infra.block = nil
+	if _, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: other.ID}); err != nil {
+		t.Fatalf("the slot must be released: %v", err)
+	}
+}
+
+func TestVMSyncEndsAllStaleLinks(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	hv1, hv2, hv3 := e.asset("assigned"), e.asset("assigned"), e.asset("assigned")
+	vm := e.vm("running", &hv3)
+	// Several stale links (more than any read page would show) exist next to the wanted one.
+	for _, hv := range []string{hv1, hv2, hv3} {
+		if _, _, err := e.graph.Link(ctx, e.pool, relationships.LinkInput{Owner: "services", Source: relationships.Node{Type: "vm", ID: vm},
+			Type: "RUNS_ON", Target: relationships.Node{Type: "asset", ID: hv}, Confidence: "derived"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := e.syncVM(vm); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.runsOn(vm); len(got) != 1 || got[0].Target.ID != hv3 {
+		t.Fatalf("only the wanted link stays: %+v", got)
+	}
+	if e.count(`SELECT count(*) FROM platform.relationships WHERE source_id = $1::uuid AND end_reason = 'hypervisor_changed'`, vm) != 2 {
+		t.Fatal("stale links end with a reason")
+	}
+	// Cleared hypervisor ends everything that is left.
+	e.infra.mu.Lock()
+	e.infra.vms[vm] = application.VMInfo{ID: vm, State: "running"}
+	e.infra.mu.Unlock()
+	_ = e.syncVM(vm)
+	if len(e.runsOn(vm)) != 0 {
+		t.Fatal("cleared hypervisor ends the link")
+	}
+}
+
+func TestVMLinkBackfillDerivesMissingLinks(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	// 205 VMs with a hypervisor exceed one backfill batch; one VM has none, one is decommissioned.
+	hvs := map[string]string{}
+	for i := 0; i < 205; i++ {
+		hv := e.asset("assigned")
+		hvs[e.vm("running", &hv)] = hv
+	}
+	plain := e.vm("running", nil)
+	hvDead := e.asset("assigned")
+	dead := e.vm("decommissioned", &hvDead)
+
+	job := jobs.Job{ID: e.corr}
+	if err := e.links.HandleBackfill(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	for vm, hv := range hvs {
+		if got := e.runsOn(vm); len(got) != 1 || got[0].Target.ID != hv || got[0].Confidence != "derived" {
+			t.Fatalf("vm %s: %+v", vm, got)
+		}
+	}
+	if len(e.runsOn(plain)) != 0 || len(e.runsOn(dead)) != 0 {
+		t.Fatal("VMs without hypervisor and decommissioned VMs get no link")
+	}
+	audited := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = 'vm-link-backfill:' || $1 AND action = 'services.vm_link.synced'`, e.corr)
+	if audited != 205 {
+		t.Fatalf("audits: %d", audited)
+	}
+	// Running it again changes and audits nothing.
+	if err := e.links.HandleBackfill(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = 'vm-link-backfill:' || $1`, e.corr); n != audited {
+		t.Fatalf("second run audited again: %d", n)
+	}
+}
+
+func TestEnqueueBackfillDeduplicates(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	clean := func() {
+		_, _ = e.pool.Exec(ctx, `DELETE FROM platform.jobs WHERE job_type = $1 AND status = 'pending'`, application.BackfillJobType)
+	}
+	clean()
+	t.Cleanup(clean)
+	for i := 0; i < 3; i++ {
+		if err := application.EnqueueBackfill(ctx, e.pool); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := e.count(`SELECT count(*) FROM platform.jobs WHERE job_type = $1 AND status = 'pending'`, application.BackfillJobType); n != 1 {
+		t.Fatalf("pending backfill jobs: %d", n)
 	}
 }

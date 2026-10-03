@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -24,10 +26,25 @@ type App struct {
 	dir    Directory
 	infra  Infrastructure
 	assets Assets
+
+	// Timeouts of a service-to-service dependency change (graph lock wait and statements).
+	lockTimeout, statementTimeout time.Duration
+
+	// impactRunning holds the users with an impact traversal in progress.
+	impactMu      sync.Mutex
+	impactRunning map[string]bool
 }
 
 func NewApp(store Store, graph *relationships.Graph, dir Directory, infra Infrastructure, assets Assets) *App {
-	return &App{store: store, graph: graph, dir: dir, infra: infra, assets: assets}
+	return &App{store: store, graph: graph, dir: dir, infra: infra, assets: assets,
+		lockTimeout: 5 * time.Second, statementTimeout: 10 * time.Second, impactRunning: map[string]bool{}}
+}
+
+// WithTimeouts overrides the lock wait and statement timeouts of
+// service-to-service dependency changes (defaults 5s and 10s).
+func (s *App) WithTimeouts(lock, statement time.Duration) *App {
+	s.lockTimeout, s.statementTimeout = lock, statement
+	return s
 }
 
 func publish(ctx context.Context, tx pgx.Tx, c Caller, typ string, payload map[string]any) error {
@@ -360,8 +377,10 @@ func (s *App) ChangeStatus(ctx context.Context, c Caller, p Principal, id string
 }
 
 // Retire ends a Service for good (terminal tombstone) with a reason code. Its
-// own dependencies end with it; Services that depend on it keep their links so
-// their owners see the retired dependency. Repeating a successful retire with
+// own dependencies end with it, and so do the dependencies other Services have
+// on it (reason service_retired, kept as history): a retired Service is not
+// part of the live dependency graph, impact views never show it as a live
+// dependency, and the audit entry counts both. Repeating a successful retire with
 // the same reason returns the current record. expectedVersion is required.
 // Requires services.manage.
 func (s *App) Retire(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (Service, error) {
@@ -402,12 +421,17 @@ func (s *App) Retire(ctx context.Context, c Caller, p Principal, id string, expe
 		if err != nil {
 			return err
 		}
-		ended, err := s.graph.UnlinkAll(ctx, tx, relationships.Node{Type: NodeService, ID: id}, relationships.Forward, reasonServiceRetired, c.Actor.UserID)
+		self := relationships.Node{Type: NodeService, ID: id}
+		ended, err := s.graph.UnlinkAll(ctx, tx, RelationshipOwner, self, relationships.Forward, reasonServiceRetired, c.Actor.UserID)
 		if err != nil {
 			return fmt.Errorf("end dependencies of retired service: %w", err)
 		}
+		endedDependents, err := s.graph.UnlinkAll(ctx, tx, RelationshipOwner, self, relationships.Reverse, reasonServiceRetired, c.Actor.UserID)
+		if err != nil {
+			return fmt.Errorf("end dependents of retired service: %w", err)
+		}
 		if err := recordAudit(ctx, tx, c, "services.service.retired", "service", id, serviceState(&cur), serviceState(&out),
-			map[string]any{"reason": reason, "endedDependencies": ended}); err != nil {
+			map[string]any{"reason": reason, "endedDependencies": ended, "endedDependents": endedDependents}); err != nil {
 			return err
 		}
 		return publish(ctx, tx, c, "ServiceStatusChanged", map[string]any{
@@ -429,34 +453,80 @@ func (s *App) Get(ctx context.Context, p Principal, id string) (Detail, error) {
 		return Detail{}, err
 	}
 	node := relationships.Node{Type: NodeService, ID: rec.ID}
-	types := []string{RelDependsOn}
-	out, outCut, err := s.graph.Outgoing(ctx, s.store.Q(), node, types, MaxDependencyList)
-	if err != nil {
-		return Detail{}, fmt.Errorf("list dependencies: %w", err)
-	}
-	in, inCut, err := s.graph.Incoming(ctx, s.store.Q(), node, types, MaxDependencyList)
-	if err != nil {
-		return Detail{}, fmt.Errorf("list dependents: %w", err)
-	}
-	nodes := make([]relationships.Node, 0, len(out)+len(in))
-	for _, r := range out {
-		nodes = append(nodes, r.Target)
-	}
-	for _, r := range in {
-		nodes = append(nodes, r.Source)
-	}
-	info, err := s.describe(ctx, p, nodes)
+	m := newMasker()
+	deps, depsNext, err := s.links(ctx, p, node, DepOut, "", MaxDependencyList, m)
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Service: rec, DependenciesCutOff: outCut, DependentsCutOff: inCut}
-	for _, r := range out {
-		d.Dependencies = append(d.Dependencies, link(r, r.Target, info))
+	dependents, dependentsNext, err := s.links(ctx, p, node, DepIn, "", MaxDependencyList, m)
+	if err != nil {
+		return Detail{}, err
 	}
-	for _, r := range in {
-		d.Dependents = append(d.Dependents, link(r, r.Source, info))
+	return Detail{Service: rec, Dependencies: deps, Dependents: dependents, DependenciesNext: depsNext, DependentsNext: dependentsNext}, nil
+}
+
+// links reads one page of DEPENDS_ON links of the node and describes the record at the far end.
+func (s *App) links(ctx context.Context, p Principal, node relationships.Node, direction, cursor string, limit int, m *masker) ([]Link, string, error) {
+	types := []string{RelDependsOn}
+	var page relationships.Page
+	var err error
+	if direction == DepOut {
+		page, err = s.graph.Outgoing(ctx, s.store.Q(), node, types, cursor, limit)
+	} else {
+		page, err = s.graph.Incoming(ctx, s.store.Q(), node, types, cursor, limit)
 	}
-	return d, nil
+	if err != nil {
+		return nil, "", fmt.Errorf("list dependencies: %w", err)
+	}
+	other := func(r relationships.Relationship) relationships.Node {
+		if direction == DepOut {
+			return r.Target
+		}
+		return r.Source
+	}
+	nodes := make([]relationships.Node, len(page.Items))
+	for i, r := range page.Items {
+		nodes[i] = other(r)
+	}
+	info, err := s.describe(ctx, p, nodes)
+	if err != nil {
+		return nil, "", err
+	}
+	out := make([]Link, 0, len(page.Items))
+	for _, r := range page.Items {
+		l := link(r, other(r), info)
+		l.Node = m.node(l.Node)
+		out = append(out, l)
+	}
+	return out, page.NextCursor, nil
+}
+
+// ListDependencies pages through the dependencies (DepOut) or dependents (DepIn)
+// of a Service, oldest relationship id first. cursor is the NextCursor of the
+// previous page. Requires services.view.
+func (s *App) ListDependencies(ctx context.Context, p Principal, id, direction, cursor string, limit int) (Result[Link], error) {
+	if err := p.require(false); err != nil {
+		return Result[Link]{}, err
+	}
+	if direction != DepOut && direction != DepIn {
+		return Result[Link]{}, invalid("direction must be out or in")
+	}
+	if !uuidPattern.MatchString(id) {
+		return Result[Link]{}, ErrNotFound
+	}
+	if cursor != "" && !uuidPattern.MatchString(cursor) {
+		return Result[Link]{}, ErrInvalidCursor
+	}
+	page := Page{Limit: limit}.Normalize()
+	rec, err := s.store.Get(ctx, strings.ToLower(id))
+	if err != nil {
+		return Result[Link]{}, err
+	}
+	items, next, err := s.links(ctx, p, relationships.Node{Type: NodeService, ID: rec.ID}, direction, cursor, page.Limit, newMasker())
+	if err != nil {
+		return Result[Link]{}, err
+	}
+	return Result[Link]{Items: items, NextCursor: next}, nil
 }
 
 func link(r relationships.Relationship, other relationships.Node, info map[relationships.Node]NodeInfo) Link {

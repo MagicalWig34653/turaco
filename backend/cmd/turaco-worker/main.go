@@ -25,6 +25,7 @@ import (
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
+	servicesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/services/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -102,6 +103,10 @@ func main() {
 	}
 	if err := registerRecurrence(runner, pool); err != nil {
 		logger.Error("configure recurring tasks", "error", err)
+		os.Exit(1)
+	}
+	if err := registerServicesBackfill(ctx, runner, pool); err != nil {
+		logger.Error("configure service link backfill", "error", err)
 		os.Exit(1)
 	}
 	if cfg.AutotaskSync {
@@ -278,6 +283,17 @@ func registerRecurrence(runner *jobs.Runner, pool *pgxpool.Pool) error {
 		JobType: tasksapp.GenerateJobType, DedupeKey: tasksapp.GenerateJobType,
 		Interval: tasksapp.GenerateInterval, MaxAttempts: 3,
 	})
+}
+
+// registerServicesBackfill registers the job that derives "VM RUNS_ON hypervisor"
+// links for Virtual Machines that predate the link consumer, and enqueues it. It
+// is idempotent, so it runs at every worker start; a dedupe key keeps several
+// workers from queueing it twice.
+func registerServicesBackfill(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool) error {
+	if err := runner.Register(servicesapp.BackfillJobType, servicesapp.BackfillJobTimeout, wiring.ServiceVMLinks(pool).HandleBackfill); err != nil {
+		return err
+	}
+	return servicesapp.EnqueueBackfill(ctx, pool)
 }
 
 // smtpMailer adapts the SMTP integration to the notification service's

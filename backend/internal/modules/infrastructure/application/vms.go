@@ -410,6 +410,19 @@ func (s *Service) GetVM(ctx context.Context, p Principal, id string) (VirtualMac
 // MaxLookupIDs bounds the ids of one public lookup.
 const MaxLookupIDs = 500
 
+// VMIDsWithHypervisor lists, for other modules' contracts, the ids (ascending,
+// after afterID, at most 500) of Virtual Machines that have a hypervisor
+// Asset, including decommissioned ones. It authorizes nothing.
+func (s *Service) VMIDsWithHypervisor(ctx context.Context, afterID string, limit int) ([]string, error) {
+	if limit <= 0 || limit > MaxLookupIDs {
+		return nil, invalid("limit must be between 1 and %d", MaxLookupIDs)
+	}
+	if afterID != "" && !uuidPattern.MatchString(afterID) {
+		return nil, invalid("afterId must be a UUID")
+	}
+	return s.store.VMIDsWithHypervisor(ctx, afterID, limit)
+}
+
 // VMsByIDs returns the existing VMs among ids for other modules' contracts. It
 // authorizes nothing.
 func (s *Service) VMsByIDs(ctx context.Context, ids []string) ([]VirtualMachine, error) {

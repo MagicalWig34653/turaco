@@ -208,6 +208,8 @@ type Store interface {
 	CloseAssignmentTx(ctx context.Context, tx pgx.Tx, assetID string, at time.Time) (bool, error)
 
 	Get(ctx context.Context, id string) (Asset, error)
+	// ByIDs returns the existing assets among the ids (UUIDs; others are ignored) with one query.
+	ByIDs(ctx context.Context, ids []string) ([]Asset, error)
 	// Lookup finds one asset by exact asset tag, serial number or reference (case-insensitive).
 	// A serial number shared by several products is ambiguous and reported as ErrConflict.
 	Lookup(ctx context.Context, code string) (Asset, error)
