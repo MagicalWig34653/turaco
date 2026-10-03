@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -59,6 +60,11 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/directory-groups/{id}/management", mgmt, h.groupManagement)
 	route("GET /api/v1/users/{id}/management", mgmt, h.userManagement)
 	route("GET /api/v1/management-artifacts/{id}/targets", mgmt, h.artifactTargets)
+	// History and diff (slice 4): same permission model as the views above.
+	route("GET /api/v1/management-artifacts/{id}/history", mgmt, h.artifactHistory)
+	route("GET /api/v1/devices/{id}/management-history", mgmt, h.deviceHistory)
+	route("GET /api/v1/devices/{id}/management/diff", mgmt, h.deviceDiff)
+	route("GET /api/v1/directory-groups/{id}/management/diff", mgmt, h.groupDiff)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -203,7 +209,16 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "endpoints.invalid_request", "The search query is invalid.")
 		return
 	}
-	f := application.DeviceFilter{Platform: v.Get("platform"), Compliance: v.Get("compliance"), Query: q, IncludeDeleted: v.Get("includeDeleted") == "true", Page: page}
+	f := application.DeviceFilter{Platform: v.Get("platform"), Compliance: v.Get("compliance"), Query: q, IncludeDeleted: v.Get("includeDeleted") == "true",
+		ManagementState: v.Get("managementState"), HasFinding: v.Get("hasFinding"), OSVersionPrefix: v.Get("osVersion"), Page: page}
+	if days := v.Get("lastCheckinOlderThanDays"); days != "" {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 1 || n > application.MaxCheckinDays {
+			httpx.WriteError(w, http.StatusBadRequest, "endpoints.invalid_request", "lastCheckinOlderThanDays must be a positive number of days.")
+			return
+		}
+		f.LastCheckinOlderThanDays = n
+	}
 	switch v.Get("linked") {
 	case "":
 	case "true", "false":
@@ -321,6 +336,7 @@ func (h *handler) sync(w http.ResponseWriter, r *http.Request) {
 		"observationsCreated": m.ObservationsCreated, "observationsChanged": m.ObservationsChanged, "observationsUnchanged": m.ObservationsUnchanged, "observationsSkipped": m.ObservationsSkipped,
 		"membershipsOpened": m.MembershipsOpened, "membershipsClosed": m.MembershipsClosed, "membershipsUnchanged": m.MembershipsUnchanged, "membershipsSkipped": m.MembershipsSkipped,
 		"managementTombstonesSkipped": m.ManagementTombstonesSkipped, "providerFindingsRaised": m.ProviderFindingsRaised, "providerFindingsResolved": m.ProviderFindingsResolved,
+		"ineffectiveFindingsRaised": m.IneffectiveFindingsRaised, "ineffectiveFindingsResolved": m.IneffectiveFindingsResolved, "ineffectiveDevicesSkipped": m.IneffectiveDevicesSkipped,
 		"managementErrors": m.ManagementErrors,
 		"devicesCreated":   res.DevicesCreated, "devicesUpdated": res.DevicesUpdated, "devicesUnchanged": res.DevicesUnchanged,
 		"devicesTombstoned": res.DevicesTombstoned, "tombstonesSkipped": res.TombstonesSkipped, "devicesRejected": res.DevicesRejected, "devicesLinked": res.DevicesLinked,

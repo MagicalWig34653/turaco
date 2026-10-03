@@ -94,6 +94,8 @@ type AssetHolders interface {
 type DeviceMembership struct {
 	DeviceID, GroupExternalID string
 	LastSyncedAt              time.Time
+	// ObservedFrom is when the current membership interval started.
+	ObservedFrom time.Time
 }
 
 // ReachQuery selects the live artifacts that have a current assignment reaching the given targets, or (with
@@ -132,6 +134,19 @@ type ViewStore interface {
 	CurrentAssignmentsOf(ctx context.Context, artifactIDs []string) (map[string][]Assignment, error)
 	// ObservationsOf returns the active observations of the artifacts on the devices.
 	ObservationsOf(ctx context.Context, artifactIDs, deviceIDs []string) ([]Observation, error)
+
+	// History reads (F6 slice 4). Every method returns at most limit rows newest first, strictly before the cursor.
+	AssignmentEvents(ctx context.Context, q AssignmentEventQuery) ([]AssignmentEventRow, error)
+	ObservationEvents(ctx context.Context, deviceID string, after *HistoryCursor, limit int) ([]ObservationEventRow, error)
+	MembershipEvents(ctx context.Context, deviceID string, after *HistoryCursor, limit int) ([]MembershipEventRow, error)
+
+	// Finding reconciliation reads (F6 slice 4).
+	LiveDevicesPage(ctx context.Context, provider, afterID string, limit int) ([]Device, error)
+	CountLiveDevicesAfter(ctx context.Context, provider, afterID string) (int, error)
+	// ArtifactsWithObservations returns the ids among artifactIDs for which the provider reports an active observation on any Device.
+	ArtifactsWithObservations(ctx context.Context, artifactIDs []string) (map[string]bool, error)
+	// ObservationStateSince returns, per artifact id, when the Device's current observed state began (the newest history row).
+	ObservationStateSince(ctx context.Context, deviceID string, artifactIDs []string) (map[string]time.Time, error)
 }
 
 // ---- view results ----

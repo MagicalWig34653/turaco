@@ -105,7 +105,7 @@ func (r *Repository) DeviceMemberships(ctx context.Context, deviceIDs []string) 
 	if len(deviceIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := r.q(ctx).Query(ctx, `SELECT device_id::text, group_external_id, last_synced_at FROM endpoints.device_group_memberships
+	rows, err := r.q(ctx).Query(ctx, `SELECT device_id::text, group_external_id, last_synced_at, observed_from FROM endpoints.device_group_memberships
 		WHERE device_id = ANY($1::uuid[]) AND observed_until IS NULL ORDER BY device_id, group_external_id`, deviceIDs)
 	if err != nil {
 		return nil, fmt.Errorf("device memberships: %w", err)
@@ -114,7 +114,7 @@ func (r *Repository) DeviceMemberships(ctx context.Context, deviceIDs []string) 
 	var out []application.DeviceMembership
 	for rows.Next() {
 		var m application.DeviceMembership
-		if err := rows.Scan(&m.DeviceID, &m.GroupExternalID, &m.LastSyncedAt); err != nil {
+		if err := rows.Scan(&m.DeviceID, &m.GroupExternalID, &m.LastSyncedAt, &m.ObservedFrom); err != nil {
 			return nil, fmt.Errorf("device memberships: scan: %w", err)
 		}
 		out = append(out, m)

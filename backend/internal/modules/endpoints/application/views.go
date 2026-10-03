@@ -75,9 +75,11 @@ func inSnapshot[T any](ctx context.Context, s *Service, fn func(ctx context.Cont
 // evalCtx holds everything the evaluator needs for the Devices (and Users) of one request. Closures are computed
 // once per Device/User and reused for every artifact.
 type evalCtx struct {
-	now        time.Time
-	nesting    map[string][]string
-	devMem     map[string][]evaluation.Membership
+	now     time.Time
+	nesting map[string][]string
+	devMem  map[string][]evaluation.Membership
+	// devMemFrom is the newest start of a Device's current group membership (zero when it has none).
+	devMemFrom map[string]time.Time
 	userOf     map[string]string
 	userMem    map[string][]evaluation.Membership
 	devClosure map[string]evaluation.Closure
@@ -125,7 +127,7 @@ func ids(ds []Device) []string {
 // Users (the holder of the linked Asset, only with o.holders), the Users' directory memberships and the group
 // nesting. Inputs that are missing or were cut are remembered so the evaluator answers unknown, not not_applicable.
 func (s *Service) newEvalCtx(ctx context.Context, devices []Device, o evalOpts) (*evalCtx, error) {
-	c := &evalCtx{now: s.now(), nesting: map[string][]string{}, devMem: map[string][]evaluation.Membership{},
+	c := &evalCtx{now: s.now(), nesting: map[string][]string{}, devMem: map[string][]evaluation.Membership{}, devMemFrom: map[string]time.Time{},
 		userOf: map[string]string{}, userMem: map[string][]evaluation.Membership{},
 		devClosure: map[string]evaluation.Closure{}, usrClosure: map[string]evaluation.Closure{},
 		devMemUnknown: map[string]bool{}, usrMemUnknown: map[string]bool{}}
@@ -138,6 +140,9 @@ func (s *Service) newEvalCtx(ctx context.Context, devices []Device, o evalOpts) 
 	for _, m := range mems {
 		c.devMem[m.DeviceID] = append(c.devMem[m.DeviceID], evaluation.Membership{GroupExternalID: m.GroupExternalID, ObservedAt: m.LastSyncedAt})
 		devExts = append(devExts, m.GroupExternalID)
+		if m.ObservedFrom.After(c.devMemFrom[m.DeviceID]) {
+			c.devMemFrom[m.DeviceID] = m.ObservedFrom
+		}
 	}
 	hist, err := s.store.DevicesWithMembershipHistory(ctx, s.viewProvider, devIDs)
 	if err != nil {
@@ -519,15 +524,7 @@ func (s *Service) deviceManagement(ctx context.Context, p Principal, deviceID st
 			return DeviceManagement{}, err
 		}
 		for _, a := range arts {
-			res := ec.evaluate(d, assigns[a.ID])
-			st := DeviceArtifactStatus{Artifact: a, Expected: expected(res, ec.now), Assignments: assignedTargets(names, assigns[a.ID], res)}
-			for _, t := range st.Assignments {
-				st.Assigned = st.Assigned || (t.Mode == evaluation.ModeInclude && t.Match == string(evaluation.Yes))
-			}
-			if o, ok := obsMap[obsKey{a.ID, d.ID}]; ok {
-				st.Observed = s.observedState(&o)
-			}
-			st.Mismatch = mismatchOf(includeHit(assigns[a.ID], res), res.Result, st.Observed)
+			st := s.artifactStatus(ec, names, d, a, assigns[a.ID], obsMap)
 			q.AfterID = a.ID
 			scanned++
 			if !deviceItemMatches(f, st) {
@@ -552,6 +549,20 @@ func (s *Service) deviceManagement(ctx context.Context, p Principal, deviceID st
 			return out, nil
 		}
 	}
+}
+
+// artifactStatus assembles Assigned, Expected Applicable and Observed for one artifact on one Device.
+func (s *Service) artifactStatus(ec *evalCtx, names groupNames, d Device, a Artifact, as []Assignment, obsMap map[obsKey]Observation) DeviceArtifactStatus {
+	res := ec.evaluate(d, as)
+	st := DeviceArtifactStatus{Artifact: a, Expected: expected(res, ec.now), Assignments: assignedTargets(names, as, res)}
+	for _, t := range st.Assignments {
+		st.Assigned = st.Assigned || (t.Mode == evaluation.ModeInclude && t.Match == string(evaluation.Yes))
+	}
+	if o, ok := obsMap[obsKey{a.ID, d.ID}]; ok {
+		st.Observed = s.observedState(&o)
+	}
+	st.Mismatch = mismatchOf(includeHit(as, res), res.Result, st.Observed)
+	return st
 }
 
 func deviceItemMatches(f DeviceManagementFilter, st DeviceArtifactStatus) bool {

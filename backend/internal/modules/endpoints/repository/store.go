@@ -489,6 +489,19 @@ func (r *Repository) ListDevices(ctx context.Context, f application.DeviceFilter
 			conds = append(conds, "asset_id IS NULL")
 		}
 	}
+	if f.ManagementState != "" {
+		add(`EXISTS (SELECT 1 FROM endpoints.management_observations o JOIN endpoints.management_artifacts a ON a.id = o.artifact_id AND a.deleted_observed_at IS NULL
+			WHERE o.device_id = endpoints.devices.id AND o.retired_at IS NULL AND o.normalized_state = $%d)`, f.ManagementState)
+	}
+	if f.HasFinding != "" {
+		add(`EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.device_id = endpoints.devices.id AND f.status = 'open' AND f.kind = $%d)`, f.HasFinding)
+	}
+	if f.OSVersionPrefix != "" {
+		add("os_version LIKE $%d", prefixPattern(f.OSVersionPrefix))
+	}
+	if f.LastCheckinBefore != nil {
+		add("last_checkin_at < $%d", *f.LastCheckinBefore)
+	}
 	if f.Query != "" {
 		args = append(args, prefixPattern(strings.ToLower(f.Query)))
 		conds = append(conds, fmt.Sprintf(`(lower(name) LIKE $%[1]d OR lower(serial_number) LIKE $%[1]d)`, len(args)))

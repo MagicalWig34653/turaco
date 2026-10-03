@@ -359,6 +359,25 @@ func (s *Service) ListDevices(ctx context.Context, p Principal, f DeviceFilter) 
 	if !p.canView() {
 		return DeviceResult{}, ErrForbidden
 	}
+	switch {
+	case f.ManagementState != "" && !slices.Contains(ManagementStateFilters, f.ManagementState):
+		return DeviceResult{}, invalid("managementState must be one of %s", strings.Join(ManagementStateFilters, ", "))
+	case f.ManagementState != "" && !p.canViewManagement():
+		// The observed state of artifacts is management data.
+		return DeviceResult{}, ErrForbidden
+	case f.HasFinding != "" && !slices.Contains(FindingKinds, f.HasFinding):
+		return DeviceResult{}, invalid("hasFinding must be one of %s", strings.Join(FindingKinds, ", "))
+	case f.LastCheckinOlderThanDays < 0 || f.LastCheckinOlderThanDays > MaxCheckinDays:
+		return DeviceResult{}, invalid("lastCheckinOlderThanDays must be between 1 and %d", MaxCheckinDays)
+	}
+	f.LastCheckinBefore = nil
+	if utf8.RuneCountInString(f.OSVersionPrefix) > 100 || !utf8.ValidString(f.OSVersionPrefix) {
+		return DeviceResult{}, invalid("osVersion is too long or invalid")
+	}
+	if f.LastCheckinOlderThanDays > 0 {
+		cutoff := s.now().Add(-time.Duration(f.LastCheckinOlderThanDays) * 24 * time.Hour)
+		f.LastCheckinBefore = &cutoff
+	}
 	f.Page = f.Page.Normalize()
 	return s.store.ListDevices(ctx, f)
 }
