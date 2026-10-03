@@ -408,6 +408,10 @@ type Store interface {
 	UpdateVMTx(ctx context.Context, tx pgx.Tx, vm VirtualMachine) (VirtualMachine, error)
 	GetVM(ctx context.Context, id string) (VirtualMachine, error)
 	ListVMs(ctx context.Context, f VMFilter) (Result[VirtualMachine], error)
+	// VMsByIDs returns the existing VMs among the ids (UUIDs; others are ignored).
+	VMsByIDs(ctx context.Context, ids []string) ([]VirtualMachine, error)
+	// VMIDsWithHypervisor lists ids ascending after afterID of VMs that have a hypervisor Asset, at most limit.
+	VMIDsWithHypervisor(ctx context.Context, afterID string, limit int) ([]string, error)
 
 	Tree(ctx context.Context, includeArchived bool) (TreeResult, error)
 }

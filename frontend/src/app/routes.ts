@@ -20,6 +20,9 @@ export type RouteId =
   | 'allRequests'
   | 'myAssets'
   | 'assets'
+  | 'services'
+  | 'serviceDetail'
+  | 'impact'
   | 'infrastructureTree'
   | 'infrastructureBuilding'
   | 'infrastructureRoom'
@@ -78,7 +81,7 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit';
 
-export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'admin';
+export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -196,6 +199,25 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'management.userPage',
     requires: ['organization.directory.view'],
     requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'services',
+    pattern: '/services',
+    titleKey: 'nav.services',
+    requiresAny: ['services.view', 'services.manage'],
+    nav: 'services',
+  },
+  {
+    id: 'serviceDetail',
+    pattern: '/services/:id',
+    titleKey: 'services.detail',
+    requiresAny: ['services.view', 'services.manage'],
+  },
+  {
+    id: 'impact',
+    pattern: '/impact',
+    titleKey: 'services.impact',
+    requiresAny: ['services.view', 'services.manage'],
   },
   {
     id: 'infrastructureTree',

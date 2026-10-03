@@ -672,6 +672,19 @@ func (s *Service) GetPlain(ctx context.Context, id string) (Asset, error) {
 	return s.store.Get(ctx, id)
 }
 
+// MaxLookupIDs bounds the ids of one AssetsByIDs lookup.
+const MaxLookupIDs = 500
+
+// AssetsByIDs returns the existing assets among ids (at most 500) with one
+// query, without any authorization (for contracts used by modules that
+// authorized the caller themselves). Ids that are not UUIDs are ignored.
+func (s *Service) AssetsByIDs(ctx context.Context, ids []string) ([]Asset, error) {
+	if len(ids) > MaxLookupIDs {
+		return nil, invalid("at most %d ids per lookup", MaxLookupIDs)
+	}
+	return s.store.ByIDs(ctx, ids)
+}
+
 // UserHolders returns assetID -> User id for the given assets that are currently assigned to a User.
 // It authorizes nothing: callers (other modules through the public contract) decide who may see it.
 func (s *Service) UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error) {

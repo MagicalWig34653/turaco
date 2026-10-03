@@ -199,6 +199,26 @@ func prefixPattern(q string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
 }
 
+func (r *Repository) ByIDs(ctx context.Context, ids []string) ([]application.Asset, error) {
+	if ids = validUUIDs(ids); len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM assets.assets WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("assets by id: %w", err)
+	}
+	defer rows.Close()
+	var out []application.Asset
+	for rows.Next() {
+		a, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("assets by id: scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) List(ctx context.Context, f application.Filter) (application.Result, error) {
 	page := f.Page.Normalize()
 	var conds []string

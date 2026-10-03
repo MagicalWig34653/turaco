@@ -32,11 +32,13 @@
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
 | `RunbookExecutionCompleted` | 1 | knowledge | Every task of a runbook execution finished. Payload: executionId, runbookId. |
 | `RunbookExecutionStarted` | 1 | knowledge | A runbook execution started and created its tasks. Payload: executionId, runbookId. |
+| `ServiceCreated` | 1 | services | A Service was created. Payload: serviceId, criticality, status. |
 | `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
 | `ServiceRequestCancelled` | 1 | requests | A service request was cancelled. Payload: requestId. |
 | `ServiceRequestCompleted` | 1 | requests | A service request was completed. Payload: requestId. |
 | `ServiceRequestRejected` | 1 | requests | A service request was rejected by an approver. Payload: requestId. |
 | `ServiceRequestSubmitted` | 1 | requests | A service request was submitted. Payload: requestId. |
+| `ServiceStatusChanged` | 1 | services | A Service changed status or was retired. Payload: serviceId, operation (status_changed, retired), status, previousStatus, reason. |
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |

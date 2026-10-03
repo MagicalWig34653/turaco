@@ -461,6 +461,59 @@ func (r *Repository) GetVM(ctx context.Context, id string) (application.VirtualM
 	return getByID(ctx, r, id, "infrastructure.virtual_machines", vmCols, scanVM)
 }
 
+func (r *Repository) VMIDsWithHypervisor(ctx context.Context, afterID string, limit int) ([]string, error) {
+	var after *string
+	if afterID != "" {
+		if !validUUID(afterID) {
+			return nil, nil
+		}
+		after = &afterID
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text FROM infrastructure.virtual_machines
+		WHERE hypervisor_asset_id IS NOT NULL AND ($1::uuid IS NULL OR id > $1::uuid)
+		ORDER BY id LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, fmt.Errorf("virtual machines with hypervisor: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("virtual machines with hypervisor: scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) VMsByIDs(ctx context.Context, ids []string) ([]application.VirtualMachine, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+vmCols+` FROM infrastructure.virtual_machines WHERE id = ANY($1::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("virtual machines by id: %w", err)
+	}
+	defer rows.Close()
+	var out []application.VirtualMachine
+	for rows.Next() {
+		v, err := scanVM(rows)
+		if err != nil {
+			return nil, fmt.Errorf("virtual machines by id: scan: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
 func likeEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }

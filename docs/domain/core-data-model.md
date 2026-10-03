@@ -84,7 +84,7 @@ A **DeviceContextSnapshot** may capture technical context at ticket creation so 
 
 Site→Building→Room→Rack models physical topology. Physical infrastructure devices are normal Assets/Devices with RackPlacement and specialized metadata, not a parallel device database. VM is an infrastructure resource related to hypervisor/service/IP.
 
-Implementation (F7a, schema `infrastructure`): `buildings` (references the Site Location by id), `rooms`, `racks`, `rack_placements` (Asset by id, history rows with `removed_at`, `previous_placement_id` for moves), `rack_unit_occupancy` (one row per occupied unit; its primary key `(rack_id, face, u)` is the database guarantee against overlaps) and `virtual_machines` (hypervisor Asset by id). `VM RUNS_ON Asset` is not yet a Relationship row; it is the `hypervisor_asset_id` column until `platform/relationships` exists. See the [F7 design](../product/f7-infrastructure-change-design.md#slice-1-status).
+Implementation (F7a, schema `infrastructure`): `buildings` (references the Site Location by id), `rooms`, `racks`, `rack_placements` (Asset by id, history rows with `removed_at`, `previous_placement_id` for moves), `rack_unit_occupancy` (one row per occupied unit; its primary key `(rack_id, face, u)` is the database guarantee against overlaps) and `virtual_machines` (hypervisor Asset by id). `VM RUNS_ON Asset` is derived as a Relationship row (F7b) from the `hypervisor_asset_id` column, which stays the source of truth. See the [F7 design](../product/f7-infrastructure-change-design.md#slice-1-status).
 
 Native Network/IPAM may model VRF, VLAN, Prefix, IPAddress and NetworkInterface, or may integrate NetBox. That implementation decision requires an ADR.
 
@@ -123,6 +123,8 @@ The management model (F6 slice 2) adds `endpoints.management_artifacts` and `man
 ## Shared relationship model
 
 Generic `Relationship(source_type, source_id, type, target_type, target_id, validity, metadata)` supports cross-domain links such as `User USES Device`, `Service DEPENDS_ON VM`, `VM RUNS_ON Device`, `Ticket AFFECTS Service`.
+
+Implementation (F7b, `platform/relationships`, table `platform.relationships`): rows carry `confidence` (`declared|derived|observed`), `valid_from`/`valid_until` with an `end_reason` code, `created_by` and a `source` label; modules register the allowed `(source_type, type, target_type)` triples with an owning module in a Go registry (unknown triples and non-owners are rejected; only the owner links and unlinks a triple), one current row per triple is guaranteed by a partial unique index, and traversal is bounded (depth 6, 500 nodes, truncation flags). Registered today: `Service DEPENDS_ON service|vm|asset|location` and `VM RUNS_ON Asset` (derived from the VM's hypervisor). `Ticket AFFECTS Service` and `Change AFFECTS ...` are not registered yet. Services live in schema `services` (`services.services`: reference, name, description, owner User/Team and support Team by id, criticality, status, version); their dependencies are Relationships, not columns.
 
 Do not replace important domain-specific relationships (AssetAssignment, Reservation, RackPlacement) with generic Relationship when they carry invariants/history.
 

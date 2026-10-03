@@ -43,6 +43,7 @@ import (
 	requeststransport "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/transport"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedesktransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/transport"
+	servicestransport "github.com/MagicalWig34653/turaco/backend/internal/modules/services/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
@@ -168,6 +169,7 @@ func main() {
 	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	infrastructuretransport.Register(mux, wiring.Infrastructure(pool), sessionAuth, logger)
+	servicestransport.Register(mux, wiring.Services(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),

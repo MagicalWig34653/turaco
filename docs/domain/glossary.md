@@ -47,7 +47,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Major Incident** — significant Incident affecting many users/services.
 - **Problem** — tracked underlying/repeating cause.
 - **Known Error** — Problem whose cause/workaround is sufficiently understood; prefer Problem state/data over a duplicate top-level object.
-- **Service** — IT-delivered capability, e.g. SAP, VPN, Corporate Wi-Fi.
+- **Service** — IT-delivered capability, e.g. SAP, VPN, Corporate Wi-Fi. Implemented in F7b as a record with owner, support team, criticality (`low|medium|high|critical`) and status (`operational|degraded|outage|planned|retired`); its dependencies are Relationships.
 - **Service Catalog** — collection of requestable IT offerings.
 - **Catalog Item** — user-facing requestable offering; not necessarily a Product.
 
@@ -134,7 +134,8 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Data Source** — origin of an observation.
 - **Source of Truth** — authoritative owner for a field/domain.
 - **Data Freshness** — how current an observation is.
-- **Relationship** — typed cross-domain association.
+- **Relationship** — typed cross-domain association between two records of any module (`platform/relationships`): allowed triples are registered by modules, at most one current row per triple, with confidence `declared` (by a person), `derived` (by Turaco) or `observed` (from an integration).
+- **Impact** — the bounded set of records affected if a record is down (downstream: its dependents) or that it depends on (upstream), found by walking current Relationships up to depth 6 and 500 records; the result says when it was truncated.
 - **Event** — business fact that happened; past-tense name.
 - **Audit Event** — immutable security/compliance record of action/state transition.
 - **Saved View** — reusable query/filter/presentation.

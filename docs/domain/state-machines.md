@@ -87,6 +87,9 @@ Implemented operations (F2, `modules/tasks`): `start` (open/blocked → in_progr
 ## Virtual Machine
 `running | stopped | unknown ⇄ each other`, then `decommissioned` (terminal tombstone). Implemented (F7a, `modules/infrastructure`): `ChangeVMState` moves between `running`, `stopped` and `unknown` (the state is hand-entered, not observed); `DecommissionVM` needs a reason code (`retired|migrated|deleted|other`) and from then on no operation is accepted. A decommissioned VM's name can be reused.
 
+## Service
+`operational ⇄ degraded ⇄ outage ⇄ planned` (any of these four to any other, with a reason code `incident|maintenance|recovered|rollout|correction|other`), then `retired` (terminal tombstone). Implemented (F7b, `modules/services`): `ChangeStatus(reason)` moves between the four live statuses (a request for the current status is a no-op); `Retire(reason)` (`replaced|decommissioned|merged|error_correction|other`) ends the Service's own dependency links and from then on no operation is accepted; a retried retire with the same reason returns the current record. The status is hand-entered, not observed. The name of a retired Service can be reused. `expectedVersion` is required.
+
 ## Rack Placement
 `active → removed`. A move closes the active placement with the internal reason `moved` and opens a new active placement linked through `previous_placement_id`; `RemoveAsset` closes it with `relocated|replaced|decommissioned|error_correction|other`. Closed placements are history and never reopened; place the Asset again instead. Buildings, Rooms and Racks are `active ⇄ archived` and cannot be archived while the level below is active or holds active placements.
 

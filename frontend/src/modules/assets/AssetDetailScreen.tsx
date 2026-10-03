@@ -1,3 +1,4 @@
+import { impactUrl } from '../services/helpers';
 import { infrastructureApi } from '../infrastructure/api';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
@@ -257,6 +258,11 @@ export function AssetDetailScreen({ id }: { id: string }) {
         <Link to={can('assets.view') || manage ? '/assets' : '/my-assets'}>{t('assets.back')}</Link>
       </p>
       {actionError ? <ApiErrorAlert error={actionError} onRetry={loaded.reload} /> : null}
+      {(can('services.view') || can('services.manage')) && (
+        <p>
+          <Link to={impactUrl('asset', asset.id)}>{t('services.impact')}</Link>
+        </p>
+      )}
       <dl className="facts">
         <dt>{t('assets.col.status')}</dt>
         <dd>

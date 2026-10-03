@@ -129,6 +129,20 @@ func (a *Assets) Assets(ctx context.Context, ids []string) (map[string]Asset, er
 	return out, nil
 }
 
+// AssetsByIDs returns id -> Asset for the existing assets among ids (at most
+// 500) with a single query. Ids are returned as stored (lower-case).
+func (a *Assets) AssetsByIDs(ctx context.Context, ids []string) (map[string]Asset, error) {
+	found, err := a.svc.AssetsByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Asset, len(found))
+	for _, x := range found {
+		out[x.ID] = view(x)
+	}
+	return out, nil
+}
+
 // Products adapts the Products directory to the questions assets ask.
 type Products struct{ dir *productspublic.Directory }
 
