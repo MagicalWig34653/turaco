@@ -95,7 +95,7 @@ func serve(t *testing.T, a authorization.Authenticator) (http.Handler, *applicat
 		conn, err := pool.Acquire(ctx)
 		if err == nil {
 			// Session-local: triggers are skipped on this connection only, never for concurrent tests.
-		_, _ = conn.Exec(ctx, `SET session_replication_role = replica`)
+			_, _ = conn.Exec(ctx, `SET session_replication_role = replica`)
 			_, _ = conn.Exec(ctx, `DELETE FROM inventory.inventory_transactions WHERE product_id = $1::uuid`, product)
 			_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 			conn.Release()
