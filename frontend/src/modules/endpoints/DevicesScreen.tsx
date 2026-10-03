@@ -14,6 +14,8 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
 import {
   complianceStates,
+  findingKinds,
+  observationStates,
   platforms,
   type Device,
   type DeviceFilters,
@@ -26,6 +28,10 @@ const initial: DeviceFilters = {
   q: '',
   linked: '',
   includeDeleted: false,
+  managementState: '',
+  hasFinding: '',
+  osVersion: '',
+  lastCheckinOlderThanDays: '',
 };
 
 export function DevicesScreen() {
@@ -35,8 +41,14 @@ export function DevicesScreen() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<ApiError>();
   const [syncResult, setSyncResult] = useState<SyncCounts>();
+  const managementAllowed = can('endpoint.management.view') || can('endpoints.manage');
   const list = usePagedList(
-    (cursor, signal) => endpointsApi.devices(filters, cursor, signal),
+    (cursor, signal) =>
+      endpointsApi.devices(
+        managementAllowed ? filters : { ...filters, managementState: '' },
+        cursor,
+        signal,
+      ),
     [filters],
   );
   const change = (patch: Partial<DeviceFilters>) =>
@@ -155,6 +167,41 @@ export function DevicesScreen() {
             { value: 'true', label: t('endpoints.linked.yes') },
             { value: 'false', label: t('endpoints.linked.no') },
           ]}
+        />
+        {managementAllowed ? (
+          <Select
+            label={t('endpoints.managementState')}
+            value={filters.managementState}
+            onChange={(e) => change({ managementState: e.target.value })}
+            options={[
+              { value: '', label: t('filters.all') },
+              ...observationStates
+                .filter((v) => ['failed', 'conflict', 'pending'].includes(v))
+                .map((value) => ({ value, label: t(`management.state.${value}`) })),
+            ]}
+          />
+        ) : null}
+        <Select
+          label={t('endpoints.hasFinding')}
+          value={filters.hasFinding}
+          onChange={(e) => change({ hasFinding: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...findingKinds.map((value) => ({ value, label: t(`endpoints.finding.${value}`) })),
+          ]}
+        />
+        <TextField
+          label={t('endpoints.osVersion')}
+          value={filters.osVersion}
+          onChange={(e) => change({ osVersion: e.target.value })}
+        />
+        <TextField
+          label={t('endpoints.lastCheckinOlderThanDays')}
+          type="number"
+          min={1}
+          max={3650}
+          value={filters.lastCheckinOlderThanDays}
+          onChange={(e) => change({ lastCheckinOlderThanDays: e.target.value })}
         />
         <Checkbox
           label={t('endpoints.includeDeleted')}

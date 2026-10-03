@@ -4679,6 +4679,22 @@ paths:
           in: query
           description: Include devices the provider no longer reports.
           schema: {type: boolean}
+        - name: managementState
+          in: query
+          description: Active observation on a live artifact. Also requires `endpoint.management.view` or `endpoints.manage`.
+          schema: {type: string, enum: [failed, conflict, pending]}
+        - name: hasFinding
+          in: query
+          description: Open finding kind. `assignment_ineffective` is Turaco-derived and distinct from provider-reported errors.
+          schema: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective]}
+        - name: osVersion
+          in: query
+          description: OS version prefix.
+          schema: {type: string}
+        - name: lastCheckinOlderThanDays
+          in: query
+          description: Positive number of days, 1 through 3650; excludes devices that never checked in.
+          schema: {type: integer, minimum: 1, maximum: 3650}
       responses:
         '200':
           description: One page.
@@ -4848,6 +4864,115 @@ paths:
         '404': {$ref: '#/components/responses/EndpointsNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /management-artifacts/{id}/history:
+    get:
+      operationId: getManagementArtifactHistory
+      summary: List meaningful management artifact changes, newest first.
+      description: "Needs `endpoint.management.view` or `endpoints.manage`. Assignment added, changed and removed entries and artifact removal are keyset paged. Group names and IDs are redacted without `organization.directory.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One history page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagementArtifactHistory'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/management-history:
+    get:
+      operationId: getDeviceManagementHistory
+      summary: List meaningful device management changes, newest first.
+      description: "Needs management access plus `endpoints.view` or `endpoints.manage`. Includes observation state changes, group joins/leaves and assignments addressing the Device; group data is redacted without `organization.directory.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One history page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceManagementHistory'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /devices/{id}/management/diff:
+    get:
+      operationId: diffDeviceManagement
+      summary: Compare management state of two Devices.
+      description: "Needs management access plus `endpoints.view` or `endpoints.manage`. Assigned, Expected Applicable and Observed stay separate. Unknown expected results remain uncertain. Scans at most 2000 artifacts per page; use nextCursor when truncated."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: otherDeviceId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+        - name: kind
+          in: query
+          schema: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        - name: differences
+          in: query
+          description: Keep different and uncertain rows only.
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One diff page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceManagementDiff'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /directory-groups/{id}/management/diff:
+    get:
+      operationId: diffDirectoryGroupManagement
+      summary: Compare artifacts targeting two Directory Groups.
+      description: "Needs management access and `organization.directory.view`. Compares direct and parent-group assignment mode, intent and filter; it does not compare Devices."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: otherGroupId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+        - name: kind
+          in: query
+          schema: {type: string, enum: [application, configuration_profile, compliance_policy, endpoint_security_policy, script, remediation]}
+        - name: differences
+          in: query
+          schema: {type: boolean}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One diff page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GroupManagementDiff'}
+        '400': {$ref: '#/components/responses/EndpointsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/EndpointsNotFound'}
         '500': {$ref: '#/components/responses/InternalError'}
   /management-filters:
     get:
@@ -7767,7 +7892,7 @@ components:
       required: [id, kind, deviceId, deviceName, status, detail, raisedAt, resolvedAt]
       properties:
         id: {type: string, format: uuid}
-        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error]}
+        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective], description: 'assignment_ineffective is Turaco-derived and distinct from provider_reported_error, which is provider-reported.'}
         deviceId: {type: string, format: uuid}
         deviceName: {type: string}
         status: {type: string, enum: [open, resolved]}
@@ -8103,6 +8228,151 @@ components:
         assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
         evaluation: {$ref: '#/components/schemas/ManagementEvaluation'}
         observedTotal: {type: object, additionalProperties: {type: integer}}
+    ManagementHistoryArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, deleted]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        kind: {type: string}
+        deleted: {type: boolean}
+    ManagementAssignmentSnapshot:
+      type: object
+      additionalProperties: false
+      required: [targetKind, group, mode, intent, filterMode, filterId, filterName]
+      properties:
+        targetKind: {type: string}
+        group: {oneOf: [{$ref: '#/components/schemas/ManagementGroupRef'}, {type: 'null'}]}
+        mode: {type: string}
+        intent: {type: string}
+        filterMode: {type: string}
+        filterId: {type: [string, 'null']}
+        filterName: {type: [string, 'null']}
+    ManagementHistoryAssignment:
+      type: object
+      additionalProperties: false
+      required: [assignmentId, providerAssignmentId, current, previous, changes]
+      properties:
+        assignmentId: {type: string, format: uuid}
+        providerAssignmentId: {type: string}
+        current: {$ref: '#/components/schemas/ManagementAssignmentSnapshot'}
+        previous: {oneOf: [{$ref: '#/components/schemas/ManagementAssignmentSnapshot'}, {type: 'null'}]}
+        changes: {type: array, items: {type: string, enum: [target, mode, intent, filter]}}
+    ManagementHistoryObservation:
+      type: object
+      additionalProperties: false
+      required: [state, rawStatus]
+      properties:
+        state: {type: string}
+        previousState: {type: string}
+        rawStatus: {type: string}
+    ManagementHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [kind, occurredAt, source, observedAt]
+      properties:
+        kind: {type: string, enum: [assignment_added, assignment_changed, assignment_removed, artifact_removed, observation_first_seen, observation_changed, group_joined, group_left]}
+        occurredAt: {type: string, format: date-time}
+        source: {type: string}
+        observedAt: {type: string, format: date-time}
+        artifact: {$ref: '#/components/schemas/ManagementHistoryArtifact'}
+        assignment: {$ref: '#/components/schemas/ManagementHistoryAssignment'}
+        observation: {$ref: '#/components/schemas/ManagementHistoryObservation'}
+        group: {$ref: '#/components/schemas/ManagementGroupRef'}
+    ManagementArtifactHistory:
+      type: object
+      additionalProperties: false
+      required: [artifact, items]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        items: {type: array, items: {$ref: '#/components/schemas/ManagementHistoryEntry'}}
+        nextCursor: {type: string}
+    DeviceManagementHistory:
+      type: object
+      additionalProperties: false
+      required: [deviceId, assignmentScope, items, truncated]
+      properties:
+        deviceId: {type: string, format: uuid}
+        assignmentScope: {type: string}
+        truncated: {type: boolean, description: "True when the assignment scope was cut at 500 artifacts."}
+        items: {type: array, items: {$ref: '#/components/schemas/ManagementHistoryEntry'}}
+        nextCursor: {type: string}
+    ManagementDiffSide:
+      type: object
+      additionalProperties: false
+      required: [assigned, assignedUnknown, assignments, expected, observed]
+      properties:
+        assigned: {type: boolean}
+        assignedUnknown: {type: boolean}
+        assignments: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        expected: {$ref: '#/components/schemas/ManagementExpected'}
+        observed: {oneOf: [{$ref: '#/components/schemas/ManagementObserved'}, {type: 'null'}]}
+        mismatch: {type: string}
+    DeviceDiffDimensions:
+      type: object
+      additionalProperties: false
+      required: [assigned, expected, observed]
+      properties:
+        assigned: {type: string, enum: [same, different, unknown]}
+        expected: {type: string, enum: [same, different, unknown]}
+        observed: {type: string, enum: [same, different, unknown]}
+    DeviceManagementDiffItem:
+      type: object
+      additionalProperties: false
+      required: [artifact, left, right, class, dimensions, uncertain]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        left: {$ref: '#/components/schemas/ManagementDiffSide'}
+        right: {$ref: '#/components/schemas/ManagementDiffSide'}
+        class: {type: string, enum: [same, different, only_left, only_right, unknown]}
+        dimensions: {$ref: '#/components/schemas/DeviceDiffDimensions'}
+        uncertain: {type: boolean}
+    DeviceDiffRef:
+      type: object
+      additionalProperties: false
+      required: [deviceId, name]
+      properties:
+        deviceId: {type: string, format: uuid}
+        name: {type: string}
+    DeviceManagementDiff:
+      type: object
+      additionalProperties: false
+      required: [left, right, items, truncated]
+      properties:
+        left: {$ref: '#/components/schemas/DeviceDiffRef'}
+        right: {$ref: '#/components/schemas/DeviceDiffRef'}
+        items: {type: array, items: {$ref: '#/components/schemas/DeviceManagementDiffItem'}}
+        nextCursor: {type: string}
+        truncated: {type: boolean}
+    GroupDiffRef:
+      type: object
+      additionalProperties: false
+      required: [groupId, externalId, name]
+      properties:
+        groupId: {type: string, format: uuid}
+        externalId: {type: string}
+        name: {type: string}
+    GroupManagementDiffItem:
+      type: object
+      additionalProperties: false
+      required: [artifact, left, right, class, differences]
+      properties:
+        artifact: {$ref: '#/components/schemas/ManagementArtifact'}
+        left: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        right: {type: array, items: {$ref: '#/components/schemas/ManagementAssignedTarget'}}
+        class: {type: string, enum: [same, different, only_left, only_right]}
+        differences: {type: array, items: {type: string, enum: [mode, intent, filter, assignments]}}
+    GroupManagementDiff:
+      type: object
+      additionalProperties: false
+      required: [left, right, items, nextCursor, truncated]
+      properties:
+        left: {$ref: '#/components/schemas/GroupDiffRef'}
+        right: {$ref: '#/components/schemas/GroupDiffRef'}
+        items: {type: array, items: {$ref: '#/components/schemas/GroupManagementDiffItem'}}
+        nextCursor: {type: string}
+        truncated: {type: boolean}
     EndpointSyncResult:
       type: object
       additionalProperties: {type: integer}

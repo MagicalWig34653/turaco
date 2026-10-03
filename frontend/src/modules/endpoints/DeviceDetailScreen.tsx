@@ -15,6 +15,7 @@ import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
 import { DeviceManagementSection } from './ManagementScreens';
+import { HistorySection } from './HistoryDiffScreens';
 import {
   reasonCodes,
   type DeviceDetail,
@@ -115,7 +116,14 @@ export function DeviceDetailScreen({ id }: { id: string }) {
     {
       key: 'kind',
       header: t('endpoints.findingKind'),
-      render: (f) => t(`endpoints.finding.${f.kind}` as MessageKey),
+      render: (f) => (
+        <>
+          {t(`endpoints.finding.${f.kind}` as MessageKey)}
+          {f.kind === 'assignment_ineffective' ? (
+            <small> · {t('endpoints.finding.derivedNote')}</small>
+          ) : null}
+        </>
+      ),
     },
     {
       key: 'status',
@@ -222,7 +230,15 @@ export function DeviceDetailScreen({ id }: { id: string }) {
       </section>
       {(can('endpoint.management.view') || can('endpoints.manage')) &&
       (can('endpoints.view') || can('endpoints.manage')) ? (
-        <DeviceManagementSection id={d.id} />
+        <>
+          <p>
+            <Link to={`/endpoints/devices/${encodeURIComponent(d.id)}/diff`}>
+              {t('management.compareDevices')}
+            </Link>
+          </p>
+          <DeviceManagementSection id={d.id} />
+          <HistorySection id={d.id} type="device" />
+        </>
       ) : null}
       {dialog ? (
         <LinkDialog

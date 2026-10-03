@@ -22,6 +22,8 @@ export type RouteId =
   | 'assets'
   | 'devices'
   | 'deviceDetail'
+  | 'deviceManagementDiff'
+  | 'groupManagementDiff'
   | 'endpointFindings'
   | 'managementArtifacts'
   | 'managementArtifactDetail'
@@ -128,6 +130,19 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'nav.devices',
     requiresAny: ['endpoints.view', 'endpoints.manage'],
     nav: 'endpoints',
+  },
+  {
+    id: 'deviceManagementDiff',
+    pattern: '/endpoints/devices/:id/diff',
+    titleKey: 'management.compareDevices',
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'groupManagementDiff',
+    pattern: '/endpoints/groups/:id/diff',
+    titleKey: 'management.compareGroups',
+    requires: ['organization.directory.view'],
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
   },
   {
     id: 'deviceDetail',
@@ -435,6 +450,8 @@ export const appRoutes: readonly AppRoute[] = [
 /** UI hiding only: all of `requires` and, when set, at least one of `requiresAny`. */
 export function canViewRoute(can: CanFn, route: AppRoute): boolean {
   if (!canAll(can, route.requires)) return false;
+  if (route.id === 'deviceManagementDiff' && !can('endpoints.view') && !can('endpoints.manage'))
+    return false;
   return !route.requiresAny || route.requiresAny.some((permission) => can(permission));
 }
 
