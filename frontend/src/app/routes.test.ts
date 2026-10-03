@@ -8,7 +8,14 @@ const ids = (permissions: string[], group: 'main' | 'admin') =>
 
 describe('visibleNavItems', () => {
   it('always shows the main entries and hides admin entries without permission', () => {
-    expect(ids([], 'main')).toEqual(['home', 'me', 'notifications']);
+    expect(ids([], 'main')).toEqual([
+      'home',
+      'me',
+      'notifications',
+      'catalog',
+      'requests',
+      'approvals',
+    ]);
     expect(ids([], 'admin')).toEqual([]);
   });
 
@@ -19,14 +26,46 @@ describe('visibleNavItems', () => {
 
   it('shows My Work and Tasks with any one task permission', () => {
     for (const permission of ['tasks.view', 'tasks.work', 'tasks.manage']) {
-      expect(ids([permission], 'main')).toEqual(['home', 'me', 'myWork', 'notifications', 'tasks']);
+      expect(ids([permission], 'main')).toEqual([
+        'home',
+        'me',
+        'myWork',
+        'notifications',
+        'catalog',
+        'requests',
+        'approvals',
+        'tasks',
+      ]);
     }
-    expect(ids(['organization.view'], 'main')).toEqual(['home', 'me', 'notifications']);
+    expect(ids(['organization.view'], 'main')).toEqual([
+      'home',
+      'me',
+      'notifications',
+      'catalog',
+      'requests',
+      'approvals',
+    ]);
   });
 
   it('shows the briefing with either briefing permission and creation only to managers', () => {
-    expect(ids(['briefing.view'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
-    expect(ids(['briefing.manage'], 'main')).toEqual(['home', 'me', 'notifications', 'briefing']);
+    expect(ids(['briefing.view'], 'main')).toEqual([
+      'home',
+      'me',
+      'notifications',
+      'catalog',
+      'requests',
+      'approvals',
+      'briefing',
+    ]);
+    expect(ids(['briefing.manage'], 'main')).toEqual([
+      'home',
+      'me',
+      'notifications',
+      'catalog',
+      'requests',
+      'approvals',
+      'briefing',
+    ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
     const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
@@ -77,5 +116,21 @@ describe('route table', () => {
     expect(isNavActive('/admin/roles', '/admin/roles/42')).toBe(true);
     expect(isNavActive('/admin/roles', '/admin/role-assignments')).toBe(false);
     expect(isNavActive('/', '/me')).toBe(false);
+  });
+});
+
+describe('catalog, requests and approvals', () => {
+  it('are available to every signed-in user, admin entries need their permissions', () => {
+    expect(ids([], 'main')).toEqual(expect.arrayContaining(['catalog', 'requests', 'approvals']));
+    expect(ids(['products.view'], 'admin')).toEqual(['products']);
+    expect(ids(['catalog.manage'], 'admin')).toEqual(['catalogAdmin']);
+    expect(ids(['requests.manage'], 'admin')).toEqual(['allRequests']);
+  });
+
+  it('matches detail routes', () => {
+    expect(matchRoute(appRoutes, '/catalog/7')?.route.id).toBe('catalogRequest');
+    expect(matchRoute(appRoutes, '/requests/7')?.route.id).toBe('requestDetail');
+    expect(matchRoute(appRoutes, '/approvals/7')?.route.id).toBe('approvalDetail');
+    expect(matchRoute(appRoutes, '/admin/requests')?.route.id).toBe('allRequests');
   });
 });

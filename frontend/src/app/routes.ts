@@ -9,6 +9,15 @@ export type RouteId =
   | 'briefing'
   | 'briefingNew'
   | 'briefingDetail'
+  | 'catalog'
+  | 'catalogRequest'
+  | 'requests'
+  | 'requestDetail'
+  | 'approvals'
+  | 'approvalDetail'
+  | 'products'
+  | 'catalogAdmin'
+  | 'allRequests'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -50,6 +59,12 @@ export const appRoutes: readonly AppRoute[] = [
     nav: 'main',
   },
   { id: 'notifications', pattern: '/notifications', titleKey: 'nav.notifications', nav: 'main' },
+  { id: 'catalog', pattern: '/catalog', titleKey: 'nav.catalog', nav: 'main' },
+  { id: 'catalogRequest', pattern: '/catalog/:id', titleKey: 'nav.catalog' },
+  { id: 'requests', pattern: '/requests', titleKey: 'nav.myRequests', nav: 'main' },
+  { id: 'requestDetail', pattern: '/requests/:id', titleKey: 'nav.myRequests' },
+  { id: 'approvals', pattern: '/approvals', titleKey: 'nav.approvals', nav: 'main' },
+  { id: 'approvalDetail', pattern: '/approvals/:id', titleKey: 'nav.approvals' },
   {
     id: 'briefing',
     pattern: '/briefing',
@@ -106,6 +121,27 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/recurring-tasks/:id',
     titleKey: 'recurrence.detail.title',
     requires: ['tasks.recurrence.manage'],
+  },
+  {
+    id: 'products',
+    pattern: '/admin/products',
+    titleKey: 'nav.products',
+    requiresAny: ['products.view', 'products.manage'],
+    nav: 'admin',
+  },
+  {
+    id: 'catalogAdmin',
+    pattern: '/admin/catalog',
+    titleKey: 'nav.catalogAdmin',
+    requires: ['catalog.manage'],
+    nav: 'admin',
+  },
+  {
+    id: 'allRequests',
+    pattern: '/admin/requests',
+    titleKey: 'nav.allRequests',
+    requiresAny: ['requests.view', 'requests.manage'],
+    nav: 'admin',
   },
   {
     id: 'roles',
