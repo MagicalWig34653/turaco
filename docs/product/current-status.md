@@ -6,7 +6,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 **F2 (Work Foundation, [design](f2-work-foundation-design.md)) is implemented:** the outbox dispatcher (slice 1); the Teams write API, Tasks and My Work with UI (slice 2); in-app notifications with UI (slice 3); the HTML email channel (slice 4); Recurring Task Definitions with UI (slice 5); manual IT Briefing publications with UI (slice 6). A Teams admin UI does not exist (Teams are managed through the API). F2 lives on the branch `f2-work-foundation` until it is merged.
 
-**Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". F3 (Products, Catalog and Requests) is implemented on branch `f3-products-catalog-requests` (backend and UI; demo seed pending).
+**Milestone:** F1 (Identity and Organization, [plan](implementation-plan.md)) is complete: all six slices are implemented for on-prem deployments with one directory. Its open verification items (real Active Directory and Windows clients, automated directory/browser end-to-end tests) are listed under "Explicit stubs / not implemented yet". F3 (Products, Catalog and Requests) is implemented on branch `f3-products-catalog-requests` (backend, UI and a development demo seed).
 
 ## Implemented in the bootstrap repository
 

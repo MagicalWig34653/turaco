@@ -37,6 +37,8 @@ if [[ -z "$user_id" ]]; then
 fi
 admin role grant --role platform-administrator --user "$user_id" 2>&1 | grep -v "already" || true
 
+admin demo seed
+
 cat <<MSG
 
 Local test instance is ready.

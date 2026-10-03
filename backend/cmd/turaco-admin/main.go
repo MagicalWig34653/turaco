@@ -9,6 +9,7 @@
 //	turaco-admin emergency create --login <name> --display-name <text> [--password-stdin]
 //	turaco-admin emergency set-password --login <name> [--password-stdin]
 //	turaco-admin emergency enable|disable --login <name>
+//	turaco-admin demo seed   (APP_ENV=development only)
 package main
 
 import (
@@ -50,7 +51,8 @@ const usage = `usage:
   turaco-admin emergency create --login <name> --display-name <text> [--password-stdin]
   turaco-admin emergency set-password --login <name> [--password-stdin]
   turaco-admin emergency enable  --login <name>
-  turaco-admin emergency disable --login <name>`
+  turaco-admin emergency disable --login <name>
+  turaco-admin demo seed   (development only)`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -83,6 +85,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runRole(ctx, e, command, rest)
 	case "emergency":
 		err = runEmergency(ctx, e, command, rest)
+	case "demo":
+		err = runDemo(ctx, e, command, rest)
 	default:
 		err = errUsage
 	}

@@ -58,7 +58,7 @@ make bootstrap
 
 ## Local test instance (one click)
 
-`make dev-setup` (or the GoLand run configuration **Turaco Dev Setup**) starts PostgreSQL and S3Mock, migrates the development and test databases and creates a development administrator through the emergency account: login `devadmin`, password `turaco-dev-password` (public, development only; override with `DEV_ADMIN_LOGIN` and `DEV_ADMIN_PASSWORD`). It is safe to run repeatedly.
+`make dev-setup` (or the GoLand run configuration **Turaco Dev Setup**) starts PostgreSQL and S3Mock, migrates the development and test databases and creates a development administrator through the emergency account: login `devadmin`, password `turaco-dev-password` (public, development only; override with `DEV_ADMIN_LOGIN` and `DEV_ADMIN_PASSWORD`). It also runs `turaco-admin demo seed`, which creates sample manufacturers, categories, products and four example catalog items (notebook, software, system access, new workplace; manager approval, unassigned fulfillment tasks) through the audited application operations. The seed refuses to run unless `APP_ENV=development` and is idempotent. It is safe to run repeatedly.
 
 The shared GoLand run configurations live in `.idea/runConfigurations/`:
 
