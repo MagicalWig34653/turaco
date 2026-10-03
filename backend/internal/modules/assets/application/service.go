@@ -50,6 +50,7 @@ func auditState(a *Asset) any {
 	return map[string]any{
 		"status": a.Status, "provisioning": a.ProvisioningStatus, "ownership": a.OwnershipType,
 		"productId": a.ProductID, "locationId": a.LocationID, "version": a.Version,
+		"serialNumber": a.SerialNumber, "assetTag": a.AssetTag,
 	}
 }
 
@@ -273,8 +274,14 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 					return err
 				}
 				next.SerialNumber = &cleaned
-			} else if pr, perr := s.products.Products(ctx, []string{cur.ProductID}); perr == nil && pr[cur.ProductID].Serialized {
-				return invalid("a serial number is required for a serialized product")
+			} else {
+				pr, perr := s.products.Products(ctx, []string{cur.ProductID})
+				if perr != nil {
+					return fmt.Errorf("check product: %w", perr)
+				}
+				if pr[cur.ProductID].Serialized {
+					return invalid("a serial number is required for a serialized product")
+				}
 			}
 			changed = append(changed, "serialNumber")
 		}
@@ -581,6 +588,9 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 		}
 		assignments = active
 	}
+	if !p.canView() {
+		a = holderView(a)
+	}
 	d := Detail{Asset: a, Assignments: assignments}
 	if p.Manage {
 		d.Allowed = AllowedOperations(a.Status)
@@ -650,6 +660,12 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, erro
 	return s.store.List(ctx, f)
 }
 
+// holderView hides the internal fields (notes, status reason, supplier) from the person an asset is assigned to.
+func holderView(a Asset) Asset {
+	a.Notes, a.StatusReason, a.SupplierID = nil, nil, nil
+	return a
+}
+
 // GetPlain returns an asset without any authorization (for contracts used by
 // modules that authorized the caller themselves).
 func (s *Service) GetPlain(ctx context.Context, id string) (Asset, error) {
@@ -681,7 +697,14 @@ func (s *Service) Mine(ctx context.Context, p Principal, page Page) (Result, err
 	if p.UserID == "" {
 		return Result{}, ErrForbidden
 	}
-	return s.store.List(ctx, Filter{AssignedToUser: p.UserID, Page: page.Normalize()})
+	res, err := s.store.List(ctx, Filter{AssignedToUser: p.UserID, Page: page.Normalize()})
+	if err != nil {
+		return Result{}, err
+	}
+	for i := range res.Items {
+		res.Items[i] = holderView(res.Items[i])
+	}
+	return res, nil
 }
 
 // Lookup resolves a scanned code to an asset. Requires assets.view.

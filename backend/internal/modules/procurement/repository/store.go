@@ -306,11 +306,11 @@ func (r *Repository) ListNeeds(ctx context.Context, f application.NeedFilter) (a
 
 // ---- orders ----
 
-const orderCols = `id::text, reference, supplier_id::text, status, status_reason, currency, notes, created_by::text, sent_at, closed_at, version, created_at, updated_at`
+const orderCols = `id::text, reference, supplier_id::text, status, status_reason, currency, notes, created_by::text, editors::text[], sent_at, closed_at, version, created_at, updated_at`
 
 func scanOrder(row pgx.Row) (application.Order, error) {
 	var o application.Order
-	err := row.Scan(&o.ID, &o.Reference, &o.SupplierID, &o.Status, &o.StatusReason, &o.Currency, &o.Notes, &o.CreatedBy, &o.SentAt, &o.ClosedAt,
+	err := row.Scan(&o.ID, &o.Reference, &o.SupplierID, &o.Status, &o.StatusReason, &o.Currency, &o.Notes, &o.CreatedBy, &o.Editors, &o.SentAt, &o.ClosedAt,
 		&o.Version, &o.CreatedAt, &o.UpdatedAt)
 	return o, err
 }
@@ -480,4 +480,14 @@ func (r *Repository) ClearLineRequestsTx(ctx context.Context, tx pgx.Tx, orderID
 		}
 	}
 	return ids, rows.Err()
+}
+
+func (r *Repository) AddEditorTx(ctx context.Context, tx pgx.Tx, orderID, userID string) error {
+	if !validUUID(userID) {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `UPDATE procurement.purchase_orders SET editors = array_append(editors, $2::uuid) WHERE id = $1::uuid AND NOT ($2::uuid = ANY(editors))`, orderID, userID); err != nil {
+		return fmt.Errorf("add order editor: %w", err)
+	}
+	return nil
 }

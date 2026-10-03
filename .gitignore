@@ -21,3 +21,7 @@ tmp/
 
 # Duplicate copies created by file-sync tools (for example "name 2.go")
 * 2.*
+
+# Built binaries
+/backend/cmd/*/turaco-*
+!/backend/cmd/*/*.go

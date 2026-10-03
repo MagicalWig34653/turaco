@@ -39,7 +39,7 @@ function StockDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const productId = balance?.productId ?? product?.id ?? '';
-  const needsReason = op === 'dispose' || op === 'correct';
+  const needsReason = op === 'dispose' || op === 'correct' || op === 'return';
   const number = Number.parseInt(amount, 10);
   const valid =
     productId !== '' &&

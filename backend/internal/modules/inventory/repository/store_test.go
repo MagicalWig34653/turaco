@@ -594,3 +594,30 @@ func TestDatabaseInvariants(t *testing.T) {
 		t.Error("a quantity reservation without a storage location was accepted")
 	}
 }
+
+func TestInvalidIdsAreValidationErrorsNotServerErrors(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	var inv *application.InvalidInputError
+	mv := application.StockMove{ProductID: e.widget, StorageLocationID: "not-a-uuid", Quantity: 1, Reason: "x"}
+	for name, fn := range map[string]func() error{
+		"issue":  func() error { _, err := e.svc.Issue(ctx, e.caller(e.manager), e.manage, mv); return err },
+		"return": func() error { _, err := e.svc.Return(ctx, e.caller(e.manager), e.manage, mv); return err },
+		"transfer": func() error {
+			_, err := e.svc.Transfer(ctx, e.caller(e.manager), e.manage, application.TransferMove{ProductID: e.widget, FromID: "x", ToID: e.shelfA.ID, Quantity: 1})
+			return err
+		},
+		"reserve": func() error {
+			_, err := e.svc.ReserveQuantity(ctx, e.caller(e.manager), e.manage, application.QuantityReservation{ProductID: e.widget, StorageLocationID: "x", Quantity: 1})
+			return err
+		},
+	} {
+		if err := fn(); !errors.As(err, &inv) {
+			t.Errorf("%s with a malformed id: %v", name, err)
+		}
+	}
+	// A return needs a reason like a correction does.
+	if _, err := e.svc.Return(ctx, e.caller(e.manager), e.manage, application.StockMove{ProductID: e.widget, StorageLocationID: e.shelfA.ID, Quantity: 1}); !errors.As(err, &inv) {
+		t.Errorf("return without a reason: %v", err)
+	}
+}

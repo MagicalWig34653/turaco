@@ -18,10 +18,13 @@ func scanReceipt(row pgx.Row) (application.GoodsReceipt, error) {
 	return g, err
 }
 
-func (r *Repository) InsertGoodsReceiptTx(ctx context.Context, tx pgx.Tx, orderID, supplierID string, deliveryNote, receivedBy *string) (application.GoodsReceipt, error) {
+func (r *Repository) InsertGoodsReceiptTx(ctx context.Context, tx pgx.Tx, orderID, supplierID string, deliveryNote, receivedBy, idempotencyKey *string) (application.GoodsReceipt, error) {
 	g, err := scanReceipt(tx.QueryRow(ctx, `
-		INSERT INTO inventory.goods_receipts(order_id, supplier_id, delivery_note, received_by) VALUES ($1::uuid, $2::uuid, $3, $4::uuid)
-		RETURNING `+receiptCols, orderID, supplierID, deliveryNote, receivedBy))
+		INSERT INTO inventory.goods_receipts(order_id, supplier_id, delivery_note, received_by, idempotency_key) VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5)
+		RETURNING `+receiptCols, orderID, supplierID, deliveryNote, receivedBy, idempotencyKey))
+	if pgCode(err) == "23505" {
+		return application.GoodsReceipt{}, application.ErrConflict
+	}
 	if err != nil {
 		return application.GoodsReceipt{}, fmt.Errorf("insert goods receipt: %w", err)
 	}
@@ -116,4 +119,20 @@ func (r *Repository) ListGoodsReceipts(ctx context.Context, orderID string, page
 		res.Items[i].Lines = lines[res.Items[i].ID]
 	}
 	return res, nil
+}
+
+func (r *Repository) GoodsReceiptByKey(ctx context.Context, key string) (application.GoodsReceipt, error) {
+	g, err := scanReceipt(r.pool.QueryRow(ctx, `SELECT `+receiptCols+` FROM inventory.goods_receipts WHERE idempotency_key = $1`, key))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.GoodsReceipt{}, application.ErrNotFound
+	}
+	if err != nil {
+		return application.GoodsReceipt{}, fmt.Errorf("goods receipt by key: %w", err)
+	}
+	lines, err := r.receiptLines(ctx, []string{g.ID})
+	if err != nil {
+		return application.GoodsReceipt{}, err
+	}
+	g.Lines = lines[g.ID]
+	return g, nil
 }

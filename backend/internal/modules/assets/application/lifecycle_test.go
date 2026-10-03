@@ -19,7 +19,7 @@ func TestLifecycleMatrix(t *testing.T) {
 		OpFinishRepair:       {StatusInRepair},
 		OpRetire:             {StatusAvailable, StatusReturned},
 		OpDispose:            {StatusRetired},
-		OpMarkLost:           {StatusReceived, StatusAvailable, StatusReserved, StatusAssigned, StatusReturned, StatusInRepair},
+		OpMarkLost:           {StatusReceived, StatusAvailable, StatusAssigned, StatusReturned, StatusInRepair},
 		OpRecover:            {StatusLost},
 	}
 	if len(want) != len(rules) {

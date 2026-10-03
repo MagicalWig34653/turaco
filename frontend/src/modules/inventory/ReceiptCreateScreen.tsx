@@ -26,6 +26,7 @@ function ReceiptForm({ order }: { order: PurchaseOrderDetail }) {
   const [note, setNote] = useState('');
   const [available, setAvailable] = useState(false);
   const [inputs, setInputs] = useState<Record<string, LineInput>>({});
+  const [key] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [invalid, setInvalid] = useState<string | undefined>(undefined);
@@ -82,6 +83,7 @@ function ReceiptForm({ order }: { order: PurchaseOrderDetail }) {
         orderId: order.id,
         deliveryNote: note.trim(),
         assetsAvailable: available,
+        idempotencyKey: key,
         lines,
       });
       navigate('/inventory/receipts');

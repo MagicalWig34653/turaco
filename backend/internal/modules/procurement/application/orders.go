@@ -145,6 +145,9 @@ func (s *Service) UpdateOrder(ctx context.Context, c Caller, p Principal, id str
 		if cur.Status != POStatusDraft {
 			return &InvalidTransitionError{Operation: "update", From: cur.Status}
 		}
+		if err := s.recordEditor(ctx, tx, c, id); err != nil {
+			return err
+		}
 		next := cur
 		var changed []string
 		if in.SupplierID != nil && *in.SupplierID != cur.SupplierID {
@@ -213,6 +216,14 @@ func (s *Service) lockDraft(ctx context.Context, tx pgx.Tx, id string, expected 
 	return cur, nil
 }
 
+// recordEditor remembers who changed a draft: editors can never approve the order.
+func (s *Service) recordEditor(ctx context.Context, tx pgx.Tx, c Caller, orderID string) error {
+	if c.Actor.UserID == "" {
+		return nil
+	}
+	return s.store.AddEditorTx(ctx, tx, orderID, c.Actor.UserID)
+}
+
 // touch bumps the order version after a line change so editors detect it.
 func (s *Service) touch(ctx context.Context, tx pgx.Tx, o Order) (Order, error) {
 	return s.store.UpdateOrderTx(ctx, tx, o)
@@ -240,6 +251,9 @@ func (s *Service) AddLine(ctx context.Context, c Caller, p Principal, orderID st
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		order, err := s.lockDraft(ctx, tx, orderID, expected, "add_line")
 		if err != nil {
+			return err
+		}
+		if err := s.recordEditor(ctx, tx, c, orderID); err != nil {
 			return err
 		}
 		lines, err := s.store.LinesTx(ctx, tx, orderID, false)
@@ -326,6 +340,9 @@ func (s *Service) UpdateLine(ctx context.Context, c Caller, p Principal, orderID
 		if err != nil {
 			return err
 		}
+		if err := s.recordEditor(ctx, tx, c, orderID); err != nil {
+			return err
+		}
 		lines, err := s.store.LinesTx(ctx, tx, orderID, true)
 		if err != nil {
 			return err
@@ -369,6 +386,9 @@ func (s *Service) RemoveLine(ctx context.Context, c Caller, p Principal, orderID
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
 		order, err := s.lockDraft(ctx, tx, orderID, expected, "remove_line")
 		if err != nil {
+			return err
+		}
+		if err := s.recordEditor(ctx, tx, c, orderID); err != nil {
 			return err
 		}
 		lines, err := s.store.LinesTx(ctx, tx, orderID, true)
@@ -464,9 +484,12 @@ func (s *Service) Submit(ctx context.Context, c Caller, p Principal, id string, 
 		if cur.CreatedBy != nil {
 			excluded = append(excluded, *cur.CreatedBy)
 		}
-		if me := c.Actor.UserID; me != "" && !slices.Contains(excluded, me) {
+		if me := c.Actor.UserID; me != "" {
 			excluded = append(excluded, me)
 		}
+		excluded = append(excluded, cur.Editors...)
+		slices.Sort(excluded)
+		excluded = slices.Compact(excluded)
 		next := cur
 		next.Status, next.StatusReason = POStatusPendingApproval, nil
 		out, err = s.store.UpdateOrderTx(ctx, tx, next)
@@ -670,7 +693,7 @@ func (s *Service) GetOrder(ctx context.Context, p Principal, id string) (Detail,
 	}
 	ids := make([]string, 0, len(lines))
 	for _, l := range lines {
-		d.TotalCents += int64(l.Quantity) * l.UnitPriceCents
+		d.TotalCents += int64(l.Quantity) * l.UnitPriceCents // bounded: 100 lines x 1e6 x 1e9 < 2^63
 		ids = append(ids, l.ProductID)
 	}
 	if sup, err := s.store.GetSupplier(ctx, o.SupplierID); err == nil {

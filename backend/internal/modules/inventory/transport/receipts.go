@@ -82,6 +82,7 @@ func (h *handler) getReceipt(w http.ResponseWriter, r *http.Request) {
 type receiptBody struct {
 	OrderID         string `json:"orderId"`
 	DeliveryNote    string `json:"deliveryNote"`
+	IdempotencyKey  string `json:"idempotencyKey"`
 	AssetsAvailable bool   `json:"assetsAvailable"`
 	Lines           []struct {
 		OrderLineID       string `json:"orderLineId"`
@@ -101,7 +102,7 @@ func (h *handler) postReceipt(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	in := application.ReceiptInput{OrderID: b.OrderID, DeliveryNote: b.DeliveryNote, AssetsAvailable: b.AssetsAvailable}
+	in := application.ReceiptInput{OrderID: b.OrderID, DeliveryNote: b.DeliveryNote, IdempotencyKey: b.IdempotencyKey, AssetsAvailable: b.AssetsAvailable}
 	for _, l := range b.Lines {
 		line := application.ReceiptLineInput{OrderLineID: l.OrderLineID, Quantity: l.Quantity, StorageLocationID: l.StorageLocationID, AssetLocationID: l.AssetLocationID}
 		if l.WarrantyUntil != nil && *l.WarrantyUntil != "" {

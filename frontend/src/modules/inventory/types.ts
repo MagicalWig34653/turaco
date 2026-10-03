@@ -105,6 +105,7 @@ export type ReceiptBody = {
   orderId: string;
   deliveryNote?: string;
   assetsAvailable?: boolean;
+  idempotencyKey?: string;
   lines: Array<{
     orderLineId: string;
     quantity: number;

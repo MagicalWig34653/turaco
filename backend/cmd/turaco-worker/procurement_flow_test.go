@@ -99,6 +99,29 @@ func TestPurchaseOrderApprovalRoundTrip(t *testing.T) {
 	if err != nil || d.Order.Status != "draft" || d.Order.StatusReason == nil || *d.Order.StatusReason != procurementapp.RejectedReason {
 		t.Fatalf("rejected order = %+v %v", d.Order, err)
 	}
+	// Corrected and submitted again: the rejected step does not block a new approval.
+	if _, err := svc.Submit(ctx, c, manager, r.ID, nil, procurementapp.Approver{TeamID: &w.team}); err != nil {
+		t.Fatalf("resubmitting a rejected order: %v", err)
+	}
+	if err := decideApproval(w, w.member, approvalOf(r.ID), "approve"); err != nil {
+		t.Fatal(err)
+	}
+	w.dispatch()
+	if status(r.ID) != "approved" {
+		t.Errorf("resubmitted order = %s, want approved", status(r.ID))
+	}
+
+	// Somebody who edited the draft cannot approve it, even when named as approver.
+	e := order()
+	editor := procurementapp.Principal{UserID: w.assignee, Manage: true}
+	ec := procurementapp.Caller{Actor: audit.UserActor(w.assignee), CorrelationID: w.corr}
+	if _, err := svc.AddLine(ctx, ec, editor, e.ID, nil, procurementapp.NewLine{ProductID: product, Quantity: 1, UnitPriceCents: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Submit(ctx, c, manager, e.ID, nil, procurementapp.Approver{UserID: &w.assignee}); err == nil {
+		t.Error("an editor of the draft was accepted as its approver")
+	}
+
 	if w.pendingEvents() != 0 {
 		t.Errorf("%d events left unprocessed", w.pendingEvents())
 	}

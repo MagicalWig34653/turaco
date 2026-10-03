@@ -67,6 +67,9 @@ func (s *Service) ReserveQuantity(ctx context.Context, c Caller, p Principal, in
 	if err != nil {
 		return Reservation{}, err
 	}
+	if err := checkIDs(in.ProductID, in.StorageLocationID); err != nil {
+		return Reservation{}, err
+	}
 	if err := s.stockProduct(ctx, in.ProductID, true); err != nil {
 		return Reservation{}, err
 	}
@@ -128,6 +131,9 @@ func (s *Service) ReserveAsset(ctx context.Context, c Caller, p Principal, in As
 	}
 	ct, ci, err := in.Origin.check()
 	if err != nil {
+		return Reservation{}, err
+	}
+	if err := checkIDs(in.AssetID); err != nil {
 		return Reservation{}, err
 	}
 	found, err := s.assets.Assets(ctx, []string{in.AssetID})

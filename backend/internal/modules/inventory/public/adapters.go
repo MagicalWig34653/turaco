@@ -67,13 +67,32 @@ func (x *Assets) ReserveInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, 
 
 func (x *Assets) ReleaseReservationInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, assetID string) error {
 	_, err := x.a.ReleaseReservationInTx(ctx, tx, caller(actor, correlationID), assetID)
-	return err
+	return mapAssetErr(err)
 }
 
 func (x *Assets) AssignReservedInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, assetID string, to application.AssetAssignee, note string) error {
 	_, err := x.a.AssignReservedInTx(ctx, tx, caller(actor, correlationID), assetID, assetspublic.Assignee{Type: to.Type, ID: to.ID}, note)
-	if errors.Is(err, assetspublic.ErrAssigneeInvalid) {
+	return mapAssetErr(err)
+}
+
+// mapAssetErr turns the Assets module's refusals into Inventory errors, so bad
+// input is a 400 and a state conflict a 409, never a 500.
+func mapAssetErr(err error) error {
+	var tr *assetspublic.InvalidTransitionError
+	var inv *assetspublic.InvalidInputError
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, assetspublic.ErrAssigneeInvalid):
 		return application.ErrAssigneeInvalid
+	case errors.As(err, &tr):
+		return application.ErrAssetUnavailable
+	case errors.As(err, &inv):
+		return application.NewInvalidInput(inv.Message)
+	case errors.Is(err, assetspublic.ErrProductInvalid):
+		return application.ErrProductInvalid
+	case errors.Is(err, assetspublic.ErrReferenceInvalid):
+		return application.ErrReferenceInvalid
 	}
 	return err
 }
@@ -92,7 +111,7 @@ func (x *Assets) CreateReceivedInTx(ctx context.Context, tx pgx.Tx, actor audit.
 		return "", application.ErrDuplicateAsset
 	}
 	if err != nil {
-		return "", err
+		return "", mapAssetErr(err)
 	}
 	return a.ID, nil
 }

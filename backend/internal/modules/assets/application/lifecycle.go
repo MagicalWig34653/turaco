@@ -46,7 +46,7 @@ var rules = map[string]rule{
 	OpFinishRepair:       {from: []string{StatusInRepair}, to: StatusAvailable, event: "AssetStatusChanged"},
 	OpRetire:             {from: []string{StatusAvailable, StatusReturned}, to: StatusRetired, reasonRequired: true, event: "AssetStatusChanged"},
 	OpDispose:            {from: []string{StatusRetired}, to: StatusDisposed, reasonRequired: true, event: "AssetStatusChanged"},
-	OpMarkLost:           {from: []string{StatusReceived, StatusAvailable, StatusReserved, StatusAssigned, StatusReturned, StatusInRepair}, to: StatusLost, closesAssignment: true, reasonRequired: true, event: "AssetStatusChanged"},
+	OpMarkLost:           {from: []string{StatusReceived, StatusAvailable, StatusAssigned, StatusReturned, StatusInRepair}, to: StatusLost, closesAssignment: true, reasonRequired: true, event: "AssetStatusChanged"},
 	OpRecover:            {from: []string{StatusLost}, to: StatusAvailable, reasonRequired: true, event: "AssetStatusChanged"},
 }
 

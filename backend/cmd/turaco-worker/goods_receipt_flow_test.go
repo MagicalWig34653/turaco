@@ -125,9 +125,16 @@ func TestGoodsReceiptBooksOrderStockAndAssetsAtomically(t *testing.T) {
 	}
 
 	// First delivery: 4 cables and 1 notebook.
-	gr, err := inv.PostGoodsReceipt(ctx, ic, im, receiptFor(4, inventoryapp.ReceivedUnit{SerialNumber: w.corr + "-A", AssetTag: w.corr + "-T1"}))
+	first := receiptFor(4, inventoryapp.ReceivedUnit{SerialNumber: w.corr + "-A", AssetTag: w.corr + "-T1"})
+	first.IdempotencyKey = "retry-" + w.corr
+	gr, err := inv.PostGoodsReceipt(ctx, ic, im, first)
 	if err != nil || len(gr.Lines) != 2 || gr.Reference == "" {
 		t.Fatalf("receipt = %+v %v", gr, err)
+	}
+	// A retry with the same key returns the posted receipt and books nothing again.
+	again, err := inv.PostGoodsReceipt(ctx, ic, im, first)
+	if err != nil || again.ID != gr.ID {
+		t.Fatalf("retry = %+v %v, want receipt %s", again, err, gr.ID)
 	}
 	count()
 	if stock != 4 || received != 5 || assetCount != 1 {

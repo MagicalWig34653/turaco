@@ -2,7 +2,9 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,6 +40,9 @@ type ReceiptLineInput struct {
 type ReceiptInput struct {
 	OrderID      string
 	DeliveryNote string
+	// IdempotencyKey (8-100 characters, chosen by the client) makes a retry return the receipt
+	// already posted with it instead of booking the delivery twice.
+	IdempotencyKey string
 	// AssetsAvailable registers new assets as available instead of received (to be checked).
 	AssetsAvailable bool
 	Lines           []ReceiptLineInput
@@ -86,6 +91,18 @@ func (s *Service) PostGoodsReceipt(ctx context.Context, c Caller, p Principal, i
 	if len(in.Lines) == 0 || len(in.Lines) > maxReceiptLines {
 		return GoodsReceipt{}, invalid("a receipt needs between 1 and %d lines", maxReceiptLines)
 	}
+	var key *string
+	if in.IdempotencyKey != "" {
+		if len(in.IdempotencyKey) < 8 || len(in.IdempotencyKey) > 100 {
+			return GoodsReceipt{}, invalid("the idempotency key must be 8-100 characters")
+		}
+		key = &in.IdempotencyKey
+		if prior, err := s.store.GoodsReceiptByKey(ctx, in.IdempotencyKey); err == nil {
+			return prior, nil
+		} else if err != ErrNotFound {
+			return GoodsReceipt{}, err
+		}
+	}
 	order, err := s.orders.Order(ctx, in.OrderID)
 	if err != nil {
 		return GoodsReceipt{}, err
@@ -123,6 +140,12 @@ func (s *Service) PostGoodsReceipt(ctx context.Context, c Caller, p Principal, i
 			if l.StorageLocationID == "" {
 				return GoodsReceipt{}, invalid("line %d needs a storage location", i+1)
 			}
+			if err := checkIDs(l.StorageLocationID); err != nil {
+				return GoodsReceipt{}, err
+			}
+			if !products[ol.ProductID].Active {
+				return GoodsReceipt{}, ErrProductInvalid
+			}
 		case kindAsset:
 			if len(l.Units) != l.Quantity {
 				return GoodsReceipt{}, invalid("line %d needs one serial number per piece (%d expected, %d given)", i+1, l.Quantity, len(l.Units))
@@ -144,18 +167,28 @@ func (s *Service) PostGoodsReceipt(ctx context.Context, c Caller, p Principal, i
 		if err := s.orders.RecordReceiptInTx(ctx, tx, c.Actor, c.CorrelationID, in.OrderID, receipt); err != nil {
 			return err
 		}
-		gr, err := s.store.InsertGoodsReceiptTx(ctx, tx, in.OrderID, order.SupplierID, strPtr(note), userPtr(c))
+		gr, err := s.store.InsertGoodsReceiptTx(ctx, tx, in.OrderID, order.SupplierID, strPtr(note), userPtr(c), key)
 		if err != nil {
 			return err
 		}
 		now := time.Now().UTC()
 		origin := Origin{Type: "goods_receipt", ID: gr.ID}
-		for i, l := range in.Lines {
+		// Stock rows are touched in (product, location) order so concurrent receipts cannot deadlock.
+		idx := make([]int, len(in.Lines))
+		for i := range idx {
+			idx[i] = i
+		}
+		slices.SortStableFunc(idx, func(a, b int) int {
+			x, y := in.Lines[a], in.Lines[b]
+			return strings.Compare(byLine[x.OrderLineID].ProductID+x.StorageLocationID, byLine[y.OrderLineID].ProductID+y.StorageLocationID)
+		})
+		for _, i := range idx {
+			l := in.Lines[i]
 			ol := byLine[l.OrderLineID]
 			line := GoodsReceiptLine{OrderLineID: l.OrderLineID, ProductID: ol.ProductID, Quantity: l.Quantity}
 			switch kinds[i] {
 			case kindStock:
-				if _, err := s.ReceiveInTx(ctx, tx, c, StockMove{ProductID: ol.ProductID, StorageLocationID: l.StorageLocationID, Quantity: l.Quantity, Origin: origin}); err != nil {
+				if _, err := s.receiveChecked(ctx, tx, c, StockMove{ProductID: ol.ProductID, StorageLocationID: l.StorageLocationID, Quantity: l.Quantity, Origin: origin}); err != nil {
 					return err
 				}
 				loc := l.StorageLocationID
@@ -189,6 +222,12 @@ func (s *Service) PostGoodsReceipt(ctx context.Context, c Caller, p Principal, i
 		}
 		return publish(ctx, tx, c, "GoodsReceived", map[string]any{"receiptId": gr.ID, "orderId": in.OrderID, "supplierId": order.SupplierID})
 	})
+	if errors.Is(err, ErrConflict) && key != nil {
+		// A concurrent request with the same key won: return its receipt.
+		if prior, perr := s.store.GoodsReceiptByKey(ctx, *key); perr == nil {
+			return prior, nil
+		}
+	}
 	if err != nil {
 		return GoodsReceipt{}, err
 	}

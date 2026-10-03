@@ -184,6 +184,9 @@ type InvalidInputError struct{ Message string }
 
 func (e *InvalidInputError) Error() string { return "inventory: invalid input: " + e.Message }
 
+// NewInvalidInput reports bad input detected by another module as an Inventory validation error.
+func NewInvalidInput(message string) error { return &InvalidInputError{Message: message} }
+
 func invalid(format string, args ...any) error {
 	return &InvalidInputError{Message: fmt.Sprintf(format, args...)}
 }
@@ -301,7 +304,10 @@ type Store interface {
 	ListTransactions(ctx context.Context, f TransactionFilter) (Result[Transaction], error)
 	ListReservations(ctx context.Context, f ReservationFilter) (Result[Reservation], error)
 
-	InsertGoodsReceiptTx(ctx context.Context, tx pgx.Tx, orderID, supplierID string, deliveryNote, receivedBy *string) (GoodsReceipt, error)
+	// InsertGoodsReceiptTx stores the receipt; a repeated idempotency key is ErrConflict.
+	InsertGoodsReceiptTx(ctx context.Context, tx pgx.Tx, orderID, supplierID string, deliveryNote, receivedBy, idempotencyKey *string) (GoodsReceipt, error)
+	// GoodsReceiptByKey returns the receipt posted with an idempotency key, or ErrNotFound.
+	GoodsReceiptByKey(ctx context.Context, key string) (GoodsReceipt, error)
 	InsertGoodsReceiptLineTx(ctx context.Context, tx pgx.Tx, receiptID string, l GoodsReceiptLine) (GoodsReceiptLine, error)
 	AddReceiptAssetTx(ctx context.Context, tx pgx.Tx, receiptLineID, assetID string) error
 	// GetGoodsReceipt returns a receipt with its lines and the assets they created.

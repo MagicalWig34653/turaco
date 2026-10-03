@@ -424,3 +424,45 @@ func TestDatabaseInvariants(t *testing.T) {
 		}
 	}
 }
+
+func TestReservedAssetsLeaveOnlyThroughInventoryAndHoldersSeeAReducedView(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := e.create(application.CreateInput{ProductID: e.mouse, Notes: "internal remark", SerialNumber: "R-" + e.corr})
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		_, err := e.svc.TransitionInTx(ctx, tx, e.caller(e.manager), a.ID, nil, application.OpReserve, application.Params{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var tr *application.InvalidTransitionError
+	if _, err := e.op(a, application.OpMarkLost, application.Params{Reason: "gone"}); !errors.As(err, &tr) {
+		t.Errorf("a reserved asset was marked lost: %v", err)
+	}
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		_, err := e.svc.TransitionInTx(ctx, tx, e.caller(e.manager), a.ID, nil, application.OpAssignReserved, application.Params{Assignee: application.Assignee{Type: "user", ID: e.holder}})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := e.svc.Get(ctx, application.Principal{UserID: e.holder}, a.ID)
+	if err != nil || d.Asset.Notes != nil || d.Asset.SupplierID != nil || d.Asset.StatusReason != nil {
+		t.Fatalf("holder view = %+v %v", d.Asset, err)
+	}
+	mine, _ := e.svc.Mine(ctx, application.Principal{UserID: e.holder}, application.Page{})
+	for _, m := range mine.Items {
+		if m.Notes != nil {
+			t.Error("my assets leaked the internal notes")
+		}
+	}
+	if full, _ := e.svc.Get(ctx, e.view, a.ID); full.Asset.Notes == nil {
+		t.Error("staff must still see the notes")
+	}
+	// Changing the serial number is traceable: the audit state carries the old and the new value.
+	if _, err := e.svc.Update(ctx, e.caller(e.manager), e.manage, a.ID, d.Asset.Version, application.UpdateInput{SerialNumber: strp("CHANGED-" + e.corr)}); err != nil {
+		t.Fatal(err)
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'assets.asset.updated' AND before_data::text LIKE '%R-%' AND after_data::text LIKE '%CHANGED-%'`, e.corr) != 1 {
+		t.Error("the serial number change must be audited with old and new value")
+	}
+}

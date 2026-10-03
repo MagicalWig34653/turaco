@@ -51,7 +51,7 @@ const (
 	MaxQuantity  = 1_000_000
 	MaxLines     = 100
 	// MaxPriceCents bounds a unit price (1 billion in major units).
-	MaxPriceCents = 100_000_000_000
+	MaxPriceCents = 1_000_000_000
 	maxName       = 150
 	maxText       = 2000
 	maxReason     = 500
@@ -95,11 +95,13 @@ type Order struct {
 	Currency     string
 	Notes        *string
 	CreatedBy    *string
-	SentAt       *time.Time
-	ClosedAt     *time.Time
-	Version      int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Editors are the Users who changed the draft (header or lines); they can never approve it.
+	Editors   []string
+	SentAt    *time.Time
+	ClosedAt  *time.Time
+	Version   int
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Line is one Purchase Order line.
@@ -249,6 +251,8 @@ type Store interface {
 	// ReceiveLineTx adds to the received quantity while it stays within the ordered quantity.
 	ReceiveLineTx(ctx context.Context, tx pgx.Tx, orderID, lineID string, qty int) (bool, error)
 	// ClearLineRequestsTx detaches the needs from all lines of an order and returns their ids.
+	// AddEditorTx records a User who edited a draft order.
+	AddEditorTx(ctx context.Context, tx pgx.Tx, orderID, userID string) error
 	ClearLineRequestsTx(ctx context.Context, tx pgx.Tx, orderID string, onlyUnfulfilled bool) ([]string, error)
 }
 

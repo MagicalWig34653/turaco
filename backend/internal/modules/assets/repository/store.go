@@ -152,7 +152,7 @@ func (r *Repository) Get(ctx context.Context, id string) (application.Asset, err
 func (r *Repository) Lookup(ctx context.Context, code string) (application.Asset, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+columns+` FROM assets.assets
-		WHERE lower(asset_tag) = lower($1) OR lower(serial_number) = lower($1) OR lower(reference) = lower($1)
+		WHERE lower(asset_tag) = lower($1) OR lower(serial_number) = lower($1) OR reference = upper($1)
 		ORDER BY id LIMIT 3`, code)
 	if err != nil {
 		return application.Asset{}, fmt.Errorf("lookup asset: %w", err)

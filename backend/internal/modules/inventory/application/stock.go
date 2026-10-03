@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -45,6 +46,18 @@ func (s *Service) stockProduct(ctx context.Context, id string, adding bool) erro
 	p, ok := found[id]
 	if !ok || !p.StockManaged || p.Serialized || (adding && !p.Active) {
 		return ErrProductInvalid
+	}
+	return nil
+}
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// checkIDs refuses ids that are not UUIDs before they reach SQL casts.
+func checkIDs(ids ...string) error {
+	for _, id := range ids {
+		if !uuidPattern.MatchString(id) {
+			return invalid("ids must be UUIDs")
+		}
 	}
 	return nil
 }
@@ -125,17 +138,26 @@ func (s *Service) locationActive(ctx context.Context, tx pgx.Tx, ids ...string) 
 // contract Goods Receipt uses). It performs no permission check: the caller
 // has authorized the receipt.
 func (s *Service) ReceiveInTx(ctx context.Context, tx pgx.Tx, c Caller, in StockMove) (Transaction, error) {
+	if err := s.stockProduct(ctx, in.ProductID, true); err != nil {
+		return Transaction{}, err
+	}
+	return s.receiveChecked(ctx, tx, c, in)
+}
+
+// receiveChecked books received goods for a product the caller already checked
+// (no read through the pool while the caller's transaction is open).
+func (s *Service) receiveChecked(ctx context.Context, tx pgx.Tx, c Caller, in StockMove) (Transaction, error) {
 	if err := c.validate(); err != nil {
 		return Transaction{}, err
 	}
 	if err := checkQuantity(in.Quantity); err != nil {
 		return Transaction{}, err
 	}
-	ct, ci, err := in.Origin.check()
-	if err != nil {
+	if err := checkIDs(in.ProductID, in.StorageLocationID); err != nil {
 		return Transaction{}, err
 	}
-	if err := s.stockProduct(ctx, in.ProductID, true); err != nil {
+	ct, ci, err := in.Origin.check()
+	if err != nil {
 		return Transaction{}, err
 	}
 	if err := s.locationActive(ctx, tx, in.StorageLocationID); err != nil {
@@ -156,8 +178,11 @@ func (s *Service) ReceiveInTx(ctx context.Context, tx pgx.Tx, c Caller, in Stock
 
 // Return puts previously issued stock back. Requires inventory.manage.
 func (s *Service) Return(ctx context.Context, c Caller, p Principal, in StockMove) ([]Transaction, error) {
-	reason, err := s.prepare(c, p, in.Quantity, in.Reason, false)
+	reason, err := s.prepare(c, p, in.Quantity, in.Reason, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkIDs(in.ProductID, in.StorageLocationID); err != nil {
 		return nil, err
 	}
 	if err := s.stockProduct(ctx, in.ProductID, true); err != nil {
@@ -206,6 +231,9 @@ func (s *Service) takeOut(ctx context.Context, c Caller, p Principal, typ string
 	if err != nil {
 		return nil, err
 	}
+	if err := checkIDs(in.ProductID, in.StorageLocationID); err != nil {
+		return nil, err
+	}
 	if err := s.stockProduct(ctx, in.ProductID, false); err != nil {
 		return nil, err
 	}
@@ -228,6 +256,9 @@ func (s *Service) takeOut(ctx context.Context, c Caller, p Principal, typ string
 func (s *Service) Transfer(ctx context.Context, c Caller, p Principal, in TransferMove) ([]Transaction, error) {
 	reason, err := s.prepare(c, p, in.Quantity, in.Reason, false)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkIDs(in.ProductID, in.FromID, in.ToID); err != nil {
 		return nil, err
 	}
 	if in.FromID == in.ToID {
@@ -280,6 +311,9 @@ func (s *Service) Correct(ctx context.Context, c Caller, p Principal, in Correct
 	}
 	reason, err := cleanReason(in.Reason, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkIDs(in.ProductID, in.StorageLocationID); err != nil {
 		return nil, err
 	}
 	if err := s.stockProduct(ctx, in.ProductID, in.Delta > 0); err != nil {

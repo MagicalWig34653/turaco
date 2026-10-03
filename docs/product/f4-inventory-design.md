@@ -31,12 +31,12 @@ Asset (+ Asset Assignment), Warehouse, Storage Location, Stock Balance, Inventor
 - **Asset:** `received → available → reserved → assigned → returned → available`; `assigned → in_repair → available`; `available/returned → retired → disposed`; exceptional `lost`. `ordered` is not used (an Asset exists once goods are received). Explicit operations: `MakeAvailable`, `Reserve`/`ReleaseReservation` (called by Inventory), `Assign(user | team | location)`, `Return`, `SendToRepair`, `FinishRepair`, `Retire`, `Dispose`, `MarkLost`, `Recover` (lost → available, reasoned). `disposed` is terminal. Provisioning (`not_required | not_started | pending | in_progress | ready | failed`) is a separate field changed by its own operation; endpoint management state belongs to F6/F9.
 - **Asset Assignment:** historical rows with validity; at most one active assignment per Asset (partial unique index); reassigning closes the old row.
 - **Reservation:** `active → fulfilled | released | expired | cancelled`; F4 implements `release` and `fulfill`. `expired` (an optional expiry swept by a job) and `cancelled` (cancelling by origin when a request is cancelled) are reserved for the request integration and not produced yet.
-- **Purchase Order:** `draft → pending_approval → approved → sent → acknowledged? → partially_received → received → closed`, `cancelled` from `draft`, `pending_approval`, `approved`, `sent` (before any receipt). Editing lines is possible only in `draft`.
+- **Purchase Order:** `draft → pending_approval → approved → sent → acknowledged? → partially_received → received → closed`, `cancelled` from `draft`, `pending_approval`, `approved`, `sent`, `acknowledged` (before any receipt). Editing lines is possible only in `draft`.
 - **Procurement Request:** `open → ordered → fulfilled`, `cancelled`; `ordered` when linked to a PO line, `fulfilled` when its PO line is fully received.
 
 ## 5. Data and migrations
 
-New schemas `assets`, `inventory`, `procurement`. Forward migrations only. Key constraints: unique Asset reference (sequence, never truncating), unique asset tag, unique serial per Product, one active assignment per Asset, one active Reservation per Asset, stock balance checks, append-only trigger on inventory transactions and goods receipt rows, `received_quantity <= ordered_quantity * 1.0` (over-delivery is refused; the exception path is a manual PO line increase while `sent`). Money is `numeric(14,2)` with a currency code per PO (default `EUR`).
+New schemas `assets`, `inventory`, `procurement`. Forward migrations only. Key constraints: unique Asset reference (sequence, never truncating), unique asset tag, unique serial per Product, one active assignment per Asset, one active Reservation per Asset, stock balance checks, append-only trigger on inventory transactions and goods receipt rows, `received_quantity <= quantity` (over-delivery is refused; lines can only be edited in `draft`, so a larger delivery needs a new order). Money is minor units (`bigint` cents, at most 10 million per unit) with a currency code per PO (default `EUR`).
 
 ## 6. API (bounded lists, optimistic versions where rows are edited)
 
@@ -67,6 +67,19 @@ Asset assignment history is personal data (who held which device): readable with
 ## 12. Tests and documentation
 
 Ledger/balance reconciliation, concurrent reservations (many goroutines against limited stock must never oversell), concurrent asset reservations (one winner), lifecycle table tests, receipt atomicity (a failing asset insert rolls back the PO update), IDOR and permission tests, PO state machine, approval round trip in the worker end-to-end test. Docs: current status, state machines, core data model, glossary, generated references, OpenAPI, local development (seed).
+
+## 12a. Review outcomes and known limitations (2026-10-03)
+
+Fixed after the security and database reviews: a rejected purchase order can be submitted again (approval step uniqueness only applies to pending and approved steps); reserved assets cannot be marked lost outside Inventory; everyone who edited a draft order is excluded from approving it; goods receipts accept an idempotency key (a retry returns the posted receipt) and touch stock rows in a fixed order; errors from the Assets module surface as 400/409 instead of 500; malformed ids are validation errors; stock returns need a reason; holders see a reduced asset view (no notes, status reason or supplier); serial number and asset tag changes are audited with old and new value; the scanner lookup and ledger type filter are indexed; unit prices are bounded so order totals cannot overflow.
+
+Accepted limitations:
+
+- `inventory.manage` can reserve any available asset and fulfill the reservation to any assignee, which has the same effect as `assets.manage` assigning it. Grant both permissions together to the same roles.
+- The approver of a purchase order is chosen at submission; there is no dedicated approval permission yet, and an approver without `procurement.view` sees only the approval, not the lines.
+- Asset creation reads products through the connection pool per delivered unit while the receipt transaction is open (the pool has a minimum size of 16); a very large receipt is slow rather than wrong.
+- The append-only triggers are row-level (`UPDATE`/`DELETE`); `TRUNCATE` and a schema owner can bypass them. In production the application should connect as a non-owner role.
+- Goods received for products that are neither quantity-tracked nor asset-managed update only the order. After a cancelled or short-closed order the procurement request is detached from its line (the audit trail keeps the history) and reopens for the full quantity.
+- Stock returns are not linked to the issue they reverse.
 
 ## 13. Not implemented in F4
 
