@@ -23,6 +23,9 @@ export type RouteId =
   | 'devices'
   | 'deviceDetail'
   | 'endpointFindings'
+  | 'managementArtifacts'
+  | 'managementArtifactDetail'
+  | 'managementFilters'
   | 'assetNew'
   | 'assetDetail'
   | 'stock'
@@ -135,6 +138,26 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/endpoint-findings',
     titleKey: 'nav.endpointFindings',
     requiresAny: ['endpoints.view', 'endpoints.manage'],
+    nav: 'endpoints',
+  },
+  {
+    id: 'managementArtifacts',
+    pattern: '/management-artifacts',
+    titleKey: 'nav.managementArtifacts',
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+    nav: 'endpoints',
+  },
+  {
+    id: 'managementArtifactDetail',
+    pattern: '/management-artifacts/:id',
+    titleKey: 'nav.managementArtifacts',
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'managementFilters',
+    pattern: '/management-filters',
+    titleKey: 'nav.managementFilters',
+    requiresAny: ['endpoint.management.view', 'endpoints.manage'],
     nav: 'endpoints',
   },
   { id: 'myAssets', pattern: '/my-assets', titleKey: 'nav.myAssets', nav: 'main' },

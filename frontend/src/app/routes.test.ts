@@ -263,7 +263,11 @@ describe('endpoints', () => {
   it('gates the nav and all routes by endpoint permission', () => {
     expect(ids([], 'endpoints')).toEqual([]);
     for (const permission of ['endpoints.view', 'endpoints.manage']) {
-      expect(ids([permission], 'endpoints')).toEqual(['devices', 'endpointFindings']);
+      expect(ids([permission], 'endpoints')).toEqual(
+        permission === 'endpoints.manage'
+          ? ['devices', 'endpointFindings', 'managementArtifacts', 'managementFilters']
+          : ['devices', 'endpointFindings'],
+      );
       for (const id of ['devices', 'deviceDetail', 'endpointFindings']) {
         const route = appRoutes.find((candidate) => candidate.id === id)!;
         expect(canViewRoute(createCan({ permissions: [permission] }), route)).toBe(true);
@@ -271,5 +275,19 @@ describe('endpoints', () => {
     }
     expect(matchRoute(appRoutes, '/devices/7')?.route.id).toBe('deviceDetail');
     expect(matchRoute(appRoutes, '/endpoint-findings')?.route.id).toBe('endpointFindings');
+    expect(ids(['endpoint.management.view'], 'endpoints')).toEqual([
+      'managementArtifacts',
+      'managementFilters',
+    ]);
+    for (const id of ['managementArtifacts', 'managementArtifactDetail', 'managementFilters']) {
+      const route = appRoutes.find((candidate) => candidate.id === id)!;
+      expect(canViewRoute(createCan({ permissions: ['endpoint.management.view'] }), route)).toBe(
+        true,
+      );
+      expect(canViewRoute(createCan({ permissions: ['endpoints.view'] }), route)).toBe(false);
+    }
+    expect(matchRoute(appRoutes, '/management-artifacts/7')?.route.id).toBe(
+      'managementArtifactDetail',
+    );
   });
 });

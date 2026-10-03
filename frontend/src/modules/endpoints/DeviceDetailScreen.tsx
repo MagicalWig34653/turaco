@@ -14,6 +14,7 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
+import { DeviceManagementSection } from './ManagementScreens';
 import {
   reasonCodes,
   type DeviceDetail,
@@ -219,6 +220,10 @@ export function DeviceDetailScreen({ id }: { id: string }) {
           emptyText={t('endpoints.findingsEmpty')}
         />
       </section>
+      {(can('endpoint.management.view') || can('endpoints.manage')) &&
+      (can('endpoints.view') || can('endpoints.manage')) ? (
+        <DeviceManagementSection id={d.id} />
+      ) : null}
       {dialog ? (
         <LinkDialog
           device={d}
