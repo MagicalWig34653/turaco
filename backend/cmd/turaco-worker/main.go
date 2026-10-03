@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -103,6 +104,13 @@ func main() {
 		logger.Error("configure recurring tasks", "error", err)
 		os.Exit(1)
 	}
+	if cfg.AutotaskSync {
+		if err := registerExternalSync(runner, dispatcher, pool); err != nil {
+			logger.Error("configure Autotask synchronization", "error", err)
+			os.Exit(1)
+		}
+		logger.Warn("Autotask synchronization is on, but the REST client is not implemented: pushes fail with a visible \"not configured\" state")
+	}
 	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
@@ -187,6 +195,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
 	} {
 		if err := d.Register(r.event, r.name, r.fn); err != nil {
+			return err
+		}
+	}
+	runbooks := wiring.Runbooks(pool)
+	for _, event := range []string{"TaskCompleted", "TaskCancelled"} {
+		if err := d.Register(event, "knowledge.runbook-task-finished", runbooks.OnTaskEvent); err != nil {
 			return err
 		}
 	}
@@ -303,4 +317,16 @@ func registerRequestConsumers(d *events.Dispatcher, svc *requestsapp.Service, no
 		}
 	}
 	return nil
+}
+
+// registerExternalSync wires the ticket synchronization with Autotask: the outbox consumers that
+// request a push and the job that performs it. The gateway is the placeholder until a REST client exists.
+func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpool.Pool) error {
+	sync := wiring.ExternalSync(pool, autotask.NotConfigured{}, true)
+	for _, event := range []string{"TicketCreated", "TicketAssigned", "TicketResolved", "TicketStatusChanged"} {
+		if err := d.Register(event, "servicedesk.external-sync", sync.OnTicketChange); err != nil {
+			return err
+		}
+	}
+	return runner.Register(servicedeskapp.PushJobType, servicedeskapp.PushJobTimeout, sync.HandlePush)
 }

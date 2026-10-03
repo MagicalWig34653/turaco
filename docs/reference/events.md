@@ -26,6 +26,8 @@
 | `PurchaseOrderSent` | 1 | procurement | A purchase order was sent to the supplier. Payload: orderId, supplierId. |
 | `ReservationFulfilled` | 1 | inventory | A reservation was fulfilled: stock was issued or the reserved asset was assigned. Payload as StockReserved. |
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
+| `RunbookExecutionCompleted` | 1 | knowledge | Every task of a runbook execution finished. Payload: executionId, runbookId. |
+| `RunbookExecutionStarted` | 1 | knowledge | A runbook execution started and created its tasks. Payload: executionId, runbookId. |
 | `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
 | `ServiceRequestCancelled` | 1 | requests | A service request was cancelled. Payload: requestId. |
 | `ServiceRequestCompleted` | 1 | requests | A service request was completed. Payload: requestId. |
@@ -39,4 +41,5 @@
 | `TicketCommentAdded` | 1 | service-desk | A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId. |
 | `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId. |
 | `TicketResolved` | 1 | service-desk | A ticket was resolved. Payload: ticketId, reporterId, affectedUserId. |
+| `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |

@@ -1,7 +1,14 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { Ticket, TicketComment, TicketDetail, TicketOperation, TicketStatus } from './types';
+import type {
+  Ticket,
+  TicketComment,
+  TicketDetail,
+  TicketExternalSync,
+  TicketOperation,
+  TicketStatus,
+} from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
@@ -13,6 +20,7 @@ registerErrorMessages({
   'tickets.team_invalid': 'error.ticketsTeamInvalid',
   'tickets.device_invalid': 'error.ticketsDeviceInvalid',
   'tickets.not_found': 'error.notFound',
+  'tickets.sync_disabled': 'error.ticketsSyncDisabled',
 });
 registerErrorResolver((error) =>
   error.code.startsWith('tickets.invalid_') ? 'error.invalidRequest' : undefined,
@@ -37,4 +45,7 @@ export const ticketsApi = {
     api.post<Ticket>(`/tickets/${enc(id)}/priority`, { expectedVersion, priority }),
   operate: (id: string, op: TicketOperation, expectedVersion: number, reason = '') =>
     api.post<Ticket>(`/tickets/${enc(id)}/${op}`, { expectedVersion, reason }),
+  externalSync: (id: string, signal?: Signal) =>
+    api.get<TicketExternalSync>(`/tickets/${enc(id)}/external-sync`, { signal }),
+  retryExternalSync: (id: string) => api.post<void>(`/tickets/${enc(id)}/external-sync`, {}),
 };

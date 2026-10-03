@@ -74,9 +74,11 @@ func serve(t *testing.T, a authorization.Authenticator) http.Handler {
 	mux := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	transport.Register(mux, application.NewService(repository.New(pool), dir{}, noDevice{}), a, logger)
+	transport.RegisterProblems(mux, application.NewProblemService(repository.New(pool), dir{}), a, logger)
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{alice, bob, agent})
+		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.problems WHERE title LIKE 'http-prb%'`)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = ANY($1::uuid[])`, []string{alice, bob, agent})
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE actor_id = ANY($1::uuid[])`, []string{alice, bob, agent})
 	})
@@ -139,5 +141,37 @@ func TestTicketsOverHTTP(t *testing.T) {
 	}
 	if rec := do(staff, "GET", "/api/v1/tickets/not-a-uuid", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("malformed id = %d", rec.Code)
+	}
+}
+
+func TestProblemsOverHTTP(t *testing.T) {
+	manage := serve(t, as(agent, "problems.manage", "tickets.view"))
+	rec := do(manage, "POST", "/api/v1/problems", `{"title":"http-prb dock","description":"d"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rec.Code, rec.Body)
+	}
+	var p struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &p)
+	if rec := do(manage, "POST", "/api/v1/problems/"+p.ID+"/identify-cause", `{"text":"firmware"}`); rec.Code != http.StatusOK {
+		t.Errorf("identify cause = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(manage, "POST", "/api/v1/problems/"+p.ID+"/mark-known-error", `{}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("known error without workaround = %d", rec.Code)
+	}
+	reader := serve(t, as(bob, "tickets.view"))
+	if rec := do(reader, "GET", "/api/v1/problems/"+p.ID, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "firmware") {
+		t.Errorf("staff read = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(reader, "POST", "/api/v1/problems/"+p.ID+"/close", `{}`); rec.Code != http.StatusForbidden {
+		t.Errorf("staff write = %d", rec.Code)
+	}
+	employee := serve(t, as(alice))
+	for _, path := range []string{"/api/v1/problems", "/api/v1/problems/" + p.ID, "/api/v1/tickets/" + p.ID + "/known-errors"} {
+		if rec := do(employee, "GET", path, ""); rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound {
+			t.Errorf("employee GET %s = %d", path, rec.Code)
+		}
+	}
+	if rec := do(employee, "POST", "/api/v1/problems", `{"title":"x"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("employee create = %d", rec.Code)
 	}
 }

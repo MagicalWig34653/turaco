@@ -6,6 +6,7 @@
 |---|---|---|---|---|---|
 | `APP_ENV` | string | false | false | `development` | Runtime environment name. |
 | `AUTH_EMERGENCY_LOGIN_ENABLED` | bool | false | false | `false` | Expose POST /api/v1/auth/emergency-login for the local break-glass account (created with turaco-admin). Every use is audited and logged at error level. |
+| `AUTOTASK_SYNC` | bool | false | false | `false` | Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible "not configured" state. |
 | `DATABASE_URL` | string | true | true | `` | PostgreSQL connection URL. |
 | `EMAIL_BASE_URL` | string | false | false | `` | Externally reachable address of the web application without a path, for example `https://turaco.example.org`; emails link to it. Required when SMTP_HOST is set; must be https outside development. |
 | `EMAIL_DEFAULT_LOCALE` | string | false | false | `en` | Language of notification emails: `en` or `de` (recipients have no language setting yet). |

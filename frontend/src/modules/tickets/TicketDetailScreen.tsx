@@ -15,6 +15,7 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
+import { problemsApi } from '../problems/api';
 import { ticketsApi } from './api';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
@@ -113,6 +114,16 @@ export function TicketDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can, session } = useSession();
   const loaded = useAsync((signal) => ticketsApi.get(id, signal), [id]);
+  const staffReader = can('tickets.view') || can('tickets.manage');
+  const known = useAsync(
+    async (signal) => (staffReader ? (await problemsApi.knownErrors(id, signal)).items : []),
+    [id, staffReader],
+  );
+  const sync = useAsync(
+    async (signal) => (staffReader ? await ticketsApi.externalSync(id, signal) : null),
+    [id, staffReader],
+  );
+  const [retrying, setRetrying] = useState(false);
   const [dialog, setDialog] = useState<{
     kind: 'text' | 'wait' | 'assign';
     op?: TicketOperation;
@@ -266,6 +277,61 @@ export function TicketDetailScreen({ id }: { id: string }) {
         <dt>{t('tickets.fact.created')}</dt>
         <dd>{formatDateTime(locale, ticket.createdAt)}</dd>
       </dl>
+      {can('runbooks.execute') ? (
+        <p>
+          <Link to={`/runbooks?ticket=${encodeURIComponent(ticket.id)}`}>
+            {t('tickets.action.runbook')}
+          </Link>
+        </p>
+      ) : null}
+      {sync.data?.enabled ? (
+        <section>
+          <h2>{t('tickets.section.externalSync')}</h2>
+          <p>
+            <Badge>
+              {sync.data.syncState
+                ? t(`tickets.sync.${sync.data.syncState}` as MessageKey)
+                : t('tickets.sync.none')}
+            </Badge>
+            {sync.data.externalId ? ` ${sync.data.externalId}` : ''}
+            {sync.data.lastSyncedAt ? ` · ${formatDateTime(locale, sync.data.lastSyncedAt)}` : ''}
+          </p>
+          {sync.data.lastError ? <p className="preline">{sync.data.lastError}</p> : null}
+          {can('tickets.manage') ? (
+            <Button
+              busy={retrying}
+              onClick={async () => {
+                setRetrying(true);
+                try {
+                  await ticketsApi.retryExternalSync(id);
+                  sync.reload();
+                } catch (e) {
+                  setActionError(asApiError(e));
+                } finally {
+                  setRetrying(false);
+                }
+              }}
+            >
+              {t('tickets.sync.retry')}
+            </Button>
+          ) : null}
+        </section>
+      ) : null}
+      {known.data && known.data.length > 0 ? (
+        <section>
+          <h2>{t('tickets.section.knownErrors')}</h2>
+          <ul className="plain-list">
+            {known.data.map((k) => (
+              <li key={k.id}>
+                <Link to={`/problems/${encodeURIComponent(k.id)}`}>
+                  {k.reference} · {k.title}
+                </Link>
+                <p className="preline">{k.workaround}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {ticket.description ? (
         <section>
           <h2>{t('tickets.field.description')}</h2>

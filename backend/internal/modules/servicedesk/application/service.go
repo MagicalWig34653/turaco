@@ -285,6 +285,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		if op == OpResolve {
 			return publish(ctx, tx, c, "TicketResolved", map[string]any{"ticketId": out.ID, "reporterId": out.ReporterID, "affectedUserId": out.AffectedUserID})
 		}
+		if op == OpReopen || op == OpClose || op == OpCancel {
+			return publish(ctx, tx, c, "TicketStatusChanged", map[string]any{"ticketId": out.ID, "operation": op})
+		}
 		return nil
 	})
 	return out, err

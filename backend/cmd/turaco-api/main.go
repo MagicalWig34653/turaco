@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -156,7 +157,10 @@ func main() {
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
+	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
+	servicedesktransport.RegisterExternal(mux, wiring.ExternalSync(pool, autotask.NotConfigured{}, cfg.AutotaskSync), sessionAuth, logger)
+	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)
 	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)

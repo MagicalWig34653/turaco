@@ -26,6 +26,7 @@
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
+| `problems.manage` | elevated | Open Problems, record cause, workaround and resolution, mark Known Errors and link tickets. Reading problems needs tickets.view or tickets.manage. |
 | `procurement.manage` | elevated | Manage suppliers and procurement requests; create, submit for approval, send, cancel and close purchase orders. |
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |
 | `products.manage` | elevated | Create and change products, manufacturers and product categories. |
@@ -33,6 +34,7 @@
 | `remote_support.start` | high | Start a future remote-support session when enabled by policy. |
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
+| `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |

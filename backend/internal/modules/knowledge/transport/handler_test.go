@@ -37,6 +37,12 @@ func as(user string, perms ...string) fakeAuth {
 	return fakeAuth{user: user, perms: m, ok: true}
 }
 
+type noTeams struct{}
+
+func (noTeams) ActiveTeams(context.Context, []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
+}
+
 const (
 	editor   = "00000000-0000-7000-8000-0000000000f1"
 	employee = "00000000-0000-7000-8000-0000000000f2"
@@ -48,9 +54,11 @@ func serve(t *testing.T, a authorization.Authenticator) http.Handler {
 	mux := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	transport.Register(mux, application.NewService(repository.New(pool)), a, logger)
+	transport.RegisterRunbooks(mux, application.NewRunbookService(repository.New(pool), nil, nil, noTeams{}), a, logger)
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM knowledge.articles WHERE title LIKE 'http-kb%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM knowledge.runbooks WHERE title LIKE 'http-rb%'`)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = $1::uuid`, editor)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE actor_id = $1::uuid`, editor)
 	})
@@ -105,5 +113,36 @@ func TestKnowledgeOverHTTP(t *testing.T) {
 	}
 	if rec := do(serve(t, fakeAuth{}), "GET", "/api/v1/knowledge-articles", ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous = %d", rec.Code)
+	}
+}
+
+func TestRunbooksOverHTTP(t *testing.T) {
+	mgr := serve(t, as(editor, "knowledge.manage"))
+	rec := do(mgr, "POST", "/api/v1/runbooks", `{"title":"http-rb reset","steps":[{"title":"Do it"},{"title":"Check it","description":"twice"}]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rec.Code, rec.Body)
+	}
+	var rb struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &rb)
+	if rec := do(mgr, "POST", "/api/v1/runbooks", `{"title":"http-rb none","steps":[]}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("no steps = %d", rec.Code)
+	}
+	if rec := do(mgr, "POST", "/api/v1/runbooks/"+rb.ID+"/executions", `{}`); rec.Code != http.StatusForbidden {
+		t.Errorf("start without runbooks.execute = %d", rec.Code)
+	}
+	if rec := do(mgr, "GET", "/api/v1/runbooks/"+rb.ID, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Check it") {
+		t.Errorf("read = %d %s", rec.Code, rec.Body)
+	}
+	user := serve(t, as(employee))
+	for _, path := range []string{"/api/v1/runbooks", "/api/v1/runbook-executions"} {
+		if rec := do(user, "GET", path, ""); rec.Code != http.StatusForbidden {
+			t.Errorf("employee GET %s = %d", path, rec.Code)
+		}
+	}
+	if rec := do(user, "GET", "/api/v1/runbooks/"+rb.ID, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("employee read = %d", rec.Code)
+	}
+	if rec := do(user, "POST", "/api/v1/runbooks", `{"title":"x","steps":[{"title":"y"}]}`); rec.Code != http.StatusForbidden {
+		t.Errorf("employee create = %d", rec.Code)
 	}
 }

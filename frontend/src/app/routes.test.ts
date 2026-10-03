@@ -202,8 +202,8 @@ describe('support', () => {
   it('offers My tickets to everyone and the queue to ticket staff', () => {
     expect(ids([], 'main')).toContain('myTickets');
     expect(ids([], 'logistics')).toEqual([]);
-    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue']);
-    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue']);
+    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue', 'problems']);
+    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue', 'problems']);
   });
 
   it('matches the static ticket route before the parameterised one', () => {
@@ -232,5 +232,29 @@ describe('incidents', () => {
   it('shows known issues to everyone and matches the detail route', () => {
     expect(ids([], 'main')).toContain('incidents');
     expect(matchRoute(appRoutes, '/incidents/7')?.route.id).toBe('incidentDetail');
+  });
+});
+
+describe('problems', () => {
+  it('shows problems to ticket staff and matches the detail route', () => {
+    expect(ids([], 'logistics')).toEqual([]);
+    expect(ids(['tickets.view'], 'logistics')).toContain('problems');
+    expect(ids(['problems.manage'], 'logistics')).toEqual(['problems']);
+    expect(matchRoute(appRoutes, '/problems/7')?.route.id).toBe('problemDetail');
+  });
+});
+
+describe('runbooks', () => {
+  it('shows runbooks to readers and executors, authoring only to knowledge.manage', () => {
+    expect(ids([], 'logistics')).not.toContain('runbooks');
+    expect(ids(['knowledge.view'], 'logistics')).toContain('runbooks');
+    expect(ids(['runbooks.execute'], 'logistics')).toContain('runbooks');
+    const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+    expect(
+      canViewRoute(createCan({ permissions: ['runbooks.execute'] }), route('runbookNew')),
+    ).toBe(false);
+    expect(matchRoute(appRoutes, '/runbooks/new')?.route.id).toBe('runbookNew');
+    expect(matchRoute(appRoutes, '/runbooks/7/edit')?.route.id).toBe('runbookEdit');
+    expect(matchRoute(appRoutes, '/runbooks/7')?.route.id).toBe('runbookDetail');
   });
 });

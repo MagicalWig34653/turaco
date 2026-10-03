@@ -4058,6 +4058,600 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /problems:
+    get:
+      operationId: listProblems
+      summary: List problems.
+      description: "Reading needs `tickets.view` or `tickets.manage` (employees get 403/404); writing needs `problems.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema: {type: string, enum: [new, under_investigation, cause_identified, known_error, resolution_planned, resolved, closed]}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemList'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createProblem
+      summary: Open a problem.
+      description: "Needs `problems.manage`. The caller becomes the owner."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemCreate'
+      responses:
+        '201':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}:
+    get:
+      operationId: getProblem
+      summary: Get a problem with its tickets.
+      description: "Reading needs `tickets.view` or `tickets.manage` (employees get 403/404); writing needs `problems.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetail'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/owner:
+    post:
+      operationId: setProblemOwner
+      summary: Set the owner.
+      description: "Needs `problems.manage`; the owner must be an active user."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemOwner'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/tickets:
+    post:
+      operationId: linkProblemTicket
+      summary: Link a ticket.
+      description: "Needs `problems.manage`; idempotent; not for closed problems."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MajorIncidentLink'
+      responses:
+        '204':
+          description: Linked.
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/tickets/{ticketId}:
+    delete:
+      operationId: unlinkProblemTicket
+      summary: Unlink a ticket.
+      description: "Needs `problems.manage`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: ticketId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '204':
+          description: Unlinked.
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/known-errors:
+    get:
+      operationId: listTicketKnownErrors
+      summary: Known errors a ticket is linked to.
+      description: "Needs `tickets.view` or `tickets.manage`; only problems in status known_error or resolution_planned, so staff see the workaround."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The known errors.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemItems'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/investigate:
+    post:
+      operationId: problem_investigate
+      summary: Investigate.
+      description: "Needs `problems.manage`. Allowed from: new. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/identify-cause:
+    post:
+      operationId: problem_identify_cause
+      summary: Identify cause.
+      description: "Needs `problems.manage`. Allowed from: new or under investigation; `text` is the cause. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/mark-known-error:
+    post:
+      operationId: problem_mark_known_error
+      summary: Mark known error.
+      description: "Needs `problems.manage`. Allowed from: cause identified; `text` is the workaround. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/plan-resolution:
+    post:
+      operationId: problem_plan_resolution
+      summary: Plan resolution.
+      description: "Needs `problems.manage`. Allowed from: known error. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/resolve:
+    post:
+      operationId: problem_resolve
+      summary: Resolve.
+      description: "Needs `problems.manage`. Allowed from: any open status except closed; `text` is the resolution. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /problems/{id}/close:
+    post:
+      operationId: problem_close
+      summary: Close.
+      description: "Needs `problems.manage`. Allowed from: resolved. Audited without the text."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProblemTransition'
+      responses:
+        '200':
+          description: The problem.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks:
+    get:
+      operationId: listRunbooks
+      summary: List runbooks.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: active
+          in: query
+          schema: {type: boolean}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookList'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRunbook
+      summary: Define a runbook.
+      description: "Needs `knowledge.manage`. 1-30 ordered steps; a step may name an active team its task is assigned to."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookInput'
+      responses:
+        '201':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}:
+    get:
+      operationId: getRunbook
+      summary: Get a runbook.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateRunbook
+      summary: Change a runbook.
+      description: "Needs `knowledge.manage`; `expectedVersion` is required. Executions already started keep their steps."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookInput'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/activate:
+    post:
+      operationId: activateRunbook
+      summary: Activate a runbook.
+      description: "Needs `knowledge.manage`. Inactive runbooks cannot be started."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/deactivate:
+    post:
+      operationId: deactivateRunbook
+      summary: Deactivate a runbook.
+      description: "Needs `knowledge.manage`. Inactive runbooks cannot be started."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeArticleVersion'
+      responses:
+        '200':
+          description: The runbook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Runbook'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbooks/{id}/executions:
+    post:
+      operationId: startRunbook
+      summary: Start a runbook.
+      description: "Needs `runbooks.execute`. Creates one task per step (typed context runbook_execution), optionally on behalf of a ticket. The execution completes when all its tasks are completed or cancelled. Emits RunbookExecutionStarted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookStart'
+      responses:
+        '201':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions:
+    get:
+      operationId: listRunbookExecutions
+      summary: List runbook executions.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - name: runbookId
+          in: query
+          schema: {type: string, format: uuid}
+        - name: ticketId
+          in: query
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecutionList'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions/{id}:
+    get:
+      operationId: getRunbookExecution
+      summary: Get an execution.
+      description: "Reading needs `knowledge.view`, `knowledge.manage` or `runbooks.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /runbook-executions/{id}/cancel:
+    post:
+      operationId: cancelRunbookExecution
+      summary: Cancel a running execution.
+      description: "Needs `runbooks.execute`; a reason is required; unfinished tasks are cancelled."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunbookCancel'
+      responses:
+        '200':
+          description: The execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunbookExecution'}
+        '400': {$ref: '#/components/responses/KnowledgeInvalid'}
+        '404': {$ref: '#/components/responses/KnowledgeNotFound'}
+        '409': {$ref: '#/components/responses/KnowledgeConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/external-sync:
+    get:
+      operationId: getTicketExternalSync
+      summary: Synchronization state of a ticket with the external service desk.
+      description: "Needs `tickets.view` or `tickets.manage`. `enabled` is false unless AUTOTASK_SYNC is on; `syncState` is null when the ticket was never synchronized."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketExternalSync'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: retryTicketExternalSync
+      summary: Ask for another push to the external service desk.
+      description: "Needs `tickets.manage`. 409 tickets.sync_disabled when the synchronization is off. The push runs as a job."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '202':
+          description: Queued.
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /my-work:
     get:
       operationId: getMyWork
@@ -6539,6 +7133,180 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         message: {type: string, maxLength: 2000}
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, description, status, cause, workaround, resolution, ownerId, linkedTickets, resolvedAt, closedAt, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as PRB-000001."}
+        title: {type: string}
+        description: {type: [string, "null"]}
+        status: {type: string, enum: [new, under_investigation, cause_identified, known_error, resolution_planned, resolved, closed]}
+        cause: {type: [string, "null"]}
+        workaround: {type: [string, "null"]}
+        resolution: {type: [string, "null"]}
+        ownerId: {type: [string, "null"], format: uuid}
+        linkedTickets: {type: integer, minimum: 0}
+        resolvedAt: {type: [string, "null"], format: date-time}
+        closedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ProblemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Problem'}
+        nextCursor: {type: string}
+    ProblemItems:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Problem'}
+    ProblemDetail:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [tickets, allowedOperations]
+          properties:
+            tickets:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, reference, title, status]
+                properties:
+                  id: {type: string, format: uuid}
+                  reference: {type: string}
+                  title: {type: string}
+                  status: {type: string}
+            allowedOperations:
+              type: array
+              items: {type: string}
+    ProblemCreate:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 5000}
+    ProblemOwner:
+      type: object
+      additionalProperties: false
+      required: [ownerId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        ownerId: {type: string, format: uuid}
+    ProblemTransition:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        text: {type: string, maxLength: 5000}
+    RunbookStep:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, maxLength: 150}
+        description: {type: string, maxLength: 2000}
+        teamId: {type: string, format: uuid}
+    Runbook:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, description, steps, active, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: "Human reference such as RB-000001."}
+        title: {type: string}
+        description: {type: string}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookStep'}
+        active: {type: boolean}
+        version: {type: integer, minimum: 1}
+        updatedAt: {type: string, format: date-time}
+    RunbookList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Runbook'}
+        nextCursor: {type: string}
+    RunbookInput:
+      type: object
+      additionalProperties: false
+      required: [title, steps]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: "Required when editing."}
+        title: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 2000}
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items: {$ref: '#/components/schemas/RunbookStep'}
+    RunbookStart:
+      type: object
+      additionalProperties: false
+      properties:
+        ticketId: {type: string, format: uuid}
+    RunbookCancel:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, maxLength: 500}
+    RunbookExecution:
+      type: object
+      additionalProperties: false
+      required: [id, runbookId, runbookTitle, steps, contextType, contextId, status, taskIds, finishedAt, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        runbookId: {type: string, format: uuid}
+        runbookTitle: {type: string}
+        steps:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookStep'}
+        contextType: {type: [string, "null"], enum: [ticket, null]}
+        contextId: {type: [string, "null"], format: uuid}
+        status: {type: string, enum: [running, completed, cancelled]}
+        taskIds:
+          type: array
+          items: {type: string, format: uuid}
+        finishedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+    RunbookExecutionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RunbookExecution'}
+        nextCursor: {type: string}
+    TicketExternalSync:
+      type: object
+      additionalProperties: false
+      required: [enabled, syncState, externalId, lastError, lastSyncedAt, externalUpdatedAt, attempts]
+      properties:
+        enabled: {type: boolean}
+        syncState: {type: [string, "null"], enum: [pending, synced, failed, null]}
+        externalId: {type: [string, "null"]}
+        lastError: {type: [string, "null"]}
+        lastSyncedAt: {type: [string, "null"], format: date-time}
+        externalUpdatedAt: {type: [string, "null"], format: date-time}
+        attempts: {type: integer, minimum: 0}
     TaskCreate:
       type: object
       additionalProperties: false

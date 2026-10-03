@@ -42,6 +42,12 @@ export type RouteId =
   | 'articleDetail'
   | 'incidents'
   | 'incidentDetail'
+  | 'problems'
+  | 'problemDetail'
+  | 'runbooks'
+  | 'runbookNew'
+  | 'runbookEdit'
+  | 'runbookDetail'
   | 'tasks'
   | 'taskNew'
   | 'taskDetail'
@@ -219,6 +225,44 @@ export const appRoutes: readonly AppRoute[] = [
   { id: 'articleDetail', pattern: '/knowledge/:id', titleKey: 'knowledge.detail.title' },
   { id: 'incidents', pattern: '/incidents', titleKey: 'nav.incidents', nav: 'main' },
   { id: 'incidentDetail', pattern: '/incidents/:id', titleKey: 'incidents.detail.title' },
+  {
+    id: 'problems',
+    pattern: '/problems',
+    titleKey: 'nav.problems',
+    requiresAny: ['tickets.view', 'tickets.manage', 'problems.manage'],
+    nav: 'logistics',
+  },
+  {
+    id: 'problemDetail',
+    pattern: '/problems/:id',
+    titleKey: 'problems.detail.title',
+    requiresAny: ['tickets.view', 'tickets.manage', 'problems.manage'],
+  },
+  {
+    id: 'runbooks',
+    pattern: '/runbooks',
+    titleKey: 'nav.runbooks',
+    requiresAny: ['knowledge.view', 'knowledge.manage', 'runbooks.execute'],
+    nav: 'logistics',
+  },
+  {
+    id: 'runbookNew',
+    pattern: '/runbooks/new',
+    titleKey: 'runbooks.new',
+    requires: ['knowledge.manage'],
+  },
+  {
+    id: 'runbookEdit',
+    pattern: '/runbooks/:id/edit',
+    titleKey: 'runbooks.edit',
+    requires: ['knowledge.manage'],
+  },
+  {
+    id: 'runbookDetail',
+    pattern: '/runbooks/:id',
+    titleKey: 'runbooks.detail.title',
+    requiresAny: ['knowledge.view', 'knowledge.manage', 'runbooks.execute'],
+  },
   {
     id: 'tasks',
     pattern: '/tasks',

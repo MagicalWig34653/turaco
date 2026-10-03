@@ -67,6 +67,8 @@ Implemented (F5, `modules/servicedesk`): operations `investigate` (from identifi
 ## Problem
 `new → under_investigation → cause_identified → known_error → resolution_planned → resolved → closed`.
 
+Implemented (F5 part 2): operations `investigate` (new), `identify_cause(cause)` (new, under_investigation), `mark_known_error(workaround)` (cause_identified), `plan_resolution` (known_error), `resolve(resolution)` (any status before resolved) and `close` (resolved). The database refuses a known error without cause and workaround. A Known Error is a Problem in `known_error` or `resolution_planned`; there is no separate record.
+
 ## Reservation
 `active → fulfilled | released | expired | cancelled`. Terminal reservations are never rewound; create a new reservation.
 

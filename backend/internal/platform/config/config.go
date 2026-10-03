@@ -27,6 +27,9 @@ type Config struct {
 	SessionAbsoluteTimeout time.Duration
 	SessionCookieSecure    bool
 
+	// AutotaskSync turns on the outbound/inbound synchronization of tickets with Autotask.
+	AutotaskSync bool
+
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
 	// the worker loads and validates the full LDAPConfig with LoadLDAP, so
@@ -145,6 +148,7 @@ var Registry = []Descriptor{
 	{Name: "SMTP_HOST", Type: "string", Description: "Mail relay host name. Setting it enables the email channel of notifications in turaco-worker; empty disables email (in-app notifications are unaffected)."},
 	{Name: "SMTP_PORT", Type: "int", Description: "Mail relay port. Default 587 for starttls, 465 for tls and 25 for none."},
 	{Name: "SMTP_SECURITY", Type: "string", Default: "starttls", Description: "Connection protection: `starttls` (required upgrade before credentials or mail are sent), `tls` (implicit TLS) or `none` (clear text; requires SMTP_ALLOW_PLAINTEXT=true and APP_ENV=development). Certificate verification is never disabled."},
+	{Name: "AUTOTASK_SYNC", Type: "bool", Default: "false", Description: "Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible \"not configured\" state."},
 	{Name: "SMTP_ALLOW_PLAINTEXT", Type: "bool", Default: "false", Description: "Allow SMTP_SECURITY=none (clear text, credentials included). Accepted only together with APP_ENV=development, for local test relays."},
 	{Name: "SMTP_USERNAME", Type: "string", Description: "Relay account. Requires SMTP_PASSWORD_FILE."},
 	{Name: "SMTP_PASSWORD_FILE", Type: "string", Secret: true, Description: "Path to a file containing the relay password (for example a Docker secret). Requires SMTP_USERNAME. The password is never stored in the database or logged."},
@@ -184,6 +188,7 @@ func Load() (Config, error) {
 		LogLevel:    getenv("LOG_LEVEL", "info"),
 
 		SessionCookieSecure: getenv("SESSION_COOKIE_SECURE", "true") != "false",
+		AutotaskSync:        getenv("AUTOTASK_SYNC", "false") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
