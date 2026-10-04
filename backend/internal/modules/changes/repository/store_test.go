@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
@@ -30,6 +31,7 @@ import (
 
 type fakeDir struct {
 	mu       sync.Mutex
+	fail     map[string]bool // teams whose member lookup fails
 	inactive map[string]bool
 	members  map[string][]string
 	locs     map[string]string
@@ -76,6 +78,9 @@ func (d *fakeDir) UserNames(_ context.Context, ids []string) (map[string]string,
 	return out, nil
 }
 func (d *fakeDir) CurrentMemberIDs(_ context.Context, team string) ([]string, error) {
+	if d.fail[team] {
+		return nil, errors.New("directory unavailable")
+	}
 	return d.members[team], nil
 }
 
@@ -1638,5 +1643,465 @@ func TestRelationshipsAreOwnedByChanges(t *testing.T) {
 	}
 	if reg.Allowed("change", "AFFECTS", "change") || reg.Allowed("service", "AFFECTS", "service") {
 		t.Error("unexpected triple allowed")
+	}
+}
+
+// ---- review fixes (F7c slice 3 review) ----
+
+// A Change's AFFECTS links end in the transaction that makes it closed,
+// cancelled or rejected; the detail and the affected-resource filter still find
+// them by their end reason.
+func TestAffectedLinksEndWithTheChange(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	current := func(id string) int {
+		return e.count(`SELECT count(*) FROM platform.relationships WHERE source_type = 'change' AND source_id = $1::uuid AND valid_until IS NULL`, id)
+	}
+	for _, tc := range []struct{ status, reason string }{{"closed", "change_closed"}, {"cancelled", "change_cancelled"}, {"rejected", "change_rejected"}} {
+		var c application.Change
+		if tc.status == "rejected" {
+			c = e.driveRejected()
+		} else {
+			c = e.drive("normal", "low", tc.status)
+		}
+		if c.Status != tc.status || c.ClosedAt == nil {
+			t.Fatalf("%s: change = %s closedAt %v", tc.status, c.Status, c.ClosedAt)
+		}
+		if current(c.ID) != 0 {
+			t.Errorf("%s: the AFFECTS link is still current", tc.status)
+		}
+		if n := e.count(`SELECT count(*) FROM platform.relationships WHERE source_type = 'change' AND source_id = $1::uuid AND end_reason = $2`, c.ID, tc.reason); n != 1 {
+			t.Errorf("%s: %d links ended with %s", tc.status, n, tc.reason)
+		}
+		d, err := e.svc.Get(ctx, e.view, c.ID)
+		if err != nil || len(d.Affected) != 1 || d.Affected[0].Missing {
+			t.Fatalf("%s: affected of the terminal change = %+v %v", tc.status, d.Affected, err)
+		}
+		res, err := e.svc.List(ctx, e.view, application.Filter{AffectedType: "service", AffectedID: d.Affected[0].ID})
+		if err != nil || len(res.Items) != 1 || res.Items[0].ID != c.ID {
+			t.Errorf("%s: filter by the affected service = %+v %v", tc.status, res.Items, err)
+		}
+		if imp, err := e.svc.Impact(ctx, e.view, c.ID, 0); err != nil || len(imp.Starts) != 1 {
+			t.Errorf("%s: impact = %+v %v", tc.status, imp, err)
+		}
+	}
+	// Open Changes keep their links current.
+	if s := e.drive("normal", "low", "scheduled"); current(s.ID) != 1 {
+		t.Error("a scheduled change lost its AFFECTS link")
+	}
+}
+
+func pgCode(err error) string {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		return pg.Code
+	}
+	return ""
+}
+
+// Per-status invariants are CHECK constraints; history is append-only and
+// keeps its Change.
+func TestDatabaseInvariants(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	c := e.drive("normal", "low", "draft")
+	for name, sql := range map[string]string{
+		"pending without approval":       `UPDATE changes.changes SET status = 'pending_approval' WHERE id = $1::uuid`,
+		"justification on normal kind":   `UPDATE changes.changes SET emergency_justification = 'x', emergency_approved_by = requester_user_id WHERE id = $1::uuid`,
+		"justification without approver": `UPDATE changes.changes SET kind = 'emergency', emergency_justification = 'x' WHERE id = $1::uuid`,
+		"cancelled without closed_at":    `UPDATE changes.changes SET status = 'cancelled', status_reason = 'other' WHERE id = $1::uuid`,
+		"closed_at on a draft":           `UPDATE changes.changes SET closed_at = now() WHERE id = $1::uuid`,
+		"in progress without start":      `UPDATE changes.changes SET status = 'in_progress' WHERE id = $1::uuid`,
+		"started draft":                  `UPDATE changes.changes SET started_at = now() WHERE id = $1::uuid`,
+		"failed without outcome":         `UPDATE changes.changes SET status = 'failed', started_at = now(), completed_at = now() WHERE id = $1::uuid`,
+		"completed without completed_at": `UPDATE changes.changes SET status = 'completed', started_at = now() WHERE id = $1::uuid`,
+		"review without note":            `UPDATE changes.changes SET status = 'review', started_at = now(), completed_at = now() WHERE id = $1::uuid`,
+		"completed before started":       `UPDATE changes.changes SET status = 'completed', started_at = now(), completed_at = now() - interval '1 hour' WHERE id = $1::uuid`,
+		"emergency closed unreviewed":    `UPDATE changes.changes SET kind = 'emergency', status = 'closed', started_at = now(), completed_at = now(), closed_at = now() WHERE id = $1::uuid`,
+		"approved window half set":       `UPDATE changes.changes SET approved_window_start = now() WHERE id = $1::uuid`,
+	} {
+		if _, err := e.pool.Exec(ctx, sql, c.ID); pgCode(err) != "23514" {
+			t.Errorf("%s: err = %v, want a check violation", name, err)
+		}
+	}
+	// A valid terminal state passes the same constraints.
+	if _, err := e.pool.Exec(ctx, `UPDATE changes.changes SET status = 'completed', started_at = now() - interval '1 hour', completed_at = now() WHERE id = $1::uuid`, c.ID); err != nil {
+		t.Errorf("valid completed state: %v", err)
+	}
+
+	s := e.drive("normal", "low", "scheduled")
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, s.ID, e.v(s.ID), application.NewTask{Title: "step"}); err != nil {
+		t.Fatal(err)
+	}
+	for name, sql := range map[string]string{
+		"update transition": `UPDATE changes.change_transitions SET operation = 'x' WHERE change_id = $1::uuid`,
+		"delete transition": `DELETE FROM changes.change_transitions WHERE change_id = $1::uuid`,
+		"update task link":  `UPDATE changes.change_tasks SET created_by = NULL WHERE change_id = $1::uuid`,
+		"delete task link":  `DELETE FROM changes.change_tasks WHERE change_id = $1::uuid`,
+		"delete change":     `DELETE FROM changes.changes WHERE id = $1::uuid`,
+	} {
+		if _, err := e.pool.Exec(ctx, sql, s.ID); err == nil {
+			t.Errorf("%s succeeded", name)
+		}
+	}
+	for _, table := range []string{"change_transitions", "change_tasks"} {
+		err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `TRUNCATE changes.`+table+` CASCADE`); err != nil {
+				return err
+			}
+			return errors.New("rollback")
+		})
+		if pgCode(err) == "" {
+			t.Errorf("truncate %s: %v", table, err)
+		}
+	}
+}
+
+// Closing a failed Change cancels the execution Tasks it kept open, with the
+// reason change_closed, and records how many in the audit entry.
+func TestCloseCancelsOpenTasks(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	c := e.drive("normal", "low", "scheduled")
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), application.NewTask{Title: "roll back"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "execution_error", false); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID))
+	if err != nil || closed.Status != "closed" {
+		t.Fatalf("close = %+v %v", closed, err)
+	}
+	if !slices.Contains(e.tasks.cancelled, c.ID) || !slices.Contains(e.tasks.reasons, application.ReasonChangeClosed) {
+		t.Errorf("open tasks were not cancelled with change_closed: %v %v", e.tasks.cancelled, e.tasks.reasons)
+	}
+	var cancelled float64
+	if err := e.pool.QueryRow(ctx, `SELECT (metadata->>'cancelledTasks')::float FROM platform.audit_events WHERE correlation_id = $1 AND action = 'changes.change.closed' AND target_id = $2`, e.corr, c.ID).Scan(&cancelled); err != nil || cancelled != 1 {
+		t.Errorf("cancelledTasks audit = %v %v", cancelled, err)
+	}
+}
+
+// One failing Change does not stop the reminders of the others; the job
+// reports the failure at the end. Recipients are sent in chunks.
+func TestReminderFailuresAreIsolatedAndChunked(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	good, bad := e.uuid(), e.uuid()
+	members := []string{e.uuid(), e.uuid(), e.uuid()}
+	e.dir.members[good] = members
+	for _, m := range members {
+		e.perms[m] = []string{"changes.view"}
+	}
+	e.dir.fail = map[string]bool{bad: true}
+	schedule := func(svc string) application.Change {
+		t.Helper()
+		c := e.create("normal", "low")
+		if _, _, err := e.svc.AddAffected(ctx, e.caller(e.requester), e.manage, c.ID, nil, "service", svc); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "low"}); err != nil {
+			t.Fatal(err)
+		}
+		w := e.window(30*time.Minute, time.Hour)
+		out, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{Window: &w})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	broken := schedule(e.service(nil, &bad))
+	fine := schedule(e.service(&e.owner, &good))
+	n := e.notes.WithChunk(1)
+	job := jobs.Job{ID: "job-isolation", Type: application.ReminderJobType}
+	err := n.HandleReminders(ctx, job)
+	if err == nil || !contains(err.Error(), broken.ID) {
+		t.Fatalf("job error = %v, want the broken change reported", err)
+	}
+	want := append(slices.Clone(members), e.owner)
+	slices.Sort(want)
+	if got := e.notifier.recipients("change.reminder"); !slices.Equal(got, want) {
+		t.Errorf("reminder recipients = %v, want %v", got, want)
+	}
+	if e.get(fine.ID).RemindedFor == nil || e.get(broken.ID).RemindedFor != nil {
+		t.Error("only the healthy change is marked reminded")
+	}
+	// Once the directory works again the next run reminds the broken change.
+	e.dir.fail = nil
+	if err := n.HandleReminders(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if e.get(broken.ID).RemindedFor == nil {
+		t.Error("the broken change was not reminded on the next run")
+	}
+}
+
+// The approval consumer requires the pending approval's id; anything else is a
+// permanent error, a stale event is ignored. Approval records the window.
+func TestApprovalConsumerRequiresThePendingApproval(t *testing.T) {
+	e := newEnv(t)
+	c := e.drive("normal", "medium", "pending_approval")
+	for name, id := range map[string]string{"missing": "", "foreign": e.uuid()} {
+		if err := e.decideWith(c.ID, "change", "approve", id); err == nil || !events.IsPermanent(err) {
+			t.Errorf("%s approval id: %v", name, err)
+		}
+	}
+	if e.get(c.ID).Status != "pending_approval" {
+		t.Fatal("a refused event changed the change")
+	}
+	e.decide(c.ID, "approve")
+	got := e.get(c.ID)
+	if got.Status != "approved" || got.ApprovedWindowStart == nil || !got.ApprovedWindowStart.Equal(*got.WindowStart) || !got.ApprovedWindowEnd.Equal(*got.WindowEnd) {
+		t.Fatalf("approved change = %+v", got)
+	}
+	if err := e.decideWith(c.ID, "change", "reject", e.uuid()); err != nil {
+		t.Errorf("stale event: %v", err)
+	}
+}
+
+// Assess repeats Submit's checks: details may change during the assessment.
+func TestAssessRechecksReadiness(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	a := e.drive("normal", "low", "assessment")
+	if _, err := e.svc.UpdateDetails(ctx, e.caller(e.requester), e.manage, a.ID, e.v(a.ID), application.Details{Window: &application.Window{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, a.ID, e.v(a.ID), application.Assessment{Risk: "low"}); !isInvalid(err) {
+		t.Errorf("assess without a window: %v", err)
+	}
+	b := e.drive("normal", "low", "assessment")
+	d, err := e.svc.Get(ctx, e.view, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), e.manage, b.ID, e.v(b.ID), "service", d.Affected[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, b.ID, e.v(b.ID), application.Assessment{Risk: "low"}); !isInvalid(err) {
+		t.Errorf("assess without affected resources: %v", err)
+	}
+	if got := e.get(b.ID); got.Status != "assessment" {
+		t.Errorf("status = %s", got.Status)
+	}
+}
+
+func TestSeparationOfDuties(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	assessor := application.Principal{UserID: e.executor, Manage: true}
+
+	// The kind is fixed after submission.
+	k := e.drive("normal", "low", "assessment")
+	if _, err := e.svc.UpdateDetails(ctx, e.caller(e.requester), e.manage, k.ID, e.v(k.ID), application.Details{Kind: ptr("emergency")}); !isInvalid(err) {
+		t.Errorf("kind change in assessment: %v", err)
+	}
+	d := e.create("normal", "low")
+	if out, err := e.svc.UpdateDetails(ctx, e.caller(e.requester), e.manage, d.ID, e.v(d.ID), application.Details{Kind: ptr("standard")}); err != nil || out.Kind != "standard" {
+		t.Errorf("kind change in draft: %+v %v", out, err)
+	}
+
+	// Neither the requester nor an editor assesses.
+	s := e.drive("normal", "low", "assessment")
+	if _, err := e.svc.Assess(ctx, e.caller(e.requester), e.manage, s.ID, e.v(s.ID), application.Assessment{Risk: "low"}); !is(err, application.ErrSeparationOfDuties) {
+		t.Errorf("requester assess: %v", err)
+	}
+	if _, err := e.svc.UpdateDetails(ctx, e.caller(e.other), e.manage2, s.ID, e.v(s.ID), application.Details{Description: ptr("more")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, s.ID, e.v(s.ID), application.Assessment{Risk: "low"}); !is(err, application.ErrSeparationOfDuties) {
+		t.Errorf("editor assess: %v", err)
+	}
+	cur := e.get(s.ID)
+	if ops := application.AllowedOperations(cur, e.manage); slices.Contains(ops, "assess") {
+		t.Errorf("the requester is offered assess: %v", ops)
+	}
+	if ops := application.AllowedOperations(cur, assessor); !slices.Contains(ops, "assess") {
+		t.Errorf("an uninvolved manager is not offered assess: %v", ops)
+	}
+	if _, err := e.svc.Assess(ctx, e.caller(e.executor), assessor, s.ID, e.v(s.ID), application.Assessment{Risk: "low"}); err != nil {
+		t.Errorf("uninvolved assess: %v", err)
+	}
+
+	// The owner never approves.
+	e.drive("normal", "medium", "pending_approval")
+	last := e.appr.requested[len(e.appr.requested)-1]
+	if !slices.Contains(last.ExcludedUserIDs, e.owner) {
+		t.Errorf("owner not excluded from approving: %v", last.ExcludedUserIDs)
+	}
+
+	// The emergency approver neither reviews nor closes.
+	em := e.drive("emergency", "medium", "assessment")
+	em, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, em.ID, e.v(em.ID), application.Assessment{Risk: "medium", EmergencyJustification: "outage"})
+	if err != nil || em.EmergencyApprovedBy == nil || *em.EmergencyApprovedBy != e.other {
+		t.Fatalf("emergency approval = %+v %v", em, err)
+	}
+	for _, step := range []func() error{
+		func() error {
+			_, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, em.ID, e.v(em.ID), application.ScheduleInput{})
+			return err
+		},
+		func() error { _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, em.ID, e.v(em.ID)); return err },
+		func() error {
+			_, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, em.ID, e.v(em.ID), "")
+			return err
+		},
+	} {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ops := application.AllowedOperations(e.get(em.ID), e.manage2); slices.Contains(ops, "review") {
+		t.Errorf("the emergency approver is offered review: %v", ops)
+	}
+	if _, err := e.svc.Review(ctx, e.caller(e.other), e.manage2, em.ID, e.v(em.ID), "fine"); !is(err, application.ErrSeparationOfDuties) {
+		t.Errorf("emergency approver review: %v", err)
+	}
+	if _, err := e.svc.Review(ctx, e.caller(e.requester), e.manage, em.ID, e.v(em.ID), "fine"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Close(ctx, e.caller(e.other), e.manage2, em.ID, e.v(em.ID)); !is(err, application.ErrSeparationOfDuties) {
+		t.Errorf("emergency approver close: %v", err)
+	}
+	if _, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, em.ID, e.v(em.ID)); err != nil {
+		t.Errorf("close by another manager: %v", err)
+	}
+
+	// Removing a resource of a type the caller cannot see confirms nothing.
+	r := e.create("normal", "low")
+	vm := e.uuid()
+	e.infra.vms[vm] = application.VMInfo{ID: vm, Name: "vm", State: "running"}
+	if _, _, err := e.svc.AddAffected(ctx, e.caller(e.requester), e.manage, r.ID, nil, "vm", vm); err != nil {
+		t.Fatal(err)
+	}
+	blind := application.Principal{UserID: e.requester, Manage: true, ServicesView: true}
+	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), blind, r.ID, e.v(r.ID), "vm", vm); !is(err, application.ErrReferenceInvalid) {
+		t.Errorf("remove a hidden type: %v", err)
+	}
+	if e.audits("affected_removed", r.ID) != 0 {
+		t.Error("a hidden link was removed")
+	}
+}
+
+// Every lifecycle operation, adding a Task and removing an affected resource
+// require expectedVersion.
+func TestExpectedVersionIsRequired(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	rc := e.caller(e.requester)
+	cases := map[string]struct {
+		status string
+		run    func(c application.Change) error
+	}{
+		"submit": {"draft", func(c application.Change) error { _, err := e.svc.Submit(ctx, rc, e.manage, c.ID, nil); return err }},
+		"assess": {"assessment", func(c application.Change) error {
+			_, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "medium", Approver: application.Approver{UserID: &e.approver}})
+			return err
+		}},
+		"schedule": {"approved", func(c application.Change) error {
+			_, err := e.svc.Schedule(ctx, rc, e.manage, c.ID, nil, application.ScheduleInput{})
+			return err
+		}},
+		"start": {"scheduled", func(c application.Change) error {
+			_, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil)
+			return err
+		}},
+		"complete": {"in_progress", func(c application.Change) error {
+			_, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "")
+			return err
+		}},
+		"fail": {"in_progress", func(c application.Change) error {
+			_, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "other", false)
+			return err
+		}},
+		"review": {"completed", func(c application.Change) error {
+			_, err := e.svc.Review(ctx, rc, e.manage, c.ID, nil, "ok")
+			return err
+		}},
+		"close": {"completed", func(c application.Change) error { _, err := e.svc.Close(ctx, rc, e.manage, c.ID, nil); return err }},
+		"cancel": {"draft", func(c application.Change) error {
+			_, err := e.svc.Cancel(ctx, rc, e.manage, c.ID, nil, "other")
+			return err
+		}},
+		"add_task": {"scheduled", func(c application.Change) error {
+			_, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, application.NewTask{Title: "x"})
+			return err
+		}},
+		"remove_affected": {"draft", func(c application.Change) error {
+			return e.svc.RemoveAffected(ctx, rc, e.manage, c.ID, nil, "service", e.uuid())
+		}},
+	}
+	for name, tc := range cases {
+		c := e.drive("normal", "medium", tc.status)
+		if err := tc.run(c); !isInvalid(err) {
+			t.Errorf("%s without expectedVersion: %v", name, err)
+		}
+		if after := e.get(c.ID); after.Version != c.Version || after.Status != c.Status {
+			t.Errorf("%s without expectedVersion changed the change", name)
+		}
+	}
+	// A stale version on AddTask is a conflict.
+	s := e.drive("normal", "low", "scheduled")
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, s.ID, ptr(s.Version+1), application.NewTask{Title: "x"}); !is(err, application.ErrVersionConflict) {
+		t.Errorf("add task with a stale version: %v", err)
+	}
+}
+
+// After an approval the window may only narrow; emergency changes may start at
+// most an hour in the past.
+func TestScheduleStaysWithinTheApprovedWindow(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	c := e.drive("normal", "medium", "approved") // approved window: +24h to +26h
+	for name, w := range map[string]application.Window{"earlier": e.window(23*time.Hour, 2*time.Hour), "longer": e.window(25*time.Hour, 2*time.Hour)} {
+		w := w
+		if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{Window: &w}); !is(err, application.ErrWindowNotApproved) {
+			t.Errorf("%s window: %v", name, err)
+		}
+	}
+	inside := e.window(24*time.Hour+30*time.Minute, time.Hour)
+	if out, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{Window: &inside}); err != nil || out.Status != "scheduled" {
+		t.Errorf("narrowed window: %+v %v", out, err)
+	}
+	// A low-risk change without an approver may move its window freely.
+	l := e.drive("normal", "low", "approved")
+	moved := e.window(72*time.Hour, time.Hour)
+	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, l.ID, e.v(l.ID), application.ScheduleInput{Window: &moved}); err != nil {
+		t.Errorf("approval-free change moved: %v", err)
+	}
+	// Emergency: any window, but not starting more than an hour ago.
+	em := e.drive("emergency", "medium", "assessment")
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, em.ID, e.v(em.ID), application.Assessment{Risk: "medium", EmergencyJustification: "outage"}); err != nil {
+		t.Fatal(err)
+	}
+	old := e.window(-2*time.Hour, 3*time.Hour)
+	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, em.ID, e.v(em.ID), application.ScheduleInput{Window: &old}); !isInvalid(err) {
+		t.Errorf("emergency window two hours ago: %v", err)
+	}
+	recent := e.window(-30*time.Minute, 2*time.Hour)
+	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, em.ID, e.v(em.ID), application.ScheduleInput{Window: &recent}); err != nil {
+		t.Errorf("emergency window half an hour ago: %v", err)
+	}
+}
+
+// The window filter finds a window that started up to 30 days before "from".
+func TestWindowFilterLowerBound(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	long, err := e.svc.Create(ctx, e.caller(e.requester), e.manage, application.NewChange{Title: "long", Kind: "normal",
+		Window: e.window(-29*24*time.Hour, 30*24*time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := e.clock
+	res, err := e.svc.List(ctx, e.view, application.Filter{WindowFrom: &from, RequesterID: e.requester})
+	if err != nil || len(res.Items) != 1 || res.Items[0].ID != long.ID {
+		t.Errorf("window filter = %+v %v", res.Items, err)
 	}
 }
