@@ -23,6 +23,7 @@ import (
 	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
@@ -238,6 +239,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalDecided", "changes.approval", wiring.Changes(pool).OnApprovalDecided); err != nil {
 		return err
 	}
+	if err := d.Register("ApprovalDecided", "planning.approval", wiring.Planning(pool).OnApprovalDecided); err != nil {
+		return err
+	}
+	if err := d.Register(planningapp.EventStatusChanged, "planning.notify-state", wiring.PlanningNotifications(pool, notifier).OnStatusChanged); err != nil {
+		return err
+	}
 	if err := d.Register("VirtualMachineChanged", "services.sync-vm-hypervisor-link", wiring.ServiceVMLinks(pool).OnVirtualMachineChanged); err != nil {
 		return err
 	}
@@ -354,6 +361,7 @@ func allCategories() []notifications.Category {
 	out = append(out, requestsapp.NotificationCategories()...)
 	out = append(out, assetsapp.NotificationCategories()...)
 	out = append(out, changesapp.NotificationCategories()...)
+	out = append(out, planningapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 

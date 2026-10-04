@@ -57,6 +57,7 @@ var Registry = []Definition{
 	{Name: "ChangeStarted", Version: 1, Owner: "changes", Description: "A scheduled Change started execution. Payload: changeId."},
 	{Name: "ChangeCompleted", Version: 1, Owner: "changes", Description: "A Change in progress was completed. Payload: changeId."},
 	{Name: "ChangeFailed", Version: 1, Owner: "changes", Description: "A Change in progress failed. Payload: changeId, reason, rollbackDone."},
+	{Name: "InitiativeStatusChanged", Version: 1, Owner: "planning", Description: "An Initiative changed status (planning started, proposed, approved, approval rejected, activated, held, resumed, completed, cancelled). Payload: initiativeId, operation, status, previousStatus; hold, cancel and rejection also reason."},
 	{Name: "DeviceLinked", Version: 1, Owner: "endpoints", Description: "A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method."},
 	{Name: "DeviceUnlinked", Version: 1, Owner: "endpoints", Description: "A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method."},
 	{Name: "EndpointFindingRaised", Version: 1, Owner: "endpoints", Description: "An endpoint data-quality finding was raised. Payload: findingId, deviceId, kind."},
