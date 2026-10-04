@@ -26,6 +26,8 @@ import (
 	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
 	catalogrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/repository"
 	catalogtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/transport"
+	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
+	changestransport "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/transport"
 	endpointstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/transport"
 	infrastructuretransport "github.com/MagicalWig34653/turaco/backend/internal/modules/infrastructure/transport"
 	inventorytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/inventory/transport"
@@ -170,6 +172,7 @@ func main() {
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	infrastructuretransport.Register(mux, wiring.Infrastructure(pool), sessionAuth, logger)
 	servicestransport.Register(mux, wiring.Services(pool), sessionAuth, logger)
+	changestransport.Register(mux, wiring.Changes(pool), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
@@ -217,5 +220,6 @@ func allCategories() []notifications.Category {
 	out = append(out, approvalsapp.NotificationCategories()...)
 	out = append(out, requestsapp.NotificationCategories()...)
 	out = append(out, assetsapp.NotificationCategories()...)
+	out = append(out, changesapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }

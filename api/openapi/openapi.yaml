@@ -6957,6 +6957,464 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /changes:
+    get:
+      operationId: listChanges
+      summary: List changes
+      description: "changes.view, changes.manage or changes.execute sees all; requesters and owners see their own. Keyset paging."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: risk, in: query, schema: {type: string, enum: [low, medium, high]}}
+        - {name: kind, in: query, schema: {type: string, enum: [standard, normal, emergency]}}
+        - {name: owner, in: query, schema: {type: string}}
+        - {name: requester, in: query, schema: {type: string}}
+        - {name: affectedType, in: query, schema: {type: string, enum: [service, vm, asset, location]}}
+        - {name: affectedId, in: query, schema: {type: string}}
+        - {name: windowFrom, in: query, schema: {type: string, format: date-time}}
+        - {name: windowTo, in: query, schema: {type: string, format: date-time}}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List changes.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeList'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createChange
+      summary: Create draft change
+      description: "Requires changes.manage. Requester is caller. Emergency justification is provided at assessment."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeCreate'}
+      responses:
+        '201':
+          description: Create draft change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}:
+    get:
+      operationId: getChange
+      summary: Get change detail
+      description: "Read access through changes.view, changes.manage, changes.execute, requester, owner or approver; otherwise 404. allowedOperations lists authorized transitions and is omitted when empty. Assess is unavailable to the requester and editors; review and close are unavailable to the emergency approver. Hidden affected records use response-local placeholder ids."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get change detail.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeDetail'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateChange
+      summary: Update draft or assessment
+      description: "Requires changes.manage and expectedVersion. Kind can change only in draft (400 changes.invalid_request). Editors cannot approve."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeUpdate'}
+      responses:
+        '200':
+          description: Update draft or assessment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/affected:
+    post:
+      operationId: addChangeAffected
+      summary: Add affected resource
+      description: "Requires changes.manage. Service, VM, Asset or Location target; at most 25. Requires target view permission. Existing link returns 200."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeAffectedAdd'}
+      responses:
+        '200':
+          description: Existing affected resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeAffected'}
+        '201':
+          description: Add affected resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeAffected'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/affected/{type}/{resourceId}:
+    delete:
+      operationId: removeChangeAffected
+      summary: Remove affected resource
+      description: "Requires changes.manage and expectedVersion in the query; draft or assessment only. Missing or malformed version returns 400 changes.invalid_request, a stale version returns 409 changes.version_conflict, and a resource type the caller cannot see returns 400 changes.invalid_reference."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: type, in: path, required: true, schema: {type: string, enum: [service, vm, asset, location]}}
+        - {name: resourceId, in: path, required: true, schema: {type: string}}
+        - {name: expectedVersion, in: query, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '204':
+          description: Remove affected resource.
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/submit:
+    post:
+      operationId: submitChange
+      summary: Draft to assessment
+      description: "Requires window, rollback plan for medium/high risk and affected resource unless standard. Version guarded and audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeVersion'}
+      responses:
+        '200':
+          description: Draft to assessment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/assess:
+    post:
+      operationId: assessChange
+      summary: Assess risk and approval
+      description: "Requires expectedVersion. Submit readiness checks run again. Medium/high risk and emergency require user or team approver; emergency justification may explicitly approve. Requester or editors cannot assess (403 changes.separation_of_duties). Requester, owner, editors, submitter and assessor cannot approve. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeAssessment'}
+      responses:
+        '200':
+          description: Assess risk and approval.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/schedule:
+    post:
+      operationId: scheduleChange
+      summary: Approved to scheduled
+      description: "Requires expectedVersion. The window must stay within the approved window (409 changes.window_not_approved). It must start in the future, except an emergency window may start at most one hour in the past (400 changes.invalid_request). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeSchedule'}
+      responses:
+        '200':
+          description: Approved to scheduled.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/start:
+    post:
+      operationId: startChange
+      summary: Scheduled to in progress
+      description: "Requires owner or changes.execute. Version guarded and audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeVersion'}
+      responses:
+        '200':
+          description: Scheduled to in progress.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/complete:
+    post:
+      operationId: completeChange
+      summary: Complete execution
+      description: "Open tasks block completion unless force is tasks_waived. Requires owner or changes.execute. Version guarded and audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeComplete'}
+      responses:
+        '200':
+          description: Complete execution.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/fail:
+    post:
+      operationId: failChange
+      summary: Record failure
+      description: "Requires owner or changes.execute; reason and rollbackDone required. Version guarded and audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeFail'}
+      responses:
+        '200':
+          description: Record failure.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/review:
+    post:
+      operationId: reviewChange
+      summary: Review outcome
+      description: "Requires expectedVersion and a nonempty outcomeNote (400 changes.invalid_request). Mandatory before closing an emergency change. The emergency approver cannot review (403 changes.separation_of_duties). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeReview'}
+      responses:
+        '200':
+          description: Review outcome.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/close:
+    post:
+      operationId: closeChange
+      summary: Close change
+      description: "Requires expectedVersion. Emergency changes require prior review; their emergency approver cannot close (403 changes.separation_of_duties). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeVersion'}
+      responses:
+        '200':
+          description: Close change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/cancel:
+    post:
+      operationId: cancelChange
+      summary: Cancel change
+      description: "Allowed from draft through scheduled; cancels pending approval and tasks. Version guarded and audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeCancel'}
+      responses:
+        '200':
+          description: Cancel change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Change'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/tasks:
+    post:
+      operationId: addChangeTask
+      summary: Add execution task
+      description: "Owner, changes.execute or changes.manage; scheduled or in progress only; at most 50. expectedVersion is required and checked, but adding a task does not increment the change version."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangeTaskCreate'}
+      responses:
+        '201':
+          description: Add execution task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeTaskCreated'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/transitions:
+    get:
+      operationId: listChangeTransitions
+      summary: List transition history
+      description: "Visible to change readers; append-only and keyset paged."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List transition history.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeTransitionList'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/impact:
+    get:
+      operationId: getChangeImpact
+      summary: Preview downstream impact
+      description: "Requires change visibility and services.view. Hidden starts are skipped; nodes are redacted. Per-start and overall truncated flags report depth/node limits."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: depth, in: query, schema: {type: integer, minimum: 1, maximum: 6}}
+      responses:
+        '200':
+          description: Preview downstream impact.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChangeImpact'}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '409': {$ref: '#/components/responses/ChangesConflict'}
+        '429': {$ref: '#/components/responses/ChangesImpactBusy'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -7001,6 +7459,31 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   responses:
+    ChangesForbidden:
+      description: Missing permission or separation of duties (platform.forbidden, changes.separation_of_duties).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChangesImpactBusy:
+      description: Another impact traversal is running for this user (changes.impact_busy).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChangesNotFound:
+      description: Change absent or not visible (changes.not_found).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChangesInvalid:
+      description: Invalid request, reference, cursor or limit (changes.invalid_request, changes.invalid_reference, changes.invalid_cursor, changes.invalid_limit).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChangesConflict:
+      description: Invalid transition, stale version, unapproved window, open tasks or review required (changes.invalid_transition, changes.version_conflict, changes.window_not_approved, changes.review_required and related conflicts).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     ServicesNotFound:
       description: Service or impact start record not found (services.not_found).
       content:
@@ -7318,6 +7801,237 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    Change:
+      type: object
+      required: [id, reference, title, kind, risk, status, requesterId, reviewRequired, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        reference: {type: string}
+        title: {type: string}
+        description: {type: string, nullable: true}
+        kind: {type: string, enum: [standard, normal, emergency]}
+        risk: {type: string, enum: [low, medium, high]}
+        status: {type: string, enum: [draft, assessment, pending_approval, approved, rejected, scheduled, in_progress, completed, failed, review, closed, cancelled]}
+        statusReason: {type: string, nullable: true}
+        requesterId: {type: string}
+        ownerId: {type: string, nullable: true}
+        rollbackPlan: {type: string, nullable: true}
+        emergencyJustification: {type: string, nullable: true}
+        windowStart: {type: string, format: date-time, nullable: true}
+        windowEnd: {type: string, format: date-time, nullable: true}
+        outcomeNote: {type: string, nullable: true}
+        rollbackDone: {type: boolean, nullable: true}
+        approvalId: {type: string, nullable: true}
+        approvedWindowStart: {type: string, format: date-time, nullable: true}
+        approvedWindowEnd: {type: string, format: date-time, nullable: true}
+        emergencyApprovedBy: {type: string, nullable: true}
+        reviewRequired: {type: boolean}
+        startedAt: {type: string, format: date-time, nullable: true}
+        completedAt: {type: string, format: date-time, nullable: true}
+        closedAt: {type: string, format: date-time, nullable: true, description: "Also set when an approval rejects the change."}
+        allowedOperations: {type: array, items: {type: string}, description: "Present on detail when at least one operation is permitted; omitted when none are permitted. Use as the authority for detail actions."}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ChangeNames:
+      type: object
+      properties:
+        users: {type: object, additionalProperties: {type: string}}
+    ChangeList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Change'}}
+        nextCursor: {type: string}
+        names: {$ref: '#/components/schemas/ChangeNames'}
+    ChangeWindow:
+      type: object
+      properties:
+        start: {type: string, format: date-time, nullable: true}
+        end: {type: string, format: date-time, nullable: true}
+    ChangeCreate:
+      type: object
+      required: [title, kind]
+      properties:
+        title: {type: string}
+        description: {type: string}
+        kind: {type: string, enum: [standard, normal, emergency]}
+        risk: {type: string, enum: [low, medium, high]}
+        ownerUserId: {type: string}
+        rollbackPlan: {type: string}
+        window: {$ref: '#/components/schemas/ChangeWindow'}
+    ChangeUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+        title: {type: string}
+        description: {type: string}
+        kind: {type: string, enum: [standard, normal, emergency]}
+        risk: {type: string, enum: [low, medium, high]}
+        ownerUserId: {type: string}
+        rollbackPlan: {type: string}
+        window: {$ref: '#/components/schemas/ChangeWindow'}
+    ChangeAffected:
+      type: object
+      properties:
+        relationshipId: {type: string}
+        type: {type: string, enum: [service, vm, asset, location]}
+        id: {type: string, description: Response-local placeholder when hidden}
+        name: {type: string, nullable: true}
+        reference: {type: string, nullable: true}
+        status: {type: string, nullable: true}
+        confidence: {type: string}
+        since: {type: string, format: date-time}
+        missing: {type: boolean}
+        hidden: {type: boolean}
+        created: {type: boolean}
+    ChangeAffectedAdd:
+      type: object
+      required: [expectedVersion, type, id]
+      properties:
+        expectedVersion: {type: integer}
+        type: {type: string, enum: [service, vm, asset, location]}
+        id: {type: string}
+    ChangeApproval:
+      type: object
+      properties:
+        id: {type: string}
+        stepIndex: {type: integer}
+        status: {type: string}
+        approverUserId: {type: string, nullable: true}
+        approverTeamId: {type: string, nullable: true}
+        decidedByUserId: {type: string, nullable: true}
+        decidedAt: {type: string, format: date-time, nullable: true}
+    ChangeTask:
+      type: object
+      properties:
+        id: {type: string}
+        title: {type: string}
+        status: {type: string}
+        dueAt: {type: string, format: date-time, nullable: true}
+    ChangeDetail:
+      allOf:
+        - $ref: '#/components/schemas/Change'
+        - type: object
+          properties:
+            affected: {type: array, items: {$ref: '#/components/schemas/ChangeAffected'}}
+            approvals: {type: array, items: {$ref: '#/components/schemas/ChangeApproval'}}
+            tasks:
+              type: object
+              properties:
+                total: {type: integer}
+                open: {type: integer}
+                items: {type: array, items: {$ref: '#/components/schemas/ChangeTask'}}
+            names: {$ref: '#/components/schemas/ChangeNames'}
+    ChangeVersion:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+    ChangeAssessment:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          properties:
+            risk: {type: string, enum: [low, medium, high]}
+            approverUserId: {type: string}
+            approverTeamId: {type: string}
+            emergencyJustification: {type: string}
+    ChangeSchedule:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          properties:
+            window: {$ref: '#/components/schemas/ChangeWindow'}
+    ChangeComplete:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          properties:
+            force: {type: string, enum: [tasks_waived]}
+    ChangeFail:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          properties:
+            reason: {type: string, enum: [execution_error, verification_failed, window_exceeded, dependency_unavailable, other]}
+            rollbackDone: {type: boolean}
+    ChangeReview:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          required: [outcomeNote]
+          properties:
+            outcomeNote: {type: string, minLength: 1, description: "Must contain non-whitespace text."}
+    ChangeCancel:
+      allOf:
+        - $ref: '#/components/schemas/ChangeVersion'
+        - type: object
+          properties:
+            reason: {type: string, enum: [no_longer_needed, superseded, rescheduled, risk_too_high, error_correction, other]}
+    ChangeTaskCreate:
+      type: object
+      required: [expectedVersion, title]
+      properties:
+        expectedVersion: {type: integer}
+        title: {type: string}
+        description: {type: string}
+        dueAt: {type: string, format: date-time, nullable: true}
+        assignedUserId: {type: string, nullable: true}
+        assignedTeamId: {type: string, nullable: true}
+    ChangeTaskCreated:
+      type: object
+      properties:
+        taskId: {type: string}
+    ChangeTransition:
+      type: object
+      properties:
+        id: {type: string}
+        fromStatus: {type: string, nullable: true}
+        toStatus: {type: string}
+        operation: {type: string}
+        reason: {type: string, nullable: true}
+        actorUserId: {type: string, nullable: true}
+        actorSystem: {type: string, nullable: true}
+        correlationId: {type: string}
+        createdAt: {type: string, format: date-time}
+    ChangeTransitionList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ChangeTransition'}}
+        nextCursor: {type: string}
+        names: {$ref: '#/components/schemas/ChangeNames'}
+    ChangeImpactNode:
+      type: object
+      properties:
+        type: {type: string, enum: [service, vm, asset, location]}
+        id: {type: string}
+        name: {type: string, nullable: true}
+        reference: {type: string, nullable: true}
+        status: {type: string, nullable: true}
+        criticality: {type: string, nullable: true}
+        missing: {type: boolean}
+        hidden: {type: boolean}
+        depth: {type: integer}
+        confidence: {type: string}
+    ChangeImpactStart:
+      type: object
+      properties:
+        type: {type: string}
+        id: {type: string}
+        name: {type: string, nullable: true}
+        reference: {type: string, nullable: true}
+        nodes: {type: array, items: {$ref: '#/components/schemas/ChangeImpactNode'}}
+        truncated: {type: boolean}
+        depthLimited: {type: boolean}
+        nodeLimited: {type: boolean}
+    ChangeImpact:
+      type: object
+      properties:
+        starts: {type: array, items: {$ref: '#/components/schemas/ChangeImpactStart'}}
+        skipped: {type: integer}
+        truncated: {type: boolean}
     Service:
       type: object
       required: [id, reference, name, criticality, status, version, createdAt, updatedAt]

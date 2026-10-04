@@ -20,6 +20,10 @@ export type RouteId =
   | 'allRequests'
   | 'myAssets'
   | 'assets'
+  | 'changes'
+  | 'myChanges'
+  | 'changeNew'
+  | 'changeDetail'
   | 'services'
   | 'serviceDetail'
   | 'impact'
@@ -81,7 +85,8 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit';
 
-export type NavGroup = 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'admin';
+export type NavGroup =
+  'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'changes' | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -200,6 +205,21 @@ export const appRoutes: readonly AppRoute[] = [
     requires: ['organization.directory.view'],
     requiresAny: ['endpoint.management.view', 'endpoints.manage'],
   },
+  { id: 'myChanges', pattern: '/changes/mine', titleKey: 'changes.mine', nav: 'main' },
+  {
+    id: 'changeNew',
+    pattern: '/changes/new',
+    titleKey: 'changes.create',
+    requires: ['changes.manage'],
+  },
+  {
+    id: 'changes',
+    pattern: '/changes',
+    titleKey: 'nav.changes',
+    requiresAny: ['changes.view', 'changes.manage', 'changes.execute'],
+    nav: 'changes',
+  },
+  { id: 'changeDetail', pattern: '/changes/:id', titleKey: 'changes.detail' },
   {
     id: 'services',
     pattern: '/services',

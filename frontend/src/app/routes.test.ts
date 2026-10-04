@@ -5,7 +5,7 @@ import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes'
 
 const ids = (
   permissions: string[],
-  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'admin',
+  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'changes' | 'admin',
 ) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
@@ -17,6 +17,7 @@ describe('visibleNavItems', () => {
       'catalog',
       'requests',
       'approvals',
+      'myChanges',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -40,6 +41,7 @@ describe('visibleNavItems', () => {
         'catalog',
         'requests',
         'approvals',
+        'myChanges',
         'myAssets',
         'myTickets',
         'knowledge',
@@ -54,6 +56,7 @@ describe('visibleNavItems', () => {
       'catalog',
       'requests',
       'approvals',
+      'myChanges',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -70,6 +73,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'briefing',
+      'myChanges',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -83,6 +87,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'briefing',
+      'myChanges',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -340,5 +345,17 @@ describe('services routes', () => {
     expect(ids(['services.manage'], 'services')).toEqual(['services']);
     expect(matchRoute(appRoutes, '/services/abc')?.route.id).toBe('serviceDetail');
     expect(matchRoute(appRoutes, '/impact')?.route.id).toBe('impact');
+  });
+});
+
+describe('changes routes', () => {
+  it('gates navigation while own changes remain reachable', () => {
+    expect(ids([], 'changes')).toEqual([]);
+    expect(ids(['changes.view'], 'changes')).toEqual(['changes']);
+    expect(ids(['changes.manage'], 'changes')).toEqual(['changes']);
+    expect(ids(['changes.execute'], 'changes')).toEqual(['changes']);
+    expect(matchRoute(appRoutes, '/changes/mine')?.route.id).toBe('myChanges');
+    expect(matchRoute(appRoutes, '/changes/new')?.route.id).toBe('changeNew');
+    expect(matchRoute(appRoutes, '/changes/abc')?.route.id).toBe('changeDetail');
   });
 });

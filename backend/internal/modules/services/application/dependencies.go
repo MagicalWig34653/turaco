@@ -423,7 +423,10 @@ func (s *App) Impact(ctx context.Context, p Principal, in ImpactInput) (ImpactRe
 	if in.Direction == Upstream {
 		dir = relationships.Forward
 	}
-	walk, err := s.graph.Traverse(ctx, s.store.Q(), relationships.TraverseInput{Start: start, Direction: dir, MaxDepth: in.Depth})
+	// Only the dependency graph counts: other modules' relationships (for
+	// example "change AFFECTS service") never appear as impacted records.
+	walk, err := s.graph.Traverse(ctx, s.store.Q(), relationships.TraverseInput{Start: start, Direction: dir, MaxDepth: in.Depth,
+		Types: ImpactRelationshipTypes, NodeTypes: DependencyTargets})
 	if err != nil {
 		return ImpactResult{}, fmt.Errorf("impact traversal: %w", err)
 	}

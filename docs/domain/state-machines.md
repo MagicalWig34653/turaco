@@ -98,6 +98,29 @@ Implemented operations (F2, `modules/tasks`): `start` (open/blocked → in_progr
 
 Terminal/exception branches: `rejected`, `failed`, `cancelled`. Emergency change can use an abbreviated explicit policy path; it does not bypass audit.
 
+Implemented (F7c, `modules/changes`; the status is only ever changed by these explicit operations, each audited with ids and reason codes, recorded in the append-only `change_transitions` (no update, delete or truncate; a Change with history cannot be deleted), and guarded by a required `expectedVersion`):
+
+| Operation | From | To | Notes |
+|---|---|---|---|
+| `Create` | - | `draft` | requester = caller; kind `standard\|normal\|emergency`; risk defaults to `low` |
+| `UpdateDetails`, `AddAffected`, `RemoveAffected` | `draft`, `assessment` | same | editors are remembered and can never assess or approve; the kind can only change in `draft`; removing a resource of a type the caller may not see is `changes.invalid_reference` |
+| `Submit` | `draft` | `assessment` | needs a window, a rollback plan for `medium`/`high` risk and, unless `standard`, at least one affected resource |
+| `Assess(risk, approver \| emergencyJustification)` | `assessment` | `pending_approval`, or `approved` | repeats Submit's checks for the assessed risk; refused for the requester and editors (`changes.separation_of_duties`); `medium`/`high` risk and every `emergency` change need an approver (user or team; requester, owner, editors and assessor excluded) - then `pending_approval`; `low` risk needs none - `approved`; an emergency change may instead carry an explicit justification (`emergency_approved`, reason `emergency`, the assessor recorded as `emergencyApprovedBy`) |
+| approval decided (`ApprovalDecided` consumer) | `pending_approval` | `approved` or `rejected` | the event must name the pending approval (else a permanent error); approval records the approved window; `rejected` is terminal (reason `approval_rejected`) |
+| `Schedule([window])` | `approved` | `scheduled` | the window must start in the future and, after an approver's approval, lie within the approved window (`changes.window_not_approved`; a different window needs a new Change); an `emergency` change may use any window starting at most one hour in the past |
+| `Start` | `scheduled` | `in_progress` | owner or `changes.execute` |
+| `Complete([force=tasks_waived])` | `in_progress` | `completed` | open execution Tasks block it; `tasks_waived` cancels them and is recorded |
+| `Fail(reason, rollbackDone)` | `in_progress` | `failed` | reason `execution_error\|verification_failed\|window_exceeded\|dependency_unavailable\|other` |
+| `Review(outcomeNote)` | `completed`, `failed` | `review` | the outcome note is required; optional step, except for emergency changes; not by the emergency approver |
+| `Close` | `completed`, `failed`, `review` | `closed` | an `emergency` change cannot be closed without a review (`changes.review_required`) nor by its emergency approver; open execution Tasks are cancelled (reason `change_closed`, counted in the audit entry) |
+| `Cancel(reason)` | `draft`..`scheduled` | `cancelled` | cancels a pending approval and the Tasks of a scheduled change; reason `no_longer_needed\|superseded\|rescheduled\|risk_too_high\|error_correction\|other` |
+
+Reopening is not supported: `rejected`, `failed` (until closed), `cancelled` and `closed` changes are never edited; create a new Change instead. Execution Tasks (`AddTask`) can be added while `scheduled` or `in_progress`.
+
+The `change AFFECTS ...` Relationships are current while the Change is open and end in the same transaction that makes it `closed`, `cancelled` or `rejected` (end reasons `change_closed`, `change_cancelled`, `change_rejected`); the Change's detail and the affected-resource list filter still read them by that reason.
+
+Database invariants (CHECK constraints of `changes.changes`): `started_at` is set exactly in `in_progress`, `completed`, `failed`, `review`, `closed`; `completed_at` exactly in `completed`, `failed`, `review`, `closed`; `closed_at` exactly in `closed`, `cancelled`, `rejected`; `started_at <= completed_at <= closed_at`; `failed` has `rollback_done` and a reason; `pending_approval` has an `approval_id`; `review` (and a closed emergency change) has an outcome note; an emergency justification exists only on `emergency` changes and always with its approver.
+
 ## Initiative
 `idea → planning → proposed → approved → active ↔ on_hold → completed`, with `cancelled` alternatives.
 

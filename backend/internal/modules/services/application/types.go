@@ -48,6 +48,9 @@ var Triples = []relationships.Triple{
 // DependencyTargets are the record types a Service may depend on.
 var DependencyTargets = []string{NodeService, NodeVM, NodeAsset, NodeLocation}
 
+// ImpactRelationshipTypes are the only relationship types the impact traversal follows.
+var ImpactRelationshipTypes = []string{RelDependsOn, RelRunsOn}
+
 // Criticality levels and Service statuses.
 const (
 	CriticalityLow      = "low"

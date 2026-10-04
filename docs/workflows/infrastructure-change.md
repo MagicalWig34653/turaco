@@ -1,5 +1,7 @@
 # Infrastructure Change
 
+**Status:** steps 2-4, 6 (Tasks only, no Runbook link) and 7 are implemented in the backend (F7a-F7c; [design](../product/f7-infrastructure-change-design.md#slice-3-status), [current status](../product/current-status.md)); Initiatives, the calendar/Briefing (step 5) and the frontend for Changes are not.
+
 ## Goal
 Plan and execute infrastructure work with dependencies, physical context, communication and history.
 

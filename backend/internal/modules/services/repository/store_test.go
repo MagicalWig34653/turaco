@@ -1061,6 +1061,44 @@ func TestListDependenciesPagesWithCursor(t *testing.T) {
 	}
 }
 
+// Relationships of other modules pointing at a Service (here "change AFFECTS
+// service", owned by Changes) are not dependencies: the impact walk never
+// reaches them.
+func TestImpactFollowsOnlyDependencyRelationships(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.graph.Registry().Register(relationships.Triple{SourceType: "change", Type: "AFFECTS", TargetType: "service", Owner: "changes"})
+	db, web := e.service("DB"), e.service("Web")
+	if err := e.dep(web.ID, "service", db.ID); err != nil {
+		t.Fatal(err)
+	}
+	change := relationships.Node{Type: "change", ID: e.uuid()}
+	for _, target := range []string{db.ID, web.ID} {
+		if _, _, err := e.graph.Link(ctx, e.pool, relationships.LinkInput{Owner: "changes", Source: change, Type: "AFFECTS",
+			Target: relationships.Node{Type: "service", ID: target}, Confidence: relationships.ConfidenceDeclared}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: db.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Nodes) != 1 || res.Nodes[0].ID != web.ID {
+		t.Fatalf("downstream nodes = %+v, want only the dependent service", res.Nodes)
+	}
+	for _, dir := range []string{"downstream", "upstream"} {
+		r, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: web.ID, Direction: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range r.Nodes {
+			if n.Type == "change" {
+				t.Errorf("%s impact reaches a change: %+v", dir, n)
+			}
+		}
+	}
+}
+
 func TestImpactAllowsOneTraversalPerUser(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -1175,5 +1213,34 @@ func TestEnqueueBackfillDeduplicates(t *testing.T) {
 	}
 	if n := e.count(`SELECT count(*) FROM platform.jobs WHERE job_type = $1 AND status = 'pending'`, application.BackfillJobType); n != 1 {
 		t.Fatalf("pending backfill jobs: %d", n)
+	}
+}
+
+// Lookup is the contract other modules (Changes) use: no permission check, retired
+// Services included, ids normalized, owners and support team returned, bounded.
+func TestLookupForOtherModules(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := e.service("Lookup A")
+	b := e.service("Lookup B")
+	if _, err := e.app.Retire(ctx, e.caller(), e.manage, b.ID, ver(b), "decommissioned"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e.app.Lookup(ctx, []string{strings.ToUpper(a.ID), b.ID, e.uuid(), "not-a-uuid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[a.ID].Reference != a.Reference || got[b.ID].Status != application.StatusRetired {
+		t.Errorf("lookup = %+v", got)
+	}
+	if empty, err := e.app.Lookup(ctx, nil); err != nil || len(empty) != 0 {
+		t.Errorf("empty lookup = %v %v", empty, err)
+	}
+	tooMany := make([]string, application.MaxLookupIDs+1)
+	for i := range tooMany {
+		tooMany[i] = a.ID
+	}
+	if _, err := e.app.Lookup(ctx, tooMany); err == nil {
+		t.Error("an oversized lookup was accepted")
 	}
 }

@@ -47,6 +47,9 @@ var Registry = []Permission{
 	{Name: "runbooks.execute", Description: "Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission.", Risk: "elevated"},
 	{Name: "tickets.view", Description: "View all tickets and their internal comments. Every signed-in user can raise tickets and read their own.", Risk: "normal"},
 	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
+	{Name: "changes.view", Description: "View all Changes (risk, rollback plan, maintenance window, affected resources, approvals, execution tasks, history) and the Change impact view. Requesters and owners see their own Changes without it; affected Services need services.view, Virtual Machines and Locations infrastructure.view, Assets assets.view to be shown by name.", Risk: "normal"},
+	{Name: "changes.manage", Description: "Create and change Changes, edit their affected resources, submit, assess, schedule, review, close and cancel them, approve emergency changes on a justification and add execution tasks. Scheduling and emergency approval affect other people's maintenance planning.", Risk: "elevated"},
+	{Name: "changes.execute", Description: "Run Changes: start, complete and fail them and add execution tasks. The owner of a Change may do the same for that Change without this permission.", Risk: "elevated"},
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
 	// Remote Access (ADR-0026): reserved, planned and not implemented; no route checks these yet.

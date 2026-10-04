@@ -33,6 +33,18 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.majorincident.update',
       labelKey: 'notifications.category.majorincident.update',
     },
+    'change.scheduled': {
+      textKey: 'notifications.change.scheduled',
+      labelKey: 'notifications.category.change.scheduled',
+    },
+    'change.reminder': {
+      textKey: 'notifications.change.reminder',
+      labelKey: 'notifications.category.change.reminder',
+    },
+    'change.state': {
+      textKey: 'notifications.change.state',
+      labelKey: 'notifications.category.change.state',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',
@@ -54,6 +66,7 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
   registerNotificationLink('ticket', (id) => `/support/${encodeURIComponent(id)}`);
   registerNotificationLink('asset', (id) => `/assets/${encodeURIComponent(id)}`);

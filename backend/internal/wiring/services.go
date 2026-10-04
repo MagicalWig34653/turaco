@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
+	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
 	infrapublic "github.com/MagicalWig34653/turaco/backend/internal/modules/infrastructure/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
@@ -21,12 +22,12 @@ var (
 )
 
 // Relationships returns the process-wide relationship graph. Modules that own
-// relationship triples register them here (Services today; Changes will add
-// "Change AFFECTS ...").
+// relationship triples register them here (Services: DEPENDS_ON and RUNS_ON; Changes: "change AFFECTS ...").
 func Relationships() *relationships.Graph {
 	graphOnce.Do(func() {
 		reg := relationships.NewRegistry()
 		reg.Register(servicesapp.Triples...)
+		reg.Register(changesapp.Triples...)
 		graph = relationships.New(reg)
 	})
 	return graph

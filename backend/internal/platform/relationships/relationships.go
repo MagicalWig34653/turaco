@@ -563,6 +563,96 @@ func (g *Graph) adjacent(ctx context.Context, q Querier, node Node, types []stri
 	return Page{Items: out}, nil
 }
 
+// OutgoingEnded lists the relationships of the types whose source is the node
+// and that were ended with the reason code (for example the links a module
+// ended when its record reached a terminal state), oldest id first, at most
+// limit (default 100, maximum 500).
+func (g *Graph) OutgoingEnded(ctx context.Context, q Querier, node Node, types []string, reason string, limit int) ([]Relationship, error) {
+	node, err := checkNode(node)
+	if err != nil {
+		return nil, err
+	}
+	types, err = g.checkTypes(types)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkReason(reason); err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, `
+		SELECT `+cols+` FROM platform.relationships
+		WHERE source_type = $1 AND source_id = $2::uuid AND type = ANY($3::text[]) AND valid_until IS NOT NULL AND end_reason = $4
+		ORDER BY id LIMIT $5`, node.Type, node.ID, types, reason, clampLimit(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list ended relationships: %w", err)
+	}
+	defer rows.Close()
+	out := []Relationship{}
+	for rows.Next() {
+		r, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list ended relationships: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// MaxSources bounds SourcesByTarget.
+const MaxSources = 5000
+
+// SourcesByTarget lists the ids of the records of sourceType that point at
+// target with a relationship of the owner's triple (sourceType, typ,
+// target.Type): through a current relationship or, when endReasons is not
+// empty, through one ended with one of those reason codes. Newest id first
+// (UUIDv7 order), at most limit (1 to MaxSources); truncated reports that
+// more exist. ErrNotAllowed when the owner does not own the triple.
+func (g *Graph) SourcesByTarget(ctx context.Context, q Querier, owner, sourceType, typ string, target Node, endReasons []string, limit int) (ids []string, truncated bool, err error) {
+	target, err = checkNode(target)
+	if err != nil {
+		return nil, false, err
+	}
+	if o, ok := g.reg.Owner(sourceType, typ, target.Type); !ok || o != owner {
+		return nil, false, ErrNotAllowed
+	}
+	for _, r := range endReasons {
+		if err := checkReason(r); err != nil {
+			return nil, false, err
+		}
+	}
+	if endReasons == nil {
+		endReasons = []string{}
+	}
+	if limit <= 0 || limit > MaxSources {
+		limit = MaxSources
+	}
+	rows, err := q.Query(ctx, `
+		SELECT id::text FROM (
+			SELECT DISTINCT source_id AS id FROM platform.relationships
+			WHERE target_type = $1 AND target_id = $2::uuid AND type = $3 AND source_type = $4
+			  AND (valid_until IS NULL OR end_reason = ANY($5::text[]))
+		) s ORDER BY id DESC LIMIT $6`, target.Type, target.ID, typ, sourceType, endReasons, limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list relationship sources: %w", err)
+	}
+	defer rows.Close()
+	ids = []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, fmt.Errorf("list relationship sources: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("list relationship sources: %w", err)
+	}
+	if len(ids) > limit {
+		return ids[:limit], true, nil
+	}
+	return ids, false, nil
+}
+
 // Edge is one relationship on a traversal path, in the direction it was
 // walked: From is the node the walk came from, To the node it reached.
 type Edge struct {

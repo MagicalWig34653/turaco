@@ -37,6 +37,11 @@ import {
   ServiceDetailScreen,
   ImpactScreen,
 } from '../modules/services/ServicesScreens';
+import {
+  ChangesListScreen,
+  ChangeCreateScreen,
+  ChangeDetailScreen,
+} from '../modules/changes/ChangesScreens';
 import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreens';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
@@ -146,6 +151,14 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UserManagementScreen key={params.id} id={params.id ?? ''} />;
     case 'managementFilters':
       return <ManagementFiltersScreen />;
+    case 'changes':
+      return <ChangesListScreen />;
+    case 'myChanges':
+      return <ChangesListScreen mine />;
+    case 'changeNew':
+      return <ChangeCreateScreen />;
+    case 'changeDetail':
+      return <ChangeDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'services':
       return <ServicesListScreen />;
     case 'serviceDetail':
