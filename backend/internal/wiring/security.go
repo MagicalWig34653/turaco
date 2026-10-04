@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	changespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/public"
 	endpointspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/public"
 	endpointsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
@@ -73,7 +74,9 @@ func (v securityInventory) FindSoftwareProduct(ctx context.Context, name, publis
 
 // Security builds the Security service using only Endpoints' public inventory contract.
 func Security(pool *pgxpool.Pool) *securityapp.Service {
-	return securityapp.NewService(securityrepository.New(pool), securityInventory{endpointspublic.NewInventory(endpointsrepository.New(pool))})
+	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
+	return securityapp.NewService(securityrepository.New(pool), securityInventory{endpointspublic.NewInventory(endpointsrepository.New(pool))}).WithRemediation(
+		taskspublicCreator(pool, dir, "security_advisory", "security_finding"), changespublic.NewChanges(Changes(pool)), Relationships(), dir, pool)
 }
 
 // SecurityNotifications builds the advisory notification consumer over Organization and roles contracts.

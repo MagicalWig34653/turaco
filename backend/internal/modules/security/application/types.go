@@ -126,6 +126,9 @@ const (
 	EventFindingChanged = "VulnerabilityFindingChanged"
 	// NotificationCategory tells security.manage holders that an Advisory became applicable.
 	NotificationCategory = "security.advisory"
+	RiskReviewCategory   = "security.risk_review_due"
+	RiskReminderJobType  = "security.risk_review_reminders"
+	RiskReminderInterval = 24 * time.Hour
 
 	// MatchJobType matches one Advisory; MatchAllJobType re-queues every Advisory that needs it.
 	MatchJobType       = "security.match"
@@ -249,6 +252,9 @@ type Principal struct {
 	Manage        bool
 	AcceptRisk    bool
 	EndpointsView bool
+	TasksView     bool
+	TasksManage   bool
+	ChangesView   bool
 }
 
 // reads reports that the caller may read advisories and findings.

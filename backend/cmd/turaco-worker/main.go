@@ -120,6 +120,10 @@ func main() {
 		logger.Error("configure security matching", "error", err)
 		os.Exit(1)
 	}
+	if err := registerSecurityRiskReminders(runner, pool, categories, smtpCfg.Enabled()); err != nil {
+		logger.Error("configure security risk reminders", "error", err)
+		os.Exit(1)
+	}
 	if cfg.AutotaskSync {
 		if err := registerExternalSync(runner, dispatcher, pool); err != nil {
 			logger.Error("configure Autotask synchronization", "error", err)
@@ -363,6 +367,18 @@ func registerSecurityMatching(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: securityapp.MatchAllJobType, DedupeKey: securityapp.MatchAllJobType,
 		Interval: securityapp.MatchAllInterval, MaxAttempts: 3})
+}
+
+func registerSecurityRiskReminders(runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+	notifier := notifications.NewService(pool, categories)
+	if email {
+		notifier = notifier.WithEmail()
+	}
+	notes := wiring.SecurityNotifications(pool, notifier)
+	if err := runner.Register(securityapp.RiskReminderJobType, 2*time.Minute, notes.HandleRiskReminders); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: securityapp.RiskReminderJobType, DedupeKey: securityapp.RiskReminderJobType, Interval: securityapp.RiskReminderInterval, MaxAttempts: 3})
 }
 
 // smtpMailer adapts the SMTP integration to the notification service's

@@ -8566,6 +8566,219 @@ paths:
           $ref: '#/components/responses/SecurityConflict'
         '500':
           $ref: '#/components/responses/InternalError'
+  /security/overview:
+    get:
+      operationId: getSecurityOverview
+      summary: Get security overview
+      description: >-
+        Requires security.view. Counts reflect current Turaco data. Overdue tasks include advisory and finding remediation tasks.
+      security:
+      - sessionAuth: []
+      responses:
+        '200':
+          description: Get security overview
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityOverview'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /security/advisories/{id}/progress:
+    get:
+      operationId: getSecurityAdvisoryProgress
+      summary: Get advisory remediation progress
+      description: >-
+        Requires security.view. generatedAt marks the Security snapshot; Task and Change summaries are read live afterward. tasksTruncated means the Finding Task summary covers only the first 20,000 Finding IDs. Task done counts only completed Tasks; cancelled is separate. Linked Change details require Change visibility. Residual risk is unknown when the Advisory is outside the applicable family, its last match is missing, incomplete or truncated, or its matched inventory ingestion is over 48 hours old. With a complete recent match, no live probable or potential findings = none; potential only = low for none/low/medium severity, medium for high/critical; any probable = medium for none/low/medium, high for high/critical. Risk-accepted findings remain live; false positives do not.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get advisory remediation progress
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityProgress'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /security/advisories/{id}/tasks:
+    get:
+      operationId: listSecurityAdvisoryTasks
+      summary: List advisory remediation tasks
+      description: >-
+        Requires security.view. Live shared Tasks; assignee details require tasks.view. Completing a task never changes Finding status.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List advisory remediation tasks
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityRemediationTaskList'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createSecurityAdvisoryTask
+      summary: Create advisory remediation task
+      description: >-
+        Requires both security.manage and tasks.manage (403 platform.forbidden otherwise). Title is fixed from the parent reference. expectedVersion is required on the parent; the parent version advances. An active User or Team assignee and dueAt (now to one year ahead) are required; malformed, unknown or inactive assignees return 400 security.invalid_request. A closed or otherwise ineligible Advisory returns 409 security.invalid_transition. Completing a Task never remediates a Finding.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SecurityCreateTaskRequest'}
+      responses:
+        '201':
+          description: Create advisory remediation task
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityTaskCreated'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /security/findings/{id}/tasks:
+    get:
+      operationId: listSecurityFindingTasks
+      summary: List finding remediation tasks
+      description: >-
+        Requires security.view. Live shared Tasks; assignee details require tasks.view. Completing a task never changes Finding status.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List finding remediation tasks
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityRemediationTaskList'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createSecurityFindingTask
+      summary: Create finding remediation task
+      description: >-
+        Requires both security.manage and tasks.manage (403 platform.forbidden otherwise). Title is fixed from the parent reference. expectedVersion is required on the parent; the parent version advances. An active User or Team assignee and dueAt (now to one year ahead) are required; malformed, unknown or inactive assignees return 400 security.invalid_request. A closed or otherwise ineligible Finding or parent Advisory returns 409 security.invalid_transition. Completing a Task never remediates a Finding.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SecurityCreateTaskRequest'}
+      responses:
+        '201':
+          description: Create finding remediation task
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityTaskCreated'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /security/advisories/{id}/changes:
+    get:
+      operationId: listSecurityAdvisoryChanges
+      summary: List linked Changes
+      description: >-
+        Requires security.view. Changes the caller cannot see appear as hidden placeholders without Change ID, reference or status.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List linked Changes
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityChangeLinkList'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: linkSecurityAdvisoryChange
+      summary: Link a Change
+      description: >-
+        Requires security.manage and visibility of the Change. expectedVersion is required on the Advisory.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SecurityLinkChangeRequest'}
+      responses:
+        '200':
+          description: Link a Change
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityChangeLink'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /security/advisories/{id}/changes/{changeId}:
+    delete:
+      operationId: unlinkSecurityAdvisoryChange
+      summary: Remove a Change link
+      description: >-
+        Requires security.manage. expectedVersion is required on the Advisory. The JSON body is required even for DELETE.
+      security:
+      - sessionAuth: []
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: changeId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SecurityVersionRequest'}
+      responses:
+        '204': {description: Change link removed}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /security/findings:
     get:
       operationId: listSecurityFindings
@@ -8986,12 +9199,12 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SecurityInvalid:
-      description: Invalid body, reference, cursor or limit (security.invalid_request, security.invalid_reference, security.invalid_cursor, security.invalid_limit).
+      description: Invalid body, assignee, reference, cursor or limit (security.invalid_request, security.invalid_reference, security.invalid_cursor, security.invalid_limit).
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SecurityConflict:
-      description: Duplicate advisory, stale version or invalid transition (security.duplicate, security.version_conflict, security.invalid_transition).
+      description: Duplicate advisory, stale version or invalid transition including a closed or ineligible remediation Task parent (security.duplicate, security.version_conflict, security.invalid_transition).
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -12889,6 +13102,96 @@ components:
               type: string
             requestId:
               type: string
+    SecurityRemediationTask:
+      type: object
+      description: Live shared Task projection. Assignee fields are omitted unless the caller has tasks.view.
+      required: [id, status, dueAt, assigneeHidden]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [open, in_progress, blocked, completed, cancelled]}
+        dueAt: {type: string, format: date-time, nullable: true}
+        assignedUserId: {type: string, format: uuid}
+        assignedTeamId: {type: string, format: uuid}
+        assigneeName: {type: string}
+        assigneeHidden: {type: boolean}
+    SecurityRemediationTaskList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SecurityRemediationTask'}}
+    SecurityCreateTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, dueAt]
+      description: A fixed title based on the parent reference is generated by Turaco. Exactly one assignee is required.
+      oneOf:
+      - required: [assignedUserId]
+      - required: [assignedTeamId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Current version of the parent Advisory or Finding.}
+        assignedUserId: {type: string, format: uuid}
+        assignedTeamId: {type: string, format: uuid}
+        dueAt: {type: string, format: date-time}
+    SecurityTaskCreated:
+      type: object
+      required: [taskId]
+      properties:
+        taskId: {type: string, format: uuid}
+    SecurityChangeLink:
+      type: object
+      required: [id, hidden]
+      description: Hidden Changes appear as placeholders; changeId, reference and status are omitted.
+      properties:
+        id: {type: string, format: uuid}
+        hidden: {type: boolean}
+        changeId: {type: string, format: uuid}
+        reference: {type: string}
+        status: {type: string}
+    SecurityChangeLinkList:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SecurityChangeLink'}}
+    SecurityLinkChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, changeId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Current Advisory version.}
+        changeId: {type: string, format: uuid}
+    SecurityProgress:
+      type: object
+      required: [generatedAt, tasksTruncated, source, findingByStatus, findingByConfidence, shareRemediated, acceptedRiskCount, earliestRiskReviewBy, oldestOpenFindingAgeDays, tasks, linkedChangesByStatus, hiddenLinkedChanges, residualRisk]
+      properties:
+        generatedAt: {type: string, format: date-time, description: RFC3339 timestamp when the Security snapshot was generated.}
+        tasksTruncated: {type: boolean, description: True when Finding Task counts cover only the first 20,000 Finding IDs.}
+        source: {type: string, enum: [turaco_derived]}
+        findingByStatus: {type: object, additionalProperties: {type: integer}}
+        findingByConfidence: {type: object, additionalProperties: {type: integer}}
+        shareRemediated: {type: number, format: double, minimum: 0, maximum: 1, description: Remediated findings divided by all findings excluding false positives.}
+        acceptedRiskCount: {type: integer}
+        earliestRiskReviewBy: {type: string, format: date-time, nullable: true}
+        oldestOpenFindingAgeDays: {type: integer, nullable: true}
+        tasks:
+          type: object
+          required: [open, done, cancelled, overdue]
+          properties:
+            open: {type: integer}
+            done: {type: integer, description: Completed Tasks only.}
+            cancelled: {type: integer}
+            overdue: {type: integer}
+        linkedChangesByStatus: {type: object, additionalProperties: {type: integer}}
+        hiddenLinkedChanges: {type: integer}
+        residualRisk: {type: string, enum: [none, low, medium, high, unknown], description: Unknown when the Advisory is outside the applicable family, matching is missing/incomplete/truncated or matched inventory ingestion is over 48 hours old. Otherwise derived from severity and live probable/potential findings including accepted risk.}
+    SecurityOverview:
+      type: object
+      required: [source, applicableBySeverity, openFindingsByConfidence, overdueTasks, riskAcceptancesDueWithin30Days]
+      properties:
+        source: {type: string, enum: [turaco_derived]}
+        applicableBySeverity: {type: object, additionalProperties: {type: integer}}
+        openFindingsByConfidence: {type: object, additionalProperties: {type: integer}}
+        overdueTasks: {type: integer}
+        riskAcceptancesDueWithin30Days: {type: integer}
     SecurityAdvisory:
       type: object
       required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, version, createdAt, updatedAt]

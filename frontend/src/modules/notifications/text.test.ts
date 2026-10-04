@@ -47,6 +47,16 @@ describe('notificationLink', () => {
       '/initiatives/a%2Fb',
     );
   });
+  it('links risk review notifications to the finding', () => {
+    expect(
+      notificationLink({
+        ...base,
+        category: 'security.risk_review_due',
+        linkType: 'security_finding',
+        linkId: 'a/b',
+      }),
+    ).toBe('/security/findings/a%2Fb');
+  });
   it('has no link for unknown targets', () => {
     expect(notificationLink({ ...base, linkType: 'mystery' })).toBeUndefined();
     expect(notificationLink({ ...base, linkType: null, linkId: null })).toBeUndefined();

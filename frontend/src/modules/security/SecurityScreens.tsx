@@ -10,6 +10,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { securityApi } from './api';
+import { AdvisoryRemediation, FindingRemediation } from './Remediation';
 import {
   advisoryActions,
   devicePath,
@@ -18,6 +19,9 @@ import {
   reviewStartDate,
   safeSourceUrl,
   validReviewDate,
+  isApplicableAdvisory,
+  isOpenFinding,
+  riskReviewDueWithin30Days,
 } from './helpers';
 import {
   advisoryStatuses,
@@ -161,13 +165,22 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
 export function AdvisoriesScreen() {
   const { t } = useI18n();
   const { can } = useSession();
-  const [status, setStatus] = useState('');
-  const [severity, setSeverity] = useState('');
+  const [status, setStatus] = useState(
+    () => new URLSearchParams(window.location.search).get('status') ?? '',
+  );
+  const [severity, setSeverity] = useState(
+    () => new URLSearchParams(window.location.search).get('severity') ?? '',
+  );
   const [q, setQ] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const list = usePagedList(
     (cursor, signal) => securityApi.advisories({ status, severity, q }, cursor, signal),
     [status, severity, q],
+  );
+  const visibleAdvisories = list.items.filter(
+    (x) =>
+      !new URLSearchParams(window.location.search).has('applicable') ||
+      isApplicableAdvisory(x.status),
   );
   return (
     <>
@@ -207,7 +220,7 @@ export function AdvisoriesScreen() {
         </label>
         <Field label={t('security.search')} value={q} onChange={setQ} type="search" />
       </div>
-      <p>{t('security.loadedCount', { count: list.items.length })}</p>
+      <p>{t('security.loadedCount', { count: visibleAdvisories.length })}</p>
       {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
       <table>
         <thead>
@@ -220,7 +233,7 @@ export function AdvisoriesScreen() {
           </tr>
         </thead>
         <tbody>
-          {list.items.map((x) => (
+          {visibleAdvisories.map((x) => (
             <tr key={x.id}>
               <td>
                 <Link to={`/security/advisories/${enc(x.id)}`}>{x.reference}</Link>
@@ -610,6 +623,7 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
               ))}
             </section>
           )}
+          <AdvisoryRemediation id={id} version={a.version} onChanged={detail.reload} />
           <section>
             <h2>{t('security.affectedDevices')}</h2>
             <FindingTable items={findings.items} />
@@ -700,13 +714,24 @@ function FindingTable({ items }: { items: Finding[] }) {
 }
 export function SecurityFindingsScreen() {
   const { t } = useI18n();
-  const [status, setStatus] = useState('');
-  const [confidence, setConfidence] = useState('');
+  const query = new URLSearchParams(window.location.search);
+  const [status, setStatus] = useState(() =>
+    query.get('riskDue') === 'true' ? 'risk_accepted' : '',
+  );
+  const [confidence, setConfidence] = useState(() => query.get('confidence') ?? '');
   const [advisoryId, setAdvisoryId] = useState('');
   const [device, setDevice] = useState('');
   const list = usePagedList(
     (cursor, signal) => securityApi.findings({ status, confidence, advisoryId }, cursor, signal),
     [status, confidence, advisoryId],
+  );
+  const visible = list.items.filter(
+    (x) =>
+      (!query.has('open') || isOpenFinding(x.status)) &&
+      (!query.has('riskDue') || riskReviewDueWithin30Days(x, new Date())) &&
+      (!device ||
+        x.deviceName?.toLowerCase().includes(device.toLowerCase()) ||
+        x.deviceId === device),
   );
   return (
     <>
@@ -740,23 +765,11 @@ export function SecurityFindingsScreen() {
       </div>
       <p>
         {t('security.loadedCount', {
-          count: list.items.filter(
-            (x) =>
-              !device ||
-              x.deviceName?.toLowerCase().includes(device.toLowerCase()) ||
-              x.deviceId === device,
-          ).length,
+          count: visible.length,
         })}
       </p>
       {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <FindingTable
-        items={list.items.filter(
-          (x) =>
-            !device ||
-            x.deviceName?.toLowerCase().includes(device.toLowerCase()) ||
-            x.deviceId === device,
-        )}
-      />
+      <FindingTable items={visible} />
       {list.hasMore && <button onClick={list.loadMore}>{t('action.loadMore')}</button>}
     </>
   );
@@ -900,6 +913,7 @@ export function SecurityFindingDetailScreen({ id }: { id: string }) {
             <dt>{t('security.reviewBy')}</dt>
             <dd>{f.riskReviewBy ?? '—'}</dd>
           </dl>
+          <FindingRemediation id={id} version={f.version} onCreated={detail.reload} />
           <section>
             <h2>{t('security.actions')}</h2>
             <div className="actions">

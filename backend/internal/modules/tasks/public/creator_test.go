@@ -59,7 +59,7 @@ func newEnv(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	e.creator = public.NewCreator(repository.New(pool), dir{activeUser: e.user})
+	e.creator = public.NewCreator(repository.New(pool), dir{activeUser: e.user}, "service_request")
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1`, e.corr)
@@ -204,6 +204,10 @@ func TestCancelByContextCancelsOnlyUnfinishedTasks(t *testing.T) {
 	if st[open] != public.StatusCancelled || st[done] != public.StatusCompleted || len(st) != 3 {
 		t.Errorf("statuses = %v", st)
 	}
+	summary, err := e.creator.SummaryByContexts(ctx, "service_request", []string{e.ctxID})
+	if err != nil || summary.Done != 1 || summary.Cancelled != 2 || summary.Open != 0 {
+		t.Fatalf("summary after cancel: %+v %v", summary, err)
+	}
 	var reason string
 	_ = e.pool.QueryRow(ctx, `SELECT status_reason FROM platform.tasks WHERE id = $1::uuid`, open).Scan(&reason)
 	if reason != "request cancelled" {
@@ -245,5 +249,36 @@ func TestManualCancelEmitsTaskCancelled(t *testing.T) {
 	}
 	if e.count(`SELECT count(*) FROM platform.outbox_events WHERE correlation_id = $1 AND event_type = 'TaskCancelled'`, e.corr) != 1 {
 		t.Error("a manual cancel must emit TaskCancelled")
+	}
+}
+
+func TestContextReadAndSummary(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	id := e.create("Context task", true)
+	tasks, err := e.creator.ByContext(ctx, "service_request", e.ctxID, 51)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("context tasks: %+v %v", tasks, err)
+	}
+	summary, err := e.creator.SummaryByContexts(ctx, "service_request", []string{e.ctxID})
+	if err != nil || summary.Open != 1 || summary.Done != 0 {
+		t.Fatalf("context summary: %+v %v", summary, err)
+	}
+	byType, err := e.creator.SummaryByType(ctx, "service_request")
+	if err != nil || byType.Open < 1 {
+		t.Fatalf("type summary: %+v %v", byType, err)
+	}
+	if _, err := e.creator.ByContext(ctx, "security_finding", e.ctxID, 1); err == nil {
+		t.Fatal("foreign context read allowed")
+	}
+	if _, err := e.creator.SummaryByType(ctx, "security_finding"); err == nil {
+		t.Fatal("foreign context summary allowed")
+	}
+	ids := make([]string, 501)
+	for i := range ids {
+		ids[i] = e.ctxID
+	}
+	if _, err := e.creator.SummaryByContexts(ctx, "service_request", ids); err == nil {
+		t.Fatal("unbounded context summary allowed")
 	}
 }

@@ -130,3 +130,41 @@ export type Transition = {
   actorSystem: string | null;
   createdAt: string;
 };
+export type RemediationTask = {
+  id: string;
+  status: string;
+  dueAt: string | null;
+  assignedUserId?: string;
+  assignedTeamId?: string;
+  assigneeName?: string;
+  assigneeHidden: boolean;
+};
+export type LinkedChange = {
+  id: string;
+  changeId?: string;
+  reference?: string;
+  status?: string;
+  hidden: boolean;
+};
+export type Progress = {
+  generatedAt: string;
+  tasksTruncated: boolean;
+  source: 'turaco_derived';
+  findingByStatus: Record<string, number>;
+  findingByConfidence: Record<string, number>;
+  shareRemediated: number;
+  acceptedRiskCount: number;
+  earliestRiskReviewBy: string | null;
+  oldestOpenFindingAgeDays: number | null;
+  tasks: { open: number; done: number; cancelled: number; overdue: number };
+  linkedChangesByStatus: Record<string, number>;
+  hiddenLinkedChanges: number;
+  residualRisk: 'none' | 'low' | 'medium' | 'high' | 'unknown';
+};
+export type Overview = {
+  source: 'turaco_derived';
+  applicableBySeverity: Record<string, number>;
+  openFindingsByConfidence: Record<string, number>;
+  overdueTasks: number;
+  riskAcceptancesDueWithin30Days: number;
+};

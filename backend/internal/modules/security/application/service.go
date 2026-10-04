@@ -14,6 +14,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -25,9 +26,14 @@ import (
 // with ids, states, counts and reason codes only: advisory titles, summaries, URLs and device names are
 // never copied into audit.
 type Service struct {
-	store     Store
-	inventory Inventory
-	now       func() time.Time
+	store           Store
+	inventory       Inventory
+	now             func() time.Time
+	tasks           TaskCreator
+	changes         ChangeReader
+	graph           *relationships.Graph
+	names           AssigneeNames
+	relationshipsDB relationships.Querier
 }
 
 // NewService wires the Security use cases over the Endpoints inventory contract.
