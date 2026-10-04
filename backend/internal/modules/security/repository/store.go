@@ -50,15 +50,17 @@ func isUnique(err error) bool {
 
 // ---- advisories ----
 
-const advisoryCols = `id::text, reference, source, external_id, title, summary, severity, published_at, modified_at, source_url,
-	status, status_reason, criteria_revision, matched_revision, matched_at, matched_ingestion_at, match_truncated, created_by::text,
-	applicable_at, resolved_at, archived_at, version, created_at, updated_at`
+const advisoryCols = `id::text, reference, source, external_id, title, summary, severity, edited_by_user, published_at, modified_at, source_url,
+	status, status_reason, criteria_revision, criteria_changed_at, matched_revision, matched_at, matched_ingestion_at, match_truncated, created_by::text,
+	applicable_at, resolved_at, archived_at, version, created_at, updated_at,
+	(SELECT count(*) FROM security.advisory_criteria c WHERE c.advisory_id = security.advisories.id AND c.normalization = 'unmatched')`
 
 func scanAdvisory(row pgx.Row) (application.Advisory, error) {
 	var a application.Advisory
-	err := row.Scan(&a.ID, &a.Reference, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Severity, &a.PublishedAt, &a.ModifiedAt,
-		&a.SourceURL, &a.Status, &a.StatusReason, &a.CriteriaRevision, &a.MatchedRevision, &a.MatchedAt, &a.MatchedIngestionAt,
-		&a.MatchTruncated, &a.CreatedBy, &a.ApplicableAt, &a.ResolvedAt, &a.ArchivedAt, &a.Version, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Reference, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Severity, &a.EditedByUser, &a.PublishedAt, &a.ModifiedAt,
+		&a.SourceURL, &a.Status, &a.StatusReason, &a.CriteriaRevision, &a.CriteriaChangedAt, &a.MatchedRevision, &a.MatchedAt, &a.MatchedIngestionAt,
+		&a.MatchTruncated, &a.CreatedBy, &a.ApplicableAt, &a.ResolvedAt, &a.ArchivedAt, &a.Version, &a.CreatedAt, &a.UpdatedAt,
+		&a.UnmatchedCriteria)
 	return a, err
 }
 
@@ -107,11 +109,13 @@ func (r *Repository) LockAdvisoryBySourceTx(ctx context.Context, tx pgx.Tx, sour
 func (r *Repository) UpdateAdvisoryTx(ctx context.Context, tx pgx.Tx, a application.Advisory) (application.Advisory, error) {
 	out, err := scanAdvisory(tx.QueryRow(ctx, `
 		UPDATE security.advisories SET title = $2, summary = $3, severity = $4, published_at = $5, modified_at = $6, source_url = $7,
-			status = $8, status_reason = $9, criteria_revision = $10, applicable_at = $11, resolved_at = $12, archived_at = $13,
+			status = $8, status_reason = $9, criteria_changed_at = CASE WHEN criteria_revision <> $10 THEN now() ELSE criteria_changed_at END,
+			criteria_revision = $10, applicable_at = $11, resolved_at = $12, archived_at = $13,
+			edited_by_user = $14,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+advisoryCols,
 		a.ID, a.Title, a.Summary, a.Severity, a.PublishedAt, a.ModifiedAt, a.SourceURL, a.Status, a.StatusReason, a.CriteriaRevision,
-		a.ApplicableAt, a.ResolvedAt, a.ArchivedAt))
+		a.ApplicableAt, a.ResolvedAt, a.ArchivedAt, a.EditedByUser))
 	return advisoryResult(out, err, "update")
 }
 
@@ -130,6 +134,30 @@ func (r *Repository) GetAdvisory(ctx context.Context, id string) (application.Ad
 	}
 	a, err := scanAdvisory(r.pool.QueryRow(ctx, `SELECT `+advisoryCols+` FROM security.advisories WHERE id = $1::uuid`, id))
 	return advisoryResult(a, err, "get")
+}
+
+// AdvisoriesByIDs loads the Advisory metadata needed to render a page of Findings in one query.
+func (r *Repository) AdvisoriesByIDs(ctx context.Context, ids []string) (map[string]application.Advisory, error) {
+	out := make(map[string]application.Advisory, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+advisoryCols+` FROM security.advisories WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("load advisories by ids: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		a, err := scanAdvisory(rows)
+		if err != nil {
+			return nil, fmt.Errorf("load advisories by ids: %w", err)
+		}
+		out[a.ID] = a
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("load advisories by ids: %w", err)
+	}
+	return out, nil
 }
 
 func (r *Repository) ListAdvisories(ctx context.Context, f application.AdvisoryFilter) (application.Result[application.Advisory], error) {
@@ -186,13 +214,35 @@ func (r *Repository) ListAdvisories(ctx context.Context, f application.AdvisoryF
 	return res, nil
 }
 
-func (r *Repository) AdvisoriesToMatch(ctx context.Context, statuses []string, ingestionAt *time.Time, limit int) ([]string, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text FROM security.advisories
-		WHERE status = ANY($1::text[]) AND (matched_revision IS NULL OR matched_revision < criteria_revision
-			OR ($2::timestamptz IS NOT NULL AND (matched_ingestion_at IS NULL OR matched_ingestion_at < $2::timestamptz)))
-		ORDER BY matched_at NULLS FIRST, id LIMIT $3`, statuses, ingestionAt, limit)
+func (r *Repository) AdvisoriesToMatch(ctx context.Context, statuses []string, productObservedAt map[string]time.Time, limit int) ([]string, error) {
+	products := make([]string, 0, len(productObservedAt))
+	times := make([]time.Time, 0, len(productObservedAt))
+	for id, at := range productObservedAt {
+		products = append(products, id)
+		times = append(times, at)
+	}
+	rows, err := r.pool.Query(ctx, `SELECT a.id::text FROM security.advisories a
+		WHERE a.status = ANY($1::text[]) AND (a.matched_revision IS NULL OR a.matched_revision < a.criteria_revision
+			OR EXISTS (
+				SELECT 1 FROM security.advisory_criteria c
+				JOIN unnest($2::uuid[], $3::timestamptz[]) AS observation(product_id, observed_at)
+					ON observation.product_id = c.software_product_id
+				WHERE c.advisory_id = a.id AND observation.observed_at > a.matched_at))
+		ORDER BY a.matched_at NULLS FIRST, a.id LIMIT $4`, statuses, products, times, limit)
 	if err != nil {
 		return nil, fmt.Errorf("advisories to match: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// MatchableProductIDs returns only normalized products referenced by matchable Advisories.
+func (r *Repository) MatchableProductIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT c.software_product_id::text
+		FROM security.advisory_criteria c JOIN security.advisories a ON a.id = c.advisory_id
+		WHERE c.software_product_id IS NOT NULL
+			AND a.status IN ('new', 'analyzing', 'applicable', 'remediation_planned', 'remediating', 'resolved')`)
+	if err != nil {
+		return nil, fmt.Errorf("matchable product ids: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
@@ -382,6 +432,47 @@ func (r *Repository) InsertFindingTx(ctx context.Context, tx pgx.Tx, f applicati
 	return out, true, nil
 }
 
+// InsertFindingsTx inserts observations in one statement. Existing finding identities are left untouched.
+func (r *Repository) InsertFindingsTx(ctx context.Context, tx pgx.Tx, findings []application.Finding) ([]application.Finding, error) {
+	if len(findings) == 0 {
+		return nil, nil
+	}
+	advisories, devices, products := make([]string, 0, len(findings)), make([]string, 0, len(findings)), make([]string, 0, len(findings))
+	versions, confidences := make([]string, 0, len(findings)), make([]string, 0, len(findings))
+	first, last := make([]time.Time, 0, len(findings)), make([]time.Time, 0, len(findings))
+	for _, f := range findings {
+		advisories, devices, products = append(advisories, f.AdvisoryID), append(devices, f.DeviceID), append(products, f.SoftwareProductID)
+		versions, confidences = append(versions, f.InstalledVersion), append(confidences, f.Confidence)
+		first, last = append(first, f.FirstSeenAt), append(last, f.LastSeenAt)
+	}
+	return collectFindings(tx.Query(ctx, `INSERT INTO security.vulnerability_findings
+		(advisory_id, device_id, software_product_id, installed_version, confidence, status, first_seen_at, last_seen_at)
+		SELECT advisory_id, device_id, product_id, installed_version, confidence, 'open', first_seen_at, last_seen_at
+		FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::timestamptz[], $7::timestamptz[])
+			AS input(advisory_id, device_id, product_id, installed_version, confidence, first_seen_at, last_seen_at)
+		WHERE true
+		ON CONFLICT (advisory_id, device_id, software_product_id) DO NOTHING RETURNING `+findingCols,
+		advisories, devices, products, versions, confidences, first, last))
+}
+
+// FindingsForDevicesTx reads only this match batch; the advisory row lock serializes match runs.
+func (r *Repository) FindingsForDevicesTx(ctx context.Context, tx pgx.Tx, advisoryID string, deviceIDs []string) ([]application.Finding, error) {
+	if len(deviceIDs) == 0 {
+		return nil, nil
+	}
+	return collectFindings(tx.Query(ctx, `SELECT `+findingCols+` FROM security.vulnerability_findings
+		WHERE advisory_id = $1::uuid AND device_id = ANY($2::uuid[]) ORDER BY id`, advisoryID, deviceIDs))
+}
+
+// LockFindingsByIDsTx locks only findings selected for a status transition.
+func (r *Repository) LockFindingsByIDsTx(ctx context.Context, tx pgx.Tx, ids []string) ([]application.Finding, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return collectFindings(tx.Query(ctx, `SELECT `+findingCols+` FROM security.vulnerability_findings
+		WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`, ids))
+}
+
 func (r *Repository) LockFindingTx(ctx context.Context, tx pgx.Tx, id string) (application.Finding, error) {
 	if !validUUID(id) {
 		return application.Finding{}, application.ErrNotFound
@@ -398,6 +489,17 @@ func (r *Repository) LockFindingsOfAdvisoryTx(ctx context.Context, tx pgx.Tx, ad
 func (r *Repository) FindingsOfAdvisory(ctx context.Context, advisoryID string) ([]application.Finding, error) {
 	return collectFindings(r.pool.Query(ctx, `SELECT `+findingCols+` FROM security.vulnerability_findings
 		WHERE advisory_id = $1::uuid ORDER BY id`, advisoryID))
+}
+
+// DueRiskFindingIDs returns expired acceptances in stable order for the periodic review pass.
+func (r *Repository) DueRiskFindingIDs(ctx context.Context, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM security.vulnerability_findings
+		WHERE status = 'risk_accepted' AND risk_review_by < CURRENT_DATE
+		ORDER BY risk_review_by, id LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("due risk findings: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (r *Repository) UpdateFindingTx(ctx context.Context, tx pgx.Tx, f application.Finding) (application.Finding, error) {
@@ -419,6 +521,36 @@ func (r *Repository) ObserveFindingTx(ctx context.Context, tx pgx.Tx, f applicat
 		WHERE id = $1::uuid`, f.ID, f.Confidence, f.InstalledVersion, f.FirstSeenAt, f.LastSeenAt)
 	if err != nil {
 		return fmt.Errorf("observe finding: %w", err)
+	}
+	return nil
+}
+
+// ObserveFindingsTx refreshes observations in one statement. A plain freshness update is coalesced
+// to hourly writes; a changed version or confidence is recorded immediately.
+func (r *Repository) ObserveFindingsTx(ctx context.Context, tx pgx.Tx, findings []application.Finding) error {
+	if len(findings) == 0 {
+		return nil
+	}
+	ids, versions, confidences := make([]string, 0, len(findings)), make([]string, 0, len(findings)), make([]string, 0, len(findings))
+	first, last := make([]time.Time, 0, len(findings)), make([]time.Time, 0, len(findings))
+	for _, f := range findings {
+		ids, versions, confidences = append(ids, f.ID), append(versions, f.InstalledVersion), append(confidences, f.Confidence)
+		first, last = append(first, f.FirstSeenAt), append(last, f.LastSeenAt)
+	}
+	_, err := tx.Exec(ctx, `UPDATE security.vulnerability_findings AS f SET
+		version = f.version + CASE WHEN f.confidence IS DISTINCT FROM input.confidence
+			OR f.installed_version IS DISTINCT FROM input.installed_version THEN 1 ELSE 0 END,
+		confidence = input.confidence, installed_version = input.installed_version,
+		first_seen_at = LEAST(f.first_seen_at, input.first_seen_at),
+		last_seen_at = GREATEST(f.last_seen_at, input.last_seen_at), updated_at = now()
+		FROM unnest($1::uuid[], $2::text[], $3::text[], $4::timestamptz[], $5::timestamptz[])
+			AS input(id, installed_version, confidence, first_seen_at, last_seen_at)
+		WHERE f.id = input.id AND (f.confidence IS DISTINCT FROM input.confidence
+			OR f.installed_version IS DISTINCT FROM input.installed_version
+			OR input.first_seen_at < f.first_seen_at
+			OR input.last_seen_at > f.last_seen_at + interval '1 hour')`, ids, versions, confidences, first, last)
+	if err != nil {
+		return fmt.Errorf("observe findings: %w", err)
 	}
 	return nil
 }
@@ -458,6 +590,11 @@ func (r *Repository) ListFindings(ctx context.Context, f application.FindingFilt
 		where = "WHERE " + strings.Join(conds, " AND ")
 	}
 	args = append(args, f.Page.Limit+1)
+	if f.AdvisoryID == "" {
+		conds = append(conds, `EXISTS (SELECT 1 FROM security.advisories a WHERE a.id = advisory_id
+			AND a.status IN ('new', 'analyzing', 'applicable', 'remediation_planned', 'remediating', 'resolved'))`)
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
 	items, err := collectFindings(r.pool.Query(ctx, `SELECT `+findingCols+` FROM security.vulnerability_findings `+where+
 		fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", len(args)), args...))
 	if err != nil {
@@ -473,28 +610,29 @@ func (r *Repository) ListFindings(ctx context.Context, f application.FindingFilt
 
 func (r *Repository) Summary(ctx context.Context, advisoryID string) (application.Summary, error) {
 	s := application.Summary{ByStatus: map[string]int{}, ByConfidence: map[string]int{}}
-	rows, err := r.pool.Query(ctx, `SELECT status, confidence, count(*) FROM security.vulnerability_findings
-		WHERE advisory_id = $1::uuid GROUP BY status, confidence`, advisoryID)
-	if err != nil {
+	var open, investigating, accepted, planned, remediating, remediated, falsePositive, riskAccepted, probable, potential int
+	if err := r.pool.QueryRow(ctx, `SELECT
+		count(*) FILTER (WHERE status = 'open'),
+		count(*) FILTER (WHERE status = 'investigating'),
+		count(*) FILTER (WHERE status = 'accepted'),
+		count(*) FILTER (WHERE status = 'remediation_planned'),
+		count(*) FILTER (WHERE status = 'remediating'),
+		count(*) FILTER (WHERE status = 'remediated'),
+		count(*) FILTER (WHERE status = 'false_positive'),
+		count(*) FILTER (WHERE status = 'risk_accepted'),
+		count(*) FILTER (WHERE confidence = 'probable'),
+		count(*) FILTER (WHERE confidence = 'potential'),
+		count(DISTINCT device_id) FILTER (WHERE status IN ('open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'risk_accepted')),
+		min(first_seen_at) FILTER (WHERE status IN ('open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'risk_accepted')),
+		(SELECT count(*) FROM security.advisory_criteria c WHERE c.advisory_id = $1::uuid AND c.normalization = 'unmatched')
+		FROM security.vulnerability_findings WHERE advisory_id = $1::uuid`, advisoryID).
+		Scan(&open, &investigating, &accepted, &planned, &remediating, &remediated, &falsePositive, &riskAccepted,
+			&probable, &potential, &s.AffectedDevices, &s.OldestOpenSince, &s.UnmatchedCriteria); err != nil {
 		return application.Summary{}, fmt.Errorf("summary: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var status, confidence string
-		var n int
-		if err := rows.Scan(&status, &confidence, &n); err != nil {
-			return application.Summary{}, fmt.Errorf("summary: %w", err)
-		}
-		s.ByStatus[status] += n
-		s.ByConfidence[confidence] += n
-	}
-	if err := rows.Err(); err != nil {
-		return application.Summary{}, fmt.Errorf("summary: %w", err)
-	}
-	if err := r.pool.QueryRow(ctx, `SELECT count(DISTINCT device_id), min(first_seen_at) FROM security.vulnerability_findings
-		WHERE advisory_id = $1::uuid AND status IN ('open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'risk_accepted')`, advisoryID).
-		Scan(&s.AffectedDevices, &s.OldestOpenSince); err != nil {
-		return application.Summary{}, fmt.Errorf("summary: %w", err)
-	}
+	s.ByStatus["open"], s.ByStatus["investigating"], s.ByStatus["accepted"] = open, investigating, accepted
+	s.ByStatus["remediation_planned"], s.ByStatus["remediating"], s.ByStatus["remediated"] = planned, remediating, remediated
+	s.ByStatus["false_positive"], s.ByStatus["risk_accepted"] = falsePositive, riskAccepted
+	s.ByConfidence["probable"], s.ByConfidence["potential"] = probable, potential
 	return s, nil
 }

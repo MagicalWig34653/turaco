@@ -10,7 +10,6 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
@@ -46,7 +45,7 @@ func runSecurity(ctx context.Context, e env, command string, args []string) erro
 	for _, r := range body.Records {
 		inputs = append(inputs, securityapp.FromRecord(r))
 	}
-	result, err := wiring.Security(e.pool).Import(ctx, securityapp.Caller{Actor: audit.SystemActor("turaco-admin"),
+	result, err := wiring.Security(e.pool).Import(ctx, securityapp.Caller{Actor: e.auditActor(),
 		CorrelationID: fmt.Sprintf("security-import:%d", time.Now().UnixNano())}, securityapp.Principal{Manage: true}, inputs)
 	if err != nil {
 		return err

@@ -85,7 +85,7 @@ func (n *Notifications) OnAdvisoryPublished(ctx context.Context, tx pgx.Tx, ev e
 	if p.SourceID != "" {
 		source = p.SourceID
 	}
-	candidates, err := n.holders.UsersWithPermission(ctx, PermManage, strings.ToLower(p.After), n.chunk+1)
+	candidates, err := n.holders.ActiveUsers(ctx, strings.ToLower(p.After), n.chunk+1)
 	if err != nil {
 		return fmt.Errorf("list security.manage holders: %w", err)
 	}

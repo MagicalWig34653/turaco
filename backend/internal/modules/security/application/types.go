@@ -139,8 +139,10 @@ const (
 	MaxMatchAllAdvisories = 1000
 
 	// MaxImportRecords bounds one import; MaxImportErrors the per-record errors reported.
-	MaxImportRecords = 500
-	MaxImportErrors  = 50
+	MaxImportRecords  = 500
+	MaxImportErrors   = 50
+	MaxImportCriteria = 2000
+	ImportTimeout     = 60 * time.Second
 	// MaxCriteria bounds the criteria of an Advisory; MaxRules the version rules of one criterion.
 	MaxCriteria = 50
 	MaxRules    = 20
@@ -173,10 +175,13 @@ type Advisory struct {
 	Status             string
 	StatusReason       *string
 	CriteriaRevision   int
+	CriteriaChangedAt  time.Time
 	MatchedRevision    *int
 	MatchedAt          *time.Time
 	MatchedIngestionAt *time.Time
 	MatchTruncated     bool
+	EditedByUser       bool
+	UnmatchedCriteria  int
 	CreatedBy          *string
 	ApplicableAt       *time.Time
 	ResolvedAt         *time.Time
@@ -333,8 +338,9 @@ type FindingFilter struct {
 
 // Summary counts the findings of an Advisory.
 type Summary struct {
-	ByStatus     map[string]int
-	ByConfidence map[string]int
+	ByStatus          map[string]int
+	ByConfidence      map[string]int
+	UnmatchedCriteria int
 	// AffectedDevices counts distinct Devices with a live exposure, including acknowledged and
 	// risk-accepted findings.
 	AffectedDevices int
@@ -364,10 +370,13 @@ type Store interface {
 	// RecordMatchTx stores the match bookkeeping without changing the version.
 	RecordMatchTx(ctx context.Context, tx pgx.Tx, id string, m MatchState) error
 	GetAdvisory(ctx context.Context, id string) (Advisory, error)
+	AdvisoriesByIDs(ctx context.Context, ids []string) (map[string]Advisory, error)
+	MatchableProductIDs(ctx context.Context) ([]string, error)
+	DueRiskFindingIDs(ctx context.Context, limit int) ([]string, error)
 	ListAdvisories(ctx context.Context, f AdvisoryFilter) (Result[Advisory], error)
 	// AdvisoriesToMatch lists Advisories in a matchable status whose criteria changed since their last
 	// match, that were never matched or whose last match predates the ingestion time; at most limit.
-	AdvisoriesToMatch(ctx context.Context, statuses []string, ingestionAt *time.Time, limit int) ([]string, error)
+	AdvisoriesToMatch(ctx context.Context, statuses []string, productObservedAt map[string]time.Time, limit int) ([]string, error)
 
 	// ReplaceCriteriaTx replaces every criterion of the Advisory (positions are reassigned in order).
 	ReplaceCriteriaTx(ctx context.Context, tx pgx.Tx, advisoryID string, c []Criterion) error
@@ -379,7 +388,10 @@ type Store interface {
 
 	// InsertFindingTx inserts a finding; ok is false when one exists for the advisory, device and product.
 	InsertFindingTx(ctx context.Context, tx pgx.Tx, f Finding) (out Finding, ok bool, err error)
+	InsertFindingsTx(ctx context.Context, tx pgx.Tx, findings []Finding) ([]Finding, error)
 	LockFindingTx(ctx context.Context, tx pgx.Tx, id string) (Finding, error)
+	FindingsForDevicesTx(ctx context.Context, tx pgx.Tx, advisoryID string, deviceIDs []string) ([]Finding, error)
+	LockFindingsByIDsTx(ctx context.Context, tx pgx.Tx, ids []string) ([]Finding, error)
 	// LockFindingsOfAdvisoryTx locks and returns every finding of the Advisory.
 	LockFindingsOfAdvisoryTx(ctx context.Context, tx pgx.Tx, advisoryID string) ([]Finding, error)
 	FindingsOfAdvisory(ctx context.Context, advisoryID string) ([]Finding, error)
@@ -388,6 +400,7 @@ type Store interface {
 	// ObserveFindingTx writes confidence, installed version and observation times; the version is bumped
 	// only when the confidence or the installed version changed.
 	ObserveFindingTx(ctx context.Context, tx pgx.Tx, f Finding) error
+	ObserveFindingsTx(ctx context.Context, tx pgx.Tx, findings []Finding) error
 	GetFinding(ctx context.Context, id string) (Finding, error)
 	ListFindings(ctx context.Context, f FindingFilter) (Result[Finding], error)
 	Summary(ctx context.Context, advisoryID string) (Summary, error)
@@ -425,6 +438,7 @@ type Inventory interface {
 	DeviceRetired(ctx context.Context, deviceIDs []string) (map[string]*time.Time, error)
 	DeviceNames(ctx context.Context, deviceIDs []string) (map[string]string, error)
 	LatestIngestionAt(ctx context.Context) (*time.Time, error)
+	LatestObservedByProducts(ctx context.Context, productIDs []string) (map[string]time.Time, error)
 	SoftwareProducts(ctx context.Context, ids []string) (map[string]SoftwareProduct, error)
 	// FindSoftwareProduct resolves a product name to a product by exact name or alias (method product|alias).
 	FindSoftwareProduct(ctx context.Context, name, publisher string) (p SoftwareProduct, method string, found bool, err error)
@@ -443,7 +457,7 @@ type PermissionResolver interface {
 // PermissionHolders lists candidate holders of a permission (platform/authorization/roles): Users with a
 // direct role assignment that grants it, by id after the cursor.
 type PermissionHolders interface {
-	UsersWithPermission(ctx context.Context, permission, after string, limit int) ([]string, error)
+	ActiveUsers(ctx context.Context, after string, limit int) ([]string, error)
 }
 
 // Notifier creates notifications inside the caller's transaction.

@@ -194,13 +194,9 @@ func (s *Service) views(ctx context.Context, p Principal, in []Finding) ([]Findi
 	if err != nil {
 		return nil, fmt.Errorf("load software products: %w", err)
 	}
-	advs := map[string]Advisory{}
-	for _, id := range advisoryIDs {
-		a, err := s.store.GetAdvisory(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		advs[id] = a
+	advs, err := s.store.AdvisoriesByIDs(ctx, advisoryIDs)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]FindingView, 0, len(in))
 	for i, f := range in {

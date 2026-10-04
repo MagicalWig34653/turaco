@@ -13,6 +13,7 @@ const ids = (
     | 'services'
     | 'changes'
     | 'planning'
+    | 'security'
     | 'admin',
 ) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
@@ -379,5 +380,15 @@ describe('planning routes', () => {
     expect(matchRoute(appRoutes, '/initiatives/42')?.route.id).toBe('initiativeDetail');
     expect(ids(['planning.view'], 'planning')).toEqual(['initiatives', 'maintenanceCalendar']);
     expect(ids(['changes.view'], 'planning')).toEqual(['maintenanceCalendar']);
+  });
+});
+
+describe('security routes', () => {
+  it('shows security navigation and details only to security readers', () => {
+    expect(ids([], 'security')).toEqual([]);
+    expect(ids(['security.view'], 'security')).toEqual(['securityAdvisories', 'securityFindings']);
+    const detail = appRoutes.find((route) => route.id === 'securityFindingDetail')!;
+    expect(canViewRoute(createCan({ permissions: [] }), detail)).toBe(false);
+    expect(canViewRoute(createCan({ permissions: ['security.view'] }), detail)).toBe(true);
   });
 });

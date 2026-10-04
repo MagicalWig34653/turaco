@@ -50,6 +50,10 @@ func (v securityInventory) LatestIngestionAt(ctx context.Context) (*time.Time, e
 	return v.source.LatestIngestionAt(ctx)
 }
 
+func (v securityInventory) LatestObservedByProducts(ctx context.Context, ids []string) (map[string]time.Time, error) {
+	return v.source.LatestObservedByProducts(ctx, ids)
+}
+
 func (v securityInventory) SoftwareProducts(ctx context.Context, ids []string) (map[string]securityapp.SoftwareProduct, error) {
 	products, err := v.source.SoftwareProducts(ctx, ids)
 	if err != nil {

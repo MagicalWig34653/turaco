@@ -202,7 +202,15 @@ func (h *handler) advisoryResponse(w http.ResponseWriter, r *http.Request, a app
 		h.writeErr(w, r, e)
 		return
 	}
-	httpx.JSON(w, 200, advisoryDTO(a))
+	dto := advisoryDTO(a)
+	if strings.HasSuffix(r.URL.Path, "/not-applicable") || strings.HasSuffix(r.URL.Path, "/resolve") || strings.HasSuffix(r.URL.Path, "/archive") {
+		warnings := []string{}
+		if a.UnmatchedCriteria > 0 {
+			warnings = append(warnings, "unmatched_criteria")
+		}
+		dto["warnings"] = warnings
+	}
+	httpx.JSON(w, 200, dto)
 }
 func (h *handler) summary(w http.ResponseWriter, r *http.Request) {
 	v, e := h.svc.Summary(r.Context(), principal(r), r.PathValue("id"))
@@ -210,7 +218,7 @@ func (h *handler) summary(w http.ResponseWriter, r *http.Request) {
 		h.writeErr(w, r, e)
 		return
 	}
-	httpx.JSON(w, 200, map[string]any{"byStatus": v.ByStatus, "byConfidence": v.ByConfidence, "affectedDevices": v.AffectedDevices, "oldestOpenSince": v.OldestOpenSince})
+	httpx.JSON(w, 200, map[string]any{"byStatus": v.ByStatus, "byConfidence": v.ByConfidence, "affectedDevices": v.AffectedDevices, "oldestOpenSince": v.OldestOpenSince, "unmatchedCriteria": v.UnmatchedCriteria})
 }
 func (h *handler) advisoryTransitions(w http.ResponseWriter, r *http.Request) {
 	p, ok := page(w, r)
@@ -321,7 +329,7 @@ func (h *handler) findingTransitions(w http.ResponseWriter, r *http.Request) {
 }
 
 func advisoryDTO(a application.Advisory) map[string]any {
-	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
+	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
 }
 func criteriaDTO(criteria []application.Criterion) []any {
 	out := make([]any, 0, len(criteria))

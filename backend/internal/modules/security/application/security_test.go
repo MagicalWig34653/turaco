@@ -83,6 +83,28 @@ func TestMutationAuthorizationAndRequiredVersion(t *testing.T) {
 	if _, err := s.AcceptRisk(context.Background(), c, Principal{AcceptRisk: true, UserID: c.Actor.UserID}, "", &version, "unknown_reason", now.AddDate(0, 1, 0)); err == nil || !strings.Contains(err.Error(), "reason") {
 		t.Errorf("unknown risk reason: %v", err)
 	}
+	if _, err := s.MarkFalsePositive(context.Background(), c, Principal{Manage: true}, "", &version, "configuration_not_affected"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("configuration exception without accept_risk = %v", err)
+	}
+	if _, err := s.MarkNotApplicable(context.Background(), c, Principal{Manage: true}, "", &version, "other"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("not applicable other without accept_risk = %v", err)
+	}
+}
+
+func TestImportBoundsAndCVEKeyNormalization(t *testing.T) {
+	a, err := cleanAdvisory(AdvisoryInput{Source: "vendor", ExternalID: " cve-2026-1234 ", Title: "Bulletin", Severity: "high"})
+	if err != nil || a.ExternalID == nil || *a.ExternalID != "CVE-2026-1234" {
+		t.Fatalf("normalized key = %+v, %v", a.ExternalID, err)
+	}
+	s := NewService(nil, nil)
+	caller := Caller{Actor: audit.UserActor("00000000-0000-7000-8000-000000000001"), CorrelationID: "test"}
+	records := make([]AdvisoryInput, MaxImportCriteria/MaxCriteria+1)
+	for i := range records {
+		records[i].Criteria = make([]CriterionInput, MaxCriteria)
+	}
+	if _, err := s.Import(context.Background(), caller, Principal{Manage: true}, records); err == nil || !strings.Contains(err.Error(), "criteria") {
+		t.Fatalf("import criteria cap = %v", err)
+	}
 }
 
 func TestHugePrereleaseIdentifierOrder(t *testing.T) {

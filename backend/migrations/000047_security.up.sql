@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS security.advisories (
     title text NOT NULL CHECK (title = btrim(title) AND length(title) BETWEEN 1 AND 300),
     summary text CHECK (summary IS NULL OR length(summary) BETWEEN 1 AND 4000),
     severity text NOT NULL CHECK (severity IN ('none', 'low', 'medium', 'high', 'critical')),
+    edited_by_user boolean NOT NULL DEFAULT false,
     published_at timestamptz,
     modified_at timestamptz,
     -- Shown as text only; https is enforced here as well as in the application.
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS security.advisories (
     status_reason text CHECK (status_reason IS NULL OR status_reason ~ '^[a-z][a-z_]{0,39}$'),
     -- Bumped on every criteria change; the matching job records the revision it matched.
     criteria_revision integer NOT NULL DEFAULT 1 CHECK (criteria_revision > 0),
+    criteria_changed_at timestamptz NOT NULL DEFAULT now(),
     matched_revision integer CHECK (matched_revision IS NULL OR matched_revision > 0),
     matched_at timestamptz,
     -- The endpoint ingestion time the last match saw; a newer ingestion makes the periodic job re-match.
@@ -64,7 +66,6 @@ CREATE TABLE IF NOT EXISTS security.advisories (
     CONSTRAINT advisories_matched CHECK ((matched_revision IS NULL) = (matched_at IS NULL) AND (matched_revision IS NULL OR matched_revision <= criteria_revision))
 );
 CREATE INDEX IF NOT EXISTS advisories_status_idx ON security.advisories (status, id DESC);
-CREATE INDEX IF NOT EXISTS advisories_severity_idx ON security.advisories (severity, id DESC);
 
 -- Affected criteria; replaced as a whole when edited (the transitions and audit keep the history).
 CREATE TABLE IF NOT EXISTS security.advisory_criteria (
@@ -122,19 +123,20 @@ CREATE TABLE IF NOT EXISTS security.vulnerability_findings (
     CONSTRAINT vulnerability_findings_identity UNIQUE (advisory_id, device_id, software_product_id),
     CONSTRAINT vulnerability_findings_seen CHECK (first_seen_at <= last_seen_at),
     CONSTRAINT vulnerability_findings_remediated CHECK ((remediated_at IS NOT NULL) = (status = 'remediated')),
-    CONSTRAINT vulnerability_findings_reason CHECK (status NOT IN ('false_positive', 'risk_accepted') OR status_reason IS NOT NULL),
-    -- A risk acceptance names its actor, time and a review date at most twelve months later.
+    CONSTRAINT vulnerability_findings_reason CHECK (status NOT IN ('false_positive', 'risk_accepted', 'remediated') OR status_reason IS NOT NULL),
+    -- Application enforces twelve months. A thirteen-month database ceiling accounts for Go AddDate
+    -- normalization on leap days and other end-of-month dates.
     CONSTRAINT vulnerability_findings_risk CHECK (
         (status = 'risk_accepted') = (risk_accepted_by IS NOT NULL)
         AND (risk_accepted_by IS NULL) = (risk_accepted_at IS NULL)
         AND (risk_accepted_by IS NULL) = (risk_review_by IS NULL)),
     CONSTRAINT vulnerability_findings_review_window CHECK (risk_review_by IS NULL OR (
         risk_review_by > (risk_accepted_at AT TIME ZONE 'UTC')::date
-        AND risk_review_by <= ((risk_accepted_at AT TIME ZONE 'UTC')::date + interval '12 months')::date))
+        AND risk_review_by <= ((risk_accepted_at AT TIME ZONE 'UTC')::date + interval '13 months')::date))
 );
 CREATE INDEX IF NOT EXISTS vulnerability_findings_advisory_idx ON security.vulnerability_findings (advisory_id, status, id DESC);
+CREATE INDEX IF NOT EXISTS vulnerability_findings_advisory_id_idx ON security.vulnerability_findings (advisory_id, id DESC);
 CREATE INDEX IF NOT EXISTS vulnerability_findings_status_idx ON security.vulnerability_findings (status, id DESC);
-CREATE INDEX IF NOT EXISTS vulnerability_findings_device_idx ON security.vulnerability_findings (device_id);
 CREATE INDEX IF NOT EXISTS vulnerability_findings_review_idx ON security.vulnerability_findings (risk_review_by) WHERE status = 'risk_accepted';
 
 -- Append-only histories of state transitions (what happened, by whom, why); reason codes only.
@@ -196,8 +198,32 @@ CREATE TRIGGER finding_transitions_no_truncate BEFORE TRUNCATE ON security.findi
 DROP TRIGGER IF EXISTS vulnerability_findings_no_delete ON security.vulnerability_findings;
 CREATE TRIGGER vulnerability_findings_no_delete BEFORE DELETE ON security.vulnerability_findings
     FOR EACH ROW EXECUTE FUNCTION security.forbid_history_change();
+DROP TRIGGER IF EXISTS vulnerability_findings_no_truncate ON security.vulnerability_findings;
+CREATE TRIGGER vulnerability_findings_no_truncate BEFORE TRUNCATE ON security.vulnerability_findings
+    FOR EACH STATEMENT EXECUTE FUNCTION security.forbid_history_change();
+DROP TRIGGER IF EXISTS advisories_no_truncate ON security.advisories;
+CREATE TRIGGER advisories_no_truncate BEFORE TRUNCATE ON security.advisories
+    FOR EACH STATEMENT EXECUTE FUNCTION security.forbid_history_change();
 
--- Endpoints read path of the Security matching (endpoints/public InstallationsByProducts): current
--- installations of a Software Product in id order.
-CREATE INDEX IF NOT EXISTS software_installations_product_live_idx
-    ON endpoints.software_installations (software_product_id, id) WHERE deleted_observed_at IS NULL;
+-- References and observation identities are stable even when a finding is triaged.
+CREATE OR REPLACE FUNCTION security.forbid_identity_change() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_TABLE_NAME = 'advisories' THEN
+        IF NEW.reference IS DISTINCT FROM OLD.reference THEN
+            RAISE EXCEPTION 'advisory reference is immutable' USING ERRCODE = 'restrict_violation';
+        END IF;
+    ELSIF NEW.reference IS DISTINCT FROM OLD.reference
+        OR NEW.advisory_id IS DISTINCT FROM OLD.advisory_id
+        OR NEW.device_id IS DISTINCT FROM OLD.device_id
+        OR NEW.software_product_id IS DISTINCT FROM OLD.software_product_id THEN
+        RAISE EXCEPTION 'finding identity is immutable' USING ERRCODE = 'restrict_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+CREATE TRIGGER advisories_identity_immutable BEFORE UPDATE ON security.advisories
+    FOR EACH ROW EXECUTE FUNCTION security.forbid_identity_change();
+CREATE TRIGGER vulnerability_findings_identity_immutable BEFORE UPDATE ON security.vulnerability_findings
+    FOR EACH ROW EXECUTE FUNCTION security.forbid_identity_change();

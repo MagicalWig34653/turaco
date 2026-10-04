@@ -118,6 +118,9 @@ func (s *Service) MarkFalsePositive(ctx context.Context, c Caller, p Principal, 
 	if err := checkReason(reason, FalsePositiveReasons); err != nil {
 		return Finding{}, err
 	}
+	if (reason == "other" || reason == "configuration_not_affected") && !p.AcceptRisk {
+		return Finding{}, ErrForbidden
+	}
 	return s.findingOp(ctx, c, p.Manage, id, expected, "mark_false_positive", "false_positive", FindingFalsePositive, reason, openFinding...)
 }
 
@@ -151,7 +154,8 @@ func (s *Service) AcceptRisk(ctx context.Context, c Caller, p Principal, id stri
 	now := s.now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	review := time.Date(reviewBy.Year(), reviewBy.Month(), reviewBy.Day(), 0, 0, 0, 0, time.UTC)
-	if !review.After(today) || review.After(today.AddDate(0, MaxRiskAcceptanceMonths, 0)) {
+	limit := today.AddDate(0, MaxRiskAcceptanceMonths, 0)
+	if !review.After(today) || review.After(limit) {
 		return Finding{}, invalid("reviewBy must be a date after today and at most %d months ahead", MaxRiskAcceptanceMonths)
 	}
 	var out Finding

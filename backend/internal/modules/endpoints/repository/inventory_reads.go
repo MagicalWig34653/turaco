@@ -30,16 +30,24 @@ func scanInstallations(rows pgx.Rows) ([]application.InstallationRow, error) {
 	return out, rows.Err()
 }
 
-// InstallationsByProducts lists installations of the Software Products in id order after the cursor (an
-// installation id; empty starts at the beginning). Without includeRetired only installations that are
-// still reported on a Device that is not tombstoned are returned.
+// InstallationsByProducts lists installations by (Software Product id, installation id).
+// Without includeRetired only installations still reported on live Devices are returned.
 func (r *Repository) InstallationsByProducts(ctx context.Context, productIDs []string, includeRetired bool, after string, limit int) ([]application.InstallationRow, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+installationCols+`
+	query := `SELECT ` + installationCols + `
 		FROM endpoints.software_installations i JOIN endpoints.devices d ON d.id = i.device_id
-		WHERE i.software_product_id = ANY($1::uuid[])
-		  AND ($2 OR (i.deleted_observed_at IS NULL AND d.deleted_observed_at IS NULL))
-		  AND ($3 = '' OR i.id > $3::uuid)
-		ORDER BY i.id LIMIT $4`, productIDs, includeRetired, after, limit)
+		WHERE i.software_product_id = ANY($1::uuid[])`
+	if !includeRetired {
+		query += ` AND i.deleted_observed_at IS NULL AND d.deleted_observed_at IS NULL`
+	}
+	args := []any{productIDs}
+	if after != "" {
+		parts := strings.Split(after, ":") // validated by endpoints/public
+		query += ` AND (i.software_product_id, i.id) > ($2::uuid, $3::uuid)`
+		args = append(args, parts[0], parts[1])
+	}
+	query += fmt.Sprintf(` ORDER BY i.software_product_id, i.id LIMIT $%d`, len(args)+1)
+	args = append(args, limit)
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list installations by product: %w", err)
 	}
@@ -115,6 +123,31 @@ func (r *Repository) LatestIngestionAt(ctx context.Context) (*time.Time, error) 
 		return nil, fmt.Errorf("latest ingestion: %w", err)
 	}
 	return at, nil
+}
+
+// LatestObservedByProducts returns the newest change in installation observations per Product.
+// A Device or installation tombstone also changes the matching outcome.
+func (r *Repository) LatestObservedByProducts(ctx context.Context, productIDs []string) (map[string]time.Time, error) {
+	rows, err := r.pool.Query(ctx, `SELECT i.software_product_id::text,
+		max(greatest(i.observed_at, i.deleted_observed_at, d.deleted_observed_at))
+		FROM endpoints.software_installations i
+		JOIN endpoints.devices d ON d.id = i.device_id
+		WHERE i.software_product_id = ANY($1::uuid[])
+		GROUP BY i.software_product_id`, productIDs)
+	if err != nil {
+		return nil, fmt.Errorf("latest product observations: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]time.Time, len(productIDs))
+	for rows.Next() {
+		var productID string
+		var at time.Time
+		if err := rows.Scan(&productID, &at); err != nil {
+			return nil, fmt.Errorf("latest product observations: %w", err)
+		}
+		out[productID] = at
+	}
+	return out, rows.Err()
 }
 
 // SoftwareProductsByIDs returns the known Software Products among ids.

@@ -194,29 +194,83 @@ func (s *Service) matchOnce(ctx context.Context, c Caller, id string) (MatchResu
 			cursor = next
 		}
 	}
-	remediate, err := s.evidence(ctx, crit, id, hits)
+	remediate, err := s.evidence(ctx, crit, adv, hits)
 	if err != nil {
 		return MatchResult{}, 0, err
 	}
+	existing, err := s.store.FindingsOfAdvisory(ctx, id)
+	if err != nil {
+		return MatchResult{}, 0, err
+	}
+	allDevices := map[string]bool{}
+	for k := range hits {
+		allDevices[k.device] = true
+	}
+	for _, f := range existing {
+		allDevices[f.DeviceID] = true
+	}
+	ids := make([]string, 0, len(allDevices))
+	for device := range allDevices {
+		ids = append(ids, device)
+	}
+	slices.Sort(ids)
+	for i := 0; i < len(ids); i += 500 {
+		batch := ids[i:min(i+500, len(ids))]
+		err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+			locked, err := s.store.LockAdvisoryTx(ctx, tx, id)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(matchable, locked.Status) {
+				res.Skipped = true
+				return nil
+			}
+			// Inventory was read before the row lock. A concurrent criteria edit must never
+			// let this run apply findings calculated from an older rule set.
+			if locked.CriteriaRevision != adv.CriteriaRevision {
+				return errCriteriaChanged
+			}
+			return s.applyMatch(ctx, tx, c, adv, batch, hits, remediate, &res)
+		})
+		if err != nil || res.Skipped {
+			if res.Skipped {
+				return MatchResult{Skipped: true}, adv.CriteriaRevision, nil
+			}
+			return MatchResult{}, 0, err
+		}
+	}
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		res.Created, res.Updated, res.Remediated, res.Reopened, res.Stale = 0, 0, 0, 0, 0
 		locked, err := s.store.LockAdvisoryTx(ctx, tx, id)
 		if err != nil {
 			return err
+		}
+		if locked.CriteriaRevision != adv.CriteriaRevision {
+			return errCriteriaChanged
 		}
 		if !slices.Contains(matchable, locked.Status) {
 			res.Skipped = true
 			return nil
 		}
-		// Inventory was read before the row lock. A concurrent criteria edit must never
-		// let this run apply findings calculated from an older rule set.
-		if locked.CriteriaRevision != adv.CriteriaRevision {
-			return errCriteriaChanged
+		if err := s.store.RecordMatchTx(ctx, tx, adv.ID, MatchState{Revision: adv.CriteriaRevision, IngestionAt: ingestion, Truncated: res.Truncated}); err != nil {
+			return err
 		}
-		return s.applyMatch(ctx, tx, c, adv, hits, remediate, ingestion, &res)
+		if !res.changed() && !res.Truncated {
+			return nil
+		}
+		if err := publish(ctx, tx, c, EventFindingChanged, map[string]any{"advisoryId": adv.ID, "operation": "match_summary",
+			"created": res.Created, "updated": res.Updated, "remediated": res.Remediated, "reopened": res.Reopened, "stale": res.Stale,
+			"truncated": res.Truncated}); err != nil {
+			return err
+		}
+		return recordAudit(ctx, tx, c, "security.advisory.matched", "security_advisory", adv.ID, nil, nil, map[string]any{
+			"criteriaRevision": adv.CriteriaRevision, "created": res.Created, "updated": res.Updated, "remediated": res.Remediated,
+			"reopened": res.Reopened, "stale": res.Stale, "truncated": res.Truncated})
 	})
 	if err != nil {
 		return MatchResult{}, 0, err
+	}
+	if res.Skipped {
+		return MatchResult{Skipped: true}, adv.CriteriaRevision, nil
 	}
 	return res, adv.CriteriaRevision, nil
 }
@@ -224,8 +278,8 @@ func (s *Service) matchOnce(ctx context.Context, c Caller, id string) (MatchResu
 // evidence checks the findings without a current match: it reads every installation of their products on
 // their Devices and decides per finding whether a newer observation shows the exposure gone. A matching
 // current installation found this way (the first read was truncated) counts as a hit.
-func (s *Service) evidence(ctx context.Context, crit []Criterion, advisoryID string, hits map[matchKey]hit) (map[string]remediation, error) {
-	existing, err := s.store.FindingsOfAdvisory(ctx, advisoryID)
+func (s *Service) evidence(ctx context.Context, crit []Criterion, adv Advisory, hits map[matchKey]hit) (map[string]remediation, error) {
+	existing, err := s.store.FindingsOfAdvisory(ctx, adv.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +311,7 @@ func (s *Service) evidence(ctx context.Context, crit []Criterion, advisoryID str
 		}
 		for p := 0; p < len(products); p += productChunk {
 			prods := products[p:min(p+productChunk, len(products))]
-			if err := s.deviceEvidence(ctx, crit, devs, prods, byDevice, retired, hits, out); err != nil {
+			if err := s.deviceEvidence(ctx, crit, adv, devs, prods, byDevice, retired, hits, out); err != nil {
 				return nil, err
 			}
 		}
@@ -266,18 +320,25 @@ func (s *Service) evidence(ctx context.Context, crit []Criterion, advisoryID str
 }
 
 // deviceEvidence decides the findings of one chunk of Devices and Software Products.
-func (s *Service) deviceEvidence(ctx context.Context, crit []Criterion, devs, prods []string, byDevice map[string][]Finding,
+func (s *Service) deviceEvidence(ctx context.Context, crit []Criterion, adv Advisory, devs, prods []string, byDevice map[string][]Finding,
 	retired map[string]*time.Time, hits map[matchKey]hit, out map[string]remediation) error {
 	insts, truncated, err := s.inventory.InstallationsOnDevices(ctx, devs, prods)
 	if err != nil {
 		return fmt.Errorf("read device installations: %w", err)
 	}
 	byKey := map[matchKey][]Installation{}
+	partialDevice := ""
+	if truncated && len(insts) > 0 {
+		partialDevice = insts[len(insts)-1].DeviceID
+	}
 	for _, in := range insts {
 		k := matchKey{in.DeviceID, in.SoftwareProductID}
 		byKey[k] = append(byKey[k], in)
 	}
 	for _, dev := range devs {
+		if truncated && (partialDevice == "" || dev >= partialDevice) {
+			continue // the final device group may be incomplete
+		}
 		for _, f := range byDevice[dev] {
 			if !slices.Contains(prods, f.SoftwareProductID) {
 				continue
@@ -285,7 +346,7 @@ func (s *Service) deviceEvidence(ctx context.Context, crit []Criterion, devs, pr
 			k := matchKey{f.DeviceID, f.SoftwareProductID}
 			list := byKey[k]
 			if truncated && len(list) == 0 {
-				continue // unknown: decide next run
+				continue
 			}
 			var found hit
 			var at *time.Time
@@ -296,10 +357,17 @@ func (s *Service) deviceEvidence(ctx context.Context, crit []Criterion, devs, pr
 						found = better(found, hit{confidence: conf, version: in.RawVersion, observedAt: in.ObservedAt})
 						continue
 					}
-					reason = ReasonVersionChanged
-					t := in.ObservedAt
-					if at == nil || t.After(*at) {
-						at = &t
+					// A criteria revision after the last observation can make the same installation
+					// miss evaluation; only a different raw version is evidence of a fix.
+					if in.RawVersion == f.InstalledVersion && adv.CriteriaChangedAt.After(f.LastSeenAt) {
+						continue
+					}
+					if in.RawVersion != f.InstalledVersion && in.ObservedAt.After(f.LastSeenAt) {
+						reason = ReasonVersionChanged
+						t := in.ObservedAt
+						if at == nil || t.After(*at) {
+							at = &t
+						}
 					}
 					continue
 				}
@@ -327,11 +395,38 @@ func (s *Service) deviceEvidence(ctx context.Context, crit []Criterion, devs, pr
 	return nil
 }
 
-func (s *Service) applyMatch(ctx context.Context, tx pgx.Tx, c Caller, adv Advisory, hits map[matchKey]hit, remediate map[string]remediation,
-	ingestion *time.Time, res *MatchResult) error {
-	findings, err := s.store.LockFindingsOfAdvisoryTx(ctx, tx, adv.ID)
+func (s *Service) applyMatch(ctx context.Context, tx pgx.Tx, c Caller, adv Advisory, devices []string, hits map[matchKey]hit, remediate map[string]remediation,
+	res *MatchResult) error {
+	findings, err := s.store.FindingsForDevicesTx(ctx, tx, adv.ID, devices)
 	if err != nil {
 		return err
+	}
+	deviceSet := make(map[string]bool, len(devices))
+	for _, id := range devices {
+		deviceSet[id] = true
+	}
+	var changeIDs []string
+	for _, f := range findings {
+		if h, ok := hits[matchKey{f.DeviceID, f.SoftwareProductID}]; ok && !h.observedAt.Before(f.LastSeenAt) &&
+			(h.version != f.InstalledVersion || h.confidence != f.Confidence || h.observedAt.Sub(f.LastSeenAt) > time.Hour ||
+				(f.Status == FindingRemediated && h.observedAt.After(f.LastSeenAt))) {
+			changeIDs = append(changeIDs, f.ID)
+		} else if ev, ok := remediate[f.ID]; ok && ev.at.After(f.LastSeenAt) && slices.Contains(remediable, f.Status) {
+			changeIDs = append(changeIDs, f.ID)
+		}
+	}
+	locked, err := s.store.LockFindingsByIDsTx(ctx, tx, changeIDs)
+	if err != nil {
+		return err
+	}
+	lockedByID := map[string]Finding{}
+	for _, f := range locked {
+		lockedByID[f.ID] = f
+	}
+	for i, f := range findings {
+		if fresh, ok := lockedByID[f.ID]; ok {
+			findings[i] = fresh
+		}
 	}
 	byKey := make(map[matchKey]Finding, len(findings))
 	for _, f := range findings {
@@ -339,48 +434,59 @@ func (s *Service) applyMatch(ctx context.Context, tx pgx.Tx, c Caller, adv Advis
 	}
 	keys := make([]matchKey, 0, len(hits))
 	for k := range hits {
-		keys = append(keys, k)
+		if deviceSet[k.device] {
+			keys = append(keys, k)
+		}
 	}
 	slices.SortFunc(keys, func(a, b matchKey) int {
 		return cmp.Or(cmp.Compare(a.device, b.device), cmp.Compare(a.product, b.product))
 	})
 	now := s.now()
+	var insert []Finding
+	var observe []Finding
 	for _, k := range keys {
 		h := hits[k]
 		cur, ok := byKey[k]
 		if !ok {
 			f := Finding{AdvisoryID: adv.ID, DeviceID: k.device, SoftwareProductID: k.product, InstalledVersion: h.version,
 				Confidence: h.confidence, Status: FindingOpen, FirstSeenAt: h.observedAt, LastSeenAt: h.observedAt}
-			out, inserted, err := s.store.InsertFindingTx(ctx, tx, f)
-			if err != nil {
-				return err
-			}
-			if !inserted {
-				continue
-			}
-			if err := s.store.InsertFindingTransitionTx(ctx, tx, transition(c, out.ID, nil, out.Status, "create", "")); err != nil {
-				return err
-			}
-			if err := publishFinding(ctx, tx, c, out, "create", nil, ""); err != nil {
-				return err
-			}
-			res.Created++
+			insert = append(insert, f)
+			continue
+		}
+		if h.observedAt.Before(cur.LastSeenAt) {
 			continue
 		}
 		next := cur
 		next.Confidence, next.InstalledVersion = h.confidence, h.version
-		if h.observedAt.After(cur.LastSeenAt) {
+		statusEvidence := h.observedAt.After(cur.LastSeenAt)
+		if statusEvidence || h.observedAt.Equal(cur.LastSeenAt) && h.version != cur.InstalledVersion {
 			next.LastSeenAt = h.observedAt
 		}
 		if h.observedAt.Before(next.FirstSeenAt) {
 			next.FirstSeenAt = h.observedAt
 		}
 		if cur.Status == FindingRemediated {
+			if !statusEvidence {
+				continue
+			}
 			next.Status, next.StatusReason, next.RemediatedAt = FindingOpen, strPtr(ReasonObservedAgain), nil
 			if _, err := s.commitFinding(ctx, tx, c, cur, next, "observe_again", "observed_again", ReasonObservedAgain, nil); err != nil {
 				return err
 			}
 			res.Reopened++
+			continue
+		}
+		if (cur.Status == FindingRiskAccepted || cur.Status == FindingFalsePositive) && statusEvidence &&
+			(h.version != cur.InstalledVersion || cur.Confidence == ConfidencePotential && h.confidence == ConfidenceProbable) {
+			next = clearRisk(next)
+			next.Status, next.StatusReason = FindingOpen, strPtr(ReasonVersionChanged)
+			if _, err := s.commitFinding(ctx, tx, c, cur, next, "reopen", "reopened", ReasonVersionChanged, nil); err != nil {
+				return err
+			}
+			res.Reopened++
+			continue
+		}
+		if next.Confidence == cur.Confidence && next.InstalledVersion == cur.InstalledVersion && next.LastSeenAt.Sub(cur.LastSeenAt) <= time.Hour {
 			continue
 		}
 		if next.Confidence == cur.Confidence && next.InstalledVersion == cur.InstalledVersion &&
@@ -389,19 +495,30 @@ func (s *Service) applyMatch(ctx context.Context, tx pgx.Tx, c Caller, adv Advis
 		}
 		// Observation refreshes do not bump the version (a user's pending operation stays valid);
 		// a changed confidence or version does.
-		if err := s.store.ObserveFindingTx(ctx, tx, next); err != nil {
-			return err
-		}
+		observe = append(observe, next)
 		if next.Confidence != cur.Confidence || next.InstalledVersion != cur.InstalledVersion {
 			res.Updated++
 		}
+	}
+	created, err := s.store.InsertFindingsTx(ctx, tx, insert)
+	if err != nil {
+		return err
+	}
+	for _, out := range created {
+		if err := s.store.InsertFindingTransitionTx(ctx, tx, transition(c, out.ID, nil, out.Status, "create", "")); err != nil {
+			return err
+		}
+		res.Created++
+	}
+	if err := s.store.ObserveFindingsTx(ctx, tx, observe); err != nil {
+		return err
 	}
 	for _, cur := range findings {
 		ev, ok := remediate[cur.ID]
 		if !ok {
 			continue
 		}
-		if _, matched := hits[matchKey{cur.DeviceID, cur.SoftwareProductID}]; matched || !slices.Contains(remediable, cur.Status) || ev.at.Before(cur.LastSeenAt) {
+		if _, matched := hits[matchKey{cur.DeviceID, cur.SoftwareProductID}]; matched || !slices.Contains(remediable, cur.Status) || !ev.at.After(cur.LastSeenAt) {
 			continue
 		}
 		next := clearRisk(cur)
@@ -413,21 +530,14 @@ func (s *Service) applyMatch(ctx context.Context, tx pgx.Tx, c Caller, adv Advis
 		res.Remediated++
 	}
 	for _, cur := range findings {
-		if _, matched := hits[matchKey{cur.DeviceID, cur.SoftwareProductID}]; !matched && slices.Contains(remediable, cur.Status) {
+		if _, matched := hits[matchKey{cur.DeviceID, cur.SoftwareProductID}]; !matched &&
+			(slices.Contains(remediable, cur.Status) || cur.Status == FindingFalsePositive) {
 			if _, gone := remediate[cur.ID]; !gone {
 				res.Stale++
 			}
 		}
 	}
-	if err := s.store.RecordMatchTx(ctx, tx, adv.ID, MatchState{Revision: adv.CriteriaRevision, IngestionAt: ingestion, Truncated: res.Truncated}); err != nil {
-		return err
-	}
-	if !res.changed() && !res.Truncated {
-		return nil
-	}
-	return recordAudit(ctx, tx, c, "security.advisory.matched", "security_advisory", adv.ID, nil, nil, map[string]any{
-		"criteriaRevision": adv.CriteriaRevision, "created": res.Created, "updated": res.Updated, "remediated": res.Remediated,
-		"reopened": res.Reopened, "stale": res.Stale, "truncated": res.Truncated})
+	return nil
 }
 
 // HandleMatch is the job handler of MatchJobType (payload {"advisoryId"}).
@@ -445,12 +555,49 @@ func (s *Service) HandleMatch(ctx context.Context, job jobs.Job) error {
 // HandleMatchAll is the job handler of MatchAllJobType: it queues the match job of every matchable
 // Advisory whose criteria changed since its last match, that was never matched or whose last match
 // predates the latest endpoint ingestion (at most MaxMatchAllAdvisories per run).
-func (s *Service) HandleMatchAll(ctx context.Context, _ jobs.Job) error {
-	ingestion, err := s.inventory.LatestIngestionAt(ctx)
+func (s *Service) HandleMatchAll(ctx context.Context, job jobs.Job) error {
+	due, err := s.store.DueRiskFindingIDs(ctx, MaxMatchAllAdvisories)
 	if err != nil {
-		return fmt.Errorf("read latest ingestion: %w", err)
+		return err
 	}
-	ids, err := s.store.AdvisoriesToMatch(ctx, matchable, ingestion, MaxMatchAllAdvisories)
+	c := MatchCaller("job:" + job.ID)
+	today := s.now().UTC().Truncate(24 * time.Hour)
+	for _, id := range due {
+		if err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+			cur, err := s.store.LockFindingTx(ctx, tx, id)
+			if errors.Is(err, ErrNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if cur.Status != FindingRiskAccepted || cur.RiskReviewBy == nil || !cur.RiskReviewBy.Before(today) {
+				return nil
+			}
+			next := clearRisk(cur)
+			next.Status, next.StatusReason = FindingOpen, strPtr("review_due")
+			_, err = s.commitFinding(ctx, tx, c, cur, next, "reopen", "reopened", "review_due", nil)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	// Read the newest observations only for products actually used by matchable criteria.
+	products, err := s.store.MatchableProductIDs(ctx)
+	if err != nil {
+		return err
+	}
+	observed := map[string]time.Time{}
+	for i := 0; i < len(products); i += 100 {
+		part, err := s.inventory.LatestObservedByProducts(ctx, products[i:min(i+100, len(products))])
+		if err != nil {
+			return fmt.Errorf("read product observations: %w", err)
+		}
+		for id, at := range part {
+			observed[id] = at
+		}
+	}
+	ids, err := s.store.AdvisoriesToMatch(ctx, matchable, observed, MaxMatchAllAdvisories)
 	if err != nil {
 		return err
 	}

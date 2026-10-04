@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -23,5 +24,12 @@ func TestSecurityImportBoundsAndSyntax(t *testing.T) {
 	}
 	if err := runSecurity(context.Background(), env{}, "unknown", nil); err != errUsage {
 		t.Fatalf("unknown command: %v", err)
+	}
+}
+
+func TestSecurityImportCLIActorCarriesOSUser(t *testing.T) {
+	actor := env{actor: json.RawMessage(`{"actor":"cli","osUser":"operator"}`)}.auditActor()
+	if actor.System != "cli" || actor.OSUser != "operator" {
+		t.Fatalf("unexpected CLI actor: %+v", actor)
 	}
 }

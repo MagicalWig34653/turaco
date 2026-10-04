@@ -14,6 +14,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/security/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 )
 
 const (
@@ -68,6 +69,21 @@ func (v *inventory) LatestIngestionAt(context.Context) (*time.Time, error) {
 	}
 	t := v.items[len(v.items)-1].ObservedAt
 	return &t, nil
+}
+func (v *inventory) LatestObservedByProducts(_ context.Context, products []string) (map[string]time.Time, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	out := make(map[string]time.Time)
+	wanted := make(map[string]bool, len(products))
+	for _, product := range products {
+		wanted[product] = true
+	}
+	for _, item := range v.items {
+		if wanted[item.SoftwareProductID] && item.ObservedAt.After(out[item.SoftwareProductID]) {
+			out[item.SoftwareProductID] = item.ObservedAt
+		}
+	}
+	return out, nil
 }
 func (v *inventory) SoftwareProducts(context.Context, []string) (map[string]application.SoftwareProduct, error) {
 	return map[string]application.SoftwareProduct{securityTestProduct: {ID: securityTestProduct, Name: "Test software"}}, nil
@@ -156,6 +172,22 @@ func TestAdvisoryFindingMatchAndFreshRemediation(t *testing.T) {
 		t.Fatalf("findings = %+v, %v", list, err)
 	}
 	f := list.Items[0].Finding
+	if _, err := pool.Exec(ctx, `UPDATE security.advisories SET reference = 'ADV-TAMPERED' WHERE id = $1::uuid`, created.ID); err == nil {
+		t.Fatal("advisory reference change was allowed")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE security.vulnerability_findings SET device_id = $2::uuid WHERE id = $1::uuid`, f.ID,
+		"00000000-0000-7000-8000-0000000000b9"); err == nil {
+		t.Fatal("finding identity change was allowed")
+	}
+	if _, err := pool.Exec(ctx, `TRUNCATE security.vulnerability_findings`); err == nil {
+		t.Fatal("finding TRUNCATE was allowed")
+	}
+	if _, err := pool.Exec(ctx, `TRUNCATE security.advisories CASCADE`); err == nil {
+		t.Fatal("advisory TRUNCATE was allowed")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE security.vulnerability_findings SET status = 'remediated', remediated_at = now() WHERE id = $1::uuid`, f.ID); err == nil {
+		t.Fatal("remediation without reason was allowed")
+	}
 	if _, err := pool.Exec(ctx, `UPDATE security.vulnerability_findings SET status = 'risk_accepted' WHERE id = $1::uuid`, f.ID); err == nil {
 		t.Fatal("finding per-status CHECK allowed risk acceptance without actor and review")
 	}
@@ -225,7 +257,8 @@ func TestImportIdempotencyAndCriteriaReanalysis(t *testing.T) {
 	ctx := context.Background()
 	p := application.Principal{UserID: securityTestUser, Manage: true, View: true}
 	key := fmt.Sprintf("BULLETIN-%d", time.Now().UnixNano())
-	in := application.AdvisoryInput{Source: "test_feed", ExternalID: key, Title: "Imported bulletin", Severity: "medium"}
+	modified := time.Now().UTC().Add(-time.Hour)
+	in := application.AdvisoryInput{Source: "test_feed", ExternalID: key, Title: "Imported bulletin", Severity: "medium", ModifiedAt: &modified}
 	first, err := svc.Import(ctx, caller, p, []application.AdvisoryInput{in})
 	if err != nil || first.Created != 1 {
 		t.Fatalf("first import = %+v, %v", first, err)
@@ -247,6 +280,8 @@ func TestImportIdempotencyAndCriteriaReanalysis(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.Criteria = []application.CriterionInput{{ProductName: "Not yet normalized", Rules: []application.Rule{{Kind: "fixed", Version: "2.0"}}}}
+	newer := modified.Add(time.Minute)
+	in.ModifiedAt = &newer
 	changed, err := svc.Import(ctx, caller, p, []application.AdvisoryInput{in})
 	if err != nil || changed.Reanalyze != 1 {
 		t.Fatalf("criteria change = %+v, %v", changed, err)
@@ -257,5 +292,106 @@ func TestImportIdempotencyAndCriteriaReanalysis(t *testing.T) {
 	}
 	if _, err := svc.Import(ctx, caller, p, make([]application.AdvisoryInput, application.MaxImportRecords+1)); err == nil {
 		t.Fatal("import cap ignored")
+	}
+}
+
+func TestCriteriaMissDoesNotRemediateAndVersionChangeReopensException(t *testing.T) {
+	pool, svc, inv, caller := securityEnv(t)
+	ctx := context.Background()
+	p := application.Principal{UserID: securityTestUser, View: true, Manage: true, AcceptRisk: true}
+	created, _, err := svc.Create(ctx, caller, p, application.AdvisoryInput{Title: "Observation guard", Severity: "high",
+		Criteria: []application.CriterionInput{{SoftwareProductID: securityTestProduct, Rules: []application.Rule{{Kind: "fixed", Version: "2.0"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupAdvisory(t, pool, created.ID)
+	t1 := time.Now().UTC().Add(-3 * time.Hour)
+	item := application.Installation{ID: "00000000-0000-7000-8000-0000000000a4", DeviceID: securityTestDevice,
+		SoftwareProductID: securityTestProduct, DevicePlatform: "windows", RawVersion: "1.0", ObservedAt: t1}
+	inv.set(item)
+	if _, err := svc.Match(ctx, application.MatchCaller(caller.CorrelationID), created.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.ListFindings(ctx, p, application.FindingFilter{AdvisoryID: created.ID})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("findings = %+v, %v", list, err)
+	}
+	f := list.Items[0].Finding
+	// A new rule excludes the same observed version. That rule change is not remediation evidence.
+	adv, _, err := svc.EditCriteria(ctx, caller, p, created.ID, &created.Version,
+		[]application.CriterionInput{{SoftwareProductID: securityTestProduct, Rules: []application.Rule{{Kind: "fixed", Version: "1.0"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.Match(ctx, application.MatchCaller(caller.CorrelationID), created.ID)
+	if err != nil || result.Stale != 1 {
+		t.Fatalf("criteria miss = %+v, %v", result, err)
+	}
+	view, err := svc.GetFinding(ctx, p, f.ID)
+	if err != nil || view.Status != application.FindingOpen {
+		t.Fatalf("same version = %+v, %v", view, err)
+	}
+	// A fresh matching version opens an exception again.
+	_, _, err = svc.EditCriteria(ctx, caller, p, adv.ID, &adv.Version,
+		[]application.CriterionInput{{SoftwareProductID: securityTestProduct, Rules: []application.Rule{{Kind: "fixed", Version: "3.0"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp, err := svc.MarkFalsePositive(ctx, caller, p, f.ID, &view.Version, "product_mismatch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.RawVersion, item.ObservedAt = "2.0", t1.Add(time.Hour)
+	inv.set(item)
+	if _, err := svc.Match(ctx, application.MatchCaller(caller.CorrelationID), created.ID); err != nil {
+		t.Fatal(err)
+	}
+	view, err = svc.GetFinding(ctx, p, f.ID)
+	if err != nil || view.Status != application.FindingOpen || view.StatusReason == nil || *view.StatusReason != application.ReasonVersionChanged || view.Version <= fp.Version {
+		t.Fatalf("exception reopen = %+v, %v", view, err)
+	}
+}
+
+func TestExpiredRiskAcceptanceReopensOnce(t *testing.T) {
+	pool, svc, inv, caller := securityEnv(t)
+	ctx := context.Background()
+	p := application.Principal{UserID: securityTestUser, View: true, Manage: true, AcceptRisk: true}
+	adv, _, err := svc.Create(ctx, caller, p, application.AdvisoryInput{Title: "Review expiry", Severity: "medium",
+		Criteria: []application.CriterionInput{{SoftwareProductID: securityTestProduct}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupAdvisory(t, pool, adv.ID)
+	inv.set(application.Installation{ID: "00000000-0000-7000-8000-0000000000a4", DeviceID: securityTestDevice,
+		SoftwareProductID: securityTestProduct, DevicePlatform: "windows", RawVersion: "1.0", ObservedAt: time.Now().UTC().Add(-time.Hour)})
+	if _, err := svc.Match(ctx, application.MatchCaller(caller.CorrelationID), adv.ID); err != nil {
+		t.Fatal(err)
+	}
+	list, err := svc.ListFindings(ctx, p, application.FindingFilter{AdvisoryID: adv.ID})
+	if err != nil || len(list.Items) != 1 {
+		t.Fatalf("findings = %+v, %v", list, err)
+	}
+	f := list.Items[0].Finding
+	accepted, err := svc.AcceptRisk(ctx, caller, p, f.ID, &f.Version, "business_need", time.Now().UTC().AddDate(0, 1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE security.vulnerability_findings SET risk_accepted_at = now() - interval '2 months', risk_review_by = CURRENT_DATE - 1 WHERE id = $1::uuid`, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	job := jobs.Job{ID: "00000000-0000-7000-8000-0000000000af"}
+	if err := svc.HandleMatchAll(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.GetFinding(ctx, p, f.ID)
+	if err != nil || view.Status != application.FindingOpen || view.StatusReason == nil || *view.StatusReason != "review_due" {
+		t.Fatalf("expired = %+v, %v", view, err)
+	}
+	if err := svc.HandleMatchAll(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM security.finding_transitions WHERE finding_id = $1::uuid AND reason = 'review_due'`, f.ID).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("review_due transitions = %d, %v (accepted version %d)", count, err, accepted.Version)
 	}
 }

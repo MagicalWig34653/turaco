@@ -8,6 +8,7 @@ package public
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -84,6 +85,7 @@ type Reader interface {
 	DeviceStates(ctx context.Context, ids []string) (map[string]*time.Time, error)
 	DeviceNames(ctx context.Context, ids []string) (map[string]string, error)
 	LatestIngestionAt(ctx context.Context) (*time.Time, error)
+	LatestObservedByProducts(ctx context.Context, productIDs []string) (map[string]time.Time, error)
 	SoftwareProductsByIDs(ctx context.Context, ids []string) ([]application.SoftwareProductRow, error)
 	SoftwareProductsByName(ctx context.Context, name, publisher string, limit int) ([]application.SoftwareProductRow, error)
 	SoftwareProductByAlias(ctx context.Context, alias string) (*application.SoftwareProductRow, error)
@@ -133,16 +135,20 @@ func convert(rows []application.InstallationRow, scope Scope) []Installation {
 	return out
 }
 
-// InstallationsByProducts lists the installations of up to MaxProductIDs Software Products in id order
-// (keyset: cursor is the last installation id of the previous page). Without includeRetired only current
+// InstallationsByProducts lists installations in (Software Product id, installation id) order.
+// The cursor is the pair from the previous page. Without includeRetired only current
 // installations on live Devices are returned.
 func (v *Inventory) InstallationsByProducts(ctx context.Context, productIDs []string, includeRetired bool, scope Scope, cursor string, limit int) (InstallationPage, error) {
 	pids := ids(productIDs)
 	if len(pids) > MaxProductIDs {
 		return InstallationPage{}, ErrTooMany
 	}
-	if cursor != "" && !uuidPattern.MatchString(cursor) {
-		return InstallationPage{}, ErrInvalidCursor
+	if cursor != "" {
+		parts := strings.Split(cursor, ":")
+		if len(parts) != 2 || !uuidPattern.MatchString(parts[0]) || !uuidPattern.MatchString(parts[1]) {
+			return InstallationPage{}, ErrInvalidCursor
+		}
+		cursor = strings.ToLower(cursor)
 	}
 	if limit <= 0 || limit > MaxPageSize {
 		limit = MaxPageSize
@@ -157,7 +163,7 @@ func (v *Inventory) InstallationsByProducts(ctx context.Context, productIDs []st
 	page := InstallationPage{}
 	if len(rows) > limit {
 		rows = rows[:limit]
-		page.NextCursor = rows[limit-1].ID
+		page.NextCursor = fmt.Sprintf("%s:%s", rows[limit-1].SoftwareProductID, rows[limit-1].ID)
 	}
 	page.Items = convert(rows, scope)
 	return page, nil
@@ -217,6 +223,19 @@ func (v *Inventory) DeviceNames(ctx context.Context, deviceIDs []string) (map[st
 // nil when never.
 func (v *Inventory) LatestIngestionAt(ctx context.Context) (*time.Time, error) {
 	return v.r.LatestIngestionAt(ctx)
+}
+
+// LatestObservedByProducts returns the newest installation observation or tombstone per
+// Software Product. Missing products have no observed installations.
+func (v *Inventory) LatestObservedByProducts(ctx context.Context, productIDs []string) (map[string]time.Time, error) {
+	pids := ids(productIDs)
+	if len(pids) > MaxProductIDs {
+		return nil, ErrTooMany
+	}
+	if len(pids) == 0 {
+		return map[string]time.Time{}, nil
+	}
+	return v.r.LatestObservedByProducts(ctx, pids)
 }
 
 func product(p application.SoftwareProductRow) SoftwareProduct {

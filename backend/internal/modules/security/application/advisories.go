@@ -187,6 +187,10 @@ func cleanAdvisory(in AdvisoryInput) (Advisory, error) {
 	if a.ExternalID, err = cleanLine("externalId", in.ExternalID, maxExternal, a.Source != SourceManual); err != nil {
 		return Advisory{}, err
 	}
+	if a.ExternalID != nil && strings.HasPrefix(strings.ToUpper(*a.ExternalID), "CVE-") {
+		id := strings.ToUpper(*a.ExternalID)
+		a.ExternalID = &id
+	}
 	title, err := cleanLine("title", in.Title, maxTitle, true)
 	if err != nil {
 		return Advisory{}, err
@@ -250,6 +254,11 @@ func (s *Service) insertAdvisory(ctx context.Context, tx pgx.Tx, c Caller, a Adv
 	}
 	if err := s.store.ReplaceCriteriaTx(ctx, tx, out.ID, crit); err != nil {
 		return Advisory{}, err
+	}
+	for _, item := range crit {
+		if item.Normalization == NormalizationUnmatched {
+			out.UnmatchedCriteria++
+		}
 	}
 	if err := s.store.InsertAdvisoryTransitionTx(ctx, tx, transition(c, out.ID, nil, out.Status, "create", "")); err != nil {
 		return Advisory{}, err
@@ -326,6 +335,15 @@ func (s *Service) Import(ctx context.Context, c Caller, p Principal, records []A
 	if len(records) == 0 || len(records) > MaxImportRecords {
 		return ImportResult{}, invalid("an import contains 1-%d advisories", MaxImportRecords)
 	}
+	totalCriteria := 0
+	for _, record := range records {
+		totalCriteria += len(record.Criteria)
+		if totalCriteria > MaxImportCriteria {
+			return ImportResult{}, invalid("an import contains at most %d criteria", MaxImportCriteria)
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, ImportTimeout)
+	defer cancel()
 	var res ImportResult
 	reject := func(i int, err error) error {
 		var inv *InvalidInputError
@@ -429,13 +447,19 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 		if err != nil {
 			return err
 		}
+		if cur.Status == AdvisoryArchived {
+			return invalid("archived advisories cannot be imported")
+		}
+		if in.ModifiedAt == nil || (cur.ModifiedAt != nil && !in.ModifiedAt.After(*cur.ModifiedAt)) {
+			return nil
+		}
 		old, err := s.store.CriteriaTx(ctx, tx, cur.ID)
 		if err != nil {
 			return err
 		}
 		next := cur
 		var changed []string
-		if cur.Title != in.Title {
+		if !cur.EditedByUser && cur.Title != in.Title {
 			next.Title = in.Title
 			changed = append(changed, "title")
 		}
@@ -443,7 +467,7 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 			next.Summary = in.Summary
 			changed = append(changed, "summary")
 		}
-		if cur.Severity != in.Severity {
+		if !cur.EditedByUser && cur.Severity != in.Severity {
 			next.Severity = in.Severity
 			changed = append(changed, "severity")
 		}
@@ -469,7 +493,7 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 		}
 		reason := ""
 		outcome = "updated"
-		if cur.Status == AdvisoryApplicable {
+		if cur.Status == AdvisoryApplicable || (criteriaChanged && !slices.Contains(criteriaEditable, cur.Status)) {
 			reason = ReasonFeedChanged
 			if criteriaChanged {
 				reason = ReasonCriteriaChanged
@@ -569,6 +593,9 @@ func (s *Service) UpdateDetails(ctx context.Context, c Caller, p Principal, id s
 		if len(changed) == 0 {
 			out = cur
 			return nil
+		}
+		if slices.Contains(changed, "title") || slices.Contains(changed, "severity") {
+			next.EditedByUser = true
 		}
 		out, err = s.commitAdvisory(ctx, tx, c, cur, next, "updated", "", map[string]any{"changedFields": changed})
 		return err
@@ -756,6 +783,9 @@ func (s *Service) MarkApplicable(ctx context.Context, c Caller, p Principal, id 
 func (s *Service) MarkNotApplicable(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (Advisory, error) {
 	if err := checkReason(reason, NotApplicableReasons); err != nil {
 		return Advisory{}, err
+	}
+	if reason == "other" && !p.AcceptRisk {
+		return Advisory{}, ErrForbidden
 	}
 	return s.advisoryOp(ctx, c, p, id, expected, "mark_not_applicable", "not_applicable", AdvisoryNotApplicable, reason,
 		AdvisoryNew, AdvisoryAnalyzing, AdvisoryApplicable)
