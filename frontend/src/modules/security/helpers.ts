@@ -61,3 +61,34 @@ export function validReviewDate(value: string, today: Date): boolean {
     value <= maxReviewDate(today)
   );
 }
+export const overviewLinks = {
+  severity: (severity: string) =>
+    `/security/advisories?applicable=true&severity=${encodeURIComponent(severity)}`,
+  confidence: (confidence: string) =>
+    `/security/findings?open=true&confidence=${encodeURIComponent(confidence)}`,
+  overdueTasks: '/tasks?overdue=true',
+  riskDue: '/security/findings?riskDue=true',
+};
+export function isOpenFinding(status: string): boolean {
+  return [
+    'open',
+    'investigating',
+    'accepted',
+    'remediation_planned',
+    'remediating',
+    'risk_accepted',
+  ].includes(status);
+}
+export function isApplicableAdvisory(status: string): boolean {
+  return ['applicable', 'remediation_planned', 'remediating'].includes(status);
+}
+export function riskReviewDueWithin30Days(finding: Finding, today: Date): boolean {
+  if (finding.status !== 'risk_accepted' || !finding.riskReviewBy) return false;
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30);
+  const start = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return (
+    finding.riskReviewBy >= start &&
+    finding.riskReviewBy <=
+      `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+  );
+}

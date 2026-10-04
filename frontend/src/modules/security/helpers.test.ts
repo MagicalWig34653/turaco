@@ -5,6 +5,10 @@ import {
   findingActions,
   safeSourceUrl,
   validReviewDate,
+  overviewLinks,
+  isOpenFinding,
+  isApplicableAdvisory,
+  riskReviewDueWithin30Days,
 } from './helpers';
 import type { Finding } from './types';
 describe('security view helpers', () => {
@@ -29,5 +33,24 @@ describe('security view helpers', () => {
     expect(validReviewDate('2026-10-04', now)).toBe(false);
     expect(validReviewDate('2027-10-04', now)).toBe(true);
     expect(validReviewDate('2027-10-05', now)).toBe(false);
+  });
+  it('links overview counts to filtered lists', () => {
+    expect(overviewLinks.severity('high')).toBe(
+      '/security/advisories?applicable=true&severity=high',
+    );
+    expect(overviewLinks.confidence('probable')).toBe(
+      '/security/findings?open=true&confidence=probable',
+    );
+    expect(isApplicableAdvisory('remediating')).toBe(true);
+    expect(isApplicableAdvisory('resolved')).toBe(false);
+    expect(isOpenFinding('remediated')).toBe(false);
+    const finding = { status: 'risk_accepted', riskReviewBy: '2026-10-30' } as Finding;
+    expect(riskReviewDueWithin30Days(finding, new Date(2026, 9, 5))).toBe(true);
+    expect(
+      riskReviewDueWithin30Days({ ...finding, riskReviewBy: '2026-10-04' }, new Date(2026, 9, 5)),
+    ).toBe(false);
+    expect(
+      riskReviewDueWithin30Days({ ...finding, riskReviewBy: '2026-11-05' }, new Date(2026, 9, 5)),
+    ).toBe(false);
   });
 });

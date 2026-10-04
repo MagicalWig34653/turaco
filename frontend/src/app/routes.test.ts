@@ -386,7 +386,12 @@ describe('planning routes', () => {
 describe('security routes', () => {
   it('shows security navigation and details only to security readers', () => {
     expect(ids([], 'security')).toEqual([]);
-    expect(ids(['security.view'], 'security')).toEqual(['securityAdvisories', 'securityFindings']);
+    expect(ids(['security.view'], 'security')).toEqual([
+      'securityOverview',
+      'securityAdvisories',
+      'securityFindings',
+    ]);
+    expect(matchRoute(appRoutes, '/security/overview')?.route.id).toBe('securityOverview');
     const detail = appRoutes.find((route) => route.id === 'securityFindingDetail')!;
     expect(canViewRoute(createCan({ permissions: [] }), detail)).toBe(false);
     expect(canViewRoute(createCan({ permissions: ['security.view'] }), detail)).toBe(true);

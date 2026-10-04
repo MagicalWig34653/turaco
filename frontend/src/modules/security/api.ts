@@ -9,6 +9,10 @@ import type {
   Page,
   Summary,
   Transition,
+  RemediationTask,
+  LinkedChange,
+  Progress,
+  Overview,
 } from './types';
 const enc = encodeURIComponent;
 registerErrorMessages({
@@ -22,6 +26,32 @@ registerErrorMessages({
   'security.duplicate': 'security.error.duplicate',
 });
 export const securityApi = {
+  overview: (signal?: AbortSignal) => api.get<Overview>('/security/overview', { signal }),
+  progress: (id: string, signal?: AbortSignal) =>
+    api.get<Progress>(`/security/advisories/${enc(id)}/progress`, { signal }),
+  tasks: (kind: 'advisories' | 'findings', id: string, signal?: AbortSignal) =>
+    api.get<{ items: RemediationTask[] }>(`/security/${kind}/${enc(id)}/tasks`, { signal }),
+  createTask: (
+    kind: 'advisories' | 'findings',
+    id: string,
+    body: {
+      expectedVersion: number;
+      assignedUserId?: string;
+      assignedTeamId?: string;
+      dueAt?: string;
+    },
+  ) => api.post<{ taskId: string }>(`/security/${kind}/${enc(id)}/tasks`, body),
+  changes: (id: string, signal?: AbortSignal) =>
+    api.get<{ items: LinkedChange[] }>(`/security/advisories/${enc(id)}/changes`, { signal }),
+  linkChange: (id: string, changeId: string, expectedVersion: number) =>
+    api.post<LinkedChange>(`/security/advisories/${enc(id)}/changes`, {
+      changeId,
+      expectedVersion,
+    }),
+  unlinkChange: (id: string, changeId: string, expectedVersion: number) =>
+    api.delete<void>(`/security/advisories/${enc(id)}/changes/${enc(changeId)}`, {
+      body: { expectedVersion },
+    }),
   advisories: (filter: Record<string, string>, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<Advisory>>('/security/advisories', {
       query: { ...filter, cursor, limit: 50 },

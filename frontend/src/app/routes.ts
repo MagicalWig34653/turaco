@@ -90,6 +90,7 @@ export type RouteId =
   | 'directorySyncRun'
   | 'audit'
   | 'securityAdvisories'
+  | 'securityOverview'
   | 'securityAdvisoryNew'
   | 'securityAdvisoryDetail'
   | 'securityFindings'
@@ -265,6 +266,13 @@ export const appRoutes: readonly AppRoute[] = [
       'changes.execute',
     ],
     nav: 'planning',
+  },
+  {
+    id: 'securityOverview',
+    pattern: '/security/overview',
+    titleKey: 'security.overview',
+    requires: ['security.view'],
+    nav: 'security',
   },
   {
     id: 'securityAdvisoryNew',

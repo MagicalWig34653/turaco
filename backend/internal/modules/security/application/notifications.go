@@ -48,96 +48,108 @@ func (n *Notifications) HandleRiskReminders(ctx context.Context, _ jobs.Job) err
 	if !ok {
 		return errors.New("security: risk reminder reader unavailable")
 	}
-	today := n.now().UTC()
+	recipients, err := n.riskRecipients(ctx)
+	if err != nil {
+		return err
+	}
+	today := n.now().UTC().Truncate(24 * time.Hour)
 	after := ""
+	var failures []error
 	for {
 		ids, err := reader.DueRiskReviews(ctx, today, after, 200)
 		if err != nil {
-			return err
+			return errors.Join(append(failures, err)...)
 		}
 		for _, id := range ids {
-			if err := n.remindRisk(ctx, id, today); err != nil {
-				return err
+			if err := n.remindRisk(ctx, id, today, recipients); err != nil {
+				failures = append(failures, fmt.Errorf("finding %s: %w", id, err))
 			}
 		}
 		if len(ids) < 200 {
-			return nil
+			return errors.Join(failures...)
 		}
 		after = ids[len(ids)-1]
 	}
 }
 
-func (n *Notifications) remindRisk(ctx context.Context, id string, today time.Time) error {
-	f, err := n.store.GetFinding(ctx, id)
-	if errors.Is(err, ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if f.Status != FindingRiskAccepted || f.RiskReviewBy == nil {
-		return nil
-	}
-	days := int(f.RiskReviewBy.Sub(today.Truncate(24*time.Hour)).Hours() / 24)
-	if days != 14 && days != 1 {
-		return nil
-	}
-	a, err := n.store.GetAdvisory(ctx, f.AdvisoryID)
-	if err != nil {
-		return err
-	}
+func (n *Notifications) riskRecipients(ctx context.Context) ([]string, error) {
+	var candidates []string
 	after := ""
 	for {
-		ids, err := n.holders.ActiveUsers(ctx, after, n.chunk+1)
+		ids, err := n.holders.ActiveUsers(ctx, after, n.chunk)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		more := len(ids) > n.chunk
-		if more {
-			ids = ids[:n.chunk]
-		}
-		if len(ids) == 0 {
-			return nil
-		}
-		active, err := n.dir.ActiveUsers(ctx, ids)
-		if err != nil {
-			return err
-		}
-		for _, user := range ids {
-			if !active[user] {
-				continue
-			}
-			perms, err := n.perms.Permissions(ctx, user)
-			if err != nil {
-				return err
-			}
-			if _, ok := perms[PermManage]; !ok {
-				continue
-			}
-			key := fmt.Sprintf("risk-review:%s:%s:%d:%s", f.ID, f.RiskReviewBy.Format(time.DateOnly), days, user)
-			err = n.store.InTx(ctx, func(tx pgx.Tx) error {
-				current, e := n.store.LockFindingTx(ctx, tx, f.ID)
-				if errors.Is(e, ErrNotFound) {
-					return nil
-				}
-				if e != nil {
-					return e
-				}
-				if current.Status != FindingRiskAccepted || current.RiskReviewBy == nil || !current.RiskReviewBy.Equal(*f.RiskReviewBy) {
-					return nil
-				}
-				_, e = n.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: user, Category: RiskReviewCategory, Params: map[string]any{"title": f.Reference + " · " + a.Reference}, LinkType: "security_finding", LinkID: f.ID, DedupeKey: key})
-				return e
-			})
-			if err != nil {
-				return err
-			}
-		}
-		if !more {
-			return nil
+		candidates = append(candidates, ids...)
+		if len(ids) < n.chunk {
+			break
 		}
 		after = ids[len(ids)-1]
 	}
+	recipients := []string{}
+	for start := 0; start < len(candidates); start += n.chunk {
+		end := start + n.chunk
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+		active, err := n.dir.ActiveUsers(ctx, candidates[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range candidates[start:end] {
+			if !active[id] {
+				continue
+			}
+			perms, err := n.perms.Permissions(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			_, manage := perms[PermManage]
+			_, accept := perms[PermAcceptRisk]
+			if manage || accept {
+				recipients = append(recipients, id)
+			}
+		}
+	}
+	return recipients, nil
+}
+
+func (n *Notifications) remindRisk(ctx context.Context, id string, today time.Time, recipients []string) error {
+	return n.store.InTx(ctx, func(tx pgx.Tx) error {
+		f, err := n.store.LockFindingTx(ctx, tx, id)
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if f.Status != FindingRiskAccepted || f.RiskReviewBy == nil {
+			return nil
+		}
+		days := int(f.RiskReviewBy.UTC().Truncate(24*time.Hour).Sub(today).Hours() / 24)
+		if days < 0 || days > 14 {
+			return nil
+		}
+		lead := 14
+		if days <= 1 {
+			lead = 1
+		}
+		a, err := n.store.GetAdvisory(ctx, f.AdvisoryID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains([]string{AdvisoryApplicable, AdvisoryRemediationPlanned, AdvisoryRemediating}, a.Status) {
+			return nil
+		}
+		for _, user := range recipients {
+			key := fmt.Sprintf("risk-review:%s:%s:%d:%s", f.ID, f.RiskReviewBy.Format(time.DateOnly), lead, user)
+			_, err = n.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: user, Category: RiskReviewCategory, Params: map[string]any{"title": f.Reference + " · " + a.Reference}, LinkType: "security_finding", LinkID: f.ID, DedupeKey: key})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // notifyChunk is how many candidate recipients one consumer run handles; the rest follows in a

@@ -2,12 +2,15 @@ package application
 
 import (
 	"context"
+	"errors"
 	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"time"
 )
 
 // Progress is derived from current Turaco records, not a deployment outcome.
 type Progress struct {
+	GeneratedAt              time.Time                  `json:"generatedAt"`
+	TasksTruncated           bool                       `json:"tasksTruncated"`
 	Source                   string                     `json:"source"`
 	FindingByStatus          map[string]int             `json:"findingByStatus"`
 	FindingByConfidence      map[string]int             `json:"findingByConfidence"`
@@ -50,70 +53,70 @@ func liveFinding(status string) bool {
 	return false
 }
 
+// FindingAggregate is a Security-owned snapshot of counts; Tasks and Changes remain live.
+type FindingAggregate struct {
+	ByStatus, ByConfidence               map[string]int
+	Total, Accepted, Probable, Potential int
+	EarliestReview, Oldest               *time.Time
+}
+
+type progressSnapshotReader interface {
+	ProgressSnapshot(context.Context, string) (Advisory, FindingAggregate, []string, bool, error)
+}
+
 func (s *Service) Progress(ctx context.Context, p Principal, id string) (Progress, error) {
 	if !p.reads() {
 		return Progress{}, ErrForbidden
 	}
-	a, err := s.store.GetAdvisory(ctx, id)
+	reader, ok := s.store.(progressSnapshotReader)
+	if !ok {
+		return Progress{}, errors.New("security: progress snapshot unavailable")
+	}
+	a, agg, ids, truncated, err := reader.ProgressSnapshot(ctx, id)
 	if err != nil {
 		return Progress{}, err
 	}
-	findings, err := s.store.FindingsOfAdvisory(ctx, a.ID)
-	if err != nil {
-		return Progress{}, err
-	}
-	out := Progress{Source: "turaco_derived", FindingByStatus: map[string]int{}, FindingByConfidence: map[string]int{}, LinkedChangesByStatus: map[string]int{}}
+	out := Progress{Source: "turaco_derived", GeneratedAt: s.now().UTC(), TasksTruncated: truncated, FindingByStatus: agg.ByStatus, FindingByConfidence: agg.ByConfidence, LinkedChangesByStatus: map[string]int{}, AcceptedRiskCount: agg.Accepted, EarliestRiskReviewBy: agg.EarliestReview}
 	for _, status := range FindingStatuses {
-		out.FindingByStatus[status] = 0
+		if _, ok := out.FindingByStatus[status]; !ok {
+			out.FindingByStatus[status] = 0
+		}
 	}
 	for _, confidence := range Confidences {
-		out.FindingByConfidence[confidence] = 0
-	}
-	ids := make([]string, 0, len(findings))
-	var oldest *time.Time
-	probable, potential := 0, 0
-	for _, f := range findings {
-		ids = append(ids, f.ID)
-		out.FindingByStatus[f.Status]++
-		out.FindingByConfidence[f.Confidence]++
-		if f.Status == FindingRiskAccepted {
-			out.AcceptedRiskCount++
-			if f.RiskReviewBy != nil && (out.EarliestRiskReviewBy == nil || f.RiskReviewBy.Before(*out.EarliestRiskReviewBy)) {
-				out.EarliestRiskReviewBy = f.RiskReviewBy
-			}
-		}
-		if liveFinding(f.Status) {
-			if f.Confidence == ConfidenceProbable {
-				probable++
-			} else {
-				potential++
-			}
-			if oldest == nil || f.FirstSeenAt.Before(*oldest) {
-				v := f.FirstSeenAt
-				oldest = &v
-			}
+		if _, ok := out.FindingByConfidence[confidence]; !ok {
+			out.FindingByConfidence[confidence] = 0
 		}
 	}
-	total := len(findings) - out.FindingByStatus[FindingFalsePositive]
+	total := agg.Total - out.FindingByStatus[FindingFalsePositive]
 	if total > 0 {
 		out.ShareRemediated = float64(out.FindingByStatus[FindingRemediated]) / float64(total)
 	}
-	if oldest != nil {
-		days := int(s.now().Sub(*oldest).Hours() / 24)
+	if agg.Oldest != nil {
+		days := int(out.GeneratedAt.Sub(*agg.Oldest).Hours() / 24)
 		if days < 0 {
 			days = 0
 		}
 		out.OldestOpenFindingAgeDays = &days
 	}
-	advisoryTasks, err := s.tasks.SummaryByContexts(ctx, "security_advisory", []string{a.ID})
+	summary, err := s.tasks.SummaryByContexts(ctx, "security_advisory", []string{a.ID})
 	if err != nil {
 		return Progress{}, err
 	}
-	findingTasks, err := s.tasks.SummaryByContexts(ctx, "security_finding", ids)
-	if err != nil {
-		return Progress{}, err
+	out.Tasks = summary
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		part, e := s.tasks.SummaryByContexts(ctx, "security_finding", ids[start:end])
+		if e != nil {
+			return Progress{}, e
+		}
+		out.Tasks.Open += part.Open
+		out.Tasks.Done += part.Done
+		out.Tasks.Cancelled += part.Cancelled
+		out.Tasks.Overdue += part.Overdue
 	}
-	out.Tasks = taskspublic.ContextSummary{Open: advisoryTasks.Open + findingTasks.Open, Done: advisoryTasks.Done + findingTasks.Done, Overdue: advisoryTasks.Overdue + findingTasks.Overdue}
 	links, err := s.LinkedChanges(ctx, p, a.ID)
 	if err != nil {
 		return Progress{}, err
@@ -125,7 +128,10 @@ func (s *Service) Progress(ctx context.Context, p Principal, id string) (Progres
 			out.LinkedChangesByStatus[link.Status]++
 		}
 	}
-	out.ResidualRisk = ResidualRisk(a.Severity, probable, potential)
+	out.ResidualRisk = ResidualRisk(a.Severity, agg.Probable, agg.Potential)
+	if a.Status != AdvisoryApplicable && a.Status != AdvisoryRemediationPlanned && a.Status != AdvisoryRemediating || a.MatchedAt == nil || a.MatchedRevision == nil || *a.MatchedRevision != a.CriteriaRevision || a.MatchTruncated || a.MatchedIngestionAt == nil || out.GeneratedAt.Sub(*a.MatchedIngestionAt) > 48*time.Hour {
+		out.ResidualRisk = "unknown"
+	}
 	return out, nil
 }
 
@@ -140,6 +146,7 @@ type Overview struct {
 
 type overviewReader interface {
 	OverviewCounts(context.Context, time.Time) (Overview, error)
+	ApplicableTaskContextIDs(context.Context) (map[string][]string, error)
 }
 
 func (s *Service) Overview(ctx context.Context, p Principal) (Overview, error) {
@@ -154,12 +161,54 @@ func (s *Service) Overview(ctx context.Context, p Principal) (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
-	for _, typ := range []string{"security_advisory", "security_finding"} {
-		summary, e := s.tasks.SummaryByType(ctx, typ)
-		if e != nil {
-			return Overview{}, e
+	contexts, err := reader.ApplicableTaskContextIDs(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
+	if counter, ok := s.tasks.(interface {
+		OverdueByTwoTypes(context.Context, string, []string, string, []string) (int, error)
+	}); ok {
+		advisories, findings := contexts["security_advisory"], contexts["security_finding"]
+		max := len(advisories)
+		if len(findings) > max {
+			max = len(findings)
 		}
-		out.OverdueTasks += summary.Overdue
+		for start := 0; start < max; start += 500 {
+			var a, f []string
+			if start < len(advisories) {
+				end := start + 500
+				if end > len(advisories) {
+					end = len(advisories)
+				}
+				a = advisories[start:end]
+			}
+			if start < len(findings) {
+				end := start + 500
+				if end > len(findings) {
+					end = len(findings)
+				}
+				f = findings[start:end]
+			}
+			count, e := counter.OverdueByTwoTypes(ctx, "security_advisory", a, "security_finding", f)
+			if e != nil {
+				return Overview{}, e
+			}
+			out.OverdueTasks += count
+		}
+	} else {
+		for typ, ids := range contexts {
+			for start := 0; start < len(ids); start += 500 {
+				end := start + 500
+				if end > len(ids) {
+					end = len(ids)
+				}
+				summary, e := s.tasks.SummaryByContexts(ctx, typ, ids[start:end])
+				if e != nil {
+					return Overview{}, e
+				}
+				out.OverdueTasks += summary.Overdue
+			}
+		}
 	}
 	out.Source = "turaco_derived"
 	return out, nil

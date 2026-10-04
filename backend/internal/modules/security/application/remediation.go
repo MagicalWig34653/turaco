@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -86,7 +87,7 @@ func (s *Service) checkObject(ctx context.Context, kind, id string) (string, err
 // CreateRemediationTask creates an ordinary Task with a fixed reference-based title.
 // Task completion never changes a Finding: only fresh inventory evidence can remediate it.
 func (s *Service) CreateRemediationTask(ctx context.Context, c Caller, p Principal, kind, id string, expected *int, user, team *string, due *time.Time) (string, error) {
-	if !p.Manage || p.UserID == "" || p.UserID != c.Actor.UserID {
+	if !p.Manage || !p.TasksManage || p.UserID == "" || p.UserID != c.Actor.UserID {
 		return "", ErrForbidden
 	}
 	if err := c.validate(); err != nil {
@@ -106,8 +107,25 @@ func (s *Service) CreateRemediationTask(ctx context.Context, c Caller, p Princip
 	if due == nil || due.Before(s.now()) || due.After(s.now().AddDate(1, 0, 0)) {
 		return "", invalid("dueAt must be within one year")
 	}
-	if (user == nil || *user == "") && (team == nil || *team == "") {
+	if user != nil && *user == "" {
+		user = nil
+	}
+	if team != nil && *team == "" {
+		team = nil
+	}
+	if user == nil && team == nil {
 		return "", invalid("assignee is required")
+	}
+	if user != nil && !uuidPattern.MatchString(*user) || team != nil && !uuidPattern.MatchString(*team) {
+		return "", invalid("invalid assignee")
+	}
+	var findingAdvisoryID string
+	if kind == "finding" {
+		f, e := s.store.GetFinding(ctx, id)
+		if e != nil {
+			return "", e
+		}
+		findingAdvisoryID = f.AdvisoryID
 	}
 	var result string
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
@@ -120,13 +138,26 @@ func (s *Service) CreateRemediationTask(ctx context.Context, c Caller, p Princip
 				return e
 			}
 			ref = a.Reference
+			if a.Status != AdvisoryAnalyzing && a.Status != AdvisoryApplicable && a.Status != AdvisoryRemediationPlanned && a.Status != AdvisoryRemediating {
+				return &InvalidTransitionError{Operation: "create_remediation_task", From: a.Status}
+			}
 			advisory = &a
 		} else {
-			f, e := s.lockFinding(ctx, tx, id, version, "create_remediation_task", FindingStatuses...)
+			parent, pe := s.store.LockAdvisoryTx(ctx, tx, findingAdvisoryID)
+			if pe != nil {
+				return pe
+			}
+			if parent.Status != AdvisoryAnalyzing && parent.Status != AdvisoryApplicable && parent.Status != AdvisoryRemediationPlanned && parent.Status != AdvisoryRemediating {
+				return &InvalidTransitionError{Operation: "create_remediation_task", From: parent.Status}
+			}
+			f, e := s.lockFinding(ctx, tx, id, version, "create_remediation_task", append(append([]string{}, openFinding...), FindingRiskAccepted)...)
 			if e != nil {
 				return e
 			}
 			ref = f.Reference
+			if f.AdvisoryID != findingAdvisoryID {
+				return ErrVersionConflict
+			}
 			finding = &f
 		}
 		existing, e := s.tasks.ByContextInTx(ctx, tx, typ, id, MaxRemediationTasks+1)
@@ -141,6 +172,9 @@ func (s *Service) CreateRemediationTask(ctx context.Context, c Caller, p Princip
 			title = "Remediate vulnerability finding " + ref
 		}
 		result, e = s.tasks.CreateInTx(ctx, tx, taskspublic.Caller{Actor: c.Actor, CorrelationID: c.CorrelationID}, taskspublic.CreateInput{Title: title, ContextType: typ, ContextID: id, AssignedUserID: user, AssignedTeamID: team, DueAt: due})
+		if errors.Is(e, taskspublic.ErrAssigneeInvalid) {
+			return invalid("invalid assignee")
+		}
 		if e != nil {
 			return e
 		}

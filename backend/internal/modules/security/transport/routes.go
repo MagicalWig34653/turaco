@@ -68,7 +68,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(application.PermView), Manage: p.Has(application.PermManage), AcceptRisk: p.Has(application.PermAcceptRisk), EndpointsView: p.Has("endpoints.view") || p.Has("endpoints.manage"), TasksView: p.Has("tasks.view"), ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
+	return application.Principal{UserID: p.UserID, View: p.Has(application.PermView), Manage: p.Has(application.PermManage), AcceptRisk: p.Has(application.PermAcceptRisk), EndpointsView: p.Has("endpoints.view") || p.Has("endpoints.manage"), TasksView: p.Has("tasks.view"), TasksManage: p.Has("tasks.manage"), ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
 }
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
 	p, _ := authorization.PrincipalFrom(r.Context())

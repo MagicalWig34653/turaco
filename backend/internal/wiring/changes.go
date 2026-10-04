@@ -25,7 +25,7 @@ func Changes(pool *pgxpool.Pool) *changesapp.Service {
 		changespublic.NewServices(servicespublic.New(Services(pool))),
 		changespublic.NewInfrastructure(infrapublic.New(Infrastructure(pool))),
 		changespublic.NewAssets(assetspublic.New(Assets(pool))),
-		approvals, changespublic.NewTasks(taskspublicCreator(pool, dir)))
+		approvals, changespublic.NewTasks(taskspublicCreator(pool, dir, "change")))
 }
 
 // ChangeNotifications builds the notification consumers and the reminder job

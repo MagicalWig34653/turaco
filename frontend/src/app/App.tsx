@@ -55,6 +55,7 @@ import {
   SecurityFindingsScreen,
   SecurityFindingDetailScreen,
 } from '../modules/security/SecurityScreens';
+import { SecurityOverviewScreen } from '../modules/security/Remediation';
 import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreens';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
@@ -182,6 +183,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ChangeCreateScreen />;
     case 'changeDetail':
       return <ChangeDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'securityOverview':
+      return <SecurityOverviewScreen />;
     case 'securityAdvisories':
       return <AdvisoriesScreen />;
     case 'securityAdvisoryNew':

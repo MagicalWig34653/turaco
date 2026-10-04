@@ -253,6 +253,7 @@ type Principal struct {
 	AcceptRisk    bool
 	EndpointsView bool
 	TasksView     bool
+	TasksManage   bool
 	ChangesView   bool
 }
 

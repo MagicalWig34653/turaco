@@ -231,18 +231,20 @@ func listByContext(ctx context.Context, q interface {
 func (r *Repository) SummaryByContexts(ctx context.Context, typ string, ids []string) (taskspublic.ContextSummary, error) {
 	var out taskspublic.ContextSummary
 	err := r.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status NOT IN ('completed','cancelled')),
-		count(*) FILTER (WHERE status IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status = 'completed'),
+		count(*) FILTER (WHERE status = 'cancelled'),
 		count(*) FILTER (WHERE status NOT IN ('completed','cancelled') AND due_at < now())
-		FROM platform.tasks WHERE context_type = $1 AND context_id = ANY($2::text[]::uuid[])`, typ, ids).Scan(&out.Open, &out.Done, &out.Overdue)
+		FROM platform.tasks WHERE context_type = $1 AND context_id = ANY($2::text[]::uuid[])`, typ, ids).Scan(&out.Open, &out.Done, &out.Cancelled, &out.Overdue)
 	return out, err
 }
 
 func (r *Repository) SummaryByType(ctx context.Context, typ string) (taskspublic.ContextSummary, error) {
 	var out taskspublic.ContextSummary
 	err := r.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status NOT IN ('completed','cancelled')),
-		count(*) FILTER (WHERE status IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status = 'completed'),
+		count(*) FILTER (WHERE status = 'cancelled'),
 		count(*) FILTER (WHERE status NOT IN ('completed','cancelled') AND due_at < now())
-		FROM platform.tasks WHERE context_type=$1`, typ).Scan(&out.Open, &out.Done, &out.Overdue)
+		FROM platform.tasks WHERE context_type=$1 AND context_id IS NOT NULL`, typ).Scan(&out.Open, &out.Done, &out.Cancelled, &out.Overdue)
 	return out, err
 }
 
@@ -490,4 +492,10 @@ func validUUID(s string) bool {
 		}
 	}
 	return true
+}
+
+func (r *Repository) OverdueByTwoTypes(ctx context.Context, typeA string, idsA []string, typeB string, idsB []string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM platform.tasks WHERE context_type IN ($1,$3) AND context_id IS NOT NULL AND due_at IS NOT NULL AND due_at<now() AND status NOT IN ('completed','cancelled') AND ((context_type=$1 AND context_id=ANY($2::text[]::uuid[])) OR (context_type=$3 AND context_id=ANY($4::text[]::uuid[])))`, typeA, idsA, typeB, idsB).Scan(&count)
+	return count, err
 }

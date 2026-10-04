@@ -22,7 +22,7 @@ func Planning(pool *pgxpool.Pool) *planningapp.Service {
 	approvals := planningpublic.NewApprovals(approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), dir, nil)))
 	return planningapp.NewService(planningrepository.New(pool), Relationships(), dir,
 		planningpublic.NewChangesAdapter(changespublic.NewChanges(Changes(pool))),
-		planningpublic.NewTasks(taskspublicCreator(pool, dir)),
+		planningpublic.NewTasks(taskspublicCreator(pool, dir, "initiative")),
 		planningpublic.NewProcurement(procurementpublic.NewRequests(Procurement(pool))),
 		planningpublic.NewServices(servicespublic.New(Services(pool))),
 		approvals)

@@ -90,7 +90,7 @@ func (remediationNames) TeamNames(context.Context, []string) (map[string]string,
 func TestRemediationTasksAndChangeLinks(t *testing.T) {
 	pool, base, inv, caller := securityEnv(t)
 	ctx := context.Background()
-	p := securityapp.Principal{UserID: securityTestUser, View: true, Manage: true, TasksView: true, ChangesView: true}
+	p := securityapp.Principal{UserID: securityTestUser, View: true, Manage: true, TasksManage: true, TasksView: true, ChangesView: true}
 	reg := relationships.NewRegistry()
 	reg.Register(securityapp.Triples...)
 	graph := relationships.New(reg)
@@ -104,6 +104,10 @@ func TestRemediationTasksAndChangeLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanupAdvisory(t, pool, a.ID)
+	a, err = svc.StartAnalysis(ctx, caller, p, a.ID, &a.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.relationships WHERE source_type='advisory' AND source_id=$1::uuid`, a.ID)
 	})

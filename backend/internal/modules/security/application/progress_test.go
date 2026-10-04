@@ -25,8 +25,11 @@ func TestResidualRisk(t *testing.T) {
 func TestRemediationAuthorizationAndVersion(t *testing.T) {
 	s := NewService(nil, nil)
 	c := Caller{Actor: audit.UserActor("00000000-0000-7000-8000-000000000001"), CorrelationID: "test"}
-	p := Principal{UserID: c.Actor.UserID, Manage: true}
+	p := Principal{UserID: c.Actor.UserID, Manage: true, TasksManage: true}
 	due := time.Now().Add(24 * time.Hour)
+	if _, err := s.CreateRemediationTask(context.Background(), c, Principal{UserID: c.Actor.UserID, Manage: true}, "advisory", "", nil, nil, nil, &due); !errors.Is(err, ErrForbidden) {
+		t.Fatal("tasks.manage must be required")
+	}
 	if _, err := s.CreateRemediationTask(context.Background(), c, Principal{}, "advisory", "", nil, nil, nil, &due); !errors.Is(err, ErrForbidden) {
 		t.Fatal(err)
 	}
@@ -36,6 +39,12 @@ func TestRemediationAuthorizationAndVersion(t *testing.T) {
 	version := 1
 	user := c.Actor.UserID
 	validID := "00000000-0000-7000-8000-000000000002"
+	badUser := "not-a-uuid"
+	if _, err := s.CreateRemediationTask(context.Background(), c, p, "advisory", validID, &version, &badUser, nil, &due); err == nil {
+		t.Fatal("malformed assignee accepted")
+	} else if _, ok := err.(*InvalidInputError); !ok {
+		t.Fatalf("expected invalid input: %v", err)
+	}
 	tooLate := time.Now().AddDate(1, 0, 1)
 	if _, err := s.CreateRemediationTask(context.Background(), c, p, "advisory", validID, &version, &user, nil, &tooLate); err == nil {
 		t.Fatal("task due beyond one year allowed")

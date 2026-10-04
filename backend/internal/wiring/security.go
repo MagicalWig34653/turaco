@@ -76,7 +76,7 @@ func (v securityInventory) FindSoftwareProduct(ctx context.Context, name, publis
 func Security(pool *pgxpool.Pool) *securityapp.Service {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
 	return securityapp.NewService(securityrepository.New(pool), securityInventory{endpointspublic.NewInventory(endpointsrepository.New(pool))}).WithRemediation(
-		taskspublicCreator(pool, dir), changespublic.NewChanges(Changes(pool)), Relationships(), dir, pool)
+		taskspublicCreator(pool, dir, "security_advisory", "security_finding"), changespublic.NewChanges(Changes(pool)), Relationships(), dir, pool)
 }
 
 // SecurityNotifications builds the advisory notification consumer over Organization and roles contracts.

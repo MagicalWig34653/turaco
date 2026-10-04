@@ -6,10 +6,9 @@ import (
 	"time"
 )
 
-// DueRiskReviews returns accepted Findings whose review date is exactly 14
-// or 1 day away. UUID cursor keeps the daily scan bounded in memory.
+// DueRiskReviews pages accepted Findings within the reminder window.
 func (r *Repository) DueRiskReviews(ctx context.Context, today time.Time, after string, limit int) ([]string, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text FROM security.vulnerability_findings WHERE status='risk_accepted' AND risk_review_by IN (($1::date + 14),($1::date + 1)) AND ($2::uuid IS NULL OR id > $2::uuid) ORDER BY id LIMIT $3`, today.UTC(), nilIfEmpty(after), limit)
+	rows, err := r.pool.Query(ctx, `SELECT f.id::text FROM security.vulnerability_findings f JOIN security.advisories a ON a.id=f.advisory_id WHERE f.status='risk_accepted' AND a.status IN ('applicable','remediation_planned','remediating') AND f.risk_review_by BETWEEN $1::date AND ($1::date + 14) AND ($2::uuid IS NULL OR f.id > $2::uuid) ORDER BY f.id LIMIT $3`, today.UTC(), nilIfEmpty(after), limit)
 	if err != nil {
 		return nil, fmt.Errorf("due risk reviews: %w", err)
 	}

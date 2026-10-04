@@ -23,7 +23,7 @@ func (s reminderStore) DueRiskReviews(_ context.Context, today time.Time, after 
 		return nil, nil
 	}
 	days := int(s.review.Sub(today.Truncate(24*time.Hour)).Hours() / 24)
-	if days == 14 || days == 1 {
+	if days >= 0 && days <= 14 {
 		return []string{reminderFindingID}, nil
 	}
 	return nil, nil
@@ -35,7 +35,7 @@ func (s reminderStore) LockFindingTx(ctx context.Context, _ pgx.Tx, id string) (
 	return s.GetFinding(ctx, id)
 }
 func (s reminderStore) GetAdvisory(context.Context, string) (Advisory, error) {
-	return Advisory{ID: reminderAdvisoryID, Reference: "ADV-TEST"}, nil
+	return Advisory{ID: reminderAdvisoryID, Reference: "ADV-TEST", Status: AdvisoryApplicable}, nil
 }
 func (s reminderStore) InTx(ctx context.Context, fn func(pgx.Tx) error) error { return fn(nil) }
 
@@ -90,6 +90,12 @@ func TestRiskReviewReminderIdempotency(t *testing.T) {
 	}
 	if len(note.seen) != 2 {
 		t.Fatalf("1-day reminder: %d", len(note.seen))
+	}
+	today = review.AddDate(0, 0, -7)
+	late := &reminderNotifier{seen: map[string]notifications.Intent{}}
+	nLate := NewNotifications(reminderStore{review: review}, reminderDirectory{}, reminderHolders{}, reminderPermissions{}, late).WithClock(func() time.Time { return today })
+	if err := nLate.HandleRiskReminders(context.Background(), jobs.Job{}); err != nil || len(late.seen) != 1 {
+		t.Fatalf("skipped 14-day run: %d %v", len(late.seen), err)
 	}
 	for _, intent := range note.seen {
 		if intent.Category != RiskReviewCategory || intent.LinkID != reminderFindingID || intent.Params["title"] != "VUL-TEST · ADV-TEST" {

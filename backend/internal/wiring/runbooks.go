@@ -53,6 +53,6 @@ func (c ticketContexts) TicketExists(ctx context.Context, id string) (bool, erro
 // Runbooks builds the Runbook service over the other modules' public contracts.
 func Runbooks(pool *pgxpool.Pool) *knowledgeapp.RunbookService {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
-	return knowledgeapp.NewRunbookService(knowledgerepository.New(pool), runbookTasks{taskspublicCreator(pool, dir)},
+	return knowledgeapp.NewRunbookService(knowledgerepository.New(pool), runbookTasks{taskspublicCreator(pool, dir, runbookContextType)},
 		ticketContexts{servicedeskrepository.New(pool)}, dir)
 }

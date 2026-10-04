@@ -67,9 +67,12 @@ var contextIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-
 
 // Creator creates and reads tasks for other modules.
 type Creator struct {
-	store application.Store
-	dir   application.Directory
+	store   application.Store
+	dir     application.Directory
+	allowed map[string]bool
 }
+
+func (c *Creator) owns(typ string) bool { return contextType.MatchString(typ) && c.allowed[typ] }
 
 // ContextReader is the Tasks-owned read port for a bounded set of tasks attached
 // to another module's record. The caller must authorize that record and any
@@ -83,7 +86,7 @@ type ContextReader interface {
 
 // SummaryByType is for the owner of a Task context type to summarize its work.
 func (c *Creator) SummaryByType(ctx context.Context, typ string) (ContextSummary, error) {
-	if !contextType.MatchString(typ) {
+	if !c.owns(typ) {
 		return ContextSummary{}, &InvalidInputError{Message: "invalid task context"}
 	}
 	reader, ok := c.store.(ContextReader)
@@ -96,13 +99,14 @@ func (c *Creator) SummaryByType(ctx context.Context, typ string) (ContextSummary
 // ContextSummary contains only state counts, so a module can aggregate its work
 // without reading unrelated Tasks or exposing Task assignees.
 type ContextSummary struct {
-	Open    int `json:"open"`
-	Done    int `json:"done"`
-	Overdue int `json:"overdue"`
+	Open      int `json:"open"`
+	Done      int `json:"done"`
+	Cancelled int `json:"cancelled"`
+	Overdue   int `json:"overdue"`
 }
 
 func (c *Creator) SummaryByContexts(ctx context.Context, typ string, ids []string) (ContextSummary, error) {
-	if !contextType.MatchString(typ) {
+	if !c.owns(typ) || len(ids) > 500 {
 		return ContextSummary{}, &InvalidInputError{Message: "invalid task context"}
 	}
 	for _, id := range ids {
@@ -133,7 +137,7 @@ func (c *Creator) ByContextInTx(ctx context.Context, tx pgx.Tx, contextType, con
 }
 
 func (c *Creator) byContext(ctx context.Context, tx pgx.Tx, typ, contextID string, limit int) ([]Task, error) {
-	if !contextType.MatchString(typ) || !contextIDPattern.MatchString(contextID) || limit < 1 || limit > 500 {
+	if !c.owns(typ) || !contextIDPattern.MatchString(contextID) || limit < 1 || limit > 500 {
 		return nil, &InvalidInputError{Message: "invalid task context or limit"}
 	}
 	reader, ok := c.store.(ContextReader)
@@ -157,8 +161,14 @@ func (c *Creator) byContext(ctx context.Context, tx pgx.Tx, typ, contextID strin
 	return out, nil
 }
 
-func NewCreator(store application.Store, dir application.Directory) *Creator {
-	return &Creator{store: store, dir: dir}
+func NewCreator(store application.Store, dir application.Directory, allowed ...string) *Creator {
+	c := &Creator{store: store, dir: dir, allowed: map[string]bool{}}
+	for _, typ := range allowed {
+		if contextType.MatchString(typ) {
+			c.allowed[typ] = true
+		}
+	}
+	return c
 }
 
 // CreateInTx creates an open task in the caller's transaction (the caller
@@ -172,7 +182,7 @@ func (c *Creator) CreateInTx(ctx context.Context, tx pgx.Tx, caller Caller, in C
 	if caller.CorrelationID == "" {
 		return "", errors.New("tasks: correlation id is required")
 	}
-	if !contextType.MatchString(in.ContextType) || len(in.ContextID) != 36 {
+	if !c.owns(in.ContextType) || !contextIDPattern.MatchString(in.ContextID) {
 		return "", &InvalidInputError{Message: "a task context needs a type and an id"}
 	}
 	n, err := application.NormalizeNewTask(application.TaskDraft{
@@ -203,6 +213,9 @@ func (c *Creator) CancelByContextInTx(ctx context.Context, tx pgx.Tx, caller Cal
 	if err := caller.Actor.Validate(); err != nil {
 		return 0, err
 	}
+	if !c.owns(contextType) || !contextIDPattern.MatchString(contextID) {
+		return 0, &InvalidInputError{Message: "invalid task context"}
+	}
 	return c.store.CancelByContextTx(ctx, tx, application.Caller{Actor: caller.Actor, CorrelationID: caller.CorrelationID}, contextType, contextID, reason)
 }
 
@@ -222,4 +235,23 @@ func (c *Creator) Tasks(ctx context.Context, ids []string) ([]Task, error) {
 // StatusesInTx returns id -> status for the given tasks inside the caller's transaction.
 func (c *Creator) StatusesInTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error) {
 	return c.store.StatusesTx(ctx, tx, ids)
+}
+
+// OverdueByContexts counts only open due Tasks in two owned context types.
+func (c *Creator) OverdueByTwoTypes(ctx context.Context, typeA string, idsA []string, typeB string, idsB []string) (int, error) {
+	if !c.owns(typeA) || !c.owns(typeB) || len(idsA) > 500 || len(idsB) > 500 {
+		return 0, &InvalidInputError{Message: "invalid task context"}
+	}
+	for _, id := range append(append([]string{}, idsA...), idsB...) {
+		if !contextIDPattern.MatchString(id) {
+			return 0, &InvalidInputError{Message: "invalid task context id"}
+		}
+	}
+	reader, ok := c.store.(interface {
+		OverdueByTwoTypes(context.Context, string, []string, string, []string) (int, error)
+	})
+	if !ok {
+		return 0, errors.New("tasks: overdue reader unavailable")
+	}
+	return reader.OverdueByTwoTypes(ctx, typeA, idsA, typeB, idsB)
 }
