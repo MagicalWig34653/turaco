@@ -1,7 +1,7 @@
 import type { MessageKey } from '../i18n/i18n';
 import { INVALID_RESPONSE_CODE, NETWORK_ERROR_CODE, type ApiError } from './client';
 
-type ErrorLike = Pick<ApiError, 'code' | 'status'>;
+type ErrorLike = Pick<ApiError, 'code' | 'status'> & Partial<Pick<ApiError, 'message'>>;
 
 /** Platform and auth/session codes only; feature modules register their own codes. */
 const byCode: Record<string, MessageKey> = {
