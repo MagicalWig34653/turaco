@@ -15,7 +15,8 @@
 | `ChangeCompleted` | 1 | changes | A Change in progress was completed. Payload: changeId. |
 | `ChangeFailed` | 1 | changes | A Change in progress failed. Payload: changeId, reason, rollbackDone. |
 | `ChangeRejected` | 1 | changes | The approver rejected a Change. Payload: changeId. |
-| `ChangeScheduled` | 1 | changes | An approved Change was scheduled in its maintenance window; also the continuation of the fan-out to a large audience. Payload: changeId, emergency, windowStart, windowEnd; continuation events carry changeId and after. |
+| `ChangeScheduled` | 1 | changes | An approved Change was scheduled in its maintenance window; published once per scheduling. Payload: changeId, emergency, windowStart, windowEnd. |
+| `ChangeScheduledFanOut` | 1 | changes (internal) | Continuation of the change.scheduled notification fan-out to a large audience (the next chunk of recipients). Payload: changeId, after (the last recipient id already notified). |
 | `ChangeStarted` | 1 | changes | A scheduled Change started execution. Payload: changeId. |
 | `ChangeSubmitted` | 1 | changes | A draft Change was submitted for assessment. Payload: changeId, kind, risk. |
 | `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |
