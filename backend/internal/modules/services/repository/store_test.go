@@ -1177,3 +1177,32 @@ func TestEnqueueBackfillDeduplicates(t *testing.T) {
 		t.Fatalf("pending backfill jobs: %d", n)
 	}
 }
+
+// Lookup is the contract other modules (Changes) use: no permission check, retired
+// Services included, ids normalized, owners and support team returned, bounded.
+func TestLookupForOtherModules(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a := e.service("Lookup A")
+	b := e.service("Lookup B")
+	if _, err := e.app.Retire(ctx, e.caller(), e.manage, b.ID, ver(b), "decommissioned"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := e.app.Lookup(ctx, []string{strings.ToUpper(a.ID), b.ID, e.uuid(), "not-a-uuid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[a.ID].Reference != a.Reference || got[b.ID].Status != application.StatusRetired {
+		t.Errorf("lookup = %+v", got)
+	}
+	if empty, err := e.app.Lookup(ctx, nil); err != nil || len(empty) != 0 {
+		t.Errorf("empty lookup = %v %v", empty, err)
+	}
+	tooMany := make([]string, application.MaxLookupIDs+1)
+	for i := range tooMany {
+		tooMany[i] = a.ID
+	}
+	if _, err := e.app.Lookup(ctx, tooMany); err == nil {
+		t.Error("an oversized lookup was accepted")
+	}
+}

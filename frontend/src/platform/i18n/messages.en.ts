@@ -1187,6 +1187,13 @@ export const en = {
     'Everyone: all employees can read it once published. IT staff: only people who may read internal articles.',
   'tickets.action.makeArticle': 'Create a knowledge article from this resolution',
   'nav.incidents': 'Known issues',
+  'notifications.change.scheduled':
+    'A change affecting a service you support was scheduled: {title}',
+  'notifications.category.change.scheduled': 'A change affecting my service was scheduled',
+  'notifications.change.reminder': 'A change affecting a service you support starts soon: {title}',
+  'notifications.category.change.reminder': 'A change affecting my service starts soon',
+  'notifications.change.state': 'The status of a change you requested or own was updated: {title}',
+  'notifications.category.change.state': 'My change was approved, rejected or failed',
   'notifications.majorincident.update': 'News on an incident you follow: {title}',
   'notifications.category.majorincident.update': 'An incident I follow has news',
   'incidents.detail.title': 'Incident',

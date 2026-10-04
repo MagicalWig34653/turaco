@@ -98,6 +98,25 @@ Implemented operations (F2, `modules/tasks`): `start` (open/blocked → in_progr
 
 Terminal/exception branches: `rejected`, `failed`, `cancelled`. Emergency change can use an abbreviated explicit policy path; it does not bypass audit.
 
+Implemented (F7c, `modules/changes`; the status is only ever changed by these explicit operations, each audited with ids and reason codes, recorded in the append-only `change_transitions`, and `expectedVersion`-guarded):
+
+| Operation | From | To | Notes |
+|---|---|---|---|
+| `Create` | - | `draft` | requester = caller; kind `standard\|normal\|emergency`; risk defaults to `low` |
+| `UpdateDetails`, `AddAffected`, `RemoveAffected` | `draft`, `assessment` | same | editors are remembered and can never approve |
+| `Submit` | `draft` | `assessment` | needs a window, a rollback plan for `medium`/`high` risk and, unless `standard`, at least one affected resource |
+| `Assess(risk, approver \| emergencyJustification)` | `assessment` | `pending_approval`, or `approved` | `medium`/`high` risk and every `emergency` change need an approver (user or team; requester, editors and assessor excluded) - then `pending_approval`; `low` risk needs none - `approved`; an emergency change may instead carry an explicit justification (`emergency_approved`, reason `emergency`) |
+| approval decided (`ApprovalDecided` consumer) | `pending_approval` | `approved` or `rejected` | `rejected` is terminal (reason `approval_rejected`) |
+| `Schedule([window])` | `approved` | `scheduled` | the window must start in the future unless the change is `emergency` |
+| `Start` | `scheduled` | `in_progress` | owner or `changes.execute` |
+| `Complete([force=tasks_waived])` | `in_progress` | `completed` | open execution Tasks block it; `tasks_waived` cancels them and is recorded |
+| `Fail(reason, rollbackDone)` | `in_progress` | `failed` | reason `execution_error\|verification_failed\|window_exceeded\|dependency_unavailable\|other` |
+| `Review(outcomeNote)` | `completed`, `failed` | `review` | optional, except for emergency changes |
+| `Close` | `completed`, `failed`, `review` | `closed` | an `emergency` change cannot be closed without a review (`changes.review_required`) |
+| `Cancel(reason)` | `draft`..`scheduled` | `cancelled` | cancels a pending approval and the Tasks of a scheduled change; reason `no_longer_needed\|superseded\|rescheduled\|risk_too_high\|error_correction\|other` |
+
+Reopening is not supported: `rejected`, `failed` (until closed), `cancelled` and `closed` changes are never edited; create a new Change instead. Execution Tasks (`AddTask`) can be added while `scheduled` or `in_progress`.
+
 ## Initiative
 `idea → planning → proposed → approved → active ↔ on_hold → completed`, with `cancelled` alternatives.
 

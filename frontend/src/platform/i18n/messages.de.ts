@@ -1210,6 +1210,16 @@ export const de: Record<MessageKey, string> = {
     'Alle: alle Mitarbeitenden können ihn nach der Veröffentlichung lesen. IT-Team: nur Personen mit Leserecht für interne Artikel.',
   'tickets.action.makeArticle': 'Wissensartikel aus dieser Lösung erstellen',
   'nav.incidents': 'Bekannte Störungen',
+  'notifications.change.scheduled':
+    'Eine Änderung an einem von dir betreuten Service wurde eingeplant: {title}',
+  'notifications.category.change.scheduled': 'Eine Änderung an meinem Service wurde eingeplant',
+  'notifications.change.reminder':
+    'Eine Änderung an einem von dir betreuten Service beginnt bald: {title}',
+  'notifications.category.change.reminder': 'Eine Änderung an meinem Service beginnt bald',
+  'notifications.change.state':
+    'Der Status einer Änderung, die du beantragt hast oder verantwortest, wurde aktualisiert: {title}',
+  'notifications.category.change.state':
+    'Meine Änderung wurde genehmigt, abgelehnt oder ist fehlgeschlagen',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',
