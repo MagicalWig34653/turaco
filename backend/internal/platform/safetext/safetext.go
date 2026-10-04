@@ -14,9 +14,12 @@ func Unsafe(r rune) bool {
 	}
 	switch {
 	case r == 0x061C, // Arabic letter mark
+		r == 0x00AD,              // soft hyphen
 		r == 0x200B,              // zero width space
 		r == 0x200E, r == 0x200F, // left/right-to-right marks
+		r == 0x2028, r == 0x2029, // Unicode line and paragraph separators
 		r >= 0x202A && r <= 0x202E, // embeddings and overrides
+		r == 0x202F,                // narrow no-break space
 		r == 0x2060,                // word joiner
 		r >= 0x2066 && r <= 0x2069, // isolates
 		r == 0xFEFF:                // byte order mark / zero width no-break space

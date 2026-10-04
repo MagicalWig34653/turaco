@@ -53,6 +53,9 @@ var Registry = []Permission{
 	{Name: "changes.approve", Description: "Approve infrastructure/service changes according to policy.", Risk: "high"},
 	{Name: "planning.view", Description: "View all Initiatives (goal, owner, status, target date, milestones, included Changes, Tasks, Procurement Requests and Services, progress, approvals, history) and the maintenance calendar. Owners see their own Initiatives without it; included records appear by name only with the matching view permission of their module.", Risk: "normal"},
 	{Name: "planning.manage", Description: "Create and change Initiatives, their milestones and included records, and drive their lifecycle (start planning, propose for approval, activate, hold, resume, complete, cancel). Proposing chooses the approver; the owner, creator, proposer and editors can never approve.", Risk: "elevated"},
+	{Name: "security.view", Description: "View security advisories and vulnerability findings. Device names additionally require endpoints.view.", Risk: "normal"},
+	{Name: "security.manage", Description: "Create, import, analyze and manage security advisories and vulnerability findings, excluding risk acceptance.", Risk: "elevated"},
+	{Name: "security.accept_risk", Description: "Accept vulnerability finding risk with a reason code and review date.", Risk: "elevated"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
 	// Remote Access (ADR-0026): reserved, planned and not implemented; no route checks these yet.
 	{Name: "remote_access.view", Description: "Planned: see whether remote access is available for a Device or Ticket (provider mapping, supported modes); does not allow starting a session.", Risk: "normal"},

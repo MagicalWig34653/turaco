@@ -1,14 +1,16 @@
 # Security Remediation
 
+**Status:** F8a backend implements Advisory ingestion, normalization, matching, Finding triage and fresh-observation re-verification. The UI and steps involving Briefing aggregation, Tasks, Changes and Deployments remain planned ([design](../product/f8-security-briefing-design.md), [current status](../product/current-status.md)).
+
 ## Goal
 Turn external/internal advisories into evidence-based operational remediation tied to actual inventory.
 
 ## Flow
-1. Security Advisory ingested/published and normalized to affected software/OS/version criteria.
-2. Software/endpoint observations create Vulnerability Findings with confidence; "potential" is not presented as confirmed vulnerability.
-3. IT analyzes applicability and publishes relevant Briefing Item showing affected count.
-4. Query/Dynamic Group exposes concrete affected endpoints; dashboard count is clickable.
+1. Security Advisory is entered by hand or imported from a bounded JSON source and normalized to affected software/OS/version criteria. Import ignores older source updates and archived Advisories; a criteria change returns a live non-editable status to `analyzing` for a fresh decision. F8a records applicability explicitly and notifies `security.manage` holders when an Advisory becomes applicable. The `unmatchedCriteria` count remains visible in detail and summary; `MarkNotApplicable`, `Resolve` and `Archive` responses carry an `unmatched_criteria` warning when appropriate.
+2. The `security.match` job compares criteria with observed Endpoint installations through `endpoints/public`, creating or updating Vulnerability Findings with `probable` or `potential` confidence. `potential` is never presented as confirmed. The six-hour `security.match_all` pass requeues Advisories with changed criteria products or overdue risk reviews. Each Advisory run is capped at 20,000 Devices and reports truncation; the possibly partial final Device group cannot cause remediation.
+3. IT investigates, accepts, plans remediation, marks a false positive or accepts risk with a reason and review date. A User needs the separate `security.accept_risk` permission to accept risk and to choose `configuration_not_affected` or `other` for a false positive, or `other` for Advisory non-applicability. Advisory/Finding summaries and filtered lists expose affected counts and concrete Devices to authorized readers; Device names need `endpoints.view`.
+4. F8c will show applicable Advisories in the computed IT Briefing and link counts to filtered lists. The manual Briefing Items already implemented in F2 remain separate records.
 5. Approved remediation creates Change/maintenance context when policy requires and a Deployment of an approved Software Version; packaging and publishing run through a Software Management Provider (IntuneGet → Intune first, [ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
 6. Deployment Rings: a pilot ring precedes broad rollout; promotion needs approval and success on fresh observed evidence.
-7. Fresh provider observations (not publish success) move Findings toward remediated; correlated failures create Tasks or Tickets.
-8. Advisory/Briefing shows progress and residual risk. Risk acceptance records actor/reason/review date.
+7. F8a marks Findings remediated on a newer nonmatching installation only if its raw version changed, or on a Device/installation tombstone. A mere evaluation miss after criteria changed is stale and leaves the Finding, including risk acceptance, untouched. Newer changed versions and `potential → probable` escalations reopen false positives and accepted risks with `version_changed`. Provider publish success and Task completion are not evidence of remediation. F8b/F9 will add the Task/Deployment response to correlated failures.
+8. F8a shows Finding state counts per Advisory and records a risk acceptance's actor, reason and review date. An accepted risk whose review date is before today reopens once with `review_due` during `security.match_all`; the `security.risk_review_due` notification remains planned for F8b. F8b/F8c add richer progress/residual-risk views and the computed Briefing entry.

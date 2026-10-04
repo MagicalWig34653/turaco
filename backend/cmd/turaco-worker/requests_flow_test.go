@@ -22,6 +22,7 @@ var allTestEventTypes = []string{
 	"ServiceRequestSubmitted", "ServiceRequestApproved", "ServiceRequestRejected", "ServiceRequestCompleted", "ServiceRequestCancelled",
 	"ServiceCreated", "ChangeSubmitted", "ChangeApproved", "ChangeRejected", "ChangeScheduled", "ChangeScheduledFanOut", "ChangeStarted", "ChangeCompleted", "ChangeFailed",
 	"InitiativeStatusChanged",
+	"SecurityAdvisoryPublished", "SecurityAdvisoryPublishedFanOut", "VulnerabilityFindingChanged",
 }
 
 // flow is a request workflow test environment over the real modules.

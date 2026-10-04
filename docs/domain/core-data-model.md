@@ -118,7 +118,9 @@ The management model (F6 slice 2) adds `endpoints.management_artifacts` and `man
 
 *Planned ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)):* the AI runtime stores no domain data of its own beyond audit of tool calls and short-lived AI Proposals; prompts and responses are not retained by default.
 
-**SecurityAdvisory** relates to CVE/software/OS/vendor. **VulnerabilityFinding** links advisory to a concrete resource with confidence (`confirmed`, `probable`, `potential`, `unknown`) and remediation state.
+**SecurityAdvisory** (F8a backend, schema `security`) has an `ADV-` reference, source/external identity unique per source, bounded plain-text title/summary, source severity, published/modified times, HTTPS source URL, status/reason, optimistic version and match freshness/revision/truncation fields. **AdvisoryCriterion** identifies a canonical SoftwareProduct or an unnormalized product name/publisher, optional OS platform and ordered version rules (`introduced`, `fixed`, `lt`, `le`, `eq`); normalization is recorded as `matched|unmatched`. Import is idempotent by source/external id.
+
+**VulnerabilityFinding** has a `VUL-` reference and unique `(advisory, Device, SoftwareProduct)` identity. It records installed version, Turaco-derived confidence (`probable` or `potential`, never automatically `confirmed`), state/reason, first/last observed times, remediated time and version. `risk_accepted` requires accepting User, acceptance time, reason code and review date within twelve months. Advisory and Finding transition rows have immutable histories guarded against update, delete and truncate; per-status CHECK constraints guard the current rows. Device and SoftwareProduct ids are external references to the Endpoints module, accessed through `endpoints/public`, with no cross-module foreign key. A newer Endpoint observation, or a Device/installation tombstone, is required for automatic remediation.
 
 ## Shared relationship model
 

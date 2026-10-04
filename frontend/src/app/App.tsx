@@ -48,6 +48,13 @@ import {
   InitiativeDetailScreen,
   MaintenanceCalendarScreen,
 } from '../modules/planning/PlanningScreens';
+import {
+  AdvisoriesScreen,
+  AdvisoryCreateScreen,
+  AdvisoryDetailScreen,
+  SecurityFindingsScreen,
+  SecurityFindingDetailScreen,
+} from '../modules/security/SecurityScreens';
 import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreens';
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
@@ -175,6 +182,16 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ChangeCreateScreen />;
     case 'changeDetail':
       return <ChangeDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'securityAdvisories':
+      return <AdvisoriesScreen />;
+    case 'securityAdvisoryNew':
+      return <AdvisoryCreateScreen />;
+    case 'securityAdvisoryDetail':
+      return <AdvisoryDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'securityFindings':
+      return <SecurityFindingsScreen />;
+    case 'securityFindingDetail':
+      return <SecurityFindingDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'services':
       return <ServicesListScreen />;
     case 'serviceDetail':

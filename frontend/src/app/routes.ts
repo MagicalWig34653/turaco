@@ -88,7 +88,12 @@ export type RouteId =
   | 'roleAssignments'
   | 'directorySync'
   | 'directorySyncRun'
-  | 'audit';
+  | 'audit'
+  | 'securityAdvisories'
+  | 'securityAdvisoryNew'
+  | 'securityAdvisoryDetail'
+  | 'securityFindings'
+  | 'securityFindingDetail';
 
 export type NavGroup =
   | 'main'
@@ -98,6 +103,7 @@ export type NavGroup =
   | 'services'
   | 'changes'
   | 'planning'
+  | 'security'
   | 'admin';
 
 export type AppRoute = {
@@ -259,6 +265,38 @@ export const appRoutes: readonly AppRoute[] = [
       'changes.execute',
     ],
     nav: 'planning',
+  },
+  {
+    id: 'securityAdvisoryNew',
+    pattern: '/security/advisories/new',
+    titleKey: 'security.create',
+    requires: ['security.manage'],
+  },
+  {
+    id: 'securityAdvisories',
+    pattern: '/security/advisories',
+    titleKey: 'security.advisories',
+    requires: ['security.view'],
+    nav: 'security',
+  },
+  {
+    id: 'securityAdvisoryDetail',
+    pattern: '/security/advisories/:id',
+    titleKey: 'security.advisory',
+    requires: ['security.view'],
+  },
+  {
+    id: 'securityFindings',
+    pattern: '/security/findings',
+    titleKey: 'security.findings',
+    requires: ['security.view'],
+    nav: 'security',
+  },
+  {
+    id: 'securityFindingDetail',
+    pattern: '/security/findings/:id',
+    titleKey: 'security.finding',
+    requires: ['security.view'],
   },
   {
     id: 'services',
