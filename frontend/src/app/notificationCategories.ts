@@ -45,6 +45,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.change.state',
       labelKey: 'notifications.category.change.state',
     },
+    'initiative.state': {
+      textKey: 'notifications.initiative.state',
+      labelKey: 'notifications.category.initiative.state',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',

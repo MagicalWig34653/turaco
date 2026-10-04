@@ -1321,6 +1321,8 @@ export const en = {
   'notifications.category.change.reminder': 'A change affecting my service starts soon',
   'notifications.change.state': 'The status of a change you requested or own was updated: {title}',
   'notifications.category.change.state': 'My change was approved, rejected or failed',
+  'notifications.initiative.state': 'The status of an initiative you own was updated: {title}',
+  'notifications.category.initiative.state': 'My initiative changed status',
   'notifications.majorincident.update': 'News on an incident you follow: {title}',
   'notifications.category.majorincident.update': 'An incident I follow has news',
   'incidents.detail.title': 'Incident',

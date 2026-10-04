@@ -1350,6 +1350,9 @@ export const de: Record<MessageKey, string> = {
     'Der Status einer Änderung, die du beantragt hast oder verantwortest, wurde aktualisiert: {title}',
   'notifications.category.change.state':
     'Meine Änderung wurde genehmigt, abgelehnt oder ist fehlgeschlagen',
+  'notifications.initiative.state':
+    'Der Status einer Initiative, die du verantwortest, wurde aktualisiert: {title}',
+  'notifications.category.initiative.state': 'Meine Initiative hat ihren Status geändert',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',
