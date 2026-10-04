@@ -1353,6 +1353,9 @@ export const de: Record<MessageKey, string> = {
   'notifications.initiative.state':
     'Der Status einer Initiative, die du verantwortest, wurde aktualisiert: {title}',
   'notifications.category.initiative.state': 'Meine Initiative hat ihren Status geändert',
+  'notifications.security.advisory':
+    'Ein Sicherheitshinweis wurde als zutreffend markiert: {title}',
+  'notifications.category.security.advisory': 'Zutreffender Sicherheitshinweis',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',

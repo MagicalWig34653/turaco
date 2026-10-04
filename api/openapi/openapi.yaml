@@ -7972,6 +7972,542 @@ paths:
         '404': {$ref: '#/components/responses/PlanningNotFound'}
         '409': {$ref: '#/components/responses/PlanningConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /security/advisories:
+    get:
+      operationId: listSecurityAdvisories
+      summary: List security advisories.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List security advisories.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: createSecurityAdvisory
+      summary: Create a manual security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityAdvisoryInput'
+      responses:
+        '201':
+          description: Create a manual security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/import:
+    post:
+      operationId: importSecurityAdvisories
+      summary: Import up to 500 advisories in a 1 MB JSON body, idempotent by source and external ID.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityAdvisoryImport'
+      responses:
+        '200':
+          description: Import up to 500 advisories in a 1 MB JSON body, idempotent by source and external ID.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}:
+    get:
+      operationId: getSecurityAdvisory
+      summary: Get a security advisory and affected criteria.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get a security advisory and affected criteria.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateSecurityAdvisory
+      summary: Edit advisory details.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityAdvisoryPatch'
+      responses:
+        '200':
+          description: Edit advisory details.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/criteria:
+    put:
+      operationId: editSecurityCriteria
+      summary: Replace and normalize affected criteria.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityCriteriaEdit'
+      responses:
+        '200':
+          description: Replace and normalize affected criteria.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/normalize:
+    post:
+      operationId: normalizeSecurityCriteria
+      summary: Normalize unmatched affected criteria.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Normalize unmatched affected criteria.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/start-analysis:
+    post:
+      operationId: startSecurityAnalysis
+      summary: Start analysis security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Start analysis security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/applicable:
+    post:
+      operationId: markSecurityApplicable
+      summary: Applicable security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Applicable security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/not-applicable:
+    post:
+      operationId: markSecurityNotApplicable
+      summary: Not applicable security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Not applicable security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/plan-remediation:
+    post:
+      operationId: planSecurityAdvisoryRemediation
+      summary: Plan remediation security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Plan remediation security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/start-remediation:
+    post:
+      operationId: startSecurityAdvisoryRemediation
+      summary: Start remediation security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Start remediation security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/resolve:
+    post:
+      operationId: resolveSecurityAdvisory
+      summary: Resolve security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Resolve security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/archive:
+    post:
+      operationId: archiveSecurityAdvisory
+      summary: Archive security advisory.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Archive security advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/findings:
+    get:
+      operationId: listAdvisoryFindings
+      summary: List findings of an advisory.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List findings of an advisory.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/summary:
+    get:
+      operationId: getSecurityAdvisorySummary
+      summary: Get finding counts and match truncation.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get finding counts and match truncation.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/advisories/{id}/transitions:
+    get:
+      operationId: listSecurityAdvisoryTransitions
+      summary: List append-only advisory transitions.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List append-only advisory transitions.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings:
+    get:
+      operationId: listSecurityFindings
+      summary: List vulnerability findings; device names require endpoints.view.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: List vulnerability findings; device names require endpoints.view.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}:
+    get:
+      operationId: getSecurityFinding
+      summary: Get a vulnerability finding; device names require endpoints.view.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get a vulnerability finding; device names require endpoints.view.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/investigate:
+    post:
+      operationId: investigateSecurityFinding
+      summary: Investigate vulnerability finding.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Investigate vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/accept:
+    post:
+      operationId: acceptSecurityFinding
+      summary: Accept vulnerability finding.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Accept vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/accept-risk:
+    post:
+      operationId: acceptSecurityRisk
+      summary: Accept risk vulnerability finding.
+      description: "Requires `security.accept_risk`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Accept risk vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/false-positive:
+    post:
+      operationId: markSecurityFalsePositive
+      summary: False positive vulnerability finding.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: False positive vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/plan-remediation:
+    post:
+      operationId: planSecurityFindingRemediation
+      summary: Plan remediation vulnerability finding.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Plan remediation vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/start-remediation:
+    post:
+      operationId: startSecurityFindingRemediation
+      summary: Start remediation vulnerability finding.
+      description: "Requires `security.manage`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Start remediation vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/reopen:
+    post:
+      operationId: reopenSecurityFinding
+      summary: Reopen vulnerability finding.
+      description: "Requires `security.manage or security.accept_risk`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityVersionRequest'
+      responses:
+        '200':
+          description: Reopen vulnerability finding.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /security/findings/{id}/transitions:
+    get:
+      operationId: listSecurityFindingTransitions
+      summary: List append-only finding transitions.
+      description: "Requires `security.view`. Responses are no-store; mutations are audited and version checked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: List append-only finding transitions.
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
 components:
   securitySchemes:
     sessionAuth:
@@ -11910,3 +12446,76 @@ components:
               type: string
             requestId:
               type: string
+    SecurityAdvisoryInput:
+      type: object
+      additionalProperties: false
+      required: [title, severity]
+      properties:
+        source: {type: string, description: Manual creation always uses source manual.}
+        externalId: {type: string, maxLength: 200}
+        title: {type: string, minLength: 1, maxLength: 300}
+        summary: {type: string, maxLength: 4000}
+        severity: {type: string, enum: [none, low, medium, high, critical]}
+        sourceUrl: {type: string, format: uri, pattern: '^https://'}
+        publishedAt: {type: string, format: date-time}
+        modifiedAt: {type: string, format: date-time}
+        criteria:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/SecurityCriterionInput'}
+    SecurityCriterionInput:
+      type: object
+      additionalProperties: false
+      properties:
+        softwareProductId: {type: string, format: uuid}
+        productName: {type: string, maxLength: 200}
+        publisher: {type: string, maxLength: 200}
+        osPlatform: {type: string, enum: [windows, macos, ios, android, linux, other]}
+        rules:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [kind, version]
+            properties:
+              kind: {type: string, enum: [introduced, fixed, lt, le, eq]}
+              version: {type: string, maxLength: 100}
+    SecurityAdvisoryImport:
+      type: object
+      additionalProperties: false
+      required: [records]
+      properties:
+        records:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: {$ref: '#/components/schemas/SecurityAdvisoryInput'}
+    SecurityAdvisoryPatch:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string, maxLength: 300}
+        summary: {type: string, maxLength: 4000}
+        severity: {type: string, enum: [none, low, medium, high, critical]}
+        sourceUrl: {type: string, format: uri, pattern: '^https://'}
+    SecurityCriteriaEdit:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, criteria]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        criteria:
+          type: array
+          maxItems: 50
+          items: {$ref: '#/components/schemas/SecurityCriterionInput'}
+    SecurityVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, description: Required for not-applicable, false-positive, accept-risk and reopen.}
+        reviewBy: {type: string, format: date, description: Required for accept-risk and at most twelve months ahead.}

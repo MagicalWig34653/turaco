@@ -50,6 +50,9 @@
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
 | `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |
+| `security.accept_risk` | elevated | Accept vulnerability finding risk with a reason code and review date. |
+| `security.manage` | elevated | Create, import, analyze and manage security advisories and vulnerability findings, excluding risk acceptance. |
+| `security.view` | normal | View security advisories and vulnerability findings. Device names additionally require endpoints.view. |
 | `services.manage` | elevated | Create and change Services, change their status, retire them, and add or remove their dependencies on Services, Virtual Machines, Assets and Locations. |
 | `services.view` | normal | View IT Services (owner, support team, criticality, status), their dependencies and dependents, and the impact view; Virtual Machine and Location names in them also need infrastructure.view, Asset references assets.view. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |

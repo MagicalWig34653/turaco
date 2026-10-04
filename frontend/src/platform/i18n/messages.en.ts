@@ -1323,6 +1323,8 @@ export const en = {
   'notifications.category.change.state': 'My change was approved, rejected or failed',
   'notifications.initiative.state': 'The status of an initiative you own was updated: {title}',
   'notifications.category.initiative.state': 'My initiative changed status',
+  'notifications.security.advisory': 'A security advisory was marked as applicable: {title}',
+  'notifications.category.security.advisory': 'Security advisory applicable',
   'notifications.majorincident.update': 'News on an incident you follow: {title}',
   'notifications.category.majorincident.update': 'An incident I follow has news',
   'incidents.detail.title': 'Incident',

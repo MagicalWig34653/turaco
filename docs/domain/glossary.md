@@ -98,8 +98,10 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Dynamic Group** — query-defined continuously evaluated entity set.
 
 ## Security/knowledge
-- **Security Advisory** — vulnerability/update/threat information item.
-- **Vulnerability Finding** — assessment that a specific resource may be affected, with confidence and remediation state.
+- **Security Advisory** — sourced vulnerability/update/threat information item (module `security`, reference `ADV-xxxxxx`), with affected software, OS and version criteria, severity and an explicit applicability/remediation lifecycle. Feed identity is the source and external id; a hand-entered Advisory has source `manual`.
+- **Advisory Criterion** — one affected Software Product or product name/publisher with optional OS platform and version rules (`introduced`, `fixed`, `lt`, `le`, `eq`). Normalization is `matched` or `unmatched`; an unmatched product never silently becomes a confirmed exposure.
+- **Vulnerability Finding** — Turaco-derived match of one Advisory, Device and Software Product (reference `VUL-xxxxxx`), with installed version, first/last observation time, confidence `probable` or `potential` and explicit triage/remediation state. It is distinct from an Endpoint Finding. Automatic `confirmed` confidence is not supported.
+- **Risk Acceptance** — a Vulnerability Finding state recorded by a User with `security.accept_risk`, a reason code and a review date no later than twelve months ahead; it does not erase the observed exposure.
 
 ## Remote access *(planned, ADR-0026)*
 - **Remote Access Provider** — external system that provides remote screen/input, terminal and file-transfer transport, NAT traversal and relays (HopToDesk first); integrated through a Connector, never through the Connector or Endpoint Agent.

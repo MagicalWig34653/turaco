@@ -40,6 +40,8 @@
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
 | `RunbookExecutionCompleted` | 1 | knowledge | Every task of a runbook execution finished. Payload: executionId, runbookId. |
 | `RunbookExecutionStarted` | 1 | knowledge | A runbook execution started and created its tasks. Payload: executionId, runbookId. |
+| `SecurityAdvisoryPublished` | 1 | security | A Security Advisory became applicable. Payload: advisoryId, severity. |
+| `SecurityAdvisoryPublishedFanOut` | 1 | security (internal) | Continuation of security.advisory notification fan-out. Payload: advisoryId, after, sourceEventId. |
 | `ServiceCreated` | 1 | services | A Service was created. Payload: serviceId, criticality, status. |
 | `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
 | `ServiceRequestCancelled` | 1 | requests | A service request was cancelled. Payload: requestId. |
@@ -58,3 +60,4 @@
 | `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |
 | `VirtualMachineChanged` | 1 | infrastructure | A Virtual Machine was created, changed, moved to another state or hypervisor, or decommissioned. Payload: virtualMachineId, operation, state, hypervisorAssetId; decommissioning also reason. |
+| `VulnerabilityFindingChanged` | 1 | security | A vulnerability finding was created or changed status. Payload: findingId, advisoryId, deviceId, status, confidence, operation, previousStatus and reason when applicable. |

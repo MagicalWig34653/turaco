@@ -25,6 +25,7 @@ import (
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
+	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	servicesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/services/application"
@@ -113,6 +114,10 @@ func main() {
 	}
 	if err := registerChangeReminders(ctx, runner, pool, categories, smtpCfg.Enabled(), logger); err != nil {
 		logger.Error("configure change reminders", "error", err)
+		os.Exit(1)
+	}
+	if err := registerSecurityMatching(runner, pool); err != nil {
+		logger.Error("configure security matching", "error", err)
 		os.Exit(1)
 	}
 	if cfg.AutotaskSync {
@@ -245,6 +250,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register(planningapp.EventStatusChanged, "planning.notify-state", wiring.PlanningNotifications(pool, notifier).OnStatusChanged); err != nil {
 		return err
 	}
+	securityNotes := wiring.SecurityNotifications(pool, notifier)
+	for _, event := range []string{securityapp.EventAdvisoryPublished, securityapp.EventAdvisoryPublishedFanOut} {
+		if err := d.Register(event, "security.notify-advisory", securityNotes.OnAdvisoryPublished); err != nil {
+			return err
+		}
+	}
 	if err := d.Register("VirtualMachineChanged", "services.sync-vm-hypervisor-link", wiring.ServiceVMLinks(pool).OnVirtualMachineChanged); err != nil {
 		return err
 	}
@@ -342,6 +353,18 @@ func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgx
 	})
 }
 
+func registerSecurityMatching(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	service := wiring.Security(pool)
+	if err := runner.Register(securityapp.MatchJobType, securityapp.MatchJobTimeout, service.HandleMatch); err != nil {
+		return err
+	}
+	if err := runner.Register(securityapp.MatchAllJobType, securityapp.MatchAllJobTimeout, service.HandleMatchAll); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: securityapp.MatchAllJobType, DedupeKey: securityapp.MatchAllJobType,
+		Interval: securityapp.MatchAllInterval, MaxAttempts: 3})
+}
+
 // smtpMailer adapts the SMTP integration to the notification service's
 // Mailer port and maps its permanent errors.
 type smtpMailer struct{ m smtp.Mailer }
@@ -362,6 +385,7 @@ func allCategories() []notifications.Category {
 	out = append(out, assetsapp.NotificationCategories()...)
 	out = append(out, changesapp.NotificationCategories()...)
 	out = append(out, planningapp.NotificationCategories()...)
+	out = append(out, securityapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 

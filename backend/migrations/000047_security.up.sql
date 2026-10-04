@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS security.vulnerability_findings (
     -- or version not comparable). confirmed is never assigned automatically.
     confidence text NOT NULL CHECK (confidence IN ('probable', 'potential')),
     status text NOT NULL DEFAULT 'open' CHECK (status IN (
-        'open', 'investigating', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
+        'open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
     status_reason text CHECK (status_reason IS NULL OR status_reason ~ '^[a-z][a-z_]{0,39}$'),
     risk_accepted_by uuid,
     risk_accepted_at timestamptz,
@@ -159,9 +159,9 @@ CREATE TABLE IF NOT EXISTS security.finding_transitions (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     finding_id uuid NOT NULL REFERENCES security.vulnerability_findings(id) ON DELETE RESTRICT,
     from_status text CHECK (from_status IS NULL OR from_status IN (
-        'open', 'investigating', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
+        'open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
     to_status text NOT NULL CHECK (to_status IN (
-        'open', 'investigating', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
+        'open', 'investigating', 'accepted', 'remediation_planned', 'remediating', 'remediated', 'false_positive', 'risk_accepted')),
     operation text NOT NULL CHECK (operation ~ '^[a-z][a-z_]{0,39}$'),
     reason text CHECK (reason IS NULL OR reason ~ '^[a-z][a-z_]{0,39}$'),
     actor_user_id uuid,
