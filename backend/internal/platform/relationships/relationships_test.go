@@ -545,3 +545,45 @@ func TestUnlinkAllExceptKeepsOneTarget(t *testing.T) {
 		t.Fatalf("kept: %+v", left.Items)
 	}
 }
+
+func TestOutgoingFromAndIncomingToBatch(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, b, c := e.node("tnode"), e.node("tnode"), e.node("tnode")
+	x, y := e.node("tnode"), e.node("tnode")
+	e.link(a, x)
+	e.link(a, y)
+	e.link(b, x)
+	ended := e.link(c, x)
+	if _, _, err := e.g.Unlink(ctx, e.pool, "tests", ended.ID, "removed", ""); err != nil {
+		t.Fatal(err)
+	}
+	out, truncated, err := e.g.OutgoingFrom(ctx, e.pool, "tnode", []string{strings.ToUpper(a.ID), b.ID, c.ID}, nil, 0)
+	if err != nil || truncated || len(out) != 3 {
+		t.Fatalf("outgoing = %d %v %v", len(out), truncated, err)
+	}
+	out, truncated, err = e.g.OutgoingFrom(ctx, e.pool, "tnode", []string{a.ID, b.ID}, []string{"TEST_DEPENDS_ON"}, 2)
+	if err != nil || !truncated || len(out) != 2 {
+		t.Fatalf("limited outgoing = %d %v %v", len(out), truncated, err)
+	}
+	in, _, err := e.g.IncomingTo(ctx, e.pool, "tnode", []string{x.ID, y.ID}, "tnode", nil, 0)
+	if err != nil || len(in) != 3 {
+		t.Fatalf("incoming = %d %v", len(in), err)
+	}
+	if in, _, err = e.g.IncomingTo(ctx, e.pool, "tnode", []string{x.ID}, "tother", nil, 0); err != nil || len(in) != 0 {
+		t.Fatalf("incoming from another source type = %d %v", len(in), err)
+	}
+	if got, _, err := e.g.OutgoingFrom(ctx, e.pool, "tnode", nil, nil, 0); err != nil || len(got) != 0 {
+		t.Fatalf("no ids = %v %v", got, err)
+	}
+	if _, _, err := e.g.OutgoingFrom(ctx, e.pool, "tnode", []string{"nope"}, nil, 0); !errors.Is(err, relationships.ErrInvalid) {
+		t.Fatalf("malformed id: %v", err)
+	}
+	many := make([]string, relationships.MaxBatchIDs+1)
+	for i := range many {
+		many[i] = a.ID
+	}
+	if _, _, err := e.g.OutgoingFrom(ctx, e.pool, "tnode", many, nil, 0); !errors.Is(err, relationships.ErrInvalid) {
+		t.Fatalf("too many ids: %v", err)
+	}
+}

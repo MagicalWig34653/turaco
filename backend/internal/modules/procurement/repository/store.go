@@ -281,6 +281,33 @@ func (r *Repository) GetNeed(ctx context.Context, id string) (application.Need, 
 	return get(ctx, r, "procurement.procurement_requests", needCols, id, scanNeed)
 }
 
+// NeedsByIDs returns the procurement requests among ids; malformed and unknown ids are absent.
+func (r *Repository) NeedsByIDs(ctx context.Context, ids []string) ([]application.Need, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	out := []application.Need{}
+	if len(valid) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+needCols+` FROM procurement.procurement_requests WHERE id = ANY($1::uuid[])`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("list procurement requests by id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		n, err := scanNeed(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list procurement requests by id: scan: %w", err)
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ListNeeds(ctx context.Context, f application.NeedFilter) (application.Result[application.Need], error) {
 	var conds []string
 	var args []any

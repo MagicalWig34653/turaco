@@ -24,6 +24,11 @@ export type RouteId =
   | 'myChanges'
   | 'changeNew'
   | 'changeDetail'
+  | 'initiatives'
+  | 'myInitiatives'
+  | 'initiativeNew'
+  | 'initiativeDetail'
+  | 'maintenanceCalendar'
   | 'services'
   | 'serviceDetail'
   | 'impact'
@@ -86,7 +91,14 @@ export type RouteId =
   | 'audit';
 
 export type NavGroup =
-  'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'changes' | 'admin';
+  | 'main'
+  | 'logistics'
+  | 'endpoints'
+  | 'infrastructure'
+  | 'services'
+  | 'changes'
+  | 'planning'
+  | 'admin';
 
 export type AppRoute = {
   id: RouteId;
@@ -220,6 +232,34 @@ export const appRoutes: readonly AppRoute[] = [
     nav: 'changes',
   },
   { id: 'changeDetail', pattern: '/changes/:id', titleKey: 'changes.detail' },
+  { id: 'myInitiatives', pattern: '/initiatives/mine', titleKey: 'planning.mine', nav: 'main' },
+  {
+    id: 'initiativeNew',
+    pattern: '/initiatives/new',
+    titleKey: 'planning.create',
+    requires: ['planning.manage'],
+  },
+  {
+    id: 'initiatives',
+    pattern: '/initiatives',
+    titleKey: 'nav.initiatives',
+    requiresAny: ['planning.view', 'planning.manage'],
+    nav: 'planning',
+  },
+  { id: 'initiativeDetail', pattern: '/initiatives/:id', titleKey: 'planning.detail' },
+  {
+    id: 'maintenanceCalendar',
+    pattern: '/maintenance-calendar',
+    titleKey: 'nav.maintenanceCalendar',
+    requiresAny: [
+      'planning.view',
+      'planning.manage',
+      'changes.view',
+      'changes.manage',
+      'changes.execute',
+    ],
+    nav: 'planning',
+  },
   {
     id: 'services',
     pattern: '/services',

@@ -21,7 +21,8 @@ function NavSection({
     | 'nav.endpoints'
     | 'nav.infrastructure'
     | 'nav.services'
-    | 'nav.changes';
+    | 'nav.changes'
+    | 'nav.planning';
 }) {
   const { t } = useI18n();
   const { can } = useSession();
@@ -99,6 +100,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
           <NavSection group="infrastructure" labelKey="nav.infrastructure" />
           <NavSection group="services" labelKey="nav.services" />
           <NavSection group="changes" labelKey="nav.changes" />
+          <NavSection group="planning" labelKey="nav.planning" />
           <NavSection group="admin" labelKey="nav.admin" />
         </nav>
       </aside>

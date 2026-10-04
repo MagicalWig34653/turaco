@@ -598,6 +598,79 @@ func (g *Graph) OutgoingEnded(ctx context.Context, q Querier, node Node, types [
 	return out, rows.Err()
 }
 
+// MaxBatchIDs bounds the ids of one OutgoingFrom/IncomingTo call.
+const MaxBatchIDs = 500
+
+// OutgoingFrom lists the current relationships of the types whose source is
+// one of the records of sourceType with the given ids (at most MaxBatchIDs),
+// ordered by source id and relationship id, at most limit (1 to MaxSources);
+// truncated reports that more exist. It is the batch form of Outgoing for read
+// models that show the links of many records at once.
+func (g *Graph) OutgoingFrom(ctx context.Context, q Querier, sourceType string, ids []string, types []string, limit int) ([]Relationship, bool, error) {
+	return g.batch(ctx, q, "source", sourceType, ids, types, "", limit)
+}
+
+// IncomingTo lists the current relationships of the types whose target is one
+// of the records of targetType with the given ids and whose source is of
+// sourceType (empty: any), in the order and bounds of OutgoingFrom.
+func (g *Graph) IncomingTo(ctx context.Context, q Querier, targetType string, ids []string, sourceType string, types []string, limit int) ([]Relationship, bool, error) {
+	return g.batch(ctx, q, "target", targetType, ids, types, sourceType, limit)
+}
+
+func (g *Graph) batch(ctx context.Context, q Querier, side, nodeType string, ids, types []string, otherType string, limit int) ([]Relationship, bool, error) {
+	if !typePattern.MatchString(nodeType) || otherType != "" && !typePattern.MatchString(otherType) {
+		return nil, false, fmt.Errorf("%w: unknown record type", ErrInvalid)
+	}
+	if len(ids) > MaxBatchIDs {
+		return nil, false, fmt.Errorf("%w: at most %d ids", ErrInvalid, MaxBatchIDs)
+	}
+	norm := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !uuidPattern.MatchString(id) {
+			return nil, false, fmt.Errorf("%w: ids must be UUIDs", ErrInvalid)
+		}
+		norm = append(norm, strings.ToLower(id))
+	}
+	if len(norm) == 0 {
+		return []Relationship{}, false, nil
+	}
+	types, err := g.checkTypes(types)
+	if err != nil {
+		return nil, false, err
+	}
+	if limit <= 0 || limit > MaxSources {
+		limit = MaxSources
+	}
+	other := "target"
+	if side == "target" {
+		other = "source"
+	}
+	rows, err := q.Query(ctx, `
+		SELECT `+cols+` FROM platform.relationships
+		WHERE `+side+`_type = $1 AND `+side+`_id = ANY($2::uuid[]) AND type = ANY($3::text[]) AND valid_until IS NULL
+		  AND ($4 = '' OR `+other+`_type = $4)
+		ORDER BY `+side+`_id, id LIMIT $5`, nodeType, norm, types, otherType, limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list relationships: %w", err)
+	}
+	defer rows.Close()
+	out := []Relationship{}
+	for rows.Next() {
+		r, err := scan(rows)
+		if err != nil {
+			return nil, false, fmt.Errorf("list relationships: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("list relationships: %w", err)
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
 // MaxSources bounds SourcesByTarget.
 const MaxSources = 5000
 

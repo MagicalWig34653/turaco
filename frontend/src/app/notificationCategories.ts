@@ -45,6 +45,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.change.state',
       labelKey: 'notifications.category.change.state',
     },
+    'initiative.state': {
+      textKey: 'notifications.initiative.state',
+      labelKey: 'notifications.category.initiative.state',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',
@@ -66,6 +70,7 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink('initiative', (id) => `/initiatives/${encodeURIComponent(id)}`);
   registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
   registerNotificationLink('ticket', (id) => `/support/${encodeURIComponent(id)}`);

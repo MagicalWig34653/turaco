@@ -50,6 +50,8 @@ const (
 	MaxLimit     = 200
 	MaxQuantity  = 1_000_000
 	MaxLines     = 100
+	// MaxLookupIDs bounds one NeedsByIDs lookup.
+	MaxLookupIDs = 500
 	// MaxPriceCents bounds a unit price (1 billion in major units).
 	MaxPriceCents = 1_000_000_000
 	maxName       = 150
@@ -234,6 +236,8 @@ type Store interface {
 	LockNeedTx(ctx context.Context, tx pgx.Tx, id string) (Need, error)
 	UpdateNeedTx(ctx context.Context, tx pgx.Tx, n Need) (Need, error)
 	GetNeed(ctx context.Context, id string) (Need, error)
+	// NeedsByIDs returns the procurement requests among ids (unknown ids are absent).
+	NeedsByIDs(ctx context.Context, ids []string) ([]Need, error)
 	ListNeeds(ctx context.Context, f NeedFilter) (Result[Need], error)
 
 	InsertOrderTx(ctx context.Context, tx pgx.Tx, supplierID, currency string, notes, createdBy *string) (Order, error)

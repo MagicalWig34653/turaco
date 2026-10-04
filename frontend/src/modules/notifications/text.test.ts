@@ -42,6 +42,11 @@ describe('notificationLink', () => {
     expect(notificationLink(base)).toBe('/tasks/abc');
     expect(notificationLink({ ...base, linkId: 'a/b' })).toBe('/tasks/a%2Fb');
   });
+  it('links initiative notifications to the initiative detail', () => {
+    expect(notificationLink({ ...base, linkType: 'initiative', linkId: 'a/b' })).toBe(
+      '/initiatives/a%2Fb',
+    );
+  });
   it('has no link for unknown targets', () => {
     expect(notificationLink({ ...base, linkType: 'mystery' })).toBeUndefined();
     expect(notificationLink({ ...base, linkType: null, linkId: null })).toBeUndefined();

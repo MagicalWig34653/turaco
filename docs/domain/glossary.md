@@ -56,9 +56,10 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Assignment** — responsibility association between work and User/Team.
 - **Approval** — recorded decision required before a flow continues.
 - **My Work** — consolidated operational view across tasks/tickets/requests/changes/deployments.
-- **Initiative** — medium/long-term modernization effort.
+- **Initiative** — medium/long-term modernization effort (module `planning`, reference `INI-xxxxxx`): title, goal, owner, target date, Milestones, an Approval before work starts, and the Changes, Tasks, Procurement Requests and Services it includes as Relationships (`initiative INCLUDES ...`, no copies). Lifecycle: [state machines](state-machines.md#initiative). The owner, creator, proposer and editors can never approve it.
+- **Milestone** — dated entry of an Initiative (title, due date, position, done or open); removal keeps the row with a reason code.
 - **Change** — planned modification to the IT environment (module `changes`, reference `CHG-xxxxxx`): kind `standard|normal|emergency`, risk `low|medium|high`, rollback plan, one maintenance window, affected resources (Relationships `change AFFECTS service|vm|asset|location`), an Approval when the policy requires one, and execution Tasks. Lifecycle: [state machines](state-machines.md#change). Requester (creates), owner (the assignee who executes) and approver are separate roles; the requester and everybody who edited, submitted or assessed a Change can never approve it.
-- **Maintenance Window** — time period in which defined operational changes may occur. Implemented as the `window_start`/`window_end` fields of a Change (at most 30 days); there is no scheduling subsystem, the maintenance calendar is a read model over scheduled Changes (F7d).
+- **Maintenance Window** — time period in which defined operational changes may occur. Implemented as the `window_start`/`window_end` fields of a Change (at most 30 days); there is no scheduling subsystem, the maintenance calendar (F7d, `GET /api/v1/maintenance-calendar`) is a read model over approved, scheduled and in-progress Changes.
 
 ## Infrastructure/network
 - **Site** — physical geographic site; an Organization Location that has Buildings.

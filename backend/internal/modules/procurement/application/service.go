@@ -377,6 +377,29 @@ func (s *Service) GetNeed(ctx context.Context, p Principal, id string) (Need, er
 	return s.store.GetNeed(ctx, id)
 }
 
+// NeedsByIDs returns id -> procurement request for the existing requests among
+// ids (at most MaxLookupIDs). It performs no permission check: it is the
+// contract other modules use after authorizing their own caller (Planning
+// validates and shows the procurement requests an Initiative includes).
+func (s *Service) NeedsByIDs(ctx context.Context, ids []string) (map[string]Need, error) {
+	if len(ids) > MaxLookupIDs {
+		return nil, invalid("at most %d procurement requests can be looked up at once", MaxLookupIDs)
+	}
+	norm := make([]string, 0, len(ids))
+	for _, id := range ids {
+		norm = append(norm, strings.ToLower(id))
+	}
+	found, err := s.store.NeedsByIDs(ctx, norm)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]Need, len(found))
+	for _, n := range found {
+		out[n.ID] = n
+	}
+	return out, nil
+}
+
 // Names are the display names that make ids in lists readable.
 type Names struct {
 	Products  map[string]string

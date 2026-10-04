@@ -363,6 +363,12 @@ type Store interface {
 	TaskIDsTx(ctx context.Context, tx pgx.Tx, changeID string) ([]string, error)
 	TaskIDs(ctx context.Context, changeID string) ([]string, error)
 
+	// ByIDs returns the Changes among ids (unknown ids are absent).
+	ByIDs(ctx context.Context, ids []string) ([]Change, error)
+	// InWindow lists the Changes in one of the statuses whose maintenance window
+	// overlaps [from, to), ordered by window start and id, at most limit.
+	InWindow(ctx context.Context, statuses []string, from, to time.Time, limit int) ([]Change, error)
+
 	// DueReminderIDs lists scheduled Changes whose window starts within (from, until]
 	// and that were not reminded for that window yet, in id order after afterID.
 	DueReminderIDs(ctx context.Context, from, until time.Time, afterID string, limit int) ([]string, error)

@@ -78,7 +78,7 @@ A **DeviceContextSnapshot** may capture technical context at ticket creation so 
 
 **KnowledgeArticle** has revision/publication/visibility/review lifecycle and relationships to software/services/problems/devices/etc. Procedures and Runbook Definitions can instantiate Runbook Executions/tasks.
 
-**Change** records planned modification, risk, schedule, rollback and affected resources. **Initiative** groups longer modernization work using existing Changes, Tasks and Procurement rather than duplicating them.
+**Change** records planned modification, risk, schedule, rollback and affected resources. **Initiative** groups longer modernization work using existing Changes, Tasks and Procurement rather than duplicating them. Implemented (F7d, schema `planning`, migration `000046`): `planning.initiatives` (reference `INI-xxxxxx` from a sequence, title, bounded goal, `owner_user_id`, status with per-status CHECKs, `status_reason` code, `target_date`, `approval_id` of the current or last proposal, `proposed_by`, `editors`, `approved_at`/`activated_at`/`closed_at`, version), `planning.milestones` (title, `due_date`, `position`, `done_at`/`done_by`, removal with reason code; at most 50 live per Initiative) and the append-only `planning.initiative_transitions` (update/delete/truncate refused by trigger, foreign keys `ON DELETE RESTRICT`). Included Changes, Tasks, Procurement Requests and Services are platform Relationships `initiative INCLUDES ...` (owner `planning`, at most 200 per Initiative); Users are referenced by id without foreign keys.
 
 ## Infrastructure/network
 

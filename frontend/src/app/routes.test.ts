@@ -5,7 +5,15 @@ import { appRoutes, canViewRoute, isNavActive, visibleNavItems } from './routes'
 
 const ids = (
   permissions: string[],
-  group: 'main' | 'logistics' | 'endpoints' | 'infrastructure' | 'services' | 'changes' | 'admin',
+  group:
+    | 'main'
+    | 'logistics'
+    | 'endpoints'
+    | 'infrastructure'
+    | 'services'
+    | 'changes'
+    | 'planning'
+    | 'admin',
 ) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
 describe('visibleNavItems', () => {
@@ -18,6 +26,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myChanges',
+      'myInitiatives',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -42,6 +51,7 @@ describe('visibleNavItems', () => {
         'requests',
         'approvals',
         'myChanges',
+        'myInitiatives',
         'myAssets',
         'myTickets',
         'knowledge',
@@ -57,6 +67,7 @@ describe('visibleNavItems', () => {
       'requests',
       'approvals',
       'myChanges',
+      'myInitiatives',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -74,6 +85,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myChanges',
+      'myInitiatives',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -88,6 +100,7 @@ describe('visibleNavItems', () => {
       'approvals',
       'briefing',
       'myChanges',
+      'myInitiatives',
       'myAssets',
       'myTickets',
       'knowledge',
@@ -357,5 +370,14 @@ describe('changes routes', () => {
     expect(matchRoute(appRoutes, '/changes/mine')?.route.id).toBe('myChanges');
     expect(matchRoute(appRoutes, '/changes/new')?.route.id).toBe('changeNew');
     expect(matchRoute(appRoutes, '/changes/abc')?.route.id).toBe('changeDetail');
+  });
+});
+
+describe('planning routes', () => {
+  it('matches initiative routes and gates the calendar', () => {
+    expect(matchRoute(appRoutes, '/initiatives/new')?.route.id).toBe('initiativeNew');
+    expect(matchRoute(appRoutes, '/initiatives/42')?.route.id).toBe('initiativeDetail');
+    expect(ids(['planning.view'], 'planning')).toEqual(['initiatives', 'maintenanceCalendar']);
+    expect(ids(['changes.view'], 'planning')).toEqual(['maintenanceCalendar']);
   });
 });

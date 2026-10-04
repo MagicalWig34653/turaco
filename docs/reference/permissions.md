@@ -29,6 +29,8 @@
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.teams.manage` | elevated | Create, rename and deactivate Teams and manage their members. Team membership determines which tasks a user with tasks.work can see and which notifications they receive, so this permission indirectly controls task access. |
 | `organization.view` | normal | View organization users, teams and locations. |
+| `planning.manage` | elevated | Create and change Initiatives, their milestones and included records, and drive their lifecycle (start planning, propose for approval, activate, hold, resume, complete, cancel). Proposing chooses the approver; the owner, creator, proposer and editors can never approve. |
+| `planning.view` | normal | View all Initiatives (goal, owner, status, target date, milestones, included Changes, Tasks, Procurement Requests and Services, progress, approvals, history) and the maintenance calendar. Owners see their own Initiatives without it; included records appear by name only with the matching view permission of their module. |
 | `platform.admin` | high | Administer platform-wide configuration. |
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
