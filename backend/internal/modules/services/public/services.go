@@ -56,6 +56,7 @@ type ServiceInfo struct {
 	Reference     string
 	Name          string
 	Status        string
+	Criticality   string
 	OwnerUserID   *string
 	OwnerTeamID   *string
 	SupportTeamID *string
@@ -95,7 +96,7 @@ func (s *Services) Lookup(ctx context.Context, ids []string) (map[string]Service
 	}
 	out := make(map[string]ServiceInfo, len(found))
 	for id, v := range found {
-		out[id] = ServiceInfo{ID: v.ID, Reference: v.Reference, Name: v.Name, Status: v.Status,
+		out[id] = ServiceInfo{ID: v.ID, Reference: v.Reference, Name: v.Name, Status: v.Status, Criticality: v.Criticality,
 			OwnerUserID: v.OwnerUserID, OwnerTeamID: v.OwnerTeamID, SupportTeamID: v.SupportTeamID}
 	}
 	return out, nil

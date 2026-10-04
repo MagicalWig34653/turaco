@@ -217,6 +217,56 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 	return res, nil
 }
 
+// ByIDs returns the Changes among ids; malformed and unknown ids are absent.
+func (r *Repository) ByIDs(ctx context.Context, ids []string) ([]application.Change, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if validUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return []application.Change{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+cols+` FROM changes.changes WHERE id = ANY($1::uuid[]) ORDER BY id`, valid)
+	if err != nil {
+		return nil, fmt.Errorf("list changes by id: %w", err)
+	}
+	return collectChanges(rows, "list changes by id")
+}
+
+// InWindow lists the Changes in the statuses whose window overlaps [from, to)
+// (window_end > from AND window_start < to). A window lasts at most 30 days
+// (changes_window_max), so window_start > from - 30 days is implied and lets
+// the window_start index bound the scan.
+func (r *Repository) InWindow(ctx context.Context, statuses []string, from, to time.Time, limit int) ([]application.Change, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+cols+` FROM changes.changes
+		WHERE status = ANY($1::text[]) AND window_start IS NOT NULL
+		  AND window_end > $2 AND window_start < $3 AND window_start > $2::timestamptz - interval '30 days'
+		ORDER BY window_start, id LIMIT $4`, statuses, from, to, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list changes in window: %w", err)
+	}
+	return collectChanges(rows, "list changes in window")
+}
+
+func collectChanges(rows pgx.Rows, what string) ([]application.Change, error) {
+	defer rows.Close()
+	out := []application.Change{}
+	for rows.Next() {
+		c, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: scan: %w", what, err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	return out, nil
+}
+
 // ---- transitions ----
 
 func (r *Repository) InsertTransitionTx(ctx context.Context, tx pgx.Tx, t application.Transition) error {
