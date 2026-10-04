@@ -124,6 +124,24 @@ Database invariants (CHECK constraints of `changes.changes`): `started_at` is se
 ## Initiative
 `idea → planning → proposed → approved → active ↔ on_hold → completed`, with `cancelled` alternatives.
 
+Implemented (F7d, `modules/planning`; the status is only ever changed by these explicit operations, each requiring `expectedVersion` (except the approval consumer), audited as `planning.initiative.<operation>` with ids, states and reason codes, recorded in the append-only `initiative_transitions` and published as `InitiativeStatusChanged`):
+
+| Operation | From | To | Notes |
+|---|---|---|---|
+| `Create` | - | `idea` | owner defaults to the caller; must be an active User |
+| `UpdateDetails`, `AddItem`, `RemoveItem`, Milestone operations | `idea`, `planning`, `approved`, `active`, `on_hold` | same | not while `proposed` (the approver decides what was proposed) and never after the end; editors are remembered and can never approve |
+| `StartPlanning` | `idea` | `planning` | |
+| `Propose(approver user \| team)` | `planning` | `proposed` | requests an Approval (subject `initiative`); the owner, creator, proposer and editors are excluded (`planning.no_eligible_approver`) |
+| approval approved (consumer `planning.approval`) | `proposed` | `approved` | sets `approved_at`; idempotent, stale events change nothing, a foreign approval id is a permanent error |
+| approval rejected (consumer) | `proposed` | `planning` | reason `approval_rejected`; it can be changed and proposed again |
+| `Activate` | `approved` | `active` | sets `activated_at` |
+| `Hold(reason)` | `active` | `on_hold` | reasons `blocked_dependency\|resource_shortage\|budget\|reprioritized\|other` |
+| `Resume` | `on_hold` | `active` | |
+| `Complete` | `active` | `completed` | sets `closed_at`; included records keep their own lifecycles |
+| `Cancel(reason)` | any but `completed`, `cancelled` | `cancelled` | reasons `no_longer_needed\|superseded\|budget\|reprioritized\|error_correction\|other`; cancels a pending approval |
+
+Database CHECKs: `proposed` has an approval and a proposer; `approved_at` is set exactly from `approved` on (free while `cancelled`); `activated_at` exactly in `active`, `on_hold`, `completed`; `closed_at` exactly in `completed`, `cancelled`; `on_hold` and `cancelled` carry a reason; timestamps in order. Milestones: `open ↔ done` (`CompleteMilestone`, `ReopenMilestone`), `RemoveMilestone(reason)` (`no_longer_needed|merged|error_correction|other`) keeps the row.
+
 ## Deployment
 Overall: `draft → scheduled? → resolving_targets → ready → running → completed | completed_with_errors | failed | cancelled`.
 
