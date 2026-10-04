@@ -2,7 +2,9 @@ package application
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,6 +25,7 @@ const (
 	OpCancel        = "cancel"
 	OpEditItems     = "edit_items"
 	OpMilestones    = "edit_milestones"
+	OpReplan        = "replan"
 )
 
 // AllowedOperations lists the operations the status and the caller's authority allow.
@@ -40,11 +43,11 @@ func AllowedOperations(i Initiative, p Principal) []string {
 	case StatusPlanning:
 		ops = append(ops, OpPropose)
 	case StatusApproved:
-		ops = append(ops, OpActivate)
+		ops = append(ops, OpActivate, OpReplan)
 	case StatusActive:
-		ops = append(ops, OpHold, OpComplete)
+		ops = append(ops, OpHold, OpComplete, OpReplan)
 	case StatusOnHold:
-		ops = append(ops, OpResume)
+		ops = append(ops, OpResume, OpReplan)
 	}
 	if i.Status != StatusCompleted && i.Status != StatusCancelled {
 		ops = append(ops, OpCancel)
@@ -64,6 +67,9 @@ func (s *Service) canRead(ctx context.Context, p Principal, i Initiative) (bool,
 	}
 	if p.UserID == i.OwnerID {
 		return true, nil
+	}
+	if i.Status != StatusProposed {
+		return false, nil
 	}
 	ok, err := s.approvals.CanView(ctx, i.ID, p.UserID)
 	if err != nil {
@@ -131,7 +137,7 @@ func (s *Service) UserNames(ctx context.Context, ids []string) (map[string]strin
 // Item is one included record as the caller may see it. Fields the caller may
 // not see stay nil: Hidden means the caller may not see records of the type,
 // and ID (and RelationshipID) are opaque placeholders (hidden-1, ...) numbered
-// per response. Missing means the lookup ran and found no such record.
+// per row. Missing means the lookup ran and found no such record.
 type Item struct {
 	RelationshipID string
 	Type           string
@@ -198,8 +204,8 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	return d, nil
 }
 
-// Items lists the records an Initiative includes, oldest link first, keyset
-// paged by relationship id (at most MaxItemLimit per page).
+// Items lists the records an Initiative includes, oldest link first, with an
+// opaque offset cursor over the bounded current relationship list.
 func (s *Service) Items(ctx context.Context, p Principal, id string, page Page) (ItemPage, error) {
 	i, err := s.readable(ctx, p, id)
 	if err != nil {
@@ -224,6 +230,21 @@ func (m *masker) id(real string) string {
 	return ph
 }
 
+func itemOffset(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil || !strings.HasPrefix(string(b), "items:") {
+		return 0, ErrInvalidCursor
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(string(b), "items:"))
+	if err != nil || n < 1 || n > MaxItems || base64.RawURLEncoding.EncodeToString([]byte("items:"+strconv.Itoa(n))) != cursor {
+		return 0, ErrInvalidCursor
+	}
+	return n, nil
+}
+
 func (s *Service) items(ctx context.Context, p Principal, id string, page Page) (ItemPage, error) {
 	if page.Limit <= 0 {
 		page.Limit = DefaultItemLimit
@@ -231,20 +252,29 @@ func (s *Service) items(ctx context.Context, p Principal, id string, page Page) 
 	if page.Limit > MaxItemLimit {
 		page.Limit = MaxItemLimit
 	}
-	if page.Cursor != "" && !uuidPattern.MatchString(page.Cursor) {
-		return ItemPage{}, ErrInvalidCursor
-	}
-	links, err := s.graph.Outgoing(ctx, s.store.Q(), relationships.Node{Type: NodeInitiative, ID: id}, []string{RelIncludes}, page.Cursor, page.Limit)
-	if err != nil {
-		return ItemPage{}, fmt.Errorf("list included records: %w", err)
-	}
-	info, err := s.lookupItems(ctx, p, links.Items)
+	offset, err := itemOffset(page.Cursor)
 	if err != nil {
 		return ItemPage{}, err
 	}
-	out := ItemPage{Items: make([]Item, 0, len(links.Items)), NextCursor: links.NextCursor}
-	var m masker
-	for _, r := range links.Items {
+	links, err := s.graph.Outgoing(ctx, s.store.Q(), relationships.Node{Type: NodeInitiative, ID: id}, []string{RelIncludes}, "", MaxItems)
+	if err != nil {
+		return ItemPage{}, fmt.Errorf("list included records: %w", err)
+	}
+	if offset > len(links.Items) {
+		return ItemPage{}, ErrInvalidCursor
+	}
+	end := min(offset+page.Limit, len(links.Items))
+	selected := links.Items[offset:end]
+	info, err := s.lookupItems(ctx, p, selected)
+	if err != nil {
+		return ItemPage{}, err
+	}
+	out := ItemPage{Items: make([]Item, 0, len(selected))}
+	if end < len(links.Items) {
+		out.NextCursor = base64.RawURLEncoding.EncodeToString([]byte("items:" + strconv.Itoa(end)))
+	}
+	for _, r := range selected {
+		var m masker
 		it := Item{RelationshipID: r.ID, Type: r.Target.Type, ID: r.Target.ID, Since: r.ValidFrom}
 		if p.hides(it.Type) {
 			it.Hidden, it.RelationshipID, it.ID = true, m.id(r.ID), m.id(r.Target.ID)

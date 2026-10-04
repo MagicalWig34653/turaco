@@ -52,6 +52,13 @@ type CalendarPage struct {
 	Truncated bool
 }
 
+// ReadScope selects fields the caller is authorized to receive. Its zero value
+// returns only a Change's id, reference, status and maintenance window.
+type ReadScope struct {
+	IncludeDetails     bool
+	IncludeAffectedIDs bool
+}
+
 // Calendar bounds.
 const (
 	MaxCalendarRange   = application.MaxCalendarRange
@@ -71,16 +78,24 @@ func info(c application.Change) ChangeInfo {
 		RequesterID: c.RequesterID, OwnerID: c.OwnerID, WindowStart: c.WindowStart, WindowEnd: c.WindowEnd}
 }
 
+func scopedInfo(c application.Change, scope ReadScope) ChangeInfo {
+	i := info(c)
+	if !scope.IncludeDetails {
+		i.Title, i.Kind, i.Risk, i.RequesterID, i.OwnerID = "", "", "", "", nil
+	}
+	return i
+}
+
 // Lookup returns id -> Change for the existing Changes among ids (at most 500).
-// It performs no permission check.
-func (x *Changes) Lookup(ctx context.Context, ids []string) (map[string]ChangeInfo, error) {
+// The caller must authorize details; the zero scope returns reference and state only.
+func (x *Changes) Lookup(ctx context.Context, ids []string, scope ReadScope) (map[string]ChangeInfo, error) {
 	found, err := x.svc.Lookup(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]ChangeInfo, len(found))
 	for id, c := range found {
-		out[id] = info(c)
+		out[id] = scopedInfo(c, scope)
 	}
 	return out, nil
 }
@@ -88,9 +103,9 @@ func (x *Changes) Lookup(ctx context.Context, ids []string) (map[string]ChangeIn
 // Calendar lists the approved, scheduled and in-progress Changes whose
 // maintenance window overlaps [from, to) (at most MaxCalendarRange), ordered by
 // window start, at most limit (1 to MaxCalendarEntries). It performs no
-// permission check: the caller redacts titles and affected resources for its
-// own user.
-func (x *Changes) Calendar(ctx context.Context, from, to time.Time, limit int) (CalendarPage, error) {
+// permission check. The caller must authorize details and affected ids before
+// requesting them; the zero scope returns only reference and state metadata.
+func (x *Changes) Calendar(ctx context.Context, from, to time.Time, limit int, scope ReadScope) (CalendarPage, error) {
 	res, err := x.svc.Calendar(ctx, from, to, limit)
 	var inv *application.InvalidInputError
 	if errors.As(err, &inv) {
@@ -101,11 +116,18 @@ func (x *Changes) Calendar(ctx context.Context, from, to time.Time, limit int) (
 	}
 	out := CalendarPage{Truncated: res.Truncated, Entries: make([]CalendarEntry, 0, len(res.Entries))}
 	for _, e := range res.Entries {
-		entry := CalendarEntry{Change: info(e.Change), Affected: make([]Node, 0, len(e.Affected))}
+		out.Entries = append(out.Entries, scopedCalendarEntry(e, scope))
+	}
+	return out, nil
+}
+
+func scopedCalendarEntry(e application.CalendarEntry, scope ReadScope) CalendarEntry {
+	entry := CalendarEntry{Change: scopedInfo(e.Change, scope)}
+	if scope.IncludeAffectedIDs {
+		entry.Affected = make([]Node, 0, len(e.Affected))
 		for _, n := range e.Affected {
 			entry.Affected = append(entry.Affected, Node{Type: n.Type, ID: n.ID})
 		}
-		out.Entries = append(out.Entries, entry)
 	}
-	return out, nil
+	return entry
 }

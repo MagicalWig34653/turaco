@@ -42,6 +42,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("PATCH /api/v1/initiatives/{id}", manage, h.update)
 	route("POST /api/v1/initiatives/{id}/start-planning", manage, h.lifecycle(h.svc.StartPlanning))
 	route("POST /api/v1/initiatives/{id}/propose", manage, h.propose)
+	route("POST /api/v1/initiatives/{id}/replan", manage, h.withReason(h.svc.Replan))
 	route("POST /api/v1/initiatives/{id}/activate", manage, h.lifecycle(h.svc.Activate))
 	route("POST /api/v1/initiatives/{id}/hold", manage, h.withReason(h.svc.Hold))
 	route("POST /api/v1/initiatives/{id}/resume", manage, h.lifecycle(h.svc.Resume))

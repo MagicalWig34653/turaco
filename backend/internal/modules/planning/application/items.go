@@ -102,6 +102,9 @@ func (s *Service) AddItem(ctx context.Context, c Caller, p Principal, initiative
 		if err != nil {
 			return err
 		}
+		if _, err := s.checkItem(ctx, p, itemType, itemID); err != nil {
+			return err
+		}
 		page, err := s.graph.Outgoing(ctx, tx, src, []string{RelIncludes}, "", MaxItems+1)
 		if err != nil {
 			return fmt.Errorf("count included records: %w", err)

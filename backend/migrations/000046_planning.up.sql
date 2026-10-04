@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS planning.initiatives (
     updated_at timestamptz NOT NULL DEFAULT now(),
     -- Per-status invariants (docs/domain/state-machines.md#initiative).
     CONSTRAINT initiatives_proposed_has_approval CHECK (status <> 'proposed' OR (approval_id IS NOT NULL AND proposed_by IS NOT NULL)),
+    CONSTRAINT initiatives_approved_has_approval CHECK (status NOT IN ('approved', 'active', 'on_hold', 'completed') OR approval_id IS NOT NULL),
     CONSTRAINT initiatives_approved_at CHECK (
         (status NOT IN ('approved', 'active', 'on_hold', 'completed') OR approved_at IS NOT NULL)
         AND (status NOT IN ('idea', 'planning', 'proposed') OR approved_at IS NULL)),
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS planning.milestones (
     initiative_id uuid NOT NULL REFERENCES planning.initiatives(id) ON DELETE RESTRICT,
     title text NOT NULL CHECK (title = btrim(title) AND length(title) BETWEEN 1 AND 150),
     due_date date NOT NULL,
+    -- Position is a sort hint, not a unique sequence; ties sort by due date and id.
     position integer NOT NULL CHECK (position BETWEEN 0 AND 10000),
     done_at timestamptz,
     done_by uuid,
@@ -72,6 +74,7 @@ CREATE TABLE IF NOT EXISTS planning.milestones (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT milestones_removed CHECK ((removed_at IS NULL) = (remove_reason IS NULL)),
+    CONSTRAINT milestones_removed_by CHECK (removed_by IS NULL OR removed_at IS NOT NULL),
     CONSTRAINT milestones_done_by CHECK (done_by IS NULL OR done_at IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS milestones_initiative_idx ON planning.milestones (initiative_id, position, due_date, id) WHERE removed_at IS NULL;
@@ -82,8 +85,10 @@ CREATE INDEX IF NOT EXISTS milestones_due_idx ON planning.milestones (due_date, 
 CREATE TABLE IF NOT EXISTS planning.initiative_transitions (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     initiative_id uuid NOT NULL REFERENCES planning.initiatives(id) ON DELETE RESTRICT,
-    from_status text,
-    to_status text NOT NULL,
+    from_status text CHECK (from_status IS NULL OR from_status IN (
+        'idea', 'planning', 'proposed', 'approved', 'active', 'on_hold', 'completed', 'cancelled')),
+    to_status text NOT NULL CHECK (to_status IN (
+        'idea', 'planning', 'proposed', 'approved', 'active', 'on_hold', 'completed', 'cancelled')),
     operation text NOT NULL CHECK (operation ~ '^[a-z][a-z_]{0,39}$'),
     reason text CHECK (reason IS NULL OR reason ~ '^[a-z][a-z_]{0,39}$'),
     -- Exactly one of a User and a system actor name.
@@ -109,3 +114,7 @@ CREATE TRIGGER initiative_transitions_append_only BEFORE UPDATE OR DELETE ON pla
 DROP TRIGGER IF EXISTS initiative_transitions_no_truncate ON planning.initiative_transitions;
 CREATE TRIGGER initiative_transitions_no_truncate BEFORE TRUNCATE ON planning.initiative_transitions
     FOR EACH STATEMENT EXECUTE FUNCTION planning.forbid_history_change();
+
+DROP TRIGGER IF EXISTS milestones_no_delete ON planning.milestones;
+CREATE TRIGGER milestones_no_delete BEFORE DELETE ON planning.milestones
+    FOR EACH ROW EXECUTE FUNCTION planning.forbid_history_change();

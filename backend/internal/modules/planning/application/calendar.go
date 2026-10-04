@@ -9,7 +9,7 @@ import (
 )
 
 // CalendarAffected is an affected Service or Location of a calendar entry as the
-// caller may see it (Hidden: placeholder id, no name; numbered per response).
+// caller may see it (Hidden: placeholder id, no name; numbered per row).
 type CalendarAffected struct {
 	Type      string
 	ID        string
@@ -28,13 +28,14 @@ type InitiativeRef struct {
 
 // CalendarItem is one Change in the maintenance calendar. Title is nil when
 // the caller may not read the Change (changes.view|manage|execute, its
-// requester or its owner); Initiatives lists only Initiatives the caller may read.
+// requester or its owner); Kind and Risk follow the same rule.
+// Initiatives lists only Initiatives the caller may read.
 type CalendarItem struct {
 	ChangeID    string
 	Reference   string
 	Title       *string
-	Kind        string
-	Risk        string
+	Kind        *string
+	Risk        *string
 	Status      string
 	WindowStart time.Time
 	WindowEnd   time.Time
@@ -87,10 +88,11 @@ func (s *Service) RawCalendar(ctx context.Context, from, to time.Time) ([]Change
 	}
 	byChange := map[string][]string{}
 	if len(ids) > 0 {
-		links, _, err := s.graph.IncomingTo(ctx, s.store.Q(), NodeChange, ids, NodeInitiative, []string{RelIncludes}, 0)
+		links, linksTruncated, err := s.graph.IncomingTo(ctx, s.store.Q(), NodeChange, ids, NodeInitiative, []string{RelIncludes}, 0)
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("list including initiatives: %w", err)
 		}
+		truncated = truncated || linksTruncated
 		for _, r := range links {
 			byChange[r.Target.ID] = append(byChange[r.Target.ID], r.Source.ID)
 		}
@@ -127,15 +129,25 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 		initiativeIDs = append(initiativeIDs, byChange[e.Change.ID]...)
 	}
 	services := map[string]ServiceInfo{}
-	if len(serviceIDs) > 0 {
-		if services, err = s.services.Lookup(ctx, dedupe(serviceIDs)); err != nil {
-			return Calendar{}, fmt.Errorf("load services: %w", err)
+	serviceIDs = dedupe(serviceIDs)
+	for start := 0; start < len(serviceIDs); start += 500 {
+		found, lookupErr := s.services.Lookup(ctx, serviceIDs[start:min(start+500, len(serviceIDs))])
+		if lookupErr != nil {
+			return Calendar{}, fmt.Errorf("load services: %w", lookupErr)
+		}
+		for id, info := range found {
+			services[id] = info
 		}
 	}
 	locations := map[string]string{}
-	if len(locationIDs) > 0 {
-		if locations, err = s.dir.LocationNames(ctx, dedupe(locationIDs)); err != nil {
-			return Calendar{}, fmt.Errorf("load locations: %w", err)
+	locationIDs = dedupe(locationIDs)
+	for start := 0; start < len(locationIDs); start += 500 {
+		found, lookupErr := s.dir.LocationNames(ctx, locationIDs[start:min(start+500, len(locationIDs))])
+		if lookupErr != nil {
+			return Calendar{}, fmt.Errorf("load locations: %w", lookupErr)
+		}
+		for id, name := range found {
+			locations[id] = name
 		}
 	}
 	initiatives := map[string]Initiative{}
@@ -150,17 +162,19 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 			}
 		}
 	}
-	var m masker
 	for _, e := range entries {
+		var m masker
 		c := e.Change
 		if c.WindowStart == nil || c.WindowEnd == nil {
 			continue
 		}
-		item := CalendarItem{ChangeID: c.ID, Reference: c.Reference, Kind: c.Kind, Risk: c.Risk, Status: c.Status,
+		item := CalendarItem{ChangeID: c.ID, Reference: c.Reference, Status: c.Status,
 			WindowStart: *c.WindowStart, WindowEnd: *c.WindowEnd, Affected: []CalendarAffected{}, Initiatives: []InitiativeRef{}}
 		if p.ChangesView || c.RequesterID == p.UserID || c.OwnerID != nil && *c.OwnerID == p.UserID {
 			title := c.Title
 			item.Title = &title
+			item.Kind = &c.Kind
+			item.Risk = &c.Risk
 		}
 		for _, n := range e.Affected {
 			if n.Type != NodeService && n.Type != NodeLocation {

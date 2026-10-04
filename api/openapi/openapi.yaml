@@ -7415,6 +7415,563 @@ paths:
         '409': {$ref: '#/components/responses/ChangesConflict'}
         '429': {$ref: '#/components/responses/ChangesImpactBusy'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives:
+    get:
+      operationId: listInitiatives
+      summary: List initiatives
+      description: "Requires authentication. planning.view or planning.manage lists all; other users see initiatives they own. Keyset paged."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: status, in: query, schema: {type: string, enum: [idea, planning, proposed, approved, active, on_hold, completed, cancelled]}}
+        - {name: owner, in: query, schema: {type: string, format: uuid}}
+        - {name: q, in: query, schema: {type: string}}
+        - {name: targetFrom, in: query, schema: {type: string, format: date}}
+        - {name: targetTo, in: query, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: List initiatives.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeList'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createInitiative
+      summary: Create initiative
+      description: "Requires planning.manage. Creates an idea; owner defaults to the caller if omitted."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeCreate'}
+      responses:
+        '201':
+          description: Create initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}:
+    get:
+      operationId: getInitiative
+      summary: Get initiative detail
+      description: "Requires planning.view or planning.manage, ownership, or approver access while proposed; otherwise 404. First 100 linked items are included with nextCursor and truncated. Hidden linked records have placeholder ids and only a type."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Get initiative detail.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeDetail'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateInitiative
+      summary: Update initiative details
+      description: "Requires planning.manage and expectedVersion. Only idea and planning are editable; approved plans must be replanned first. An editor is excluded from approval. Empty targetDate clears it."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeUpdate'}
+      responses:
+        '200':
+          description: Update initiative details.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/start-planning:
+    post:
+      operationId: initiativeStartPlanning
+      summary: Start planning initiative
+      description: "Requires planning.manage and expectedVersion. idea to planning."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Start planning initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/propose:
+    post:
+      operationId: initiativePropose
+      summary: Propose initiative
+      description: "Requires planning.manage and expectedVersion. planning to proposed; one approver User or Team is required. Owner, creator, proposer and editors cannot approve. Rejection returns to planning."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativePropose'}
+      responses:
+        '200':
+          description: Propose initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/replan:
+    post:
+      operationId: initiativeReplan
+      summary: Replan initiative
+      description: "Requires planning.manage, expectedVersion and a reason (scope_change, priority_change, resource_change, error_correction or other). An approved, active or on_hold initiative returns to planning, clears its approval state and needs a new approval before activation."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeReplan'}
+      responses:
+        '200':
+          description: Replan initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/activate:
+    post:
+      operationId: initiativeActivate
+      summary: Activate initiative
+      description: "Requires planning.manage and expectedVersion. approved to active."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Activate initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/hold:
+    post:
+      operationId: initiativeHold
+      summary: Hold initiative
+      description: "Requires planning.manage and expectedVersion. active to on_hold with reason blocked_dependency, resource_shortage, budget, reprioritized or other."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeReason'}
+      responses:
+        '200':
+          description: Hold initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/resume:
+    post:
+      operationId: initiativeResume
+      summary: Resume initiative
+      description: "Requires planning.manage and expectedVersion. on_hold to active."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Resume initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/complete:
+    post:
+      operationId: initiativeComplete
+      summary: Complete initiative
+      description: "Requires planning.manage and expectedVersion. active to completed."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Complete initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/cancel:
+    post:
+      operationId: initiativeCancel
+      summary: Cancel initiative
+      description: "Requires planning.manage and expectedVersion. Any nonterminal status to cancelled with reason no_longer_needed, superseded, budget, reprioritized, error_correction or other; cancels a pending approval."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeReason'}
+      responses:
+        '200':
+          description: Cancel initiative.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Initiative'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/transitions:
+    get:
+      operationId: listInitiativeTransitions
+      summary: List initiative transitions
+      description: "Append-only history; requires initiative read access."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List initiative transitions.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeTransitionList'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/items:
+    get:
+      operationId: listInitiativeItems
+      summary: List linked initiative items
+      description: "Requires initiative read access. Hidden record types have placeholder ids and no title, reference or status."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List linked initiative items.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeItemPage'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: addInitiativeItem
+      summary: Add linked item
+      description: "Requires planning.manage and expectedVersion. Type must be change, task, procurement_request or service; caller must be allowed to read that type. At most 200 live items."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeItemAdd'}
+      responses:
+        '200':
+          description: Existing link returned (idempotent add).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeItemCreated'}
+        '201':
+          description: Add linked item.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeItemCreated'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/items/{type}/{itemId}:
+    delete:
+      operationId: removeInitiativeItem
+      summary: Remove linked item
+      description: "Requires planning.manage and expectedVersion query parameter."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: type, in: path, required: true, schema: {type: string, enum: [change, task, procurement_request, service]}}
+        - {name: itemId, in: path, required: true, schema: {type: string}}
+        - {name: expectedVersion, in: query, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '204':
+          description: Remove linked item.
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/milestones:
+    post:
+      operationId: addInitiativeMilestone
+      summary: Add milestone
+      description: "Requires planning.manage and expectedVersion of the Initiative; at most 50 live milestones."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeMilestoneAdd'}
+      responses:
+        '201':
+          description: Add milestone.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeMilestone'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/milestones/{milestoneId}:
+    patch:
+      operationId: updateInitiativeMilestone
+      summary: Update milestone
+      description: "Requires planning.manage and expectedVersion of the Milestone."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: milestoneId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeMilestoneUpdate'}
+      responses:
+        '200':
+          description: Update milestone.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeMilestone'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/milestones/{milestoneId}/complete:
+    post:
+      operationId: completeInitiativeMilestone
+      summary: Complete milestone
+      description: "Requires planning.manage and expectedVersion of the Milestone."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: milestoneId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Complete milestone.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeMilestone'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/milestones/{milestoneId}/reopen:
+    post:
+      operationId: reopenInitiativeMilestone
+      summary: Reopen milestone
+      description: "Requires planning.manage and expectedVersion of the Milestone."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: milestoneId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeVersion'}
+      responses:
+        '200':
+          description: Reopen milestone.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeMilestone'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /initiatives/{id}/milestones/{milestoneId}/remove:
+    post:
+      operationId: removeInitiativeMilestone
+      summary: Remove milestone
+      description: "Requires planning.manage and expectedVersion of the Milestone. Remove reasons are no_longer_needed, merged, error_correction or other; removed milestones remain in history."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: milestoneId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InitiativeReason'}
+      responses:
+        '200':
+          description: Remove milestone.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InitiativeMilestone'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /maintenance-calendar:
+    get:
+      operationId: getMaintenanceCalendar
+      summary: Get maintenance calendar
+      description: "Requires planning.view or planning.manage or changes.view, changes.manage or changes.execute. RFC 3339 range must be at most 92 days; to is exclusive. At most 500 approved, scheduled or in-progress Changes; truncated also reports capped initiative links. Change title, kind and risk require Change read access. Affected Service and Location names are redacted without their permissions; including initiatives require Initiative read access."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: Get maintenance calendar.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MaintenanceCalendar'}
+        '400': {$ref: '#/components/responses/PlanningInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/PlanningNotFound'}
+        '409': {$ref: '#/components/responses/PlanningConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -7459,6 +8016,21 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   responses:
+    PlanningNotFound:
+      description: Initiative or milestone absent or not visible (planning.not_found).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    PlanningInvalid:
+      description: Invalid input, reference, cursor or range (planning.invalid_request, planning.invalid_reference, planning.invalid_cursor, planning.invalid_limit).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    PlanningConflict:
+      description: Stale version, invalid transition, ineligible approver or limit reached (planning.version_conflict, planning.invalid_transition, planning.no_eligible_approver, planning.limit_reached).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     ChangesForbidden:
       description: Missing permission or separation of duties (platform.forbidden, changes.separation_of_duties).
       content:
@@ -7801,6 +8373,236 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    Initiative:
+      type: object
+      required: [id, reference, title, ownerId, status, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        reference: {type: string}
+        title: {type: string}
+        goal: {type: string, nullable: true}
+        ownerId: {type: string}
+        status: {type: string, enum: [idea, planning, proposed, approved, active, on_hold, completed, cancelled]}
+        statusReason: {type: string, nullable: true}
+        targetDate: {type: string, format: date, nullable: true}
+        approvalId: {type: string, nullable: true}
+        proposedBy: {type: string, nullable: true}
+        createdBy: {type: string}
+        approvedAt: {type: string, format: date-time, nullable: true}
+        activatedAt: {type: string, format: date-time, nullable: true}
+        closedAt: {type: string, format: date-time, nullable: true}
+        allowedOperations: {type: array, items: {type: string}, description: Detail only; backend-authorized operations including replan when permitted.}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    InitiativeList:
+      type: object
+      required: [items, nextCursor, names]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Initiative'}}
+        nextCursor: {type: string}
+        names: {$ref: '#/components/schemas/InitiativeNames'}
+    InitiativeNames:
+      type: object
+      properties:
+        users: {type: object, additionalProperties: {type: string}}
+    InitiativeCreate:
+      type: object
+      required: [title]
+      properties:
+        title: {type: string}
+        goal: {type: string}
+        ownerUserId: {type: string}
+        targetDate: {type: string, format: date}
+    InitiativeUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string}
+        goal: {type: string}
+        ownerUserId: {type: string}
+        targetDate: {type: string, description: YYYY-MM-DD or empty string to clear}
+    InitiativeVersion:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    InitiativeReason:
+      type: object
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, description: Operation-specific reason code.}
+    InitiativeReplan:
+      type: object
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, enum: [scope_change, priority_change, resource_change, error_correction, other]}
+    InitiativePropose:
+      type: object
+      required: [expectedVersion]
+      description: Exactly one approverUserId or approverTeamId is required.
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        approverUserId: {type: string}
+        approverTeamId: {type: string}
+    InitiativeItem:
+      type: object
+      required: [relationshipId, type, id, since]
+      properties:
+        relationshipId: {type: string}
+        type: {type: string, enum: [change, task, procurement_request, service]}
+        id: {type: string, description: Placeholder hidden-N if hidden is true.}
+        reference: {type: string, nullable: true}
+        title: {type: string, nullable: true}
+        status: {type: string, nullable: true}
+        since: {type: string, format: date-time}
+        missing: {type: boolean}
+        hidden: {type: boolean}
+    InitiativeItemPage:
+      type: object
+      required: [items, truncated]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/InitiativeItem'}}
+        nextCursor: {type: string, description: Opaque token; pass unchanged as cursor to the next items request.}
+        truncated: {type: boolean}
+    InitiativeItemAdd:
+      type: object
+      required: [expectedVersion, type, id]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        type: {type: string, enum: [change, task, procurement_request, service]}
+        id: {type: string}
+    InitiativeItemCreated:
+      type: object
+      required: [relationshipId, type, id, since, created]
+      properties:
+        relationshipId: {type: string}
+        type: {type: string}
+        id: {type: string}
+        since: {type: string, format: date-time}
+        created: {type: boolean}
+    InitiativeMilestone:
+      type: object
+      required: [id, title, dueDate, position, version, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        dueDate: {type: string, format: date}
+        position: {type: integer}
+        doneAt: {type: string, format: date-time, nullable: true}
+        doneBy: {type: string, nullable: true}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    InitiativeMilestoneAdd:
+      type: object
+      required: [expectedVersion, title, dueDate]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string}
+        dueDate: {type: string, format: date}
+        position: {type: integer}
+    InitiativeMilestoneUpdate:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        title: {type: string}
+        dueDate: {type: string, format: date}
+        position: {type: integer}
+    InitiativeApproval:
+      type: object
+      properties:
+        id: {type: string}
+        stepIndex: {type: integer}
+        status: {type: string}
+        approverUserId: {type: string, nullable: true}
+        approverTeamId: {type: string, nullable: true}
+        decidedByUserId: {type: string, nullable: true}
+        decidedAt: {type: string, format: date-time, nullable: true}
+    InitiativeProgress:
+      type: object
+      properties:
+        items: {type: integer}
+        itemsLimitExceeded: {type: boolean}
+        changesByStatus: {type: object, nullable: true, additionalProperties: {type: integer}}
+        tasksByStatus: {type: object, nullable: true, additionalProperties: {type: integer}}
+        procurementRequestsByStatus: {type: object, nullable: true, additionalProperties: {type: integer}}
+        milestones:
+          type: object
+          properties:
+            done: {type: integer}
+            total: {type: integer}
+            overdue: {type: integer}
+    InitiativeDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Initiative'}
+        - type: object
+          required: [items, milestones, approvals, progress, names]
+          properties:
+            items: {$ref: '#/components/schemas/InitiativeItemPage'}
+            milestones: {type: array, items: {$ref: '#/components/schemas/InitiativeMilestone'}}
+            approvals: {type: array, items: {$ref: '#/components/schemas/InitiativeApproval'}}
+            progress: {$ref: '#/components/schemas/InitiativeProgress'}
+            names: {$ref: '#/components/schemas/InitiativeNames'}
+    InitiativeTransition:
+      type: object
+      properties:
+        id: {type: string}
+        fromStatus: {type: string, nullable: true}
+        toStatus: {type: string}
+        operation: {type: string}
+        reason: {type: string, nullable: true}
+        actorUserId: {type: string, nullable: true}
+        actorSystem: {type: string, nullable: true}
+        correlationId: {type: string}
+        createdAt: {type: string, format: date-time}
+    InitiativeTransitionList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/InitiativeTransition'}}
+        nextCursor: {type: string}
+        names: {$ref: '#/components/schemas/InitiativeNames'}
+    MaintenanceCalendarAffected:
+      type: object
+      properties:
+        type: {type: string, enum: [service, location]}
+        id: {type: string, description: Placeholder when hidden.}
+        name: {type: string, nullable: true}
+        reference: {type: string, nullable: true}
+        missing: {type: boolean}
+        hidden: {type: boolean}
+    MaintenanceCalendarEntry:
+      type: object
+      properties:
+        changeId: {type: string}
+        reference: {type: string}
+        title: {type: string, nullable: true, description: Null without Change read access.}
+        kind: {type: string, nullable: true, enum: [standard, normal, emergency]}
+        risk: {type: string, nullable: true, enum: [low, medium, high]}
+        status: {type: string, enum: [approved, scheduled, in_progress]}
+        windowStart: {type: string, format: date-time}
+        windowEnd: {type: string, format: date-time}
+        affected: {type: array, items: {$ref: '#/components/schemas/MaintenanceCalendarAffected'}}
+        initiatives:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              reference: {type: string}
+              title: {type: string}
+    MaintenanceCalendar:
+      type: object
+      required: [from, to, items, truncated]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        items: {type: array, items: {$ref: '#/components/schemas/MaintenanceCalendarEntry'}}
+        truncated: {type: boolean}
     Change:
       type: object
       required: [id, reference, title, kind, risk, status, requesterId, reviewRequired, version, createdAt, updatedAt]

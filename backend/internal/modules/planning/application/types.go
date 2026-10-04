@@ -36,13 +36,15 @@ var Statuses = []string{StatusIdea, StatusPlanning, StatusProposed, StatusApprov
 // editableStatuses are the statuses in which details, Milestones and included
 // items can change: not while a proposal waits for its decision (the approver
 // decides what was proposed) and never after the Initiative ended.
-var editableStatuses = []string{StatusIdea, StatusPlanning, StatusApproved, StatusActive, StatusOnHold}
+var editableStatuses = []string{StatusIdea, StatusPlanning}
 
 var (
 	// HoldReasons are the reason codes Hold accepts.
 	HoldReasons = []string{"blocked_dependency", "resource_shortage", "budget", "reprioritized", "other"}
 	// CancelReasons are the reason codes Cancel accepts.
 	CancelReasons = []string{"no_longer_needed", "superseded", "budget", "reprioritized", "error_correction", "other"}
+	// ReplanReasons explain why an approved plan needs a fresh decision.
+	ReplanReasons = []string{"scope_change", "priority_change", "resource_change", "error_correction", "other"}
 	// MilestoneRemoveReasons are the reason codes RemoveMilestone accepts.
 	MilestoneRemoveReasons = []string{"no_longer_needed", "merged", "error_correction", "other"}
 )
@@ -298,6 +300,8 @@ type Store interface {
 	LockTx(ctx context.Context, tx pgx.Tx, id string) (Initiative, error)
 	// UpdateTx writes every mutable column and bumps the version.
 	UpdateTx(ctx context.Context, tx pgx.Tx, in Initiative) (Initiative, error)
+	// AddEditorTx records an editor without changing the Initiative version.
+	AddEditorTx(ctx context.Context, tx pgx.Tx, initiativeID, userID string) error
 	Get(ctx context.Context, id string) (Initiative, error)
 	ByIDs(ctx context.Context, ids []string) ([]Initiative, error)
 	List(ctx context.Context, f Filter) (Result[Initiative], error)

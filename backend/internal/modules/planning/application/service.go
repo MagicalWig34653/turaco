@@ -157,7 +157,7 @@ func (s *Service) commit(ctx context.Context, tx pgx.Tx, c Caller, cur, next Ini
 		if err := s.recordTransition(ctx, tx, c, out.ID, &cur.Status, out.Status, op, reason); err != nil {
 			return Initiative{}, err
 		}
-		payload := map[string]any{"initiativeId": out.ID, "operation": op, "status": out.Status, "previousStatus": cur.Status}
+		payload := map[string]any{"initiativeId": out.ID, "ownerId": out.OwnerID, "operation": op, "status": out.Status, "previousStatus": cur.Status}
 		if reason != "" {
 			payload["reason"] = reason
 		}
@@ -334,6 +334,11 @@ func (s *Service) UpdateDetails(ctx context.Context, c Caller, p Principal, id s
 		cur, err := s.lockStatus(ctx, tx, id, exp, "update", editableStatuses...)
 		if err != nil {
 			return err
+		}
+		if in.OwnerUserID != nil {
+			if _, err := s.checkOwner(ctx, owner); err != nil {
+				return err
+			}
 		}
 		next := addEditor(cur, c.Actor.UserID)
 		var changed []string

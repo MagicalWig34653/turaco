@@ -15,6 +15,10 @@ type Request struct {
 	Status    string
 }
 
+// ReadScope selects request fields the caller is authorized to receive. The
+// zero value returns only id, reference and status.
+type ReadScope struct{ IncludeDetails bool }
+
 // Cancelled reports that the request was cancelled.
 func (r Request) Cancelled() bool { return r.Status == application.NeedCancelled }
 
@@ -23,17 +27,25 @@ type Requests struct{ svc *application.Service }
 
 func NewRequests(svc *application.Service) *Requests { return &Requests{svc: svc} }
 
+func scopedRequest(n application.Need, scope ReadScope) Request {
+	item := Request{ID: n.ID, Reference: n.Reference, Status: n.Status}
+	if scope.IncludeDetails {
+		item.ProductID, item.Quantity = n.ProductID, n.Quantity
+	}
+	return item
+}
+
 // Lookup returns id -> request for the existing Procurement Requests among ids
-// (at most 500). It performs no permission check; the caller authorizes its own
-// user (procurement.view|manage) first.
-func (r *Requests) Lookup(ctx context.Context, ids []string) (map[string]Request, error) {
+// (at most 500). The caller authorizes details for its own user
+// (procurement.view|manage) before setting IncludeDetails.
+func (r *Requests) Lookup(ctx context.Context, ids []string, scope ReadScope) (map[string]Request, error) {
 	found, err := r.svc.NeedsByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]Request, len(found))
 	for id, n := range found {
-		out[id] = Request{ID: n.ID, Reference: n.Reference, ProductID: n.ProductID, Quantity: n.Quantity, Status: n.Status}
+		out[id] = scopedRequest(n, scope)
 	}
 	return out, nil
 }

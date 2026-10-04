@@ -31,7 +31,7 @@ func changeInfo(c changespublic.ChangeInfo) application.ChangeInfo {
 }
 
 func (x *ChangesAdapter) Lookup(ctx context.Context, ids []string) (map[string]application.ChangeInfo, error) {
-	found, err := x.c.Lookup(ctx, ids)
+	found, err := x.c.Lookup(ctx, ids, changespublic.ReadScope{IncludeDetails: true})
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (x *ChangesAdapter) Lookup(ctx context.Context, ids []string) (map[string]a
 }
 
 func (x *ChangesAdapter) Calendar(ctx context.Context, from, to time.Time, limit int) ([]application.ChangeCalendarEntry, bool, error) {
-	page, err := x.c.Calendar(ctx, from, to, limit)
+	page, err := x.c.Calendar(ctx, from, to, limit, changespublic.ReadScope{IncludeDetails: true, IncludeAffectedIDs: true})
 	if errors.Is(err, changespublic.ErrInvalidRange) {
 		return nil, false, application.ErrInvalidRange
 	}
@@ -84,7 +84,7 @@ type Procurement struct{ r *procurementpublic.Requests }
 func NewProcurement(r *procurementpublic.Requests) *Procurement { return &Procurement{r: r} }
 
 func (x *Procurement) Requests(ctx context.Context, ids []string) (map[string]application.RequestInfo, error) {
-	found, err := x.r.Lookup(ctx, ids)
+	found, err := x.r.Lookup(ctx, ids, procurementpublic.ReadScope{IncludeDetails: true})
 	if err != nil {
 		return nil, err
 	}

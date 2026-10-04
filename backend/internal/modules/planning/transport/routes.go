@@ -465,8 +465,8 @@ type calendarItemDTO struct {
 	ChangeID    string                `json:"changeId"`
 	Reference   string                `json:"reference"`
 	Title       *string               `json:"title"`
-	Kind        string                `json:"kind"`
-	Risk        string                `json:"risk"`
+	Kind        *string               `json:"kind"`
+	Risk        *string               `json:"risk"`
 	Status      string                `json:"status"`
 	WindowStart string                `json:"windowStart"`
 	WindowEnd   string                `json:"windowEnd"`

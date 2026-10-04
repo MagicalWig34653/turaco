@@ -3,7 +3,6 @@ package application
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -15,8 +14,7 @@ import (
 
 // NotificationCategories are the notification categories Planning creates:
 // initiative.state tells the owner that their Initiative changed status. The
-// owner may always read their Initiative, so the title never reaches someone
-// who cannot open it.
+// reference is the only Initiative content included in the notification.
 func NotificationCategories() []notifications.Category {
 	return []notifications.Category{{
 		Name: NotificationCategory, Owner: "planning", LinkType: "initiative", LinkPath: "/initiatives/{id}",
@@ -45,35 +43,34 @@ func NewNotifications(store Store, dir Directory, notifier Notifier) *Notificati
 func (n *Notifications) OnStatusChanged(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
 		InitiativeID string `json:"initiativeId"`
+		OwnerID      string `json:"ownerId"`
 		Status       string `json:"status"`
 	}
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
 		return events.Permanent(fmt.Errorf("decode %s payload: %w", ev.EventType, err))
 	}
-	if !uuidPattern.MatchString(p.InitiativeID) {
-		return events.Permanent(fmt.Errorf("invalid initiative id in %s", ev.EventType))
+	if !uuidPattern.MatchString(p.InitiativeID) || !uuidPattern.MatchString(p.OwnerID) {
+		return events.Permanent(fmt.Errorf("invalid initiative or owner id in %s", ev.EventType))
 	}
-	i, err := n.store.Get(ctx, strings.ToLower(p.InitiativeID))
-	if errors.Is(err, ErrNotFound) {
+	p.InitiativeID, p.OwnerID = strings.ToLower(p.InitiativeID), strings.ToLower(p.OwnerID)
+	if ev.ActorID != nil && *ev.ActorID == p.OwnerID {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if ev.ActorID != nil && *ev.ActorID == i.OwnerID {
-		return nil
-	}
-	active, err := n.dir.ActiveUsers(ctx, []string{i.OwnerID})
+	active, err := n.dir.ActiveUsers(ctx, []string{p.OwnerID})
 	if err != nil {
 		return fmt.Errorf("check recipient: %w", err)
 	}
-	if !active[i.OwnerID] {
+	if !active[p.OwnerID] {
 		return nil
 	}
+	i, err := n.store.Get(ctx, p.InitiativeID)
+	if err != nil {
+		return fmt.Errorf("load initiative reference: %w", err)
+	}
 	if _, err := n.notifier.Create(ctx, tx, notifications.Intent{
-		RecipientUserID: i.OwnerID, Category: NotificationCategory,
-		Params:   map[string]any{"title": i.Reference + " · " + i.Title, "status": p.Status},
-		LinkType: "initiative", LinkID: i.ID, DedupeKey: ev.ID + ":" + i.OwnerID,
+		RecipientUserID: p.OwnerID, Category: NotificationCategory,
+		Params:   map[string]any{"title": i.Reference, "status": p.Status},
+		LinkType: "initiative", LinkID: i.ID, DedupeKey: ev.ID + ":" + p.OwnerID,
 	}); err != nil {
 		return fmt.Errorf("create notification: %w", err)
 	}

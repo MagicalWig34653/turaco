@@ -104,6 +104,9 @@ func (s *Service) AddMilestone(ctx context.Context, c Caller, p Principal, initi
 		if err != nil {
 			return err
 		}
+		if err := s.store.AddEditorTx(ctx, tx, cur.ID, c.Actor.UserID); err != nil {
+			return err
+		}
 		return recordAudit(ctx, tx, c, "milestone_added", cur.ID, nil, nil, map[string]any{"milestoneId": out.ID})
 	})
 	return out, err
@@ -128,7 +131,19 @@ func (s *Service) milestoneOp(ctx context.Context, c Caller, p Principal, initia
 	}
 	var out Milestone
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockEditable(ctx, tx, initiativeID, nil, op)
+		var cur Initiative
+		var err error
+		if op == "complete_milestone" || op == "reopen_milestone" {
+			if !uuidPattern.MatchString(initiativeID) {
+				return ErrNotFound
+			}
+			cur, err = s.store.LockTx(ctx, tx, strings.ToLower(initiativeID))
+			if err == nil && !oneOf(cur.Status, []string{StatusIdea, StatusPlanning, StatusApproved, StatusActive, StatusOnHold}) {
+				err = &InvalidTransitionError{Operation: op, From: cur.Status}
+			}
+		} else {
+			cur, err = s.lockEditable(ctx, tx, initiativeID, nil, op)
+		}
 		if err != nil {
 			return err
 		}
@@ -152,6 +167,9 @@ func (s *Service) milestoneOp(ctx context.Context, c Caller, p Principal, initia
 			return nil
 		}
 		if out, err = s.store.UpdateMilestoneTx(ctx, tx, next); err != nil {
+			return err
+		}
+		if err := s.store.AddEditorTx(ctx, tx, cur.ID, c.Actor.UserID); err != nil {
 			return err
 		}
 		meta["milestoneId"] = m.ID

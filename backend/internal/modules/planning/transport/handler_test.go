@@ -169,7 +169,7 @@ func TestRoutesRequireAuthentication(t *testing.T) {
 	h := serve(t, fakeAuth{})
 	for _, r := range []struct{ method, path string }{
 		{"GET", "/api/v1/initiatives"}, {"POST", "/api/v1/initiatives"}, {"GET", "/api/v1/initiatives/" + chgID},
-		{"POST", "/api/v1/initiatives/" + chgID + "/activate"}, {"GET", "/api/v1/maintenance-calendar"},
+		{"POST", "/api/v1/initiatives/" + chgID + "/activate"}, {"POST", "/api/v1/initiatives/" + chgID + "/replan"}, {"GET", "/api/v1/maintenance-calendar"},
 	} {
 		if code, _ := do(t, h, r.method, r.path, "{}"); code != http.StatusUnauthorized {
 			t.Errorf("%s %s = %d", r.method, r.path, code)
@@ -202,6 +202,12 @@ func TestHTTPInitiativeAndCalendar(t *testing.T) {
 	}
 	if code, body := do(t, h, "POST", base+"/activate", `{"expectedVersion":1}`); code != http.StatusConflict || errCode(body) != "planning.invalid_transition" {
 		t.Errorf("activate idea = %d %v", code, body)
+	}
+	if code, body := do(t, h, "POST", base+"/replan", `{"expectedVersion":1,"reason":"scope_change"}`); code != http.StatusConflict || errCode(body) != "planning.invalid_transition" {
+		t.Errorf("replan idea = %d %v", code, body)
+	}
+	if code, body := do(t, h, "POST", base+"/replan", `{"expectedVersion":1,"reason":"free text"}`); code != http.StatusBadRequest || errCode(body) != "planning.invalid_request" {
+		t.Errorf("replan reason = %d %v", code, body)
 	}
 	if code, body := do(t, h, "POST", base+"/start-planning", `{"expectedVersion":1}`); code != http.StatusOK || body["status"] != "planning" {
 		t.Fatalf("start planning = %d %v", code, body)

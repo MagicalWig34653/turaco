@@ -73,9 +73,11 @@ func (s *Service) Propose(ctx context.Context, c Caller, p Principal, id string,
 	}
 	for _, a := range []*string{approver.UserID, approver.TeamID} {
 		if a != nil {
-			if _, err := checkID(*a); err != nil {
+			normalized, err := checkID(*a)
+			if err != nil {
 				return Initiative{}, err
 			}
+			*a = normalized
 		}
 	}
 	return s.move(ctx, c, p, id, expected, "proposed", []string{StatusPlanning}, "", func(tx pgx.Tx, cur Initiative, next *Initiative) error {
@@ -96,6 +98,20 @@ func (s *Service) Propose(ctx context.Context, c Caller, p Principal, id string,
 		next.Status, next.StatusReason, next.ApprovalID, next.ProposedBy = StatusProposed, nil, &approvalID, &proposer
 		return nil
 	})
+}
+
+// Replan withdraws approval before any material changes to an approved plan.
+// The existing approval remains as history; a new proposal requests a new one.
+func (s *Service) Replan(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (Initiative, error) {
+	if !oneOf(reason, ReplanReasons) {
+		return Initiative{}, invalid("reason must be one of %s", strings.Join(ReplanReasons, ", "))
+	}
+	return s.move(ctx, c, p, id, expected, "replanned", []string{StatusApproved, StatusActive, StatusOnHold}, reason,
+		func(_ pgx.Tx, _ Initiative, next *Initiative) error {
+			next.Status, next.StatusReason = StatusPlanning, &reason
+			next.ApprovalID, next.ProposedBy, next.ApprovedAt, next.ActivatedAt = nil, nil, nil, nil
+			return nil
+		})
 }
 
 // OnApprovalDecided moves a proposed Initiative whose approval was decided: an

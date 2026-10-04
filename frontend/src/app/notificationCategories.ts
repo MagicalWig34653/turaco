@@ -70,6 +70,7 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink('initiative', (id) => `/initiatives/${encodeURIComponent(id)}`);
   registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
   registerNotificationLink('ticket', (id) => `/support/${encodeURIComponent(id)}`);

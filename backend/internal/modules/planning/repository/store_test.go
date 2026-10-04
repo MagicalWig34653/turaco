@@ -28,14 +28,19 @@ import (
 // ---- fakes of the other modules' contracts ----
 
 type fakeDir struct {
-	inactive map[string]bool
-	locs     map[string]string
+	inactive         map[string]bool
+	locs             map[string]string
+	maxLocationBatch int
+	afterActiveUsers func()
 }
 
 func (d *fakeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	for _, id := range ids {
 		out[id] = !d.inactive[id]
+	}
+	if d.afterActiveUsers != nil {
+		d.afterActiveUsers()
 	}
 	return out, nil
 }
@@ -54,6 +59,10 @@ func (d *fakeDir) UserNames(_ context.Context, ids []string) (map[string]string,
 	return out, nil
 }
 func (d *fakeDir) LocationNames(_ context.Context, ids []string) (map[string]string, error) {
+	d.maxLocationBatch = max(d.maxLocationBatch, len(ids))
+	if len(ids) > 500 {
+		return nil, errors.New("too many locations")
+	}
 	out := map[string]string{}
 	for _, id := range ids {
 		if n, ok := d.locs[id]; ok {
@@ -113,15 +122,24 @@ func (f *fakeProcurement) Requests(_ context.Context, ids []string) (map[string]
 }
 
 type fakeServices struct {
-	byID map[string]application.ServiceInfo
+	byID        map[string]application.ServiceInfo
+	maxBatch    int
+	afterLookup func()
 }
 
 func (f *fakeServices) Lookup(_ context.Context, ids []string) (map[string]application.ServiceInfo, error) {
+	f.maxBatch = max(f.maxBatch, len(ids))
+	if len(ids) > 500 {
+		return nil, errors.New("too many services")
+	}
 	out := map[string]application.ServiceInfo{}
 	for _, id := range ids {
 		if v, ok := f.byID[id]; ok {
 			out[id] = v
 		}
+	}
+	if f.afterLookup != nil {
+		f.afterLookup()
 	}
 	return out, nil
 }
@@ -362,6 +380,19 @@ func (e *env) drive(status string) application.Initiative {
 	return i
 }
 
+func (e *env) activate(i application.Initiative) application.Initiative {
+	e.t.Helper()
+	if _, err := e.svc.Propose(e.ctx(), e.caller(e.mgr2), e.manage2, i.ID, e.v(i.ID), application.Approver{UserID: &e.approver}); err != nil {
+		e.t.Fatal(err)
+	}
+	e.decide(i.ID, "approve")
+	out, err := e.svc.Activate(e.ctx(), e.caller(e.mgr), e.manage, i.ID, e.v(i.ID))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return out
+}
+
 func (e *env) count(sql string, args ...any) int {
 	e.t.Helper()
 	var n int
@@ -588,10 +619,57 @@ func TestApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 	if e.audits("approved", i.ID) != 1 || e.audits("approval_rejected", i.ID) != 1 {
 		t.Error("decisions not audited")
 	}
-	// The approver may read the Initiative; an outsider may not.
+	// Team approvers read only while the Initiative awaits the decision; afterwards it is hidden again.
 	e.appr.viewers[i.ID+":"+e.approver] = true
-	if _, err := e.svc.Get(ctx, application.Principal{UserID: e.approver}, i.ID); err != nil {
-		t.Errorf("approver read: %v", err)
+	if _, err := e.svc.Get(ctx, application.Principal{UserID: e.approver}, i.ID); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("approver read after the decision: %v", err)
+	}
+}
+
+func TestApprovedPlanRequiresReplanForMaterialEdits(t *testing.T) {
+	e := newEnv(t)
+	ctx, mc := e.ctx(), e.caller(e.mgr)
+	title, goal, owner := "Revised title", "Revised goal", e.viewer
+	serviceID := e.uuid()
+	e.services.byID[serviceID] = application.ServiceInfo{ID: serviceID, Reference: "SVC-9", Name: "Mail", Status: "operational"}
+	for _, status := range []string{"approved", "active", "on_hold"} {
+		t.Run(status, func(t *testing.T) {
+			i := e.drive(status)
+			oldApproval := *i.ApprovalID
+			for field, details := range map[string]application.Details{
+				"title": {Title: &title}, "goal": {Goal: &goal}, "owner": {OwnerUserID: &owner},
+			} {
+				if _, err := e.svc.UpdateDetails(ctx, mc, e.manage, i.ID, e.v(i.ID), details); !isTransition(err) {
+					t.Errorf("%s edit: %v", field, err)
+				}
+			}
+			if _, err := e.svc.AddMilestone(ctx, mc, e.manage, i.ID, e.v(i.ID), application.MilestoneInput{Title: "New scope", DueDate: e.clock.AddDate(0, 0, 7)}); !isTransition(err) {
+				t.Errorf("milestone add: %v", err)
+			}
+			if _, _, err := e.svc.AddItem(ctx, mc, e.manage, i.ID, e.v(i.ID), "service", serviceID); !isTransition(err) {
+				t.Errorf("item add: %v", err)
+			}
+			if _, err := e.svc.Replan(ctx, mc, e.manage, i.ID, nil, "scope_change"); !isInvalid(err) {
+				t.Errorf("missing replan version: %v", err)
+			}
+			if _, err := e.svc.Replan(ctx, mc, e.manage, i.ID, e.v(i.ID), "free text"); !isInvalid(err) {
+				t.Errorf("invalid replan reason: %v", err)
+			}
+			r, err := e.svc.Replan(ctx, mc, e.manage, i.ID, e.v(i.ID), "scope_change")
+			if err != nil || r.Status != "planning" || r.ApprovalID != nil || r.ProposedBy != nil || r.ApprovedAt != nil || r.ActivatedAt != nil {
+				t.Fatalf("replan = %+v %v", r, err)
+			}
+			if e.audits("replanned", i.ID) != 1 || e.count(`SELECT count(*) FROM planning.initiative_transitions WHERE initiative_id = $1::uuid AND from_status = $2 AND to_status = 'planning' AND operation = 'replanned' AND reason = 'scope_change'`, i.ID, status) != 1 {
+				t.Error("replan not audited and recorded")
+			}
+			if _, err := e.svc.UpdateDetails(ctx, mc, e.manage, i.ID, e.v(i.ID), application.Details{Title: &title}); err != nil {
+				t.Fatalf("edit after replan: %v", err)
+			}
+			p, err := e.svc.Propose(ctx, e.caller(e.mgr2), e.manage2, i.ID, e.v(i.ID), application.Approver{UserID: &e.approver})
+			if err != nil || p.ApprovalID == nil || *p.ApprovalID == oldApproval {
+				t.Fatalf("new proposal = %+v %v", p, err)
+			}
+		})
 	}
 }
 
@@ -685,10 +763,11 @@ func TestMilestones(t *testing.T) {
 		t.Errorf("milestone cap: %v", err)
 	}
 	// Due milestones (public contract) see only approved, active and on-hold Initiatives.
-	act := e.drive("active")
+	act := e.drive("planning")
 	if _, err := e.svc.AddMilestone(ctx, mc, e.manage, act.ID, e.v(act.ID), application.MilestoneInput{Title: "Go live", DueDate: e.clock.AddDate(0, 0, 3)}); err != nil {
 		t.Fatal(err)
 	}
+	act = e.activate(act)
 	list, err := e.svc.DueMilestones(ctx, e.clock, e.clock.AddDate(0, 0, 7), e.owner)
 	if err != nil {
 		t.Fatal(err)
@@ -698,6 +777,54 @@ func TestMilestones(t *testing.T) {
 	}
 	if _, err := e.svc.DueMilestones(ctx, e.clock, e.clock.AddDate(0, 0, 93), ""); !isInvalid(err) {
 		t.Errorf("due range cap: %v", err)
+	}
+}
+
+func TestMilestoneMutationsRecordEditorWithoutInitiativeVersionBump(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	for _, op := range []string{"add", "update", "complete", "reopen", "remove"} {
+		t.Run(op, func(t *testing.T) {
+			i := e.drive("planning")
+			var m application.Milestone
+			var err error
+			if op != "add" {
+				m, err = e.svc.AddMilestone(ctx, e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), application.MilestoneInput{Title: "Scope", DueDate: e.clock.AddDate(0, 0, 7)})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if op == "reopen" {
+				m, err = e.svc.CompleteMilestone(ctx, e.caller(e.mgr), e.manage, i.ID, m.ID, ptr(m.Version))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			version := *e.v(i.ID)
+			actor := e.caller(e.mgr2)
+			switch op {
+			case "add":
+				_, err = e.svc.AddMilestone(ctx, actor, e.manage2, i.ID, &version, application.MilestoneInput{Title: "Scope", DueDate: e.clock.AddDate(0, 0, 7)})
+			case "update":
+				title := "Expanded scope"
+				_, err = e.svc.UpdateMilestone(ctx, actor, e.manage2, i.ID, m.ID, ptr(m.Version), application.MilestoneChange{Title: &title})
+			case "complete":
+				_, err = e.svc.CompleteMilestone(ctx, actor, e.manage2, i.ID, m.ID, ptr(m.Version))
+			case "reopen":
+				_, err = e.svc.ReopenMilestone(ctx, actor, e.manage2, i.ID, m.ID, ptr(m.Version))
+			case "remove":
+				_, err = e.svc.RemoveMilestone(ctx, actor, e.manage2, i.ID, m.ID, ptr(m.Version), "merged")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := *e.v(i.ID); got != version || !slices.Contains(e.get(i.ID).Editors, e.mgr2) {
+				t.Fatalf("version/editor after %s: %d, %+v", op, got, e.get(i.ID).Editors)
+			}
+			if _, err := e.svc.Propose(ctx, e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), application.Approver{UserID: &e.mgr2}); !errors.Is(err, application.ErrNoEligibleApprover) {
+				t.Errorf("editor could approve after %s: %v", op, err)
+			}
+		})
 	}
 }
 
@@ -783,6 +910,21 @@ func TestItemsValidationRedactionAndCaps(t *testing.T) {
 	if err != nil || len(p2.Items) != 1 || p2.NextCursor != "" {
 		t.Fatalf("page 2 = %+v %v", p2, err)
 	}
+	if p1.NextCursor == p1.Items[2].RelationshipID || strings.Contains(p1.NextCursor, "-") {
+		t.Errorf("cursor exposed relationship id: %q", p1.NextCursor)
+	}
+	barePage, err := e.svc.Items(ctx, bare, i.ID, application.Page{Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range barePage.Items {
+		if !it.Hidden || it.ID != "hidden-2" || it.RelationshipID != "hidden-1" {
+			t.Errorf("item placeholders not scoped to row: %+v", it)
+		}
+	}
+	if _, err := e.svc.Items(ctx, e.view, i.ID, application.Page{Cursor: p1.Items[2].RelationshipID}); !errors.Is(err, application.ErrInvalidCursor) {
+		t.Errorf("relationship id accepted as cursor: %v", err)
+	}
 	if _, err := e.svc.Items(ctx, e.view, i.ID, application.Page{Cursor: "nope"}); !errors.Is(err, application.ErrInvalidCursor) {
 		t.Errorf("bad cursor: %v", err)
 	}
@@ -842,6 +984,35 @@ func TestItemsValidationRedactionAndCaps(t *testing.T) {
 	}
 }
 
+func TestOwnerAndItemAreRecheckedAfterInitiativeLock(t *testing.T) {
+	e := newEnv(t)
+	ctx, mc := e.ctx(), e.caller(e.mgr)
+	i := e.drive("planning")
+	newOwner := e.uuid()
+	e.dir.afterActiveUsers = func() {
+		e.dir.inactive[newOwner] = true
+		e.dir.afterActiveUsers = nil
+	}
+	if _, err := e.svc.UpdateDetails(ctx, mc, e.manage, i.ID, e.v(i.ID), application.Details{OwnerUserID: &newOwner}); !errors.Is(err, application.ErrReferenceInvalid) {
+		t.Errorf("owner became inactive before row lock: %v", err)
+	}
+	if got := e.get(i.ID).OwnerID; got != e.owner {
+		t.Errorf("inactive owner was persisted: %s", got)
+	}
+	serviceID := e.uuid()
+	e.services.byID[serviceID] = application.ServiceInfo{ID: serviceID, Reference: "SVC-9", Name: "Mail", Status: "operational"}
+	e.services.afterLookup = func() {
+		delete(e.services.byID, serviceID)
+		e.services.afterLookup = nil
+	}
+	if _, _, err := e.svc.AddItem(ctx, mc, e.manage, i.ID, e.v(i.ID), "service", serviceID); !errors.Is(err, application.ErrReferenceInvalid) {
+		t.Errorf("service disappeared before row lock: %v", err)
+	}
+	if n := e.count(`SELECT count(*) FROM platform.relationships WHERE source_type = 'initiative' AND source_id = $1::uuid AND target_id = $2::uuid AND valid_until IS NULL`, i.ID, serviceID); n != 0 {
+		t.Errorf("disappeared service linked: %d", n)
+	}
+}
+
 // ---- calendar ----
 
 func TestMaintenanceCalendar(t *testing.T) {
@@ -866,17 +1037,19 @@ func TestMaintenanceCalendar(t *testing.T) {
 	e.services.byID[svc] = application.ServiceInfo{ID: svc, Reference: "SVC-9", Name: "Mail", Status: "operational"}
 	e.dir.locs[loc] = "Berlin"
 	e.changes.calendar = []application.ChangeCalendarEntry{
-		{Change: application.ChangeInfo{ID: chg, Reference: "CHG-9", Title: "Core switch firmware", Status: "scheduled", RequesterID: e.mgr, WindowStart: &ws, WindowEnd: &we},
+		{Change: application.ChangeInfo{ID: chg, Reference: "CHG-9", Title: "Core switch firmware", Kind: "normal", Risk: "high", Status: "scheduled", RequesterID: e.mgr, WindowStart: &ws, WindowEnd: &we},
 			Affected: []application.Node{{Type: "service", ID: svc}, {Type: "location", ID: loc}, {Type: "vm", ID: vm}}},
-		{Change: application.ChangeInfo{ID: own, Reference: "CHG-10", Title: "Own change", Status: "approved", RequesterID: e.outsider, WindowStart: &ws, WindowEnd: &we}},
+		{Change: application.ChangeInfo{ID: own, Reference: "CHG-10", Title: "Own change", Status: "approved", RequesterID: e.outsider, WindowStart: &ws, WindowEnd: &we},
+			Affected: []application.Node{{Type: "service", ID: e.uuid()}, {Type: "service", ID: svc}}},
 	}
 	e.changes.truncated = true
 	// The Initiative that includes the change is listed for readers of the Initiative.
-	i := e.drive("active")
+	i := e.drive("planning")
 	e.changes.byID[chg] = e.changes.calendar[0].Change
 	if _, _, err := e.svc.AddItem(ctx, e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), "change", chg); err != nil {
 		t.Fatal(err)
 	}
+	i = e.activate(i)
 	cal, err := e.svc.MaintenanceCalendar(ctx, e.view, from, to)
 	if err != nil {
 		t.Fatal(err)
@@ -885,7 +1058,7 @@ func TestMaintenanceCalendar(t *testing.T) {
 		t.Fatalf("calendar = %+v", cal)
 	}
 	first := cal.Items[0]
-	if first.Title == nil || len(first.Affected) != 2 || first.Affected[0].Name == nil || *first.Affected[0].Name != "Mail" || *first.Affected[1].Name != "Berlin" {
+	if first.Title == nil || first.Kind == nil || *first.Kind != "normal" || first.Risk == nil || *first.Risk != "high" || len(first.Affected) != 2 || first.Affected[0].Name == nil || *first.Affected[0].Name != "Mail" || *first.Affected[1].Name != "Berlin" {
 		t.Errorf("first = %+v", first)
 	}
 	if len(first.Initiatives) != 1 || first.Initiatives[0].ID != i.ID {
@@ -898,13 +1071,16 @@ func TestMaintenanceCalendar(t *testing.T) {
 		t.Fatal(err)
 	}
 	first = cal.Items[0]
-	if first.Title != nil || first.Reference != "CHG-9" {
+	if first.Title != nil || first.Kind != nil || first.Risk != nil || first.Reference != "CHG-9" || first.Status != "scheduled" {
 		t.Errorf("title leaked: %+v", first)
 	}
 	for _, a := range first.Affected {
 		if !a.Hidden || a.Name != nil || a.ID == svc || a.ID == loc {
 			t.Errorf("affected leaked: %+v", a)
 		}
+	}
+	if cal.Items[1].Affected[1].ID == first.Affected[0].ID {
+		t.Errorf("hidden placeholders correlate across rows: %+v %+v", first.Affected, cal.Items[1].Affected)
 	}
 	// changes.view only: titles, but Initiatives only when readable (here: not the owner).
 	changesOnly := application.Principal{UserID: e.outsider, ChangesView: true}
@@ -922,6 +1098,50 @@ func TestMaintenanceCalendar(t *testing.T) {
 	cal, _ = e.svc.MaintenanceCalendar(ctx, requesterOnly, from, to)
 	if cal.Items[1].Title == nil || cal.Items[0].Title != nil {
 		t.Errorf("requester titles = %v %v", cal.Items[0].Title, cal.Items[1].Title)
+	}
+}
+
+func TestMaintenanceCalendarChunksNames(t *testing.T) {
+	e := newEnv(t)
+	from := time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	entry := application.ChangeCalendarEntry{Change: application.ChangeInfo{ID: e.uuid(), Reference: "CHG-501", Title: "Wide maintenance", RequesterID: e.mgr, WindowStart: &from, WindowEnd: &to}}
+	for n := 0; n < 501; n++ {
+		svc, loc := e.uuid(), e.uuid()
+		e.services.byID[svc] = application.ServiceInfo{ID: svc, Name: "Service"}
+		e.dir.locs[loc] = "Location"
+		entry.Affected = append(entry.Affected, application.Node{Type: "service", ID: svc}, application.Node{Type: "location", ID: loc})
+	}
+	e.changes.calendar = []application.ChangeCalendarEntry{entry}
+	cal, err := e.svc.MaintenanceCalendar(e.ctx(), e.view, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Items) != 1 || len(cal.Items[0].Affected) != 1002 || e.services.maxBatch != 500 || e.dir.maxLocationBatch != 500 {
+		t.Errorf("calendar affected=%d, service batch=%d, location batch=%d", len(cal.Items[0].Affected), e.services.maxBatch, e.dir.maxLocationBatch)
+	}
+}
+
+func TestMaintenanceCalendarReportsIncludedLinksTruncation(t *testing.T) {
+	e := newEnv(t)
+	from := time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	changeID := e.uuid()
+	e.changes.calendar = []application.ChangeCalendarEntry{{Change: application.ChangeInfo{ID: changeID, Reference: "CHG-1", WindowStart: &from, WindowEnd: &to}}}
+	_, err := e.pool.Exec(e.ctx(), `INSERT INTO platform.relationships (source_type, source_id, type, target_type, target_id, confidence, created_by)
+		SELECT 'initiative', uuidv7(), 'INCLUDES', 'change', $1::uuid, 'declared', $2::uuid FROM generate_series(1, 5001)`, changeID, e.mgr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.pool.Exec(context.Background(), `DELETE FROM platform.relationships WHERE target_type = 'change' AND target_id = $1::uuid AND created_by = $2::uuid`, changeID, e.mgr)
+	})
+	cal, err := e.svc.MaintenanceCalendar(e.ctx(), e.view, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cal.Truncated {
+		t.Error("included initiative links were truncated without a signal")
 	}
 }
 
@@ -998,6 +1218,21 @@ func TestPermissionsAndOwnership(t *testing.T) {
 	}
 }
 
+func TestApproverReadOnlyDuringProposal(t *testing.T) {
+	e := newEnv(t)
+	for _, status := range []string{"planning", "proposed", "approved", "active"} {
+		i := e.drive(status)
+		e.appr.viewers[i.ID+":"+e.approver] = true
+		p := application.Principal{UserID: e.approver}
+		_, err := e.svc.Get(e.ctx(), p, i.ID)
+		if status == "proposed" && err != nil {
+			t.Errorf("approver should read proposed: %v", err)
+		} else if status != "proposed" && !errors.Is(err, application.ErrNotFound) {
+			t.Errorf("approver read %s: %v", status, err)
+		}
+	}
+}
+
 // ---- notifications ----
 
 func TestStatusNotification(t *testing.T) {
@@ -1011,6 +1246,9 @@ func TestStatusNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	ev.EventType, ev.Payload, ev.ActorID, ev.CorrelationID = application.EventStatusChanged, payload, actor, e.corr
+	if _, err := e.svc.UpdateDetails(e.ctx(), e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), application.Details{OwnerUserID: &e.mgr2}); err != nil {
+		t.Fatal(err)
+	}
 	run := func(ev events.OutboxEvent) {
 		if err := pgx.BeginFunc(e.ctx(), e.pool, func(tx pgx.Tx) error { return e.notes.OnStatusChanged(e.ctx(), tx, ev) }); err != nil {
 			t.Fatal(err)
@@ -1018,7 +1256,7 @@ func TestStatusNotification(t *testing.T) {
 	}
 	run(ev)
 	run(ev) // idempotent
-	if len(e.notifier.intent) != 1 || e.notifier.intent[0].RecipientUserID != e.owner || e.notifier.intent[0].Category != "initiative.state" {
+	if len(e.notifier.intent) != 1 || e.notifier.intent[0].RecipientUserID != e.owner || e.notifier.intent[0].Category != "initiative.state" || e.notifier.intent[0].Params["title"] != i.Reference {
 		t.Fatalf("notifications = %+v", e.notifier.intent)
 	}
 	// The owner is not told about their own change, nor when inactive.
@@ -1087,7 +1325,12 @@ func pgCode(err error) string {
 func TestDatabaseInvariants(t *testing.T) {
 	e := newEnv(t)
 	ctx := e.ctx()
-	i := e.drive("active")
+	i := e.drive("planning")
+	m, err := e.svc.AddMilestone(ctx, e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), application.MilestoneInput{Title: "M", DueDate: e.clock})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i = e.activate(i)
 	for name, sql := range map[string]string{
 		"unknown status":       `UPDATE planning.initiatives SET status = 'planned' WHERE id = $1::uuid`,
 		"hold without reason":  `UPDATE planning.initiatives SET status = 'on_hold', status_reason = NULL WHERE id = $1::uuid`,
@@ -1099,17 +1342,28 @@ func TestDatabaseInvariants(t *testing.T) {
 		"reason free text":     `UPDATE planning.initiatives SET status_reason = 'Not A Code' WHERE id = $1::uuid`,
 		"blank title":          `UPDATE planning.initiatives SET title = ' x' WHERE id = $1::uuid`,
 		"time order":           `UPDATE planning.initiatives SET activated_at = approved_at - interval '1 day' WHERE id = $1::uuid`,
+		"approved no approval": `UPDATE planning.initiatives SET approval_id = NULL WHERE id = $1::uuid`,
 	} {
 		if _, err := e.pool.Exec(ctx, sql, i.ID); pgCode(err) != "23514" {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	m, err := e.svc.AddMilestone(ctx, e.caller(e.mgr), e.manage, i.ID, e.v(i.ID), application.MilestoneInput{Title: "M", DueDate: e.clock})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := e.pool.Exec(ctx, `UPDATE planning.milestones SET removed_at = now() WHERE id = $1::uuid`, m.ID); pgCode(err) != "23514" {
 		t.Errorf("removed without reason: %v", err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE planning.milestones SET removed_by = $2::uuid WHERE id = $1::uuid`, m.ID, e.mgr); pgCode(err) != "23514" {
+		t.Errorf("removed by without removal time: %v", err)
+	}
+	if _, err := e.pool.Exec(ctx, `DELETE FROM planning.milestones WHERE id = $1::uuid`, m.ID); pgCode(err) != "23001" {
+		t.Errorf("delete milestone: %v", err)
+	}
+	for name, sql := range map[string]string{
+		"invalid from": `INSERT INTO planning.initiative_transitions(initiative_id, from_status, to_status, operation, actor_system, correlation_id) VALUES ($1::uuid, 'unknown', 'active', 'test', 'test', 'test')`,
+		"invalid to":   `INSERT INTO planning.initiative_transitions(initiative_id, from_status, to_status, operation, actor_system, correlation_id) VALUES ($1::uuid, 'active', 'unknown', 'test', 'test', 'test')`,
+	} {
+		if _, err := e.pool.Exec(ctx, sql, i.ID); pgCode(err) != "23514" {
+			t.Errorf("%s transition: %v", name, err)
+		}
 	}
 	// Transitions are append-only and keep their Initiative.
 	for name, sql := range map[string]string{
@@ -1125,5 +1379,30 @@ func TestDatabaseInvariants(t *testing.T) {
 	}
 	if _, err := e.pool.Exec(ctx, `DELETE FROM planning.initiatives WHERE id = $1::uuid`, i.ID); pgCode(err) != "23001" && pgCode(err) != "23503" {
 		t.Errorf("delete initiative with history: %v", err)
+	}
+}
+
+func TestApprovalAndActivationUseDatabaseTime(t *testing.T) {
+	e := newEnv(t)
+	e.clock = time.Date(2040, 1, 1, 0, 0, 0, 0, time.UTC)
+	var before time.Time
+	if err := e.pool.QueryRow(e.ctx(), `SELECT now()`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	i := e.drive("approved")
+	if i.ApprovedAt == nil || i.ApprovedAt.Before(before) || i.ApprovedAt.After(time.Now().Add(time.Minute)) {
+		t.Fatalf("approved_at did not use database time: %v", i.ApprovedAt)
+	}
+	e.clock = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	out, err := e.svc.Activate(e.ctx(), e.caller(e.mgr), e.manage, i.ID, e.v(i.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ActivatedAt == nil || out.ActivatedAt.Before(*out.ApprovedAt) || out.ActivatedAt.Before(before) {
+		t.Fatalf("activated_at did not use ordered database time: approved=%v activated=%v", out.ApprovedAt, out.ActivatedAt)
+	}
+	done, err := e.svc.Complete(e.ctx(), e.caller(e.mgr), e.manage, i.ID, e.v(i.ID))
+	if err != nil || done.ClosedAt == nil || done.ClosedAt.Before(*out.ActivatedAt) {
+		t.Fatalf("closed_at did not preserve database time order: %+v %v", done, err)
 	}
 }

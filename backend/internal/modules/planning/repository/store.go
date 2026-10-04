@@ -91,7 +91,11 @@ func (r *Repository) LockTx(ctx context.Context, tx pgx.Tx, id string) (applicat
 func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, i application.Initiative) (application.Initiative, error) {
 	out, err := scan(tx.QueryRow(ctx, `
 		UPDATE planning.initiatives SET title = $2, goal = $3, owner_user_id = $4::uuid, status = $5, status_reason = $6, target_date = $7,
-			approval_id = $8::uuid, proposed_by = $9::uuid, editors = $10::uuid[], approved_at = $11, activated_at = $12, closed_at = $13,
+			approval_id = $8::uuid, proposed_by = $9::uuid, editors = $10::uuid[],
+			approved_at = CASE WHEN $5::text = 'approved' AND status <> 'approved' THEN now() ELSE $11 END,
+			activated_at = CASE WHEN $5::text = 'active' AND status = 'approved' THEN GREATEST(now(), approved_at) ELSE $12 END,
+			closed_at = CASE WHEN $5::text IN ('completed', 'cancelled') AND status NOT IN ('completed', 'cancelled')
+				THEN GREATEST(now(), approved_at, activated_at) ELSE $13 END,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+cols,
 		i.ID, i.Title, i.Goal, i.OwnerID, i.Status, i.StatusReason, i.TargetDate, i.ApprovalID, i.ProposedBy, editors(i),
@@ -100,6 +104,22 @@ func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, i application.Init
 		return application.Initiative{}, fmt.Errorf("update initiative: %w", err)
 	}
 	return out, nil
+}
+
+// AddEditorTx records participation without changing the Initiative version.
+// The caller holds the Initiative row lock, so this is part of the same mutation.
+func (r *Repository) AddEditorTx(ctx context.Context, tx pgx.Tx, initiativeID, actorID string) error {
+	if actorID == "" {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE planning.initiatives
+		SET editors = CASE WHEN $2::uuid = ANY(editors) THEN editors ELSE array_append(editors, $2::uuid) END,
+			updated_at = now()
+		WHERE id = $1::uuid`, initiativeID, actorID)
+	if err != nil {
+		return fmt.Errorf("add initiative editor: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (application.Initiative, error) {
