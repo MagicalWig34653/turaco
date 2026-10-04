@@ -43,6 +43,7 @@ func as(user string, perms ...string) fakeAuth {
 
 const (
 	manager  = "00000000-0000-7000-8000-0000000000c3"
+	assessor = "00000000-0000-7000-8000-0000000000c5"
 	outsider = "00000000-0000-7000-8000-0000000000c4"
 	svcID    = "00000000-0000-7000-8000-0000000000a1"
 )
@@ -133,9 +134,20 @@ func serve(t *testing.T, a authorization.Authenticator) http.Handler {
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.relationships WHERE source_type = 'change' AND source_id IN (SELECT id FROM changes.changes WHERE title LIKE 'http-%')`)
-		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = $1::uuid`, manager)
-		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE actor_id = $1::uuid`, manager)
-		_, _ = pool.Exec(ctx, `DELETE FROM changes.changes WHERE title LIKE 'http-%'`)
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = ANY($1::uuid[])`, []string{manager, assessor, outsider})
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE actor_id = ANY($1::uuid[])`, []string{manager, assessor, outsider})
+		// Transitions and Task links are append-only: skip the triggers on this connection only.
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			return
+		}
+		defer conn.Release()
+		_, _ = conn.Exec(ctx, `SET session_replication_role = replica`)
+		for _, table := range []string{"change_transitions", "change_tasks"} {
+			_, _ = conn.Exec(ctx, `DELETE FROM changes.`+table+` WHERE change_id IN (SELECT id FROM changes.changes WHERE title LIKE 'http-%')`)
+		}
+		_, _ = conn.Exec(ctx, `DELETE FROM changes.changes WHERE title LIKE 'http-%'`)
+		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 	})
 	return httpx.Middleware(logger, mux)
 }
@@ -208,17 +220,40 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 	if code != http.StatusOK || len(body["affected"].([]any)) != 1 || body["allowedOperations"] == nil {
 		t.Fatalf("get = %d %v", code, body)
 	}
-	v := int(body["version"].(float64))
-	if code, body := do(t, h, "POST", base+"/submit", `{"expectedVersion":`+itoa(v)+`}`); code != http.StatusOK || body["status"] != "assessment" {
+	// ver reads the current version; every lifecycle operation requires it.
+	ver := func() string {
+		t.Helper()
+		_, b := do(t, h, "GET", base, "")
+		return itoa(int(b["version"].(float64)))
+	}
+	// Removing an affected resource takes the version as a query parameter.
+	if code, body := do(t, h, "DELETE", base+"/affected/service/"+svcID, ""); code != http.StatusBadRequest || errCode(body) != "changes.invalid_request" {
+		t.Errorf("remove affected without expectedVersion = %d %v", code, body)
+	}
+	if code, body := do(t, h, "DELETE", base+"/affected/service/"+svcID+"?expectedVersion=x", ""); code != http.StatusBadRequest {
+		t.Errorf("remove affected with a malformed version = %d %v", code, body)
+	}
+	if code, body := do(t, h, "DELETE", base+"/affected/vm/"+svcID+"?expectedVersion="+ver(), ""); code != http.StatusBadRequest || errCode(body) != "changes.invalid_reference" {
+		t.Errorf("remove a hidden type = %d %v", code, body)
+	}
+	if code, body := do(t, h, "POST", base+"/submit", `{}`); code != http.StatusBadRequest || errCode(body) != "changes.invalid_request" {
+		t.Errorf("submit without expectedVersion = %d %v", code, body)
+	}
+	if code, body := do(t, h, "POST", base+"/submit", `{"expectedVersion":`+ver()+`}`); code != http.StatusOK || body["status"] != "assessment" {
 		t.Fatalf("submit = %d %v", code, body)
 	}
-	if code, body := do(t, h, "POST", base+"/submit", `{}`); code != http.StatusConflict || errCode(body) != "changes.invalid_transition" {
+	if code, body := do(t, h, "POST", base+"/submit", `{"expectedVersion":`+ver()+`}`); code != http.StatusConflict || errCode(body) != "changes.invalid_transition" {
 		t.Errorf("second submit = %d %v", code, body)
 	}
-	if code, body := do(t, h, "POST", base+"/assess", `{"risk":"low"}`); code != http.StatusOK || body["status"] != "approved" {
+	// The requester never assesses their own change.
+	if code, body := do(t, h, "POST", base+"/assess", `{"expectedVersion":`+ver()+`,"risk":"low"}`); code != http.StatusForbidden || errCode(body) != "changes.separation_of_duties" {
+		t.Errorf("assess by the requester = %d %v", code, body)
+	}
+	hAssess := serve(t, as(assessor, "changes.manage"))
+	if code, body := do(t, hAssess, "POST", base+"/assess", `{"expectedVersion":`+ver()+`,"risk":"low"}`); code != http.StatusOK || body["status"] != "approved" {
 		t.Fatalf("assess = %d %v", code, body)
 	}
-	if code, body := do(t, h, "POST", base+"/schedule", `{}`); code != http.StatusOK || body["status"] != "scheduled" {
+	if code, body := do(t, h, "POST", base+"/schedule", `{"expectedVersion":`+ver()+`}`); code != http.StatusOK || body["status"] != "scheduled" {
 		t.Fatalf("schedule = %d %v", code, body)
 	}
 
@@ -231,7 +266,7 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 	if code, body := do(t, hStranger, "GET", base, ""); code != http.StatusNotFound || errCode(body) != "changes.not_found" {
 		t.Errorf("stranger get = %d %v", code, body)
 	}
-	if code, _ := do(t, hStranger, "POST", base+"/start", `{}`); code != http.StatusNotFound {
+	if code, _ := do(t, hStranger, "POST", base+"/start", `{"expectedVersion":`+ver()+`}`); code != http.StatusNotFound {
 		t.Errorf("stranger start = %d", code)
 	}
 	if code, _ := do(t, hStranger, "GET", base+"/transitions", ""); code != http.StatusNotFound {
@@ -249,7 +284,7 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 	if code, _ := do(t, hOwner, "GET", "/api/v1/changes?windowFrom=yesterday", ""); code != http.StatusBadRequest {
 		t.Errorf("bad time filter = %d", code)
 	}
-	if code, _ := do(t, hOwner, "POST", base+"/cancel", `{"reason":"other"}`); code != http.StatusForbidden {
+	if code, _ := do(t, hOwner, "POST", base+"/cancel", `{"expectedVersion":`+ver()+`,"reason":"other"}`); code != http.StatusForbidden {
 		t.Errorf("owner cancel without manage = %d", code)
 	}
 	if code, body := do(t, hOwner, "GET", base+"/impact", ""); code != http.StatusForbidden {
@@ -261,16 +296,22 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 	if code, body := do(t, h, "GET", base+"/impact", ""); code != http.StatusOK || len(body["starts"].([]any)) != 1 {
 		t.Errorf("impact = %d %v", code, body)
 	}
-	if code, body := do(t, hExec, "POST", base+"/start", `{}`); code != http.StatusOK || body["status"] != "in_progress" {
+	if code, body := do(t, hExec, "POST", base+"/start", `{}`); code != http.StatusBadRequest || errCode(body) != "changes.invalid_request" {
+		t.Errorf("start without expectedVersion = %d %v", code, body)
+	}
+	if code, body := do(t, hExec, "POST", base+"/start", `{"expectedVersion":`+ver()+`}`); code != http.StatusOK || body["status"] != "in_progress" {
 		t.Fatalf("executor start = %d %v", code, body)
 	}
-	if code, body := do(t, hOwner, "POST", base+"/tasks", `{"title":"step one"}`); code != http.StatusCreated || body["taskId"] == nil {
+	if code, body := do(t, hOwner, "POST", base+"/tasks", `{"title":"step one"}`); code != http.StatusBadRequest || errCode(body) != "changes.invalid_request" {
+		t.Errorf("add task without expectedVersion = %d %v", code, body)
+	}
+	if code, body := do(t, hOwner, "POST", base+"/tasks", `{"expectedVersion":`+ver()+`,"title":"step one"}`); code != http.StatusCreated || body["taskId"] == nil {
 		t.Errorf("add task = %d %v", code, body)
 	}
-	if code, body := do(t, hOwner, "POST", base+"/fail", `{"reason":"bogus"}`); code != http.StatusBadRequest {
+	if code, body := do(t, hOwner, "POST", base+"/fail", `{"expectedVersion":`+ver()+`,"reason":"bogus"}`); code != http.StatusBadRequest {
 		t.Errorf("fail with bad reason = %d %v", code, body)
 	}
-	if code, body := do(t, hOwner, "POST", base+"/complete", `{}`); code != http.StatusOK || body["status"] != "completed" {
+	if code, body := do(t, hOwner, "POST", base+"/complete", `{"expectedVersion":`+ver()+`}`); code != http.StatusOK || body["status"] != "completed" {
 		t.Errorf("complete = %d %v", code, body)
 	}
 	code, body = do(t, h, "GET", base+"/transitions", "")
@@ -280,8 +321,15 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 	if strings.Contains(mustJSON(body), "title") {
 		t.Error("transitions must not carry free text")
 	}
-	if code, body := do(t, h, "POST", base+"/close", `{}`); code != http.StatusOK || body["status"] != "closed" {
+	if code, body := do(t, h, "POST", base+"/review", `{"expectedVersion":`+ver()+`}`); code != http.StatusBadRequest {
+		t.Errorf("review without an outcome note = %d %v", code, body)
+	}
+	if code, body := do(t, h, "POST", base+"/close", `{"expectedVersion":`+ver()+`}`); code != http.StatusOK || body["status"] != "closed" || body["closedAt"] == nil {
 		t.Errorf("close = %d %v", code, body)
+	}
+	// A closed change still lists its affected resources (its links ended with it).
+	if code, body := do(t, h, "GET", base, ""); code != http.StatusOK || len(body["affected"].([]any)) != 1 {
+		t.Errorf("closed change affected = %d %v", code, body)
 	}
 }
 

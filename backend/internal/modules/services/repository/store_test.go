@@ -1061,6 +1061,44 @@ func TestListDependenciesPagesWithCursor(t *testing.T) {
 	}
 }
 
+// Relationships of other modules pointing at a Service (here "change AFFECTS
+// service", owned by Changes) are not dependencies: the impact walk never
+// reaches them.
+func TestImpactFollowsOnlyDependencyRelationships(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.graph.Registry().Register(relationships.Triple{SourceType: "change", Type: "AFFECTS", TargetType: "service", Owner: "changes"})
+	db, web := e.service("DB"), e.service("Web")
+	if err := e.dep(web.ID, "service", db.ID); err != nil {
+		t.Fatal(err)
+	}
+	change := relationships.Node{Type: "change", ID: e.uuid()}
+	for _, target := range []string{db.ID, web.ID} {
+		if _, _, err := e.graph.Link(ctx, e.pool, relationships.LinkInput{Owner: "changes", Source: change, Type: "AFFECTS",
+			Target: relationships.Node{Type: "service", ID: target}, Confidence: relationships.ConfidenceDeclared}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	res, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: db.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Nodes) != 1 || res.Nodes[0].ID != web.ID {
+		t.Fatalf("downstream nodes = %+v, want only the dependent service", res.Nodes)
+	}
+	for _, dir := range []string{"downstream", "upstream"} {
+		r, err := e.app.Impact(ctx, e.view, application.ImpactInput{Type: "service", ID: web.ID, Direction: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range r.Nodes {
+			if n.Type == "change" {
+				t.Errorf("%s impact reaches a change: %+v", dir, n)
+			}
+		}
+	}
+}
+
 func TestImpactAllowsOneTraversalPerUser(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

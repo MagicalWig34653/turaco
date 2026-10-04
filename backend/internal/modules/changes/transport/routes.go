@@ -26,6 +26,9 @@ type changeDTO struct {
 	OutcomeNote            *string  `json:"outcomeNote"`
 	RollbackDone           *bool    `json:"rollbackDone"`
 	ApprovalID             *string  `json:"approvalId"`
+	ApprovedWindowStart    *string  `json:"approvedWindowStart"`
+	ApprovedWindowEnd      *string  `json:"approvedWindowEnd"`
+	EmergencyApprovedBy    *string  `json:"emergencyApprovedBy"`
 	ReviewRequired         bool     `json:"reviewRequired"`
 	StartedAt              *string  `json:"startedAt"`
 	CompletedAt            *string  `json:"completedAt"`
@@ -40,7 +43,8 @@ func toChange(c application.Change) changeDTO {
 	return changeDTO{ID: c.ID, Reference: c.Reference, Title: c.Title, Description: c.Description, Kind: c.Kind, Risk: c.Risk, Status: c.Status,
 		StatusReason: c.StatusReason, RequesterID: c.RequesterID, OwnerID: c.OwnerID, RollbackPlan: c.RollbackPlan,
 		EmergencyJustification: c.EmergencyJustification, WindowStart: tsPtr(c.WindowStart), WindowEnd: tsPtr(c.WindowEnd),
-		OutcomeNote: c.OutcomeNote, RollbackDone: c.RollbackDone, ApprovalID: c.ApprovalID, ReviewRequired: c.ReviewRequired(),
+		OutcomeNote: c.OutcomeNote, RollbackDone: c.RollbackDone, ApprovalID: c.ApprovalID, ApprovedWindowStart: tsPtr(c.ApprovedWindowStart), ApprovedWindowEnd: tsPtr(c.ApprovedWindowEnd),
+		EmergencyApprovedBy: c.EmergencyApprovedBy, ReviewRequired: c.ReviewRequired(),
 		StartedAt: tsPtr(c.StartedAt), CompletedAt: tsPtr(c.CompletedAt), ClosedAt: tsPtr(c.ClosedAt),
 		Version: c.Version, CreatedAt: ts(c.CreatedAt), UpdatedAt: ts(c.UpdatedAt)}
 }
@@ -261,7 +265,11 @@ func (h *handler) addAffected(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) removeAffected(w http.ResponseWriter, r *http.Request) {
-	err := h.svc.RemoveAffected(r.Context(), caller(w, r), principal(r), r.PathValue("id"), nil, r.PathValue("type"), r.PathValue("resourceId"))
+	expected, ok := parseVersion(w, r.URL.Query().Get("expectedVersion"))
+	if !ok {
+		return
+	}
+	err := h.svc.RemoveAffected(r.Context(), caller(w, r), principal(r), r.PathValue("id"), expected, r.PathValue("type"), r.PathValue("resourceId"))
 	if err != nil {
 		h.writeErr(w, r, err)
 		return
@@ -387,16 +395,17 @@ func (h *handler) cancel(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) addTask(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Title          string     `json:"title"`
-		Description    string     `json:"description"`
-		DueAt          *time.Time `json:"dueAt"`
-		AssignedUserID *string    `json:"assignedUserId"`
-		AssignedTeamID *string    `json:"assignedTeamId"`
+		ExpectedVersion *int       `json:"expectedVersion"`
+		Title           string     `json:"title"`
+		Description     string     `json:"description"`
+		DueAt           *time.Time `json:"dueAt"`
+		AssignedUserID  *string    `json:"assignedUserId"`
+		AssignedTeamID  *string    `json:"assignedTeamId"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
-	id, err := h.svc.AddTask(r.Context(), caller(w, r), principal(r), r.PathValue("id"), application.NewTask{Title: b.Title,
+	id, err := h.svc.AddTask(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, application.NewTask{Title: b.Title,
 		Description: b.Description, DueAt: b.DueAt, AssignedUserID: b.AssignedUserID, AssignedTeamID: b.AssignedTeamID})
 	if err != nil {
 		h.writeErr(w, r, err)

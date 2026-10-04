@@ -48,13 +48,14 @@ func validUUID(s string) bool {
 
 const cols = `id::text, reference, title, description, kind, risk, status, status_reason, requester_user_id::text, owner_user_id::text,
 	rollback_plan, emergency_justification, window_start, window_end, outcome_note, rollback_done, approval_id::text,
+	approved_window_start, approved_window_end, emergency_approved_by::text,
 	editors::text[], reminded_for, started_at, completed_at, closed_at, version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Change, error) {
 	var c application.Change
 	err := row.Scan(&c.ID, &c.Reference, &c.Title, &c.Description, &c.Kind, &c.Risk, &c.Status, &c.StatusReason, &c.RequesterID, &c.OwnerID,
 		&c.RollbackPlan, &c.EmergencyJustification, &c.WindowStart, &c.WindowEnd, &c.OutcomeNote, &c.RollbackDone, &c.ApprovalID,
-		&c.Editors, &c.RemindedFor, &c.StartedAt, &c.CompletedAt, &c.ClosedAt, &c.Version, &c.CreatedAt, &c.UpdatedAt)
+		&c.ApprovedWindowStart, &c.ApprovedWindowEnd, &c.EmergencyApprovedBy, &c.Editors, &c.RemindedFor, &c.StartedAt, &c.CompletedAt, &c.ClosedAt, &c.Version, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
 }
 
@@ -95,10 +96,12 @@ func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, c application.Chan
 		UPDATE changes.changes SET title = $2, description = $3, kind = $4, risk = $5, status = $6, status_reason = $7,
 			owner_user_id = $8::uuid, rollback_plan = $9, emergency_justification = $10, window_start = $11, window_end = $12,
 			outcome_note = $13, rollback_done = $14, approval_id = $15::uuid, editors = $16::uuid[], reminded_for = $17,
-			started_at = $18, completed_at = $19, closed_at = $20, version = version + 1, updated_at = now()
+			started_at = $18, completed_at = $19, closed_at = $20, approved_window_start = $21, approved_window_end = $22,
+			emergency_approved_by = $23::uuid, version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+cols,
 		c.ID, c.Title, c.Description, c.Kind, c.Risk, c.Status, c.StatusReason, c.OwnerID, c.RollbackPlan, c.EmergencyJustification,
-		c.WindowStart, c.WindowEnd, c.OutcomeNote, c.RollbackDone, c.ApprovalID, editors(c), c.RemindedFor, c.StartedAt, c.CompletedAt, c.ClosedAt))
+		c.WindowStart, c.WindowEnd, c.OutcomeNote, c.RollbackDone, c.ApprovalID, editors(c), c.RemindedFor, c.StartedAt, c.CompletedAt, c.ClosedAt,
+		c.ApprovedWindowStart, c.ApprovedWindowEnd, c.EmergencyApprovedBy))
 	if err != nil {
 		return application.Change{}, fmt.Errorf("update change: %w", err)
 	}
@@ -134,7 +137,9 @@ func (r *Repository) Get(ctx context.Context, id string) (application.Change, er
 }
 
 // List is keyset pagination over the UUIDv7 id, newest first. The affected
-// resource filter reads the current "change AFFECTS ..." relationship rows.
+// resource filter is the id set the service read through platform/relationships
+// (no query on another module's tables). The "own Changes" scope is a UNION ALL
+// of the requester and owner indexes instead of an OR.
 func (r *Repository) List(ctx context.Context, f application.Filter) (application.Result[application.Change], error) {
 	var conds []string
 	var args []any
@@ -158,16 +163,20 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		add("requester_user_id = $%d::uuid", f.RequesterID)
 	}
 	if f.OnlyUserID != "" {
-		add("(requester_user_id = $%[1]d::uuid OR owner_user_id = $%[1]d::uuid)", f.OnlyUserID)
+		add(`id IN (SELECT id FROM changes.changes WHERE requester_user_id = $%[1]d::uuid
+			UNION ALL SELECT id FROM changes.changes WHERE owner_user_id = $%[1]d::uuid)`, f.OnlyUserID)
 	}
 	if f.AffectedType != "" {
-		args = append(args, f.AffectedType, f.AffectedID)
-		conds = append(conds, fmt.Sprintf(`EXISTS (SELECT 1 FROM platform.relationships r
-			WHERE r.source_type = 'change' AND r.source_id = c.id AND r.type = 'AFFECTS' AND r.valid_until IS NULL
-			  AND r.target_type = $%d AND r.target_id = $%d::uuid)`, len(args)-1, len(args)))
+		ids := f.AffectedChangeIDs
+		if ids == nil {
+			ids = []string{}
+		}
+		add("id = ANY($%d::uuid[])", ids)
 	}
 	if f.WindowFrom != nil {
-		add("window_end >= $%d", *f.WindowFrom)
+		// A window lasts at most 30 days (changes_window_max), so the lower bound
+		// on window_start is exact and lets the window_start index narrow the scan.
+		add("(window_end >= $%[1]d::timestamptz AND window_start >= $%[1]d::timestamptz - interval '30 days')", *f.WindowFrom)
 	}
 	if f.WindowTo != nil {
 		add("window_start <= $%d", *f.WindowTo)

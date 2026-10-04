@@ -13,7 +13,6 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 )
 
 var systemActor = audit.SystemActor("changes-workflow")
@@ -37,7 +36,7 @@ func denyExecute(p Principal, c Change) error {
 
 // Submit sends a draft Change to assessment. It needs a maintenance window, a
 // rollback plan for medium and high risk and, unless the Change is standard,
-// at least one affected resource. Requires changes.manage.
+// at least one affected resource. Requires changes.manage and expectedVersion.
 func (s *Service) Submit(ctx context.Context, c Caller, p Principal, id string, expected *int) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
@@ -45,26 +44,18 @@ func (s *Service) Submit(ctx context.Context, c Caller, p Principal, id string, 
 	if !p.Manage {
 		return Change{}, ErrForbidden
 	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
+	}
 	var out Change
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "submit", StatusDraft)
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "submit", StatusDraft)
 		if err != nil {
 			return err
 		}
-		if cur.WindowStart == nil {
-			return invalid("a maintenance window is required before a change can be submitted")
-		}
-		if cur.Risk != RiskLow && cur.RollbackPlan == nil {
-			return invalid("a rollback plan is required for medium and high risk")
-		}
-		if cur.Kind != KindStandard {
-			page, err := s.graph.Outgoing(ctx, tx, relationships.Node{Type: NodeChange, ID: cur.ID}, []string{RelAffects}, "", 1)
-			if err != nil {
-				return fmt.Errorf("count affected resources: %w", err)
-			}
-			if len(page.Items) == 0 {
-				return invalid("at least one affected resource is required before a change can be submitted")
-			}
+		if err := s.checkReady(ctx, tx, cur, cur.Risk); err != nil {
+			return err
 		}
 		next := addEditor(cur, c.Actor.UserID)
 		next.Status, next.StatusReason = StatusAssessment, nil
@@ -92,14 +83,21 @@ type Assessment struct {
 // approval (the Change becomes pending_approval), approves the Change when no
 // approval is required, or approves an emergency change on its justification
 // (audited as the emergency path; the Change then needs a review before it can
-// be closed). The requester, everybody who edited, submitted or assessed the
-// Change can never approve it. Requires changes.manage.
+// be closed). Separation of duties: the requester and everybody who edited or
+// submitted the Change may not assess it (ErrSeparationOfDuties), and the
+// requester, the owner, the editors, the submitter and the assessor can never
+// approve it. Submit's checks are repeated under the same lock. Requires
+// changes.manage and expectedVersion.
 func (s *Service) Assess(ctx context.Context, c Caller, p Principal, id string, expected *int, in Assessment) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
 	}
 	if !p.Manage {
 		return Change{}, ErrForbidden
+	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
 	}
 	if !oneOf(in.Risk, Risks) {
 		return Change{}, invalid("risk must be one of %s", strings.Join(Risks, ", "))
@@ -120,12 +118,15 @@ func (s *Service) Assess(ctx context.Context, c Caller, p Principal, id string, 
 	}
 	var out Change
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "assess", StatusAssessment)
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "assess", StatusAssessment)
 		if err != nil {
 			return err
 		}
-		if in.Risk != RiskLow && cur.RollbackPlan == nil {
-			return invalid("a rollback plan is required for medium and high risk")
+		if c.Actor.UserID == cur.RequesterID || slices.Contains(cur.Editors, c.Actor.UserID) {
+			return ErrSeparationOfDuties
+		}
+		if err := s.checkReady(ctx, tx, cur, in.Risk); err != nil {
+			return err
 		}
 		next := addEditor(cur, c.Actor.UserID)
 		next.Risk = in.Risk
@@ -139,6 +140,7 @@ func (s *Service) Assess(ctx context.Context, c Caller, p Principal, id string, 
 				return invalid("an emergency justification replaces the approver")
 			}
 			next.Status, next.StatusReason, next.EmergencyJustification = StatusApproved, strPtr(reasonEmergency), justification
+			next.EmergencyApprovedBy = userPtr(c)
 			out, err = s.commit(ctx, tx, c, cur, next, "emergency_approved", reasonEmergency, nil)
 			if err != nil {
 				return err
@@ -149,6 +151,9 @@ func (s *Service) Assess(ctx context.Context, c Caller, p Principal, id string, 
 				return invalid("exactly one approver (user or team) is required")
 			}
 			excluded := append([]string{cur.RequesterID}, next.Editors...)
+			if cur.OwnerID != nil {
+				excluded = append(excluded, *cur.OwnerID)
+			}
 			slices.Sort(excluded)
 			excluded = slices.Compact(excluded)
 			next.Status, next.StatusReason = StatusPendingApproval, nil
@@ -177,11 +182,13 @@ func (s *Service) Assess(ctx context.Context, c Caller, p Principal, id string, 
 }
 
 // OnApprovalDecided moves a Change whose approval was decided: an approval
-// makes it `approved`, a rejection makes it `rejected` (terminal; the reason
-// `approval_rejected` is stored and the approver's comment stays with the
-// approval). It runs in the dispatcher's claim transaction and is idempotent:
+// makes it `approved` (the approved maintenance window is recorded), a
+// rejection makes it `rejected` (terminal; the reason `approval_rejected` is
+// stored, the approver's comment stays with the approval and the AFFECTS links
+// end). It runs in the dispatcher's claim transaction and is idempotent:
 // events of other subjects and stale events (the Change is no longer pending
-// approval) change nothing.
+// approval) change nothing. An event without an approval id, or naming another
+// approval than the pending one, is a permanent error.
 func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
 		ApprovalID  string `json:"approvalId"`
@@ -198,6 +205,9 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 	if p.Decision != "approve" && p.Decision != "reject" {
 		return events.Permanent(fmt.Errorf("approval decision %q of change %s is unknown", p.Decision, p.SubjectID))
 	}
+	if p.ApprovalID == "" {
+		return events.Permanent(fmt.Errorf("approval decision of change %s carries no approval id", p.SubjectID))
+	}
 	cur, err := s.store.LockTx(ctx, tx, strings.ToLower(p.SubjectID))
 	if errors.Is(err, ErrNotFound) {
 		return nil
@@ -205,22 +215,30 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 	if err != nil {
 		return err
 	}
-	if cur.Status != StatusPendingApproval || cur.ApprovalID != nil && p.ApprovalID != "" && *cur.ApprovalID != p.ApprovalID {
+	if cur.Status != StatusPendingApproval {
 		return nil
+	}
+	if cur.ApprovalID == nil || !strings.EqualFold(*cur.ApprovalID, p.ApprovalID) {
+		return events.Permanent(fmt.Errorf("approval %s is not the pending approval of change %s", p.ApprovalID, cur.ID))
 	}
 	c := Caller{Actor: systemActor, CorrelationID: ev.CorrelationID}
 	next := cur
 	if p.Decision == "approve" {
 		next.Status, next.StatusReason = StatusApproved, nil
+		next.ApprovedWindowStart, next.ApprovedWindowEnd = cur.WindowStart, cur.WindowEnd
 		out, err := s.commit(ctx, tx, c, cur, next, "approved", "", nil)
 		if err != nil {
 			return err
 		}
 		return publish(ctx, tx, c, "ChangeApproved", map[string]any{"changeId": out.ID, "emergency": false})
 	}
-	next.Status, next.StatusReason = StatusRejected, strPtr(ReasonApprovalRejected)
+	now := s.now()
+	next.Status, next.StatusReason, next.ClosedAt = StatusRejected, strPtr(ReasonApprovalRejected), &now
 	out, err := s.commit(ctx, tx, c, cur, next, "approval_rejected", ReasonApprovalRejected, nil)
 	if err != nil {
+		return err
+	}
+	if err := s.endLinks(ctx, tx, c, out.ID, out.Status); err != nil {
 		return err
 	}
 	return publish(ctx, tx, c, "ChangeRejected", map[string]any{"changeId": out.ID})
@@ -233,14 +251,20 @@ type ScheduleInput struct {
 }
 
 // Schedule schedules an approved Change. It needs a maintenance window that
-// starts in the future; an emergency change is exempt from that rule. Requires
-// changes.manage.
+// starts in the future and, when an approver approved the Change, lies within
+// the approved window (ErrWindowNotApproved; a different window needs a new
+// Change). An emergency change may use any window that starts at most one hour
+// in the past. Requires changes.manage and expectedVersion.
 func (s *Service) Schedule(ctx context.Context, c Caller, p Principal, id string, expected *int, in ScheduleInput) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
 	}
 	if !p.Manage {
 		return Change{}, ErrForbidden
+	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
 	}
 	var ws, we *time.Time
 	if in.Window != nil {
@@ -253,8 +277,8 @@ func (s *Service) Schedule(ctx context.Context, c Caller, p Principal, id string
 		}
 	}
 	var out Change
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "schedule", StatusApproved)
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "schedule", StatusApproved)
 		if err != nil {
 			return err
 		}
@@ -265,8 +289,17 @@ func (s *Service) Schedule(ctx context.Context, c Caller, p Principal, id string
 		if next.WindowStart == nil {
 			return invalid("a maintenance window is required to schedule a change")
 		}
-		if cur.Kind != KindEmergency && !next.WindowStart.After(s.now()) {
+		now := s.now()
+		switch {
+		case cur.Kind == KindEmergency:
+			if next.WindowStart.Before(now.Add(-EmergencyPastGrace)) {
+				return invalid("an emergency maintenance window may start at most one hour in the past")
+			}
+		case !next.WindowStart.After(now):
 			return invalid("the maintenance window must start in the future")
+		case cur.ApprovedWindowStart != nil && cur.ApprovedWindowEnd != nil &&
+			(next.WindowStart.Before(*cur.ApprovedWindowStart) || next.WindowEnd.After(*cur.ApprovedWindowEnd)):
+			return ErrWindowNotApproved
 		}
 		next.Status, next.StatusReason, next.RemindedFor = StatusScheduled, nil, nil
 		out, err = s.commit(ctx, tx, c, cur, next, "scheduled", "", map[string]any{"windowChanged": in.Window != nil})
@@ -280,9 +313,12 @@ func (s *Service) Schedule(ctx context.Context, c Caller, p Principal, id string
 }
 
 // Start begins the execution of a scheduled Change. Only the Change's owner or
-// a holder of changes.execute may start it.
+// a holder of changes.execute may start it; expectedVersion is required.
 func (s *Service) Start(ctx context.Context, c Caller, p Principal, id string, expected *int) (Change, error) {
 	if err := c.validate(); err != nil {
+		return Change{}, err
+	}
+	if _, err := requireVersion(expected); err != nil {
 		return Change{}, err
 	}
 	var out Change
@@ -316,7 +352,7 @@ func (s *Service) lockExecute(ctx context.Context, tx pgx.Tx, p Principal, id st
 	if !p.canExecute(cur) {
 		return Change{}, denyExecute(p, cur)
 	}
-	if expected != nil && *expected != cur.Version {
+	if expected == nil || *expected != cur.Version {
 		return Change{}, ErrVersionConflict
 	}
 	if !slices.Contains(from, cur.Status) {
@@ -353,6 +389,9 @@ func (s *Service) Complete(ctx context.Context, c Caller, p Principal, id string
 	}
 	if force != "" && force != ReasonTasksWaived {
 		return Change{}, invalid("force must be empty or %s", ReasonTasksWaived)
+	}
+	if _, err := requireVersion(expected); err != nil {
+		return Change{}, err
 	}
 	var out Change
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
@@ -397,6 +436,9 @@ func (s *Service) Fail(ctx context.Context, c Caller, p Principal, id string, ex
 	if !oneOf(reason, FailReasons) {
 		return Change{}, invalid("reason must be one of %s", strings.Join(FailReasons, ", "))
 	}
+	if _, err := requireVersion(expected); err != nil {
+		return Change{}, err
+	}
 	var out Change
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.lockExecute(ctx, tx, p, id, expected, "fail", StatusInProgress)
@@ -416,7 +458,9 @@ func (s *Service) Fail(ctx context.Context, c Caller, p Principal, id string, ex
 }
 
 // Review records the post-implementation review of a completed or failed
-// Change with a short outcome note. Requires changes.manage.
+// Change with a short outcome note (required). The User who approved an
+// emergency change on its justification may not review it
+// (ErrSeparationOfDuties). Requires changes.manage and expectedVersion.
 func (s *Service) Review(ctx context.Context, c Caller, p Principal, id string, expected *int, outcomeNote string) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
@@ -424,15 +468,25 @@ func (s *Service) Review(ctx context.Context, c Caller, p Principal, id string, 
 	if !p.Manage {
 		return Change{}, ErrForbidden
 	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
+	}
 	note, err := cleanText("outcome note", outcomeNote, maxOutcome)
 	if err != nil {
 		return Change{}, err
 	}
+	if note == nil {
+		return Change{}, invalid("an outcome note is required for the review")
+	}
 	var out Change
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "review", StatusCompleted, StatusFailed)
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "review", StatusCompleted, StatusFailed)
 		if err != nil {
 			return err
+		}
+		if emergencyApprover(cur, c) {
+			return ErrSeparationOfDuties
 		}
 		next := cur
 		next.Status, next.OutcomeNote = StatusReview, note
@@ -443,7 +497,11 @@ func (s *Service) Review(ctx context.Context, c Caller, p Principal, id string, 
 }
 
 // Close closes a completed, failed or reviewed Change. An emergency change
-// cannot be closed without a review (ErrReviewRequired). Requires changes.manage.
+// cannot be closed without a review (ErrReviewRequired), nor by the User who
+// approved it on its justification (ErrSeparationOfDuties). Execution Tasks
+// still open (a failed Change keeps them) are cancelled with the reason
+// change_closed and counted in the audit entry; the AFFECTS links end. Requires
+// changes.manage and expectedVersion.
 func (s *Service) Close(ctx context.Context, c Caller, p Principal, id string, expected *int) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
@@ -451,27 +509,55 @@ func (s *Service) Close(ctx context.Context, c Caller, p Principal, id string, e
 	if !p.Manage {
 		return Change{}, ErrForbidden
 	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
+	}
 	var out Change
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "close", StatusCompleted, StatusFailed, StatusReview)
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "close", StatusCompleted, StatusFailed, StatusReview)
 		if err != nil {
 			return err
 		}
 		if cur.ReviewRequired() && cur.Status != StatusReview {
 			return ErrReviewRequired
 		}
+		if emergencyApprover(cur, c) {
+			return ErrSeparationOfDuties
+		}
+		open, err := s.openTasks(ctx, tx, cur.ID)
+		if err != nil {
+			return err
+		}
+		var meta map[string]any
+		if len(open) > 0 {
+			n, err := s.tasks.CancelByContextInTx(ctx, tx, c.Actor, c.CorrelationID, cur.ID, ReasonChangeClosed)
+			if err != nil {
+				return fmt.Errorf("cancel open tasks: %w", err)
+			}
+			meta = map[string]any{"cancelledTasks": n}
+		}
 		now := s.now()
 		next := cur
 		next.Status, next.ClosedAt = StatusClosed, &now
-		out, err = s.commit(ctx, tx, c, cur, next, "closed", "", nil)
-		return err
+		out, err = s.commit(ctx, tx, c, cur, next, "closed", "", meta)
+		if err != nil {
+			return err
+		}
+		return s.endLinks(ctx, tx, c, out.ID, out.Status)
 	})
 	return out, err
 }
 
+// emergencyApprover reports that the caller approved the emergency change on its justification.
+func emergencyApprover(cur Change, c Caller) bool {
+	return cur.EmergencyApprovedBy != nil && c.Actor.UserID != "" && *cur.EmergencyApprovedBy == c.Actor.UserID
+}
+
 // Cancel cancels a Change that has not started (draft up to scheduled) with a
-// reason code. A pending approval is cancelled and the execution Tasks of a
-// scheduled Change are cancelled with it. Requires changes.manage.
+// reason code. A pending approval is cancelled, the execution Tasks of a
+// scheduled Change are cancelled with it and the AFFECTS links end. Requires
+// changes.manage and expectedVersion.
 func (s *Service) Cancel(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (Change, error) {
 	if err := c.validate(); err != nil {
 		return Change{}, err
@@ -482,9 +568,13 @@ func (s *Service) Cancel(ctx context.Context, c Caller, p Principal, id string, 
 	if !oneOf(reason, CancelReasons) {
 		return Change{}, invalid("reason must be one of %s", strings.Join(CancelReasons, ", "))
 	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Change{}, err
+	}
 	var out Change
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, id, expected, "cancel", StatusDraft, StatusAssessment, StatusPendingApproval, StatusApproved, StatusScheduled)
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.lockStatus(ctx, tx, id, &exp, "cancel", StatusDraft, StatusAssessment, StatusPendingApproval, StatusApproved, StatusScheduled)
 		if err != nil {
 			return err
 		}
@@ -505,7 +595,10 @@ func (s *Service) Cancel(ctx context.Context, c Caller, p Principal, id string, 
 		next := cur
 		next.Status, next.StatusReason, next.ClosedAt = StatusCancelled, &reason, &now
 		out, err = s.commit(ctx, tx, c, cur, next, "cancelled", reason, meta)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.endLinks(ctx, tx, c, out.ID, out.Status)
 	})
 	return out, err
 }
@@ -521,9 +614,14 @@ type NewTask struct {
 
 // AddTask adds an execution Task with the context type "change" to a
 // scheduled or running Change. The Change's owner, a holder of changes.execute
-// and changes.manage may add Tasks; at most 50 per Change.
-func (s *Service) AddTask(ctx context.Context, c Caller, p Principal, id string, in NewTask) (string, error) {
+// and changes.manage may add Tasks; at most 50 per Change. expectedVersion is
+// required and checked (adding a Task does not change the Change's version).
+func (s *Service) AddTask(ctx context.Context, c Caller, p Principal, id string, expected *int, in NewTask) (string, error) {
 	if err := c.validate(); err != nil {
+		return "", err
+	}
+	exp, err := requireVersion(expected)
+	if err != nil {
 		return "", err
 	}
 	title := strings.TrimSpace(in.Title)
@@ -531,7 +629,7 @@ func (s *Service) AddTask(ctx context.Context, c Caller, p Principal, id string,
 		return "", invalid("task title must be 1-%d characters", maxTaskTitle)
 	}
 	var taskID string
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		if !uuidPattern.MatchString(id) {
 			return ErrNotFound
 		}
@@ -541,6 +639,9 @@ func (s *Service) AddTask(ctx context.Context, c Caller, p Principal, id string,
 		}
 		if !p.Manage && !p.canExecute(cur) {
 			return denyExecute(p, cur)
+		}
+		if exp != cur.Version {
+			return ErrVersionConflict
 		}
 		if cur.Status != StatusScheduled && cur.Status != StatusInProgress {
 			return &InvalidTransitionError{Operation: "add_task", From: cur.Status}

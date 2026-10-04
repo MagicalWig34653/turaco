@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,7 +22,10 @@ import (
 // NotificationCategories are the notification categories Changes creates:
 // change.scheduled (a Change affecting a Service you own or support was
 // scheduled), change.reminder (such a Change starts soon) and change.state (a
-// Change you requested or own was approved, rejected or failed).
+// Change you requested or own was approved, rejected or failed). Only Users
+// who may read the Change are notified: holders of changes.view, manage or
+// execute, its requester, its owner and its approvers; anybody else in the
+// audience gets nothing, so the title never reaches someone who cannot open it.
 func NotificationCategories() []notifications.Category {
 	cat := func(name, enSubject, enIntro, deSubject, deIntro string) notifications.Category {
 		return notifications.Category{
@@ -54,24 +58,41 @@ const (
 	// ReminderLead is how long before the window start the reminder is sent.
 	ReminderLead  = time.Hour
 	reminderBatch = 100
+
+	// FanOutEventType is the internal continuation event of the change.scheduled
+	// fan-out; ChangeScheduled itself is published once per scheduling.
+	FanOutEventType = "ChangeScheduledFanOut"
 )
+
+// errStale stops a reminder whose Change changed between its chunks.
+var errStale = errors.New("changes: reminder no longer due")
 
 // Notifications turns Change events into notifications and runs the reminder
 // job. Consumers run in the outbox dispatcher's claim transaction, write only
 // through tx and are idempotent (notification dedupe keys per event or window).
 type Notifications struct {
-	store    Store
-	graph    *relationships.Graph
-	dir      Directory
-	services Services
-	notifier Notifier
-	now      func() time.Time
-	chunk    int
+	store     Store
+	graph     *relationships.Graph
+	dir       Directory
+	services  Services
+	notifier  Notifier
+	perms     PermissionResolver
+	approvals ApprovalViewer
+	logger    *slog.Logger
+	now       func() time.Time
+	chunk     int
 }
 
-func NewNotifications(store Store, graph *relationships.Graph, dir Directory, services Services, notifier Notifier) *Notifications {
-	return &Notifications{store: store, graph: graph, dir: dir, services: services, notifier: notifier,
-		now: func() time.Time { return time.Now().UTC() }, chunk: notifyChunk}
+func NewNotifications(store Store, graph *relationships.Graph, dir Directory, services Services, notifier Notifier,
+	perms PermissionResolver, approvals ApprovalViewer) *Notifications {
+	return &Notifications{store: store, graph: graph, dir: dir, services: services, notifier: notifier, perms: perms, approvals: approvals,
+		logger: slog.Default(), now: func() time.Time { return time.Now().UTC() }, chunk: notifyChunk}
+}
+
+// WithLogger sets the logger the reminder job reports per-Change failures to.
+func (n *Notifications) WithLogger(l *slog.Logger) *Notifications {
+	n.logger = l
+	return n
 }
 
 // WithChunk overrides the number of recipients per consumer run (tests).
@@ -140,7 +161,30 @@ func (n *Notifications) audience(ctx context.Context, changeID string) ([]string
 	return out, nil
 }
 
-// send creates the notifications for the recipients that are active, skipping skip.
+// mayRead reports whether the User may read the Change (the read rule of the
+// API): requester, owner, a holder of changes.view|manage|execute or an approver.
+func (n *Notifications) mayRead(ctx context.Context, c Change, user string) (bool, error) {
+	if user == c.RequesterID || c.OwnerID != nil && *c.OwnerID == user {
+		return true, nil
+	}
+	perms, err := n.perms.Permissions(ctx, user)
+	if err != nil {
+		return false, fmt.Errorf("load recipient permissions: %w", err)
+	}
+	for _, p := range []string{PermView, PermManage, PermExecute} {
+		if _, ok := perms[p]; ok {
+			return true, nil
+		}
+	}
+	ok, err := n.approvals.CanView(ctx, c.ID, user)
+	if err != nil {
+		return false, fmt.Errorf("check recipient approver: %w", err)
+	}
+	return ok, nil
+}
+
+// send creates the notifications for the recipients that are active and may
+// read the Change, skipping skip.
 func (n *Notifications) send(ctx context.Context, tx pgx.Tx, category string, c Change, recipients []string, skip *string, dedupe func(user string) string) error {
 	var ids []string
 	for _, id := range recipients {
@@ -157,6 +201,13 @@ func (n *Notifications) send(ctx context.Context, tx pgx.Tx, category string, c 
 	}
 	for _, id := range ids {
 		if !active[id] {
+			continue
+		}
+		ok, err := n.mayRead(ctx, c, id)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			continue
 		}
 		if _, err := n.notifier.Create(ctx, tx, notifications.Intent{
@@ -177,10 +228,12 @@ func decodePayload(ev events.OutboxEvent, dst any) error {
 }
 
 // OnChangeScheduled tells the owners and support Teams of the affected Services
-// that a Change was scheduled. Large audiences are notified in chunks: the rest
-// follows in a continuation event (payload field "after"), so one claim
-// transaction stays short and nobody is silently left out. A stale event (the
-// Change was cancelled meanwhile) notifies nobody.
+// that a Change was scheduled; it consumes ChangeScheduled and its internal
+// continuation ChangeScheduledFanOut. Large audiences are notified in chunks:
+// the rest follows in a ChangeScheduledFanOut event (payload field "after"), so
+// one claim transaction stays short, nobody is silently left out and
+// ChangeScheduled stays one event per scheduling. A stale event (the Change was
+// cancelled meanwhile) notifies nobody.
 func (n *Notifications) OnChangeScheduled(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
 		ChangeID string `json:"changeId"`
@@ -216,7 +269,7 @@ func (n *Notifications) OnChangeScheduled(ctx context.Context, tx pgx.Tx, ev eve
 	}
 	if len(rest) > n.chunk {
 		rest = rest[:n.chunk]
-		if err := events.Publish(ctx, tx, events.Publication{Type: "ChangeScheduled", ActorID: ev.ActorID, CorrelationID: ev.CorrelationID,
+		if err := events.Publish(ctx, tx, events.Publication{Type: FanOutEventType, ActorID: ev.ActorID, CorrelationID: ev.CorrelationID,
 			Payload: map[string]any{"changeId": c.ID, "after": rest[len(rest)-1]}}); err != nil {
 			return fmt.Errorf("continue fan-out: %w", err)
 		}
@@ -253,54 +306,93 @@ func (n *Notifications) OnChangeState(ctx context.Context, tx pgx.Tx, ev events.
 // HandleReminders is the job handler of ReminderJobType: for every scheduled
 // Change whose window starts within the next hour it tells the owners and
 // support Teams of the affected Services once per window. Each Change is
-// handled in its own transaction; the window start that was reminded is stored
-// on the Change and every notification has a dedupe key of Change, window and
-// recipient, so a retry or a second worker sends nothing twice, while a
-// rescheduled window is reminded again.
+// handled on its own, in chunks of recipients with one transaction each; the
+// window start that was reminded is stored with the last chunk and every
+// notification has a dedupe key of Change, window and recipient, so a retry or
+// a second worker sends nothing twice, while a rescheduled window is reminded
+// again. A failing Change is logged and skipped; the job reports all failures
+// together at the end (and is retried), so one broken Change never blocks the
+// reminders of the others.
 func (n *Notifications) HandleReminders(ctx context.Context, job jobs.Job) error {
 	after := ""
+	var failed []error
 	for {
 		now := n.now()
 		ids, err := n.store.DueReminderIDs(ctx, now, now.Add(ReminderLead), after, reminderBatch)
 		if err != nil {
-			return fmt.Errorf("list due reminders: %w", err)
+			return errors.Join(append(failed, fmt.Errorf("list due reminders: %w", err))...)
 		}
 		for _, id := range ids {
 			if err := n.remind(ctx, id); err != nil {
-				return fmt.Errorf("remind change %s: %w", id, err)
+				n.logger.ErrorContext(ctx, "change reminder failed", "job_id", job.ID, "change_id", id, "error", err)
+				failed = append(failed, fmt.Errorf("remind change %s: %w", id, err))
 			}
 		}
 		if len(ids) < reminderBatch {
-			return nil
+			return errors.Join(failed...)
 		}
 		after = ids[len(ids)-1]
 	}
 }
 
+// due reports that the Change's window starts within the reminder lead and was not reminded yet.
+func (n *Notifications) due(c Change) bool {
+	now := n.now()
+	return c.Status == StatusScheduled && c.WindowStart != nil && c.WindowStart.After(now) && !c.WindowStart.After(now.Add(ReminderLead)) &&
+		(c.RemindedFor == nil || !c.RemindedFor.Equal(*c.WindowStart))
+}
+
 func (n *Notifications) remind(ctx context.Context, id string) error {
-	return n.store.InTx(ctx, func(tx pgx.Tx) error {
-		c, err := n.store.LockTx(ctx, tx, id)
-		if errors.Is(err, ErrNotFound) {
+	c, err := n.store.Get(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !n.due(c) {
+		return nil
+	}
+	all, err := n.audience(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	window := *c.WindowStart
+	key := strconv.FormatInt(window.Unix(), 10)
+	parts := [][]string{}
+	for len(all) > n.chunk {
+		parts, all = append(parts, all[:n.chunk]), all[n.chunk:]
+	}
+	parts = append(parts, all)
+	for i, part := range parts {
+		last := i == len(parts)-1
+		err := n.store.InTx(ctx, func(tx pgx.Tx) error {
+			cur, err := n.store.LockTx(ctx, tx, id)
+			if errors.Is(err, ErrNotFound) {
+				return errStale
+			}
+			if err != nil {
+				return err
+			}
+			if !n.due(cur) || !cur.WindowStart.Equal(window) {
+				return errStale
+			}
+			if err := n.send(ctx, tx, "change.reminder", cur, part, nil, func(u string) string {
+				return "reminder:" + cur.ID + ":" + key + ":" + u
+			}); err != nil {
+				return err
+			}
+			if !last {
+				return nil
+			}
+			return n.store.MarkRemindedTx(ctx, tx, cur.ID, window)
+		})
+		if errors.Is(err, errStale) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		now := n.now()
-		if c.Status != StatusScheduled || c.WindowStart == nil || !c.WindowStart.After(now) || c.WindowStart.After(now.Add(ReminderLead)) ||
-			c.RemindedFor != nil && c.RemindedFor.Equal(*c.WindowStart) {
-			return nil
-		}
-		all, err := n.audience(ctx, c.ID)
-		if err != nil {
-			return err
-		}
-		window := strconv.FormatInt(c.WindowStart.Unix(), 10)
-		if err := n.send(ctx, tx, "change.reminder", c, all, nil, func(u string) string {
-			return "reminder:" + c.ID + ":" + window + ":" + u
-		}); err != nil {
-			return err
-		}
-		return n.store.MarkRemindedTx(ctx, tx, c.ID, *c.WindowStart)
-	})
+	}
+	return nil
 }

@@ -5,6 +5,10 @@ type Definition struct {
 	Version     int
 	Owner       string
 	Description string
+	// Internal marks an event only its owner module publishes and consumes
+	// (for example the continuation of a chunked fan-out); it is not a
+	// contract for other modules.
+	Internal bool
 }
 
 var Registry = []Definition{
@@ -48,7 +52,8 @@ var Registry = []Definition{
 	{Name: "ChangeSubmitted", Version: 1, Owner: "changes", Description: "A draft Change was submitted for assessment. Payload: changeId, kind, risk."},
 	{Name: "ChangeApproved", Version: 1, Owner: "changes", Description: "A Change was approved: by its approver, without approval when none was required, or on an emergency justification. Payload: changeId, emergency."},
 	{Name: "ChangeRejected", Version: 1, Owner: "changes", Description: "The approver rejected a Change. Payload: changeId."},
-	{Name: "ChangeScheduled", Version: 1, Owner: "changes", Description: "An approved Change was scheduled in its maintenance window; also the continuation of the fan-out to a large audience. Payload: changeId, emergency, windowStart, windowEnd; continuation events carry changeId and after."},
+	{Name: "ChangeScheduled", Version: 1, Owner: "changes", Description: "An approved Change was scheduled in its maintenance window; published once per scheduling. Payload: changeId, emergency, windowStart, windowEnd."},
+	{Name: "ChangeScheduledFanOut", Version: 1, Owner: "changes", Internal: true, Description: "Continuation of the change.scheduled notification fan-out to a large audience (the next chunk of recipients). Payload: changeId, after (the last recipient id already notified)."},
 	{Name: "ChangeStarted", Version: 1, Owner: "changes", Description: "A scheduled Change started execution. Payload: changeId."},
 	{Name: "ChangeCompleted", Version: 1, Owner: "changes", Description: "A Change in progress was completed. Payload: changeId."},
 	{Name: "ChangeFailed", Version: 1, Owner: "changes", Description: "A Change in progress failed. Payload: changeId, reason, rollbackDone."},

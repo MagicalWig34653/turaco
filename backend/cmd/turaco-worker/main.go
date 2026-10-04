@@ -110,7 +110,7 @@ func main() {
 		logger.Error("configure service link backfill", "error", err)
 		os.Exit(1)
 	}
-	if err := registerChangeReminders(ctx, runner, pool, categories, smtpCfg.Enabled()); err != nil {
+	if err := registerChangeReminders(ctx, runner, pool, categories, smtpCfg.Enabled(), logger); err != nil {
 		logger.Error("configure change reminders", "error", err)
 		os.Exit(1)
 	}
@@ -222,7 +222,7 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalDecided", "procurement.order-approval", procurementSvc.OnApprovalDecided); err != nil {
 		return err
 	}
-	changeNotes := wiring.ChangeNotifications(pool, notifier)
+	changeNotes := wiring.ChangeNotifications(pool, notifier, perms)
 	for _, r := range []struct{ event, name string }{
 		{"ChangeApproved", "changes.notify-state"}, {"ChangeRejected", "changes.notify-state"}, {"ChangeFailed", "changes.notify-state"},
 	} {
@@ -230,8 +230,10 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 			return err
 		}
 	}
-	if err := d.Register("ChangeScheduled", "changes.notify-scheduled", changeNotes.OnChangeScheduled); err != nil {
-		return err
+	for _, event := range []string{"ChangeScheduled", changesapp.FanOutEventType} {
+		if err := d.Register(event, "changes.notify-scheduled", changeNotes.OnChangeScheduled); err != nil {
+			return err
+		}
 	}
 	if err := d.Register("ApprovalDecided", "changes.approval", wiring.Changes(pool).OnApprovalDecided); err != nil {
 		return err
@@ -318,12 +320,14 @@ func registerServicesBackfill(ctx context.Context, runner *jobs.Runner, pool *pg
 // registerChangeReminders registers the "starts soon" reminder job of scheduled Changes and
 // schedules it. The job is idempotent per Change and maintenance window; the schedule's
 // dedupe key keeps several workers from enqueueing it twice.
-func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool, logger *slog.Logger) error {
 	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
 	}
-	if err := runner.Register(changesapp.ReminderJobType, changesapp.ReminderJobTimeout, wiring.ChangeNotifications(pool, notifier).HandleReminders); err != nil {
+	perms := roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgrepository.New(pool)))
+	notes := wiring.ChangeNotifications(pool, notifier, perms).WithLogger(logger)
+	if err := runner.Register(changesapp.ReminderJobType, changesapp.ReminderJobTimeout, notes.HandleReminders); err != nil {
 		return err
 	}
 	return runner.AddSchedule(jobs.Schedule{

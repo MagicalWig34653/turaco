@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,15 +27,22 @@ const (
 	OpAffected = "edit_affected"
 )
 
-// AllowedOperations lists the operations the status and the caller's authority allow.
+// AllowedOperations lists the operations the status and the caller's authority
+// allow, leaving out steps separation of duties forbids the caller.
 func AllowedOperations(c Change, p Principal) []string {
 	ops := []string{}
+	mayAssess := p.UserID != c.RequesterID && !slices.Contains(c.Editors, p.UserID)
+	emergencyApprover := c.EmergencyApprovedBy != nil && *c.EmergencyApprovedBy == p.UserID
 	if p.Manage {
 		switch c.Status {
 		case StatusDraft:
 			ops = append(ops, OpUpdate, OpAffected, OpSubmit, OpCancel)
 		case StatusAssessment:
-			ops = append(ops, OpUpdate, OpAffected, OpAssess, OpCancel)
+			ops = append(ops, OpUpdate, OpAffected)
+			if mayAssess {
+				ops = append(ops, OpAssess)
+			}
+			ops = append(ops, OpCancel)
 		case StatusPendingApproval, StatusApproved:
 			if c.Status == StatusApproved {
 				ops = append(ops, OpSchedule)
@@ -45,12 +53,16 @@ func AllowedOperations(c Change, p Principal) []string {
 		case StatusInProgress:
 			ops = append(ops, OpAddTask)
 		case StatusCompleted, StatusFailed:
-			ops = append(ops, OpReview)
-			if !c.ReviewRequired() {
-				ops = append(ops, OpClose)
+			if !emergencyApprover {
+				ops = append(ops, OpReview)
+				if !c.ReviewRequired() {
+					ops = append(ops, OpClose)
+				}
 			}
 		case StatusReview:
-			ops = append(ops, OpClose)
+			if !emergencyApprover {
+				ops = append(ops, OpClose)
+			}
 		}
 	}
 	if p.canExecute(c) {
@@ -144,6 +156,13 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result[Chang
 			return Result[Change]{Items: []Change{}}, nil
 		}
 		f.AffectedID = strings.ToLower(f.AffectedID)
+		// Current links and the links of terminal Changes (ended with their terminal reason).
+		ids, _, err := s.graph.SourcesByTarget(ctx, s.store.Q(), RelationshipOwner, NodeChange, RelAffects,
+			relationships.Node{Type: f.AffectedType, ID: f.AffectedID}, []string{ReasonChangeClosed, ReasonChangeCancelled, ReasonChangeRejected}, relationships.MaxSources)
+		if err != nil {
+			return Result[Change]{}, fmt.Errorf("list changes affecting the resource: %w", err)
+		}
+		f.AffectedChangeIDs = ids
 	}
 	f.OwnerID, f.RequesterID = strings.ToLower(f.OwnerID), strings.ToLower(f.RequesterID)
 	if f.WindowFrom != nil && f.WindowTo != nil && f.WindowTo.Before(*f.WindowFrom) {
@@ -208,7 +227,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 		return Detail{}, err
 	}
 	d := Detail{Change: c, AllowedOps: AllowedOperations(c, p)}
-	if d.Affected, err = s.affected(ctx, p, c.ID); err != nil {
+	if d.Affected, err = s.affected(ctx, p, c); err != nil {
 		return Detail{}, err
 	}
 	if d.Approvals, err = s.approvals.ForSubject(ctx, c.ID); err != nil {
@@ -249,15 +268,16 @@ func (m *masker) id(real string) string {
 	return ph
 }
 
-// affected lists the affected resources of a Change (at most MaxAffected).
-func (s *Service) affected(ctx context.Context, p Principal, changeID string) ([]AffectedResource, error) {
-	page, err := s.graph.Outgoing(ctx, s.store.Q(), relationships.Node{Type: NodeChange, ID: changeID}, []string{RelAffects}, "", MaxAffected)
+// affected lists the affected resources of a Change (at most MaxAffected): the
+// current links, or the links that ended when a terminal Change terminated.
+func (s *Service) affected(ctx context.Context, p Principal, c Change) ([]AffectedResource, error) {
+	links, err := affectedLinks(ctx, s.graph, s.store.Q(), c)
 	if err != nil {
 		return nil, fmt.Errorf("list affected resources: %w", err)
 	}
-	out := make([]AffectedResource, 0, len(page.Items))
+	out := make([]AffectedResource, 0, len(links))
 	byType := map[string][]string{}
-	for _, r := range page.Items {
+	for _, r := range links {
 		byType[r.Target.Type] = append(byType[r.Target.Type], r.Target.ID)
 	}
 	svcs, vms, assets, locs := map[string]ServiceInfo{}, map[string]VMInfo{}, map[string]AssetInfo{}, map[string]string{}
@@ -282,7 +302,7 @@ func (s *Service) affected(ctx context.Context, p Principal, changeID string) ([
 		}
 	}
 	var m masker
-	for _, r := range page.Items {
+	for _, r := range links {
 		a := AffectedResource{RelationshipID: r.ID, Type: r.Target.Type, ID: r.Target.ID, Confidence: r.Confidence, Since: r.ValidFrom}
 		if p.hides(a.Type) {
 			a.Hidden, a.RelationshipID, a.ID = true, m.id(r.ID), m.id(r.Target.ID)
@@ -360,13 +380,13 @@ func (s *Service) Impact(ctx context.Context, p Principal, id string, depth int)
 		return ImpactResult{}, ErrImpactBusy
 	}
 	defer s.releaseImpact(p.UserID)
-	page, err := s.graph.Outgoing(ctx, s.store.Q(), relationships.Node{Type: NodeChange, ID: c.ID}, []string{RelAffects}, "", MaxAffected)
+	links, err := affectedLinks(ctx, s.graph, s.store.Q(), c)
 	if err != nil {
 		return ImpactResult{}, fmt.Errorf("list affected resources: %w", err)
 	}
 	res := ImpactResult{Starts: []Impact{}}
 	budget := ImpactNodeCap
-	for _, r := range page.Items {
+	for _, r := range links {
 		if p.hides(r.Target.Type) {
 			res.Skipped++
 			continue

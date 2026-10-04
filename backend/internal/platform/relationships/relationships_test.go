@@ -3,6 +3,7 @@ package relationships_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -353,6 +354,45 @@ func TestUnlinkAll(t *testing.T) {
 	in, _ := e.g.Incoming(ctx, e.pool, a, nil, "", 10)
 	if len(in.Items) != 1 {
 		t.Fatal("incoming links stay")
+	}
+}
+
+// Ended links stay readable by their end reason, and the sources pointing at a
+// target are listed newest first with the requested ended ones.
+func TestOutgoingEndedAndSourcesByTarget(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	target := e.node("tnode")
+	var sources []relationships.Node
+	for i := 0; i < 4; i++ {
+		s := e.node("tnode")
+		sources = append(sources, s)
+		e.link(s, target)
+	}
+	// sources[0] ended "closed_test" (kept), sources[1] ended "removed" (dropped).
+	if _, err := e.g.UnlinkAll(ctx, e.pool, "tests", sources[0], relationships.Forward, "closed_test", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.g.UnlinkAll(ctx, e.pool, "tests", sources[1], relationships.Forward, "removed", ""); err != nil {
+		t.Fatal(err)
+	}
+	ended, err := e.g.OutgoingEnded(ctx, e.pool, sources[0], []string{"TEST_DEPENDS_ON"}, "closed_test", 10)
+	if err != nil || len(ended) != 1 || ended[0].Target != target || ended[0].Current() {
+		t.Fatalf("ended = %+v %v", ended, err)
+	}
+	if none, err := e.g.OutgoingEnded(ctx, e.pool, sources[1], nil, "closed_test", 10); err != nil || len(none) != 0 {
+		t.Fatalf("other reason = %+v %v", none, err)
+	}
+	ids, truncated, err := e.g.SourcesByTarget(ctx, e.pool, "tests", "tnode", "TEST_DEPENDS_ON", target, []string{"closed_test"}, 10)
+	want := []string{sources[3].ID, sources[2].ID, sources[0].ID}
+	if err != nil || truncated || !slices.Equal(ids, want) {
+		t.Fatalf("sources = %v %v %v, want %v", ids, truncated, err, want)
+	}
+	if ids, truncated, _ := e.g.SourcesByTarget(ctx, e.pool, "tests", "tnode", "TEST_DEPENDS_ON", target, nil, 1); len(ids) != 1 || ids[0] != sources[3].ID || !truncated {
+		t.Errorf("current only, limit 1 = %v %v", ids, truncated)
+	}
+	if _, _, err := e.g.SourcesByTarget(ctx, e.pool, "others", "tnode", "TEST_DEPENDS_ON", target, nil, 10); !errors.Is(err, relationships.ErrNotAllowed) {
+		t.Errorf("foreign owner: %v", err)
 	}
 }
 

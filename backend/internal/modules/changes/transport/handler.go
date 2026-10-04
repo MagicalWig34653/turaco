@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	permView        = "changes.view"
-	permManage      = "changes.manage"
-	permExecute     = "changes.execute"
+	permView        = application.PermView
+	permManage      = application.PermManage
+	permExecute     = application.PermExecute
 	permServicesV   = "services.view"
 	permServicesM   = "services.manage"
 	permInfraView   = "infrastructure.view"
@@ -91,6 +91,10 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "changes.tasks_open", "Execution tasks are still open.")
 	case errors.Is(err, application.ErrTooMany):
 		httpx.WriteError(w, http.StatusConflict, "changes.limit_reached", "The limit for this change has been reached.")
+	case errors.Is(err, application.ErrSeparationOfDuties):
+		httpx.WriteError(w, http.StatusForbidden, "changes.separation_of_duties", "Separation of duties does not allow you to take this step on this change.")
+	case errors.Is(err, application.ErrWindowNotApproved):
+		httpx.WriteError(w, http.StatusConflict, "changes.window_not_approved", "The maintenance window lies outside the approved window.")
 	case errors.Is(err, application.ErrImpactBusy):
 		httpx.WriteError(w, http.StatusTooManyRequests, "changes.impact_busy", "An impact view is already being calculated for you; try again when it has finished.")
 	case errors.Is(err, application.ErrInvalidCursor):
@@ -151,6 +155,24 @@ func parsePage(w http.ResponseWriter, r *http.Request) (application.Page, bool) 
 		return application.Page{}, false
 	}
 	return application.Page{Limit: limit, Cursor: r.URL.Query().Get("cursor")}.Normalize(), true
+}
+
+// parseVersion reads the optional expectedVersion query parameter (a
+// non-negative integer); a missing value is nil and the service refuses it
+// where the version is required.
+func parseVersion(w http.ResponseWriter, raw string) (*int, bool) {
+	if raw == "" {
+		return nil, true
+	}
+	n := 0
+	for _, ch := range raw {
+		if ch < '0' || ch > '9' || n > 1<<30 {
+			httpx.WriteError(w, http.StatusBadRequest, "changes.invalid_request", "expectedVersion must be a positive integer.")
+			return nil, false
+		}
+		n = n*10 + int(ch-'0')
+	}
+	return &n, true
 }
 
 // versionBody carries the optimistic-concurrency version and a reason code.

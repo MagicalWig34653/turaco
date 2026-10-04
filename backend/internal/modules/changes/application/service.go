@@ -375,6 +375,10 @@ func (s *Service) UpdateDetails(ctx context.Context, c Caller, p Principal, id s
 			changed = append(changed, "description")
 		}
 		if in.Kind != nil && *in.Kind != cur.Kind {
+			// The kind decides the approval path; after submission it is fixed.
+			if cur.Status != StatusDraft {
+				return invalid("the kind can only be changed in draft")
+			}
 			next.Kind = *in.Kind
 			changed = append(changed, "kind")
 		}
@@ -532,7 +536,9 @@ func (s *Service) AddAffected(ctx context.Context, c Caller, p Principal, change
 
 // RemoveAffected ends the link between a draft or assessed Change and an
 // affected resource. Removing a link that does not exist succeeds without an
-// audit entry. Requires changes.manage.
+// audit entry. A resource of a type the caller may not see is
+// ErrReferenceInvalid, as when adding, so removal never confirms hidden links.
+// Requires changes.manage and expectedVersion.
 func (s *Service) RemoveAffected(ctx context.Context, c Caller, p Principal, changeID string, expected *int, targetType, targetID string) error {
 	if err := c.validate(); err != nil {
 		return err
@@ -540,19 +546,26 @@ func (s *Service) RemoveAffected(ctx context.Context, c Caller, p Principal, cha
 	if !p.Manage {
 		return ErrForbidden
 	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return err
+	}
 	if !uuidPattern.MatchString(changeID) {
 		return ErrNotFound
 	}
 	if !oneOf(targetType, AffectedTargets) {
 		return invalid("type must be one of %s", strings.Join(AffectedTargets, ", "))
 	}
-	targetID, err := checkID(targetID)
+	targetID, err = checkID(targetID)
 	if err != nil {
 		return err
 	}
+	if p.hides(targetType) {
+		return ErrReferenceInvalid
+	}
 	changeID = strings.ToLower(changeID)
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
-		cur, err := s.lockStatus(ctx, tx, changeID, expected, "remove_affected", StatusDraft, StatusAssessment)
+		cur, err := s.lockStatus(ctx, tx, changeID, &exp, "remove_affected", StatusDraft, StatusAssessment)
 		if err != nil {
 			return err
 		}
@@ -569,4 +582,50 @@ func (s *Service) RemoveAffected(ctx context.Context, c Caller, p Principal, cha
 		}
 		return recordAudit(ctx, tx, c, "affected_removed", changeID, nil, nil, map[string]any{"targetType": targetType, "targetId": targetID})
 	})
+}
+
+// checkReady checks what a Change needs before it is submitted and again when
+// it is assessed (under the same lock, as details may change in assessment): a
+// maintenance window, a rollback plan for medium and high risk and, unless the
+// Change is standard, at least one affected resource.
+func (s *Service) checkReady(ctx context.Context, tx pgx.Tx, c Change, risk string) error {
+	if c.WindowStart == nil {
+		return invalid("a maintenance window is required")
+	}
+	if risk != RiskLow && c.RollbackPlan == nil {
+		return invalid("a rollback plan is required for medium and high risk")
+	}
+	if c.Kind != KindStandard {
+		page, err := s.graph.Outgoing(ctx, tx, relationships.Node{Type: NodeChange, ID: c.ID}, []string{RelAffects}, "", 1)
+		if err != nil {
+			return fmt.Errorf("count affected resources: %w", err)
+		}
+		if len(page.Items) == 0 {
+			return invalid("at least one affected resource is required")
+		}
+	}
+	return nil
+}
+
+// endLinks ends every current AFFECTS link of a Change that reached a terminal
+// status, in the caller's transaction, with the status's end reason. The links
+// stay readable by that reason (affected resources of closed Changes, list
+// filter), but no longer count as current relationships of the resources.
+func (s *Service) endLinks(ctx context.Context, tx pgx.Tx, c Caller, changeID, status string) error {
+	if _, err := s.graph.UnlinkAll(ctx, tx, RelationshipOwner, relationships.Node{Type: NodeChange, ID: changeID}, relationships.Forward,
+		linkEndReason(status), c.Actor.UserID); err != nil {
+		return fmt.Errorf("end affected resource links: %w", err)
+	}
+	return nil
+}
+
+// affectedLinks returns the affected resources of a Change: its current AFFECTS
+// links, or for a terminal Change the links ended when it terminated.
+func affectedLinks(ctx context.Context, g *relationships.Graph, q relationships.Querier, c Change) ([]relationships.Relationship, error) {
+	node := relationships.Node{Type: NodeChange, ID: c.ID}
+	if reason := linkEndReason(c.Status); reason != "" {
+		return g.OutgoingEnded(ctx, q, node, []string{RelAffects}, reason, MaxAffected)
+	}
+	page, err := g.Outgoing(ctx, q, node, []string{RelAffects}, "", MaxAffected)
+	return page.Items, err
 }

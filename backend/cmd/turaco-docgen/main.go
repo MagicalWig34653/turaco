@@ -72,7 +72,11 @@ func renderEvents() []byte {
 	var b strings.Builder
 	b.WriteString("# Event Catalog\n\n> Generated from code. Do not edit manually.\n\n| Event | Version | Owner | Description |\n|---|---:|---|---|\n")
 	for _, e := range items {
-		fmt.Fprintf(&b, "| `%s` | %d | %s | %s |\n", e.Name, e.Version, e.Owner, e.Description)
+		owner := e.Owner
+		if e.Internal {
+			owner += " (internal)"
+		}
+		fmt.Fprintf(&b, "| `%s` | %d | %s | %s |\n", e.Name, e.Version, owner, e.Description)
 	}
 	return []byte(b.String())
 }

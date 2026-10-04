@@ -59,6 +59,13 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 		}
 		return d.Change.Status
 	}
+	ver := func(id string) *int {
+		d, err := chg.Get(ctx, requester, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &d.Change.Version
+	}
 	window := func() changesapp.Window {
 		s, e := time.Now().Add(48*time.Hour), time.Now().Add(50*time.Hour)
 		return changesapp.Window{Start: &s, End: &e}
@@ -73,14 +80,14 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 		if _, _, err := chg.AddAffected(ctx, cc(w.creator), requester, c.ID, nil, "service", service.ID); err != nil {
 			t.Fatal(err)
 		}
-		if c, err = chg.Submit(ctx, cc(w.creator), requester, c.ID, nil); err != nil {
+		if c, err = chg.Submit(ctx, cc(w.creator), requester, c.ID, ver(c.ID)); err != nil {
 			t.Fatal(err)
 		}
 		return c
 	}
 	assess := func(c changesapp.Change, approver string) {
 		t.Helper()
-		if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, nil, changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &approver}}); err != nil {
+		if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, ver(c.ID), changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &approver}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -94,10 +101,10 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 
 	// The requester and the assessor can never be the approver.
 	c := newChange()
-	if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, nil, changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &w.creator}}); !errors.Is(err, changesapp.ErrNoEligibleApprover) {
+	if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, ver(c.ID), changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &w.creator}}); !errors.Is(err, changesapp.ErrNoEligibleApprover) {
 		t.Errorf("requester as approver: %v", err)
 	}
-	if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, nil, changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &w.outsider}}); !errors.Is(err, changesapp.ErrNoEligibleApprover) {
+	if _, err := chg.Assess(ctx, cc(w.outsider), assessor, c.ID, ver(c.ID), changesapp.Assessment{Risk: "medium", Approver: changesapp.Approver{UserID: &w.outsider}}); !errors.Is(err, changesapp.ErrNoEligibleApprover) {
 		t.Errorf("assessor as approver: %v", err)
 	}
 	if status(c.ID) != "assessment" {
@@ -129,7 +136,7 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 	}
 
 	// Scheduling tells the Service's owner and support Team (not the actor, not inactive members).
-	if _, err := chg.Schedule(ctx, cc(w.creator), requester, c.ID, nil, changesapp.ScheduleInput{}); err != nil {
+	if _, err := chg.Schedule(ctx, cc(w.creator), requester, c.ID, ver(c.ID), changesapp.ScheduleInput{}); err != nil {
 		t.Fatal(err)
 	}
 	w.dispatch()
@@ -140,14 +147,14 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 	}
 
 	// Execution: Tasks block completion until finished.
-	if _, err := chg.Start(ctx, cc(w.assignee), owner, c.ID, nil); err != nil {
+	if _, err := chg.Start(ctx, cc(w.assignee), owner, c.ID, ver(c.ID)); err != nil {
 		t.Fatal(err)
 	}
-	taskID, err := chg.AddTask(ctx, cc(w.assignee), owner, c.ID, changesapp.NewTask{Title: "Flash firmware"})
+	taskID, err := chg.AddTask(ctx, cc(w.assignee), owner, c.ID, ver(c.ID), changesapp.NewTask{Title: "Flash firmware"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chg.Complete(ctx, cc(w.assignee), owner, c.ID, nil, ""); !errors.Is(err, changesapp.ErrOpenTasks) {
+	if _, err := chg.Complete(ctx, cc(w.assignee), owner, c.ID, ver(c.ID), ""); !errors.Is(err, changesapp.ErrOpenTasks) {
 		t.Fatalf("complete with an open task: %v", err)
 	}
 	var ctxType string
@@ -158,7 +165,7 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 	if _, err := ts.Transition(ctx, w.caller(w.creator), tasksapp.Principal{UserID: w.creator, Manage: true}, taskID, nil, tasksapp.OpComplete, ""); err != nil {
 		t.Fatal(err)
 	}
-	if done, err := chg.Complete(ctx, cc(w.assignee), owner, c.ID, nil, ""); err != nil || done.Status != "completed" {
+	if done, err := chg.Complete(ctx, cc(w.assignee), owner, c.ID, ver(c.ID), ""); err != nil || done.Status != "completed" {
 		t.Fatalf("complete = %+v %v", done, err)
 	}
 
@@ -183,7 +190,7 @@ func TestChangeApprovalRoundTripAndExecution(t *testing.T) {
 	// Cancelling a change with a pending approval cancels the approval, so it can no longer be decided.
 	p := newChange()
 	assess(p, w.member)
-	if _, err := chg.Cancel(ctx, cc(w.creator), requester, p.ID, nil, "superseded"); err != nil {
+	if _, err := chg.Cancel(ctx, cc(w.creator), requester, p.ID, ver(p.ID), "superseded"); err != nil {
 		t.Fatal(err)
 	}
 	if err := decideApproval(w, w.member, approvalOf(p.ID), "approve"); err == nil {

@@ -28,11 +28,14 @@ func Changes(pool *pgxpool.Pool) *changesapp.Service {
 		approvals, changespublic.NewTasks(taskspublicCreator(pool, dir)))
 }
 
-// ChangeNotifications builds the notification consumers and the reminder job handler of Changes.
-func ChangeNotifications(pool *pgxpool.Pool, notifier changesapp.Notifier) *changesapp.Notifications {
+// ChangeNotifications builds the notification consumers and the reminder job
+// handler of Changes; perms (platform/authorization/roles.Evaluator) decides
+// which Users may read Changes and may therefore be notified.
+func ChangeNotifications(pool *pgxpool.Pool, notifier changesapp.Notifier, perms changesapp.PermissionResolver) *changesapp.Notifications {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
+	approvals := changespublic.NewApprovals(approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), dir, nil)))
 	return changesapp.NewNotifications(changesrepository.New(pool), Relationships(), dir,
-		changespublic.NewServices(servicespublic.New(Services(pool))), notifier)
+		changespublic.NewServices(servicespublic.New(Services(pool))), notifier, perms, approvals)
 }
 
 var _ changesapp.Notifier = (*notifications.Service)(nil)

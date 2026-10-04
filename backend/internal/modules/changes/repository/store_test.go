@@ -165,7 +165,9 @@ func (a *fakeApprovals) CanView(_ context.Context, subjectID, userID string) (bo
 type fakeTasks struct {
 	mu        sync.Mutex
 	statuses  map[string]string
+	changeOf  map[string]string
 	cancelled []string
+	reasons   []string
 }
 
 func (t *fakeTasks) CreateInTx(ctx context.Context, tx pgx.Tx, _ audit.Actor, _ string, in application.TaskInput) (string, error) {
@@ -175,16 +177,18 @@ func (t *fakeTasks) CreateInTx(ctx context.Context, tx pgx.Tx, _ audit.Actor, _ 
 	}
 	t.mu.Lock()
 	t.statuses[id] = "open"
+	t.changeOf[id] = in.ChangeID
 	t.mu.Unlock()
 	return id, nil
 }
-func (t *fakeTasks) CancelByContextInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, _, changeID, _ string) (int, error) {
+func (t *fakeTasks) CancelByContextInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, _, changeID, reason string) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.cancelled = append(t.cancelled, changeID)
+	t.reasons = append(t.reasons, reason)
 	n := 0
 	for id, st := range t.statuses {
-		if st != "completed" && st != "cancelled" {
+		if t.changeOf[id] == changeID && st != "completed" && st != "cancelled" {
 			t.statuses[id] = "cancelled"
 			n++
 		}
@@ -210,6 +214,17 @@ func (t *fakeTasks) Tasks(_ context.Context, ids []string) ([]application.TaskIn
 		if st, ok := t.statuses[id]; ok {
 			out = append(out, application.TaskInfo{ID: id, Title: "step", Status: st})
 		}
+	}
+	return out, nil
+}
+
+// fakePerms holds the effective permissions of Users; a User not listed has none.
+type fakePerms map[string][]string
+
+func (f fakePerms) Permissions(_ context.Context, userID string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, p := range f[userID] {
+		out[p] = struct{}{}
 	}
 	return out, nil
 }
@@ -274,6 +289,7 @@ type env struct {
 	appr     *fakeApprovals
 	tasks    *fakeTasks
 	notifier *fakeNotifier
+	perms    fakePerms
 
 	corr  string
 	ids   []string
@@ -294,7 +310,8 @@ func newEnv(t *testing.T) *env {
 		infra:    &fakeInfra{vms: map[string]application.VMInfo{}},
 		assets:   &fakeAssets{byID: map[string]application.AssetInfo{}},
 		appr:     &fakeApprovals{viewers: map[string]bool{}},
-		tasks:    &fakeTasks{statuses: map[string]string{}},
+		tasks:    &fakeTasks{statuses: map[string]string{}, changeOf: map[string]string{}},
+		perms:    fakePerms{},
 		notifier: &fakeNotifier{seen: map[string]bool{}},
 	}
 	for _, dst := range []*string{&e.requester, &e.other, &e.owner, &e.executor, &e.approver, &e.outsider} {
@@ -305,7 +322,7 @@ func newEnv(t *testing.T) *env {
 	graph := relationships.New(reg)
 	e.store = repository.New(pool)
 	e.svc = application.NewService(e.store, graph, e.dir, e.services, e.infra, e.assets, e.appr, e.tasks).WithClock(func() time.Time { return e.clock })
-	e.notes = application.NewNotifications(e.store, graph, e.dir, e.services, e.notifier).WithClock(func() time.Time { return e.clock })
+	e.notes = application.NewNotifications(e.store, graph, e.dir, e.services, e.notifier, e.perms, e.appr).WithClock(func() time.Time { return e.clock })
 	e.manage = application.Principal{UserID: e.requester, Manage: true, ServicesView: true, InfraView: true, AssetsView: true}
 	e.manage2 = application.Principal{UserID: e.other, Manage: true, ServicesView: true, InfraView: true, AssetsView: true}
 	e.view = application.Principal{UserID: e.other, View: true, ServicesView: true, InfraView: true, AssetsView: true}
@@ -317,7 +334,18 @@ func newEnv(t *testing.T) *env {
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.relationships WHERE source_type = 'change' AND source_id IN (SELECT id FROM changes.changes WHERE requester_user_id = ANY($1::uuid[]))`, e.ids)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id LIKE $1`, e.corr+"%")
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE correlation_id LIKE $1`, e.corr+"%")
-		_, _ = pool.Exec(ctx, `DELETE FROM changes.changes WHERE requester_user_id = ANY($1::uuid[])`, e.ids)
+		// Transitions and Task links are append-only: skip the triggers on this connection only.
+		conn, err := pool.Acquire(ctx)
+		if err != nil {
+			return
+		}
+		defer conn.Release()
+		_, _ = conn.Exec(ctx, `SET session_replication_role = replica`)
+		for _, table := range []string{"change_transitions", "change_tasks"} {
+			_, _ = conn.Exec(ctx, `DELETE FROM changes.`+table+` WHERE change_id IN (SELECT id FROM changes.changes WHERE requester_user_id = ANY($1::uuid[]))`, e.ids)
+		}
+		_, _ = conn.Exec(ctx, `DELETE FROM changes.changes WHERE requester_user_id = ANY($1::uuid[])`, e.ids)
+		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 	})
 	return e
 }
@@ -369,6 +397,16 @@ func (e *env) affect(c application.Change) {
 	}
 }
 
+// v returns the current version of a Change (the expectedVersion of the next operation).
+func (e *env) v(id string) *int {
+	e.t.Helper()
+	var n int
+	if err := e.pool.QueryRow(e.ctx(), `SELECT version FROM changes.changes WHERE id = $1::uuid`, id).Scan(&n); err != nil {
+		return ptr(1) // unknown or malformed id: the service answers for itself
+	}
+	return &n
+}
+
 func (e *env) get(id string) application.Change {
 	e.t.Helper()
 	c, err := e.store.Get(e.ctx(), id)
@@ -396,9 +434,9 @@ func (e *env) drive(kind, risk, status string) application.Change {
 		return c
 	}
 	if status == "cancelled" {
-		return step(e.svc.Cancel(ctx, rc, e.manage, c.ID, nil, "no_longer_needed"))
+		return step(e.svc.Cancel(ctx, rc, e.manage, c.ID, e.v(c.ID), "no_longer_needed"))
 	}
-	c = step(e.svc.Submit(ctx, rc, e.manage, c.ID, nil))
+	c = step(e.svc.Submit(ctx, rc, e.manage, c.ID, e.v(c.ID)))
 	if status == "assessment" {
 		return c
 	}
@@ -406,7 +444,7 @@ func (e *env) drive(kind, risk, status string) application.Change {
 	if risk != "" && risk != application.RiskLow || kind == application.KindEmergency {
 		approver.UserID = &e.approver
 	}
-	c = step(e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: c.Risk, Approver: approver}))
+	c = step(e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: c.Risk, Approver: approver}))
 	if status == "pending_approval" {
 		return c
 	}
@@ -420,29 +458,29 @@ func (e *env) drive(kind, risk, status string) application.Change {
 	if status == "approved" {
 		return c
 	}
-	c = step(e.svc.Schedule(ctx, rc, e.manage, c.ID, nil, application.ScheduleInput{}))
+	c = step(e.svc.Schedule(ctx, rc, e.manage, c.ID, e.v(c.ID), application.ScheduleInput{}))
 	if status == "scheduled" {
 		return c
 	}
-	c = step(e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil))
+	c = step(e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID)))
 	if status == "in_progress" {
 		return c
 	}
 	if status == "failed" {
-		return step(e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "execution_error", true))
+		return step(e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "execution_error", true))
 	}
-	c = step(e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, ""))
+	c = step(e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), ""))
 	if status == "completed" {
 		return c
 	}
 	if status == "review" {
-		return step(e.svc.Review(ctx, rc, e.manage, c.ID, nil, "went fine"))
+		return step(e.svc.Review(ctx, rc, e.manage, c.ID, e.v(c.ID), "went fine"))
 	}
 	if status == "closed" {
 		if kind == application.KindEmergency {
-			c = step(e.svc.Review(ctx, rc, e.manage, c.ID, nil, "ok"))
+			c = step(e.svc.Review(ctx, rc, e.manage, c.ID, e.v(c.ID), "ok"))
 		}
-		return step(e.svc.Close(ctx, rc, e.manage, c.ID, nil))
+		return step(e.svc.Close(ctx, rc, e.manage, c.ID, e.v(c.ID)))
 	}
 	e.t.Fatalf("unknown status %s", status)
 	return c
@@ -464,7 +502,16 @@ func (e *env) decide(changeID, decision string) {
 }
 
 func (e *env) decideErr(subjectID, subjectType, decision string) error {
-	payload, _ := json.Marshal(map[string]any{"subjectType": subjectType, "subjectId": subjectID, "decision": decision})
+	var approvalID *string
+	_ = e.pool.QueryRow(e.ctx(), `SELECT approval_id::text FROM changes.changes WHERE id = $1::uuid`, subjectID).Scan(&approvalID)
+	if approvalID == nil {
+		approvalID = ptr(e.uuid())
+	}
+	return e.decideWith(subjectID, subjectType, decision, *approvalID)
+}
+
+func (e *env) decideWith(subjectID, subjectType, decision, approvalID string) error {
+	payload, _ := json.Marshal(map[string]any{"approvalId": approvalID, "subjectType": subjectType, "subjectId": subjectID, "decision": decision})
 	return pgx.BeginFunc(e.ctx(), e.pool, func(tx pgx.Tx) error {
 		return e.svc.OnApprovalDecided(e.ctx(), tx, events.OutboxEvent{ID: "ev", EventType: "ApprovalDecided", CorrelationID: e.corr, Payload: payload})
 	})
@@ -555,7 +602,7 @@ func TestOperationsPerStatus(t *testing.T) {
 			return err
 		},
 		"submit": func(c application.Change) error {
-			_, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, nil)
+			_, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID))
 			return err
 		},
 		"assess": func(c application.Change) error {
@@ -563,39 +610,39 @@ func TestOperationsPerStatus(t *testing.T) {
 			if c.Risk != "low" {
 				ap.UserID = &e.approver
 			}
-			_, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: c.Risk, Approver: ap})
+			_, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: c.Risk, Approver: ap})
 			return err
 		},
 		"schedule": func(c application.Change) error {
-			_, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, nil, application.ScheduleInput{})
+			_, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{})
 			return err
 		},
 		"start": func(c application.Change) error {
-			_, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil)
+			_, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID))
 			return err
 		},
 		"complete": func(c application.Change) error {
-			_, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "")
+			_, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "")
 			return err
 		},
 		"fail": func(c application.Change) error {
-			_, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "other", false)
+			_, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "other", false)
 			return err
 		},
 		"review": func(c application.Change) error {
-			_, err := e.svc.Review(ctx, e.caller(e.requester), e.manage, c.ID, nil, "")
+			_, err := e.svc.Review(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "ok")
 			return err
 		},
 		"close": func(c application.Change) error {
-			_, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, c.ID, nil)
+			_, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID))
 			return err
 		},
 		"cancel": func(c application.Change) error {
-			_, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, c.ID, nil, "other")
+			_, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "other")
 			return err
 		},
 		"add_task": func(c application.Change) error {
-			_, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, application.NewTask{Title: "step"})
+			_, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), application.NewTask{Title: "step"})
 			return err
 		},
 	}
@@ -654,18 +701,18 @@ func TestApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 	if _, err := e.svc.UpdateDetails(ctx, e.caller(e.other), e.manage2, c.ID, &c.Version, application.Details{Description: ptr("changed")}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, nil); err != nil {
+	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID)); err != nil {
 		t.Fatal(err)
 	}
 	// Needs exactly one approver; low risk and no approver is the only approver-free case here.
-	if _, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, nil, application.Assessment{Risk: "medium"}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, e.v(c.ID), application.Assessment{Risk: "medium"}); !isInvalid(err) {
 		t.Errorf("assess without approver: %v", err)
 	}
 	both := application.Approver{UserID: &e.approver, TeamID: &e.owner}
-	if _, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, nil, application.Assessment{Risk: "medium", Approver: both}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, e.v(c.ID), application.Assessment{Risk: "medium", Approver: both}); !isInvalid(err) {
 		t.Errorf("assess with two approvers: %v", err)
 	}
-	out, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, nil,
+	out, err := e.svc.Assess(ctx, e.caller(e.executor), application.Principal{UserID: e.executor, Manage: true}, c.ID, e.v(c.ID),
 		application.Assessment{Risk: "medium", Approver: application.Approver{UserID: &e.approver}})
 	if err != nil || out.Status != "pending_approval" || out.ApprovalID == nil {
 		t.Fatalf("assess = %+v %v", out, err)
@@ -710,14 +757,14 @@ func TestApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 	if e.published("ChangeRejected", r.ID) != 1 {
 		t.Error("ChangeRejected not published")
 	}
-	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, r.ID, nil, "other"); !isTransition(err) {
+	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, r.ID, e.v(r.ID), "other"); !isTransition(err) {
 		t.Errorf("cancel of a rejected change: %v", err)
 	}
 
 	// A refusing approvals module (nobody eligible) leaves the change in assessment.
 	n := e.drive("normal", "high", "assessment")
 	e.appr.refuse = application.ErrNoEligibleApprover
-	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, n.ID, nil, application.Assessment{Risk: "high", Approver: application.Approver{UserID: &e.requester}}); !is(err, application.ErrNoEligibleApprover) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, n.ID, e.v(n.ID), application.Assessment{Risk: "high", Approver: application.Approver{UserID: &e.requester}}); !is(err, application.ErrNoEligibleApprover) {
 		t.Errorf("assess with ineligible approver: %v", err)
 	}
 	e.appr.refuse = nil
@@ -727,7 +774,7 @@ func TestApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 
 	// Cancelling a pending change cancels its approval.
 	p := e.drive("normal", "medium", "pending_approval")
-	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, p.ID, nil, "superseded"); err != nil {
+	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, p.ID, e.v(p.ID), "superseded"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(e.appr.cancelled, p.ID) {
@@ -736,11 +783,11 @@ func TestApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 
 	// Low risk normal changes need no approval and take no approver.
 	l := e.drive("normal", "low", "assessment")
-	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, l.ID, nil, application.Assessment{Risk: "low", Approver: application.Approver{UserID: &e.approver}}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, l.ID, e.v(l.ID), application.Assessment{Risk: "low", Approver: application.Approver{UserID: &e.approver}}); !isInvalid(err) {
 		t.Errorf("approver on an approval-free change: %v", err)
 	}
 	// Assessing a different risk applies it (and then needs the approval).
-	up, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, l.ID, nil, application.Assessment{Risk: "high", Approver: application.Approver{UserID: &e.approver}})
+	up, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, l.ID, e.v(l.ID), application.Assessment{Risk: "high", Approver: application.Approver{UserID: &e.approver}})
 	if !isInvalid(err) && err == nil {
 		t.Errorf("raising risk to high without a rollback plan: %+v", up)
 	}
@@ -751,21 +798,21 @@ func TestEmergencyPath(t *testing.T) {
 	ctx := e.ctx()
 	c := e.drive("emergency", "medium", "assessment")
 	// No approval and no justification: refused. A justification on a normal change: refused.
-	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "medium"}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "medium"}); !isInvalid(err) {
 		t.Errorf("emergency assess without approver or justification: %v", err)
 	}
 	normal := e.drive("normal", "medium", "assessment")
-	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, normal.ID, nil, application.Assessment{Risk: "medium", EmergencyJustification: "urgent"}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, normal.ID, e.v(normal.ID), application.Assessment{Risk: "medium", EmergencyJustification: "urgent"}); !isInvalid(err) {
 		t.Errorf("justification on a normal change: %v", err)
 	}
-	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "medium", EmergencyJustification: "urgent", Approver: application.Approver{UserID: &e.approver}}); !isInvalid(err) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "medium", EmergencyJustification: "urgent", Approver: application.Approver{UserID: &e.approver}}); !isInvalid(err) {
 		t.Errorf("justification and approver together: %v", err)
 	}
 	// Needs changes.manage.
-	if _, err := e.svc.Assess(ctx, e.caller(e.executor), e.execute, c.ID, nil, application.Assessment{Risk: "medium", EmergencyJustification: "urgent"}); !is(err, application.ErrForbidden) {
+	if _, err := e.svc.Assess(ctx, e.caller(e.executor), e.execute, c.ID, e.v(c.ID), application.Assessment{Risk: "medium", EmergencyJustification: "urgent"}); !is(err, application.ErrForbidden) {
 		t.Errorf("emergency approval without changes.manage: %v", err)
 	}
-	out, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "medium", EmergencyJustification: "customer outage"})
+	out, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "medium", EmergencyJustification: "customer outage"})
 	if err != nil || out.Status != "approved" || out.EmergencyJustification == nil {
 		t.Fatalf("emergency assess = %+v %v", out, err)
 	}
@@ -778,41 +825,41 @@ func TestEmergencyPath(t *testing.T) {
 	}
 	// An emergency change may be scheduled in the past or now; a normal one may not.
 	past := e.window(-time.Hour, 3*time.Hour)
-	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, nil, application.ScheduleInput{Window: &past}); err != nil {
+	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{Window: &past}); err != nil {
 		t.Fatalf("emergency schedule in the past: %v", err)
 	}
 	n := e.drive("normal", "low", "approved")
-	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, n.ID, nil, application.ScheduleInput{Window: &past}); !isInvalid(err) {
+	if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, n.ID, e.v(n.ID), application.ScheduleInput{Window: &past}); !isInvalid(err) {
 		t.Errorf("normal schedule in the past: %v", err)
 	}
 	// It cannot be closed without a review.
 	run := func(c application.Change) application.Change {
-		c, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil)
+		c, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID))
 		if err != nil {
 			t.Fatal(err)
 		}
-		c, err = e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "")
+		c, err = e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return c
 	}
 	done := run(e.get(c.ID))
-	if _, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, done.ID, nil); !is(err, application.ErrReviewRequired) {
+	if _, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, done.ID, e.v(done.ID)); !is(err, application.ErrReviewRequired) {
 		t.Fatalf("closing an emergency change without review: %v", err)
 	}
 	if ops := application.AllowedOperations(done, e.manage); slices.Contains(ops, "close") || !slices.Contains(ops, "review") {
 		t.Errorf("allowed operations of an unreviewed emergency change: %v", ops)
 	}
-	if _, err := e.svc.Review(ctx, e.caller(e.requester), e.manage, done.ID, nil, "root cause found"); err != nil {
+	if _, err := e.svc.Review(ctx, e.caller(e.requester), e.manage, done.ID, e.v(done.ID), "root cause found"); err != nil {
 		t.Fatal(err)
 	}
-	if closed, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, done.ID, nil); err != nil || closed.Status != "closed" {
+	if closed, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, done.ID, e.v(done.ID)); err != nil || closed.Status != "closed" {
 		t.Fatalf("close after review: %+v %v", closed, err)
 	}
 	// A normal change can be closed without a review.
 	nn := run(e.drive("normal", "low", "scheduled"))
-	if _, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, nn.ID, nil); err != nil {
+	if _, err := e.svc.Close(ctx, e.caller(e.requester), e.manage, nn.ID, e.v(nn.ID)); err != nil {
 		t.Fatalf("close of a normal change: %v", err)
 	}
 }
@@ -860,24 +907,24 @@ func TestWindowAndRollbackValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, noWindow.ID, nil); !isInvalid(err) {
+	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, noWindow.ID, e.v(noWindow.ID)); !isInvalid(err) {
 		t.Errorf("submit without window: %v", err)
 	}
 	med, err := e.svc.Create(ctx, e.caller(e.requester), e.manage, application.NewChange{Title: "x", Kind: "standard", Risk: "medium", Window: e.window(time.Hour, time.Hour)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, med.ID, nil); !isInvalid(err) {
+	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, med.ID, e.v(med.ID)); !isInvalid(err) {
 		t.Errorf("submit medium risk without rollback plan: %v", err)
 	}
 	if _, err := e.svc.UpdateDetails(ctx, e.caller(e.requester), e.manage, med.ID, &med.Version, application.Details{RollbackPlan: ptr("revert")}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, med.ID, nil); err != nil || got.Status != "assessment" {
+	if got, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, med.ID, e.v(med.ID)); err != nil || got.Status != "assessment" {
 		t.Errorf("standard change without affected resources and with rollback plan: %+v %v", got, err)
 	}
 	normal := e.create("normal", "low")
-	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, normal.ID, nil); !isInvalid(err) {
+	if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, normal.ID, e.v(normal.ID)); !isInvalid(err) {
 		t.Errorf("submit of a normal change without affected resources: %v", err)
 	}
 	// Optimistic concurrency.
@@ -903,11 +950,11 @@ func TestConcurrentStartAndCancel(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, startErr = e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil)
+			_, startErr = e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID))
 		}()
 		go func() {
 			defer wg.Done()
-			_, cancelErr = e.svc.Cancel(ctx, e.caller(e.requester), e.manage, c.ID, nil, "rescheduled")
+			_, cancelErr = e.svc.Cancel(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "rescheduled")
 		}()
 		wg.Wait()
 		if (startErr == nil) == (cancelErr == nil) {
@@ -918,7 +965,8 @@ func TestConcurrentStartAndCancel(t *testing.T) {
 		if startErr == nil {
 			loser, want = cancelErr, "in_progress"
 		}
-		if !isTransition(loser) {
+		// The loser either saw the new status or the new version.
+		if !isTransition(loser) && !is(loser, application.ErrVersionConflict) {
 			t.Errorf("round %d: loser error = %v", i, loser)
 		}
 		if got := e.get(c.ID).Status; got != want {
@@ -936,7 +984,7 @@ func TestConcurrentStartAndCancel(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil); err == nil {
+			if _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID)); err == nil {
 				ok.Add(1)
 			}
 		}()
@@ -1007,35 +1055,35 @@ func TestPermissionsAndOwnership(t *testing.T) {
 	if _, err := e.svc.Create(ctx, e.caller(e.other), e.manage, application.NewChange{Title: "x", Kind: "normal"}); !is(err, application.ErrForbidden) {
 		t.Errorf("create with a principal that is not the actor: %v", err)
 	}
-	if _, err := e.svc.Cancel(ctx, e.caller(e.outsider), e.view, c.ID, nil, "other"); !is(err, application.ErrForbidden) {
+	if _, err := e.svc.Cancel(ctx, e.caller(e.outsider), e.view, c.ID, e.v(c.ID), "other"); !is(err, application.ErrForbidden) {
 		t.Errorf("cancel with view only: %v", err)
 	}
-	if _, err := e.svc.Close(ctx, e.caller(e.outsider), e.execute, c.ID, nil); !is(err, application.ErrForbidden) {
+	if _, err := e.svc.Close(ctx, e.caller(e.outsider), e.execute, c.ID, e.v(c.ID)); !is(err, application.ErrForbidden) {
 		t.Errorf("close with execute only: %v", err)
 	}
 	// Running: an outsider learns nothing; a reader without execute is forbidden; the owner and executor may.
-	if _, err := e.svc.Start(ctx, e.caller(e.outsider), e.outsiderP, c.ID, nil); !is(err, application.ErrNotFound) {
+	if _, err := e.svc.Start(ctx, e.caller(e.outsider), e.outsiderP, c.ID, e.v(c.ID)); !is(err, application.ErrNotFound) {
 		t.Errorf("outsider start: %v", err)
 	}
-	if _, err := e.svc.Start(ctx, e.caller(e.other), e.view, c.ID, nil); !is(err, application.ErrForbidden) {
+	if _, err := e.svc.Start(ctx, e.caller(e.other), e.view, c.ID, e.v(c.ID)); !is(err, application.ErrForbidden) {
 		t.Errorf("viewer start: %v", err)
 	}
-	if _, err := e.svc.Start(ctx, e.caller(e.requester), e.manage, c.ID, nil); !is(err, application.ErrForbidden) {
+	if _, err := e.svc.Start(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID)); !is(err, application.ErrForbidden) {
 		t.Errorf("manager (not owner, no execute) start: %v", err)
 	}
 	if _, err := e.svc.Start(ctx, e.caller(e.executor), e.execute, c.ID, ptr(c.Version+9)); !is(err, application.ErrVersionConflict) {
 		t.Errorf("start with a stale version: %v", err)
 	}
-	if _, err := e.svc.Start(ctx, e.caller(e.executor), e.execute, c.ID, nil); err != nil {
+	if _, err := e.svc.Start(ctx, e.caller(e.executor), e.execute, c.ID, e.v(c.ID)); err != nil {
 		t.Errorf("executor start: %v", err)
 	}
-	if _, err := e.svc.Complete(ctx, e.caller(e.outsider), e.outsiderP, c.ID, nil, ""); !is(err, application.ErrNotFound) {
+	if _, err := e.svc.Complete(ctx, e.caller(e.outsider), e.outsiderP, c.ID, e.v(c.ID), ""); !is(err, application.ErrNotFound) {
 		t.Errorf("outsider complete: %v", err)
 	}
-	if _, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "not_a_code", false); !isInvalid(err) {
+	if _, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "not_a_code", false); !isInvalid(err) {
 		t.Errorf("fail with unknown reason: %v", err)
 	}
-	failed, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "verification_failed", true)
+	failed, err := e.svc.Fail(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "verification_failed", true)
 	if err != nil || failed.Status != "failed" || failed.RollbackDone == nil || !*failed.RollbackDone {
 		t.Fatalf("owner fail = %+v %v", failed, err)
 	}
@@ -1140,10 +1188,10 @@ func TestAffectedResourcesRedactionAndValidation(t *testing.T) {
 	}
 
 	// Removing ends the link, once.
-	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), e.manage, c.ID, nil, "vm", vmID); err != nil {
+	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "vm", vmID); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), e.manage, c.ID, nil, "vm", vmID); err != nil {
+	if err := e.svc.RemoveAffected(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "vm", vmID); err != nil {
 		t.Fatal(err)
 	}
 	if e.audits("affected_removed", c.ID) != 1 {
@@ -1244,23 +1292,23 @@ func TestExecutionTasks(t *testing.T) {
 	c := e.drive("normal", "low", "scheduled")
 	// Tasks only on scheduled/in-progress changes, and not by outsiders.
 	d := e.drive("normal", "low", "draft")
-	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, d.ID, application.NewTask{Title: "x"}); err == nil || !is(err, application.ErrNotFound) && !isTransition(err) {
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, d.ID, e.v(d.ID), application.NewTask{Title: "x"}); err == nil || !is(err, application.ErrNotFound) && !isTransition(err) {
 		t.Errorf("task on a draft: %v", err)
 	}
-	if _, err := e.svc.AddTask(ctx, e.caller(e.outsider), e.outsiderP, c.ID, application.NewTask{Title: "x"}); !is(err, application.ErrNotFound) {
+	if _, err := e.svc.AddTask(ctx, e.caller(e.outsider), e.outsiderP, c.ID, e.v(c.ID), application.NewTask{Title: "x"}); !is(err, application.ErrNotFound) {
 		t.Errorf("outsider task: %v", err)
 	}
-	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, application.NewTask{Title: " "}); !isInvalid(err) {
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), application.NewTask{Title: " "}); !isInvalid(err) {
 		t.Errorf("blank task title: %v", err)
 	}
-	t1, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, application.NewTask{Title: "stop service"})
+	t1, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), application.NewTask{Title: "stop service"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.AddTask(ctx, e.caller(e.requester), e.manage, c.ID, application.NewTask{Title: "verify"}); err != nil {
+	if _, err := e.svc.AddTask(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.NewTask{Title: "verify"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, nil); err != nil {
+	if _, err := e.svc.Start(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID)); err != nil {
 		t.Fatal(err)
 	}
 	det, err := e.svc.Get(ctx, e.view, c.ID)
@@ -1268,19 +1316,19 @@ func TestExecutionTasks(t *testing.T) {
 		t.Fatalf("tasks summary = %+v %v", det.Tasks, err)
 	}
 	// Open tasks block completion unless waived with the dedicated code.
-	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, ""); !is(err, application.ErrOpenTasks) {
+	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), ""); !is(err, application.ErrOpenTasks) {
 		t.Fatalf("complete with open tasks: %v", err)
 	}
-	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, "whatever"); !isInvalid(err) {
+	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), "whatever"); !isInvalid(err) {
 		t.Fatalf("complete with unknown force: %v", err)
 	}
 	e.tasks.mu.Lock()
 	e.tasks.statuses[t1] = "completed"
 	e.tasks.mu.Unlock()
-	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, ""); !is(err, application.ErrOpenTasks) {
+	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), ""); !is(err, application.ErrOpenTasks) {
 		t.Fatalf("complete with one open task: %v", err)
 	}
-	done, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, nil, application.ReasonTasksWaived)
+	done, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, c.ID, e.v(c.ID), application.ReasonTasksWaived)
 	if err != nil || done.Status != "completed" || done.StatusReason == nil || *done.StatusReason != "tasks_waived" {
 		t.Fatalf("waived completion = %+v %v", done, err)
 	}
@@ -1290,18 +1338,18 @@ func TestExecutionTasks(t *testing.T) {
 	}
 	// With all tasks finished no force is needed.
 	f := e.drive("normal", "low", "scheduled")
-	id, _ := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, f.ID, application.NewTask{Title: "a"})
-	_, _ = e.svc.Start(ctx, e.caller(e.owner), e.ownerP, f.ID, nil)
+	id, _ := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, f.ID, e.v(f.ID), application.NewTask{Title: "a"})
+	_, _ = e.svc.Start(ctx, e.caller(e.owner), e.ownerP, f.ID, e.v(f.ID))
 	e.tasks.mu.Lock()
 	e.tasks.statuses[id] = "cancelled"
 	e.tasks.mu.Unlock()
-	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, f.ID, nil, ""); err != nil {
+	if _, err := e.svc.Complete(ctx, e.caller(e.owner), e.ownerP, f.ID, e.v(f.ID), ""); err != nil {
 		t.Errorf("complete with finished tasks: %v", err)
 	}
 	// Cancelling a scheduled change cancels its tasks.
 	g := e.drive("normal", "low", "scheduled")
-	_, _ = e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, g.ID, application.NewTask{Title: "a"})
-	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, g.ID, nil, "rescheduled"); err != nil {
+	_, _ = e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, g.ID, e.v(g.ID), application.NewTask{Title: "a"})
+	if _, err := e.svc.Cancel(ctx, e.caller(e.requester), e.manage, g.ID, e.v(g.ID), "rescheduled"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(e.tasks.cancelled, g.ID) {
@@ -1310,11 +1358,11 @@ func TestExecutionTasks(t *testing.T) {
 	// The task limit holds.
 	h := e.drive("normal", "low", "scheduled")
 	for i := 0; i < application.MaxTasks; i++ {
-		if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, h.ID, application.NewTask{Title: fmt.Sprintf("s%d", i)}); err != nil {
+		if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, h.ID, e.v(h.ID), application.NewTask{Title: fmt.Sprintf("s%d", i)}); err != nil {
 			t.Fatalf("task %d: %v", i, err)
 		}
 	}
-	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, h.ID, application.NewTask{Title: "one too many"}); !is(err, application.ErrTooMany) {
+	if _, err := e.svc.AddTask(ctx, e.caller(e.owner), e.ownerP, h.ID, e.v(h.ID), application.NewTask{Title: "one too many"}); !is(err, application.ErrTooMany) {
 		t.Errorf("51st task: %v", err)
 	}
 }
@@ -1392,25 +1440,35 @@ func TestScheduledNotificationFanOutIsChunked(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.dir.members[team] = append(e.dir.members[team], e.requester) // the actor is skipped
-	if _, err := e.svc.Submit(e.ctx(), e.caller(e.requester), e.manage, c.ID, nil); err != nil {
+	// Members may read Changes; one member without any Changes permission is never told.
+	for _, m := range members {
+		e.perms[m] = []string{"changes.view"}
+	}
+	blind := e.uuid()
+	e.dir.members[team] = append(e.dir.members[team], blind)
+	if _, err := e.svc.Submit(e.ctx(), e.caller(e.requester), e.manage, c.ID, e.v(c.ID)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Assess(e.ctx(), e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "low"}); err != nil {
+	if _, err := e.svc.Assess(e.ctx(), e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "low"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.Schedule(e.ctx(), e.caller(e.requester), e.manage, c.ID, nil, application.ScheduleInput{}); err != nil {
+	if _, err := e.svc.Schedule(e.ctx(), e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{}); err != nil {
 		t.Fatal(err)
 	}
-	// Audience: 5 members, the owner and the requester (a member too) = 7, in chunks of 2; the actor (requester) is not told.
+	// Audience: 5 members, the owner, the requester (a member too) and the blind member = 8, in chunks of 2;
+	// the actor (requester) and the blind member are not told.
 	n := e.notes.WithChunk(2)
 	if len(e.outbox("ChangeScheduled")) != 1 {
 		t.Fatalf("scheduled events = %d", len(e.outbox("ChangeScheduled")))
+	}
+	pending := func() []events.OutboxEvent {
+		return append(e.outbox("ChangeScheduled"), e.outbox(application.FanOutEventType)...)
 	}
 	done := map[string]bool{}
 	processed := 0
 	for processed < 10 {
 		var next *events.OutboxEvent
-		for _, x := range e.outbox("ChangeScheduled") {
+		for _, x := range pending() {
 			if !done[x.ID] {
 				x := x
 				next = &x
@@ -1432,10 +1490,14 @@ func TestScheduledNotificationFanOutIsChunked(t *testing.T) {
 		t.Errorf("recipients = %v, want %v (events processed: %d)", got, want, processed)
 	}
 	if processed != 4 {
-		t.Errorf("fan-out took %d events, want 4 chunks of 7 audience members", processed)
+		t.Errorf("fan-out took %d events, want 4 chunks of 8 audience members", processed)
+	}
+	// ChangeScheduled is one event per scheduling; the continuation is the internal fan-out event.
+	if len(e.outbox("ChangeScheduled")) != 1 || len(e.outbox(application.FanOutEventType)) != 3 {
+		t.Errorf("events: %d ChangeScheduled, %d fan-out", len(e.outbox("ChangeScheduled")), len(e.outbox(application.FanOutEventType)))
 	}
 	// Redelivery of the last chunk is idempotent (dedupe keys per event and recipient).
-	last := e.outbox("ChangeScheduled")
+	last := e.outbox(application.FanOutEventType)
 	e.consume(n.OnChangeScheduled, last[len(last)-1])
 	if again := e.notifier.recipients("change.scheduled"); !slices.Equal(again, want) {
 		t.Errorf("recipients after redelivery = %v", again)
@@ -1444,7 +1506,7 @@ func TestScheduledNotificationFanOutIsChunked(t *testing.T) {
 	e.notifier.mu.Lock()
 	e.notifier.seen, e.notifier.intent = map[string]bool{}, nil
 	e.notifier.mu.Unlock()
-	if _, err := e.svc.Cancel(e.ctx(), e.caller(e.requester), e.manage, c.ID, nil, "rescheduled"); err != nil {
+	if _, err := e.svc.Cancel(e.ctx(), e.caller(e.requester), e.manage, c.ID, e.v(c.ID), "rescheduled"); err != nil {
 		t.Fatal(err)
 	}
 	e.consume(n.OnChangeScheduled, e.outbox("ChangeScheduled")[0])
@@ -1491,6 +1553,7 @@ func TestReminderJobIsIdempotentPerWindow(t *testing.T) {
 	team := e.uuid()
 	m1, m2 := e.uuid(), e.uuid()
 	e.dir.members[team] = []string{m1, m2}
+	e.perms[m1], e.perms[m2] = []string{"changes.execute"}, []string{"changes.manage"}
 	svc := e.service(&e.owner, &team)
 
 	soon := e.create("normal", "low")
@@ -1504,14 +1567,14 @@ func TestReminderJobIsIdempotentPerWindow(t *testing.T) {
 	// Move both through to scheduled; "soon" starts in 30 minutes.
 	sched := func(c application.Change, w *application.Window) {
 		if c.Status != "approved" {
-			if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, nil); err != nil {
+			if _, err := e.svc.Submit(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID)); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, nil, application.Assessment{Risk: "low"}); err != nil {
+			if _, err := e.svc.Assess(ctx, e.caller(e.other), e.manage2, c.ID, e.v(c.ID), application.Assessment{Risk: "low"}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, nil, application.ScheduleInput{Window: w}); err != nil {
+		if _, err := e.svc.Schedule(ctx, e.caller(e.requester), e.manage, c.ID, e.v(c.ID), application.ScheduleInput{Window: w}); err != nil {
 			t.Fatal(err)
 		}
 	}

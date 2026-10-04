@@ -68,6 +68,33 @@ const (
 	// reasonEmergency marks the emergency approval path.
 	reasonEmergency = "emergency"
 	reasonRemoved   = "removed"
+	// ReasonChangeClosed is the reason the open execution Tasks of a closed
+	// Change are cancelled with, and the end reason of its AFFECTS links.
+	ReasonChangeClosed = "change_closed"
+	// End reasons of the AFFECTS links of a cancelled or rejected Change.
+	ReasonChangeCancelled = "change_cancelled"
+	ReasonChangeRejected  = "change_rejected"
+)
+
+// linkEndReason is the end reason of the AFFECTS links of a Change in a
+// terminal status; empty while the Change is still open (its links are current).
+func linkEndReason(status string) string {
+	switch status {
+	case StatusClosed:
+		return ReasonChangeClosed
+	case StatusCancelled:
+		return ReasonChangeCancelled
+	case StatusRejected:
+		return ReasonChangeRejected
+	}
+	return ""
+}
+
+// Permissions of the Changes module (platform/permissions registry).
+const (
+	PermView    = "changes.view"
+	PermManage  = "changes.manage"
+	PermExecute = "changes.execute"
 )
 
 // Relationship names used with platform/relationships.
@@ -110,6 +137,8 @@ const (
 	MaxTasks = 50
 	// MaxWindow is the longest maintenance window.
 	MaxWindow = 30 * 24 * time.Hour
+	// EmergencyPastGrace is how far in the past an emergency change's window may start when it is scheduled.
+	EmergencyPastGrace = time.Hour
 	// ImpactNodeCap bounds the records one Change impact response lists in all.
 	ImpactNodeCap = 1000
 	maxTitle      = 150
@@ -139,6 +168,12 @@ type Change struct {
 	OutcomeNote            *string
 	RollbackDone           *bool
 	ApprovalID             *string
+	// ApprovedWindowStart/End are the maintenance window the approver approved;
+	// Schedule keeps a non-emergency Change within it.
+	ApprovedWindowStart *time.Time
+	ApprovedWindowEnd   *time.Time
+	// EmergencyApprovedBy approved an emergency change on its justification; they never review or close it.
+	EmergencyApprovedBy *string
 	// Editors are the Users who edited, submitted or assessed the Change; with the requester they can never approve it.
 	Editors     []string
 	RemindedFor *time.Time
@@ -237,6 +272,12 @@ var (
 	ErrOpenTasks          = errors.New("changes: execution tasks are still open")
 	ErrTooMany            = errors.New("changes: limit reached")
 	ErrImpactBusy         = errors.New("changes: an impact traversal is already running for this user")
+	// ErrSeparationOfDuties refuses a step the caller may not take on this
+	// Change because of an earlier role: the requester and editors never assess
+	// it, the emergency approver never reviews or closes it.
+	ErrSeparationOfDuties = errors.New("changes: separation of duties forbids this step for the caller")
+	// ErrWindowNotApproved refuses a schedule outside the approved maintenance window.
+	ErrWindowNotApproved = errors.New("changes: the maintenance window lies outside the approved window")
 )
 
 // InvalidTransitionError reports an operation the status does not allow.
@@ -295,7 +336,10 @@ type Filter struct {
 	WindowFrom *time.Time
 	WindowTo   *time.Time
 	OnlyUserID string
-	Page       Page
+	// AffectedChangeIDs are the Changes linked to the affected resource (set by
+	// the service from the relationships; used when AffectedType is set).
+	AffectedChangeIDs []string
+	Page              Page
 }
 
 // Store persists Changes. Tx methods run inside InTx.
@@ -473,6 +517,17 @@ type Tasks interface {
 	CancelByContextInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, changeID, reason string) (int, error)
 	StatusesInTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error)
 	Tasks(ctx context.Context, ids []string) ([]TaskInfo, error)
+}
+
+// PermissionResolver returns a User's effective permissions
+// (platform/authorization/roles.Evaluator).
+type PermissionResolver interface {
+	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
+}
+
+// ApprovalViewer reports whether a User is or was an approver of a Change.
+type ApprovalViewer interface {
+	CanView(ctx context.Context, subjectID, userID string) (bool, error)
 }
 
 // Notifier creates notifications inside the caller's transaction.
