@@ -1356,6 +1356,9 @@ export const de: Record<MessageKey, string> = {
   'notifications.security.advisory':
     'Ein Sicherheitshinweis wurde als zutreffend markiert: {title}',
   'notifications.category.security.advisory': 'Zutreffender Sicherheitshinweis',
+  'notifications.security.risk_review_due':
+    'Eine akzeptierte Sicherheitsgefährdung muss überprüft werden: {title}',
+  'notifications.category.security.risk_review_due': 'Sicherheitsrisiko prüfen',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',

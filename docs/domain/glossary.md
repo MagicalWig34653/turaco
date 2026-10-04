@@ -53,6 +53,8 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 
 ## Work/change/planning
 - **Task** — concrete unit of work shared across the platform.
+- **Remediation Task** — an ordinary Task attached to a Security Advisory or Vulnerability Finding, with a fixed reference-based title; completing it does not remediate a Finding.
+- **Residual Risk** — Turaco-derived label (`none|low|medium|high`) from an Advisory’s severity and live probable/potential Findings, including accepted risks.
 - **Assignment** — responsibility association between work and User/Team.
 - **Approval** — recorded decision required before a flow continues.
 - **My Work** — consolidated operational view across tasks/tickets/requests/changes/deployments.

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
@@ -25,7 +27,117 @@ func NotificationCategories() []notifications.Category {
 			"en": {Subject: "Security advisory applicable: %s", Intro: "A security advisory was marked as applicable:", Action: "Open advisory"},
 			"de": {Subject: "Sicherheitshinweis betrifft uns: %s", Intro: "Ein Sicherheitshinweis wurde als zutreffend markiert:", Action: "Hinweis öffnen"},
 		},
+	}, {
+		Name: RiskReviewCategory, Owner: "security", LinkType: "security_finding", LinkPath: "/security/findings/{id}",
+		Email: map[string]notifications.EmailText{
+			"en": {Subject: "Security risk review due: %s", Intro: "A security risk acceptance is due for review:", Action: "Open finding"},
+			"de": {Subject: "Sicherheitsrisiko prüfen: %s", Intro: "Eine akzeptierte Sicherheitsgefährdung muss überprüft werden:", Action: "Befund öffnen"},
+		},
 	}}
+}
+
+type riskReminderStore interface {
+	DueRiskReviews(context.Context, time.Time, string, int) ([]string, error)
+}
+
+// HandleRiskReminders scans due findings in bounded pages and creates one
+// notification per recipient, finding, review date and lead day. The notification dedupe
+// key is durable, so retries and concurrent workers do not resend it.
+func (n *Notifications) HandleRiskReminders(ctx context.Context, _ jobs.Job) error {
+	reader, ok := n.store.(riskReminderStore)
+	if !ok {
+		return errors.New("security: risk reminder reader unavailable")
+	}
+	today := n.now().UTC()
+	after := ""
+	for {
+		ids, err := reader.DueRiskReviews(ctx, today, after, 200)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := n.remindRisk(ctx, id, today); err != nil {
+				return err
+			}
+		}
+		if len(ids) < 200 {
+			return nil
+		}
+		after = ids[len(ids)-1]
+	}
+}
+
+func (n *Notifications) remindRisk(ctx context.Context, id string, today time.Time) error {
+	f, err := n.store.GetFinding(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if f.Status != FindingRiskAccepted || f.RiskReviewBy == nil {
+		return nil
+	}
+	days := int(f.RiskReviewBy.Sub(today.Truncate(24*time.Hour)).Hours() / 24)
+	if days != 14 && days != 1 {
+		return nil
+	}
+	a, err := n.store.GetAdvisory(ctx, f.AdvisoryID)
+	if err != nil {
+		return err
+	}
+	after := ""
+	for {
+		ids, err := n.holders.ActiveUsers(ctx, after, n.chunk+1)
+		if err != nil {
+			return err
+		}
+		more := len(ids) > n.chunk
+		if more {
+			ids = ids[:n.chunk]
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		active, err := n.dir.ActiveUsers(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, user := range ids {
+			if !active[user] {
+				continue
+			}
+			perms, err := n.perms.Permissions(ctx, user)
+			if err != nil {
+				return err
+			}
+			if _, ok := perms[PermManage]; !ok {
+				continue
+			}
+			key := fmt.Sprintf("risk-review:%s:%s:%d:%s", f.ID, f.RiskReviewBy.Format(time.DateOnly), days, user)
+			err = n.store.InTx(ctx, func(tx pgx.Tx) error {
+				current, e := n.store.LockFindingTx(ctx, tx, f.ID)
+				if errors.Is(e, ErrNotFound) {
+					return nil
+				}
+				if e != nil {
+					return e
+				}
+				if current.Status != FindingRiskAccepted || current.RiskReviewBy == nil || !current.RiskReviewBy.Equal(*f.RiskReviewBy) {
+					return nil
+				}
+				_, e = n.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: user, Category: RiskReviewCategory, Params: map[string]any{"title": f.Reference + " · " + a.Reference}, LinkType: "security_finding", LinkID: f.ID, DedupeKey: key})
+				return e
+			})
+			if err != nil {
+				return err
+			}
+		}
+		if !more {
+			return nil
+		}
+		after = ids[len(ids)-1]
+	}
 }
 
 // notifyChunk is how many candidate recipients one consumer run handles; the rest follows in a
@@ -42,11 +154,15 @@ type Notifications struct {
 	perms    PermissionResolver
 	notifier Notifier
 	chunk    int
+	now      func() time.Time
 }
 
 func NewNotifications(store Store, dir Directory, holders PermissionHolders, perms PermissionResolver, notifier Notifier) *Notifications {
-	return &Notifications{store: store, dir: dir, holders: holders, perms: perms, notifier: notifier, chunk: notifyChunk}
+	return &Notifications{store: store, dir: dir, holders: holders, perms: perms, notifier: notifier, chunk: notifyChunk, now: func() time.Time { return time.Now().UTC() }}
 }
+
+// WithClock sets the clock for deterministic reminder tests.
+func (n *Notifications) WithClock(now func() time.Time) *Notifications { n.now = now; return n }
 
 // WithChunk overrides the number of candidates per consumer run (tests).
 func (n *Notifications) WithChunk(chunk int) *Notifications {

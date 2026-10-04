@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
+	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 )
@@ -197,6 +198,52 @@ func (r *Repository) ListByIDs(ctx context.Context, ids []string) ([]application
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// ListByContext is a bounded read for modules that own a typed Task context.
+func (r *Repository) ListByContext(ctx context.Context, contextType, contextID string, limit int) ([]application.Task, error) {
+	return listByContext(ctx, r.pool, contextType, contextID, limit)
+}
+
+func (r *Repository) ListByContextTx(ctx context.Context, tx pgx.Tx, contextType, contextID string, limit int) ([]application.Task, error) {
+	return listByContext(ctx, tx, contextType, contextID, limit)
+}
+
+func listByContext(ctx context.Context, q interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, contextType, contextID string, limit int) ([]application.Task, error) {
+	rows, err := q.Query(ctx, `SELECT `+columns+` FROM platform.tasks WHERE context_type = $1 AND context_id = $2::uuid ORDER BY id LIMIT $3`, contextType, contextID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list tasks by context: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Task{}
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list tasks by context: scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) SummaryByContexts(ctx context.Context, typ string, ids []string) (taskspublic.ContextSummary, error) {
+	var out taskspublic.ContextSummary
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status NOT IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status NOT IN ('completed','cancelled') AND due_at < now())
+		FROM platform.tasks WHERE context_type = $1 AND context_id = ANY($2::text[]::uuid[])`, typ, ids).Scan(&out.Open, &out.Done, &out.Overdue)
+	return out, err
+}
+
+func (r *Repository) SummaryByType(ctx context.Context, typ string) (taskspublic.ContextSummary, error) {
+	var out taskspublic.ContextSummary
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status NOT IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status IN ('completed','cancelled')),
+		count(*) FILTER (WHERE status NOT IN ('completed','cancelled') AND due_at < now())
+		FROM platform.tasks WHERE context_type=$1`, typ).Scan(&out.Open, &out.Done, &out.Overdue)
+	return out, err
 }
 
 func (r *Repository) StatusesTx(ctx context.Context, tx pgx.Tx, ids []string) (map[string]string, error) {

@@ -247,3 +247,21 @@ func TestManualCancelEmitsTaskCancelled(t *testing.T) {
 		t.Error("a manual cancel must emit TaskCancelled")
 	}
 }
+
+func TestContextReadAndSummary(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	id := e.create("Context task", true)
+	tasks, err := e.creator.ByContext(ctx, "service_request", e.ctxID, 51)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != id {
+		t.Fatalf("context tasks: %+v %v", tasks, err)
+	}
+	summary, err := e.creator.SummaryByContexts(ctx, "service_request", []string{e.ctxID})
+	if err != nil || summary.Open != 1 || summary.Done != 0 {
+		t.Fatalf("context summary: %+v %v", summary, err)
+	}
+	byType, err := e.creator.SummaryByType(ctx, "service_request")
+	if err != nil || byType.Open < 1 {
+		t.Fatalf("type summary: %+v %v", byType, err)
+	}
+}

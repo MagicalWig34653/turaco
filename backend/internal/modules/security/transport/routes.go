@@ -44,9 +44,18 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/security/advisories/{id}/archive", manage, h.advisoryOperation)
 	route("GET /api/v1/security/advisories/{id}/findings", view, h.advisoryFindings)
 	route("GET /api/v1/security/advisories/{id}/summary", view, h.summary)
+	route("GET /api/v1/security/advisories/{id}/progress", view, h.progress)
+	route("GET /api/v1/security/overview", view, h.overview)
+	route("GET /api/v1/security/advisories/{id}/tasks", view, h.advisoryTasks)
+	route("POST /api/v1/security/advisories/{id}/tasks", manage, h.createAdvisoryTask)
+	route("GET /api/v1/security/advisories/{id}/changes", view, h.advisoryChanges)
+	route("POST /api/v1/security/advisories/{id}/changes", manage, h.linkChange)
+	route("DELETE /api/v1/security/advisories/{id}/changes/{changeId}", manage, h.unlinkChange)
 	route("GET /api/v1/security/advisories/{id}/transitions", view, h.advisoryTransitions)
 	route("GET /api/v1/security/findings", view, h.listFindings)
 	route("GET /api/v1/security/findings/{id}", view, h.getFinding)
+	route("GET /api/v1/security/findings/{id}/tasks", view, h.findingTasks)
+	route("POST /api/v1/security/findings/{id}/tasks", manage, h.createFindingTask)
 	route("POST /api/v1/security/findings/{id}/investigate", manage, h.findingOperation)
 	route("POST /api/v1/security/findings/{id}/accept", manage, h.findingOperation)
 	route("POST /api/v1/security/findings/{id}/accept-risk", accept, h.findingOperation)
@@ -59,7 +68,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(application.PermView), Manage: p.Has(application.PermManage), AcceptRisk: p.Has(application.PermAcceptRisk), EndpointsView: p.Has("endpoints.view") || p.Has("endpoints.manage")}
+	return application.Principal{UserID: p.UserID, View: p.Has(application.PermView), Manage: p.Has(application.PermManage), AcceptRisk: p.Has(application.PermAcceptRisk), EndpointsView: p.Has("endpoints.view") || p.Has("endpoints.manage"), TasksView: p.Has("tasks.view"), ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
 }
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
 	p, _ := authorization.PrincipalFrom(r.Context())

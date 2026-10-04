@@ -53,6 +53,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.security.advisory',
       labelKey: 'notifications.category.security.advisory',
     },
+    'security.risk_review_due': {
+      textKey: 'notifications.security.risk_review_due',
+      labelKey: 'notifications.category.security.risk_review_due',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',
@@ -78,6 +82,10 @@ export function registerModuleNotifications(): void {
   registerNotificationLink(
     'security_advisory',
     (id) => `/security/advisories/${encodeURIComponent(id)}`,
+  );
+  registerNotificationLink(
+    'security_finding',
+    (id) => `/security/findings/${encodeURIComponent(id)}`,
   );
   registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);

@@ -63,11 +63,98 @@ var ErrAssigneeInvalid = application.ErrAssigneeInvalid
 type InvalidInputError = application.InvalidInputError
 
 var contextType = regexp.MustCompile(`^[a-z][a-z_]{1,39}$`)
+var contextIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Creator creates and reads tasks for other modules.
 type Creator struct {
 	store application.Store
 	dir   application.Directory
+}
+
+// ContextReader is the Tasks-owned read port for a bounded set of tasks attached
+// to another module's record. The caller must authorize that record and any
+// assignee details before returning the result to a user.
+type ContextReader interface {
+	ListByContext(ctx context.Context, contextType, contextID string, limit int) ([]application.Task, error)
+	ListByContextTx(ctx context.Context, tx pgx.Tx, contextType, contextID string, limit int) ([]application.Task, error)
+	SummaryByContexts(ctx context.Context, contextType string, contextIDs []string) (ContextSummary, error)
+	SummaryByType(ctx context.Context, contextType string) (ContextSummary, error)
+}
+
+// SummaryByType is for the owner of a Task context type to summarize its work.
+func (c *Creator) SummaryByType(ctx context.Context, typ string) (ContextSummary, error) {
+	if !contextType.MatchString(typ) {
+		return ContextSummary{}, &InvalidInputError{Message: "invalid task context"}
+	}
+	reader, ok := c.store.(ContextReader)
+	if !ok {
+		return ContextSummary{}, errors.New("tasks: context reader unavailable")
+	}
+	return reader.SummaryByType(ctx, typ)
+}
+
+// ContextSummary contains only state counts, so a module can aggregate its work
+// without reading unrelated Tasks or exposing Task assignees.
+type ContextSummary struct {
+	Open    int `json:"open"`
+	Done    int `json:"done"`
+	Overdue int `json:"overdue"`
+}
+
+func (c *Creator) SummaryByContexts(ctx context.Context, typ string, ids []string) (ContextSummary, error) {
+	if !contextType.MatchString(typ) {
+		return ContextSummary{}, &InvalidInputError{Message: "invalid task context"}
+	}
+	for _, id := range ids {
+		if !contextIDPattern.MatchString(id) {
+			return ContextSummary{}, &InvalidInputError{Message: "invalid task context id"}
+		}
+	}
+	if len(ids) == 0 {
+		return ContextSummary{}, nil
+	}
+	reader, ok := c.store.(ContextReader)
+	if !ok {
+		return ContextSummary{}, errors.New("tasks: context reader unavailable")
+	}
+	return reader.SummaryByContexts(ctx, typ, ids)
+}
+
+// ByContext reads live task state. A limit of 51 lets an owner enforce a cap
+// of 50 without reading an unbounded context.
+func (c *Creator) ByContext(ctx context.Context, contextType, contextID string, limit int) ([]Task, error) {
+	return c.byContext(ctx, nil, contextType, contextID, limit)
+}
+
+// ByContextInTx reads a context inside its owner's transaction, so a locked
+// parent row serializes creation and the cap check.
+func (c *Creator) ByContextInTx(ctx context.Context, tx pgx.Tx, contextType, contextID string, limit int) ([]Task, error) {
+	return c.byContext(ctx, tx, contextType, contextID, limit)
+}
+
+func (c *Creator) byContext(ctx context.Context, tx pgx.Tx, typ, contextID string, limit int) ([]Task, error) {
+	if !contextType.MatchString(typ) || !contextIDPattern.MatchString(contextID) || limit < 1 || limit > 500 {
+		return nil, &InvalidInputError{Message: "invalid task context or limit"}
+	}
+	reader, ok := c.store.(ContextReader)
+	if !ok {
+		return nil, errors.New("tasks: context reader unavailable")
+	}
+	var ts []application.Task
+	var err error
+	if tx == nil {
+		ts, err = reader.ListByContext(ctx, typ, contextID, limit)
+	} else {
+		ts, err = reader.ListByContextTx(ctx, tx, typ, contextID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Task, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, Task{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DueAt: t.DueAt, AssignedUserID: t.AssignedUserID, AssignedTeamID: t.AssignedTeamID})
+	}
+	return out, nil
 }
 
 func NewCreator(store application.Store, dir application.Directory) *Creator {

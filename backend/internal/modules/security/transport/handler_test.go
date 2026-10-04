@@ -29,6 +29,11 @@ func TestSecurityRoutesAuthorizeBeforeResourceLookup(t *testing.T) {
 		{"GET", "/api/v1/security/findings/00000000-0000-7000-8000-000000000002", 403},
 		{"POST", "/api/v1/security/advisories", 403},
 		{"POST", "/api/v1/security/findings/00000000-0000-7000-8000-000000000002/accept-risk", 403},
+		{"GET", "/api/v1/security/overview", 403},
+		{"GET", "/api/v1/security/advisories/00000000-0000-7000-8000-000000000002/progress", 403},
+		{"GET", "/api/v1/security/findings/00000000-0000-7000-8000-000000000002/tasks", 403},
+		{"POST", "/api/v1/security/advisories/00000000-0000-7000-8000-000000000002/tasks", 403},
+		{"POST", "/api/v1/security/advisories/00000000-0000-7000-8000-000000000002/changes", 403},
 	} {
 		mux := http.NewServeMux()
 		Register(mux, nil, testAuth{authenticated: true, permissions: map[string]struct{}{}}, nil)

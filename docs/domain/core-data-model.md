@@ -156,3 +156,5 @@ Each synchronized field/domain defines direction and conflict mode (`external_wi
 ## Data quality
 
 Explicit findings should surface duplicate-device candidates, stale management records, unknown software mappings, double IP assignment, departed-user assignments and other reconciliation problems as operational work instead of hidden sync warnings.
+
+**F8b remediation tracking:** Security creates ordinary `platform.tasks` with `context_type` `security_advisory` or `security_finding` (at most 50 per object). It owns the `advisory REMEDIATED_BY change` Relationship triple (at most 25 current links per Advisory). Task status does not change Finding status. The daily risk-review reminder uses notification dedupe keys per Finding, review date, reminder threshold and recipient, so no new table or migration is required.

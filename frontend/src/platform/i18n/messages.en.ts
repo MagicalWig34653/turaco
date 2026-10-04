@@ -1325,6 +1325,8 @@ export const en = {
   'notifications.category.initiative.state': 'My initiative changed status',
   'notifications.security.advisory': 'A security advisory was marked as applicable: {title}',
   'notifications.category.security.advisory': 'Security advisory applicable',
+  'notifications.security.risk_review_due': 'A security risk acceptance is due for review: {title}',
+  'notifications.category.security.risk_review_due': 'Security risk review due',
   'notifications.majorincident.update': 'News on an incident you follow: {title}',
   'notifications.category.majorincident.update': 'An incident I follow has news',
   'incidents.detail.title': 'Incident',
