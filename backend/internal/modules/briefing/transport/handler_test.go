@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -66,6 +67,44 @@ func newStub() *stub {
 	return &stub{item: application.Item{
 		ID: "00000000-0000-7000-8000-000000000001", Title: "Maintenance", Severity: "info", Status: "draft", Version: 1,
 	}}
+}
+
+func TestFeedRouteAuthorizationAndShape(t *testing.T) {
+	store := newStub()
+	store.item.Status = application.StatusPublished
+	for _, tc := range []struct {
+		auth        fakeAuth
+		status      int
+		wantEntries int
+	}{
+		{fakeAuth{ok: false}, http.StatusUnauthorized, 0},
+		{with(), http.StatusForbidden, 0},
+		{with("briefing.view"), http.StatusOK, 1},
+		{with("security.view"), http.StatusOK, 0},
+	} {
+		mux := http.NewServeMux()
+		svc := application.NewService(store, nil)
+		feed := application.NewFeedService(svc, application.FeedSources{})
+		Register(mux, svc, tc.auth, slog.New(slog.NewTextHandler(io.Discard, nil)), feed)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/briefing/feed", nil))
+		if rec.Code != tc.status {
+			t.Fatalf("status = %d, want %d: %s", rec.Code, tc.status, rec.Body.String())
+		}
+		if tc.status == http.StatusOK {
+			var body struct {
+				Entries     []application.FeedEntry   `json:"entries"`
+				Truncated   map[string]bool           `json:"truncated"`
+				Unavailable []application.FeedFailure `json:"unavailable"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Entries) != tc.wantEntries {
+				t.Fatalf("entries = %d, want %d", len(body.Entries), tc.wantEntries)
+			}
+		}
+	}
 }
 
 func serve(t *testing.T, s *stub, a authorization.Authenticator, method, target, body string) *httptest.ResponseRecorder {

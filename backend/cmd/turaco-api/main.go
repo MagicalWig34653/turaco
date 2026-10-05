@@ -183,7 +183,8 @@ func main() {
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
 		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
-	briefingtransport.Register(mux, briefingapp.NewService(briefingrepository.New(pool), nil), sessionAuth, logger)
+	briefingService := briefingapp.NewService(briefingrepository.New(pool), nil)
+	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService))
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	categories, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {

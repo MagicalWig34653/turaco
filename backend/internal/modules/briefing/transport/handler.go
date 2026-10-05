@@ -22,25 +22,49 @@ const (
 
 type handler struct {
 	svc    *application.Service
+	feed   *application.FeedService
 	logger *slog.Logger
 }
 
 // Register mounts the briefing routes. Route permissions are the outer gate;
 // the service decides what each caller sees.
-func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger, feed ...*application.FeedService) {
 	h := &handler{svc: svc, logger: logger}
+	if len(feed) > 0 {
+		h.feed = feed[0]
+	}
 	anyBriefing := authorization.RequireAny(auth, permView, permManage)
 	manage := authorization.Require(auth, permManage)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/briefing-items", anyBriefing, h.list)
+	if h.feed != nil {
+		route("GET /api/v1/briefing/feed", authorization.RequireAny(auth,
+			permView, permManage, "security.view", "planning.view", "planning.manage", "changes.view", "changes.manage", "changes.execute",
+			"tickets.view", "tickets.manage", "majorincidents.manage", "endpoints.manage", "integrations.intune.manage",
+			"organization.directory.sync"), h.getFeed)
+	}
 	route("POST /api/v1/briefing-items", manage, h.create)
 	route("GET /api/v1/briefing-items/{id}", anyBriefing, h.get)
 	route("PATCH /api/v1/briefing-items/{id}", manage, h.update)
 	route("DELETE /api/v1/briefing-items/{id}", manage, h.delete)
 	route("POST /api/v1/briefing-items/{id}/publish", manage, h.publish)
 	route("POST /api/v1/briefing-items/{id}/withdraw", manage, h.withdraw)
+}
+
+func (h *handler) getFeed(w http.ResponseWriter, r *http.Request) {
+	p, _ := authorization.PrincipalFrom(r.Context())
+	has := p.Has
+	result, err := h.feed.Feed(r.Context(), application.FeedPrincipal{UserID: p.UserID,
+		Briefing: has(permView) || has(permManage), Security: has("security.view"), Planning: has("planning.view") || has("planning.manage"),
+		Changes: has("changes.view") || has("changes.manage") || has("changes.execute"), Desk: has("tickets.view") || has("tickets.manage") || has("majorincidents.manage"),
+		Endpoints: has("endpoints.manage") || has("integrations.intune.manage"), Integrations: has("endpoints.manage") || has("tickets.manage") || has("integrations.intune.manage"), Directory: has("endpoints.manage") || has("integrations.intune.manage") || has("organization.directory.sync")}, time.Now())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {

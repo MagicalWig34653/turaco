@@ -25,6 +25,17 @@ var (
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
+func (r *Repository) CountPending(ctx context.Context, userID string, teamIDs []string) (int, error) {
+	if !validUUID(userID) {
+		return 0, nil
+	}
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM approvals.approvals WHERE status='pending'
+ AND (approver_user_id=$1::uuid OR approver_team_id=ANY($2::text[]::uuid[]))
+ AND NOT ($1::uuid=ANY(excluded_user_ids))`, userID, teamIDs).Scan(&n)
+	return n, err
+}
+
 const columns = `id::text, subject_type, subject_id::text, subject_label, step_index, status,
 	approver_user_id::text, approver_team_id::text, coalesce(excluded_user_ids::text[], '{}'), requested_by_user_id::text,
 	decided_by_user_id::text, decided_at, decision_comment, version, created_at, updated_at`

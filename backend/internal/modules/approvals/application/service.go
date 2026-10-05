@@ -184,6 +184,22 @@ func (s *Service) Inbox(ctx context.Context, userID, status string, page Page) (
 	return s.store.Inbox(ctx, InboxQuery{UserID: userID, TeamIDs: ids, Status: status, Page: page.Normalize()})
 }
 
+// PendingForUserCount counts decisions currently available to this User, including
+// current Team assignments and excluding conflicted requesters.
+func (s *Service) PendingForUserCount(ctx context.Context, userID string) (int, error) {
+	teams, err := s.dir.CurrentTeamIDs(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	counter, ok := s.store.(interface {
+		CountPending(ctx context.Context, userID string, teamIDs []string) (int, error)
+	})
+	if !ok {
+		return 0, fmt.Errorf("approvals: count is unavailable")
+	}
+	return counter.CountPending(ctx, userID, teams)
+}
+
 // ForSubject returns the approvals of a subject (all steps, in order).
 func (s *Service) ForSubject(ctx context.Context, subjectType, subjectID string) ([]Approval, error) {
 	return s.store.ForSubject(ctx, subjectType, subjectID)
