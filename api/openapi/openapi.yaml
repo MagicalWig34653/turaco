@@ -743,6 +743,22 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /briefing/feed:
+    get:
+      operationId: getBriefingFeed
+      summary: Get the computed IT Briefing feed.
+      description: "Computed on request from authoritative records; entries are not stored copies. Access requires any one of briefing.view, briefing.manage, security.view, planning.view, planning.manage, changes.view, changes.manage, changes.execute, tickets.view, tickets.manage, majorincidents.manage, endpoints.manage, integrations.intune.manage or organization.directory.sync. Each source applies its own permission and record scope. At most 20 entries per source are returned; true truncated flags signal more available or incomplete source results. A failed source is reported in unavailable while other sources still return. Manual briefing items remain available through /briefing-items."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Permission-filtered feed with per-source truncation and failures.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingFeed'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /briefing-items:
     get:
       operationId: listBriefingItems
@@ -10625,6 +10641,48 @@ components:
         dueAfterHours: {type: integer, minimum: 1, maximum: 8760}
         clearDueAfter: {type: boolean}
         rule: {$ref: '#/components/schemas/RecurrenceRule'}
+    BriefingFeed:
+      type: object
+      additionalProperties: false
+      required: [entries, truncated, unavailable]
+      properties:
+        entries:
+          type: array
+          items: {$ref: '#/components/schemas/BriefingFeedEntry'}
+        truncated:
+          type: object
+          description: Source keys with true values indicate more available or incomplete results. Missing keys are not truncated.
+          additionalProperties: {type: boolean}
+        unavailable:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, reason]
+            properties:
+              source: {type: string}
+              reason: {type: string, enum: [source_error, source_timeout]}
+    BriefingFeedEntry:
+      type: object
+      additionalProperties: false
+      required: [kind, severity, titleKey, params, linkPath, source]
+      properties:
+        kind: {type: string, enum: [manual_item, security_advisory, risk_review_due, maintenance, milestone_due, major_incident, ticket_backlog, integration_health, pending_approvals]}
+        severity: {type: string, enum: [info, warning, critical]}
+        titleKey: {type: string, description: "Client localization key; clients should use a generic localized fallback for unknown keys."}
+        params: {type: object, additionalProperties: true, description: "Localization parameters scoped to records visible to the caller."}
+        count: {type: integer, minimum: 0}
+        reference:
+          type: object
+          additionalProperties: false
+          required: [type, id]
+          properties:
+            type: {type: string}
+            id: {type: string}
+        linkPath: {type: string, description: "Internal path to the authoritative record or filtered list."}
+        occurredAt: {type: string, format: date-time}
+        dueAt: {type: string, format: date-time}
+        source: {type: string}
     BriefingItem:
       type: object
       additionalProperties: false

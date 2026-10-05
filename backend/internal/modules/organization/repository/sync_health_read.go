@@ -7,11 +7,32 @@ import (
 
 // DirectorySyncStatus returns at most 21 providers and omits raw error text.
 func (h *Repository) DirectorySyncStatus(ctx context.Context, scope orgpublic.SyncScope) ([]orgpublic.DirectorySyncStatus, error) {
-	rows, err := h.pool.Query(ctx, `SELECT p.provider_key,
- (SELECT max(finished_at) FROM organization.directory_sync_runs s WHERE s.provider_key=p.provider_key AND outcome='succeeded'),
- (SELECT max(finished_at) FROM organization.directory_sync_runs s WHERE s.provider_key=p.provider_key AND outcome='failed'),
- (SELECT left(error,500) FROM organization.directory_sync_runs s WHERE s.provider_key=p.provider_key AND outcome='failed' ORDER BY finished_at DESC,id DESC LIMIT 1)
- FROM (SELECT DISTINCT provider_key FROM organization.directory_sync_runs) p ORDER BY p.provider_key LIMIT 21`)
+	summaryColumn := "NULL::text"
+	failureColumn := "NULL::text AS error"
+	if scope.IncludeErrorSummary {
+		summaryColumn = "left(failure.error,500)"
+		failureColumn = "error"
+	}
+	rows, err := h.pool.Query(ctx, `WITH RECURSIVE providers AS (
+ SELECT min(provider_key) AS provider_key FROM organization.directory_sync_runs
+ UNION ALL
+ SELECT (SELECT min(provider_key) FROM organization.directory_sync_runs WHERE provider_key > p.provider_key)
+ FROM providers p WHERE p.provider_key IS NOT NULL
+ )
+ SELECT p.provider_key, success.finished_at, failure.finished_at,
+ `+summaryColumn+`
+ FROM providers p
+ LEFT JOIN LATERAL (
+ SELECT id, finished_at FROM organization.directory_sync_runs s
+ WHERE s.provider_key=p.provider_key AND outcome='succeeded' ORDER BY id DESC LIMIT 1
+ ) success ON true
+ LEFT JOIN LATERAL (
+ SELECT id, finished_at, `+failureColumn+` FROM organization.directory_sync_runs f
+ WHERE f.provider_key=p.provider_key AND outcome='failed' ORDER BY id DESC LIMIT 1
+ ) failure ON true
+ WHERE p.provider_key IS NOT NULL AND failure.id IS NOT NULL
+ AND (success.id IS NULL OR failure.id > success.id)
+ ORDER BY p.provider_key LIMIT 21`)
 	if err != nil {
 		return nil, err
 	}
@@ -23,11 +44,9 @@ func (h *Repository) DirectorySyncStatus(ctx context.Context, scope orgpublic.Sy
 		if err = rows.Scan(&v.Provider, &v.LastSuccessAt, &v.LastFailureAt, &summary); err != nil {
 			return nil, err
 		}
-		if v.LastFailureAt != nil && (v.LastSuccessAt == nil || v.LastFailureAt.After(*v.LastSuccessAt)) {
-			v.LastErrorCode = "sync_failed"
-			if scope.IncludeErrorSummary && summary != nil {
-				v.LastErrorSummary = *summary
-			}
+		v.LastErrorCode = "sync_failed"
+		if scope.IncludeErrorSummary && summary != nil {
+			v.LastErrorSummary = *summary
 		}
 		out = append(out, v)
 	}

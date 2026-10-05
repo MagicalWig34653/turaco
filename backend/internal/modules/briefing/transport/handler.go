@@ -40,10 +40,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	}
 	route("GET /api/v1/briefing-items", anyBriefing, h.list)
 	if h.feed != nil {
-		route("GET /api/v1/briefing/feed", authorization.RequireAny(auth,
-			permView, permManage, "security.view", "planning.view", "planning.manage", "changes.view", "changes.manage", "changes.execute",
-			"tickets.view", "tickets.manage", "majorincidents.manage", "endpoints.manage", "integrations.intune.manage",
-			"organization.directory.sync"), h.getFeed)
+		route("GET /api/v1/briefing/feed", authorization.RequireAny(auth, feedPermissions()...), h.getFeed)
 	}
 	route("POST /api/v1/briefing-items", manage, h.create)
 	route("GET /api/v1/briefing-items/{id}", anyBriefing, h.get)
@@ -53,13 +50,50 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/briefing-items/{id}/withdraw", manage, h.withdraw)
 }
 
+// A single permission table controls both the route gate and source scopes.
+type feedPermission struct {
+	name  string
+	apply func(*application.FeedPrincipal)
+}
+
+var feedPermissionTable = []feedPermission{
+	{permView, func(p *application.FeedPrincipal) { p.Briefing = true }},
+	{permManage, func(p *application.FeedPrincipal) { p.Briefing = true }},
+	{"security.view", func(p *application.FeedPrincipal) { p.Security = true }},
+	{"planning.view", func(p *application.FeedPrincipal) { p.Planning = true }},
+	{"planning.manage", func(p *application.FeedPrincipal) { p.Planning = true }},
+	{"changes.view", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"changes.manage", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"changes.execute", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"tickets.view", func(p *application.FeedPrincipal) { p.Desk = true; p.Tickets = true }},
+	{"tickets.manage", func(p *application.FeedPrincipal) { p.Desk = true; p.Tickets = true; p.Autotask = true }},
+	{"majorincidents.manage", func(p *application.FeedPrincipal) { p.Desk = true }},
+	{"endpoints.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
+	{"integrations.intune.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
+	{"organization.directory.sync", func(p *application.FeedPrincipal) { p.Directory = true }},
+}
+
+func feedPermissions() []string {
+	out := make([]string, 0, len(feedPermissionTable))
+	for _, permission := range feedPermissionTable {
+		out = append(out, permission.name)
+	}
+	return out
+}
+
+func feedPrincipal(userID string, has func(string) bool) application.FeedPrincipal {
+	p := application.FeedPrincipal{UserID: userID}
+	for _, permission := range feedPermissionTable {
+		if has(permission.name) {
+			permission.apply(&p)
+		}
+	}
+	return p
+}
+
 func (h *handler) getFeed(w http.ResponseWriter, r *http.Request) {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	has := p.Has
-	result, err := h.feed.Feed(r.Context(), application.FeedPrincipal{UserID: p.UserID,
-		Briefing: has(permView) || has(permManage), Security: has("security.view"), Planning: has("planning.view") || has("planning.manage"),
-		Changes: has("changes.view") || has("changes.manage") || has("changes.execute"), Desk: has("tickets.view") || has("tickets.manage") || has("majorincidents.manage"),
-		Endpoints: has("endpoints.manage") || has("integrations.intune.manage"), Integrations: has("endpoints.manage") || has("tickets.manage") || has("integrations.intune.manage"), Directory: has("endpoints.manage") || has("integrations.intune.manage") || has("organization.directory.sync")}, time.Now())
+	result, err := h.feed.Feed(r.Context(), feedPrincipal(p.UserID, p.Has), time.Now())
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -20,9 +20,9 @@ func (b *Briefing) OpenMajorIncidents(ctx context.Context, scope ReadScope) ([]M
 	return b.repo.OpenMajorIncidents(ctx, scope)
 }
 
-// UnassignedOpenTickets returns a count without ticket details.
-func (b *Briefing) UnassignedOpenTickets(ctx context.Context) (int, error) {
-	return b.repo.UnassignedOpenTickets(ctx)
+// UnassignedOpenTickets returns a count without ticket details. Zero ReadScope hides the count.
+func (b *Briefing) UnassignedOpenTickets(ctx context.Context, scope ReadScope) (int, error) {
+	return b.repo.UnassignedOpenTickets(ctx, scope)
 }
 
 // SyncHealth returns Autotask push counts without raw errors.

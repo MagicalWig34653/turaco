@@ -22,7 +22,7 @@ type SyncHealth struct{ repo syncHealthReader }
 
 func NewSyncHealth(repo syncHealthReader) *SyncHealth { return &SyncHealth{repo: repo} }
 
-// DirectorySyncStatus returns at most 21 providers and a code rather than raw errors.
+// DirectorySyncStatus returns at most 21 unhealthy providers and a code rather than raw errors.
 func (h *SyncHealth) DirectorySyncStatus(ctx context.Context, scope SyncScope) ([]DirectorySyncStatus, error) {
 	return h.repo.DirectorySyncStatus(ctx, scope)
 }

@@ -213,12 +213,16 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 // that are approved, active or on hold, by due date, at most MaxDueMilestones.
 // It performs no permission check: it is the contract for other modules' read
 // models (the briefing), which authorize for their own caller.
-func (s *Service) DueMilestones(ctx context.Context, from, to time.Time, ownerID string) ([]Milestone, error) {
+func (s *Service) DueMilestones(ctx context.Context, from, to time.Time, ownerID string, requestedLimit ...int) ([]Milestone, error) {
 	from, to = day(from), day(to)
 	if to.Before(from) || to.Sub(from) > MaxCalendarRange {
 		return nil, invalid("the range must not be reversed or longer than 92 days")
 	}
-	return s.store.DueMilestones(ctx, from, to, []string{StatusApproved, StatusActive, StatusOnHold}, ownerID, MaxDueMilestones)
+	limit := MaxDueMilestones
+	if len(requestedLimit) > 0 && requestedLimit[0] > 0 && requestedLimit[0] < limit {
+		limit = requestedLimit[0]
+	}
+	return s.store.DueMilestones(ctx, from, to, []string{StatusApproved, StatusActive, StatusOnHold}, ownerID, limit)
 }
 
 // ByIDs returns the Initiatives among ids (for the public contract; no permission check).

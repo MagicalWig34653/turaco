@@ -123,3 +123,48 @@ func TestFeedSortsSeverityThenTime(t *testing.T) {
 		t.Fatalf("wrong order: %+v", out.Entries)
 	}
 }
+
+type countingApprovals struct{ calls int }
+
+func (a *countingApprovals) PendingForUserCount(ctx context.Context, _ string) (int, error) {
+	a.calls++
+	return 1, ctx.Err()
+}
+func TestFeedCachesPerEffectivePermissionSet(t *testing.T) {
+	approvals := &countingApprovals{}
+	feed := NewFeedService(nil, FeedSources{Approvals: approvals})
+	now := time.Now()
+	for _, p := range []FeedPrincipal{{UserID: "a", Briefing: true}, {UserID: "a", Briefing: true}, {UserID: "a", Security: true}, {UserID: "b", Briefing: true}} {
+		if _, err := feed.Feed(context.Background(), p, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if approvals.calls != 3 {
+		t.Fatalf("source calls = %d, want 3", approvals.calls)
+	}
+	if _, err := feed.Feed(context.Background(), FeedPrincipal{UserID: "a", Briefing: true}, now.Add(11*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if approvals.calls != 4 {
+		t.Fatalf("source calls after expiry = %d", approvals.calls)
+	}
+}
+
+type timedOutSecurity struct{ feedSecurity }
+
+func (timedOutSecurity) ApplicableAdvisorySummaries(ctx context.Context, _ securitypublic.ReadScope) ([]securitypublic.ApplicableSummary, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func TestFeedMarksSourceTimeoutWithoutLeakingError(t *testing.T) {
+	feed := NewFeedService(nil, FeedSources{Security: timedOutSecurity{}})
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	result, err := feed.Feed(ctx, FeedPrincipal{UserID: "user", Security: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Unavailable) == 0 || result.Unavailable[0] != (FeedFailure{Source: "security_advisory", Reason: "source_timeout"}) {
+		t.Fatalf("unavailable = %+v", result.Unavailable)
+	}
+}

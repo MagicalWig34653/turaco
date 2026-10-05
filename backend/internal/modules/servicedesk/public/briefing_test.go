@@ -60,3 +60,55 @@ func TestAutotaskSyncHealthCountsFailures(t *testing.T) {
 		t.Fatalf("health = %+v", h)
 	}
 }
+
+func TestBriefingTicketCountsUseOpenScope(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	var incidentID, ticketID, userID string
+	if err := pool.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO servicedesk.major_incidents(title,summary) VALUES ('count incident','status') RETURNING id::text`).Scan(&incidentID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE id=$1::uuid`, incidentID) })
+	if err := pool.QueryRow(ctx, `INSERT INTO servicedesk.tickets(title,reporter_user_id,affected_user_id,major_incident_id)
+ VALUES ('count ticket',$1::uuid,$1::uuid,$2::uuid) RETURNING id::text`, userID, incidentID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE id=$1::uuid`, ticketID) })
+	b := NewBriefing(pool)
+	hidden, err := b.UnassignedOpenTickets(ctx, ReadScope{})
+	if err != nil || hidden != 0 {
+		t.Fatalf("hidden count = %d, %v", hidden, err)
+	}
+	count, err := b.UnassignedOpenTickets(ctx, ReadScope{IncludeDetails: true})
+	if err != nil || count < 1 {
+		t.Fatalf("visible count = %d, %v", count, err)
+	}
+	incidents, err := b.OpenMajorIncidents(ctx, ReadScope{IncludeDetails: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, incident := range incidents {
+		if incident.ID == incidentID {
+			if incident.LinkedTicketsTotal != 1 || incident.OpenLinkedTickets != 1 {
+				t.Fatalf("counts = %+v", incident)
+			}
+			if _, err := pool.Exec(ctx, `UPDATE servicedesk.tickets SET status='resolved',resolved_at=now() WHERE id=$1::uuid`, ticketID); err != nil {
+				t.Fatal(err)
+			}
+			refreshed, err := b.OpenMajorIncidents(ctx, ReadScope{IncludeDetails: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, v := range refreshed {
+				if v.ID == incidentID && (v.LinkedTicketsTotal != 1 || v.OpenLinkedTickets != 0) {
+					t.Fatalf("resolved counts = %+v", v)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("incident absent")
+}

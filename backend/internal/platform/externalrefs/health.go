@@ -17,6 +17,6 @@ func SyncHealth(ctx context.Context, q Querier, system, entityType string) (Heal
 	var h Health
 	err := q.QueryRow(ctx, `SELECT count(*) FILTER (WHERE sync_state='failed'),
  count(*) FILTER (WHERE sync_state='pending'), min(updated_at) FILTER (WHERE sync_state='failed')
- FROM platform.external_references WHERE system=$1 AND entity_type=$2`, system, entityType).Scan(&h.Failed, &h.Pending, &h.OldestFailureAt)
+ FROM platform.external_references WHERE system=$1 AND entity_type=$2 AND sync_state <> 'synced'`, system, entityType).Scan(&h.Failed, &h.Pending, &h.OldestFailureAt)
 	return h, err
 }

@@ -14,6 +14,7 @@ import {
 } from '../modules/recurrence/DefinitionScreens';
 import { RecurrenceScreen } from '../modules/recurrence/RecurrenceScreen';
 import { BriefingScreen } from '../modules/briefing/BriefingScreen';
+import { BriefingFeedScreen } from '../modules/briefing/BriefingFeedScreen';
 import {
   BriefingCreateScreen,
   BriefingDetailScreen,
@@ -118,6 +119,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
     case 'myWork':
       return <MyWorkScreen />;
     case 'briefing':
+      return <BriefingFeedScreen />;
+    case 'briefingItems':
       return <BriefingScreen />;
     case 'briefingNew':
       return <BriefingCreateScreen />;

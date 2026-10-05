@@ -7,6 +7,7 @@ export type RouteId =
   | 'myWork'
   | 'notifications'
   | 'briefing'
+  | 'briefingItems'
   | 'briefingNew'
   | 'briefingDetail'
   | 'catalog'
@@ -142,8 +143,29 @@ export const appRoutes: readonly AppRoute[] = [
     id: 'briefing',
     pattern: '/briefing',
     titleKey: 'nav.briefing',
-    requiresAny: ['briefing.view', 'briefing.manage'],
+    requiresAny: [
+      'briefing.view',
+      'briefing.manage',
+      'security.view',
+      'planning.view',
+      'planning.manage',
+      'changes.view',
+      'changes.manage',
+      'changes.execute',
+      'tickets.view',
+      'tickets.manage',
+      'majorincidents.manage',
+      'endpoints.manage',
+      'integrations.intune.manage',
+      'organization.directory.sync',
+    ],
     nav: 'main',
+  },
+  {
+    id: 'briefingItems',
+    pattern: '/briefing/items',
+    titleKey: 'briefing.items.title',
+    requiresAny: ['briefing.view', 'briefing.manage'],
   },
   {
     id: 'briefingNew',

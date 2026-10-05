@@ -191,13 +191,7 @@ func (s *Service) PendingForUserCount(ctx context.Context, userID string) (int, 
 	if err != nil {
 		return 0, err
 	}
-	counter, ok := s.store.(interface {
-		CountPending(ctx context.Context, userID string, teamIDs []string) (int, error)
-	})
-	if !ok {
-		return 0, fmt.Errorf("approvals: count is unavailable")
-	}
-	return counter.CountPending(ctx, userID, teams)
+	return s.store.CountPending(ctx, userID, teams)
 }
 
 // ForSubject returns the approvals of a subject (all steps, in order).

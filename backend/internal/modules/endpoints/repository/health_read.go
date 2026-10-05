@@ -14,7 +14,7 @@ type ProviderSyncStatus struct {
 // SyncHealth is a bounded provider read (at most 20 providers plus one for truncation).
 // The sync state stores completion time only; it has no durable last-error field.
 func (h *Repository) SyncHealth(ctx context.Context) ([]ProviderSyncStatus, error) {
-	rows, err := h.pool.Query(ctx, `SELECT provider,last_completed_at FROM endpoints.provider_sync_state ORDER BY provider LIMIT 21`)
+	rows, err := h.pool.Query(ctx, `SELECT provider,last_completed_at FROM endpoints.provider_sync_state WHERE last_completed_at IS NULL OR last_completed_at <= now() - interval '24 hours' ORDER BY provider LIMIT 21`)
 	if err != nil {
 		return nil, err
 	}

@@ -108,6 +108,7 @@ describe('visibleNavItems', () => {
       'incidents',
     ]);
     expect(matchRoute(appRoutes, '/briefing/new')?.route.id).toBe('briefingNew');
+    expect(matchRoute(appRoutes, '/briefing/items')?.route.id).toBe('briefingItems');
     expect(matchRoute(appRoutes, '/briefing/5')?.route.id).toBe('briefingDetail');
     const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
     expect(canViewRoute(createCan({ permissions: ['briefing.view'] }), route('briefingNew'))).toBe(
@@ -116,6 +117,13 @@ describe('visibleNavItems', () => {
     expect(
       canViewRoute(createCan({ permissions: ['briefing.manage'] }), route('briefingNew')),
     ).toBe(true);
+    expect(ids(['security.view'], 'main')).toContain('briefing');
+    expect(
+      canViewRoute(createCan({ permissions: ['security.view'] }), route('briefingItems')),
+    ).toBe(false);
+    expect(canViewRoute(createCan({ permissions: ['security.view'] }), route('briefing'))).toBe(
+      true,
+    );
   });
 
   it('shows recurring tasks only with tasks.recurrence.manage', () => {

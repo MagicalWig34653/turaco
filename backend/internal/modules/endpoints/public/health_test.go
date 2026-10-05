@@ -12,7 +12,7 @@ func TestSyncHealthReadsCompletion(t *testing.T) {
 	ctx := context.Background()
 	provider := "f8c_test_provider"
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM endpoints.provider_sync_state WHERE provider=$1`, provider) })
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	now := time.Now().UTC().Add(-25 * time.Hour).Truncate(time.Microsecond)
 	if _, err := pool.Exec(ctx, `INSERT INTO endpoints.provider_sync_state(provider,last_completed_at) VALUES ($1,$2) ON CONFLICT(provider) DO UPDATE SET last_completed_at=$2`, provider, now); err != nil {
 		t.Fatal(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
+	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
+	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
@@ -212,5 +215,72 @@ func TestResponsesAreNotCached(t *testing.T) {
 	rec := serve(t, newStub(), with("briefing.view"), "GET", "/api/v1/briefing-items", "")
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+	}
+}
+
+type permissionSecurity struct{}
+
+func (permissionSecurity) ApplicableAdvisorySummaries(context.Context, securitypublic.ReadScope) ([]securitypublic.ApplicableSummary, error) {
+	return []securitypublic.ApplicableSummary{{ID: "adv", Reference: "ADV-1", Title: "secret advisory", Severity: "critical"}}, nil
+}
+func (permissionSecurity) RiskReviewsDuePage(context.Context, securitypublic.ReadScope) (securitypublic.RiskReviewPage, error) {
+	return securitypublic.RiskReviewPage{}, nil
+}
+
+type permissionPlanning struct{ now time.Time }
+
+func (p permissionPlanning) UpcomingMaintenance(context.Context, time.Time, time.Time, planningpublic.MaintenanceScope) ([]planningpublic.UpcomingMaintenance, bool, error) {
+	return []planningpublic.UpcomingMaintenance{{ChangeID: "chg", Reference: "CHG-1", Title: "secret change", WindowStart: p.now.Add(time.Hour)}}, false, nil
+}
+func (permissionPlanning) DueMilestones(context.Context, time.Time, time.Time, planningpublic.DueMilestoneScope) ([]planningpublic.DueMilestone, error) {
+	return nil, nil
+}
+
+func TestFeedPermissionTableExactFlagsAndRedaction(t *testing.T) {
+	now := time.Now()
+	expected := map[string]application.FeedPrincipal{
+		"briefing.view": {Briefing: true}, "briefing.manage": {Briefing: true},
+		"security.view": {Security: true},
+		"planning.view": {Planning: true}, "planning.manage": {Planning: true},
+		"changes.view": {Changes: true}, "changes.manage": {Changes: true}, "changes.execute": {Changes: true},
+		"tickets.view": {Desk: true, Tickets: true}, "tickets.manage": {Desk: true, Tickets: true, Autotask: true},
+		"majorincidents.manage": {Desk: true},
+		"endpoints.manage":      {Endpoints: true, Directory: true}, "integrations.intune.manage": {Endpoints: true, Directory: true},
+		"organization.directory.sync": {Directory: true},
+	}
+	if len(feedPermissions()) != len(expected) {
+		t.Fatalf("permissions = %v", feedPermissions())
+	}
+	for _, permission := range feedPermissions() {
+		t.Run(permission, func(t *testing.T) {
+			want, ok := expected[permission]
+			if !ok {
+				t.Fatalf("unexpected permission %s", permission)
+			}
+			want.UserID = "user"
+			got := feedPrincipal("user", func(v string) bool { return v == permission })
+			if got != want {
+				t.Fatalf("flags = %+v, want %+v", got, want)
+			}
+			feed := application.NewFeedService(nil, application.FeedSources{Security: permissionSecurity{}, Planning: permissionPlanning{now: now}})
+			result, err := feed.Feed(context.Background(), got, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range result.Entries {
+				if entry.Kind == "security_advisory" && !got.Security {
+					t.Fatal("security entry leaked")
+				}
+				if entry.Kind == "maintenance" {
+					_, hasTitle := entry.Params["title"]
+					if hasTitle != got.Changes {
+						t.Fatalf("change title visibility = %v", hasTitle)
+					}
+				}
+				if strings.Contains(fmt.Sprint(entry.Params), "secret advisory") && !got.Security {
+					t.Fatal("advisory title leaked")
+				}
+			}
+		})
 	}
 }

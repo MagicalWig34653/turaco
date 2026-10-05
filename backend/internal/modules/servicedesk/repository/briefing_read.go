@@ -9,12 +9,15 @@ import (
 // BriefingReadScope selects incident details. Its zero value exposes references and state only.
 type BriefingReadScope struct{ IncludeDetails bool }
 type BriefingMajorIncident struct {
-	ID            string
-	Reference     string
-	Title         string
-	Status        string
-	StartedAt     time.Time
-	LinkedTickets int
+	ID        string
+	Reference string
+	Title     string
+	Status    string
+	StartedAt time.Time
+	// LinkedTicketsTotal includes resolved, closed and cancelled links.
+	LinkedTicketsTotal int
+	// OpenLinkedTickets includes new, open, in_progress and waiting Tickets.
+	OpenLinkedTickets int
 }
 type BriefingSyncStatus struct {
 	Failed          int
@@ -26,7 +29,8 @@ type BriefingSyncStatus struct {
 // Service Desk has no major-incident severity or affected-user count; linked tickets are counted.
 func (b *Repository) OpenMajorIncidents(ctx context.Context, scope BriefingReadScope) ([]BriefingMajorIncident, error) {
 	rows, err := b.pool.Query(ctx, `SELECT m.id::text,m.reference,m.title,m.status,m.created_at,
- (SELECT count(*) FROM servicedesk.tickets t WHERE t.major_incident_id=m.id)
+ (SELECT count(*) FROM servicedesk.tickets t WHERE t.major_incident_id=m.id),
+ (SELECT count(*) FROM servicedesk.tickets t WHERE t.major_incident_id=m.id AND t.status IN ('new','open','in_progress','waiting'))
  FROM servicedesk.major_incidents m WHERE m.status NOT IN ('resolved','closed') ORDER BY m.created_at DESC,m.id DESC LIMIT 21`)
 	if err != nil {
 		return nil, err
@@ -35,12 +39,13 @@ func (b *Repository) OpenMajorIncidents(ctx context.Context, scope BriefingReadS
 	out := []BriefingMajorIncident{}
 	for rows.Next() {
 		var v BriefingMajorIncident
-		if err = rows.Scan(&v.ID, &v.Reference, &v.Title, &v.Status, &v.StartedAt, &v.LinkedTickets); err != nil {
+		if err = rows.Scan(&v.ID, &v.Reference, &v.Title, &v.Status, &v.StartedAt, &v.LinkedTicketsTotal, &v.OpenLinkedTickets); err != nil {
 			return nil, err
 		}
 		if !scope.IncludeDetails {
 			v.Title = ""
-			v.LinkedTickets = 0
+			v.LinkedTicketsTotal = 0
+			v.OpenLinkedTickets = 0
 		}
 		out = append(out, v)
 	}
@@ -48,7 +53,11 @@ func (b *Repository) OpenMajorIncidents(ctx context.Context, scope BriefingReadS
 }
 
 // UnassignedOpenTickets counts open tickets without an assigned user. It contains no ticket details.
-func (b *Repository) UnassignedOpenTickets(ctx context.Context) (int, error) {
+// A zero scope hides the count.
+func (b *Repository) UnassignedOpenTickets(ctx context.Context, scope BriefingReadScope) (int, error) {
+	if !scope.IncludeDetails {
+		return 0, nil
+	}
 	var n int
 	err := b.pool.QueryRow(ctx, `SELECT count(*) FROM servicedesk.tickets WHERE assignee_user_id IS NULL AND status IN ('new','open','in_progress','waiting')`).Scan(&n)
 	return n, err

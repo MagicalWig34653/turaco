@@ -160,6 +160,7 @@ type Store interface {
 	CancelBySubjectTx(ctx context.Context, tx pgx.Tx, c Caller, subjectType, subjectID string) (int, error)
 	ForSubject(ctx context.Context, subjectType, subjectID string) ([]Approval, error)
 	Inbox(ctx context.Context, q InboxQuery) (Result, error)
+	CountPending(ctx context.Context, userID string, teamIDs []string) (int, error)
 	// IsApproverFor reports whether the User (directly or through one of the
 	// Teams) is or was an approver of any step of the subject.
 	IsApproverFor(ctx context.Context, subjectType, subjectID, userID string, teamIDs []string) (bool, error)

@@ -11,7 +11,7 @@ type Health struct{ repo *repository.Repository }
 
 func NewHealth(pool *pgxpool.Pool) *Health { return &Health{repo: repository.New(pool)} }
 
-// SyncHealth returns at most 21 provider completion records. The schema has no last-error field.
+// SyncHealth returns at most 21 stale provider completion records. The schema has no last-error field.
 func (h *Health) SyncHealth(ctx context.Context) ([]SyncStatus, error) { return h.repo.SyncHealth(ctx) }
 
 // OpenProviderErrors returns a count without device details.

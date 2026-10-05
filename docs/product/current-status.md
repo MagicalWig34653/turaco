@@ -2,7 +2,7 @@
 
 **Status date:** 2026-10-05
 
-**F8c backend:** `GET /api/v1/briefing/feed` computes permission-filtered entries from published manual Items, applicable Security Advisories, risk reviews, upcoming maintenance, due Milestones, open Major Incidents, Endpoint/Autotask/Directory health and the caller's pending Approval count. Each source contributes at most 20 entries, with `truncated` and `unavailable` metadata. Titles require the owning module's read permission; the feed stores no copies and needs no migration. OpenAPI and frontend are delegated.
+**F8c backend:** `GET /api/v1/briefing/feed` computes permission-filtered entries from published manual Items, applicable Security Advisories, risk reviews, upcoming maintenance, due Milestones, open Major Incidents, Endpoint/Autotask/Directory health, unassigned open Tickets and the caller's pending Approval count. Each source contributes at most 20 entries, with `truncated` and `unavailable` metadata. Titles require the owning module's read permission. Each source has a two-second deadline and failures report `source_timeout` or `source_error`; successful feeds use a bounded ten-second per-User/effective-permission cache. Major Incident counts are open linked Tickets. Migration `000049_briefing_health_indexes.up.sql` indexes health and the unassigned Ticket backlog. OpenAPI and frontend are delegated.
 
 This file distinguishes implemented repository/runtime foundation from planned product behavior. Architecture and workflow documents describe the target design unless they explicitly say otherwise.
 
