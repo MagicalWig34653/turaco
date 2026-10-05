@@ -1,6 +1,6 @@
 # Infrastructure Change
 
-**Status:** steps 1 (Initiatives including Changes, F7d), 2-4, 6 (Tasks only, no Runbook link) and 7 are implemented in the backend (F7a-F7d; [design](../product/f7-infrastructure-change-design.md#slice-4-status), [current status](../product/current-status.md)); step 5 has the maintenance calendar read model (`GET /api/v1/maintenance-calendar`) and the `planning/public` contract for the briefing, but the IT Briefing integration (F8) and the frontend for Changes and Initiatives are not implemented.
+**Status:** steps 1 (Initiatives including Changes, F7d), 2-4, 6 (Tasks only, no Runbook link) and 7 are implemented in the backend (F7a-F7d; [design](../product/f7-infrastructure-change-design.md#slice-4-status), [current status](../product/current-status.md)); step 5 has the maintenance calendar read model (`GET /api/v1/maintenance-calendar`) and the F8c backend Briefing feed from `planning/public`. The feed frontend remains delegated.
 
 ## Goal
 Plan and execute infrastructure work with dependencies, physical context, communication and history.

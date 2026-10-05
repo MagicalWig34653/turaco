@@ -52,6 +52,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Catalog Item** — user-facing requestable offering; not necessarily a Product.
 
 ## Work/change/planning
+- **Briefing Feed Entry** — a computed, permission-filtered presentation of an authoritative record or health count. It is not a copy of that record; manual Briefing Items remain editorial records.
 - **Task** — concrete unit of work shared across the platform.
 - **Remediation Task** — an ordinary Task attached to a Security Advisory or Vulnerability Finding, with a fixed reference-based title; completing it does not remediate a Finding.
 - **Residual Risk** — Turaco-derived label (`none|low|medium|high`) from an Advisory’s severity and live probable/potential Findings, including accepted risks.

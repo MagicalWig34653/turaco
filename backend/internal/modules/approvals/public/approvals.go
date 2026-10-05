@@ -64,6 +64,12 @@ type Approvals struct{ svc *application.Service }
 
 func New(svc *application.Service) *Approvals { return &Approvals{svc: svc} }
 
+// PendingForUserCount exposes only this User's actionable count; the caller
+// must pass the authenticated User ID, never an untrusted request parameter.
+func (a *Approvals) PendingForUserCount(ctx context.Context, userID string) (int, error) {
+	return a.svc.PendingForUserCount(ctx, userID)
+}
+
 func ac(c Caller) application.Caller {
 	return application.Caller{Actor: c.Actor, CorrelationID: c.CorrelationID}
 }

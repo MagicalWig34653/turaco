@@ -1,7 +1,13 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { BriefingCreateBody, BriefingItem, BriefingStatus, BriefingUpdateBody } from './types';
+import type {
+  BriefingCreateBody,
+  BriefingItem,
+  BriefingStatus,
+  BriefingUpdateBody,
+  FeedResult,
+} from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
@@ -17,6 +23,7 @@ registerErrorResolver((error) =>
 );
 
 export const briefingApi = {
+  feed: (signal?: Signal) => api.get<FeedResult>('/briefing/feed', { signal }),
   /** Viewers get published, unexpired items; managers get all and may filter by status. */
   list: (status: BriefingStatus | '', cursor?: string, signal?: Signal) =>
     api.get<Page<BriefingItem>>(base, { signal, query: { status, limit: 50, cursor } }),

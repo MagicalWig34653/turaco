@@ -56,6 +56,7 @@ type MaintenanceScope struct {
 type DueMilestoneScope struct {
 	OwnerID   string
 	AllOwners bool
+	Limit     int
 }
 
 // Bounds of the contract.
@@ -124,7 +125,7 @@ func (x *Planning) DueMilestones(ctx context.Context, from, to time.Time, scope 
 	if (scope.OwnerID == "") == !scope.AllOwners {
 		return nil, ErrInvalidScope
 	}
-	list, err := x.svc.DueMilestones(ctx, from, to, scope.OwnerID)
+	list, err := x.svc.DueMilestones(ctx, from, to, scope.OwnerID, scope.Limit)
 	var inv *application.InvalidInputError
 	if errors.As(err, &inv) {
 		return nil, ErrInvalidRange

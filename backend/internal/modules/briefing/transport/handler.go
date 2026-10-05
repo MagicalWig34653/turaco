@@ -22,25 +22,83 @@ const (
 
 type handler struct {
 	svc    *application.Service
+	feed   *application.FeedService
 	logger *slog.Logger
 }
 
 // Register mounts the briefing routes. Route permissions are the outer gate;
 // the service decides what each caller sees.
-func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger, feed ...*application.FeedService) {
 	h := &handler{svc: svc, logger: logger}
+	if len(feed) > 0 {
+		h.feed = feed[0]
+	}
 	anyBriefing := authorization.RequireAny(auth, permView, permManage)
 	manage := authorization.Require(auth, permManage)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/briefing-items", anyBriefing, h.list)
+	if h.feed != nil {
+		route("GET /api/v1/briefing/feed", authorization.RequireAny(auth, feedPermissions()...), h.getFeed)
+	}
 	route("POST /api/v1/briefing-items", manage, h.create)
 	route("GET /api/v1/briefing-items/{id}", anyBriefing, h.get)
 	route("PATCH /api/v1/briefing-items/{id}", manage, h.update)
 	route("DELETE /api/v1/briefing-items/{id}", manage, h.delete)
 	route("POST /api/v1/briefing-items/{id}/publish", manage, h.publish)
 	route("POST /api/v1/briefing-items/{id}/withdraw", manage, h.withdraw)
+}
+
+// A single permission table controls both the route gate and source scopes.
+type feedPermission struct {
+	name  string
+	apply func(*application.FeedPrincipal)
+}
+
+var feedPermissionTable = []feedPermission{
+	{permView, func(p *application.FeedPrincipal) { p.Briefing = true }},
+	{permManage, func(p *application.FeedPrincipal) { p.Briefing = true }},
+	{"security.view", func(p *application.FeedPrincipal) { p.Security = true }},
+	{"planning.view", func(p *application.FeedPrincipal) { p.Planning = true }},
+	{"planning.manage", func(p *application.FeedPrincipal) { p.Planning = true }},
+	{"changes.view", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"changes.manage", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"changes.execute", func(p *application.FeedPrincipal) { p.Changes = true }},
+	{"tickets.view", func(p *application.FeedPrincipal) { p.Desk = true; p.Tickets = true }},
+	{"tickets.manage", func(p *application.FeedPrincipal) { p.Desk = true; p.Tickets = true; p.Autotask = true }},
+	{"majorincidents.manage", func(p *application.FeedPrincipal) { p.Desk = true }},
+	{"endpoints.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
+	{"integrations.intune.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
+	{"organization.directory.sync", func(p *application.FeedPrincipal) { p.Directory = true }},
+}
+
+func feedPermissions() []string {
+	out := make([]string, 0, len(feedPermissionTable))
+	for _, permission := range feedPermissionTable {
+		out = append(out, permission.name)
+	}
+	return out
+}
+
+func feedPrincipal(userID string, has func(string) bool) application.FeedPrincipal {
+	p := application.FeedPrincipal{UserID: userID}
+	for _, permission := range feedPermissionTable {
+		if has(permission.name) {
+			permission.apply(&p)
+		}
+	}
+	return p
+}
+
+func (h *handler) getFeed(w http.ResponseWriter, r *http.Request) {
+	p, _ := authorization.PrincipalFrom(r.Context())
+	result, err := h.feed.Feed(r.Context(), feedPrincipal(p.UserID, p.Has), time.Now())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {

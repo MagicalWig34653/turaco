@@ -193,6 +193,15 @@ func TestInboxFollowsAssignmentAndExclusion(t *testing.T) {
 	viaTeam := e.request(0, func(r *application.RequestInput) {
 		r.SubjectID, r.ApproverUserID, r.ApproverTeamID = other, nil, &e.team
 	})
+	for _, tc := range []struct {
+		user string
+		want int
+	}{{e.approver, 1}, {e.memberA, 1}, {e.requester, 0}, {e.outsider, 0}} {
+		got, err := e.svc.PendingForUserCount(ctx, tc.user)
+		if err != nil || got != tc.want {
+			t.Fatalf("pending count for %s = %d, %v; want %d", tc.user, got, err, tc.want)
+		}
+	}
 
 	ids := func(user, status string) map[string]bool {
 		res, err := e.svc.Inbox(ctx, user, status, application.Page{Limit: 200})
@@ -219,6 +228,9 @@ func TestInboxFollowsAssignmentAndExclusion(t *testing.T) {
 	}
 	if _, err := e.svc.Decide(ctx, e.caller(e.memberA), viaTeam.ID, "approve", "", nil); err != nil {
 		t.Fatal(err)
+	}
+	if got, err := e.svc.PendingForUserCount(ctx, e.memberB); err != nil || got != 0 {
+		t.Fatalf("decided team count = %d, %v", got, err)
 	}
 	if got := ids(e.memberB, "pending"); got[viaTeam.ID] {
 		t.Error("a decided approval leaves every member's pending inbox")

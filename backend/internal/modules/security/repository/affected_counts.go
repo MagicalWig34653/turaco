@@ -27,7 +27,7 @@ func (r *Repository) AffectedDeviceCounts(ctx context.Context, ids []string) (ma
 }
 
 func (r *Repository) ApplicableAdvisories(ctx context.Context) ([]application.Advisory, bool, error) {
-	rows, err := r.pool.Query(ctx, `SELECT `+advisoryCols+` FROM security.advisories WHERE status IN ('applicable','remediation_planned','remediating') ORDER BY id DESC LIMIT 201`)
+	rows, err := r.pool.Query(ctx, `SELECT `+advisoryCols+` FROM security.advisories WHERE status IN ('applicable','remediation_planned','remediating') ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, id DESC LIMIT 21`)
 	if err != nil {
 		return nil, false, err
 	}
@@ -43,9 +43,9 @@ func (r *Repository) ApplicableAdvisories(ctx context.Context) ([]application.Ad
 	if err = rows.Err(); err != nil {
 		return nil, false, err
 	}
-	truncated := len(out) > 200
+	truncated := len(out) > 20
 	if truncated {
-		out = out[:200]
+		out = out[:20]
 	}
 	return out, truncated, nil
 }
