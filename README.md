@@ -1,25 +1,62 @@
-# Turaco
+<p align="center">
+  <img src="design/icon/preview/default-1024.png" alt="Turaco app icon" width="128" height="128">
+</p>
 
-**Turaco** is an open-source-first IT operations platform for internal IT teams. It is designed to connect service delivery, assets, inventory, procurement, endpoint intelligence, infrastructure, knowledge, change work and security context around one canonical operational model.
+<h1 align="center">Turaco</h1>
 
-> Project name status: **Turaco is the current repository and product name.** Public branding remains subject to formal trademark/name clearance before launch; see `docs/product/name-clearance.md`.
+<p align="center">
+  <strong>One connected workspace for IT operations.</strong><br>
+  Service desk, assets, inventory, procurement, endpoint intelligence, infrastructure and change, security advisories and a computed IT briefing around one canonical model of your organization.
+</p>
 
-## Current status
+<p align="center">
+  <a href="https://magicalwig34653.github.io/turaco/">Website</a> ·
+  <a href="https://magicalwig34653.github.io/turaco/docs/README.html">Documentation</a> ·
+  <a href="docs/product/current-status.md">Current status</a> ·
+  <a href="docs/product/implementation-plan.md">Roadmap</a> ·
+  <a href="docs/architecture/constitution.md">Principles</a>
+</p>
 
-Architecture/bootstrap repository. The foundation is intentionally small; business modules are implemented incrementally behind documented boundaries. Read `docs/product/current-status.md` before assuming a planned capability already exists.
+<p align="center">
+  <a href="https://github.com/MagicalWig34653/turaco/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MagicalWig34653/turaco/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/MagicalWig34653/turaco/actions/workflows/security.yml"><img alt="Security" src="https://github.com/MagicalWig34653/turaco/actions/workflows/security.yml/badge.svg"></a>
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18-336791?logo=postgresql&logoColor=white">
+  <img alt="Status" src="https://img.shields.io/badge/status-early%20build-orange">
+</p>
 
-## Baseline stack
+> **Early build, built in the open.** Turaco is an open-source-first project in active development. Read [`docs/product/current-status.md`](docs/product/current-status.md) before assuming a capability exists. The name and branding are subject to trademark clearance ([`docs/product/name-clearance.md`](docs/product/name-clearance.md)); no distribution license has been granted yet ([`docs/product/open-source-strategy.md`](docs/product/open-source-strategy.md)).
 
-- Go 1.27.x
-- React + TypeScript + Vite
-- PostgreSQL 18
-- S3-compatible object storage
-- Docker/Colima for local infrastructure
-- Docker/Swarm for primary Linux deployment
-- GitHub Actions + GHCR
-- Claude Code as the primary implementation environment
+## What it does
 
-## macOS quick start
+| Area | What exists today |
+| --- | --- |
+| **Work** | Tasks, My Work, notifications (in-app and email), recurring work, manual IT briefing items |
+| **Requests** | Product catalog, request lifecycles, approvals with separation of duties |
+| **Service desk** | Tickets, major incidents, problems and known errors, knowledge articles, runbooks as tracked task lists, Autotask sync port |
+| **Assets and inventory** | Asset lifecycle and assignment, warehouses, stock ledger, reservations, procurement, goods receipt |
+| **Endpoint intelligence** | Devices, installed software, findings, management artifacts and assignments, *Assigned vs Expected vs Observed*, assignment paths, history and diff |
+| **Infrastructure and change** | Buildings, racks and placements, VMs, services with impact analysis, changes with approvals, planning and a maintenance calendar |
+| **Security** | Advisories, vulnerability findings with confidence, remediation tracking, risk acceptance, residual risk |
+| **Briefing** | A computed feed from all of the above, filtered by what you may see |
+| **Platform** | Authentication and roles, audit trail, transactional outbox, jobs, permissions registry, OpenAPI, i18n (English and German) |
+
+Planned: provider-based software lifecycle and patching (F9), remote access with HopToDesk, RustDesk and AnyDesk (F10), workforce presence (F11) and Turaco AI (F12). Live provider clients (Microsoft Graph, Autotask REST, advisory feeds) are not built yet; their ports have fakes and imports.
+
+## Principles
+
+- **Modular monolith.** Modules own their data; cross-module access goes through public contracts and events, enforced by `make archcheck`.
+- **Explicit, audited operations.** No generic status updates; important mutations are audited in the same transaction; optimistic versions everywhere.
+- **Honest data.** External data keeps its source and freshness. Assigned, Expected and Observed are never collapsed into one status; "unknown" is a first-class answer.
+- **Least privilege.** Backend-enforced permissions, redaction instead of leaking, separate trust boundaries for agents.
+- **Open-source first.** Self-hostable, boring technology, documentation as part of every change.
+
+## Stack
+
+Go 1.27 (pgx, explicit SQL) · React + TypeScript + Vite · PostgreSQL 18 · S3-compatible object storage · Docker (Colima locally, Swarm on Linux) · GitHub Actions and GHCR. The interface ships three themes (Turaco, Dark, Cyberpunk) plus an Auto mode that follows your OS.
+
+## Quick start (macOS)
 
 The local workflow is optimized for Apple Silicon macOS. Go, Node and Claude Code run natively; stateful development dependencies run in Colima.
 
