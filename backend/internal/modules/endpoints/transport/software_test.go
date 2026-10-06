@@ -2,6 +2,7 @@ package transport_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,18 @@ func TestSoftwareRoutesRequirePermissions(t *testing.T) {
 				t.Fatalf("%s %s: got %d want %d: %s", tc.method, tc.path, rec.Code, tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestSoftwareCatalogSearchIsRateLimitedPerUser(t *testing.T) {
+	h := serve(t, as(admin, "software.view"), nil, false)
+	for i := 0; i < 10; i++ {
+		if rec := do(h, "GET", "/api/v1/software/catalog/search?q=firefox", ""); rec.Code != http.StatusConflict {
+			t.Fatalf("search %d: %d", i, rec.Code)
+		}
+	}
+	rec := do(h, "GET", "/api/v1/software/catalog/search?q=firefox", "")
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "endpoints.software_rate_limited") {
+		t.Fatalf("11th search: %d %s", rec.Code, rec.Body.String())
 	}
 }

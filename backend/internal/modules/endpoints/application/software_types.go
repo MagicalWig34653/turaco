@@ -162,15 +162,15 @@ type SoftwareVersion struct {
 	// holds software.view only (their hashes stay).
 	DefinitionRedacted bool
 	RegisteredBy       string
-	ApprovalStatus       string
-	ApprovalReason       *string
-	RequestedBy          *string
-	RequestedAt          *time.Time
-	DecidedBy            *string
-	DecidedAt            *time.Time
-	Version              int
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ApprovalStatus     string
+	ApprovalReason     *string
+	RequestedBy        *string
+	RequestedAt        *time.Time
+	DecidedBy          *string
+	DecidedAt          *time.Time
+	Version            int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // SoftwareTransition is one append-only decision about a product or a version. InstallerSHA256 and
@@ -355,7 +355,8 @@ type SoftwareStore interface {
 	// SyncablePackages returns the provider's packages that have a provider id, by id after the cursor.
 	SyncablePackages(ctx context.Context, provider, after string, limit int) ([]SoftwarePackage, error)
 	// RecordProviderReferenceTx records the provider's package id as the package's platform external reference
-	// (system = provider, entity type software_package); the id is set once and never changed.
+	// (system = provider, entity type software_package); the id is set once and never changed (a retry after a
+	// failed attempt keeps the first attempt's id there; the package row carries the current one).
 	RecordProviderReferenceTx(ctx context.Context, tx pgx.Tx, provider, packageID, providerPackageID string) error
 	// ArtifactIDByExternalTx returns the live Management Artifact with that external id, or nil.
 	ArtifactIDByExternalTx(ctx context.Context, tx pgx.Tx, provider, externalID string) (*string, error)
