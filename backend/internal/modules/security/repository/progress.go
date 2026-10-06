@@ -16,8 +16,9 @@ func (r *Repository) OverviewCounts(ctx context.Context, now time.Time) (applica
 	for _, v := range application.Confidences {
 		out.OpenFindingsByConfidence[v] = 0
 	}
-	rows, err := r.pool.Query(ctx, `WITH live AS (SELECT id,severity FROM security.advisories WHERE status IN ('applicable','remediation_planned','remediating'))
+	rows, err := r.pool.Query(ctx, `WITH live AS (SELECT id,severity,known_exploited FROM security.advisories WHERE status IN ('applicable','remediation_planned','remediating'))
  SELECT 'advisory',severity,count(*) FROM live GROUP BY severity
+ UNION ALL SELECT 'kev','',count(*) FROM live WHERE known_exploited
  UNION ALL SELECT 'finding',f.confidence,count(*) FROM security.vulnerability_findings f JOIN live a ON a.id=f.advisory_id WHERE f.status IN ('open','investigating','accepted','remediation_planned','remediating','risk_accepted') GROUP BY f.confidence
  UNION ALL SELECT 'review','',count(*) FROM security.vulnerability_findings f JOIN live a ON a.id=f.advisory_id WHERE f.status='risk_accepted' AND f.risk_review_by BETWEEN $1::date AND ($1::date+30)`, now.UTC())
 	if err != nil {
@@ -35,6 +36,8 @@ func (r *Repository) OverviewCounts(ctx context.Context, now time.Time) (applica
 			out.ApplicableBySeverity[key] = count
 		case "finding":
 			out.OpenFindingsByConfidence[key] = count
+		case "kev":
+			out.KnownExploitedApplicable = count
 		case "review":
 			out.RiskAcceptancesDueWithin30Days = count
 		}

@@ -67,6 +67,40 @@ function UnmatchedCriteriaBadge({ count }: { count: number }) {
     <Badge tone="warning">{t('security.criteriaNotEvaluated', { count })}</Badge>
   ) : null;
 }
+function CriteriaIncompleteBadge({
+  advisory,
+}: {
+  advisory: Pick<Advisory, 'criteriaIncomplete' | 'criteriaSkipped' | 'criteriaChangedUpstream'>;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      {advisory.criteriaIncomplete && (
+        <Badge tone="warning">
+          {t('security.criteriaIncomplete', { count: advisory.criteriaSkipped })}
+        </Badge>
+      )}
+      {advisory.criteriaChangedUpstream && (
+        <Badge tone="warning">{t('security.criteriaChangedUpstream')}</Badge>
+      )}
+    </>
+  );
+}
+function KnownExploitedBadge({
+  advisory,
+}: {
+  advisory: Pick<Advisory, 'knownExploited' | 'kevDueDate'>;
+}) {
+  const { t } = useI18n();
+  if (!advisory.knownExploited) return null;
+  return (
+    <Badge tone="danger">
+      {advisory.kevDueDate
+        ? t('security.knownExploitedDue', { date: advisory.kevDueDate })
+        : t('security.knownExploited')}
+    </Badge>
+  );
+}
 function Field({
   label,
   value,
@@ -314,7 +348,9 @@ export function AdvisoriesScreen() {
               header: t('security.title'),
               render: (x: Advisory) => (
                 <>
-                  {x.title} <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />
+                  {x.title} <KnownExploitedBadge advisory={x} />{' '}
+                  <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />{' '}
+                  <CriteriaIncompleteBadge advisory={x} />
                 </>
               ),
             },
@@ -602,8 +638,9 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
         <>
           <p>
             {a.reference} · <Label kind="severity" value={a.severity} /> ·{' '}
-            <Label kind="status" value={a.status} />{' '}
-            <UnmatchedCriteriaBadge count={a.unmatchedCriteria} />
+            <Label kind="status" value={a.status} /> <KnownExploitedBadge advisory={a} />{' '}
+            <UnmatchedCriteriaBadge count={a.unmatchedCriteria} />{' '}
+            <CriteriaIncompleteBadge advisory={a} />
           </p>
           <section>
             <h2>{t('security.facts')}</h2>
@@ -699,6 +736,9 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
           )}
           {warnings.includes('unmatched_criteria') && (
             <p role="status">{t('security.actionWarningUnmatched')}</p>
+          )}
+          {warnings.includes('criteria_incomplete') && (
+            <p role="status">{t('security.actionWarningIncomplete')}</p>
           )}
           {summary.data && (
             <section>

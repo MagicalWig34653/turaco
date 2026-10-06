@@ -8307,7 +8307,7 @@ paths:
       summary: Mark not applicable
       description: Requires `security.manage`. Every edit or action requires `expectedVersion` for optimistic concurrency.
         Requires a reason code; `other` also requires `security.accept_risk` (403 otherwise). The response includes
-        `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated. Responses are no-store;
+        `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated and `criteria_incomplete` if the feed left affected software out. Responses are no-store;
         mutations are audited.
       security:
       - sessionAuth: []
@@ -8413,7 +8413,7 @@ paths:
       operationId: resolveSecurityAdvisory
       summary: Resolve advisory
       description: Requires `security.manage`. Every edit or action requires `expectedVersion` for optimistic concurrency.
-        The response includes `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated.
+        The response includes `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated and `criteria_incomplete` if the feed left affected software out.
         Responses are no-store; mutations are audited.
       security:
       - sessionAuth: []
@@ -8449,7 +8449,7 @@ paths:
       operationId: archiveSecurityAdvisory
       summary: Archive advisory
       description: Requires `security.manage`. Every edit or action requires `expectedVersion` for optimistic concurrency.
-        The response includes `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated.
+        The response includes `warnings`, containing `unmatched_criteria` if any criteria could not be evaluated and `criteria_incomplete` if the feed left affected software out.
         Responses are no-store; mutations are audited.
       security:
       - sessionAuth: []
@@ -14692,20 +14692,24 @@ components:
         residualRisk: {type: string, enum: [none, low, medium, high, unknown], description: Unknown when the Advisory is outside the applicable family, matching is missing/incomplete/truncated or matched inventory ingestion is over 48 hours old. Otherwise derived from severity and live probable/potential findings including accepted risk.}
     SecurityOverview:
       type: object
-      required: [source, applicableBySeverity, openFindingsByConfidence, overdueTasks, riskAcceptancesDueWithin30Days]
+      required: [source, applicableBySeverity, openFindingsByConfidence, knownExploitedApplicable, overdueTasks, riskAcceptancesDueWithin30Days]
       properties:
         source: {type: string, enum: [turaco_derived]}
         applicableBySeverity: {type: object, additionalProperties: {type: integer}}
         openFindingsByConfidence: {type: object, additionalProperties: {type: integer}}
+        knownExploitedApplicable: {type: integer, description: Live advisories listed in the CISA Known Exploited Vulnerabilities catalog.}
         overdueTasks: {type: integer}
         riskAcceptancesDueWithin30Days: {type: integer}
     SecurityAdvisory:
       type: object
-      required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, version, createdAt, updatedAt]
+      required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, criteriaIncomplete, criteriaSkipped, criteriaChangedUpstream, knownExploited, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string}
         source: {type: string}
+        knownExploited: {type: boolean, description: Listed in the CISA Known Exploited Vulnerabilities catalog. Set only by the feed sync, never by manual edit.}
+        knownExploitedAddedAt: {type: string, format: date, nullable: true}
+        kevDueDate: {type: string, format: date, nullable: true, description: Remediation due date of the KEV catalog.}
         externalId: {type: string, nullable: true}
         title: {type: string}
         summary: {type: string, nullable: true}
@@ -14723,6 +14727,9 @@ components:
         matchTruncated: {type: boolean}
         editedByUser: {type: boolean}
         unmatchedCriteria: {type: integer, minimum: 0, description: Criteria that could not be matched to a Software Product and therefore were not evaluated.}
+        criteriaIncomplete: {type: boolean, description: The feed adapter had to leave affected software out of the criteria (too many products or rules, unusual versions). Analysts must not treat the criteria as complete.}
+        criteriaSkipped: {type: integer, minimum: 0, description: How many criteria or rules were left out (see criteriaIncomplete).}
+        criteriaChangedUpstream: {type: boolean, description: The feed reported different criteria for this advisory after an analyst decision; the criteria were kept as they are. Cleared by an analyst criteria edit.}
         createdBy: {type: string, nullable: true}
         applicableAt: {type: string, format: date-time, nullable: true}
         resolvedAt: {type: string, format: date-time, nullable: true}
@@ -14738,8 +14745,8 @@ components:
           properties:
             warnings:
               type: array
-              description: Contains unmatched_criteria when any criteria could not be evaluated; empty otherwise.
-              items: {type: string, enum: [unmatched_criteria]}
+              description: Contains unmatched_criteria when any criteria could not be evaluated and criteria_incomplete when the feed left affected software out; empty otherwise.
+              items: {type: string, enum: [unmatched_criteria, criteria_incomplete]}
     SecurityCriterion:
       type: object
       required: [id, position, normalization, matchMethod, rules]

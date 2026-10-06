@@ -137,11 +137,13 @@ func (s *Service) Progress(ctx context.Context, p Principal, id string) (Progres
 
 // Overview is a current, Turaco-derived feed seed for F8c.
 type Overview struct {
-	Source                         string         `json:"source"`
-	ApplicableBySeverity           map[string]int `json:"applicableBySeverity"`
-	OpenFindingsByConfidence       map[string]int `json:"openFindingsByConfidence"`
-	OverdueTasks                   int            `json:"overdueTasks"`
-	RiskAcceptancesDueWithin30Days int            `json:"riskAcceptancesDueWithin30Days"`
+	Source                   string         `json:"source"`
+	ApplicableBySeverity     map[string]int `json:"applicableBySeverity"`
+	OpenFindingsByConfidence map[string]int `json:"openFindingsByConfidence"`
+	// KnownExploitedApplicable counts live advisories listed in the CISA KEV catalog; they are the first to handle.
+	KnownExploitedApplicable       int `json:"knownExploitedApplicable"`
+	OverdueTasks                   int `json:"overdueTasks"`
+	RiskAcceptancesDueWithin30Days int `json:"riskAcceptancesDueWithin30Days"`
 }
 
 type overviewReader interface {

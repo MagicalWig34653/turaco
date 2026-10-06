@@ -4,6 +4,8 @@ import type { FeedEntry, Severity } from './types';
 const titles: Record<string, MessageKey> = {
   'briefing.feed.manual_item': 'briefing.feed.manual_item',
   'briefing.feed.security_advisory': 'briefing.feed.security_advisory',
+  'briefing.feed.security_advisory_kev': 'briefing.feed.security_advisory_kev',
+  'briefing.feed.advisory_feed': 'briefing.feed.advisory_feed',
   'briefing.feed.risk_review_due': 'briefing.feed.risk_review_due',
   'briefing.feed.maintenance': 'briefing.feed.maintenance',
   'briefing.feed.milestone_due': 'briefing.feed.milestone_due',

@@ -20,7 +20,7 @@ import (
 
 // Service performs Security operations. Audit actions are security.advisory.<operation> (created,
 // imported, updated, criteria_changed, criteria_normalized, analysis_started, applicable,
-// not_applicable, remediation_planned, remediation_started, resolved, archived, matched) and
+// not_applicable, remediation_planned, remediation_started, resolved, archived, matched, kev_enriched) and
 // security.finding.<operation> (investigating, risk_accepted, false_positive, remediation_planned,
 // remediation_started, reopened, remediated, observed_again), written in the mutation's transaction
 // with ids, states, counts and reason codes only: advisory titles, summaries, URLs and device names are
@@ -34,6 +34,7 @@ type Service struct {
 	graph           *relationships.Graph
 	names           AssigneeNames
 	relationshipsDB relationships.Querier
+	feeds           FeedSources
 }
 
 // NewService wires the Security use cases over the Endpoints inventory contract.

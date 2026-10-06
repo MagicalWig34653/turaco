@@ -7,10 +7,12 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 // CriterionInput describes affected software: a Software Product by id, or a product name (with an
@@ -34,12 +36,17 @@ type AdvisoryInput struct {
 	PublishedAt *time.Time
 	ModifiedAt  *time.Time
 	Criteria    []CriterionInput
+	// CriteriaSkipped counts affected software the feed left out of Criteria (feed records only).
+	CriteriaSkipped int
 }
 
 // FromRecord converts a normalized feed record.
 func FromRecord(r advisories.AdvisoryRecord) AdvisoryInput {
 	in := AdvisoryInput{Source: r.Source, ExternalID: r.ExternalID, Title: r.Title, Summary: r.Summary, Severity: r.Severity,
-		SourceURL: r.SourceURL, PublishedAt: r.PublishedAt, ModifiedAt: r.ModifiedAt}
+		SourceURL: r.SourceURL, PublishedAt: r.PublishedAt, ModifiedAt: r.ModifiedAt, CriteriaSkipped: max(0, r.CriteriaSkipped)}
+	if len(r.References) > 0 {
+		in.Summary = withReferences(in.Summary, r.References)
+	}
 	for _, c := range r.Criteria {
 		ci := CriterionInput{ProductName: c.ProductName, Publisher: c.Publisher, OSPlatform: c.OSPlatform}
 		for _, rule := range c.Rules {
@@ -48,6 +55,28 @@ func FromRecord(r advisories.AdvisoryRecord) AdvisoryInput {
 		in.Criteria = append(in.Criteria, ci)
 	}
 	return in
+}
+
+// withReferences appends the source's reference URLs to the summary text as long as the summary limit allows.
+func withReferences(summary string, refs []string) string {
+	out := summary
+	header := "References:"
+	added := false
+	for _, ref := range refs {
+		add := "\n" + ref
+		if !added {
+			add = "\n\n" + header + add
+			if summary == "" {
+				add = add[2:]
+			}
+		}
+		if utf8.RuneCountInString(out)+utf8.RuneCountInString(add) > maxSummary {
+			break
+		}
+		out += add
+		added = true
+	}
+	return out
 }
 
 // cleanCriteria validates criteria without resolving products.
@@ -212,6 +241,8 @@ func cleanAdvisory(in AdvisoryInput) (Advisory, error) {
 	if a.ModifiedAt, err = checkTime("modifiedAt", in.ModifiedAt); err != nil {
 		return Advisory{}, err
 	}
+	a.CriteriaSkipped = min(max(0, in.CriteriaSkipped), 100000)
+	a.CriteriaIncomplete = a.CriteriaSkipped > 0
 	return a, nil
 }
 
@@ -326,6 +357,12 @@ type ImportResult struct {
 // (reported by index) without stopping the batch. The source "manual" is reserved. Each record commits on
 // its own. Requires security.manage.
 func (s *Service) Import(ctx context.Context, c Caller, p Principal, records []AdvisoryInput) (ImportResult, error) {
+	return s.importBatch(ctx, c, p, records, c.isFeed())
+}
+
+// importBatch is Import; feed selects the feed rules (archived advisories are rejected, not fatal; analyst
+// decisions are never undone). The feed sync sets it whatever actor runs it (the admin command runs as an operator).
+func (s *Service) importBatch(ctx context.Context, c Caller, p Principal, records []AdvisoryInput, feed bool) (ImportResult, error) {
 	if err := c.validate(); err != nil {
 		return ImportResult{}, err
 	}
@@ -399,7 +436,7 @@ func (s *Service) Import(ctx context.Context, c Caller, p Principal, records []A
 			}
 			continue
 		}
-		outcome, err := s.importOne(ctx, c, p, a, crit)
+		outcome, err := s.importOne(ctx, c, p, a, crit, feed)
 		if err != nil {
 			return res, fmt.Errorf("import record %d: %w", i, err)
 		}
@@ -411,6 +448,12 @@ func (s *Service) Import(ctx context.Context, c Caller, p Principal, records []A
 		case "reanalyze":
 			res.Updated++
 			res.Reanalyze++
+		case outcomeRejected:
+			// A feed meets an advisory an analyst archived (terminal): counted, never fatal, so it cannot wedge the sync.
+			res.Rejected++
+			if len(res.Errors) < MaxImportErrors {
+				res.Errors = append(res.Errors, ImportError{Index: i, Message: "the advisory is archived"})
+			}
 		default:
 			res.Unchanged++
 		}
@@ -426,7 +469,12 @@ func sameStr(a, b *string) bool {
 	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }
 
-func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advisory, crit []Criterion) (string, error) {
+const outcomeRejected = "rejected"
+
+// isFeed reports whether the caller is the advisory feed sync: its imports never undo analyst decisions.
+func (c Caller) isFeed() bool { return c.Actor == audit.SystemActor(feedActor) }
+
+func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advisory, crit []Criterion, feed bool) (string, error) {
 	outcome := "unchanged"
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 		if err := s.store.LockAdvisorySourceTx(ctx, tx, in.Source, *in.ExternalID); err != nil {
@@ -448,6 +496,10 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 			return err
 		}
 		if cur.Status == AdvisoryArchived {
+			if feed {
+				outcome = outcomeRejected
+				return nil
+			}
 			return invalid("archived advisories cannot be imported")
 		}
 		if in.ModifiedAt == nil || (cur.ModifiedAt != nil && !in.ModifiedAt.After(*cur.ModifiedAt)) {
@@ -484,20 +536,46 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 			changed = append(changed, "modifiedAt")
 		}
 		criteriaChanged := criteriaKey(old) != criteriaKey(crit)
-		if criteriaChanged {
-			changed = append(changed, "criteria")
-			next.CriteriaRevision = cur.CriteriaRevision + 1
+		// A feed never undoes an analyst decision: it replaces criteria only while the advisory is still
+		// being analyzed (new, analyzing) or applicable (then back to analyzing, because the decision
+		// rested on the old criteria). In every other status the upstream difference is only flagged.
+		withhold := feed && criteriaChanged && !slices.Contains(criteriaEditable, cur.Status)
+		meta := map[string]any{"via": "import"}
+		if withhold {
+			criteriaChanged = false
+			if !cur.CriteriaChangedUpstream {
+				next.CriteriaChangedUpstream = true
+				changed = append(changed, "criteriaChangedUpstream")
+			}
+			meta["criteriaChangedUpstream"] = true
+		} else {
+			if cur.CriteriaIncomplete != in.CriteriaIncomplete || cur.CriteriaSkipped != in.CriteriaSkipped {
+				next.CriteriaIncomplete, next.CriteriaSkipped = in.CriteriaIncomplete, in.CriteriaSkipped
+				changed = append(changed, "criteriaIncomplete")
+			}
+			if criteriaChanged {
+				changed = append(changed, "criteria")
+				next.CriteriaRevision = cur.CriteriaRevision + 1
+			}
 		}
 		if len(changed) == 0 {
 			return nil
 		}
+		meta["changedFields"] = changed
 		reason := ""
 		outcome = "updated"
-		if cur.Status == AdvisoryApplicable || (criteriaChanged && !slices.Contains(criteriaEditable, cur.Status)) {
+		switch {
+		case feed:
+			if criteriaChanged && cur.Status == AdvisoryApplicable {
+				reason = ReasonCriteriaChanged
+			}
+		case cur.Status == AdvisoryApplicable || (criteriaChanged && !slices.Contains(criteriaEditable, cur.Status)):
 			reason = ReasonFeedChanged
 			if criteriaChanged {
 				reason = ReasonCriteriaChanged
 			}
+		}
+		if reason != "" {
 			next.Status, next.StatusReason, next.ApplicableAt = AdvisoryAnalyzing, &reason, nil
 			outcome = "reanalyze"
 		}
@@ -510,7 +588,7 @@ func (s *Service) importOne(ctx context.Context, c Caller, p Principal, in Advis
 		if reason != "" {
 			op = "reanalysis_started"
 		}
-		if _, err := s.commitAdvisory(ctx, tx, c, cur, next, op, reason, map[string]any{"changedFields": changed, "via": "import"}); err != nil {
+		if _, err := s.commitAdvisory(ctx, tx, c, cur, next, op, reason, meta); err != nil {
 			return err
 		}
 		if criteriaChanged {
@@ -635,6 +713,13 @@ func (s *Service) EditCriteria(ctx context.Context, c Caller, p Principal, id st
 		}
 		if criteriaKey(old) == criteriaKey(crit) {
 			out, crit = cur, old
+			if cur.CriteriaChangedUpstream {
+				// The analyst reviewed the upstream change and keeps the criteria.
+				next := cur
+				next.CriteriaChangedUpstream = false
+				out, err = s.commitAdvisory(ctx, tx, c, cur, next, "criteria_upstream_acknowledged", "", nil)
+				return err
+			}
 			return nil
 		}
 		if err := s.store.ReplaceCriteriaTx(ctx, tx, cur.ID, crit); err != nil {
@@ -642,6 +727,7 @@ func (s *Service) EditCriteria(ctx context.Context, c Caller, p Principal, id st
 		}
 		next := cur
 		next.CriteriaRevision++
+		next.CriteriaChangedUpstream = false
 		reason := ""
 		if cur.Status == AdvisoryApplicable {
 			next.Status, next.StatusReason, next.ApplicableAt = AdvisoryAnalyzing, strPtr(ReasonCriteriaChanged), nil

@@ -4,6 +4,9 @@
 
 | Variable | Type | Required | Secret | Default | Description |
 |---|---|---|---|---|---|
+| `ADVISORY_SOURCES` | string | false | false | `nvd,cisa_kev` | Comma-separated advisory feeds to synchronize: `nvd` (NVD API 2.0) and/or `cisa_kev` (CISA Known Exploited Vulnerabilities catalog). Used when ADVISORY_SYNC is on and by the admin command. |
+| `ADVISORY_SYNC` | bool | false | false | `false` | Synchronize security advisories from the public NVD and CISA KEV feeds (scheduled worker job security.advisory_sync and `turaco-admin security sync-feeds`). No account is needed. Imported advisories start in status new; criteria come from the feed's CPE data and analysts decide applicability. |
+| `ADVISORY_SYNC_INTERVAL` | duration | false | false | `6h` | How often the advisory sync job runs; at least 1h. |
 | `APP_ENV` | string | false | false | `development` | Runtime environment name. |
 | `AUTH_EMERGENCY_LOGIN_ENABLED` | bool | false | false | `false` | Expose POST /api/v1/auth/emergency-login for the local break-glass account (created with turaco-admin). Every use is audited and logged at error level. |
 | `AUTOTASK_SYNC` | bool | false | false | `false` | Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible "not configured" state. |
@@ -33,6 +36,7 @@
 | `LDAP_USER_BASE_DN` | string | false | false | `` | Search base for user accounts. Required when LDAP_URL is set. |
 | `LDAP_USER_FILTER` | string | false | false | `` | User search filter. Default depends on LDAP_DIRECTORY_TYPE. |
 | `LOG_LEVEL` | string | false | false | `info` | Application log level. |
+| `NVD_API_KEY_FILE` | string | false | true | `` | Path to a file containing an optional NVD API key (for example a Docker secret). With a key the NVD rate limit rises from 5 to 50 requests per 30 seconds. The key is sent only to the NVD API and never stored or logged. |
 | `S3_ACCESS_KEY_ID` | string | false | true | `` | S3 access key when required. |
 | `S3_BUCKET` | string | false | false | `turaco-dev` | Object-storage bucket/namespace. |
 | `S3_ENDPOINT` | string | false | false | `` | S3-compatible endpoint; set for non-AWS/local providers. |
