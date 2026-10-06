@@ -4702,7 +4702,7 @@ paths:
         - name: hasFinding
           in: query
           description: Open finding kind. `assignment_ineffective` is Turaco-derived and distinct from provider-reported errors.
-          schema: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective]}
+          schema: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective, deployment_evidence_conflict]}
         - name: osVersion
           in: query
           description: OS version prefix.
@@ -10051,6 +10051,284 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/start:
+    post:
+      operationId: startDeployment
+      summary: Start a scheduled Deployment.
+      description: "Moves a `scheduled` Deployment through `resolving_targets` to `running`; the first ring is activated by the engine. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/pause:
+    post:
+      operationId: pauseDeployment
+      summary: Pause a running Deployment.
+      description: "No new assignments are requested while paused; statusReason is `manual_pause`. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/resume:
+    post:
+      operationId: resumeDeployment
+      summary: Resume a paused Deployment.
+      description: "Allowed only while the paused reason can be lifted (a revoked version or blocked product keeps it paused). Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/halt:
+    post:
+      operationId: haltDeployment
+      summary: Halt a Deployment (kill switch).
+      description: "Needs a reason code. Stops all rings; assignments are cleared by the engine. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentHalt'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}/halt:
+    post:
+      operationId: haltDeploymentRing
+      summary: Halt one ring.
+      description: "Needs a reason code. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentHalt'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}/resume:
+    post:
+      operationId: resumeDeploymentRing
+      summary: Resume a halted ring.
+      description: "Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}/promote:
+    post:
+      operationId: promoteDeploymentRing
+      summary: Promote an awaiting ring.
+      description: "Allowed from `awaiting_promotion` when the soak, threshold, fresh-evidence, approval and Change window gates pass. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}/request-approval:
+    post:
+      operationId: requestDeploymentRingApproval
+      summary: Request the promotion approval of a ring.
+      description: "Exactly one of approverUserId and approverTeamId; the approver needs `deployments.approve` and must not have planned the deployment. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentRingApprovalRequest'}
+      responses:
+        '200':
+          description: The Deployment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/progress:
+    get:
+      operationId: getDeploymentProgress
+      summary: Live progress of a Deployment.
+      description: "Same read rule as the plan. Per ring: status, target counts by state, success rate on fresh evidence (null until something was observed), soak remaining and the next gate (previous_ring, resume, none, observations, soak, threshold, fresh_evidence, completion, approval, promotion)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentProgress'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}/targets:
+    get:
+      operationId: listDeploymentRingTargets
+      summary: List the targets of a ring (keyset).
+      description: "Optional `state` filter (400 endpoints.invalid_request for an unknown state). Device names are returned only with `endpoints.view`; otherwise `deviceName` is null and `namesRedacted` is true."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: state, in: query, schema: {$ref: '#/components/schemas/DeploymentTargetState'}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentTargetPage'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/attempts:
+    get:
+      operationId: listDeploymentAttempts
+      summary: List the assignment attempts of a Deployment (keyset).
+      description: "Writer attempts (set or clear assignment) with their outcome code."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentAttemptPage'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -10461,7 +10739,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     DeploymentsConflict:
-      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), Target Set name taken (endpoints.target_set_name_taken), too many editors (endpoints.editors_full), a high-impact ring without window (endpoints.no_window_high_impact) or used by a submitted, approved or scheduled plan (endpoints.target_set_in_use), a gate (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.target_set_archived, endpoints.change_window_invalid, endpoints.approval_required, endpoints.approval_not_required, endpoints.plan_changed) or blocking validation issues (endpoints.deployment_invalid, body DeploymentInvalidError with `issues`)."
+      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), Target Set name taken (endpoints.target_set_name_taken), too many editors (endpoints.editors_full), a high-impact ring without window (endpoints.no_window_high_impact) or used by a submitted, approved or scheduled plan (endpoints.target_set_in_use), a gate (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.target_set_archived, endpoints.change_window_invalid, endpoints.approval_required, endpoints.approval_not_required, endpoints.plan_changed, endpoints.deploy_write_disabled and the execution gates endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required, endpoints.ring_not_awaiting_promotion, endpoints.ring_not_halted) or blocking validation issues (endpoints.deployment_invalid, body DeploymentInvalidError with `issues`)."
       content:
         application/json:
           schema:
@@ -13078,7 +13356,7 @@ components:
       required: [id, kind, deviceId, deviceName, status, detail, raisedAt, resolvedAt]
       properties:
         id: {type: string, format: uuid}
-        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective], description: 'assignment_ineffective is Turaco-derived and distinct from provider_reported_error, which is provider-reported.'}
+        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective], description: 'deployment_evidence_conflict is Turaco-derived (a provider observation contradicts a decided Deployment target); assignment_ineffective is Turaco-derived and distinct from provider_reported_error, which is provider-reported.'}
         deviceId: {type: string, format: uuid}
         deviceName: {type: string}
         status: {type: string, enum: [open, resolved]}
@@ -13378,8 +13656,8 @@ components:
         clauses: {type: array, items: {$ref: '#/components/schemas/TargetClauseResult'}}
     DeploymentStatus:
       type: string
-      enum: [draft, pending_approval, approved, scheduled, cancelled]
-      description: "Planning lifecycle: draft → pending_approval → approved → scheduled (high impact), draft → scheduled (otherwise), any planning status → cancelled. A rejected plan Approval returns the plan to draft with statusReason approval_rejected; an approver who lost deployments.approve returns it with approver_not_authorized. Both clear approvalId, planSha256, submittedBy and submittedAt."
+      enum: [draft, pending_approval, approved, scheduled, cancelled, resolving_targets, ready, running, paused, completed, completed_with_errors, failed]
+      description: "Execution (F9 G3) continues after scheduled: resolving_targets, ready, running, paused (statusReason says why), completed, completed_with_errors, failed. Planning lifecycle: draft → pending_approval → approved → scheduled (high impact), draft → scheduled (otherwise), any planning status → cancelled. A rejected plan Approval returns the plan to draft with statusReason approval_rejected; an approver who lost deployments.approve returns it with approver_not_authorized. Both clear approvalId, planSha256, submittedBy and submittedAt."
     Deployment:
       type: object
       additionalProperties: false
@@ -13572,6 +13850,100 @@ components:
       properties:
         reason: {type: string, enum: [superseded, no_longer_needed, plan_error, security_risk, other]}
         expectedVersion: {type: integer}
+    DeploymentHalt:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [manual_halt, quality_issue, security_risk, other]}
+        expectedVersion: {type: integer}
+    DeploymentRingApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        approverUserId: {type: string, format: uuid}
+        approverTeamId: {type: string, format: uuid}
+        expectedVersion: {type: integer}
+    DeploymentRingStatus:
+      type: string
+      enum: [pending, active, awaiting_promotion, promoted, halted]
+    DeploymentTargetState:
+      type: string
+      enum: [pending, assignment_requested, awaiting_observation, successful, failed, expired, already_satisfied, not_applicable, cancelled]
+      description: "Observation-derived outcome per target. A provider observation that contradicts a decided state raises the Endpoint Finding deployment_evidence_conflict; the decided state is not changed."
+    DeploymentRingProgress:
+      type: object
+      required: [ringId, ringRunId, position, name, status, counts, nextGate]
+      properties:
+        ringId: {type: string, format: uuid}
+        ringRunId: {type: string, format: uuid}
+        position: {type: integer}
+        name: {type: string}
+        status: {$ref: '#/components/schemas/DeploymentRingStatus'}
+        statusReason: {type: string, nullable: true}
+        activatedAt: {type: string, format: date-time, nullable: true}
+        settledAt: {type: string, format: date-time, nullable: true}
+        awaitingSince: {type: string, format: date-time, nullable: true}
+        promotedAt: {type: string, format: date-time, nullable: true}
+        haltedAt: {type: string, format: date-time, nullable: true}
+        assignmentRequestedAt: {type: string, format: date-time, nullable: true}
+        assignmentClearedAt: {type: string, format: date-time, nullable: true}
+        promotionApprovalStatus: {type: string, nullable: true}
+        approvalRequired: {type: boolean}
+        successThresholdPercent: {type: integer}
+        soakMinutes: {type: integer}
+        counts: {type: object, additionalProperties: {type: integer}, description: Targets per DeploymentTargetState.}
+        freshSuccessful: {type: integer}
+        freshObserved: {type: integer}
+        successRatePercent: {type: number, nullable: true}
+        soakRemainingSeconds: {type: integer}
+        nextGate: {type: string}
+    DeploymentProgress:
+      type: object
+      required: [deployment, rings]
+      properties:
+        deployment: {$ref: '#/components/schemas/Deployment'}
+        rings: {type: array, items: {$ref: '#/components/schemas/DeploymentRingProgress'}}
+    DeploymentTarget:
+      type: object
+      required: [id, deviceId, state, resolvedAt]
+      properties:
+        id: {type: string, format: uuid}
+        deviceId: {type: string, format: uuid}
+        deviceName: {type: string, nullable: true}
+        state: {$ref: '#/components/schemas/DeploymentTargetState'}
+        stateReason: {type: string, nullable: true}
+        resolvedAt: {type: string, format: date-time}
+        assignmentRequestedAt: {type: string, format: date-time, nullable: true}
+        readBackAt: {type: string, format: date-time, nullable: true}
+        expiresAt: {type: string, format: date-time, nullable: true}
+        decidedAt: {type: string, format: date-time, nullable: true}
+        evidenceObservedAt: {type: string, format: date-time, nullable: true}
+    DeploymentTargetPage:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/DeploymentTarget'}}
+        nextCursor: {type: string, nullable: true}
+        namesRedacted: {type: boolean}
+    DeploymentAttempt:
+      type: object
+      required: [id, ringRunId, kind, attempt, operationId, requestedAt, outcomeCode]
+      properties:
+        id: {type: string, format: uuid}
+        ringRunId: {type: string, format: uuid}
+        kind: {type: string, enum: [set_assignment, clear_assignment]}
+        attempt: {type: integer}
+        operationId: {type: string}
+        requestedAt: {type: string, format: date-time}
+        outcomeCode: {type: string, enum: [accepted, transient_error, permanent_error]}
+    DeploymentAttemptPage:
+      type: object
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/DeploymentAttempt'}}
+        nextCursor: {type: string, nullable: true}
     DeploymentInvalidError:
       type: object
       additionalProperties: false
