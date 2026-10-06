@@ -65,6 +65,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/devices/{id}/management-history", mgmt, h.deviceHistory)
 	route("GET /api/v1/devices/{id}/management/diff", mgmt, h.deviceDiff)
 	route("GET /api/v1/directory-groups/{id}/management/diff", mgmt, h.groupDiff)
+	registerSoftware(route, auth, h)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -100,7 +101,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView), DirectoryView: p.Has(permDirView)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView), DirectoryView: p.Has(permDirView),
+		SoftwareView: p.Has(permSoftwareView), SoftwareApprove: p.Has(permSoftwareApprove), SoftwarePackage: p.Has(permSoftwarePackage)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

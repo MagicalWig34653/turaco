@@ -12,9 +12,9 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
-	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	approvalstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/transport"
