@@ -6,7 +6,7 @@
 
 | Interface | Turaco side | Needs a real counterpart? | Easiest way to get one | Effort |
 | --- | --- | --- | --- | --- |
-| Security advisory feeds (CISA KEV, OSV, NVD, MSRC) | F8 port `integrations/advisories` (Fake + import) | **No account needed** | Public APIs; free NVD key optional | Low — can be built now |
+| Security advisory feeds (CISA KEV, OSV, NVD, MSRC) | F8 port `integrations/advisories`; **NVD and CISA KEV adapters implemented** ([advisory feeds](../integrations/advisory-feeds.md)), OSV and MSRC open | **No account needed** | Public APIs; free NVD key optional | Implemented for NVD and KEV |
 | SMTP (notifications) | Implemented (`SMTP_*`) | No | Mailpit in Docker | Very low |
 | LDAP / Active Directory sync, Kerberos SSO | Implemented (F1) | Yes (any LDAP) | Samba AD DC or OpenLDAP in Docker | Low–medium |
 | OIDC login (Entra later) | Planned (ADR-0013) | Yes | Keycloak in Docker for development; free Entra tenant for the real thing | Low (Keycloak) |
@@ -19,7 +19,7 @@
 
 ## Things that need no account
 
-- **CISA Known Exploited Vulnerabilities** is a public JSON feed with no key. **OSV.dev** has a free public API without a key. **NVD API 2.0** is free; a key (requested by e-mail) raises the rate limit. **Microsoft Security Update Guide** data is public. These cover the F8 "live advisory feeds" gap: a real adapter for KEV + OSV (+ NVD) can be built and tested against the live services today. *verify rate limits and terms of use.*
+- **CISA Known Exploited Vulnerabilities** is a public JSON feed with no key. **OSV.dev** has a free public API without a key. **NVD API 2.0** is free; a key (requested by e-mail) raises the rate limit. **Microsoft Security Update Guide** data is public. NVD and KEV adapters exist and can be tried live with `TURACO_LIVE_FEED_TESTS=1` or `turaco-admin security sync-feeds` ([advisory feeds](../integrations/advisory-feeds.md)); OSV and MSRC adapters remain. *verify rate limits and terms of use.*
 - **SMTP:** run Mailpit (`axllent/mailpit`, ports 1025/8025) and set `SMTP_HOST=localhost`, `SMTP_PORT=1025`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM`, `EMAIL_BASE_URL` on the worker (see [local development](local-development.md)).
 - **S3:** already part of `make infra-up`.
 
@@ -62,7 +62,7 @@ Notifications to Teams need a tenant (the same trial tenant as above) and either
 
 ## Practical order
 
-1. Build real adapters for the public advisory feeds (no account).
+1. ~~Build real adapters for the public advisory feeds~~ done for NVD and CISA KEV; OSV and MSRC remain.
 2. ~~Add Mailpit, Keycloak and a Samba AD container for realistic local testing.~~ Done: optional `make lab-up` compose project, see [lab services](lab-services.md).
 3. Try the Business Premium trial for the Intune/Graph client; run IntuneGet's web app against it once an Entra app exists.
 4. Ask Kaseya/Datto about an Autotask sandbox in parallel (long lead time).

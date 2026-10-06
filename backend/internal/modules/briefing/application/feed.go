@@ -52,9 +52,14 @@ type FeedResult struct {
 	Truncated   map[string]bool `json:"truncated"`
 	Unavailable []FeedFailure   `json:"unavailable"`
 }
+
+// kevTitleKey is the title key of an advisory listed in the CISA Known Exploited Vulnerabilities catalog.
+const kevTitleKey = "briefing.feed.security_advisory_kev"
+
 type SecurityFeed interface {
 	ApplicableAdvisorySummaries(context.Context, securitypublic.ReadScope) ([]securitypublic.ApplicableSummary, error)
 	RiskReviewsDuePage(context.Context, securitypublic.ReadScope) (securitypublic.RiskReviewPage, error)
+	AdvisoryFeedHealth(context.Context) ([]securitypublic.FeedHealth, error)
 }
 type PlanningFeed interface {
 	UpcomingMaintenance(context.Context, time.Time, time.Time, planningpublic.MaintenanceScope) ([]planningpublic.UpcomingMaintenance, bool, error)
@@ -176,10 +181,14 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			more := false
 			for _, x := range a {
 				sev := SeverityWarning
-				if x.Severity == "critical" {
+				if x.Severity == "critical" || x.KnownExploited {
 					sev = SeverityCritical
 				}
-				v = append(v, FeedEntry{Kind: "security_advisory", Severity: sev, TitleKey: "briefing.feed.security_advisory", Params: map[string]any{"reference": x.Reference, "title": x.Title}, Count: count(x.AffectedDevices), Reference: &FeedReference{"security_advisory", x.ID}, LinkPath: "/security/advisories/" + x.ID, Source: "security"})
+				entry := FeedEntry{Kind: "security_advisory", Severity: sev, TitleKey: "briefing.feed.security_advisory", Params: map[string]any{"reference": x.Reference, "title": x.Title}, Count: count(x.AffectedDevices), Reference: &FeedReference{"security_advisory", x.ID}, LinkPath: "/security/advisories/" + x.ID, Source: "security"}
+				if x.KnownExploited {
+					entry.TitleKey, entry.DueAt = kevTitleKey, x.KEVDueDate
+				}
+				v = append(v, entry)
 				more = more || x.Truncated
 			}
 			add("security_advisory", v, more)
@@ -200,6 +209,27 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 				v = append(v, FeedEntry{Kind: "risk_review_due", Severity: sev, TitleKey: "briefing.feed.risk_review_due", Params: map[string]any{"reference": x.FindingReference}, Reference: &FeedReference{"security_finding", x.FindingID}, LinkPath: "/security/findings/" + x.FindingID, DueAt: &d, Source: "security"})
 			}
 			add("risk_review_due", v, r.NextCursor != "")
+		}
+		fh, e := sourceCall(ctx, s.sources.Security.AdvisoryFeedHealth)
+		if e != nil {
+			fail("advisory_feed", e)
+		} else {
+			v := []FeedEntry{}
+			for _, x := range fh {
+				reason := x.LastError
+				if reason == "" && x.Stale {
+					reason = "stale"
+				}
+				if reason == "" {
+					continue
+				}
+				at := x.LastSuccessAt
+				if at == nil {
+					at = x.LastAttemptAt
+				}
+				v = append(v, FeedEntry{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.advisory_feed", Params: map[string]any{"source": x.Source, "reason": reason}, OccurredAt: at, LinkPath: "/security/advisories", Source: "security"})
+			}
+			add("advisory_feed", v, false)
 		}
 	}
 	if s.sources.Planning != nil {
@@ -338,6 +368,9 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 		a, b := out.Entries[i], out.Entries[j]
 		if rank(a.Severity) != rank(b.Severity) {
 			return rank(a.Severity) < rank(b.Severity)
+		}
+		if ka, kb := a.TitleKey == kevTitleKey, b.TitleKey == kevTitleKey; ka != kb {
+			return ka // known exploited advisories come first within their severity
 		}
 		ta, tb := time.Time{}, time.Time{}
 		if a.DueAt != nil {

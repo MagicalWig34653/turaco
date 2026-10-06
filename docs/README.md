@@ -59,6 +59,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 - [Intune](integrations/intune.md)
 - [Intune Assignment Intelligence](integrations/intune-assignment-intelligence.md)
 - [Autotask](integrations/autotask.md)
+- [Advisory feeds (NVD, CISA KEV)](integrations/advisory-feeds.md)
 - [Teams and Email](integrations/teams-email.md)
 
 ## Decisions

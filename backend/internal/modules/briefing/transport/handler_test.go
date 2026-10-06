@@ -223,6 +223,9 @@ type permissionSecurity struct{}
 func (permissionSecurity) ApplicableAdvisorySummaries(context.Context, securitypublic.ReadScope) ([]securitypublic.ApplicableSummary, error) {
 	return []securitypublic.ApplicableSummary{{ID: "adv", Reference: "ADV-1", Title: "secret advisory", Severity: "critical"}}, nil
 }
+func (permissionSecurity) AdvisoryFeedHealth(context.Context) ([]securitypublic.FeedHealth, error) {
+	return nil, nil
+}
 func (permissionSecurity) RiskReviewsDuePage(context.Context, securitypublic.ReadScope) (securitypublic.RiskReviewPage, error) {
 	return securitypublic.RiskReviewPage{}, nil
 }

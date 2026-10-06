@@ -1,11 +1,12 @@
 // Package advisories is the adapter boundary to security advisory feeds
 // (docs/product/f8-security-briefing-design.md, decision B1).
 //
-// Only the internal side exists so far: the normalized record types the Security module imports, the
-// Provider contract a feed adapter implements, an in-memory Fake for tests and local development and a
-// placeholder that reports "not configured". Real feeds (NVD, CISA KEV, vendor bulletins, MSRC) are later
-// adapters; their DTOs never cross this boundary: providers return the normalized records below. The
-// same records are accepted by the bounded JSON import (POST /api/v1/security/advisories/import).
+// The port holds the normalized record types the Security module imports, the Provider contract a feed
+// adapter implements, an in-memory Fake for tests and local development and a placeholder that reports
+// "not configured". Real accountless adapters live in the sub-packages nvd (NVD API 2.0) and cisakev
+// (CISA Known Exploited Vulnerabilities catalog); OSV, vendor bulletins and MSRC are later adapters.
+// Provider DTOs never cross this boundary: adapters return the normalized records below. The same
+// records are accepted by the bounded JSON import (POST /api/v1/security/advisories/import).
 //
 // Every field is untrusted input: the consumer validates lengths, characters, enumerations and URLs.
 package advisories
@@ -13,6 +14,8 @@ package advisories
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
@@ -65,6 +68,84 @@ type AdvisoryRecord struct {
 	ModifiedAt  *time.Time
 	SourceURL   string
 	Criteria    []Criteria
+	// CriteriaSkipped counts affected software the adapter had to leave out of Criteria (too many products
+	// or rules, versions it cannot carry); above zero the criteria are incomplete and analysts must not
+	// treat them as complete.
+	CriteriaSkipped int `json:",omitempty"`
+	// References are https URLs the source lists for the advisory (bounded by the adapter).
+	References []string `json:",omitempty"`
+}
+
+// Errors adapters return; messages never contain URLs, keys or response bodies.
+var (
+	// ErrRateLimited reports that the source throttled the client beyond the retry budget.
+	ErrRateLimited = errors.New("advisories: the source rate limit was exceeded")
+	// ErrUnavailable reports a network failure, timeout or an unexpected status of the source.
+	ErrUnavailable = errors.New("advisories: the source is unavailable")
+	// ErrInvalidResponse reports a malformed, oversized or implausible response.
+	ErrInvalidResponse = errors.New("advisories: the source returned an invalid response")
+)
+
+// SyncResult is one bounded incremental read of a feed. Through is the end of the last window that was
+// read completely: the next run continues from it. Complete is false when the record bound stopped the
+// read before the present was reached or an error ended the read early (Records and Through then hold the
+// progress made so far).
+type SyncResult struct {
+	Records  []AdvisoryRecord
+	Through  time.Time
+	Complete bool
+}
+
+// SameHostHTTPS is an http.Client CheckRedirect that follows a redirect only to the same host over https
+// (at most 3 hops); every other redirect ends with the redirect response itself, which adapters treat as
+// "unavailable". Request headers such as an API key therefore never reach another host.
+func SameHostHTTPS(req *http.Request, via []*http.Request) error {
+	if len(via) > 3 || req.URL.Scheme != "https" || req.URL.Host != via[0].URL.Host {
+		return http.ErrUseLastResponse
+	}
+	return nil
+}
+
+// Syncer is an incremental advisory feed (NVD).
+type Syncer interface {
+	// Sync reads advisories modified since the given time (zero: the adapter's default window).
+	Sync(ctx context.Context, since time.Time) (SyncResult, error)
+	// ByID reads the advisories with the given ids (CVE ids); unknown ids are skipped.
+	ByID(ctx context.Context, ids []string) ([]AdvisoryRecord, error)
+}
+
+// KEVEntry is the CISA Known Exploited Vulnerabilities enrichment of one CVE.
+type KEVEntry struct {
+	CVEID              string
+	DateAdded          *time.Time
+	DueDate            *time.Time
+	RequiredAction     string
+	KnownRansomwareUse bool
+}
+
+// KEVCatalog is a conditional read of the KEV catalog. NotModified is true when the ETag the caller sent
+// is still current (Entries is then empty).
+type KEVCatalog struct {
+	Entries     []KEVEntry
+	ETag        string
+	NotModified bool
+}
+
+// KEVSource reads the Known Exploited Vulnerabilities catalog.
+type KEVSource interface {
+	Catalog(ctx context.Context, etag string) (KEVCatalog, error)
+}
+
+// ReadLimited reads at most max bytes; a longer body is ErrInvalidResponse.
+func ReadLimited(r io.Reader, max int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, max+1))
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	if int64(len(b)) > max {
+		return nil, ErrInvalidResponse
+	}
+	return b, nil
 }
 
 // Provider reads advisories from a feed.

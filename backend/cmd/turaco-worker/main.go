@@ -127,6 +127,10 @@ func main() {
 		logger.Error("configure security risk reminders", "error", err)
 		os.Exit(1)
 	}
+	if err := registerAdvisorySync(runner, pool); err != nil {
+		logger.Error("configure advisory feed synchronization", "error", err)
+		os.Exit(1)
+	}
 	if err := registerSoftwarePackageSync(runner, pool, cfg.SoftwareProviderSync); err != nil {
 		logger.Error("configure software package synchronization", "error", err)
 		os.Exit(1)
@@ -388,6 +392,27 @@ func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enable
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.SoftwarePackageSyncJobType, DedupeKey: endpointsapp.SoftwarePackageSyncJobType,
 		Interval: endpointsapp.SoftwarePackageSyncInterval, MaxAttempts: 3})
+}
+
+// registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
+// when ADVISORY_SYNC is on. The dedupe key keeps several workers from queueing the same run.
+func registerAdvisorySync(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	cfg, err := config.LoadAdvisoryFeeds()
+	if err != nil {
+		return err
+	}
+	service, err := wiring.SecurityWithFeeds(pool, cfg)
+	if err != nil {
+		return err
+	}
+	if err := runner.Register(securityapp.AdvisorySyncJobType, securityapp.AdvisorySyncJobTimeout, service.HandleAdvisorySync); err != nil {
+		return err
+	}
+	if !cfg.Enabled {
+		return nil
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: securityapp.AdvisorySyncJobType, DedupeKey: securityapp.AdvisorySyncJobType,
+		Interval: cfg.Interval, MaxAttempts: 2})
 }
 
 func registerSecurityMatching(runner *jobs.Runner, pool *pgxpool.Pool) error {

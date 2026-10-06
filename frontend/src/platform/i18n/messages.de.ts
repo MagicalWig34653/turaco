@@ -951,6 +951,9 @@ export const de: Record<MessageKey, string> = {
   'briefing.feed.source': 'Quelle',
   'briefing.feed.manual_item': '{title}',
   'briefing.feed.security_advisory': 'Sicherheitsmeldung {reference}: {title}',
+  'briefing.feed.security_advisory_kev':
+    'Aktiv ausgenutzte Sicherheitsmeldung {reference}: {title}',
+  'briefing.feed.advisory_feed': 'Meldungsquelle {source} ist nicht aktuell: {reason}',
   'briefing.feed.risk_review_due': 'Risikoprüfung fällig für {reference}',
   'briefing.feed.maintenance': 'Wartung für Änderung {reference}',
   'briefing.feed.milestone_due': 'Meilenstein fällig für {reference}: {title}',
@@ -2301,6 +2304,12 @@ export const de: Record<MessageKey, string> = {
   'security.summaryCounts': 'Befundzahlen',
   'security.unmatchedCriteria': 'Nicht zugeordnete Kriterien',
   'security.criteriaNotEvaluated': '{count} Kriterien nicht ausgewertet',
+  'security.criteriaIncomplete': 'Kriterien unvollständig ({count} ausgelassen)',
+  'security.criteriaChangedUpstream': 'Kriterien upstream geändert',
+  'security.actionWarningIncomplete':
+    'Der Feed hat betroffene Software in den Kriterien ausgelassen. Behandeln Sie die Kriterien nicht als vollständig; prüfen Sie die Quelle, bevor Sie sich auf diese Entscheidung verlassen.',
+  'security.knownExploited': 'Aktiv ausgenutzt',
+  'security.knownExploitedDue': 'Aktiv ausgenutzt, fällig {date}',
   'security.actionWarningUnmatched':
     'Einige Kriterien konnten keinem Softwareprodukt zugeordnet und daher nicht ausgewertet werden. Prüfen Sie sie, bevor Sie sich auf diese Entscheidung verlassen.',
   'security.importIgnored':

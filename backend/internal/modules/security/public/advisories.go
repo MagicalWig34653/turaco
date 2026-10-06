@@ -42,6 +42,10 @@ type ApplicableSummary struct {
 	Title           string
 	AffectedDevices int
 	Truncated       bool
+	// KnownExploited marks advisories listed in the CISA KEV catalog (shown with the detail scope only);
+	// KEVDueDate is the catalog's due date.
+	KnownExploited bool
+	KEVDueDate     *time.Time
 }
 
 func (a *Advisories) ApplicableAdvisorySummaries(ctx context.Context, scope ReadScope) ([]ApplicableSummary, error) {
@@ -56,6 +60,7 @@ func (a *Advisories) ApplicableAdvisorySummaries(ctx context.Context, scope Read
 		if scope.IncludeDetails {
 			v.Severity = item.Severity
 			v.Title = item.Title
+			v.KnownExploited, v.KEVDueDate = item.KnownExploited, item.KEVDueDate
 			ids = append(ids, item.ID)
 		}
 		out = append(out, v)
@@ -153,6 +158,31 @@ func (a *Advisories) Lookup(ctx context.Context, id string, scope ReadScope) (Ad
 		}
 		out.Title, out.Summary, out.Severity = detail.Title, detail.Summary, detail.Severity
 		out.AffectedDevices, out.MatchTruncated = summary.AffectedDevices, detail.MatchTruncated
+	}
+	return out, nil
+}
+
+// FeedHealth is the state of one advisory feed source for the briefing's integration health. LastError is a
+// constant code ("rate_limited", "unavailable", ...), never an error text.
+type FeedHealth struct {
+	Source        string
+	LastSuccessAt *time.Time
+	LastAttemptAt *time.Time
+	LastError     string
+	// Stale is set when the last success is older than 48 hours or missing.
+	Stale bool
+}
+
+// AdvisoryFeedHealth lists the feed sources that have run. The caller authorizes the requesting user.
+func (a *Advisories) AdvisoryFeedHealth(ctx context.Context) ([]FeedHealth, error) {
+	states, err := a.service.FeedStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedHealth, 0, len(states))
+	for _, s := range states {
+		stale := s.LastSuccessAt == nil || time.Since(*s.LastSuccessAt) > application.FeedStaleAfter
+		out = append(out, FeedHealth{Source: s.Source, LastSuccessAt: s.LastSuccessAt, LastAttemptAt: s.LastAttemptAt, LastError: s.LastError, Stale: stale})
 	}
 	return out, nil
 }
