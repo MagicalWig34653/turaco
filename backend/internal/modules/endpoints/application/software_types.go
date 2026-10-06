@@ -292,6 +292,9 @@ type SoftwareStore interface {
 	AppendPackageObservationTx(ctx context.Context, tx pgx.Tx, o PackageObservation) error
 	// SyncablePackages returns the provider's packages that have a provider id, by id after the cursor.
 	SyncablePackages(ctx context.Context, provider, after string, limit int) ([]SoftwarePackage, error)
+	// RecordProviderReferenceTx records the provider's package id as the package's platform external reference
+	// (system = provider, entity type software_package); the id is set once and never changed.
+	RecordProviderReferenceTx(ctx context.Context, tx pgx.Tx, provider, packageID, providerPackageID string) error
 	// ArtifactIDByExternalTx returns the live Management Artifact with that external id, or nil.
 	ArtifactIDByExternalTx(ctx context.Context, tx pgx.Tx, provider, externalID string) (*string, error)
 	// OpenPackageFindingTx raises the package finding or refreshes its detail; it reports whether it was raised.

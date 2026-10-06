@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/externalrefs"
 )
 
 // ---- software products ----
@@ -385,6 +386,20 @@ func (r *Repository) ListSoftwarePackages(ctx context.Context, f application.Sof
 		res.NextCursor = res.Items[page.Limit-1].ID
 	}
 	return res, nil
+}
+
+// SoftwarePackageEntity is the external-reference entity type of a Software Package.
+const SoftwarePackageEntity = "software_package"
+
+func (r *Repository) RecordProviderReferenceTx(ctx context.Context, tx pgx.Tx, provider, packageID, providerPackageID string) error {
+	ref, err := externalrefs.Ensure(ctx, tx, provider, SoftwarePackageEntity, packageID)
+	if err != nil {
+		return err
+	}
+	if ref.ExternalID != nil && *ref.ExternalID == providerPackageID && ref.SyncState == externalrefs.StateSynced {
+		return nil
+	}
+	return externalrefs.MarkSynced(ctx, tx, ref.ID, providerPackageID, ref.Version)
 }
 
 func (r *Repository) ArtifactIDByExternalTx(ctx context.Context, tx pgx.Tx, provider, externalID string) (*string, error) {

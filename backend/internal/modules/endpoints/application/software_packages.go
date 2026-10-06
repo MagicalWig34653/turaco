@@ -310,6 +310,11 @@ func (s *Service) applyPackageRecordTx(ctx context.Context, tx pgx.Tx, c Caller,
 	if err != nil {
 		return SoftwarePackage{}, false, err
 	}
+	if cur.ProviderPackageID == nil {
+		if err := s.store.RecordProviderReferenceTx(ctx, tx, updated.Provider, updated.ID, *updated.ProviderPackageID); err != nil {
+			return SoftwarePackage{}, false, err
+		}
+	}
 	if changed {
 		if err := s.store.AppendPackageObservationTx(ctx, tx, PackageObservation{PackageID: cur.ID, Status: updated.Status, ProviderPackageID: updated.ProviderPackageID,
 			InstallerSHA256: updated.InstallerSHA256, ManagementArtifactExternalID: updated.ManagementArtifactExternalID, Source: source, ObservedAt: observed}); err != nil {

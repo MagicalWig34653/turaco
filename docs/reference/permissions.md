@@ -55,6 +55,9 @@
 | `security.view` | normal | View security advisories and vulnerability findings. Device names additionally require endpoints.view. |
 | `services.manage` | elevated | Create and change Services, change their status, retire them, and add or remove their dependencies on Services, Virtual Machines, Assets and Locations. |
 | `services.view` | normal | View IT Services (owner, support team, criticality, status), their dependencies and dependents, and the impact view; Virtual Machine and Location names in them also need infrastructure.view, Asset references assets.view. |
+| `software.approve` | elevated | Approve, reject and revoke Software Version approvals (never for a version the same person registered or requested) and change a Software Product's approval status (approve, deprecate, retire, block, unblock). Includes software.view. |
+| `software.package` | elevated | Register Software Versions, request their approval, package approved versions through the Software Management Provider, publish packages whose reported installer hash equals the approved hash and run the package synchronization. Includes software.view. |
+| `software.view` | normal | View Software Products with their Software Approval Status, Software Versions with their approval history, Software Packages and the provider catalog search. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |

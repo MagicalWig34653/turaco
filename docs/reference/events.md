@@ -24,7 +24,7 @@
 | `DeploymentTargetFailed` | 1 | endpoint | A deployment target attempt failed. |
 | `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
 | `DeviceUnlinked` | 1 | endpoints | A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method. |
-| `EndpointFindingRaised` | 1 | endpoints | An endpoint data-quality finding was raised. Payload: findingId, deviceId, kind. |
+| `EndpointFindingRaised` | 1 | endpoints | An endpoint finding was raised. Payload: findingId, kind and deviceId, or softwarePackageId for package_hash_mismatch. |
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `InitiativeStatusChanged` | 1 | planning | An Initiative changed status (planning started, proposed, approved, approval rejected, activated, held, resumed, completed, cancelled). Payload: initiativeId, operation, status, previousStatus; hold, cancel and rejection also reason. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |
@@ -49,6 +49,11 @@
 | `ServiceRequestRejected` | 1 | requests | A service request was rejected by an approver. Payload: requestId. |
 | `ServiceRequestSubmitted` | 1 | requests | A service request was submitted. Payload: requestId. |
 | `ServiceStatusChanged` | 1 | services | A Service changed status or was retired. Payload: serviceId, operation (status_changed, retired), status, previousStatus, reason. |
+| `SoftwarePackagePublished` | 1 | endpoints | The Software Management Provider reported a Software Package as published into the Management Provider (by a publish operation or a package synchronization). Payload: packageId, versionId, provider. |
+| `SoftwareVersionApprovalRequested` | 1 | endpoints | The approval of a Software Version was requested. Payload: versionId, productId. |
+| `SoftwareVersionApprovalRequestedFanOut` | 1 | endpoints (internal) | Continuation of the software.approval_requested notification fan-out. Payload: versionId, after, sourceEventId. |
+| `SoftwareVersionApproved` | 1 | endpoints | A Software Version was approved, bound to its installer hash. Payload: versionId, productId, installerSha256. |
+| `SoftwareVersionRevoked` | 1 | endpoints | The approval of a Software Version was revoked. Payload: versionId, productId, reason. |
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |

@@ -401,6 +401,10 @@ func TestSoftwarePackagePublishGatesAndHashBinding(t *testing.T) {
 	if err != nil || again.ID != pk.ID || s.fake.Packages() != 1 || s.fake.Calls("package") != 1 {
 		t.Fatalf("idempotent package: %v %s %d %d", err, again.ID, s.fake.Packages(), s.fake.Calls("package"))
 	}
+	if n := s.count(`SELECT count(*) FROM platform.external_references WHERE system = $1 AND entity_type = 'software_package' AND entity_id = $2::uuid AND external_id = $3 AND sync_state = 'synced'`,
+		pk.Provider, pk.ID, *pk.ProviderPackageID); n != 1 {
+		t.Fatalf("external reference %d", n)
+	}
 	obsCount := func() int {
 		return s.count(`SELECT count(*) FROM endpoints.software_package_observations WHERE software_package_id = $1`, pk.ID)
 	}
