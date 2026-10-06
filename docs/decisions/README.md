@@ -32,3 +32,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - ADR-0028 Workforce Presence for Operational Availability
 - ADR-0029 Turaco AI — Provider-Independent, Tool-Based and User-Delegated
 - ADR-0030 Network/IPAM is integrated, not rebuilt
+- [ADR-0031 Public Website as a Separate Static Site](ADR-0031-public-website-static-site.md)

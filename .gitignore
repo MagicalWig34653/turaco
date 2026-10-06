@@ -25,3 +25,6 @@ tmp/
 # Built binaries
 /backend/cmd/*/turaco-*
 !/backend/cmd/*/*.go
+
+# Public website build output
+site/dist/
