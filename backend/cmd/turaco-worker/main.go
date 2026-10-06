@@ -45,6 +45,19 @@ import (
 
 var version = "dev"
 
+// runnerLockTimeout is the job lock timeout of the runner. A job must not outlive its lock, or
+// another worker would reclaim it: it covers the longest job registered on every worker (the
+// advisory feed sync) and, when LDAP is enabled, the directory sync.
+func runnerLockTimeout(ldapEnabled bool, ldapSyncTimeout time.Duration) time.Duration {
+	lock := securityapp.AdvisorySyncJobTimeout + 5*time.Minute
+	if ldapEnabled {
+		if minLock := ldapSyncTimeout + directorySyncMargin + 5*time.Minute; minLock > lock {
+			lock = minLock
+		}
+	}
+	return lock
+}
+
 // directorySyncMargin covers run bookkeeping beyond the fetch/apply timeout.
 const directorySyncMargin = 2 * time.Minute
 
@@ -70,13 +83,8 @@ func main() {
 		logger.Error("load directory configuration", "error", err)
 		os.Exit(1)
 	}
-	opts := jobs.RunnerOptions{}
-	if ldapCfg.Enabled() {
-		// A job must not outlive its lock, or another worker would reclaim it.
-		if minLock := ldapCfg.SyncTimeout + directorySyncMargin + 5*time.Minute; minLock > 30*time.Minute {
-			opts.LockTimeout = minLock
-		}
-	}
+	lockTimeout := runnerLockTimeout(ldapCfg.Enabled(), ldapCfg.SyncTimeout)
+	opts := jobs.RunnerOptions{LockTimeout: lockTimeout}
 	runner := jobs.NewRunner(pool, opts, logger)
 
 	if ldapCfg.Enabled() {

@@ -68,12 +68,24 @@ Kerberos (KDC `localhost:1088`, realm `LAB.TURACO.TEST`): the DC runs a KDC and 
 
 1. `make lab-up`, set the environment above, start `make api` and `make worker` (after `make dev-setup`).
 2. Sign in as `devadmin`, request a run: `POST /api/v1/directory-sync-runs` (permission `organization.directory.sync`), or wait for `LDAP_SYNC_INTERVAL` (minimum 5m).
-3. `GET /api/v1/directory-sync-runs` should show a succeeded run observing the 12 users and 6 groups (the service account lies in `CN=Users`, outside the user base).
-4. Expected: 11 active Users and `jonas.sales` `inactive` (disabled account), as designed in the sync design (not yet run against this lab by the author); `GRP-IT-Helpdesk` nested in `GRP-IT`, and the department groups nested in `GRP-All-Staff`.
-5. Password login: sign in as `bob.helpdesk` / `Lab-Only-Passw0rd!` (directory-verified bind).
+3. `GET /api/v1/directory-sync-runs` should show a succeeded run observing the 12 users and 23 groups (the 6 `GRP-*` groups plus the 17 built-in AD groups of `CN=Users`, e.g. Domain Admins; the service account lies in `CN=Users`, outside the user base).
+4. Expected: 11 active Users and `jonas.sales` `inactive` (disabled account), as designed in the sync design; `GRP-IT-Helpdesk` nested in `GRP-IT`, and the department groups nested in `GRP-All-Staff`.
+5. Password login: `POST /api/v1/auth/login` with `{"identifier":"bob.helpdesk","password":"Lab-Only-Passw0rd!"}` (directory-verified bind). API calls with a cookie need an `Origin` header equal to the API host (CSRF check), e.g. `-H 'Origin: http://localhost:18090'` with curl.
 6. Change something in the directory and re-run: `docker exec turaco-lab-samba-ad-1 samba-tool user disable kira.it` (undo with `enable`), `samba-tool user create ...`, `samba-tool group addmembers ...`.
 
 Without Turaco, `./scripts/lab-verify.sh` checks the directory with a throwaway `ldap-utils` container.
+
+### Verified against Turaco on 2026-10-07
+
+Throwaway database `turaco_lab`, `turaco-api` on `:18090` and `turaco-worker`, `APP_ENV=development`, `AUTH_EMERGENCY_LOGIN_ENABLED=true`, the environments above and the SMTP variables from "Mail"; emergency admin created with `turaco-admin emergency create/enable` plus `role grant platform-administrator`.
+
+- Passed: first sync (`POST /api/v1/directory-sync-runs`, run succeeded): 12 users created (11 `active`, `jonas.sales` `inactive`), 23 groups, 12 direct memberships, 12 nesting edges; `GRP-IT-Helpdesk` is nested in `GRP-IT` and the four department groups in `GRP-All-Staff`. `unresolvedMembers: 5` (built-in members outside the user base) is normal.
+- Passed: change detection. After `samba-tool user disable kira.it` and removing `carla.support` from `GRP-IT-Helpdesk`, the next run reported `usersDeactivated: 1`, `membershipsClosed: 1`; after enabling and re-adding it reported `usersActivated: 1`, `membershipsOpened: 1`.
+- Passed: LDAPS with certificate verification (`LDAP_URL=ldaps://localhost:1636`, `LDAP_CA_FILE` = exported lab CA, no `LDAP_ALLOW_PLAINTEXT`): sync and password login.
+- Passed: password login for `bob.helpdesk` (username), `hans.hr@lab.turaco.test` (email) and `LAB\eva.finance` (domain form; session `authMethod: ldap`); wrong password and the disabled `jonas.sales` are rejected with 401.
+- Passed: mail. Assigning a Task to `bob.helpdesk` (who needs an active Role with `tasks.*`) produced "Task assigned: Lab mail test" in Mailpit within 20 s.
+- Not verified: Kerberos/SPNEGO, scheduled sync interval (only the first scheduled run and manual runs were seen).
+- Found while verifying (fixed): `turaco-worker` exited at startup with `timeout 45m0s must be shorter than lock timeout 30m0s` for the advisory feed job; the worker now derives its job lock timeout from that job.
 
 ## Identity provider (Keycloak)
 
