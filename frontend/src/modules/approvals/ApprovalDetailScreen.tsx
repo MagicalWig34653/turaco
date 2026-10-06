@@ -137,6 +137,13 @@ export function ApprovalDetailScreen({ id }: { id: string }) {
           </>
         ) : null}
       </dl>
+      {current.subjectType === 'deployment' ? (
+        <p>
+          <Link to={`/deployments/${encodeURIComponent(current.subjectId)}`}>
+            {t('approvals.openDeployment')}
+          </Link>
+        </p>
+      ) : null}
       {current.subjectType === 'purchase_order' ? (
         <p>
           {can('procurement.view') || can('procurement.manage') ? (

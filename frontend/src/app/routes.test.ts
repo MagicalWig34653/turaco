@@ -413,6 +413,7 @@ describe('software routes', () => {
         'softwareProducts',
         'softwareCatalog',
         'softwarePackages',
+        'deployments',
       ]);
     }
     expect(ids(['endpoints.view'], 'endpoints')).not.toContain('softwareProducts');
@@ -430,5 +431,41 @@ describe('software routes', () => {
     const register = appRoutes.find((route) => route.id === 'softwareVersionNew')!;
     expect(canViewRoute(createCan({ permissions: ['software.approve'] }), register)).toBe(false);
     expect(canViewRoute(createCan({ permissions: ['software.package'] }), register)).toBe(true);
+  });
+});
+
+describe('deployment routes', () => {
+  const route = (id: string) => appRoutes.find((candidate) => candidate.id === id)!;
+
+  it('shows plans and target sets to deployment readers and plans to software users', () => {
+    for (const permission of [
+      'deployments.view',
+      'deployments.manage',
+      'deployments.execute',
+      'deployments.approve',
+    ]) {
+      expect(ids([permission], 'endpoints')).toEqual(['deployments', 'targetSets']);
+    }
+    expect(ids(['deployments.high_impact'], 'endpoints')).toEqual(['deployments']);
+    expect(ids(['endpoints.view'], 'endpoints')).not.toContain('deployments');
+  });
+
+  it('matches static paths before detail routes', () => {
+    expect(matchRoute(appRoutes, '/deployments')?.route.id).toBe('deployments');
+    expect(matchRoute(appRoutes, '/deployments/new')?.route.id).toBe('deploymentNew');
+    expect(matchRoute(appRoutes, '/deployments/d1')?.route.id).toBe('deploymentDetail');
+    expect(matchRoute(appRoutes, '/target-sets')?.route.id).toBe('targetSets');
+    expect(matchRoute(appRoutes, '/target-sets/new')?.route.id).toBe('targetSetNew');
+    expect(matchRoute(appRoutes, '/target-sets/t1')?.route.id).toBe('targetSetDetail');
+  });
+
+  it('lets only planners create and lets owners and approvers open a plan', () => {
+    const viewer = createCan({ permissions: ['deployments.view'] });
+    const manager = createCan({ permissions: ['deployments.manage'] });
+    expect(canViewRoute(viewer, route('deploymentNew'))).toBe(false);
+    expect(canViewRoute(manager, route('deploymentNew'))).toBe(true);
+    expect(canViewRoute(viewer, route('targetSetNew'))).toBe(false);
+    expect(canViewRoute(createCan({ permissions: [] }), route('deploymentDetail'))).toBe(true);
+    expect(canViewRoute(createCan({ permissions: [] }), route('targetSetDetail'))).toBe(false);
   });
 });

@@ -78,6 +78,12 @@ import {
   SoftwareVersionRegisterScreen,
 } from '../modules/software/VersionScreens';
 import { SoftwareCatalogScreen, SoftwarePackagesScreen } from '../modules/software/PackagesScreens';
+import {
+  DeploymentPlanScreen,
+  DeploymentWizardScreen,
+  DeploymentsScreen,
+} from '../modules/deployments/DeploymentScreens';
+import { TargetSetEditorScreen, TargetSetsScreen } from '../modules/deployments/TargetSetScreens';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
 import { ReceiptsScreen } from '../modules/inventory/ReceiptsScreen';
@@ -185,6 +191,18 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <SoftwareVersionRegisterScreen />;
     case 'softwareVersionDetail':
       return <SoftwareVersionDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'deployments':
+      return <DeploymentsScreen />;
+    case 'deploymentNew':
+      return <DeploymentWizardScreen />;
+    case 'deploymentDetail':
+      return <DeploymentPlanScreen key={params.id} id={params.id ?? ''} />;
+    case 'targetSets':
+      return <TargetSetsScreen />;
+    case 'targetSetNew':
+      return <TargetSetEditorScreen />;
+    case 'targetSetDetail':
+      return <TargetSetEditorScreen key={params.id} id={params.id ?? ''} />;
     case 'initiatives':
       return <InitiativesListScreen />;
     case 'myInitiatives':
