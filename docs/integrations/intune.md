@@ -67,3 +67,9 @@ Future Intune actions are typed provider capabilities behind domain/application 
 ## Apps published by a Software Management Provider (planned)
 
 Software lifecycle orchestration ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)) uses IntuneGet to package WinGet software and upload it to Intune. The resulting Intune app is an ordinary Management Artifact ingested by this sync; Turaco links it to the Software Package and Software Version but never treats publication as assignment or installation. Intune remains the Management Provider that assigns, executes and reports.
+
+## Management Assignment Writer (F9 G3)
+
+`integrations/intune` also defines the typed, idempotent write port Deployments use ([ADR-0027](../decisions/ADR-0027-software-management-providers.md), [design](../product/f9-software-lifecycle-design.md#g3-implementation-notes)): `SetRingAssignment(RingAssignmentOp{OperationID, ManagementArtifactExternalID, RingKey, TargetGroupExternalID, Intent, DeviceExternalIDs})` and `ClearRingAssignment(operationID, artifact, ringKey)`. Each Deployment Ring maps to one Turaco-owned provider group (`turaco-ring-<ringId>`) that holds the ring's target Devices and one assignment of the published application to it; Turaco never edits other assignments. Errors wrap `ErrTransient` (retry with a new attempt) or `ErrPermanent`. The write counts as Assigned only after the normal management synchronization reads the assignment and the group membership back.
+
+The writer is disabled by default (`SOFTWARE_DEPLOY_WRITE`) and needs its own app registration/secret once a Graph client exists. **Not implemented:** the Graph writer; the production wiring uses `NotConfiguredWriter`, whose writes fail permanently (a started ring halts with `assignment_failed`). `FakeWriter` applies assignments and memberships to the Fake provider snapshot, records every call and can inject failures and latency; it is used by tests only.

@@ -854,6 +854,12 @@ func TestDeploymentReadsPermissionsAndRedaction(t *testing.T) {
 		t.Fatal("bogus state accepted")
 	}
 	viewer := application.Principal{UserID: x.newID(), DeploymentsView: true}
+	if det, err := x.svc.GetDeployment(ctx, viewer, x.dep.ID); err != nil || det.Deployment.Status != "running" || det.Deployment.StartedAt == nil {
+		t.Fatalf("detail of a running deployment: %v %+v", err, det.Deployment)
+	}
+	if list, err := x.svc.ListDeployments(ctx, viewer, application.DeploymentFilter{Status: "running"}); err != nil || len(list.Items) == 0 {
+		t.Fatalf("list running: %v", err)
+	}
 	res, err := x.svc.ListRingTargets(ctx, viewer, x.dep.ID, x.ringID(1), "", application.Page{})
 	if err != nil || len(res.Items) != 2 || !res.NamesRedacted {
 		t.Fatalf("redacted: %v %+v", err, res)

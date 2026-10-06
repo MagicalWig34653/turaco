@@ -37,3 +37,17 @@ func TestSoftwareApprovalCategoryIsRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDeploymentTickJobIsRegisteredAndScheduledOnlyWithTheCapability(t *testing.T) {
+	pool := dbtest.Pool(t)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, enabled := range []bool{false, true} {
+		runner := jobs.NewRunner(pool, jobs.RunnerOptions{}, logger)
+		if err := registerDeploymentEngine(runner, pool, enabled); err != nil {
+			t.Fatalf("register (enabled=%v): %v", enabled, err)
+		}
+		if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, func(context.Context, jobs.Job) error { return nil }); err == nil {
+			t.Fatalf("job type not registered (enabled=%v)", enabled)
+		}
+	}
+}
