@@ -9165,6 +9165,441 @@ paths:
           $ref: '#/components/responses/SecurityConflict'
         '500':
           $ref: '#/components/responses/InternalError'
+  /software/products:
+    get:
+      operationId: listSoftwareProducts
+      summary: List Software Products with their Software Approval Status.
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. Invalid status yields 400 endpoints.invalid_request."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: status, in: query, description: 'Exact Software Approval Status.', schema: {type: string, enum: [candidate, approved, deprecated, retired, blocked]}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProductList'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/products/{id}/approve:
+    post:
+      operationId: approveSoftwareProduct
+      summary: Approve a Software Product (candidate to approved).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Takes no reason (400 when one is sent). Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProduct'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/products/{id}/deprecate:
+    post:
+      operationId: deprecateSoftwareProduct
+      summary: Deprecate a Software Product (approved to deprecated).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: superseded, vendor_end_of_support, policy, other. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareProductDeprecate'}
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProduct'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/products/{id}/retire:
+    post:
+      operationId: retireSoftwareProduct
+      summary: Retire a Software Product (deprecated to retired).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: no_longer_used, superseded, vendor_end_of_life, other. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareProductRetire'}
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProduct'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/products/{id}/block:
+    post:
+      operationId: blockSoftwareProduct
+      summary: Block a Software Product from any other status.
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: security_risk, license, vendor_unsupported, policy, duplicate, other. A blocked product refuses version registration and approval requests. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareProductBlock'}
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProduct'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/products/{id}/unblock:
+    post:
+      operationId: unblockSoftwareProduct
+      summary: Unblock a Software Product (blocked to candidate, re-evaluation).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: re_evaluation, error_correction, other. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareProductUnblock'}
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareProduct'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions:
+    get:
+      operationId: listSoftwareVersions
+      summary: List Software Versions.
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. Invalid status yields 400 endpoints.invalid_request."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: productId, in: query, description: 'Only versions of this Software Product.', schema: {type: string, format: uuid}}
+        - {name: status, in: query, description: 'Exact version approval status.', schema: {type: string, enum: [registered, pending, approved, rejected, revoked]}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersionList'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: registerSoftwareVersion
+      summary: Register a Software Version binding.
+      description: "Needs `software.package` (elevated). A Software Version is an immutable binding of version string, installer SHA-256, https installer URL, publisher, install command and detection rule; the server stores SHA-256s of the command and the rule and a binding SHA-256 over all of them. Registration is idempotent per binding (200 with the existing version, 201 when created); any changed field is a new version that needs its own approval. Refused while the product is blocked or retired (409 endpoints.product_blocked). Bodies above 32 KiB, a hash that is not 64 hexadecimal characters, a non-https URL or text with control characters yield 400. The registrant can never approve this version. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRegister'}
+      responses:
+        '201':
+          description: The version was created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '200':
+          description: The existing version with the same binding.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}:
+    get:
+      operationId: getSoftwareVersion
+      summary: Get a Software Version with its approval history and packages.
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. The approval history is append-only; each decision records the installer and binding hash it was made for."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersionDetail'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}/request-approval:
+    post:
+      operationId: requestSoftwareVersionApproval
+      summary: Request approval (registered to pending).
+      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Takes no reason. Refused while the product is blocked or retired (409 endpoints.product_blocked). Holders of `software.approve` other than the requester are notified (software.approval_requested). Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}/approve:
+    post:
+      operationId: approveSoftwareVersion
+      summary: Approve a version (pending to approved).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Takes no reason. Separation of duties: the person who registered the version or requested its approval cannot approve it (403 endpoints.separation_of_duties). The approval binds to the version binding and installer hash. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}/reject:
+    post:
+      operationId: rejectSoftwareVersion
+      summary: Reject a version (pending to rejected).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: hash_unverified, untrusted_source, license, security_risk, policy, other. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionReject'}
+      responses:
+        '200':
+          description: The version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}/revoke:
+    post:
+      operationId: revokeSoftwareVersion
+      summary: Revoke an approval (approved to revoked).
+      description: "Needs `software.approve` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). Reason code: security_risk, defect, superseded, policy, other. Not allowed from the current status yields 409 endpoints.invalid_transition. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRevoke'}
+      responses:
+        '200':
+          description: The version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareVersion'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/versions/{id}/package:
+    post:
+      operationId: packageSoftwareVersion
+      summary: Package an approved version at the Software Management Provider.
+      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the Software Version's version. Requires an approved version (409 endpoints.version_not_approved) of an approved product (409 endpoints.product_not_approved). One package per provider and version; the provider is called with the idempotency key `versionId:installerSha256`, so a retry cannot create a second package. 409 endpoints.software_provider_not_configured when no provider is configured. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The package.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwarePackage'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/catalog/search:
+    get:
+      operationId: searchSoftwareCatalog
+      summary: Search the Software Management Provider's catalog.
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. `q` must be 2-100 characters without control characters (400 otherwise). At most 50 results; provider data is sanitized and entries that fail sanitization are dropped; `sourceUrl` is https only. 409 endpoints.software_provider_not_configured when no provider is configured."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+      responses:
+        '200':
+          description: Catalog entries.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwareCatalogList'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/packages:
+    get:
+      operationId: listSoftwarePackages
+      summary: List Software Packages.
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. Invalid status yields 400 endpoints.invalid_request."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: status, in: query, description: 'Exact package status.', schema: {type: string, enum: [requested, building, packaged, published, failed]}}
+        - {name: versionId, in: query, description: 'Only packages of this Software Version.', schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwarePackageList'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/packages/sync:
+    post:
+      operationId: syncSoftwarePackages
+      summary: Read package status from the Software Management Provider now.
+      description: "Needs `software.package` (elevated). Takes no body. Updates status and the provider-reported installer hash with source and freshness, raises or resolves `package_hash_mismatch` findings and links the published Management Artifact once the management sync has ingested it. 409 endpoints.software_sync_disabled when the synchronization is switched off, 409 endpoints.software_provider_not_configured without a provider. Audited."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Counts of the run.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwarePackageSyncResult'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/packages/{id}/publish:
+    post:
+      operationId: publishSoftwarePackage
+      summary: Publish a packaged Software Package to the Management Provider.
+      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the package's version. Requires the package to be packaged (409 endpoints.package_not_ready), the version and product approved, and the provider-reported installer hash to equal the approved hash (409 endpoints.hash_mismatch). Idempotency key `packageId:publish:installerSha256`; publishing an already published package returns it unchanged. 409 endpoints.software_provider_not_configured without a provider. Audited with ids, statuses, hashes and reason codes only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The package.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoftwarePackage'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '404': {$ref: '#/components/responses/SoftwareNotFound'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -9544,6 +9979,21 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    SoftwareNotFound:
+      description: Software Product, Version or Package not found (endpoints.not_found).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SoftwareInvalid:
+      description: Invalid body, reason code, status filter, query, cursor or limit (endpoints.invalid_request, endpoints.invalid_cursor, endpoints.invalid_limit).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SoftwareConflict:
+      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), a gate (endpoints.product_not_approved, endpoints.product_blocked, endpoints.version_not_approved, endpoints.package_not_ready, endpoints.hash_mismatch), no provider (endpoints.software_provider_not_configured) or synchronization off (endpoints.software_sync_disabled)."
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -12190,6 +12640,196 @@ components:
       required: [reason, expectedVersion]
       properties:
         reason: {type: string, enum: [serial_confirmed, correction, duplicate, wrong_asset, other]}
+        expectedVersion: {type: integer}
+    SoftwareProduct:
+      type: object
+      additionalProperties: false
+      required: [id, name, publisher, approvalStatus, approvalReason, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        publisher: {type: [string, "null"]}
+        approvalStatus: {type: string, enum: [candidate, approved, deprecated, retired, blocked]}
+        approvalReason: {type: [string, "null"], description: 'Reason code of the last deprecate, retire or block.'}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    SoftwareProductList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SoftwareProduct'}}
+        nextCursor: {type: string, description: 'Empty when there is no further page.'}
+    SoftwareVersion:
+      type: object
+      additionalProperties: false
+      description: An immutable installable binding. The approval binds to `bindingSha256` and `installerSha256`; a change of any bound field is a new version.
+      required: [id, productId, productName, productVersion, installerSha256, installerUrl, publisher, installCommand, installCommandSha256, detectionRule, detectionRuleSha256, bindingSha256, registeredBy, approvalStatus, approvalReason, requestedBy, requestedAt, decidedBy, decidedAt, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        productName: {type: string}
+        productVersion: {type: string}
+        installerSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        installerUrl: {type: string, description: https only.}
+        publisher: {type: [string, "null"]}
+        installCommand: {type: string}
+        installCommandSha256: {type: string}
+        detectionRule: {type: string}
+        detectionRuleSha256: {type: string}
+        bindingSha256: {type: string, description: 'SHA-256 over version, installer hash, URL, publisher, command hash and rule hash; unique per product.'}
+        registeredBy: {type: string, format: uuid}
+        approvalStatus: {type: string, enum: [registered, pending, approved, rejected, revoked]}
+        approvalReason: {type: [string, "null"]}
+        requestedBy: {type: [string, "null"], format: uuid}
+        requestedAt: {type: [string, "null"], format: date-time}
+        decidedBy: {type: [string, "null"], format: uuid}
+        decidedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+    SoftwareVersionList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SoftwareVersion'}}
+        nextCursor: {type: string, description: 'Empty when there is no further page.'}
+    SoftwareVersionApproval:
+      type: object
+      additionalProperties: false
+      description: One append-only approval decision with the hashes it was made for.
+      required: [id, fromStatus, toStatus, operation, reason, installerSha256, bindingSha256, actorUserId, actorSystem, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        fromStatus: {type: string}
+        toStatus: {type: string}
+        operation: {type: string, enum: [request_approval, approve, reject, revoke]}
+        reason: {type: [string, "null"]}
+        installerSha256: {type: string}
+        bindingSha256: {type: string}
+        actorUserId: {type: [string, "null"], format: uuid}
+        actorSystem: {type: [string, "null"]}
+        createdAt: {type: string, format: date-time}
+    SoftwareVersionDetail:
+      type: object
+      additionalProperties: false
+      required: [version, approvals, packages]
+      properties:
+        version: {$ref: '#/components/schemas/SoftwareVersion'}
+        approvals: {type: array, items: {$ref: '#/components/schemas/SoftwareVersionApproval'}}
+        packages: {type: array, items: {$ref: '#/components/schemas/SoftwarePackage'}}
+    SoftwarePackage:
+      type: object
+      additionalProperties: false
+      required: [id, provider, providerPackageId, versionId, status, installerSha256, hashMismatch, managementProvider, managementArtifactExternalId, managementArtifactId, source, observedAt, lastSyncedAt, publishRequestedAt, version]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        providerPackageId: {type: [string, "null"]}
+        versionId: {type: string, format: uuid}
+        status: {type: string, enum: [requested, building, packaged, published, failed], description: 'requested is Turaco''s request before the provider answered; the others are provider-reported.'}
+        installerSha256: {type: [string, "null"], description: Installer hash reported by the provider.}
+        hashMismatch: {type: boolean, description: 'An open package_hash_mismatch finding: the provider-reported hash differs from the approved hash. Publishing is refused.'}
+        managementProvider: {type: [string, "null"]}
+        managementArtifactExternalId: {type: [string, "null"]}
+        managementArtifactId: {type: [string, "null"], format: uuid}
+        source: {type: string, description: 'Where the status came from (operation or sync).'}
+        observedAt: {type: [string, "null"], format: date-time}
+        lastSyncedAt: {type: [string, "null"], format: date-time}
+        publishRequestedAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+    SoftwarePackageList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SoftwarePackage'}}
+        nextCursor: {type: string, description: 'Empty when there is no further page.'}
+    SoftwarePackageSyncResult:
+      type: object
+      additionalProperties: false
+      required: [checked, changed, linked, findingsRaised, findingsResolved]
+      properties:
+        checked: {type: integer}
+        changed: {type: integer}
+        linked: {type: integer}
+        findingsRaised: {type: integer}
+        findingsResolved: {type: integer}
+    SoftwareCatalogEntry:
+      type: object
+      additionalProperties: false
+      required: [providerId, name, publisher, latestVersion, sourceUrl]
+      properties:
+        providerId: {type: string}
+        name: {type: string}
+        publisher: {type: [string, "null"]}
+        latestVersion: {type: [string, "null"]}
+        sourceUrl: {type: [string, "null"], description: https only.}
+    SoftwareCatalogList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SoftwareCatalogEntry'}}
+    SoftwareVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer}
+    SoftwareVersionRegister:
+      type: object
+      additionalProperties: false
+      required: [productId, version, installerSha256, installerUrl, installCommand, detectionRule]
+      properties:
+        productId: {type: string, format: uuid}
+        version: {type: string, minLength: 1, maxLength: 100}
+        installerSha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+        installerUrl: {type: string, maxLength: 2000, description: https only.}
+        publisher: {type: string}
+        installCommand: {type: string, minLength: 1, maxLength: 2000, description: One line.}
+        detectionRule: {type: string, minLength: 1, maxLength: 4000}
+    SoftwareProductDeprecate:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [superseded, vendor_end_of_support, policy, other], description: 'A reason code, never free text.'}
+        expectedVersion: {type: integer}
+    SoftwareProductRetire:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [no_longer_used, superseded, vendor_end_of_life, other], description: 'A reason code, never free text.'}
+        expectedVersion: {type: integer}
+    SoftwareProductBlock:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [security_risk, license, vendor_unsupported, policy, duplicate, other], description: 'A reason code, never free text.'}
+        expectedVersion: {type: integer}
+    SoftwareProductUnblock:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [re_evaluation, error_correction, other], description: 'A reason code, never free text.'}
+        expectedVersion: {type: integer}
+    SoftwareVersionReject:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [hash_unverified, untrusted_source, license, security_risk, policy, other], description: 'A reason code, never free text.'}
+        expectedVersion: {type: integer}
+    SoftwareVersionRevoke:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [security_risk, defect, superseded, policy, other], description: 'A reason code, never free text.'}
         expectedVersion: {type: integer}
     ManagementArtifact:
       type: object
