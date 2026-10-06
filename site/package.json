@@ -1,0 +1,16 @@
+{
+  "name": "turaco-public-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build/build.mjs",
+    "test": "node --test build/*.test.mjs",
+    "serve": "node build/serve.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "marked": "15.0.12"
+  }
+}

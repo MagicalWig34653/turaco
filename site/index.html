@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Turaco — IT work, connected.</title>
+    <meta
+      name="description"
+      content="An open-source-first IT operations workspace for internal IT teams. Explore Turaco's early build, architecture, and public documentation."
+    />
+    <meta property="og:title" content="Turaco — IT work, connected." />
+    <meta
+      property="og:description"
+      content="One connected workspace for internal IT. An open-source-first project, built in the open."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://magicalwig34653.github.io/turaco/"
+    />
+    <link rel="canonical" href="https://magicalwig34653.github.io/turaco/" />
+    <meta name="theme-color" content="#edf2e8" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/shared.css" />
+    <link rel="stylesheet" href="assets/landing.css" />
+    <script src="assets/theme.js"></script>
+    <script src="assets/landing.js" defer></script>
+  </head>
+  <body class="landing">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <svg
+      class="icon-library"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <symbol id="i-grid" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="2" />
+          <rect x="14" y="3" width="7" height="7" rx="2" />
+          <rect x="3" y="14" width="7" height="7" rx="2" />
+          <rect x="14" y="14" width="7" height="7" rx="2" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path
+            d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"
+          />
+        </symbol>
+        <symbol id="i-ticket" viewBox="0 0 24 24">
+          <path
+            d="M4 4h16v5a3 3 0 0 0 0 6v5H4v-5a3 3 0 0 0 0-6zM9 8h6m-6 4h4m-4 4h6"
+          />
+        </symbol>
+        <symbol id="i-box" viewBox="0 0 24 24">
+          <path d="m12 3 9 5v9l-9 5-9-5V8zm0 10v9M3 8l9 5 9-5M7 5l10 6" />
+        </symbol>
+        <symbol id="i-device" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="13" rx="2" />
+          <path d="M8 21h8m-4-5v5M7 8h4m-4 4h8" />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6zm-4 9 3 3 5-6" />
+        </symbol>
+        <symbol id="i-branch" viewBox="0 0 24 24">
+          <rect x="8" y="2" width="8" height="6" rx="1" />
+          <rect x="2" y="16" width="8" height="6" rx="1" />
+          <rect x="14" y="16" width="8" height="6" rx="1" />
+          <path d="M12 8v4H6v4m6-4h6v4" />
+        </symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <header class="landing-header wrap">
+      <a href="index.html" class="brand" aria-label="Turaco home"
+        ><span class="brand-mark" aria-hidden="true">t</span>turaco<span
+          class="preview-tag"
+          >PREVIEW</span
+        ></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#workspace">Workspace</a><a href="#roadmap">Roadmap</a
+        ><a href="docs/README.html">Docs <span aria-hidden="true">↗</span></a>
+      </nav>
+      <label class="theme-control"
+        ><span class="sr-only">Color theme</span
+        ><select data-theme-select aria-label="Color theme">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="cyberpunk">Cyberpunk</option>
+        </select></label
+      ><a class="header-github" href="https://github.com/MagicalWig34653/turaco"
+        >GitHub <span aria-hidden="true">↗</span></a
+      >
+    </header>
+    <main id="main" tabindex="-1">
+      <section class="hero wrap">
+        <div class="hero-mesh" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="status-dot"></span> Built in the open. Connecting the
+            dots.
+          </p>
+          <h1>IT work,<br /><em>connected.</em></h1>
+          <p class="hero-description">
+            Less scattered context.<br />More room to get things done.
+          </p>
+          <p class="hero-detail">
+            One connected IT operations workspace for internal teams — from the
+            first support request to the device, the change, and the bigger
+            picture.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="docs/README.html"
+              >Explore the project <span aria-hidden="true">↗</span></a
+            ><a class="text-link" href="#workspace"
+              >Meet the workspace <span aria-hidden="true">↓</span></a
+            >
+          </div>
+          <p class="preview-note">
+            Project preview — name and branding not final
+          </p>
+        </div>
+        <div class="hero-visual">
+          <div class="orbit orbit-one" aria-hidden="true"></div>
+          <div class="orbit orbit-two" aria-hidden="true"></div>
+          <div
+            class="mock-app"
+            aria-label="Illustrative My Work dashboard with fictional demo data"
+          >
+            <div class="mock-top">
+              <span class="mock-brand">◒ turaco</span
+              ><span class="mock-search"
+                >Search your workspace <kbd>⌘ K</kbd></span
+              ><span class="avatar">JD</span>
+            </div>
+            <div class="mock-body">
+              <div class="mock-sidebar" aria-hidden="true">
+                <span class="mini-label">WORKSPACE</span
+                ><span class="selected">◈ &nbsp; My Work</span
+                ><span>▤ &nbsp; Service desk</span><span>▣ &nbsp; Assets</span
+                ><span>⌘ &nbsp; Endpoints</span><span>◇ &nbsp; Knowledge</span>
+                <div class="mock-sidebar-bottom">◌ &nbsp; Settings</div>
+              </div>
+              <div class="mock-main">
+                <div class="mock-breadcrumb">Workspace / My Work</div>
+                <p class="mock-greeting">A little clarity for your day.</p>
+                <h2>Good morning, Jamie <span aria-hidden="true">☀</span></h2>
+                <div class="mock-stats">
+                  <div>
+                    <span>My tasks</span><strong>04</strong
+                    ><small>Ready when you are</small>
+                  </div>
+                  <div>
+                    <span>Assigned tickets</span><strong>03</strong
+                    ><small>One place to focus</small>
+                  </div>
+                  <div>
+                    <span>Approvals</span><strong>01</strong
+                    ><small>Your input matters</small>
+                  </div>
+                </div>
+                <div class="mock-section-heading">
+                  <strong>Up next</strong><span>Your work, in context</span>
+                </div>
+                <div class="mock-task">
+                  <span class="task-check"></span>
+                  <div>
+                    <strong>Prepare a new workplace</strong
+                    ><small>Request · REQ-000042</small>
+                  </div>
+                  <span class="mini-pill">In progress</span>
+                </div>
+                <div class="mock-task">
+                  <span class="task-check"></span>
+                  <div>
+                    <strong>Investigate display connection</strong
+                    ><small>Ticket · TKT-000018</small>
+                  </div>
+                  <span class="mini-pill neutral">Open</span>
+                </div>
+                <div class="mock-task">
+                  <span class="task-check"></span>
+                  <div>
+                    <strong>Review a software request</strong
+                    ><small>Approval · APR-000007</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="ticket-float">
+            <div class="ticket-float-top">
+              <span><span class="status-dot"></span> TKT-000018</span
+              ><span>↗</span>
+            </div>
+            <strong>Everything has context.</strong>
+            <p>Display not connecting</p>
+            <div class="context-row">
+              <span class="context-icon">▣</span>
+              <div>
+                <b>AST-000012</b><small>Assigned device · Demo laptop</small>
+              </div>
+              <span class="context-linked">Linked</span>
+            </div>
+            <div class="ticket-person">
+              <span class="avatar">JD</span
+              ><span>Jamie Doe <small>Fictional employee</small></span
+              ><span class="mini-pill">Open</span>
+            </div>
+          </div>
+          <p class="mock-caption">
+            Illustrative interface · fictional demo data · not a live product
+          </p>
+        </div>
+      </section>
+      <div class="project-strip wrap">
+        <span>EARLY BUILD. CLEAR DIRECTION.</span>
+        <p>
+          Open-source-first <span>·</span> Self-hosted direction
+          <span>·</span> Internal IT, by design
+        </p>
+        <a href="docs/product/current-status.html"
+          >What exists today <span aria-hidden="true">↗</span></a
+        >
+      </div>
+      <section id="workspace" class="section wrap reveal">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / THE WORKSPACE</p>
+            <h2>
+              The whole picture.<br /><span class="soft-text"
+                >Without the tab chase.</span
+              >
+            </h2>
+          </div>
+          <p>
+            Tickets don’t live in isolation. Neither do your assets, your
+            people, or the work that comes next. Turaco is being built around
+            those connections.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-ticket" /></svg
+            ><span class="card-status">Implemented core</span>
+            <h3>Support with context</h3>
+            <p>
+              Service desk, knowledge, problems and runbooks connect support
+              work to people and devices.
+            </p>
+            <a href="docs/product/current-status.html"
+              >Service desk &amp; knowledge <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-box" /></svg
+            ><span class="card-status">Implemented core</span>
+            <h3>From request to reality</h3>
+            <p>
+              Catalog requests, approvals, procurement, inventory and asset
+              lifecycles share one operational model.
+            </p>
+            <a href="docs/domain/glossary.html"
+              >Assets &amp; fulfillment <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-device" /></svg
+            ><span class="card-status">UI + backend slices</span>
+            <h3>Know your endpoints</h3>
+            <p>
+              Device and software observations keep their source and freshness.
+              Management intelligence backends separate intent from evidence.
+            </p>
+            <a href="docs/product/f6-endpoint-intelligence-design.html"
+              >Endpoint intelligence <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-branch" /></svg
+            ><span class="card-status">UI + backend slices</span>
+            <h3>See what a change touches</h3>
+            <p>
+              Physical topology has a UI. Services, dependencies, changes,
+              initiatives and maintenance have backend slices.
+            </p>
+            <a href="docs/product/f7-infrastructure-change-design.html"
+              >Infrastructure &amp; change <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-shield" /></svg
+            ><span class="card-status">Backend implemented</span>
+            <h3>Turn security into work</h3>
+            <p>
+              Imported advisories, software matching, findings and remediation
+              tasks connect security context to everyday operations.
+            </p>
+            <a href="docs/product/f8-security-briefing-design.html"
+              >Security advisories <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card feature-highlight">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-sun" /></svg
+            ><span class="card-status">Manual UI · feed backend</span>
+            <h3>Start with what matters</h3>
+            <p>
+              My Work brings tasks together. Manual briefing publications have a
+              UI; the computed briefing feed is backend-only.
+            </p>
+            <a href="docs/product/current-status.html"
+              >My Work &amp; briefing <span aria-hidden="true">↗</span></a
+            >
+          </article>
+        </div>
+        <aside class="honesty-note">
+          <span aria-hidden="true">↳</span>
+          <p>
+            <strong>A project, not a promise of production readiness.</strong>
+            Intune uses a fake adapter; advisory ingestion is
+            manual/import-based. Live Graph and advisory feeds, the Autotask
+            REST client and webhook are not implemented.
+            <a href="docs/product/current-status.html"
+              >Read the full implementation status.</a
+            >
+          </p>
+        </aside>
+      </section>
+      <section class="principles-section">
+        <div class="wrap section reveal">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / BUILT WITH INTENTION</p>
+              <h2>Good foundations.<br />Fewer surprises.</h2>
+            </div>
+            <p>
+              A connected workspace needs more than connected screens. These are
+              the rules shaping the system underneath.
+            </p>
+          </div>
+          <div class="principles-grid">
+            <article>
+              <span>01</span>
+              <h3>Open-source-first</h3>
+              <p>
+                A useful self-hosted product is the direction. Source is public;
+                the distribution license still awaits legal review.
+              </p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>One modular monolith</h3>
+              <p>
+                Explicit domains, public contracts and shared platform services.
+                Complexity belongs in the problem, not the plumbing.
+              </p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>Trust is explicit</h3>
+              <p>
+                Backend authorization, least privilege and audit records for
+                important changes. Agents are restricted trust boundaries.
+              </p>
+            </article>
+            <article>
+              <span>04</span>
+              <h3>Evidence keeps its origin</h3>
+              <p>
+                External observations preserve source and freshness. Unknown
+                stays unknown; stale data never becomes certainty.
+              </p>
+            </article>
+          </div>
+          <div class="state-strip">
+            <div>
+              <small>CONFIGURED</small><strong>Assigned</strong
+              ><span>What the provider targets</span>
+            </div>
+            <span class="state-divider" aria-hidden="true">≠</span>
+            <div>
+              <small>DERIVED</small><strong>Expected</strong
+              ><span>What Turaco can explain</span>
+            </div>
+            <span class="state-divider" aria-hidden="true">≠</span>
+            <div>
+              <small>REPORTED</small><strong>Observed</strong
+              ><span>What the provider last saw</span>
+            </div>
+            <a href="docs/integrations/intune-assignment-intelligence.html"
+              >Different questions.<br />Different answers. ↗</a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="section wrap architecture-section reveal">
+        <div class="architecture-copy">
+          <p class="eyebrow">03 / UNDER THE HOOD</p>
+          <h2>
+            Connected by design.<br /><span class="soft-text"
+              >Clear at the boundaries.</span
+            >
+          </h2>
+          <p>
+            A Go API and worker. Explicit PostgreSQL. Domain modules that own
+            their data and share public contracts. A foundation you can inspect.
+          </p>
+          <a class="text-link" href="docs/architecture/system-architecture.html"
+            >Explore the architecture <span aria-hidden="true">↗</span></a
+          >
+          <div class="stack-chips" aria-label="Technology stack">
+            <span>Go</span><span>PostgreSQL 18</span
+            ><span>React + TypeScript</span><span>S3</span><span>Docker</span>
+          </div>
+          <p class="small-note">
+            Architecture overview includes planned boundaries. Object storage is
+            an abstraction; agents remain capability placeholders.
+          </p>
+        </div>
+        <div class="architecture-visual">
+          <svg
+            viewBox="0 0 620 475"
+            role="img"
+            aria-labelledby="arch-title arch-desc"
+          >
+            <title id="arch-title">Turaco modular monolith architecture</title>
+            <desc id="arch-desc">
+              The React workspace connects to a Go API and worker containing
+              domain modules and shared platform services. PostgreSQL and S3 sit
+              below. Restricted connector and endpoint agents and integration
+              adapters have separate boundaries. Live integrations and agent
+              transport are planned.
+            </desc>
+            <g class="diagram-lines" fill="none">
+              <path
+                d="M310 66v33M310 351v28M115 351v69h86m219 0h85v-69M97 243H35V128h128m360 115h62V128h-128"
+              />
+            </g>
+            <rect
+              class="diagram-box"
+              x="163"
+              y="16"
+              width="294"
+              height="50"
+              rx="12"
+            />
+            <text class="diagram-label" x="310" y="47">React workspace</text>
+            <rect
+              class="diagram-container"
+              x="77"
+              y="99"
+              width="466"
+              height="252"
+              rx="17"
+            />
+            <text class="diagram-label" x="310" y="133">
+              Go API + worker · modular monolith
+            </text>
+            <g class="diagram-module">
+              <rect x="97" y="153" width="135" height="53" rx="9" />
+              <rect x="242" y="153" width="135" height="53" rx="9" />
+              <rect x="387" y="153" width="135" height="53" rx="9" />
+            </g>
+            <g class="diagram-text">
+              <text x="164" y="176">Service desk</text>
+              <text x="164" y="192">Knowledge · Tasks</text>
+              <text x="309" y="176">Assets · Inventory</text>
+              <text x="309" y="192">Procurement</text>
+              <text x="454" y="176">Endpoints · Security</text>
+              <text x="454" y="192">Infrastructure · Change</text>
+            </g>
+            <rect
+              class="diagram-box"
+              x="97"
+              y="225"
+              width="426"
+              height="100"
+              rx="10"
+            />
+            <text class="diagram-label" x="310" y="251">
+              Shared platform services
+            </text>
+            <g class="diagram-text">
+              <text x="310" y="277">
+                Identity · Authorization · Audit · Relationships
+              </text>
+              <text x="310" y="300">Outbox · Jobs · Notifications</text>
+            </g>
+            <rect
+              class="diagram-box"
+              x="201"
+              y="379"
+              width="218"
+              height="70"
+              rx="10"
+            />
+            <text class="diagram-label" x="310" y="405">PostgreSQL 18</text>
+            <text class="diagram-text" x="310" y="429">
+              S3-compatible storage boundary
+            </text>
+            <g class="diagram-text">
+              <text x="84" y="446">Restricted agents*</text>
+              <text x="535" y="446">Integration adapters*</text>
+            </g>
+          </svg>
+          <p>
+            * Connector / Endpoint: separate trust boundaries. Intune: fake
+            adapter; advisories: manual/import. Live Graph, advisory feeds and
+            Autotask REST are planned.
+          </p>
+        </div>
+      </section>
+      <section id="roadmap" class="section wrap reveal">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">04 / THE ROAD AHEAD</p>
+            <h2>
+              Built in slices.<br /><span class="soft-text"
+                >Shared in the open.</span
+              >
+            </h2>
+          </div>
+          <p>
+            <strong><span data-count="12">12</span> phases</strong>, one
+            connected direction. Status reflects the documented build, not a
+            release commitment. F9–F12 sequencing remains open.
+          </p>
+        </div>
+        <div class="roadmap-legend">
+          <span
+            ><i class="done-dot"></i> Done: core scope with documented
+            gaps</span
+          ><span><i class="progress-dot"></i> In progress</span
+          ><span><i class="planned-dot"></i> Planned</span>
+        </div>
+        <ol class="roadmap-grid">
+          <li class="done">
+            <span class="phase-id">F1 <b>Done</b></span>
+            <h3>Identity &amp; organization</h3>
+            <p>
+              On-prem identity and one-directory foundation. Real AD
+              verification remains.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F2 <b>Done</b></span>
+            <h3>Work foundation</h3>
+            <p>
+              Tasks, My Work, notifications, recurring work and manual briefing.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F3 <b>Done</b></span>
+            <h3>Products &amp; requests</h3>
+            <p>
+              Catalog, request lifecycles, approvals and employee request UI.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F4 <b>Done</b></span>
+            <h3>Inventory &amp; assets</h3>
+            <p>Procurement, stock, goods receipt and asset lifecycle.</p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F5 <b>Done</b></span>
+            <h3>Service desk &amp; knowledge</h3>
+            <p>
+              Tickets, knowledge, problems, runbooks and the internal side of the
+              Autotask sync. The Autotask REST client and webhook remain.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F6 <b>Done</b></span>
+            <h3>Endpoint intelligence</h3>
+            <p>
+              Devices, software, findings, assignment intelligence, history and
+              diff. The live Microsoft Graph client remains.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F7 <b>Done</b></span>
+            <h3>Infrastructure &amp; change</h3>
+            <p>
+              Topology, services with impact analysis, changes with approvals and
+              planning with a maintenance calendar.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F8 <b>Done</b></span>
+            <h3>Security &amp; IT briefing</h3>
+            <p>
+              Advisories, findings, remediation tracking and the computed IT
+              briefing. Live advisory feeds remain.
+            </p>
+          </li>
+          <li>
+            <span class="phase-id">F9 <b>Planned</b></span>
+            <h3>Software lifecycle</h3>
+            <p>
+              Provider-based patch orchestration. IntuneGet → Intune is the
+              intended path.
+            </p>
+          </li>
+          <li>
+            <span class="phase-id">F10 <b>Planned</b></span>
+            <h3>Remote access</h3>
+            <p>
+              Provider-based sessions with authorization and audit. HopToDesk,
+              RustDesk and AnyDesk as first providers.
+            </p>
+          </li>
+          <li>
+            <span class="phase-id">F11 <b>Planned</b></span>
+            <h3>Workforce presence</h3>
+            <p>
+              Operational availability and team coverage, with privacy-scoped
+              access.
+            </p>
+          </li>
+          <li>
+            <span class="phase-id">F12 <b>Planned</b></span>
+            <h3>Turaco AI</h3>
+            <p>
+              Typed tools acting as the requesting user. No AI runtime is
+              implemented.
+            </p>
+          </li>
+        </ol>
+        <a
+          class="text-link roadmap-link"
+          href="docs/product/implementation-plan.html"
+          >Read the implementation plan <span aria-hidden="true">↗</span></a
+        >
+      </section>
+      <section id="get-started" class="get-started wrap reveal">
+        <div>
+          <p class="eyebrow">05 / MAKE YOURSELF AT HOME</p>
+          <h2>Curious?<br />Start at the source.</h2>
+          <p>
+            Explore the docs, inspect the decisions, or run the development
+            environment. This is an early build with a public trail.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button primary"
+              href="https://github.com/MagicalWig34653/turaco"
+              >View on GitHub <span aria-hidden="true">↗</span></a
+            ><a class="text-link" href="docs/development/local-development.html"
+              >Setup guide ↗</a
+            >
+          </div>
+        </div>
+        <div class="terminal">
+          <div class="terminal-header">
+            <span><i></i><i></i><i></i></span
+            ><span>macOS quick start · Apple Silicon</span>
+          </div>
+          <div class="terminal-code">
+            <span class="terminal-comment"
+              ># From your local repository checkout</span
+            >
+            <pre><code>brew bundle
+colima start --cpu 6 --memory 12 --disk 80
+make bootstrap</code></pre>
+            <span class="terminal-comment"
+              ># Then use three separate terminals</span
+            >
+            <pre><code>make api
+make worker
+make frontend</code></pre>
+            <p>Open <a href="http://localhost:5173">localhost:5173 ↗</a></p>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="landing-footer wrap">
+      <div>
+        <a class="brand" href="index.html"
+          ><span class="brand-mark" aria-hidden="true">t</span>turaco</a
+        >
+        <p>One connected direction for internal IT.</p>
+        <p class="preview-note">
+          Project preview — name and branding not final
+        </p>
+      </div>
+      <div class="footer-links">
+        <a href="docs/README.html">Documentation</a
+        ><a href="https://github.com/MagicalWig34653/turaco">GitHub ↗</a
+        ><a href="docs/product/open-source-strategy.html">License direction</a
+        ><a href="docs/product/name-clearance.html">Name clearance</a>
+      </div>
+      <p class="license-note">
+        No LICENSE file is committed. No public distribution license is granted
+        yet; AGPL-3.0-or-later is the preferred direction, pending legal review.
+      </p>
+      <span class="footer-small"
+        >No trackers. No cookies. Just the project.</span
+      >
+    </footer>
+  </body>
+</html>
