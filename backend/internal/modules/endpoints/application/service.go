@@ -52,6 +52,10 @@ type Service struct {
 	// catalog limits catalog searches per user (guarded by catalogMu).
 	catalogMu sync.Mutex
 	catalog   catalogLimiter
+	// approvals, changes and locations serve Deployment planning (F9 G2, WithDeployments).
+	approvals DeploymentApprovals
+	changes   ChangeWindows
+	locations AssetLocations
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -65,7 +69,23 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	}
 	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
 		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
-		catalog: catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow}}
+		catalog:   catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow},
+		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}}
+}
+
+// WithDeployments connects Deployment planning to the Approvals, Changes and Assets public contracts. Without it
+// plans cannot be submitted for approval, every Change is unknown and no Asset has a location.
+func (s *Service) WithDeployments(approvals DeploymentApprovals, changes ChangeWindows, locations AssetLocations) *Service {
+	if approvals != nil {
+		s.approvals = approvals
+	}
+	if changes != nil {
+		s.changes = changes
+	}
+	if locations != nil {
+		s.locations = locations
+	}
+	return s
 }
 
 // WithSoftware sets the Software Management Provider (nil keeps "not configured") and switches the package

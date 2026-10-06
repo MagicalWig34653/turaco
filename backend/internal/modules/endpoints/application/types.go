@@ -158,6 +158,16 @@ type Principal struct {
 	SoftwareView    bool
 	SoftwareApprove bool
 	SoftwarePackage bool
+	// DeploymentsView, DeploymentsManage, DeploymentsExecute and DeploymentsHighImpact are the deployments.*
+	// permissions (F9 G2). Manage includes the read access.
+	DeploymentsView       bool
+	DeploymentsManage     bool
+	DeploymentsExecute    bool
+	DeploymentsHighImpact bool
+}
+
+func (p Principal) canViewDeployments() bool {
+	return p.DeploymentsView || p.DeploymentsManage || p.DeploymentsExecute
 }
 
 func (p Principal) canViewSoftware() bool {
@@ -335,6 +345,7 @@ type Store interface {
 	ManagementStore
 	ViewStore
 	SoftwareStore
+	DeploymentStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.
