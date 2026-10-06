@@ -79,6 +79,16 @@ func gateText(code string) string {
 		return "the package is not packaged yet."
 	case "hash_mismatch":
 		return "the installer hash reported by the provider does not equal the approved hash."
+	case application.IssueTargetSetArchived:
+		return "the target set is archived."
+	case application.IssueChangeWindowInvalid:
+		return "the change is not approved or scheduled, or its maintenance window has ended."
+	case application.IssueApprovalRequired:
+		return "the plan is high impact and needs an approved plan approval first."
+	case "approval_not_required":
+		return "the plan is not high impact and is scheduled without a plan approval."
+	case "plan_changed":
+		return "the plan changed after its approval; submit it again."
 	}
 	return "a precondition does not hold."
 }

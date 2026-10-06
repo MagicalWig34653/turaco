@@ -691,6 +691,18 @@ func (s *Service) UserHolders(ctx context.Context, assetIDs []string) (map[strin
 	return s.store.UserHolders(ctx, assetIDs)
 }
 
+// Locations returns assetID -> location id for the given assets (at most MaxLocationLookup) that have a location.
+// It authorizes nothing: callers (other modules through the public contract) decide who may see it.
+func (s *Service) Locations(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	if len(assetIDs) > MaxLocationLookup {
+		return nil, invalid("at most %d assets can be looked up at once", MaxLocationLookup)
+	}
+	return s.store.Locations(ctx, assetIDs)
+}
+
+// MaxLocationLookup bounds one Locations call.
+const MaxLocationLookup = 1000
+
 // AssetsHeldByUsers returns userID -> ids of the assets currently assigned to the User (at most limit in total).
 func (s *Service) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
 	return s.store.AssetsHeldByUsers(ctx, userIDs, limit)
