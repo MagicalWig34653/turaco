@@ -261,7 +261,7 @@ describe('plan actions', () => {
       id: 'schedule',
       disabledReason: 'deployments.reason.planChanged',
     });
-    expect(planActions(plan('scheduled', true), full)).toEqual([{ id: 'cancel' }]);
+    expect(planActions(plan('scheduled', true), full)).toEqual([]);
     expect(
       planActions(plan('draft', true, [approvalRequired]), full, 'endpoints.plan_changed')[0],
     ).toEqual({

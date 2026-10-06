@@ -261,9 +261,19 @@ export function deploymentTone(status: DeploymentStatus | string): Tone {
     case 'approved':
       return 'info';
     case 'scheduled':
+    case 'completed':
       return 'success';
     case 'cancelled':
       return 'neutral';
+    case 'resolving_targets':
+    case 'ready':
+    case 'running':
+      return 'info';
+    case 'paused':
+    case 'completed_with_errors':
+      return 'warning';
+    case 'failed':
+      return 'danger';
     default:
       return 'unknown';
   }
@@ -290,6 +300,19 @@ export function planSteps(status: DeploymentStatus, highImpact: boolean): PlanSt
   const order: PlanStep['id'][] = highImpact
     ? ['draft', 'submitted', 'approved', 'scheduled']
     : ['draft', 'scheduled'];
+  if (isRunStatus(status)) {
+    const done = order.slice(0, -1).map((id) => ({ id, state: 'done' as const }));
+    const scheduled: PlanStep = { id: 'scheduled', state: 'done' };
+    if (status === 'scheduled') return [...done, scheduled];
+    return [
+      ...done,
+      scheduled,
+      {
+        id: status,
+        state: status === 'failed' ? 'failed' : status.startsWith('completed') ? 'done' : 'current',
+      },
+    ];
+  }
   if (status === 'cancelled')
     return [
       ...order.map((id) => ({ id, state: 'upcoming' as const })),
@@ -303,6 +326,19 @@ export function planSteps(status: DeploymentStatus, highImpact: boolean): PlanSt
       i < index ? 'done' : i === index ? (id === 'scheduled' ? 'done' : 'current') : 'upcoming',
   }));
 }
+
+/** Statuses from scheduled on belong to the run view; the planning actions no longer apply. */
+export const runStatuses = [
+  'scheduled',
+  'resolving_targets',
+  'ready',
+  'running',
+  'paused',
+  'completed',
+  'completed_with_errors',
+  'failed',
+] as const;
+export const isRunStatus = (status: string) => (runStatuses as readonly string[]).includes(status);
 
 export const blockingIssues = (issues: readonly PlanIssue[], ...except: string[]) =>
   issues.filter((issue) => issue.blocking && !except.includes(issue.code));
@@ -322,7 +358,7 @@ export function planActions(
   can: (permission: string) => boolean,
   lastErrorCode?: string,
 ): PlanAction[] {
-  if (!can('deployments.manage')) return [];
+  if (!can('deployments.manage') || isRunStatus(plan.status)) return [];
   const actions: PlanAction[] = [];
   const highImpactAllowed = can('deployments.high_impact');
   const blocking = blockingIssues(plan.validation.issues, 'approval_required');
@@ -335,7 +371,7 @@ export function planActions(
     );
     actions.push({ id: 'submit', ...(disabledReason ? { disabledReason } : {}) });
   }
-  if (plan.status !== 'cancelled' && plan.status !== 'scheduled') {
+  if (plan.status !== 'cancelled') {
     const disabledReason = reason(
       [plan.highImpact && !highImpactAllowed, 'deployments.reason.needsHighImpact'],
       [plan.status === 'pending_approval', 'deployments.reason.approvalPending'],

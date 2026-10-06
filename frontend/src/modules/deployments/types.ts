@@ -126,6 +126,13 @@ export const deploymentStatuses = [
   'approved',
   'scheduled',
   'cancelled',
+  'resolving_targets',
+  'ready',
+  'running',
+  'paused',
+  'completed',
+  'completed_with_errors',
+  'failed',
 ] as const;
 export type DeploymentStatus = (typeof deploymentStatuses)[number];
 
@@ -296,3 +303,77 @@ export type DeploymentInput = {
 };
 
 export type DeploymentFilter = { status: string; productId: string; versionId: string };
+
+export const haltReasons = ['manual_halt', 'quality_issue', 'security_risk', 'other'] as const;
+
+export const targetStates = [
+  'pending',
+  'assignment_requested',
+  'awaiting_observation',
+  'successful',
+  'failed',
+  'expired',
+  'already_satisfied',
+  'not_applicable',
+  'cancelled',
+] as const;
+
+export const ringStatuses = [
+  'pending',
+  'active',
+  'awaiting_promotion',
+  'promoted',
+  'halted',
+] as const;
+
+export type RingProgress = {
+  ringId: string;
+  ringRunId: string;
+  position: number;
+  name: string;
+  status: string;
+  statusReason: string | null;
+  activatedAt: string | null;
+  settledAt: string | null;
+  awaitingSince: string | null;
+  promotedAt: string | null;
+  haltedAt: string | null;
+  promotionApprovalStatus: string | null;
+  approvalRequired: boolean;
+  successThresholdPercent: number;
+  soakMinutes: number;
+  counts: Record<string, number>;
+  freshSuccessful: number;
+  freshObserved: number;
+  successRatePercent: number | null;
+  soakRemainingSeconds: number;
+  /** previous_ring, resume, none, observations, soak, threshold, fresh_evidence, completion, approval, promotion. */
+  nextGate: string;
+};
+
+export type DeploymentProgress = { deployment: Deployment; rings: RingProgress[] };
+
+export type DeploymentTarget = {
+  id: string;
+  deviceId: string;
+  /** Null without endpoints.view. */
+  deviceName: string | null;
+  state: string;
+  stateReason: string | null;
+  resolvedAt: string;
+  assignmentRequestedAt: string | null;
+  readBackAt: string | null;
+  expiresAt: string | null;
+  decidedAt: string | null;
+  evidenceObservedAt: string | null;
+};
+
+export type DeploymentAttempt = {
+  id: string;
+  ringRunId: string;
+  kind: string;
+  attempt: number;
+  operationId: string;
+  requestedAt: string;
+  outcomeCode: string;
+};

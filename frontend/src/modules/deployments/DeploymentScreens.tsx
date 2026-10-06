@@ -29,7 +29,7 @@ import {
   Section,
   canViewSoftware,
 } from './components';
-import { codeKey, planActions, planSteps, type PlanAction } from './helpers';
+import { codeKey, isRunStatus, planActions, planSteps, type PlanAction } from './helpers';
 import {
   PlanFields,
   PlanFieldsDialog,
@@ -39,6 +39,7 @@ import {
   planInput,
   type PlanFieldValues,
 } from './PlanParts';
+import { RunView } from './RunView';
 import {
   cancelReasons,
   deploymentStatuses,
@@ -508,6 +509,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
   const steps = planSteps(plan.status, highImpact || (plan.status !== 'draft' && plan.highImpact));
   const actionLabel = (action: PlanAction) => t(`deployments.action.${action.id}`);
   const reason = validation.highImpactReason;
+  const isRun = isRunStatus(plan.status);
   const openApproval = plan.approvals.find((approval) => approval.status === 'pending');
 
   return (
@@ -559,7 +561,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
         </span>
       </p>
       {notice ? <Alert kind="success">{notice}</Alert> : null}
-      {plan.statusReason ? (
+      {plan.statusReason && !isRun ? (
         <Alert kind={plan.statusReason === 'approval_rejected' ? 'warning' : 'info'}>
           {t(
             codeKey(
@@ -581,6 +583,8 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
           )}
         </Alert>
       ) : null}
+
+      {isRun ? <RunView plan={plan} onChanged={detail.reload} /> : null}
 
       <section className="deployments-lifecycle" aria-labelledby={`${noteId}-steps`}>
         <div className="deployments-card-heading">
@@ -623,7 +627,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
               </Button>
             ))}
           </div>
-        ) : (
+        ) : isRun ? null : (
           <p className="deployments-muted">
             {t(codeKey('deployments.statusHint', plan.status, 'deployments.statusHint.none'))}
           </p>
