@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
@@ -38,6 +39,26 @@ func TestDeploymentPlanApprovalRoundTrip(t *testing.T) {
 		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.software_aliases WHERE software_product_id = $1::uuid`, productID)
 		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.software_products WHERE id = $1::uuid`, productID)
 		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
+	})
+	// The approver holds deployments.approve through a role; w.assignee holds nothing.
+	roleKey := "dep-approve-" + strings.ToLower(strings.ReplaceAll(w.corr, "_", "-"))
+	if len(roleKey) > 60 {
+		roleKey = roleKey[:60]
+	}
+	var roleID string
+	if err := w.pool.QueryRow(ctx, `INSERT INTO platform.roles(key, name) VALUES ($1, $1) RETURNING id::text`, roleKey).Scan(&roleID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.pool.Exec(ctx, `INSERT INTO platform.role_permissions(role_id, permission) VALUES ($1, 'deployments.approve')`, roleID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.pool.Exec(ctx, `INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by) VALUES ($1, 'user', $2, '{"actor":"test"}')`, roleID, w.member); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = w.pool.Exec(ctx, `DELETE FROM platform.role_assignments WHERE role_id = $1`, roleID)
+		_, _ = w.pool.Exec(ctx, `DELETE FROM platform.role_permissions WHERE role_id = $1`, roleID)
+		_, _ = w.pool.Exec(ctx, `DELETE FROM platform.roles WHERE id = $1`, roleID)
 	})
 	planner := endpointsapp.Principal{UserID: w.creator, Manage: true, SoftwarePackage: true, DeploymentsManage: true, DeploymentsHighImpact: true}
 	approverP := endpointsapp.Principal{UserID: w.member, SoftwareApprove: true}
@@ -102,6 +123,20 @@ func TestDeploymentPlanApprovalRoundTrip(t *testing.T) {
 	self := w.creator
 	if _, err := svc.SubmitDeployment(ctx, cc, planner, d.ID, &d.Version, endpointsapp.Approver{UserID: &self}); !errors.Is(err, endpointsapp.ErrNoEligibleApprover) {
 		t.Fatalf("self approver: %v", err)
+	}
+	// An approver without deployments.approve is refused.
+	assignee := w.assignee
+	if _, err := svc.SubmitDeployment(ctx, cc, planner, d.ID, &d.Version, endpointsapp.Approver{UserID: &assignee}); !errors.Is(err, endpointsapp.ErrNoEligibleApprover) {
+		t.Fatalf("approver without deployments.approve: %v", err)
+	}
+	// A Team qualifies through a member holding it (the creator, also a member, is excluded).
+	team := w.team
+	tp := plan()
+	if tp, err = svc.SubmitDeployment(ctx, cc, planner, tp.ID, &tp.Version, endpointsapp.Approver{TeamID: &team}); err != nil || tp.Status != "pending_approval" {
+		t.Fatalf("team approver: %+v %v", tp, err)
+	}
+	if _, err := svc.CancelDeployment(ctx, cc, planner, tp.ID, &tp.Version, "plan_error"); err != nil {
+		t.Fatal(err)
 	}
 	member := w.member
 	if d, err = svc.SubmitDeployment(ctx, cc, planner, d.ID, &d.Version, endpointsapp.Approver{UserID: &member}); err != nil || d.Status != "pending_approval" {

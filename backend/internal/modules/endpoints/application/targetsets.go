@@ -614,7 +614,8 @@ func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition, 
 			ev.Incomplete = true
 			return ev, nil
 		}
-		page, err := s.store.LiveDevicesPage(ctx, s.viewProvider, after, targetBatch)
+		limit := min(targetBatch, b.scans)
+		page, err := s.store.LiveDevicesPage(ctx, s.viewProvider, after, limit)
 		if err != nil {
 			return TargetEvaluation{}, err
 		}
@@ -627,7 +628,7 @@ func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition, 
 		if err != nil || stop {
 			return ev, err
 		}
-		if len(page) < targetBatch {
+		if len(page) < limit {
 			return ev, nil
 		}
 		after = page[len(page)-1].ID

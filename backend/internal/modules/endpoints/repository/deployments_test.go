@@ -26,7 +26,8 @@ type fakeApprovals struct {
 	requested map[string][]string // approval id -> excluded users
 	subjects  map[string]string   // approval id -> deployment id
 	cancelled []string
-	viewers   map[string]bool // deployment id + user id
+	// list holds the approvals per deployment id as the Approvals module would report them.
+	list map[string][]*application.DeploymentApprovalInfo
 }
 
 func (f *fakeApprovals) RequestInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, _, subjectID, _ string, a application.Approver, excluded []string) (string, error) {
@@ -37,6 +38,7 @@ func (f *fakeApprovals) RequestInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, 
 	}
 	id := f.newID()
 	f.requested[id], f.subjects[id] = excluded, subjectID
+	f.list[subjectID] = append(f.list[subjectID], &application.DeploymentApprovalInfo{ID: id, Status: "pending", ApproverUserID: a.UserID, ApproverTeamID: a.TeamID})
 	return id, nil
 }
 
@@ -44,17 +46,63 @@ func (f *fakeApprovals) CancelBySubjectInTx(_ context.Context, _ pgx.Tx, _ audit
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cancelled = append(f.cancelled, subjectID)
+	for _, a := range f.list[subjectID] {
+		if a.Status == "pending" {
+			a.Status = "cancelled"
+		}
+	}
 	return nil
 }
 
-func (f *fakeApprovals) ForSubject(context.Context, string) ([]application.DeploymentApprovalInfo, error) {
-	return nil, nil
-}
-
-func (f *fakeApprovals) CanView(_ context.Context, subjectID, userID string) (bool, error) {
+func (f *fakeApprovals) ForSubject(_ context.Context, subjectID string) ([]application.DeploymentApprovalInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.viewers[subjectID+userID], nil
+	var out []application.DeploymentApprovalInfo
+	for _, a := range f.list[subjectID] {
+		out = append(out, *a)
+	}
+	return out, nil
+}
+
+// setDecided records a decision of approval id by user.
+func (f *fakeApprovals) setDecided(id, status, user string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, l := range f.list {
+		for _, a := range l {
+			if a.ID == id {
+				a.Status, a.DecidedByUserID = status, &user
+			}
+		}
+	}
+}
+
+// fakeApprovers grants permissions per User and knows Team members.
+type fakeApprovers struct {
+	perms map[string][]string
+	teams map[string][]string // team id -> member ids
+}
+
+func (f *fakeApprovers) Permissions(_ context.Context, userID string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, p := range f.perms[userID] {
+		out[p] = struct{}{}
+	}
+	return out, nil
+}
+
+func (f *fakeApprovers) TeamMemberIDs(_ context.Context, teamID string) ([]string, error) {
+	return f.teams[teamID], nil
+}
+
+func (f *fakeApprovers) TeamIDsOfUser(_ context.Context, userID string) ([]string, error) {
+	var out []string
+	for t, ms := range f.teams {
+		if slices.Contains(ms, userID) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 type fakeChanges map[string]application.ChangeWindow
@@ -85,6 +133,7 @@ type depEnv struct {
 	*sw
 	dir       *fakeDir
 	approvals *fakeApprovals
+	approvers *fakeApprovers
 	changes   fakeChanges
 	locations fakeLocations
 	planner   application.Principal
@@ -97,9 +146,13 @@ func newDepEnv(t *testing.T) *depEnv {
 	s := newSW(t)
 	d := &depEnv{sw: s, dir: &fakeDir{groups: map[string]application.DirectoryGroup{}, parents: map[string][]string{}, members: map[string][]string{},
 		users: map[string]string{}, noIdentity: map[string]bool{}}, changes: fakeChanges{}, locations: fakeLocations{}, other: s.newID()}
-	d.approvals = &fakeApprovals{newID: s.newID, requested: map[string][]string{}, subjects: map[string]string{}, viewers: map[string]bool{}}
-	s.svc.WithViews(d.dir, fakeHolders{held: map[string]string{}}).WithDeployments(d.approvals, d.changes, d.locations)
-	d.planner = application.Principal{UserID: s.user, DeploymentsManage: true, DeploymentsHighImpact: true, View: true}
+	d.approvals = &fakeApprovals{newID: s.newID, requested: map[string][]string{}, subjects: map[string]string{}, list: map[string][]*application.DeploymentApprovalInfo{}}
+	d.approvers = &fakeApprovers{perms: map[string][]string{s.approver: {application.PermDeploymentsApprove}}, teams: map[string][]string{}}
+	// The fleet share rule depends on every live Device of the shared test database; tests switch it off and set
+	// thresholds explicitly where they test them.
+	s.svc.WithViews(d.dir, fakeHolders{held: map[string]string{}}).WithDeployments(d.approvals, d.changes, d.locations).
+		WithDeploymentApprovers(d.approvers).WithHighImpactThresholds(application.HighImpactTargetThreshold, 0)
+	d.planner = application.Principal{UserID: s.user, DeploymentsManage: true, DeploymentsHighImpact: true, View: true, ChangesRead: true}
 	d.reader = application.Principal{UserID: s.user, DeploymentsView: true}
 	t.Cleanup(func() {
 		ctx := context.Background()
@@ -232,8 +285,11 @@ func TestTargetSetEvaluationFiltersAndExplain(t *testing.T) {
 	if results["platform"] != "matched/" || results["compliance"] != "failed/value_differs" || results["group"] != "failed/not_member" {
 		t.Fatalf("clauses = %v", results)
 	}
-	if ex, err = d.svc.ExplainTargetSet(ctx, d.reader, set.ID, devs["d4"].ID); err != nil || !ex.Matched || !ex.Redacted || ex.DeviceName != "" {
-		t.Fatalf("explain d4 without endpoints.view: %v %+v", err, ex)
+	if _, err = d.svc.ExplainTargetSet(ctx, d.reader, set.ID, devs["d4"].ID); !errors.Is(err, application.ErrForbidden) {
+		t.Fatalf("explain d4 without endpoints.view: %v", err)
+	}
+	if ex, err = d.svc.ExplainTargetSet(ctx, d.planner, set.ID, devs["d4"].ID); err != nil || !ex.Matched || ex.DeviceName != "PC-4" {
+		t.Fatalf("explain d4: %v %+v", err, ex)
 	}
 	if _, err := d.svc.ExplainTargetSet(ctx, d.planner, set.ID, d.newID()); !errors.Is(err, application.ErrNotFound) {
 		t.Fatalf("unknown device: %v", err)
@@ -251,7 +307,7 @@ func TestTargetSetCapsRedactionPermissionsAndLifecycle(t *testing.T) {
 	d.fleet(d.newID())
 	all := d.set("everything", application.TargetDefinition{})
 	ev := d.evaluate(d.reader, all.ID)
-	if ev.Matched != 4 || len(ev.Examples) != 4 || !ev.Examples[0].Redacted || ev.Examples[0].Name != "" || ev.ByPlatform["windows"] != 3 || ev.ByCompliance["noncompliant"] != 1 {
+	if ev.Matched != 4 || len(ev.Examples) != 0 || !ev.ExamplesRedacted || ev.ByPlatform["windows"] != 3 || ev.ByCompliance["noncompliant"] != 1 {
 		t.Fatalf("evaluation without endpoints.view: %+v", ev)
 	}
 	d.svc.WithTargetCap(2)
@@ -469,8 +525,13 @@ func TestDeploymentPlanningLifecycleAndRingRules(t *testing.T) {
 	for _, tr := range detail.Transitions {
 		ops = append(ops, tr.Operation)
 	}
-	if !slices.Equal(ops, []string{"created", "scheduled", "cancelled"}) || len(detail.Rings) != 2 || detail.Changes[okChange].Reference != "CHG-1" {
+	// The reader may not read the Change (no changes permission, not requester or owner): a hidden placeholder.
+	if !slices.Equal(ops, []string{"created", "scheduled", "cancelled"}) || len(detail.Rings) != 2 || !detail.Changes[okChange].Hidden ||
+		detail.Changes[okChange].Reference != "" || detail.Changes[okChange].WindowEnd != nil {
 		t.Fatalf("detail = %v %+v", ops, detail)
+	}
+	if detail, err = d.svc.GetDeployment(ctx, d.planner, dep.ID); err != nil || detail.Changes[okChange].Hidden || detail.Changes[okChange].Reference != "CHG-1" {
+		t.Fatalf("detail with changes read: %v %+v", err, detail.Changes)
 	}
 	for _, typ := range []string{application.EventDeploymentScheduled, application.EventDeploymentCancelled} {
 		if n := d.count(`SELECT count(*) FROM platform.outbox_events WHERE event_type = $1 AND correlation_id = $2`, typ, d.corr); n != 1 {
@@ -484,9 +545,20 @@ func TestDeploymentPlanningLifecycleAndRingRules(t *testing.T) {
 
 func ptr(n int) *int { return &n }
 
+// decide records the decision of the plan's pending approval by the approver and delivers ApprovalDecided.
 func (d *depEnv) decide(dep application.Deployment, decision string) error {
 	d.t.Helper()
-	payload, _ := json.Marshal(map[string]string{"approvalId": *dep.ApprovalID, "subjectType": "deployment", "subjectId": dep.ID, "decision": decision})
+	return d.decideAs(dep.ID, *dep.ApprovalID, decision, d.approver)
+}
+
+func (d *depEnv) decideAs(depID, approvalID, decision, user string) error {
+	d.t.Helper()
+	status := "approved"
+	if decision == "reject" {
+		status = "rejected"
+	}
+	d.approvals.setDecided(approvalID, status, user)
+	payload, _ := json.Marshal(map[string]string{"approvalId": approvalID, "subjectType": "deployment", "subjectId": depID, "decision": decision})
 	return d.repo().InTx(context.Background(), func(tx pgx.Tx) error {
 		return d.svc.OnApprovalDecided(context.Background(), tx, events.OutboxEvent{EventType: "ApprovalDecided", CorrelationID: d.corr, Payload: payload})
 	})
@@ -513,10 +585,17 @@ func TestDeploymentHighImpactNeedsPermissionAndApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An all-Devices ring needs deployments.high_impact.
-	ring := application.RingInput{Name: "Pilot", TargetSetID: all.ID, SuccessThresholdPercent: 90, NoWindowRequired: true}
+	// An all-Devices ring needs deployments.high_impact and a maintenance window.
+	start, end := time.Now().Add(time.Hour), time.Now().Add(48*time.Hour)
+	change := d.newID()
+	d.changes[change] = application.ChangeWindow{ID: change, Reference: "CHG-HI", Status: "scheduled", WindowStart: &start, WindowEnd: &end}
+	ring := application.RingInput{Name: "Pilot", TargetSetID: all.ID, SuccessThresholdPercent: 90, ChangeID: &change}
 	if _, _, err := d.svc.AddRing(ctx, d.caller(), manager, dep.ID, &dep.Version, ring); !errors.Is(err, application.ErrHighImpactForbidden) {
 		t.Fatalf("all devices without high impact: %v", err)
+	}
+	if _, _, err := d.svc.AddRing(ctx, d.caller(), d.planner, dep.ID, &dep.Version, application.RingInput{Name: "Pilot", TargetSetID: all.ID,
+		SuccessThresholdPercent: 90, NoWindowRequired: true}); gateCode(err) != application.IssueNoWindowHighImpact {
+		t.Fatalf("all devices without a window: %v", err)
 	}
 	dep, _, err = d.svc.AddRing(ctx, d.caller(), d.planner, dep.ID, &dep.Version, ring)
 	if err != nil || !dep.HighImpact {
@@ -542,22 +621,16 @@ func TestDeploymentHighImpactNeedsPermissionAndApproval(t *testing.T) {
 	if ex := d.approvals.requested[*dep.ApprovalID]; !slices.Contains(ex, d.user) {
 		t.Fatalf("excluded = %v", ex)
 	}
-	// A decision about another approval is a permanent error; other subjects are ignored.
-	wrong := dep
-	other := d.newID()
-	wrong.ApprovalID = &other
-	if err := d.decide(wrong, "approve"); !events.IsPermanent(err) {
-		t.Fatalf("foreign approval: %v", err)
-	}
-	// Rejected: back to draft with approval_rejected; the plan may be submitted again.
+	// Rejected: back to draft with approval_rejected and the approval binding cleared; it may be submitted again.
 	if err := d.decide(dep, "reject"); err != nil {
 		t.Fatal(err)
 	}
 	dep = d.get(dep.ID)
-	if dep.Status != application.DeploymentDraft || dep.StatusReason == nil || *dep.StatusReason != application.ReasonApprovalRejected {
+	if dep.Status != application.DeploymentDraft || dep.StatusReason == nil || *dep.StatusReason != application.ReasonApprovalRejected ||
+		dep.ApprovalID != nil || dep.PlanSHA256 != nil || dep.SubmittedAt != nil {
 		t.Fatalf("after rejection: %+v", dep)
 	}
-	if err := d.decide(dep, "approve"); err != nil {
+	if err := d.decideAs(dep.ID, d.newID(), "approve", d.approver); err != nil {
 		t.Fatalf("stale decision must be ignored: %v", err)
 	}
 	if got := d.get(dep.ID); got.Status != application.DeploymentDraft {
@@ -591,7 +664,13 @@ func TestDeploymentHighImpactNeedsPermissionAndApproval(t *testing.T) {
 	}
 
 	// Cancelling a pending plan cancels its Approval.
-	dep2, _ := d.plan(v.ID, all)
+	dep2, err := d.svc.CreateDeployment(ctx, d.caller(), d.planner, application.DeploymentInput{Name: "Again", SoftwareVersionID: v.ID, Intent: "install"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dep2, _, err = d.svc.AddRing(ctx, d.caller(), d.planner, dep2.ID, &dep2.Version, ring); err != nil {
+		t.Fatal(err)
+	}
 	dep2, err = d.svc.SubmitDeployment(ctx, d.caller(), d.planner, dep2.ID, &dep2.Version, application.Approver{UserID: &approver})
 	if err != nil {
 		t.Fatal(err)
@@ -671,7 +750,8 @@ func TestDeploymentOverlapWarningAndScopedReads(t *testing.T) {
 	if _, err := d.svc.GetDeployment(ctx, stranger, first.ID); !errors.Is(err, application.ErrNotFound) {
 		t.Fatalf("stranger detail: %v", err)
 	}
-	d.approvals.viewers[first.ID+d.other] = true
+	other := d.other
+	d.approvals.list[first.ID] = append(d.approvals.list[first.ID], &application.DeploymentApprovalInfo{ID: d.newID(), Status: "approved", ApproverUserID: &other})
 	if _, err := d.svc.GetDeployment(ctx, stranger, first.ID); err != nil {
 		t.Fatalf("approver detail: %v", err)
 	}
@@ -710,6 +790,12 @@ func TestDeploymentTablesEnforceInvariants(t *testing.T) {
 		`DELETE FROM endpoints.deployment_transitions WHERE deployment_id = $1`,
 		`UPDATE endpoints.deployment_rings SET soak_minutes = 5 WHERE deployment_id = $1`,
 		`DELETE FROM endpoints.deployment_rings WHERE deployment_id = $1`,
+		// The approval binding, scheduling and high impact are frozen outside their own transitions.
+		`UPDATE endpoints.deployments SET plan_sha256 = repeat('a', 64) WHERE id = $1`,
+		`UPDATE endpoints.deployments SET approval_id = uuidv7() WHERE id = $1`,
+		`UPDATE endpoints.deployments SET high_impact = NOT high_impact WHERE id = $1`,
+		`UPDATE endpoints.deployments SET scheduled_at = now() - interval '1 day' WHERE id = $1`,
+		`UPDATE endpoints.deployments SET status = 'cancelled', status_reason = 'other', cancelled_by = created_by, cancelled_at = now(), high_impact = NOT high_impact WHERE id = $1`,
 	}
 	for _, sql := range refused {
 		if _, err := d.pool.Exec(ctx, sql, dep.ID); err == nil {
@@ -730,6 +816,9 @@ func TestDeploymentTablesEnforceInvariants(t *testing.T) {
 		`UPDATE endpoints.deployment_rings SET position = 2 WHERE deployment_id = $1`,
 		`UPDATE endpoints.deployment_rings SET change_id = uuidv7() WHERE deployment_id = $1`,
 		`UPDATE endpoints.deployment_rings SET success_threshold_percent = 0 WHERE deployment_id = $1`,
+		// A draft carries no approval binding.
+		`UPDATE endpoints.deployments SET plan_sha256 = repeat('a', 64) WHERE id = $1`,
+		`UPDATE endpoints.deployments SET approval_id = uuidv7() WHERE id = $1`,
 	} {
 		if _, err := d.pool.Exec(ctx, sql, draft.ID); err == nil {
 			t.Errorf("accepted: %s", sql)

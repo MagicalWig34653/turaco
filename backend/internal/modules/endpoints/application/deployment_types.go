@@ -179,8 +179,8 @@ type TargetSet struct {
 	ExcludeDeviceCount  int
 	DeviceListsRedacted bool
 	Version             int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // TargetSetInput is the input of CreateTargetSet and UpdateTargetSet. OwnerUserID empty means the caller.

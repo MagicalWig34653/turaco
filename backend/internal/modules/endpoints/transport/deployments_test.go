@@ -72,7 +72,11 @@ func TestTargetSetHTTPRoundTrip(t *testing.T) {
 		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.target_sets WHERE name = $1`, name)
 		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 	})
-	h := serve(t, as(admin, "deployments.manage"), nil, false)
+	// Groups and Device ids in a definition need endpoints.view.
+	if rec := do(serve(t, as(admin, "deployments.manage"), nil, false), "POST", "/api/v1/target-sets", `{"name":"`+name+`","definition":{"excludeDeviceIds":["`+unknownID+`"]}}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("device ids without endpoints.view: %d %s", rec.Code, rec.Body.String())
+	}
+	h := serve(t, as(admin, "deployments.manage", "endpoints.view"), nil, false)
 	rec := do(h, "POST", "/api/v1/target-sets", `{"name":"`+name+`","definition":{"filters":{"platform":["windows","windows"],
 		"groups":[{"externalId":"grp-1","includeNested":true}]},"excludeDeviceIds":["`+strings.ToUpper(unknownID)+`"]}}`)
 	if rec.Code != http.StatusCreated {
