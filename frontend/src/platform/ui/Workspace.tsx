@@ -54,23 +54,44 @@ export function useCountUp(value: number, enabled = true): number {
     : value;
 }
 
+type MetricTone = 'info' | 'warning' | 'danger' | 'success' | 'neutral';
+
+/**
+ * A zero count never keeps an alarming tone: with a zero caption it reads as
+ * success ("Nothing overdue"), otherwise it becomes neutral.
+ */
+export function metricState(
+  value: number,
+  tone: MetricTone,
+  caption?: string,
+  zeroCaption?: string,
+): { tone: MetricTone; caption: string | undefined } {
+  if (value !== 0 || tone === 'info' || tone === 'neutral' || tone === 'success')
+    return { tone, caption };
+  return zeroCaption ? { tone: 'success', caption: zeroCaption } : { tone: 'neutral', caption };
+}
+
 export function MetricCard({
   label,
   value,
   to,
-  tone = 'info',
-  caption,
+  tone: requestedTone = 'info',
+  caption: requestedCaption,
+  zeroCaption,
   denominator,
   icon,
 }: {
   label: string;
   value: number;
   to: string;
-  tone?: 'info' | 'warning' | 'danger' | 'success';
+  tone?: MetricTone;
   caption?: string;
+  /** Calm wording shown instead of `caption` when a warning/danger count is zero. */
+  zeroCaption?: string;
   denominator?: number;
   icon?: ReactNode;
 }) {
+  const { tone, caption } = metricState(value, requestedTone, requestedCaption, zeroCaption);
   const display = useCountUp(value);
   return (
     <Link

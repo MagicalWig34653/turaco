@@ -4,18 +4,18 @@ import { useSession } from '../platform/session/SessionProvider';
 import { PageHeader } from '../platform/ui/PageHeader';
 import { NavIcon } from '../platform/ui/NavIcon';
 import { Card } from '../platform/ui/Workspace';
-import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
+import { OverviewScreen, useGreeting } from './OverviewScreen';
 
 export function Home() {
   const { t } = useI18n();
   const { can } = useSession();
-  if (can('tasks.view') || can('tasks.manage') || can('tasks.work'))
-    return <MyWorkScreen overview />;
+  const greeting = useGreeting();
+  if (can('tasks.view') || can('tasks.manage') || can('tasks.work')) return <OverviewScreen />;
   return (
     <div className="work-dashboard employee-home">
       <PageHeader
         eyebrow={t('dashboard.employeeEyebrow')}
-        title={t('dashboard.employeeTitle')}
+        title={greeting}
         intro={t('dashboard.employeeIntro')}
       />
       <Card className="employee-support">
@@ -73,7 +73,7 @@ export function Home() {
         <span className="dashboard-eyebrow">{t('nav.catalog')}</span>
         <h2>{t('dashboard.catalogTitle')}</h2>
         <p>{t('dashboard.catalogIntro')}</p>
-        <Link to="/catalog">
+        <Link to="/catalog" className="btn">
           {t('dashboard.browseCatalog')} <span aria-hidden="true">→</span>
         </Link>
       </Card>

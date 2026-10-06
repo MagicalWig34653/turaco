@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeFeed } from './workModel';
+import { focusSummary, summarizeFeed } from './workModel';
 import type { FeedEntry } from '../briefing/types';
+import type { Task } from '../tasks/types';
 const entry = (kind: FeedEntry['kind'], fields: Partial<FeedEntry> = {}): FeedEntry => ({
   kind,
   severity: 'info',
@@ -32,5 +33,30 @@ describe('dashboard feed summary', () => {
       'manual_item',
     ]);
     expect(entries[0]?.kind).toBe('manual_item');
+  });
+});
+
+describe('My Work focus summary', () => {
+  const now = new Date('2026-10-06T12:00:00Z');
+  const item = (
+    id: string,
+    priority: Task['priority'],
+    dueAt: string | null,
+    status: Task['status'] = 'open',
+  ) => ({ id, priority, dueAt, status });
+  it('counts open work by priority and lists upcoming due dates first', () => {
+    const summary = focusSummary(
+      [
+        item('a', 'high', '2026-10-09T00:00:00Z'),
+        item('b', 'low', '2026-10-07T00:00:00Z'),
+        item('late', 'urgent', '2026-10-01T00:00:00Z'),
+        item('done', 'high', '2026-10-08T00:00:00Z', 'completed'),
+        item('none', 'normal', null),
+      ],
+      now,
+    );
+    expect(summary.total).toBe(4);
+    expect(summary.byPriority).toEqual({ urgent: 1, high: 1, normal: 1, low: 1 });
+    expect(summary.dueSoon.map((task) => task.id)).toEqual(['b', 'a']);
   });
 });

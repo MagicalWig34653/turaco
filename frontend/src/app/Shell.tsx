@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { organizationApi } from '../modules/organization/api';
 import { notificationsApi, onNotificationsChanged } from '../modules/notifications/api';
 import { unreadLabel } from '../modules/notifications/text';
 import { useAsync } from '../platform/api/useAsync';
@@ -8,6 +7,7 @@ import { useI18n } from '../platform/i18n/I18nProvider';
 import { locales, type Locale } from '../platform/i18n/i18n';
 import { Link, navigate, useLocation } from '../platform/router/Router';
 import { useSession } from '../platform/session/SessionProvider';
+import { sessionDisplayName } from '../platform/session/identity';
 import { useTheme } from '../platform/theme/ThemeProvider';
 import { NavIcon } from '../platform/ui/NavIcon';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
@@ -53,13 +53,7 @@ function UserIdentity({ name, method }: { name: string; method?: string | undefi
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
   const { session, can, logout } = useSession();
-  const userId = session?.userId ?? '';
-  const user = useAsync(
-    (signal) =>
-      can('organization.view') ? organizationApi.user(userId, signal) : Promise.resolve(undefined),
-    [can, userId],
-  );
-  const userName = user.data?.displayName || '';
+  const userName = sessionDisplayName(session) ?? '';
   const navigation = shellNavigation(can);
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();
   const { pathname } = useLocation();
