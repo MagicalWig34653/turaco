@@ -775,7 +775,7 @@ func TestDeploymentOverlapWarningAndScopedReads(t *testing.T) {
 	if res, err := d.svc.ListDeployments(ctx, d.reader, application.DeploymentFilter{Status: "scheduled", VersionID: v.ID}); err != nil || len(res.Items) != 1 {
 		t.Fatalf("filtered list: %v %+v", err, res)
 	}
-	if _, err := d.svc.ListDeployments(ctx, d.reader, application.DeploymentFilter{Status: "running"}); err == nil {
+	if _, err := d.svc.ListDeployments(ctx, d.reader, application.DeploymentFilter{Status: "bogus"}); err == nil {
 		t.Fatal("unknown status accepted")
 	}
 	if _, err := d.svc.ValidateDeployment(ctx, d.reader, first.ID); !errors.Is(err, application.ErrForbidden) {

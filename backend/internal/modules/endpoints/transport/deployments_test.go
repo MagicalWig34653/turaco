@@ -34,7 +34,7 @@ func TestDeploymentRoutesRequirePermissions(t *testing.T) {
 		{"create set oversize", "POST", "/api/v1/target-sets", `{"name":"x","definition":{"filters":{"model":["` + strings.Repeat("m", 100<<10) + `"]}}}`, []string{"deployments.manage"}, http.StatusBadRequest},
 		{"archive without version", "POST", "/api/v1/target-sets/" + unknownID + "/archive", `{}`, []string{"deployments.manage"}, http.StatusBadRequest},
 		{"deployments for any session", "GET", "/api/v1/deployments", "", nil, http.StatusOK},
-		{"deployments invalid status", "GET", "/api/v1/deployments?status=running", "", []string{"deployments.view"}, http.StatusBadRequest},
+		{"deployments invalid status", "GET", "/api/v1/deployments?status=bogus", "", []string{"deployments.view"}, http.StatusBadRequest},
 		{"deployment unknown", "GET", "/api/v1/deployments/" + unknownID, "", []string{"deployments.view"}, http.StatusNotFound},
 		{"deployment of another user", "GET", "/api/v1/deployments/" + unknownID, "", nil, http.StatusNotFound},
 		{"create with view", "POST", "/api/v1/deployments", `{"name":"x","softwareVersionId":"` + unknownID + `","intent":"install"}`, []string{"deployments.view"}, http.StatusForbidden},
@@ -48,6 +48,18 @@ func TestDeploymentRoutesRequirePermissions(t *testing.T) {
 		{"submit without high impact", "POST", "/api/v1/deployments/" + unknownID + "/submit", `{"approverUserId":"` + admin + `","expectedVersion":1}`, []string{"deployments.manage"}, http.StatusForbidden},
 		{"schedule unknown", "POST", "/api/v1/deployments/" + unknownID + "/schedule", `{"expectedVersion":1}`, []string{"deployments.manage"}, http.StatusNotFound},
 		{"cancel free text", "POST", "/api/v1/deployments/" + unknownID + "/cancel", `{"reason":"because I said so","expectedVersion":1}`, []string{"deployments.manage"}, http.StatusBadRequest},
+		{"start with manage only", "POST", "/api/v1/deployments/" + unknownID + "/start", `{"expectedVersion":1}`, []string{"deployments.manage"}, http.StatusForbidden},
+		{"start without version", "POST", "/api/v1/deployments/" + unknownID + "/start", `{}`, []string{"deployments.execute"}, http.StatusBadRequest},
+		{"start with the capability off", "POST", "/api/v1/deployments/" + unknownID + "/start", `{"expectedVersion":1}`, []string{"deployments.execute"}, http.StatusConflict},
+		{"resume with the capability off", "POST", "/api/v1/deployments/" + unknownID + "/resume", `{"expectedVersion":1}`, []string{"deployments.execute"}, http.StatusConflict},
+		{"promote with the capability off", "POST", "/api/v1/deployments/" + unknownID + "/rings/" + unknownID + "/promote", `{"expectedVersion":1}`, []string{"deployments.execute"}, http.StatusConflict},
+		{"pause unknown", "POST", "/api/v1/deployments/" + unknownID + "/pause", `{"expectedVersion":1}`, []string{"deployments.execute"}, http.StatusNotFound},
+		{"halt free text", "POST", "/api/v1/deployments/" + unknownID + "/halt", `{"reason":"because","expectedVersion":1}`, []string{"deployments.execute"}, http.StatusBadRequest},
+		{"halt ring with view", "POST", "/api/v1/deployments/" + unknownID + "/rings/" + unknownID + "/halt", `{"reason":"manual_halt","expectedVersion":1}`, []string{"deployments.view"}, http.StatusForbidden},
+		{"cancel with execute only", "POST", "/api/v1/deployments/" + unknownID + "/cancel", `{"reason":"plan_error","expectedVersion":1}`, []string{"deployments.execute"}, http.StatusNotFound},
+		{"progress of another user", "GET", "/api/v1/deployments/" + unknownID + "/progress", "", nil, http.StatusNotFound},
+		{"targets of another user", "GET", "/api/v1/deployments/" + unknownID + "/rings/" + unknownID + "/targets", "", nil, http.StatusNotFound},
+		{"attempts of another user", "GET", "/api/v1/deployments/" + unknownID + "/attempts", "", nil, http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
