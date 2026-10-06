@@ -23,6 +23,7 @@ var allTestEventTypes = []string{
 	"ServiceCreated", "ChangeSubmitted", "ChangeApproved", "ChangeRejected", "ChangeScheduled", "ChangeScheduledFanOut", "ChangeStarted", "ChangeCompleted", "ChangeFailed",
 	"InitiativeStatusChanged",
 	"SecurityAdvisoryPublished", "SecurityAdvisoryPublishedFanOut", "VulnerabilityFindingChanged",
+	"SoftwareVersionApprovalRequested", "SoftwareVersionApprovalRequestedFanOut", "SoftwareVersionApproved",
 	"TargetSetChanged", "DeploymentScheduled", "DeploymentCancelled",
 }
 
