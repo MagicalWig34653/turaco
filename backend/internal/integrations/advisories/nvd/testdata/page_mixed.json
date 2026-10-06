@@ -1,0 +1,72 @@
+{
+  "resultsPerPage": 3,
+  "startIndex": 0,
+  "totalResults": 3,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "timestamp": "2026-10-01T10:00:00.000",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2026-1001",
+        "sourceIdentifier": "cve@example.org",
+        "published": "2026-09-01T10:15:07.123",
+        "lastModified": "2026-09-20T14:00:00.000",
+        "vulnStatus": "Analyzed",
+        "descriptions": [
+          {"lang": "es", "value": "Descripcion en espanol."},
+          {"lang": "en", "value": "Heap overflow in Example Viewer before 2.5.0 allows remote code execution.‮evil\nSecond line."}
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {"source": "nvd@nist.gov", "type": "Primary", "cvssData": {"version": "3.1", "baseScore": 9.8, "baseSeverity": "CRITICAL"}}
+          ],
+          "cvssMetricV2": [
+            {"type": "Primary", "cvssData": {"baseScore": 4.0}}
+          ]
+        },
+        "configurations": [
+          {"nodes": [
+            {"operator": "OR", "negate": false, "cpeMatch": [
+              {"vulnerable": true, "criteria": "cpe:2.3:a:example_corp:example_viewer:*:*:*:*:*:*:*:*", "versionStartIncluding": "2.0.0", "versionEndExcluding": "2.5.0"},
+              {"vulnerable": true, "criteria": "cpe:2.3:a:example_corp:example_viewer:1.9:*:*:*:*:*:*:*"},
+              {"vulnerable": true, "criteria": "cpe:2.3:a:example_corp:example_viewer:*:*:*:*:*:macos:*:*", "versionEndIncluding": "1.8.1"}
+            ]}
+          ]},
+          {"operator": "AND", "nodes": [
+            {"operator": "OR", "negate": false, "cpeMatch": [
+              {"vulnerable": true, "criteria": "cpe:2.3:a:other_vendor:other_tool:*:*:*:*:*:*:*:*", "versionEndExcluding": "7.1"},
+              {"vulnerable": true, "criteria": "cpe:2.3:o:other_vendor:other_os:*:*:*:*:*:*:*:*"},
+              {"vulnerable": true, "criteria": "cpe:2.3:h:other_vendor:other_box:-:*:*:*:*:*:*:*"},
+              {"vulnerable": false, "criteria": "cpe:2.3:a:context_vendor:context_app:*:*:*:*:*:*:*:*"}
+            ]}
+          ]}
+        ],
+        "references": [
+          {"url": "https://example.org/advisory/1001"},
+          {"url": "http://example.org/insecure"},
+          {"url": "javascript:alert(1)"},
+          {"url": "https://example.org/advisory/1001"}
+        ]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2026-1002",
+        "published": "2026-09-02T00:00:00.000",
+        "lastModified": "2026-09-21T00:00:00.000",
+        "vulnStatus": "Rejected",
+        "descriptions": [{"lang": "en", "value": "** REJECT ** duplicate."}]
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2026-1003",
+        "published": "2026-09-03T00:00:00.000",
+        "lastModified": "2026-09-22T00:00:00.000",
+        "vulnStatus": "Awaiting Analysis",
+        "descriptions": [{"lang": "en", "value": "Awaiting analysis."}]
+      }
+    }
+  ]
+}
