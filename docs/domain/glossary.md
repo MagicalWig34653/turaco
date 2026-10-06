@@ -101,7 +101,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Management Observation** — provider-reported target result/status for a Management Artifact with source and observed time.
 - **Assignment Path** — explainability read model showing why an artifact is expected to apply or be excluded; not authoritative storage.
 - **Target** — selected scope of an operation.
-- **Target Set** *(F9 G2)* — a saved, bounded Device query (platform, OS version prefix, ownership, compliance, manufacturer, model, Device Group membership with optional nested Directory Groups, linked Asset's location) plus explicit include/exclude lists (at most 500 Devices each), evaluated on demand (bounded, explainable per clause), never continuously. Without any filter or include it selects all Devices, which is high impact. Replaces the planned Dynamic Group for endpoint targeting.
+- **Target Set** *(F9 G2)* — a saved, bounded Device query (platform, OS version prefix, ownership, compliance, manufacturer, model, Device Group membership with optional nested Directory Groups, linked Asset's location) plus explicit include/exclude lists (at most 500 Devices each), evaluated on demand (bounded, explainable per clause), never continuously. Without any effective filter (a list covering its whole enum counts as unset) it selects all Devices, which is high impact, as is a root Directory Group with its nested groups; a Deployment is also high impact by its summed target count (≥ 200 Devices or ≥ 25 % of the live Devices). Replaces the planned Dynamic Group for endpoint targeting.
 - **Dynamic Group** — query-defined continuously evaluated entity set (not implemented; endpoint targeting uses Target Sets).
 
 ## Security/knowledge
