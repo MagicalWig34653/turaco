@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -26,7 +27,7 @@ func newEnv(secure bool, active bool, perms map[string]struct{}) env {
 	logger := slog.New(slog.NewJSONHandler(logs, nil))
 	auth := NewSessionAuthenticator(fs, fakeGate{active: active}, fakePerms{perms: perms}, secure)
 	mux := http.NewServeMux()
-	Register(mux, fs, auth, secure, logger)
+	Register(mux, fs, auth, nil, secure, logger)
 	return env{mux, fs, logs}
 }
 
@@ -220,5 +221,46 @@ func TestLogoutRejectsGET(t *testing.T) {
 	e.mux.ServeHTTP(rec, cookieReq("GET", "/api/v1/auth/logout", "tok-secret"))
 	if rec.Code != http.StatusMethodNotAllowed || len(e.sessions.revoked) != 0 {
 		t.Fatalf("status=%d", rec.Code)
+	}
+}
+
+type fakeNames struct {
+	display, given string
+	err            error
+}
+
+func (f fakeNames) SessionNames(context.Context, string) (string, string, error) {
+	return f.display, f.given, f.err
+}
+
+func TestGetSessionNames(t *testing.T) {
+	tests := []struct {
+		name               string
+		names              SessionNameLoader
+		wantDisplay, given string
+	}{
+		{"with names", fakeNames{display: "Lena Hoffmann", given: "Lena"}, "Lena Hoffmann", "Lena"},
+		{"lookup error omits names", fakeNames{err: errors.New("boom")}, "", ""},
+		{"no loader", nil, "", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := &fakeSessions{sessions: map[string]Session{"tok-secret": testSession()}}
+			auth := NewSessionAuthenticator(fs, fakeGate{active: true}, fakePerms{}, false)
+			mux := http.NewServeMux()
+			Register(mux, fs, auth, tc.names, false, slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)))
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, cookieReq("GET", "/api/v1/auth/session", "tok-secret"))
+			var got sessionResponse
+			if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+			}
+			if got.DisplayName != tc.wantDisplay || got.GivenName != tc.given {
+				t.Fatalf("got %+v", got)
+			}
+			if tc.wantDisplay == "" && contains(rec.Body.String(), "displayName") {
+				t.Fatalf("empty name serialized: %s", rec.Body)
+			}
+		})
 	}
 }

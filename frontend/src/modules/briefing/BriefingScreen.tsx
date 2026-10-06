@@ -1,6 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -19,7 +20,7 @@ export function SeverityBadge({ severity }: { severity: BriefingItem['severity']
 
 /** Published briefing items for everybody with briefing.view; managers also see and filter all items. */
 export function BriefingScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const manage = can('briefing.manage');
   const [status, setStatus] = useState<BriefingStatus | ''>('');
@@ -51,13 +52,27 @@ export function BriefingScreen() {
     {
       key: 'published',
       header: t('briefing.col.published'),
-      render: (item) => (item.publishedAt ? formatDateTime(locale, item.publishedAt) : '–'),
+      render: (item) => <TableDate value={item.publishedAt} />,
     },
     {
       key: 'valid',
       header: t('briefing.col.validUntil'),
-      render: (item) => (item.validUntil ? formatDateTime(locale, item.validUntil) : '–'),
+      render: (item) => <TableDate value={item.validUntil} />,
     },
+  ];
+
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`briefing.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -74,7 +89,7 @@ export function BriefingScreen() {
         }
       />
       {manage ? (
-        <div className="filters">
+        <FilterBar activeFilters={activeFilters}>
           <Select
             label={t('tasks.col.status')}
             value={status}
@@ -84,9 +99,10 @@ export function BriefingScreen() {
               ...briefingStatuses.map((value) => ({ value, label: t(`briefing.status.${value}`) })),
             ]}
           />
-        </div>
+        </FilterBar>
       ) : null}
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.briefing')}
         columns={columns}
         rows={list.items}

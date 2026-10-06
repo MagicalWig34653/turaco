@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -228,13 +229,28 @@ export function WarehousesScreen() {
           ) : null
         }
       />
-      <form className="filters" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={[
+          ...(includeInactive
+            ? [
+                {
+                  key: 'includeInactive',
+                  label: t('inventory.warehouse.showInactive'),
+                  onRemove: () => {
+                    setIncludeInactive(false);
+                  },
+                },
+              ]
+            : []),
+        ]}
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Checkbox
           label={t('inventory.warehouse.showInactive')}
           checked={includeInactive}
           onChange={(event) => setIncludeInactive(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       {warehouses.error ? (
         <ApiErrorAlert error={warehouses.error} onRetry={warehouses.reload} />
       ) : null}

@@ -1,6 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -13,7 +14,7 @@ import { knowledgeApi } from './api';
 import type { Article, ArticleStatus } from './types';
 
 export function ArticlesScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const manage = can('knowledge.manage');
   const [query, setQuery] = useState('');
@@ -59,9 +60,34 @@ export function ArticlesScreen() {
     {
       key: 'updated',
       header: t('knowledge.col.updated'),
-      render: (a) => formatDateTime(locale, a.updatedAt),
+      render: (a) => <TableDate value={a.updatedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(query
+      ? [
+          {
+            key: 'q',
+            label: `${t('knowledge.search')}: ${query}`,
+            onRemove: () => {
+              setQuery('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`knowledge.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -75,7 +101,11 @@ export function ArticlesScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('knowledge.search')}
           type="search"
@@ -98,8 +128,9 @@ export function ArticlesScreen() {
             ]}
           />
         ) : null}
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.knowledge')}
         columns={columns}
         rows={list.items}

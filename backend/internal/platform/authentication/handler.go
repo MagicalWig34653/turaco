@@ -17,9 +17,16 @@ type sessionStore interface {
 	Revoke(ctx context.Context, sessionID, actorID, correlationID string) error
 }
 
+// SessionNameLoader returns the session user's own display and given name.
+// Names are presentation only; they never affect authentication.
+type SessionNameLoader interface {
+	SessionNames(ctx context.Context, userID string) (displayName, givenName string, err error)
+}
+
 type handler struct {
 	sessions sessionStore
 	auth     *SessionAuthenticator
+	names    SessionNameLoader
 	secure   bool
 	logger   *slog.Logger
 }
@@ -29,11 +36,17 @@ type sessionResponse struct {
 	AuthMethod  string   `json:"authMethod"`
 	ExpiresAt   string   `json:"expiresAt"`
 	Permissions []string `json:"permissions"`
+	DisplayName string   `json:"displayName,omitempty"`
+	GivenName   string   `json:"givenName,omitempty"`
 }
 
-// Register mounts the session endpoints under /api/v1/auth.
-func Register(mux *http.ServeMux, sessions sessionStore, auth *SessionAuthenticator, secureCookie bool, logger *slog.Logger) {
-	h := &handler{sessions: sessions, auth: auth, secure: secureCookie, logger: logger}
+// Register mounts the session endpoints under /api/v1/auth. names may be nil;
+// the session response then carries no names.
+func Register(mux *http.ServeMux, sessions sessionStore, auth *SessionAuthenticator, names SessionNameLoader, secureCookie bool, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	h := &handler{sessions: sessions, auth: auth, names: names, secure: secureCookie, logger: logger}
 	mux.Handle("GET /api/v1/auth/session", httpx.NoStore(http.HandlerFunc(h.getSession)))
 	// The whole API is also wrapped by RequireSameOrigin in main; keeping it
 	// here makes logout safe even if mounted elsewhere.
@@ -59,12 +72,23 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 		perms = append(perms, name)
 	}
 	sort.Strings(perms)
-	httpx.JSON(w, http.StatusOK, sessionResponse{
+	resp := sessionResponse{
 		UserID:      s.UserID,
 		AuthMethod:  s.AuthMethod,
 		ExpiresAt:   expires.UTC().Format(time.RFC3339),
 		Permissions: perms,
-	})
+	}
+	if h.names != nil {
+		// A name lookup failure must not break the session: the UI falls back
+		// to a neutral greeting.
+		display, given, err := h.names.SessionNames(r.Context(), s.UserID)
+		if err != nil {
+			h.logger.WarnContext(r.Context(), "session names unavailable", "request_id", httpx.RequestID(w), "error", err)
+		} else {
+			resp.DisplayName, resp.GivenName = display, given
+		}
+	}
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 func (h *handler) logout(w http.ResponseWriter, r *http.Request) {

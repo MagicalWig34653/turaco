@@ -1,3 +1,6 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import type { MessageKey } from '../../platform/i18n/i18n';
+import { DateFilter, FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
@@ -69,7 +72,7 @@ function EventDetail({ event, onClose }: { event: AuditEvent; onClose: () => voi
 }
 
 export function AuditScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [applied, setApplied] = useState<AuditFilter>({});
   const [selected, setSelected] = useState<AuditEvent | null>(null);
@@ -94,7 +97,7 @@ export function AuditScreen() {
     {
       key: 'time',
       header: t('audit.col.time'),
-      render: (e) => formatDateTime(locale, e.occurredAt),
+      render: (e) => <TableDate value={e.occurredAt} />,
     },
     { key: 'action', header: t('audit.col.action'), render: (e) => <code>{e.action}</code> },
     {
@@ -128,7 +131,23 @@ export function AuditScreen() {
   return (
     <>
       <PageHeader title={t('nav.audit')} intro={t('audit.intro')} />
-      <form className="filters" onSubmit={submit} aria-label={t('filters.title')}>
+      <FilterBar
+        activeFilters={Object.entries(applied).map(([key, value]) => ({
+          key,
+          label: `${t(`audit.filter.${key}` as MessageKey)}: ${value}`,
+          onRemove: () => {
+            setApplied((current) => {
+              const next = { ...current };
+              delete next[key as keyof AuditFilter];
+              return next;
+            });
+            setForm((current) => ({ ...current, [key]: '' }));
+          },
+        }))}
+        onClear={reset}
+        onSubmit={submit}
+        aria-label={t('filters.title')}
+      >
         <TextField
           label={t('audit.filter.actionPrefix')}
           hint={t('audit.filter.actionPrefix.hint')}
@@ -159,25 +178,24 @@ export function AuditScreen() {
           onChange={set('correlationId')}
           maxLength={200}
         />
-        <TextField
+        <DateFilter
           label={t('audit.filter.from')}
           type="datetime-local"
           value={form.from}
-          onChange={set('from')}
+          onChange={(value) => setForm((previous) => ({ ...previous, from: value }))}
         />
-        <TextField
+        <DateFilter
           label={t('audit.filter.to')}
           type="datetime-local"
           value={form.to}
-          onChange={set('to')}
+          onChange={(value) => setForm((previous) => ({ ...previous, to: value }))}
         />
-        <div className="form-actions">
-          <Button type="submit" variant="primary">
-            {t('filters.apply')}
-          </Button>
-          <Button onClick={reset}>{t('filters.reset')}</Button>
-        </div>
-      </form>
+
+        <Button type="submit" variant="primary">
+          {t('filters.apply')}
+        </Button>
+        <Button onClick={reset}>{t('filters.reset')}</Button>
+      </FilterBar>
       <DataTable
         caption={t('nav.audit')}
         columns={columns}

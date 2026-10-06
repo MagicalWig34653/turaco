@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -291,6 +292,31 @@ export function ProductsScreen() {
       : []),
   ];
 
+  const activeFilters = [
+    ...(query
+      ? [
+          {
+            key: 'q',
+            label: `${t('products.filter.search')}: ${query}`,
+            onRemove: () => {
+              setQuery('');
+            },
+          },
+        ]
+      : []),
+    ...(showInactive
+      ? [
+          {
+            key: 'inactive',
+            label: t('products.filter.inactive'),
+            onRemove: () => {
+              setShowInactive(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -304,7 +330,11 @@ export function ProductsScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('products.filter.search')}
           type="search"
@@ -318,9 +348,10 @@ export function ProductsScreen() {
           checked={showInactive}
           onChange={(event) => setShowInactive(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       {actionError ? <ApiErrorAlert error={actionError} onRetry={list.reload} /> : null}
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.products')}
         columns={columns}
         rows={list.items}

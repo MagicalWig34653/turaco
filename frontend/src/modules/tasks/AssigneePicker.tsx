@@ -4,6 +4,7 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { TextField } from '../../platform/ui/Field';
+import { Avatar } from '../../platform/ui/Workspace';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { organizationApi } from '../organization/api';
 
@@ -14,10 +15,13 @@ type Props = {
   type: AssigneeType;
   value: Assignee | null;
   onChange: (assignee: Assignee | null) => void;
+  /** Overrides the search field label, e.g. "Owner". */
+  label?: string;
+  hint?: string;
 };
 
 /** Search picker for active Users and Teams (/users?q=, /teams?q=); needs organization.view. */
-export function AssigneePicker({ type, value, onChange }: Props) {
+export function AssigneePicker({ type, value, onChange, label, hint }: Props) {
   const { t } = useI18n();
   const { can } = useSession();
   const name = useId();
@@ -51,7 +55,11 @@ export function AssigneePicker({ type, value, onChange }: Props) {
   return (
     <div className="picker">
       <TextField
-        label={type === 'user' ? t('tasks.assign.search.user') : t('tasks.assign.search.team')}
+        label={
+          label ?? (type === 'user' ? t('tasks.assign.search.user') : t('tasks.assign.search.team'))
+        }
+        hint={hint}
+        placeholder={t('tasks.assign.searchPlaceholder')}
         type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
@@ -63,7 +71,7 @@ export function AssigneePicker({ type, value, onChange }: Props) {
       ) : null}
       {results.error ? <ApiErrorAlert error={results.error} onRetry={results.reload} /> : null}
       <fieldset className="picker-results" aria-busy={results.loading}>
-        <legend>{t('tasks.assign.results')}</legend>
+        <legend className="visually-hidden">{t('tasks.assign.results')}</legend>
         {results.loading ? <p role="status">{t('state.loading')}</p> : null}
         {!results.loading && results.data && results.data.length === 0 ? (
           <p className="empty">{t('tasks.assign.noResults')}</p>
@@ -76,11 +84,15 @@ export function AssigneePicker({ type, value, onChange }: Props) {
               checked={value?.id === candidate.id}
               onChange={() => onChange({ id: candidate.id, label: candidate.label })}
             />
-            <span>
-              {candidate.label}
+            <Avatar name={candidate.label} />
+            <span className="picker-text">
+              <span>{candidate.label}</span>
               {candidate.detail ? (
-                <span className="picker-detail"> · {candidate.detail}</span>
+                <small className="picker-detail">{candidate.detail}</small>
               ) : null}
+            </span>
+            <span className="picker-check" aria-hidden="true">
+              ✓
             </span>
           </label>
         ))}

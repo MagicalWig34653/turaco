@@ -109,7 +109,7 @@ func main() {
 	subjects := orgpublic.NewAuthorizationSubjects(orgReader)
 	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
 	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure)
-	authentication.Register(mux, sessions, sessionAuth, cfg.SessionCookieSecure, logger)
+	authentication.Register(mux, sessions, sessionAuth, orgpublic.NewUserAccess(orgReader), cfg.SessionCookieSecure, logger)
 
 	// Login. Password login binds as the synced account, so the API needs the
 	// directory connection settings but never the sync bind secret.

@@ -1,6 +1,6 @@
+import { TableDate } from '../../platform/ui/TableDate';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
@@ -17,7 +17,7 @@ export function ApprovalStatusBadge({ status }: { status: Approval['status'] }) 
 }
 
 export function ApprovalsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [tab, setTab] = useState<'pending' | 'decided'>('pending');
   const list = usePagedList((cursor, signal) => approvalsApi.list(tab, cursor, signal), [tab]);
   const columns: Column<Approval>[] = [
@@ -35,7 +35,7 @@ export function ApprovalsScreen() {
     {
       key: 'created',
       header: t('approvals.col.created'),
-      render: (a) => formatDateTime(locale, a.createdAt),
+      render: (a) => <TableDate value={a.createdAt} />,
     },
   ];
   return (

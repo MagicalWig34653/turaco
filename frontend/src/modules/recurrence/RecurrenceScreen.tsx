@@ -1,7 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
 import { useState } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
@@ -15,7 +15,7 @@ import { describeRule } from './describe';
 import type { RecurringTaskDefinition } from './types';
 
 export function RecurrenceScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const list = usePagedList((cursor, signal) => recurrenceApi.list(cursor, signal), []);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function RecurrenceScreen() {
     {
       key: 'next',
       header: t('recurrence.col.nextRun'),
-      render: (d) => (d.nextRunAt ? formatDateTime(locale, d.nextRunAt) : '–'),
+      render: (d) => <TableDate value={d.nextRunAt} />,
     },
     {
       key: 'actions',

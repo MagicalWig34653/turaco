@@ -1,11 +1,13 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
+import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
@@ -35,7 +37,7 @@ const initial: DeviceFilters = {
 };
 
 export function DevicesScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const [filters, setFilters] = useState<DeviceFilters>(initial);
   const [syncing, setSyncing] = useState(false);
@@ -69,40 +71,161 @@ export function DevicesScreen() {
   const columns: Column<Device>[] = [
     {
       key: 'name',
+      sortValue: (d) => d.name,
       header: t('endpoints.name'),
       render: (d) => <Link to={`/devices/${encodeURIComponent(d.id)}`}>{d.name}</Link>,
     },
     {
       key: 'platform',
+      sortValue: (d) => d.osPlatform,
       header: t('endpoints.platform'),
       render: (d) => t(`endpoints.platform.${d.osPlatform}` as MessageKey),
     },
     {
       key: 'compliance',
+      sortValue: (d) => d.complianceState,
       header: t('endpoints.compliance'),
-      render: (d) => t(`endpoints.compliance.${d.complianceState}` as MessageKey),
+      render: (d) => (
+        <Badge
+          tone={
+            d.complianceState === 'compliant'
+              ? 'success'
+              : d.complianceState === 'noncompliant'
+                ? 'danger'
+                : 'unknown'
+          }
+        >
+          {t(`endpoints.compliance.${d.complianceState}` as MessageKey)}
+        </Badge>
+      ),
     },
     {
       key: 'asset',
       header: t('endpoints.asset'),
       render: (d) =>
         d.assetId && (can('assets.view') || can('assets.manage')) ? (
-          <Link to={`/assets/${encodeURIComponent(d.assetId)}`}>{d.assetId}</Link>
+          <Link to={`/assets/${encodeURIComponent(d.assetId)}`}>{t('endpoints.linked.yes')}</Link>
+        ) : d.assetId ? (
+          t('endpoints.linked.yes')
         ) : (
-          (d.assetId ?? '–')
+          '–'
         ),
     },
     {
       key: 'observed',
+      sortValue: (d) => d.observedAt,
       header: t('endpoints.observedAt'),
-      render: (d) => formatDateTime(locale, d.observedAt),
+      render: (d) => <TableDate value={d.observedAt} />,
     },
     {
       key: 'synced',
+      sortValue: (d) => d.lastSyncedAt,
       header: t('endpoints.lastSyncedAt'),
-      render: (d) => formatDateTime(locale, d.lastSyncedAt),
+      render: (d) => <TableDate value={d.lastSyncedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(filters.q
+      ? [
+          {
+            key: 'q',
+            label: `${t('endpoints.search')}: ${filters.q}`,
+            onRemove: () => {
+              change({ q: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.platform
+      ? [
+          {
+            key: 'platform',
+            label: t(`endpoints.platform.${filters.platform}` as MessageKey),
+            onRemove: () => {
+              change({ platform: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.compliance
+      ? [
+          {
+            key: 'compliance',
+            label: t(`endpoints.compliance.${filters.compliance}` as MessageKey),
+            onRemove: () => {
+              change({ compliance: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.linked
+      ? [
+          {
+            key: 'linked',
+            label: t(filters.linked === 'true' ? 'endpoints.linked.yes' : 'endpoints.linked.no'),
+            onRemove: () => {
+              change({ linked: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.managementState
+      ? [
+          {
+            key: 'managementState',
+            label: t(`management.state.${filters.managementState}` as MessageKey),
+            onRemove: () => {
+              change({ managementState: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.hasFinding
+      ? [
+          {
+            key: 'hasFinding',
+            label: t(`endpoints.finding.${filters.hasFinding}` as MessageKey),
+            onRemove: () => {
+              change({ hasFinding: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.osVersion
+      ? [
+          {
+            key: 'osVersion',
+            label: `${t('endpoints.osVersion')}: ${filters.osVersion}`,
+            onRemove: () => {
+              change({ osVersion: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.lastCheckinOlderThanDays
+      ? [
+          {
+            key: 'lastCheckinOlderThanDays',
+            label: `${t('endpoints.lastCheckinOlderThanDays')}: ${filters.lastCheckinOlderThanDays}`,
+            onRemove: () => {
+              change({ lastCheckinOlderThanDays: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.includeDeleted
+      ? [
+          {
+            key: 'includeDeleted',
+            label: t('endpoints.includeDeleted'),
+            onRemove: () => {
+              change({ includeDeleted: false });
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -129,7 +252,14 @@ export function DevicesScreen() {
           </dl>
         </section>
       ) : null}
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setFilters(initial);
+        }}
+        role="search"
+        onSubmit={(e) => e.preventDefault()}
+      >
         <TextField
           label={t('endpoints.search')}
           type="search"
@@ -208,8 +338,9 @@ export function DevicesScreen() {
           checked={filters.includeDeleted}
           onChange={(e) => change({ includeDeleted: e.target.checked })}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.devices')}
         columns={columns}
         rows={list.items}

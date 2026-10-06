@@ -1,8 +1,9 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -75,7 +76,7 @@ function NewDialog({ onClose }: { onClose: () => void }) {
 }
 
 export function ProblemsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const [status, setStatus] = useState<ProblemStatus | ''>('');
   const [creating, setCreating] = useState(false);
@@ -83,22 +84,49 @@ export function ProblemsScreen() {
   const columns: Column<Problem>[] = [
     {
       key: 'ref',
+      sortValue: (p) => p.reference,
       header: t('problems.col.reference'),
       render: (p) => <Link to={`/problems/${encodeURIComponent(p.id)}`}>{p.reference}</Link>,
     },
-    { key: 'title', header: t('problems.col.title'), render: (p) => p.title },
+    {
+      key: 'title',
+      sortValue: (p) => p.title,
+      header: t('problems.col.title'),
+      render: (p) => p.title,
+    },
     {
       key: 'status',
+      sortValue: (p) => p.status,
       header: t('problems.col.status'),
       render: (p) => <ProblemBadge status={p.status} />,
     },
-    { key: 'tickets', header: t('problems.col.tickets'), render: (p) => p.linkedTickets },
+    {
+      key: 'tickets',
+      sortValue: (p) => p.linkedTickets,
+      header: t('problems.col.tickets'),
+      render: (p) => p.linkedTickets,
+    },
     {
       key: 'updated',
+      sortValue: (p) => p.updatedAt,
       header: t('problems.col.updated'),
-      render: (p) => formatDateTime(locale, p.updatedAt),
+      render: (p) => <TableDate value={p.updatedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`problems.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -112,7 +140,11 @@ export function ProblemsScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('problems.col.status')}
           value={status}
@@ -122,8 +154,9 @@ export function ProblemsScreen() {
             ...problemStatuses.map((value) => ({ value, label: t(`problems.status.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.problems')}
         columns={columns}
         rows={list.items}

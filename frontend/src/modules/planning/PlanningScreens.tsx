@@ -1,3 +1,4 @@
+import { DateFilter, FilterBar } from '../../platform/ui/FilterBar';
 import { useState, type FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
@@ -8,7 +9,11 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
+import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
+import { Table } from '../../platform/ui/Table';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { servicesApi } from '../services/api';
 import { planningApi } from './api';
@@ -139,13 +144,13 @@ function InitiativeForm({
       />
       {error && <ApiErrorAlert error={error} />}
       <div className="actions">
-        <button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           {t('action.save')}
-        </button>
+        </Button>
         {onClose && (
-          <button type="button" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         )}
       </div>
     </form>
@@ -168,70 +173,171 @@ export function InitiativesListScreen({ mine = false }: { mine?: boolean }) {
       ),
     [status, owner, q, targetFrom, targetTo, mine, session?.userId],
   );
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`planning.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(!mine && owner
+      ? [
+          {
+            key: 'owner',
+            label: `${t('planning.ownerId')}: ${owner}`,
+            onRemove: () => {
+              setOwner('');
+            },
+          },
+        ]
+      : []),
+    ...(q
+      ? [
+          {
+            key: 'q',
+            label: `${t('planning.search')}: ${q}`,
+            onRemove: () => {
+              setQ('');
+            },
+          },
+        ]
+      : []),
+    ...(targetFrom
+      ? [
+          {
+            key: 'from',
+            label: `${t('planning.targetFrom')}: ${targetFrom}`,
+            onRemove: () => {
+              setTargetFrom('');
+            },
+          },
+        ]
+      : []),
+    ...(targetTo
+      ? [
+          {
+            key: 'to',
+            label: `${t('planning.targetTo')}: ${targetTo}`,
+            onRemove: () => {
+              setTargetTo('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
         title={t(mine ? 'planning.mine' : 'planning.list')}
         actions={
           can('planning.manage') ? (
-            <Link to="/initiatives/new">{t('planning.create')}</Link>
+            <Link className="btn btn-primary" to="/initiatives/new">
+              {t('planning.create')}
+            </Link>
           ) : undefined
         }
       />
-      <div className="filters">
-        <label>
-          {t('planning.status')}
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">{t('filters.all')}</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {t(`planning.status.${s}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!mine && <Field label={t('planning.ownerId')} value={owner} onChange={setOwner} />}
-        <Field label={t('planning.search')} value={q} onChange={setQ} type="search" />
-        <Field
+      <FilterBar activeFilters={activeFilters}>
+        <Select
+          label={t('planning.status')}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...statuses.map((value) => ({
+              value,
+              label: t(`planning.status.${value}` as MessageKey),
+            })),
+          ]}
+        />
+        {!mine ? (
+          <TextField
+            label={t('planning.ownerId')}
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+          />
+        ) : null}
+        <TextField
+          label={t('planning.search')}
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <DateFilter
           label={t('planning.targetFrom')}
+          type="date"
           value={targetFrom}
           onChange={setTargetFrom}
-          type="date"
         />
-        <Field label={t('planning.targetTo')} value={targetTo} onChange={setTargetTo} type="date" />
-      </div>
-      {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <table>
-        <thead>
-          <tr>
-            <th>{t('planning.reference')}</th>
-            <th>{t('planning.title')}</th>
-            <th>{t('planning.status')}</th>
-            <th>{t('planning.owner')}</th>
-            <th>{t('planning.targetDate')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.items.map((x) => (
-            <tr key={x.id}>
-              <td>
+        <DateFilter
+          label={t('planning.targetTo')}
+          type="date"
+          value={targetTo}
+          onChange={setTargetTo}
+        />
+      </FilterBar>
+      <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        caption={t(mine ? 'planning.mine' : 'planning.list')}
+        columns={
+          [
+            {
+              key: 'reference',
+              sortValue: (x) => x.reference,
+              header: t('planning.reference'),
+              render: (x: Initiative) => (
                 <Link to={`/initiatives/${enc(x.id)}`}>{x.reference}</Link>
-              </td>
-              <td>{x.title}</td>
-              <td>
-                <Status value={x.status} />
-              </td>
-              <td>{x.ownerId}</td>
-              <td>
-                {x.targetDate
-                  ? new Intl.DateTimeFormat(locale).format(new Date(`${x.targetDate}T00:00:00`))
-                  : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list.hasMore && <button onClick={list.loadMore}>{t('action.loadMore')}</button>}
+              ),
+            },
+            {
+              key: 'title',
+              sortValue: (x) => x.title,
+              header: t('planning.title'),
+              render: (x: Initiative) => x.title,
+            },
+            {
+              key: 'status',
+              sortValue: (x) => x.status,
+              header: t('planning.status'),
+              render: (x: Initiative) => <Status value={x.status} />,
+            },
+            {
+              key: 'owner',
+              sortValue: (x) => x.ownerId,
+              header: t('planning.owner'),
+              render: (x: Initiative) => x.ownerId ?? '—',
+            },
+            {
+              key: 'date',
+              header: t('planning.targetDate'),
+              render: (x: Initiative) =>
+                x.targetDate ? (
+                  <time dateTime={x.targetDate}>
+                    {new Intl.DateTimeFormat(locale).format(new Date(`${x.targetDate}T00:00:00`))}
+                  </time>
+                ) : (
+                  '—'
+                ),
+            },
+          ] satisfies Column<Initiative>[]
+        }
+        rows={list.items}
+        rowKey={(x) => x.id}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('planning.empty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
     </>
   );
 }
@@ -315,12 +421,12 @@ function ActionDialog({
         )}
         {error && <ApiErrorAlert error={error} />}
         <div className="actions">
-          <button type="submit" disabled={busy || (action === 'propose' && !approver)}>
+          <Button type="submit" disabled={busy || (action === 'propose' && !approver)}>
             {t('action.save')}
-          </button>
-          <button type="button" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -384,9 +490,9 @@ function MilestoneDialog({
           type="number"
         />
         {error && <ApiErrorAlert error={error} />}
-        <button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           {t('action.save')}
-        </button>
+        </Button>
       </form>
     </Dialog>
   );
@@ -429,7 +535,7 @@ function ItemDialog({
         </label>
         <Field label={t('planning.itemId')} value={id} onChange={setId} required />
         {error && <ApiErrorAlert error={error} />}
-        <button type="submit">{t('planning.item.add')}</button>
+        <Button type="submit">{t('planning.item.add')}</Button>
       </form>
     </Dialog>
   );
@@ -483,7 +589,9 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
         title={`${data.reference} · ${data.title}`}
         actions={
           canEditPlan && ops.includes('update') ? (
-            <button onClick={() => setEdit(true)}>{t('planning.edit')}</button>
+            <Button type="submit" onClick={() => setEdit(true)}>
+              {t('planning.edit')}
+            </Button>
           ) : undefined
         }
       />
@@ -505,9 +613,9 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
         {['start-planning', 'propose', 'replan', 'activate', 'hold', 'resume', 'complete', 'cancel']
           .filter((x) => ops.includes(x.replace('-', '_')))
           .map((x) => (
-            <button key={x} onClick={() => setAction(x)}>
+            <Button type="submit" key={x} onClick={() => setAction(x)}>
               {t(`planning.action.${x}` as MessageKey)}
-            </button>
+            </Button>
           ))}
       </div>
       {error && <ApiErrorAlert error={error} />}
@@ -557,9 +665,11 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
       <section>
         <h2>{t('planning.milestones')}</h2>
         {canEditPlan && ops.includes('edit_milestones') && (
-          <button onClick={() => setMilestone('new')}>{t('planning.milestone.add')}</button>
+          <Button type="submit" onClick={() => setMilestone('new')}>
+            {t('planning.milestone.add')}
+          </Button>
         )}
-        <table>
+        <Table>
           <thead>
             <tr>
               <th>{t('planning.title')}</th>
@@ -577,32 +687,37 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
                 <td>
                   {canEditPlan && ops.includes('edit_milestones') && (
                     <>
-                      <button onClick={() => setMilestone(m)}>{t('planning.edit')}</button>
-                      <button onClick={() => setRemoveMilestone(m)}>
+                      <Button type="submit" onClick={() => setMilestone(m)}>
+                        {t('planning.edit')}
+                      </Button>
+                      <Button type="submit" onClick={() => setRemoveMilestone(m)}>
                         {t('planning.milestone.remove')}
-                      </button>
+                      </Button>
                     </>
                   )}
                   {canUpdateMilestoneProgress && (
-                    <button
+                    <Button
+                      type="submit"
                       onClick={() => void milestoneAction(m, m.doneAt ? 'reopen' : 'complete')}
                     >
                       {t(m.doneAt ? 'planning.milestone.reopen' : 'planning.milestone.complete')}
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       </section>
       <section>
         <h2>{t('planning.items')}</h2>
         {canEditPlan && ops.includes('edit_items') && (
-          <button onClick={() => setAddItem(true)}>{t('planning.item.add')}</button>
+          <Button type="submit" onClick={() => setAddItem(true)}>
+            {t('planning.item.add')}
+          </Button>
         )}
         {items.error && <ApiErrorAlert error={items.error} onRetry={items.reload} />}
-        <table>
+        <Table>
           <thead>
             <tr>
               <th>{t('planning.type')}</th>
@@ -635,7 +750,8 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
                 </td>
                 <td>
                   {canEditPlan && ops.includes('edit_items') && !x.hidden && (
-                    <button
+                    <Button
+                      type="submit"
                       onClick={() =>
                         void (async () => {
                           setError(undefined);
@@ -649,14 +765,18 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
                       }
                     >
                       {t('planning.item.remove')}
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
             ))}
           </tbody>
-        </table>
-        {items.hasMore && <button onClick={items.loadMore}>{t('action.loadMore')}</button>}
+        </Table>
+        {items.hasMore && (
+          <Button type="submit" onClick={items.loadMore}>
+            {t('action.loadMore')}
+          </Button>
+        )}
         {data.items.truncated && <p>{t('planning.truncated')}</p>}
       </section>
       <section>
@@ -677,7 +797,9 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
           ))}
         </ol>
         {transitions.hasMore && (
-          <button onClick={transitions.loadMore}>{t('action.loadMore')}</button>
+          <Button type="submit" onClick={transitions.loadMore}>
+            {t('action.loadMore')}
+          </Button>
         )}
       </section>
       {action && (
@@ -719,9 +841,12 @@ export function InitiativeDetailScreen({ id }: { id: string }) {
               ))}
             </select>
           </label>
-          <button onClick={() => void milestoneAction(removeMilestone, 'remove', removeReason)}>
+          <Button
+            type="submit"
+            onClick={() => void milestoneAction(removeMilestone, 'remove', removeReason)}
+          >
             {t('planning.milestone.remove')}
-          </button>
+          </Button>
         </Dialog>
       )}
     </>
@@ -779,7 +904,7 @@ export function MaintenanceCalendarScreen() {
   return (
     <>
       <PageHeader title={t('planning.calendar')} />
-      <div className="filters">
+      <FilterBar>
         <label>
           {t('planning.calendar.view')}
           <select
@@ -794,7 +919,7 @@ export function MaintenanceCalendarScreen() {
             <option value="week">{t('planning.calendar.week')}</option>
           </select>
         </label>
-        <Field
+        <DateFilter
           label={t('planning.calendar.date')}
           value={anchor}
           onChange={(date) => {
@@ -803,14 +928,19 @@ export function MaintenanceCalendarScreen() {
           }}
           type="date"
         />
-        <Field
+        <DateFilter
           label={t('planning.calendar.from')}
           value={fromDate}
           onChange={setFromDate}
           type="date"
         />
-        <Field label={t('planning.calendar.to')} value={toDate} onChange={setToDate} type="date" />
-      </div>
+        <DateFilter
+          label={t('planning.calendar.to')}
+          value={toDate}
+          onChange={setToDate}
+          type="date"
+        />
+      </FilterBar>
       {calendar.error && <ApiErrorAlert error={calendar.error} onRetry={calendar.reload} />}
       {calendar.loading && <p>{t('state.loading')}</p>}
       {!calendar.loading && calendar.data?.items.length === 0 && (

@@ -1,0 +1,57 @@
+import type { AppRoute } from '../../../app/routes';
+import { canViewRoute } from '../../../app/routes';
+import type { CanFn } from '../../session/permissions';
+
+/** Navigation is today's source; object search providers can contribute commands later. */
+export type PaletteCommand = { id: string; label: string; path: string; keywords?: string };
+
+export function navigationCommands(
+  routes: readonly AppRoute[],
+  can: CanFn,
+  label: (route: AppRoute) => string,
+): PaletteCommand[] {
+  return routes
+    .filter((route) => route.nav && canViewRoute(can, route))
+    .map((route) => ({ id: route.id, label: label(route), path: route.pattern }));
+}
+
+function fuzzyScore(value: string, query: string): number {
+  const haystack = value.toLocaleLowerCase();
+  const needle = query.toLocaleLowerCase().trim();
+  if (!needle) return 0;
+  const exact = haystack.indexOf(needle);
+  if (exact >= 0) return exact;
+  let cursor = 0;
+  let gap = 0;
+  for (const letter of needle) {
+    const next = haystack.indexOf(letter, cursor);
+    if (next < 0) return Number.POSITIVE_INFINITY;
+    gap += next - cursor;
+    cursor = next + 1;
+  }
+  return haystack.length + gap;
+}
+
+export function filterCommands(
+  commands: readonly PaletteCommand[],
+  query: string,
+): PaletteCommand[] {
+  if (!query.trim()) return [...commands];
+  return commands
+    .map((command) => ({
+      command,
+      score: fuzzyScore(`${command.label} ${command.keywords ?? ''}`, query),
+    }))
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => a.score - b.score || a.command.label.localeCompare(b.command.label))
+    .map(({ command }) => command);
+}
+
+export function moveCommandSelection(current: number, length: number, key: string): number {
+  if (length === 0) return -1;
+  if (key === 'Home') return 0;
+  if (key === 'End') return length - 1;
+  if (key === 'ArrowDown') return (current + 1 + length) % length;
+  if (key === 'ArrowUp') return (current - 1 + length) % length;
+  return current;
+}

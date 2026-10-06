@@ -18,12 +18,22 @@ export function Alert({ kind, children, className }: AlertProps) {
   );
 }
 
+/** `live` marks an ongoing state (for example in progress); themes may animate its dot. */
 export function Badge({
   tone = 'neutral',
+  live = false,
   children,
 }: {
-  tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info';
+  tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'unknown';
+  live?: boolean;
   children: ReactNode;
 }) {
-  return <span className={`badge badge-${tone}`}>{children}</span>;
+  return (
+    <span className={`badge badge-${tone}${live ? ' badge-live' : ''}`}>
+      <span className="badge-icon" aria-hidden="true">
+        {{ neutral: '•', success: '✓', warning: '!', danger: '!', info: '•', unknown: '?' }[tone]}
+      </span>
+      {children}
+    </span>
+  );
 }

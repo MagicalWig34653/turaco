@@ -1,8 +1,9 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
@@ -134,7 +135,7 @@ function ItemDialog({
 }
 
 export function CatalogAdminScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [status, setStatus] = useState<'active' | 'inactive' | ''>('');
   const [editing, setEditing] = useState<Editing | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
@@ -165,7 +166,7 @@ export function CatalogAdminScreen() {
     {
       key: 'updated',
       header: t('catalogAdmin.col.updated'),
-      render: (item) => formatDateTime(locale, item.updatedAt),
+      render: (item) => <TableDate value={item.updatedAt} />,
     },
     {
       key: 'actions',
@@ -183,6 +184,22 @@ export function CatalogAdminScreen() {
     },
   ];
 
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(
+              status === 'active' ? 'catalogAdmin.status.active' : 'catalogAdmin.status.inactive',
+            ),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -194,7 +211,11 @@ export function CatalogAdminScreen() {
           </Button>
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('catalogAdmin.filter.status')}
           value={status}
@@ -205,9 +226,10 @@ export function CatalogAdminScreen() {
             { value: 'inactive', label: t('catalogAdmin.status.inactive') },
           ]}
         />
-      </form>
+      </FilterBar>
       {actionError ? <ApiErrorAlert error={actionError} onRetry={list.reload} /> : null}
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.catalogAdmin')}
         columns={columns}
         rows={list.items}

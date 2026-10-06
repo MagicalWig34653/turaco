@@ -6,6 +6,7 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate } from '../../platform/router/Router';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
 import { recurrenceApi } from './api';
 import { describeRule } from './describe';
 import { DefinitionForm, type DefinitionFormValues } from './DefinitionForm';
@@ -117,9 +118,9 @@ export function DefinitionDetailScreen({ id }: { id: string }) {
       <PageHeader
         title={definition.title}
         actions={
-          <button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}>
+          <Button type="button" className="btn btn-secondary" onClick={() => setEditing(true)}>
             {t('tasks.action.edit')}
-          </button>
+          </Button>
         }
       />
       <p>

@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -197,6 +198,20 @@ export function StockScreen() {
       : []),
   ];
 
+  const activeFilters = [
+    ...(withStockOnly
+      ? [
+          {
+            key: 'withStockOnly',
+            label: t('inventory.stock.withStockOnly'),
+            onRemove: () => {
+              setWithStockOnly(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -210,14 +225,19 @@ export function StockScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Checkbox
           label={t('inventory.stock.withStockOnly')}
           checked={withStockOnly}
           onChange={(event) => setWithStockOnly(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.stock')}
         columns={columns}
         rows={list.items}

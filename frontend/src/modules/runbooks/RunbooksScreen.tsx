@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -40,6 +41,20 @@ export function RunbooksScreen() {
       ),
     },
   ];
+  const activeFilters = [
+    ...(activeOnly
+      ? [
+          {
+            key: 'active',
+            label: t('runbooks.filter.activeOnly'),
+            onRemove: () => {
+              setActiveOnly(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -53,14 +68,15 @@ export function RunbooksScreen() {
           ) : null
         }
       />
-      <form className="filters" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar activeFilters={activeFilters} onSubmit={(event) => event.preventDefault()}>
         <Checkbox
           label={t('runbooks.filter.activeOnly')}
           checked={activeOnly}
           onChange={(event) => setActiveOnly(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.runbooks')}
         columns={columns}
         rows={list.items}

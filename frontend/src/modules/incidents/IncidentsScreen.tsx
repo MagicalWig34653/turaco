@@ -1,8 +1,9 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -82,7 +83,7 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
 }
 
 export function IncidentsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const [activeOnly, setActiveOnly] = useState(true);
   const [declaring, setDeclaring] = useState(false);
@@ -105,9 +106,23 @@ export function IncidentsScreen() {
     {
       key: 'updated',
       header: t('incidents.col.updated'),
-      render: (m) => formatDateTime(locale, m.updatedAt),
+      render: (m) => <TableDate value={m.updatedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(activeOnly
+      ? [
+          {
+            key: 'activeOnly',
+            label: t('incidents.filter.activeOnly'),
+            onRemove: () => {
+              setActiveOnly(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -121,14 +136,15 @@ export function IncidentsScreen() {
           ) : null
         }
       />
-      <form className="filters" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar activeFilters={activeFilters} onSubmit={(event) => event.preventDefault()}>
         <Checkbox
           label={t('incidents.filter.activeOnly')}
           checked={activeOnly}
           onChange={(event) => setActiveOnly(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.incidents')}
         columns={columns}
         rows={list.items}

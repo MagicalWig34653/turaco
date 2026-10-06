@@ -1,14 +1,20 @@
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import type { ApiError } from '../../platform/api/client';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
-import { Link, navigate } from '../../platform/router/Router';
+import { Link, navigate, useLocation } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
+import { Button } from '../../platform/ui/Button';
+import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Table } from '../../platform/ui/Table';
 import { securityApi } from './api';
 import { AdvisoryRemediation, FindingRemediation } from './Remediation';
 import {
@@ -34,6 +40,7 @@ import {
   ruleKinds,
   severities,
   type Criterion,
+  type Advisory,
   type Finding,
   type Transition,
 } from './types';
@@ -83,7 +90,7 @@ function Transitions({ items }: { items: Transition[] }) {
   return (
     <section>
       <h2>{t('security.transitions')}</h2>
-      <table>
+      <Table>
         <thead>
           <tr>
             <th>{t('security.date')}</th>
@@ -104,7 +111,7 @@ function Transitions({ items }: { items: Transition[] }) {
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </section>
   );
 }
@@ -151,19 +158,27 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <p>{t('security.importIgnored')}</p>
         {error && <ApiErrorAlert error={error} />}
         <div className="actions">
-          <button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy}>
             {t('security.import')}
-          </button>
-          <button type="button" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>
   );
 }
+function clearOverviewFilters(...keys: string[]) {
+  const url = new URL(window.location.href);
+  keys.forEach((key) => url.searchParams.delete(key));
+  navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true });
+}
+
 export function AdvisoriesScreen() {
   const { t } = useI18n();
+  const { search } = useLocation();
+  const applicable = new URLSearchParams(search).has('applicable');
   const { can } = useSession();
   const [status, setStatus] = useState(
     () => new URLSearchParams(window.location.search).get('status') ?? '',
@@ -172,16 +187,58 @@ export function AdvisoriesScreen() {
     () => new URLSearchParams(window.location.search).get('severity') ?? '',
   );
   const [q, setQ] = useState('');
+  useFilterQuery({ status, severity });
   const [importOpen, setImportOpen] = useState(false);
   const list = usePagedList(
     (cursor, signal) => securityApi.advisories({ status, severity, q }, cursor, signal),
     [status, severity, q],
   );
-  const visibleAdvisories = list.items.filter(
-    (x) =>
-      !new URLSearchParams(window.location.search).has('applicable') ||
-      isApplicableAdvisory(x.status),
-  );
+  const visibleAdvisories = list.items.filter((x) => !applicable || isApplicableAdvisory(x.status));
+  const activeFilters = [
+    ...(applicable
+      ? [
+          {
+            key: 'applicable',
+            label: t('security.filter.applicable'),
+            onRemove: () => clearOverviewFilters('applicable'),
+          },
+        ]
+      : []),
+    ...(q
+      ? [
+          {
+            key: 'search',
+            label: `${t('security.search')}: ${q}`,
+            onRemove: () => {
+              setQ('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`security.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(severity
+      ? [
+          {
+            key: 'severity',
+            label: t(`security.severity.${severity}` as MessageKey),
+            onRemove: () => {
+              setSeverity('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -189,70 +246,109 @@ export function AdvisoriesScreen() {
         actions={
           can('security.manage') ? (
             <>
-              <Link to="/security/advisories/new">{t('security.create')}</Link>{' '}
-              <button onClick={() => setImportOpen(true)}>{t('security.import')}</button>
+              <Link className="btn btn-primary" to="/security/advisories/new">
+                {t('security.create')}
+              </Link>{' '}
+              <Button onClick={() => setImportOpen(true)}>{t('security.import')}</Button>
             </>
           ) : undefined
         }
       />
-      <div className="filters">
-        <label>
-          {t('security.status')}
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">{t('filters.all')}</option>
-            {advisoryStatuses.map((x) => (
-              <option key={x} value={x}>
-                {t(`security.status.${x}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t('security.severity')}
-          <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-            <option value="">{t('filters.all')}</option>
-            {severities.map((x) => (
-              <option key={x} value={x}>
-                {t(`security.severity.${x}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Field label={t('security.search')} value={q} onChange={setQ} type="search" />
-      </div>
-      <p>{t('security.loadedCount', { count: visibleAdvisories.length })}</p>
-      {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <table>
-        <thead>
-          <tr>
-            <th>{t('security.reference')}</th>
-            <th>{t('security.title')}</th>
-            <th>{t('security.severity')}</th>
-            <th>{t('security.status')}</th>
-            <th>{t('security.source')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibleAdvisories.map((x) => (
-            <tr key={x.id}>
-              <td>
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setQ('');
+          setStatus('');
+          setSeverity('');
+          clearOverviewFilters('applicable');
+        }}
+      >
+        <Select
+          label={t('security.status')}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...advisoryStatuses.map((value) => ({
+              value,
+              label: t(`security.status.${value}` as MessageKey),
+            })),
+          ]}
+        />
+        <Select
+          label={t('security.severity')}
+          value={severity}
+          onChange={(e) => setSeverity(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...severities.map((value) => ({
+              value,
+              label: t(`security.severity.${value}` as MessageKey),
+            })),
+          ]}
+        />
+        <TextField
+          label={t('security.search')}
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </FilterBar>
+      <p aria-live="polite">{t('security.loadedCount', { count: visibleAdvisories.length })}</p>
+      <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        caption={t('security.advisories')}
+        columns={
+          [
+            {
+              key: 'reference',
+              sortValue: (x) => x.reference,
+              header: t('security.reference'),
+              render: (x: Advisory) => (
                 <Link to={`/security/advisories/${enc(x.id)}`}>{x.reference}</Link>
-              </td>
-              <td>
-                {x.title} <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />
-              </td>
-              <td>
-                <Label kind="severity" value={x.severity} />
-              </td>
-              <td>
-                <Label kind="status" value={x.status} />
-              </td>
-              <td>{x.source}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list.hasMore && <button onClick={list.loadMore}>{t('action.loadMore')}</button>}
+              ),
+            },
+            {
+              key: 'title',
+              sortValue: (x) => x.title,
+              header: t('security.title'),
+              render: (x: Advisory) => (
+                <>
+                  {x.title} <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />
+                </>
+              ),
+            },
+            {
+              key: 'severity',
+              sortValue: (x) => x.severity,
+              header: t('security.severity'),
+              render: (x: Advisory) => <Label kind="severity" value={x.severity} />,
+            },
+            {
+              key: 'status',
+              sortValue: (x) => x.status,
+              header: t('security.status'),
+              render: (x: Advisory) => <Label kind="status" value={x.status} />,
+            },
+            {
+              key: 'source',
+              sortValue: (x) => x.source,
+              header: t('security.source'),
+              render: (x: Advisory) => x.source,
+            },
+          ] satisfies Column<Advisory>[]
+        }
+        rows={visibleAdvisories}
+        rowKey={(x) => x.id}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('security.empty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
       {importOpen && (
         <ImportDialog
           onClose={() => setImportOpen(false)}
@@ -365,26 +461,26 @@ function CriteriaEditor({
                     edit(i, { rules: x.rules.map((r, n) => (n === j ? { ...r, version: v } : r)) })
                   }
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() => edit(i, { rules: x.rules.filter((_, n) => n !== j) })}
                 >
                   {t('security.remove')}
-                </button>
+                </Button>
               </div>
             ))}
-            <button
+            <Button
               type="button"
               onClick={() => edit(i, { rules: [...x.rules, { kind: 'eq', version: '' }] })}
             >
               {t('security.addRule')}
-            </button>
-            <button type="button" onClick={() => setRows((old) => old.filter((_, n) => n !== i))}>
+            </Button>
+            <Button type="button" onClick={() => setRows((old) => old.filter((_, n) => n !== i))}>
               {t('security.remove')}
-            </button>
+            </Button>
           </fieldset>
         ))}
-        <button
+        <Button
           type="button"
           onClick={() =>
             setRows((old) => [
@@ -394,15 +490,15 @@ function CriteriaEditor({
           }
         >
           {t('security.addCriterion')}
-        </button>
+        </Button>
         {error && <ApiErrorAlert error={error} />}
         <div className="actions">
-          <button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy}>
             {t('action.save')}
-          </button>
-          <button type="button" onClick={onClose}>
+          </Button>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -450,7 +546,7 @@ export function AdvisoryCreateScreen() {
           type="url"
         />
         {error && <ApiErrorAlert error={error} />}
-        <button type="submit">{t('action.save')}</button>
+        <Button type="submit">{t('action.save')}</Button>
       </form>
     </>
   );
@@ -544,11 +640,15 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
             <h2>{t('security.criteria')}</h2>
             {can('security.manage') && (
               <>
-                <button onClick={() => setEdit(true)}>{t('security.editCriteria')}</button>
-                <button onClick={() => void normalize()}>{t('security.normalize')}</button>
+                <Button type="submit" onClick={() => setEdit(true)}>
+                  {t('security.editCriteria')}
+                </Button>
+                <Button type="submit" onClick={() => void normalize()}>
+                  {t('security.normalize')}
+                </Button>
               </>
             )}
-            <table>
+            <Table>
               <thead>
                 <tr>
                   <th>{t('security.productName')}</th>
@@ -577,21 +677,22 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </section>
           {can('security.manage') && (
             <section>
               <h2>{t('security.actions')}</h2>
               <div className="actions">
                 {advisoryActions(a.status).map((op) => (
-                  <button
+                  <Button
+                    type="submit"
                     key={op}
                     onClick={() =>
                       op === 'not-applicable' ? setReasonAction(op) : void action(op)
                     }
                   >
                     {t(`security.action.${op}` as MessageKey)}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </section>
@@ -628,7 +729,9 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
             <h2>{t('security.affectedDevices')}</h2>
             <FindingTable items={findings.items} />
             {findings.hasMore && (
-              <button onClick={findings.loadMore}>{t('action.loadMore')}</button>
+              <Button type="submit" onClick={findings.loadMore}>
+                {t('action.loadMore')}
+              </Button>
             )}
           </section>
           {transitions.data && <Transitions items={transitions.data.items} />}
@@ -664,61 +767,96 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
     </>
   );
 }
-function FindingTable({ items }: { items: Finding[] }) {
+function FindingTable({
+  items,
+  loading = false,
+  filterSummary = '',
+}: {
+  items: Finding[];
+  loading?: boolean;
+  filterSummary?: string;
+}) {
   const { t } = useI18n();
   const { can } = useSession();
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>{t('security.reference')}</th>
-          <th>{t('security.advisory')}</th>
-          <th>{t('security.device')}</th>
-          <th>{t('security.productName')}</th>
-          <th>{t('security.installedVersion')}</th>
-          <th>{t('security.confidence')}</th>
-          <th>{t('security.status')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((x) => (
-          <tr key={x.id}>
-            <td>
+    <DataTable
+      filterSummary={filterSummary}
+      caption={t('security.findings')}
+      columns={
+        [
+          {
+            key: 'reference',
+            sortValue: (x) => x.reference,
+            header: t('security.reference'),
+            render: (x: Finding) => (
               <Link to={`/security/findings/${enc(x.id)}`}>{x.reference}</Link>
-            </td>
-            <td>
+            ),
+          },
+          {
+            key: 'advisory',
+            sortValue: (x) => x.advisoryReference,
+            header: t('security.advisory'),
+            render: (x: Finding) => (
               <Link to={`/security/advisories/${enc(x.advisoryId)}`}>{x.advisoryReference}</Link>
-            </td>
-            <td>
-              {devicePath(x, can('endpoints.view') || can('endpoints.manage')) ? (
+            ),
+          },
+          {
+            key: 'device',
+            sortValue: (x) => x.deviceName,
+            header: t('security.device'),
+            render: (x: Finding) =>
+              devicePath(x, can('endpoints.view') || can('endpoints.manage')) ? (
                 <Link to={devicePath(x, true) ?? ''}>{x.deviceName}</Link>
               ) : (
                 t('security.deviceHidden')
-              )}
-            </td>
-            <td>{x.productName ?? x.softwareProductId}</td>
-            <td>{x.installedVersion ?? '—'}</td>
-            <td>
+              ),
+          },
+          {
+            key: 'product',
+            sortValue: (x) => x.productName,
+            header: t('security.productName'),
+            render: (x: Finding) => x.productName ?? x.softwareProductId,
+          },
+          {
+            key: 'version',
+            sortValue: (x) => x.installedVersion,
+            header: t('security.installedVersion'),
+            render: (x: Finding) => x.installedVersion ?? '—',
+          },
+          {
+            key: 'confidence',
+            sortValue: (x) => x.confidence,
+            header: t('security.confidence'),
+            render: (x: Finding) => (
               <span title={t('security.confidenceHelp')}>
                 <Label kind="confidence" value={x.confidence} />
               </span>
-            </td>
-            <td>
-              <Label kind="status" value={x.status} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            ),
+          },
+          {
+            key: 'status',
+            sortValue: (x) => x.status,
+            header: t('security.status'),
+            render: (x: Finding) => <Label kind="status" value={x.status} />,
+          },
+        ] satisfies Column<Finding>[]
+      }
+      rows={items}
+      rowKey={(x) => x.id}
+      loading={loading}
+      emptyText={t('security.findingsEmpty')}
+    />
   );
 }
 export function SecurityFindingsScreen() {
   const { t } = useI18n();
-  const query = new URLSearchParams(window.location.search);
+  const { search } = useLocation();
+  const query = new URLSearchParams(search);
   const [status, setStatus] = useState(() =>
     query.get('riskDue') === 'true' ? 'risk_accepted' : '',
   );
   const [confidence, setConfidence] = useState(() => query.get('confidence') ?? '');
+  useFilterQuery({ confidence });
   const [advisoryId, setAdvisoryId] = useState('');
   const [device, setDevice] = useState('');
   const list = usePagedList(
@@ -733,44 +871,137 @@ export function SecurityFindingsScreen() {
         x.deviceName?.toLowerCase().includes(device.toLowerCase()) ||
         x.deviceId === device),
   );
+  const activeFilters = [
+    ...(query.has('open')
+      ? [
+          {
+            key: 'open',
+            label: t('security.filter.open'),
+            onRemove: () => clearOverviewFilters('open'),
+          },
+        ]
+      : []),
+    ...(query.has('riskDue')
+      ? [
+          {
+            key: 'riskDue',
+            label: t('security.riskDue30'),
+            onRemove: () => clearOverviewFilters('riskDue'),
+          },
+        ]
+      : []),
+    ...(device
+      ? [
+          {
+            key: 'device',
+            label: `${t('security.device')}: ${device}`,
+            onRemove: () => {
+              setDevice('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`security.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(confidence
+      ? [
+          {
+            key: 'confidence',
+            label: t(`security.confidence.${confidence}` as MessageKey),
+            onRemove: () => {
+              setConfidence('');
+            },
+          },
+        ]
+      : []),
+    ...(advisoryId
+      ? [
+          {
+            key: 'advisory',
+            label: `${t('security.advisoryId')}: ${advisoryId}`,
+            onRemove: () => {
+              setAdvisoryId('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('security.findings')} />
       <p>{t('security.confidenceHelp')}</p>
-      <div className="filters">
-        <label>
-          {t('security.status')}
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">{t('filters.all')}</option>
-            {findingStatuses.map((x) => (
-              <option key={x} value={x}>
-                {t(`security.status.${x}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t('security.confidence')}
-          <select value={confidence} onChange={(e) => setConfidence(e.target.value)}>
-            <option value="">{t('filters.all')}</option>
-            {confidences.map((x) => (
-              <option key={x} value={x}>
-                {t(`security.confidence.${x}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Field label={t('security.advisoryId')} value={advisoryId} onChange={setAdvisoryId} />
-        <Field label={t('security.device')} value={device} onChange={setDevice} type="search" />
-      </div>
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setStatus('');
+          setConfidence('');
+          setAdvisoryId('');
+          setDevice('');
+          clearOverviewFilters('open', 'riskDue');
+        }}
+      >
+        <Select
+          label={t('security.status')}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...findingStatuses.map((value) => ({
+              value,
+              label: t(`security.status.${value}` as MessageKey),
+            })),
+          ]}
+        />
+        <Select
+          label={t('security.confidence')}
+          value={confidence}
+          onChange={(e) => setConfidence(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...confidences.map((value) => ({
+              value,
+              label: t(`security.confidence.${value}` as MessageKey),
+            })),
+          ]}
+        />
+        <TextField
+          label={t('security.advisoryId')}
+          value={advisoryId}
+          onChange={(e) => setAdvisoryId(e.target.value)}
+        />
+        <TextField
+          label={t('security.device')}
+          type="search"
+          value={device}
+          onChange={(e) => setDevice(e.target.value)}
+        />
+      </FilterBar>
       <p>
         {t('security.loadedCount', {
           count: visible.length,
         })}
       </p>
       {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <FindingTable items={visible} />
-      {list.hasMore && <button onClick={list.loadMore}>{t('action.loadMore')}</button>}
+      <FindingTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        items={visible}
+        loading={list.loading}
+      />
+      {list.hasMore && (
+        <Button onClick={list.loadMore} busy={list.loadingMore}>
+          {t('action.loadMore')}
+        </Button>
+      )}
     </>
   );
 }
@@ -830,10 +1061,10 @@ function ReasonDialog({
           </label>
         )}
         <div className="actions">
-          <button type="submit">{t('action.save')}</button>
-          <button type="button" onClick={onClose}>
+          <Button type="submit">{t('action.save')}</Button>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         </div>
       </form>
     </Dialog>
@@ -919,7 +1150,8 @@ export function SecurityFindingDetailScreen({ id }: { id: string }) {
             <div className="actions">
               {findingActions(f.status, can('security.manage'), can('security.accept_risk')).map(
                 (op) => (
-                  <button
+                  <Button
+                    type="submit"
                     key={op}
                     onClick={() =>
                       ['accept-risk', 'false-positive', 'reopen'].includes(op)
@@ -928,7 +1160,7 @@ export function SecurityFindingDetailScreen({ id }: { id: string }) {
                     }
                   >
                     {t(`security.action.${op}` as MessageKey)}
-                  </button>
+                  </Button>
                 ),
               )}
             </div>

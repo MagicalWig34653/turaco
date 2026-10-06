@@ -1,6 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
@@ -26,7 +27,7 @@ export function RequestStatusBadge({ status }: { status: RequestStatus }) {
 
 /** The own requests of the signed-in user (scope "mine") or all requests of the organization. */
 export function RequestsScreen({ scope }: { scope: 'mine' | 'all' }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [status, setStatus] = useState<RequestStatus | ''>('');
   const list = usePagedList(
     (cursor, signal) => requestsApi.list(scope, status, cursor, signal),
@@ -36,21 +37,43 @@ export function RequestsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const columns: Column<ServiceRequest>[] = [
     {
       key: 'reference',
+      sortValue: (r) => r.reference,
       header: t('requests.col.reference'),
       render: (r) => <Link to={`/requests/${encodeURIComponent(r.id)}`}>{r.reference}</Link>,
     },
-    { key: 'item', header: t('requests.col.item'), render: (r) => r.catalogItemTitle },
+    {
+      key: 'item',
+      sortValue: (r) => r.catalogItemTitle,
+      header: t('requests.col.item'),
+      render: (r) => r.catalogItemTitle,
+    },
     {
       key: 'status',
+      sortValue: (r) => r.status,
       header: t('requests.col.status'),
       render: (r) => <RequestStatusBadge status={r.status} />,
     },
     {
       key: 'submitted',
+      sortValue: (r) => r.submittedAt,
       header: t('requests.col.submitted'),
-      render: (r) => formatDateTime(locale, r.submittedAt),
+      render: (r) => <TableDate value={r.submittedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`requests.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -64,7 +87,11 @@ export function RequestsScreen({ scope }: { scope: 'mine' | 'all' }) {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('requests.filter.status')}
           value={status}
@@ -74,8 +101,9 @@ export function RequestsScreen({ scope }: { scope: 'mine' | 'all' }) {
             ...requestStatuses.map((value) => ({ value, label: t(`requests.status.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={title}
         columns={columns}
         rows={list.items}

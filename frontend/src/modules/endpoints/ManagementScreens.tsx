@@ -1,3 +1,5 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { Dialog } from '../../platform/ui/Dialog';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -11,6 +13,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
 import { endpointsApi } from './api';
 import { orderedCounts, visibleGroupName } from './viewHelpers';
 import { HistorySection } from './HistoryDiffScreens';
@@ -64,12 +67,12 @@ export function ManagementArtifactsScreen() {
     {
       key: 'observed',
       header: t('endpoints.observedAt'),
-      render: (item) => formatDateTime(locale, item.observedAt),
+      render: (item) => <TableDate value={item.observedAt} />,
     },
     {
       key: 'synced',
       header: t('endpoints.lastSyncedAt'),
-      render: (item) => formatDateTime(locale, item.lastSyncedAt),
+      render: (item) => <TableDate value={item.lastSyncedAt} />,
     },
     {
       key: 'removed',
@@ -78,10 +81,64 @@ export function ManagementArtifactsScreen() {
         item.deletedObservedAt ? formatDateTime(locale, item.deletedObservedAt) : '–',
     },
   ];
+  const activeFilters = [
+    ...(filters.q
+      ? [
+          {
+            key: 'q',
+            label: `${t('management.search')}: ${filters.q}`,
+            onRemove: () => {
+              change({ q: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.kind
+      ? [
+          {
+            key: 'kind',
+            label: t(`management.kind.${filters.kind}` as MessageKey),
+            onRemove: () => {
+              change({ kind: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.platform
+      ? [
+          {
+            key: 'platform',
+            label: t(`endpoints.platform.${filters.platform}` as MessageKey),
+            onRemove: () => {
+              change({ platform: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.includeDeleted
+      ? [
+          {
+            key: 'includeDeleted',
+            label: t('management.includeDeleted'),
+            onRemove: () => {
+              change({ includeDeleted: false });
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('nav.managementArtifacts')} />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setFilters(artifactInitial);
+        }}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('management.search')}
           type="search"
@@ -108,8 +165,9 @@ export function ManagementArtifactsScreen() {
           checked={filters.includeDeleted}
           onChange={(event) => change({ includeDeleted: event.target.checked })}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.managementArtifacts')}
         columns={columns}
         rows={list.items}
@@ -148,12 +206,12 @@ export function ManagementFiltersScreen() {
     {
       key: 'observed',
       header: t('endpoints.observedAt'),
-      render: (item) => formatDateTime(locale, item.observedAt),
+      render: (item) => <TableDate value={item.observedAt} />,
     },
     {
       key: 'synced',
       header: t('endpoints.lastSyncedAt'),
-      render: (item) => formatDateTime(locale, item.lastSyncedAt),
+      render: (item) => <TableDate value={item.lastSyncedAt} />,
     },
     {
       key: 'removed',
@@ -162,10 +220,53 @@ export function ManagementFiltersScreen() {
         item.deletedObservedAt ? formatDateTime(locale, item.deletedObservedAt) : '–',
     },
   ];
+  const activeFilters = [
+    ...(filters.q
+      ? [
+          {
+            key: 'q',
+            label: `${t('management.search')}: ${filters.q}`,
+            onRemove: () => {
+              change({ q: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.platform
+      ? [
+          {
+            key: 'platform',
+            label: t(`endpoints.platform.${filters.platform}` as MessageKey),
+            onRemove: () => {
+              change({ platform: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.includeDeleted
+      ? [
+          {
+            key: 'includeDeleted',
+            label: t('management.includeDeleted'),
+            onRemove: () => {
+              change({ includeDeleted: false });
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('nav.managementFilters')} />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setFilters(filterInitial);
+        }}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('management.search')}
           type="search"
@@ -183,8 +284,9 @@ export function ManagementFiltersScreen() {
           checked={filters.includeDeleted}
           onChange={(event) => change({ includeDeleted: event.target.checked })}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.managementFilters')}
         columns={columns}
         rows={list.items}
@@ -482,9 +584,9 @@ function WhyDialog({
           </ol>
         </>
       ) : null}
-      <button type="button" onClick={onClose}>
+      <Button type="button" onClick={onClose}>
         {t('action.close')}
-      </button>
+      </Button>
     </Dialog>
   );
 }
@@ -525,9 +627,9 @@ export function DeviceManagementSection({ id }: { id: string }) {
       render: (x) => (
         <>
           <ExpectedView value={x.expected} />
-          <button type="button" onClick={() => setWhy(x.artifact.id)}>
+          <Button type="button" onClick={() => setWhy(x.artifact.id)}>
             {t('management.why')}
-          </button>
+          </Button>
         </>
       ),
     },
@@ -542,10 +644,46 @@ export function DeviceManagementSection({ id }: { id: string }) {
       render: (x) => (x.mismatch ? label(t, 'management.mismatch', x.mismatch) : '–'),
     },
   ];
+  const activeFilters = [
+    ...(filters.kind
+      ? [
+          {
+            key: 'kind',
+            label: `${t('management.kind')}: ${filters.kind}`,
+            onRemove: () => {
+              setFilters((current) => ({ ...current, kind: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filters.state
+      ? [
+          {
+            key: 'state',
+            label: `${t('management.observed')}: ${filters.state}`,
+            onRemove: () => {
+              setFilters((current) => ({ ...current, state: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filters.mismatch
+      ? [
+          {
+            key: 'mismatch',
+            label: `${t('management.mismatch')}: ${filters.mismatch}`,
+            onRemove: () => {
+              setFilters((current) => ({ ...current, mismatch: '' }));
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <section>
       <h2>{t('management.section')}</h2>
-      <div className="filters">
+      <FilterBar activeFilters={activeFilters}>
         <Select
           label={t('management.kind')}
           value={filters.kind}
@@ -573,8 +711,9 @@ export function DeviceManagementSection({ id }: { id: string }) {
             ...mismatches.map((k) => ({ value: k, label: label(t, 'management.mismatch', k) })),
           ]}
         />
-      </div>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('management.section')}
         columns={columns}
         rows={list.items}

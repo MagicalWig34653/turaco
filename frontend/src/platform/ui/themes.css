@@ -1,0 +1,44 @@
+/*
+ * Cross-theme presentation rules. Cyberpunk-only expression lives in cyberpunk.css, which is
+ * imported last and scoped to html[data-theme='cyberpunk'] so other themes pay nothing for it.
+ */
+
+/* Disabled controls remain readable; state is also indicated by native semantics. */
+html:is([data-theme='dark'], [data-theme='cyberpunk'])
+  :is(button, input, select, textarea):disabled {
+  opacity: 1;
+  color: var(--text-secondary);
+  -webkit-text-fill-color: var(--text-secondary);
+  background: var(--surface-muted-token);
+  border-color: var(--border-token);
+  box-shadow: none;
+  text-shadow: none;
+  filter: none;
+}
+html[data-theme='dark'] .turaco-appbar {
+  background: var(--surface-base);
+}
+
+/* Cancel, rather than run infinite animations at a zero duration. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+/* A hidden tab pauses every running animation; ThemeProvider sets data-visibility. */
+html[data-visibility='hidden'] *,
+html[data-visibility='hidden'] *::before,
+html[data-visibility='hidden'] *::after {
+  animation-play-state: paused !important;
+}

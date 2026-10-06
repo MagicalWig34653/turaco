@@ -105,6 +105,7 @@ import { I18nProvider, useI18n } from '../platform/i18n/I18nProvider';
 import { matchRoute } from '../platform/router/routing';
 import { navigate, useLocation } from '../platform/router/Router';
 import { SessionProvider, useSession } from '../platform/session/SessionProvider';
+import { ThemeProvider } from '../platform/theme/ThemeProvider';
 import { Home } from './Home';
 import { appRoutes, canViewRoute, type RouteId } from './routes';
 import { Shell } from './Shell';
@@ -347,10 +348,12 @@ function Gate() {
 
 export function App() {
   return (
-    <I18nProvider>
-      <SessionProvider>
-        <Gate />
-      </SessionProvider>
-    </I18nProvider>
+    <ThemeProvider>
+      <I18nProvider>
+        <SessionProvider>
+          <Gate />
+        </SessionProvider>
+      </I18nProvider>
+    </ThemeProvider>
   );
 }

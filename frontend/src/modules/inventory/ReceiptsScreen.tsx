@@ -1,6 +1,6 @@
+import { TableDate } from '../../platform/ui/TableDate';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -10,7 +10,7 @@ import { inventoryApi } from './api';
 import type { GoodsReceipt } from './types';
 
 export function ReceiptsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const [products, setProducts] = useState<Record<string, string>>({});
   const list = usePagedList<GoodsReceipt>(async (cursor, signal) => {
@@ -23,7 +23,7 @@ export function ReceiptsScreen() {
     {
       key: 'time',
       header: t('inventory.col.time'),
-      render: (r) => formatDateTime(locale, r.createdAt),
+      render: (r) => <TableDate value={r.createdAt} />,
     },
     {
       key: 'note',

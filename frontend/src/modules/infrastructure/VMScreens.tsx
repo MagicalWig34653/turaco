@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { impactUrl } from '../services/helpers';
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
@@ -159,8 +160,46 @@ export function VMListScreen() {
           ) : undefined
         }
       />
-      <form
-        className="form"
+      <FilterBar
+        activeFilters={[
+          ...(filters.q
+            ? [
+                {
+                  key: 'q',
+                  label: `${t('infra.search')}: ${filters.q}`,
+                  onRemove: () => {
+                    setFilters((current) => ({ ...current, q: '' }));
+                    setQ('');
+                  },
+                },
+              ]
+            : []),
+          ...(filters.state
+            ? [
+                {
+                  key: 'state',
+                  label: `${t('infra.vm.state')}: ${filters.state}`,
+                  onRemove: () => {
+                    setFilters((current) => ({ ...current, state: '' }));
+                    setState('');
+                  },
+                },
+              ]
+            : []),
+          ...(filters.hypervisorAssetId
+            ? [
+                {
+                  key: 'hypervisorAssetId',
+                  label: `${t('infra.vm.hypervisor')}: ${filters.hypervisorAssetId}`,
+                  onRemove: () => {
+                    setFilters((current) => ({ ...current, hypervisorAssetId: '' }));
+                    setHypervisor('');
+                  },
+                },
+              ]
+            : []),
+        ]}
+
         onSubmit={(event) => {
           event.preventDefault();
           setFilters({ q, state, hypervisorAssetId: hypervisor });
@@ -186,7 +225,7 @@ export function VMListScreen() {
           <input value={hypervisor} onChange={(event) => setHypervisor(event.target.value)} />
         </label>
         <Button type="submit">{t('filters.apply')}</Button>
-      </form>
+      </FilterBar>
       {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
       <ul>
         {list.items.map((vm) => (

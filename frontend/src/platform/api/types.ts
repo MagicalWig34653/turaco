@@ -7,6 +7,10 @@ export type AuthSession = {
   authMethod: string;
   expiresAt: string;
   permissions: string[];
+  /** The user's own display name; presentation only, absent when unknown. */
+  displayName?: string;
+  /** The user's given name when the directory provides one. */
+  givenName?: string;
 };
 
 export type LoginRequest = { identifier: string; password: string };

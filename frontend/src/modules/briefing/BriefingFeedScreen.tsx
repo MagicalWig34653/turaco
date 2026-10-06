@@ -4,10 +4,17 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Alert, Badge } from '../../platform/ui/Alert';
+import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Card, EmptyState, MetricCard, Skeleton, useCountUp } from '../../platform/ui/Workspace';
 import { briefingApi } from './api';
 import { severityTone } from './actions';
 import { groupFeedEntries, resolveFeedTitle, sourceKey } from './feed';
+
+function FeedCount({ value }: { value: number }) {
+  const display = useCountUp(value);
+  return <strong aria-label={String(value)}>{display}</strong>;
+}
 
 export function BriefingFeedScreen() {
   const { t, locale } = useI18n();
@@ -30,11 +37,29 @@ export function BriefingFeedScreen() {
           ) : null
         }
       />
-      {feed.loading && !data ? <p role="status">{t('state.loading')}</p> : null}
+      {feed.loading && !data ? <Skeleton lines={6} /> : null}
       {feed.error ? (
         <Alert kind="error">
-          {t('error.generic')} <button onClick={feed.reload}>{t('action.retry')}</button>
+          {t('error.generic')} <Button onClick={feed.reload}>{t('action.retry')}</Button>
         </Alert>
+      ) : null}
+      {data ? (
+        <div className="workspace-metrics" aria-label={t('briefing.feed.summary')}>
+          {(['critical', 'warning', 'info'] as const).map((severity) => {
+            const entries = data.entries.filter((entry) => entry.severity === severity);
+            return (
+              <MetricCard
+                key={severity}
+                label={t(`briefing.severity.${severity}`)}
+                value={entries.length}
+                to={entries[0]?.linkPath ?? '/briefing'}
+                tone={
+                  severity === 'critical' ? 'danger' : severity === 'warning' ? 'warning' : 'info'
+                }
+              />
+            );
+          })}
+        </div>
       ) : null}
       {data?.unavailable.length ? (
         <Alert kind="warning">
@@ -65,16 +90,23 @@ export function BriefingFeedScreen() {
           </ul>
         </Alert>
       ) : null}
-      {data && groups.length === 0 ? <p>{t('briefing.feed.empty')}</p> : null}
+      {data && groups.length === 0 ? <EmptyState title={t('briefing.feed.empty')} /> : null}
       {groups.map((group) => (
-        <section key={group.severity} aria-label={t(`briefing.severity.${group.severity}`)}>
-          <h2>{t(`briefing.severity.${group.severity}`)}</h2>
-          <div className="grid">
+        <section
+          key={group.severity}
+          className="briefing-group"
+          aria-label={t(`briefing.severity.${group.severity}`)}
+        >
+          <div className="workspace-section-head">
+            <h2>{t(`briefing.severity.${group.severity}`)}</h2>
+            <span>{group.entries.length}</span>
+          </div>
+          <div className="briefing-grid">
             {group.entries.map((entry, index) => {
               const title = resolveFeedTitle(entry);
               return (
-                <article
-                  className="card"
+                <Card
+                  className={`briefing-card severity-${entry.severity}`}
                   key={`${entry.kind}-${entry.reference?.id ?? entry.linkPath}-${index}`}
                 >
                   <Badge tone={severityTone(entry.severity)}>
@@ -89,24 +121,31 @@ export function BriefingFeedScreen() {
                   {entry.count !== undefined ? (
                     <p>
                       <Link to={entry.linkPath}>
-                        {t('briefing.feed.count', { count: entry.count })}
+                        <FeedCount value={entry.count} />{' '}
+                        <span className="visually-hidden">
+                          {t('briefing.feed.count', { count: entry.count })}
+                        </span>
                       </Link>
                     </p>
                   ) : null}
                   {entry.dueAt ? (
                     <p>
-                      {t('briefing.feed.dueAt')}: {formatDateTime(locale, entry.dueAt)}
+                      {t('briefing.feed.dueAt')}:{' '}
+                      <time dateTime={entry.dueAt}>{formatDateTime(locale, entry.dueAt)}</time>
                     </p>
                   ) : null}
                   {entry.occurredAt ? (
                     <p>
-                      {t('briefing.feed.occurredAt')}: {formatDateTime(locale, entry.occurredAt)}
+                      {t('briefing.feed.occurredAt')}:{' '}
+                      <time dateTime={entry.occurredAt}>
+                        {formatDateTime(locale, entry.occurredAt)}
+                      </time>
                     </p>
                   ) : null}
                   <p>
                     {t('briefing.feed.source')}: {t(sourceKey(entry.source))}
                   </p>
-                </article>
+                </Card>
               );
             })}
           </div>

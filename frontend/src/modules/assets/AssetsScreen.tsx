@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -9,6 +10,7 @@ import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { copyContextText, type MenuItem } from '../../platform/ui/ContextMenu';
 import { Select, TextField } from '../../platform/ui/Field';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { PageHeader } from '../../platform/ui/PageHeader';
@@ -35,11 +37,13 @@ export function AssetStatusBadge({ status }: { status: AssetStatus }) {
 /** The table shared by "My equipment" and the asset list. */
 export function AssetTable({
   caption,
+  filterSummary = '',
   emptyText,
   list,
   productNames,
 }: {
   caption: string;
+  filterSummary?: string;
   emptyText: string;
   list: PagedState<Asset>;
   productNames: Record<string, string>;
@@ -48,28 +52,59 @@ export function AssetTable({
   const columns: Column<Asset>[] = [
     {
       key: 'reference',
+      sortValue: (a) => a.reference,
       header: t('assets.col.reference'),
       render: (a) => <Link to={`/assets/${encodeURIComponent(a.id)}`}>{a.reference}</Link>,
     },
     {
       key: 'product',
+      sortValue: (a) => productNames[a.productId] ?? a.productId,
       header: t('assets.col.product'),
       render: (a) => productNames[a.productId] ?? '–',
     },
-    { key: 'serial', header: t('assets.col.serial'), render: (a) => a.serialNumber ?? '–' },
-    { key: 'tag', header: t('assets.col.tag'), render: (a) => a.assetTag ?? '–' },
+    {
+      key: 'serial',
+      sortValue: (a) => a.serialNumber,
+      header: t('assets.col.serial'),
+      render: (a) => a.serialNumber ?? '–',
+    },
+    {
+      key: 'tag',
+      sortValue: (a) => a.assetTag,
+      header: t('assets.col.tag'),
+      render: (a) => a.assetTag ?? '–',
+    },
     {
       key: 'status',
+      sortValue: (a) => a.status,
       header: t('assets.col.status'),
       render: (a) => <AssetStatusBadge status={a.status} />,
     },
   ];
+  const rowActions = (asset: Asset): MenuItem[] => [
+    {
+      id: 'open',
+      label: t('contextMenu.open'),
+      onSelect: () => navigate(`/assets/${encodeURIComponent(asset.id)}`),
+    },
+    {
+      id: 'copy-reference',
+      label: t('contextMenu.copyReference'),
+      onSelect: () => {
+        void copyContextText(asset.reference).then((copied) => {
+          if (!copied) window.prompt(t('contextMenu.copyFallback'), asset.reference);
+        });
+      },
+    },
+  ];
   return (
     <DataTable
+      filterSummary={filterSummary}
       caption={caption}
       columns={columns}
       rows={list.items}
       rowKey={(a) => a.id}
+      rowActions={rowActions}
       loading={list.loading}
       error={list.error}
       onRetry={list.reload}
@@ -136,6 +171,31 @@ export function AssetsScreen() {
     }
   };
 
+  const activeFilters = [
+    ...(query
+      ? [
+          {
+            key: 'search',
+            label: `${t('assets.filter.search')}: ${query}`,
+            onRemove: () => {
+              setQuery('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`assets.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -149,7 +209,7 @@ export function AssetsScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => void lookup(event)}>
+      <FilterBar role="search" onSubmit={(event) => void lookup(event)}>
         <TextField
           label={t('assets.lookup.label')}
           hint={t('assets.lookup.hint')}
@@ -161,9 +221,13 @@ export function AssetsScreen() {
         <Button type="submit" disabled={code.trim() === ''}>
           {t('assets.lookup.action')}
         </Button>
-      </form>
+      </FilterBar>
       {lookupError ? <ApiErrorAlert error={lookupError} /> : null}
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('assets.filter.search')}
           type="search"
@@ -181,8 +245,9 @@ export function AssetsScreen() {
             ...assetStatuses.map((value) => ({ value, label: t(`assets.status.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <AssetTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.assets')}
         emptyText={t('assets.empty')}
         list={list}

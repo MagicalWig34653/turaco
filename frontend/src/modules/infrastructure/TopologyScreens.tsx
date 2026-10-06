@@ -8,6 +8,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Table } from '../../platform/ui/Table';
 import { infrastructureApi as api } from './api';
 import { buildElevation } from './elevation';
 import type { Placement } from './types';
@@ -630,7 +631,7 @@ export function RackScreen({ id }: { id: string }) {
               <Button onClick={() => setForm('place')}>{t('infra.place')}</Button>
             </>
           )}
-          <table>
+          <Table>
             <caption>{t('infra.elevation')}</caption>
             <thead>
               <tr>
@@ -686,7 +687,7 @@ export function RackScreen({ id }: { id: string }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
           {form === 'remove' && (
             <Dialog title={t('infra.remove')} onClose={() => setForm(undefined)}>
               {error && <ApiErrorAlert error={error} />}

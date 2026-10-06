@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
@@ -8,7 +9,10 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
+import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Table } from '../../platform/ui/Table';
 import { assetsApi } from '../assets/api';
 import { infrastructureApi } from '../infrastructure/api';
 import { servicesApi, type ServiceFields } from './api';
@@ -148,6 +152,69 @@ export function ServicesListScreen() {
   const [filter, setFilter] = useState(form);
   const [create, setCreate] = useState(false);
   const list = usePagedList((cursor, signal) => servicesApi.list(filter, cursor, signal), [filter]);
+  const activeFilters = [
+    ...(filter.q
+      ? [
+          {
+            key: 'q',
+            label: `${t('services.search')}: ${filter.q}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, q: '' }));
+              setForm((current) => ({ ...current, q: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.status
+      ? [
+          {
+            key: 'status',
+            label: t(`services.status.${filter.status}` as MessageKey),
+            onRemove: () => {
+              setFilter((current) => ({ ...current, status: '' }));
+              setForm((current) => ({ ...current, status: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.criticality
+      ? [
+          {
+            key: 'criticality',
+            label: t(`services.criticality.${filter.criticality}` as MessageKey),
+            onRemove: () => {
+              setFilter((current) => ({ ...current, criticality: '' }));
+              setForm((current) => ({ ...current, criticality: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.ownerUserId
+      ? [
+          {
+            key: 'ownerUserId',
+            label: `${t('services.ownerUserId')}: ${filter.ownerUserId}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, ownerUserId: '' }));
+              setForm((current) => ({ ...current, ownerUserId: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.teamId
+      ? [
+          {
+            key: 'teamId',
+            label: `${t('services.teamId')}: ${filter.teamId}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, teamId: '' }));
+              setForm((current) => ({ ...current, teamId: '' }));
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -158,73 +225,86 @@ export function ServicesListScreen() {
           ) : undefined
         }
       />
-      <form
-        className="form"
+      <FilterBar
+        activeFilters={activeFilters}
+
+        role="search"
         onSubmit={(e) => {
           e.preventDefault();
           setFilter({ ...form });
         }}
       >
-        <label>
-          {t('services.search')}
-          <input value={form.q} onChange={(e) => setForm({ ...form, q: e.target.value })} />
-        </label>
-        <Choice
+        <TextField
+          label={t('services.search')}
+          value={form.q}
+          onChange={(e) => setForm({ ...form, q: e.target.value })}
+        />
+        <Select
           label={t('services.status')}
           value={form.status}
-          values={statuses}
-          prefix="services.status"
-          all
-          onChange={(v) => setForm({ ...form, status: v })}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...statuses.map((value) => ({ value, label: t(`services.status.${value}`) })),
+          ]}
         />
-        <Choice
+        <Select
           label={t('services.criticality')}
           value={form.criticality}
-          values={criticalities}
-          prefix="services.criticality"
-          all
-          onChange={(v) => setForm({ ...form, criticality: v })}
+          onChange={(e) => setForm({ ...form, criticality: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...criticalities.map((value) => ({ value, label: t(`services.criticality.${value}`) })),
+          ]}
         />
-        <label>
-          {t('services.ownerUserId')}
-          <input
-            value={form.ownerUserId}
-            onChange={(e) => setForm({ ...form, ownerUserId: e.target.value })}
-          />
-        </label>
-        <label>
-          {t('services.teamId')}
-          <input
-            value={form.teamId}
-            onChange={(e) => setForm({ ...form, teamId: e.target.value })}
-          />
-        </label>
+        <TextField
+          label={t('services.ownerUserId')}
+          value={form.ownerUserId}
+          onChange={(e) => setForm({ ...form, ownerUserId: e.target.value })}
+        />
+        <TextField
+          label={t('services.teamId')}
+          value={form.teamId}
+          onChange={(e) => setForm({ ...form, teamId: e.target.value })}
+        />
         <Button type="submit">{t('filters.apply')}</Button>
-      </form>
-      {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <table>
-        <thead>
-          <tr>
-            <th>{t('services.reference')}</th>
-            <th>{t('services.name')}</th>
-            <th>{t('services.status')}</th>
-            <th>{t('services.criticality')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.items.map((s) => (
-            <tr key={s.id}>
-              <td>
-                <Link to={`/services/${enc(s.id)}`}>{s.reference}</Link>
-              </td>
-              <td>{s.name}</td>
-              <td>{t(`services.status.${s.status}`)}</td>
-              <td>{t(`services.criticality.${s.criticality}`)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list.hasMore && <Button onClick={list.loadMore}>{t('action.loadMore')}</Button>}
+      </FilterBar>
+      <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        caption={t('services.list')}
+        columns={
+          [
+            {
+              key: 'reference',
+              header: t('services.reference'),
+              render: (service: Service) => (
+                <Link to={`/services/${enc(service.id)}`}>{service.reference}</Link>
+              ),
+            },
+            { key: 'name', header: t('services.name'), render: (service: Service) => service.name },
+            {
+              key: 'status',
+              header: t('services.status'),
+              render: (service: Service) => t(`services.status.${service.status}`),
+            },
+            {
+              key: 'criticality',
+              header: t('services.criticality'),
+              render: (service: Service) => t(`services.criticality.${service.criticality}`),
+            },
+          ] satisfies Column<Service>[]
+        }
+        rows={list.items}
+        rowKey={(service) => service.id}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('services.empty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
       {create && (
         <ServiceForm
           onClose={() => setCreate(false)}
@@ -352,7 +432,7 @@ function LinkTable({
   return (
     <>
       <h2>{title}</h2>
-      <table>
+      <Table>
         <thead>
           <tr>
             <th>{t('services.type')}</th>
@@ -383,7 +463,7 @@ function LinkTable({
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
     </>
   );
 }
@@ -662,7 +742,7 @@ export function ImpactScreen() {
           {result.data && (
             <>
               <p>{t(`services.directionHelp.${direction}`)}</p>
-              <table>
+              <Table>
                 <thead>
                   <tr>
                     <th>{t('services.type')}</th>
@@ -689,7 +769,7 @@ export function ImpactScreen() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
               {result.data.truncated && <p>{t('services.impactTruncated')}</p>}
             </>
           )}

@@ -1,0 +1,122 @@
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 208px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 6px;
+  color: var(--text-primary, var(--turaco-ink));
+  background: var(--surface-raised, var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-menu);
+  animation: context-menu-enter var(--motion-fast) var(--motion-ease) both;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 7px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  background: var(--surface-muted);
+}
+
+.context-menu-item:focus-visible,
+.table-actions-trigger:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.context-menu-item:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.context-menu-item-danger {
+  color: var(--state-critical, var(--sem-danger));
+}
+
+.context-menu-icon {
+  width: 18px;
+  flex: none;
+  text-align: center;
+}
+
+.context-menu-label {
+  flex: 1;
+}
+
+.context-menu-shortcut {
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+
+.table-actions-cell {
+  width: 48px;
+  text-align: right;
+}
+
+.table-actions-trigger {
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  color: var(--text-primary, var(--turaco-ink));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 7px);
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.table-actions-trigger:hover {
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+tr[data-has-row-actions]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
+
+@keyframes context-menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-menu {
+    animation: none;
+  }
+}
+
+:root[data-motion='reduced'] .context-menu {
+  animation: none;
+}

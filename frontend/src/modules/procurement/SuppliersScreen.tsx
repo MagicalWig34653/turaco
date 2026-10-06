@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -136,6 +137,20 @@ export function SuppliersScreen() {
         ]
       : []),
   ];
+  const activeFilters = [
+    ...(includeInactive
+      ? [
+          {
+            key: 'includeInactive',
+            label: t('procurement.supplier.showInactive'),
+            onRemove: () => {
+              setIncludeInactive(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -149,15 +164,16 @@ export function SuppliersScreen() {
           ) : null
         }
       />
-      <form className="filters" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar activeFilters={activeFilters} onSubmit={(event) => event.preventDefault()}>
         <Checkbox
           label={t('procurement.supplier.showInactive')}
           checked={includeInactive}
           onChange={(event) => setIncludeInactive(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       {actionError ? <ApiErrorAlert error={actionError} onRetry={list.reload} /> : null}
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.suppliers')}
         columns={columns}
         rows={list.items}

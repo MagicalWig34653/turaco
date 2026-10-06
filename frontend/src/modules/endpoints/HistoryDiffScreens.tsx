@@ -1,6 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useEffect, useState } from 'react';
 import { useAsync, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { organizationApi } from '../organization/api';
@@ -9,6 +10,7 @@ import { Badge } from '../../platform/ui/Alert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
 import { endpointsApi } from './api';
 import { diffBadge, historyChanges, visibleGroupName } from './viewHelpers';
 import {
@@ -23,7 +25,7 @@ const label = (t: ReturnType<typeof useI18n>['t'], prefix: string, value: string
   t(`${prefix}.${value}` as MessageKey);
 
 export function HistorySection({ id, type }: { id: string; type: 'device' | 'artifact' }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const list = usePagedList(
     (cursor, signal) =>
       type === 'device'
@@ -40,13 +42,13 @@ export function HistorySection({ id, type }: { id: string; type: 'device' | 'art
     {
       key: 'occurred',
       header: t('management.occurredAt'),
-      render: (x) => formatDateTime(locale, x.occurredAt),
+      render: (x) => <TableDate value={x.occurredAt} />,
     },
     { key: 'source', header: t('endpoints.source'), render: (x) => x.source },
     {
       key: 'observed',
       header: t('endpoints.observedAt'),
-      render: (x) => formatDateTime(locale, x.observedAt),
+      render: (x) => <TableDate value={x.observedAt} />,
     },
     {
       key: 'detail',
@@ -175,7 +177,7 @@ function DiffFiltersView({
 }) {
   const { t } = useI18n();
   return (
-    <div className="filters">
+    <FilterBar>
       <Select
         label={t('management.kind')}
         value={filters.kind}
@@ -193,7 +195,7 @@ function DiffFiltersView({
         checked={filters.differences}
         onChange={(e) => onChange({ ...filters, differences: e.target.checked })}
       />
-    </div>
+    </FilterBar>
   );
 }
 
@@ -281,8 +283,7 @@ export function DeviceDiffScreen({ id }: { id: string }) {
       <p>
         <Link to={`/devices/${encodeURIComponent(id)}`}>{t('endpoints.back')}</Link>
       </p>
-      <form
-        className="filters"
+      <FilterBar
         onSubmit={(e) => {
           e.preventDefault();
           navigate(
@@ -295,8 +296,8 @@ export function DeviceDiffScreen({ id }: { id: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit">{t('management.compare')}</button>
-      </form>
+        <Button type="submit">{t('management.compare')}</Button>
+      </FilterBar>
       {candidates.data ? (
         <div className="filters">
           {candidates.data.items
@@ -399,8 +400,7 @@ export function GroupDiffScreen({ id }: { id: string }) {
       <p>
         <Link to={`/endpoints/groups/${encodeURIComponent(id)}`}>{t('management.back')}</Link>
       </p>
-      <form
-        className="filters"
+      <FilterBar
         onSubmit={(e) => {
           e.preventDefault();
           navigate(
@@ -413,8 +413,8 @@ export function GroupDiffScreen({ id }: { id: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit">{t('management.compare')}</button>
-      </form>
+        <Button type="submit">{t('management.compare')}</Button>
+      </FilterBar>
       {candidates.data ? (
         <div className="filters">
           {candidates.data.items
