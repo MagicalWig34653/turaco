@@ -294,31 +294,26 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
                   : t('shell.notificationStatus', { count: unreadValue ?? 0 })}
             </span>
           </Link>
-          <div className="turaco-rail-user">
-            <Link to="/me" title={t('nav.me')} aria-label={t('nav.me')}>
-              <UserIdentity name={userName} method={session?.authMethod} />
-            </Link>
-            <button
-              type="button"
-              className="turaco-theme-toggle"
-              onClick={() => setTheme(nextTheme)}
-              title={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
-              aria-label={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
+          <button
+            type="button"
+            className="turaco-theme-toggle"
+            onClick={() => setTheme(nextTheme)}
+            title={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
+            aria-label={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden="true"
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="18"
-                height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
-              </svg>
-            </button>
-          </div>
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+            </svg>
+          </button>
         </div>
       </aside>
       <div className="content-column turaco-content-column" inert={mobileOpen}>

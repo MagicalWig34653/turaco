@@ -617,7 +617,7 @@
   .turaco-shell-collapsed .turaco-rail-label,
   .turaco-shell-collapsed .turaco-rail-section .nav-heading,
   .turaco-shell-collapsed .turaco-rail-bottom {
-    display: initial;
+    display: flex;
   }
   .turaco-shell-collapsed .turaco-rail-brand {
     flex-direction: row;
@@ -849,16 +849,35 @@ html[data-theme='dark'] .turaco-shell .turaco-rail {
   top: 12px;
   bottom: 12px;
 }
+/* One compact footer row: unread status and theme quick toggle. Identity lives in the top bar. */
 .turaco-rail-footer {
   flex: none;
   margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 10px;
+  border-top: 1px solid var(--border-token);
 }
 .turaco-rail-bottom {
-  padding: 15px 8px;
-  min-height: 48px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  min-height: 36px;
+  margin: 0;
+  border-top: 0;
+  border-radius: var(--radius-sm);
   text-decoration: none;
-  line-height: 1.5;
-  border-top-color: var(--border-token);
+  line-height: 1.4;
+}
+.turaco-rail-bottom > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turaco-rail-bottom:hover {
+  background: var(--rail-active);
+  color: var(--rail-text);
 }
 .turaco-rail-bottom-dot {
   flex: none;
@@ -867,33 +886,9 @@ html[data-theme='dark'] .turaco-shell .turaco-rail {
   background: var(--rail-muted);
   box-shadow: none;
 }
-.turaco-rail-user {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 15px 4px;
-  border-top: 1px solid var(--border-token);
-}
-.turaco-rail-user > a {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  color: var(--rail-text);
-  text-decoration: none;
-  border-radius: var(--radius-sm);
-}
-.turaco-rail-user .turaco-avatar {
-  background: var(--rail-active);
-  color: var(--rail-text);
-  flex: none;
-  width: 34px;
-  height: 34px;
-}
-.turaco-rail-user .turaco-user-label small {
-  color: var(--rail-muted);
-  margin-top: 3px;
+/* The navigation scrolls on its own; a soft fade marks clipped items above the footer. */
+.turaco-shell .turaco-rail nav {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
 }
 .turaco-theme-toggle {
   display: grid;
@@ -916,11 +911,8 @@ html[data-theme='dark'] .turaco-shell .turaco-rail {
 .turaco-theme-toggle:active {
   transform: scale(0.94);
 }
-.turaco-shell-collapsed .turaco-rail-user {
-  flex-direction: column;
-}
-.turaco-shell-collapsed .turaco-rail-user .turaco-user-label {
-  display: none;
+.turaco-shell-collapsed .turaco-rail-footer {
+  justify-content: center;
 }
 .turaco-shell .turaco-appbar {
   height: 70px;
@@ -1010,13 +1002,6 @@ html[data-theme='cyberpunk'] .page-eyebrow {
   .turaco-user-menu > summary {
     padding-inline: 5px;
   }
-  .turaco-rail-user .turaco-user-label,
-  .turaco-shell-collapsed .turaco-rail-user .turaco-user-label {
-    display: grid;
-  }
-  .turaco-shell-collapsed .turaco-rail-user {
-    flex-direction: row;
-  }
   .turaco-shell-collapsed .turaco-rail-bottom {
     display: flex;
   }
@@ -1042,11 +1027,6 @@ html[data-theme='cyberpunk'] .page-eyebrow {
 .turaco-shell .turaco-rail-section a:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
-}
-.turaco-rail-user .turaco-user-label small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   .turaco-theme-toggle:active,
