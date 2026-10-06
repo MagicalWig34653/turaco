@@ -552,3 +552,22 @@ html[data-density='compact'] .change-facts dd {
   width: 44px;
   padding-inline: 4px;
 }
+/* Tablet: with the rail open the content column is narrow, so the form and KPIs stack earlier. */
+@media (max-width: 1000px) {
+  .change-form {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'basics'
+      'planning'
+      'owner'
+      'alert'
+      'footer';
+  }
+  .change-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 0;
+  }
+  .change-metric:nth-child(2) {
+    border-right: 0;
+  }
+}

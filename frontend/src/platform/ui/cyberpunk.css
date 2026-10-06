@@ -349,10 +349,14 @@ html[data-theme='cyberpunk'] .workspace-section-head h2::before {
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-right: 2px;
+  margin: 0 10px 0 2px;
+  vertical-align: 0.12em;
   background: var(--cyber-cyan);
   box-shadow: 0 0 8px var(--cyber-cyan);
   transform: rotate(45deg);
+}
+html[data-theme='cyberpunk'] .dashboard-section-heading h2::before {
+  margin: 0 2px;
 }
 html[data-theme='cyberpunk'] .section-count,
 html[data-theme='cyberpunk'] .filter-count {
@@ -817,10 +821,12 @@ html[data-theme='cyberpunk']
     .turaco-command-head *
   ):focus,
 html[data-theme='cyberpunk'] .turaco-shell .datetime-trigger[aria-expanded='true'] {
+  /* Fields show one solid 2px cyan ring (3:1 against every surface) instead of the yellow one. */
+  outline: none;
   border-color: var(--cyber-cyan);
   box-shadow:
-    0 0 0 1px rgb(0 240 255 / 45%),
-    0 0 18px rgb(0 240 255 / 22%);
+    0 0 0 1px var(--cyber-cyan),
+    0 0 18px rgb(0 240 255 / 28%);
 }
 html[data-theme='cyberpunk'] select:not([multiple]):not([size]) {
   --select-chevron: var(--cyber-cyan);
