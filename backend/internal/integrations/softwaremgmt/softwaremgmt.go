@@ -14,6 +14,8 @@ package softwaremgmt
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -30,6 +32,10 @@ var ErrNotConfigured = errors.New("softwaremgmt: no software management provider
 
 // ErrNotFound means the provider does not know the package.
 var ErrNotFound = errors.New("softwaremgmt: package not found")
+
+// ErrHashDiffers means the provider refused a publication because the packaged installer hash differs from the
+// expected one.
+var ErrHashDiffers = errors.New("softwaremgmt: packaged installer hash differs from the expected hash")
 
 // Package statuses as reported by a provider. Anything else is treated as failed by the consumer.
 const (
@@ -69,10 +75,20 @@ type ProviderTarget struct {
 	ManagementProvider string
 }
 
+// PublishRequest asks the provider to publish one package. ExpectedInstallerSHA256 is the approved installer
+// hash: the provider must refuse the publication when the installer it packaged has another hash, so a package
+// changed between Turaco's check and the publication is never published.
+type PublishRequest struct {
+	ProviderPackageID       string
+	Target                  ProviderTarget
+	ExpectedInstallerSHA256 string
+}
+
 // PackageRecord is the provider's report about one package. InstallerSHA256 is the hash of the installer the
 // provider actually packaged (lower-case hex), which Turaco compares with the approved hash.
 // ManagementArtifactExternalID is the Management Provider's id of the published object (the Intune app),
-// known once published.
+// known once published. ProductKey, Version, Publisher, InstallCommandSHA256 and DetectionRuleSHA256 are
+// optional: when reported, Turaco compares them with the approved binding.
 type PackageRecord struct {
 	ProviderPackageID            string
 	ProductKey                   string
@@ -80,6 +96,8 @@ type PackageRecord struct {
 	InstallerSHA256              string
 	InstallerURL                 string
 	Publisher                    string
+	InstallCommandSHA256         string
+	DetectionRuleSHA256          string
 	Status                       string
 	ManagementArtifactExternalID string
 	ObservedAt                   time.Time
@@ -91,8 +109,9 @@ type Provider interface {
 	SearchCatalog(ctx context.Context, query string) ([]CatalogEntry, error)
 	// Package packages a Software Version. It is idempotent per opKey.
 	Package(ctx context.Context, req PackageRequest, opKey string) (PackageRecord, error)
-	// Publish publishes or updates a package into a Management Provider. It is idempotent per opKey.
-	Publish(ctx context.Context, providerPackageID string, target ProviderTarget, opKey string) (PackageRecord, error)
+	// Publish publishes or updates a package into a Management Provider. It is idempotent per opKey and refuses
+	// when the packaged installer hash differs from req.ExpectedInstallerSHA256.
+	Publish(ctx context.Context, req PublishRequest, opKey string) (PackageRecord, error)
 	// PackageStatus reports the current state of the given packages; unknown ids are left out.
 	PackageStatus(ctx context.Context, providerPackageIDs []string) ([]PackageRecord, error)
 }
@@ -108,7 +127,7 @@ func (NotConfigured) Package(context.Context, PackageRequest, string) (PackageRe
 	return PackageRecord{}, ErrNotConfigured
 }
 
-func (NotConfigured) Publish(context.Context, string, ProviderTarget, string) (PackageRecord, error) {
+func (NotConfigured) Publish(context.Context, PublishRequest, string) (PackageRecord, error) {
 	return PackageRecord{}, ErrNotConfigured
 }
 
@@ -133,6 +152,8 @@ type Fake struct {
 	failOp    map[string]error
 	hashOver  map[string]string
 	artifact  map[string]string
+	binding   map[string]func(*PackageRecord)
+	beforePub func()
 	initial   string
 	prefix    string
 	now       func() time.Time
@@ -142,6 +163,7 @@ type Fake struct {
 func NewFake() *Fake {
 	return &Fake{packages: map[string]PackageRecord{}, packageOp: map[string]string{}, publishOp: map[string]bool{},
 		calls: map[string]int{}, failOp: map[string]error{}, hashOver: map[string]string{}, artifact: map[string]string{},
+		binding: map[string]func(*PackageRecord){},
 		initial: StatusPackaged, now: func() time.Time { return time.Now().UTC() }}
 }
 
@@ -206,6 +228,35 @@ func (f *Fake) SetStatus(providerPackageID, status string) {
 		p.ObservedAt = f.now()
 		f.packages[providerPackageID] = p
 	}
+}
+
+// SetObservedAt sets the observation time the provider reports for a package (out-of-order reports).
+func (f *Fake) SetObservedAt(providerPackageID string, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p, ok := f.packages[providerPackageID]; ok {
+		p.ObservedAt = at
+		f.packages[providerPackageID] = p
+	}
+}
+
+// ReportBinding changes the bound values the provider reports for a package (now and in later reports).
+func (f *Fake) ReportBinding(providerPackageID string, change func(*PackageRecord)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.binding[providerPackageID] = change
+	if p, ok := f.packages[providerPackageID]; ok {
+		change(&p)
+		f.packages[providerPackageID] = p
+	}
+}
+
+// BeforePublish runs hook (without the Fake's lock) at the start of every Publish call, to simulate something
+// happening while a publication is in flight; nil removes it.
+func (f *Fake) BeforePublish(hook func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.beforePub = hook
 }
 
 // SetArtifact sets the Management Artifact external id a publication of the package yields.
@@ -274,21 +325,32 @@ func (f *Fake) Package(_ context.Context, req PackageRequest, opKey string) (Pac
 		hash = h
 	}
 	rec := PackageRecord{ProviderPackageID: id, ProductKey: req.ProductKey, Version: req.Version, InstallerSHA256: hash,
-		InstallerURL: req.InstallerURL, Publisher: req.Publisher, Status: f.initial, ObservedAt: f.now()}
+		InstallerURL: req.InstallerURL, Publisher: req.Publisher, InstallCommandSHA256: sha256Hex(req.InstallCommand),
+		DetectionRuleSHA256: sha256Hex(req.DetectionRule), Status: f.initial, ObservedAt: f.now()}
+	if change, ok := f.binding[id]; ok {
+		change(&rec)
+	}
 	f.packages[id] = rec
 	f.order = append(f.order, id)
 	f.packageOp[opKey] = id
 	return rec, nil
 }
 
-func (f *Fake) Publish(_ context.Context, providerPackageID string, target ProviderTarget, opKey string) (PackageRecord, error) {
+func (f *Fake) Publish(_ context.Context, req PublishRequest, opKey string) (PackageRecord, error) {
+	f.mu.Lock()
+	hook := f.beforePub
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.begin("publish"); err != nil {
 		return PackageRecord{}, err
 	}
-	if opKey == "" || target.ManagementProvider == "" {
-		return PackageRecord{}, errors.New("softwaremgmt: operation key and target are required")
+	providerPackageID := req.ProviderPackageID
+	if opKey == "" || req.Target.ManagementProvider == "" || req.ExpectedInstallerSHA256 == "" {
+		return PackageRecord{}, errors.New("softwaremgmt: operation key, target and expected hash are required")
 	}
 	p, ok := f.packages[providerPackageID]
 	if !ok {
@@ -296,6 +358,9 @@ func (f *Fake) Publish(_ context.Context, providerPackageID string, target Provi
 	}
 	if f.publishOp[opKey] {
 		return p, nil
+	}
+	if p.InstallerSHA256 != req.ExpectedInstallerSHA256 {
+		return PackageRecord{}, ErrHashDiffers
 	}
 	if p.Status != StatusPackaged && p.Status != StatusPublished {
 		return PackageRecord{}, fmt.Errorf("softwaremgmt: package %s is %s and cannot be published", providerPackageID, p.Status)
@@ -323,4 +388,9 @@ func (f *Fake) PackageStatus(_ context.Context, ids []string) ([]PackageRecord, 
 		}
 	}
 	return out, nil
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }

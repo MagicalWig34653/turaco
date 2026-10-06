@@ -20,7 +20,7 @@ func TestNotConfiguredFailsEveryCall(t *testing.T) {
 	if _, err := p.Package(ctx, softwaremgmt.PackageRequest{}, "k"); !errors.Is(err, softwaremgmt.ErrNotConfigured) {
 		t.Fatalf("package: %v", err)
 	}
-	if _, err := p.Publish(ctx, "p", softwaremgmt.ProviderTarget{ManagementProvider: "intune"}, "k"); !errors.Is(err, softwaremgmt.ErrNotConfigured) {
+	if _, err := p.Publish(ctx, softwaremgmt.PublishRequest{ProviderPackageID: "p", Target: softwaremgmt.ProviderTarget{ManagementProvider: "intune"}, ExpectedInstallerSHA256: "ab"}, "k"); !errors.Is(err, softwaremgmt.ErrNotConfigured) {
 		t.Fatalf("publish: %v", err)
 	}
 	if _, err := p.PackageStatus(ctx, []string{"p"}); !errors.Is(err, softwaremgmt.ErrNotConfigured) {
@@ -44,14 +44,20 @@ func TestFakeIsIdempotentPerOperationKey(t *testing.T) {
 		t.Fatal("another key must create another package")
 	}
 	target := softwaremgmt.ProviderTarget{ManagementProvider: "intune"}
-	p1, err := f.Publish(ctx, a.ProviderPackageID, target, "pub-1")
+	pub := softwaremgmt.PublishRequest{ProviderPackageID: a.ProviderPackageID, Target: target, ExpectedInstallerSHA256: "ab"}
+	wrong := pub
+	wrong.ExpectedInstallerSHA256 = "cd"
+	if _, err := f.Publish(ctx, wrong, "pub-0"); !errors.Is(err, softwaremgmt.ErrHashDiffers) {
+		t.Fatalf("publish with another expected hash: %v", err)
+	}
+	p1, err := f.Publish(ctx, pub, "pub-1")
 	if err != nil || p1.Status != softwaremgmt.StatusPublished || p1.ManagementArtifactExternalID != "app-pkg-1" {
 		t.Fatalf("publish: %v %+v", err, p1)
 	}
-	if p2, err := f.Publish(ctx, a.ProviderPackageID, target, "pub-1"); err != nil || p2 != p1 {
+	if p2, err := f.Publish(ctx, pub, "pub-1"); err != nil || p2 != p1 {
 		t.Fatalf("repeat publish: %v %+v", err, p2)
 	}
-	if _, err := f.Publish(ctx, "pkg-99", target, "pub-x"); !errors.Is(err, softwaremgmt.ErrNotFound) {
+	if _, err := f.Publish(ctx, softwaremgmt.PublishRequest{ProviderPackageID: "pkg-99", Target: target, ExpectedInstallerSHA256: "ab"}, "pub-x"); !errors.Is(err, softwaremgmt.ErrNotFound) {
 		t.Fatalf("unknown package: %v", err)
 	}
 	recs, err := f.PackageStatus(ctx, []string{"pkg-1", "nope"})
@@ -78,7 +84,7 @@ func TestFakeFailureInjectionAndHashReport(t *testing.T) {
 	if err != nil || rec.Status != softwaremgmt.StatusBuilding {
 		t.Fatalf("package: %v %+v", err, rec)
 	}
-	if _, err := f.Publish(ctx, rec.ProviderPackageID, softwaremgmt.ProviderTarget{ManagementProvider: "intune"}, "p"); err == nil {
+	if _, err := f.Publish(ctx, softwaremgmt.PublishRequest{ProviderPackageID: rec.ProviderPackageID, Target: softwaremgmt.ProviderTarget{ManagementProvider: "intune"}, ExpectedInstallerSHA256: "aa"}, "p"); err == nil {
 		t.Fatal("a building package must not publish")
 	}
 	f.ReportHash(rec.ProviderPackageID, "bb")

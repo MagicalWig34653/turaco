@@ -3,6 +3,12 @@
 -- Software Management Provider with their status observations (docs/product/f9-software-lifecycle-design.md,
 -- ADR-0027). Decisions and observations are append-only; an approved binding is never mutated: a changed hash,
 -- installer URL, publisher, install command or detection rule is a new Software Version.
+--
+-- The migrator wraps this file in one transaction. The ALTERs of the existing software_products and findings
+-- tables take strong locks until commit; they fail after 5s of waiting instead of queueing behind a long
+-- transaction, and no statement may run longer than 30s.
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
 
 -- Software Approval Status of a product: candidate -> approved -> deprecated -> retired; blocked (with a reason
 -- code) from any state, left only to candidate. version is the optimistic concurrency counter of the decision.
@@ -14,7 +20,8 @@ ALTER TABLE endpoints.software_products
     ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE endpoints.software_products DROP CONSTRAINT IF EXISTS software_products_blocked_reason;
 ALTER TABLE endpoints.software_products ADD CONSTRAINT software_products_blocked_reason
-    CHECK ((approval_status = 'blocked') = (approval_reason IS NOT NULL));
+    CHECK ((approval_status = 'blocked') = (approval_reason IS NOT NULL)) NOT VALID;
+ALTER TABLE endpoints.software_products VALIDATE CONSTRAINT software_products_blocked_reason;
 CREATE INDEX IF NOT EXISTS software_products_approval_idx ON endpoints.software_products (approval_status, id);
 
 CREATE TABLE IF NOT EXISTS endpoints.software_product_transitions (
@@ -92,6 +99,11 @@ CREATE INDEX IF NOT EXISTS software_version_approvals_version_idx ON endpoints.s
 -- A Software Package of a Software Management Provider for one Software Version. installer_sha256 is the hash
 -- the provider reports (compared with the approved hash); the Management Artifact is linked once the
 -- management sync has ingested the published object.
+-- package_attempt and publish_attempt are part of the provider operation keys: a retry of the same attempt is
+-- idempotent at the provider, a retry after a reported failure (or after a concluded publication) is a new
+-- attempt. published_at is set once, when Turaco accepted the package as published (SoftwarePackagePublished
+-- is emitted exactly then). A provider-reported publication is accepted only for a Turaco publish request of
+-- an approved version whose reported hash matches; otherwise the link is ignored and a finding is raised.
 CREATE TABLE IF NOT EXISTS endpoints.software_packages (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     provider text NOT NULL CHECK (provider ~ '^[a-z][a-z0-9_-]{1,39}$'),
@@ -108,6 +120,9 @@ CREATE TABLE IF NOT EXISTS endpoints.software_packages (
     requested_by uuid NOT NULL,
     publish_requested_by uuid,
     publish_requested_at timestamptz,
+    package_attempt integer NOT NULL DEFAULT 1 CHECK (package_attempt > 0),
+    publish_attempt integer NOT NULL DEFAULT 0 CHECK (publish_attempt >= 0),
+    published_at timestamptz,
     version integer NOT NULL DEFAULT 1 CHECK (version > 0),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -116,11 +131,14 @@ CREATE TABLE IF NOT EXISTS endpoints.software_packages (
     CONSTRAINT software_packages_reported CHECK (status = 'requested' OR (provider_package_id IS NOT NULL AND observed_at IS NOT NULL)),
     CONSTRAINT software_packages_artifact_matches CHECK (management_artifact_id IS NULL OR management_artifact_external_id IS NOT NULL),
     CONSTRAINT software_packages_publish_matches CHECK ((publish_requested_by IS NULL) = (publish_requested_at IS NULL)),
-    CONSTRAINT software_packages_publish_target CHECK (publish_requested_by IS NULL OR management_provider IS NOT NULL)
+    CONSTRAINT software_packages_publish_target CHECK (publish_requested_by IS NULL OR management_provider IS NOT NULL),
+    CONSTRAINT software_packages_publish_attempted CHECK (publish_requested_by IS NULL OR publish_attempt > 0)
 );
 CREATE INDEX IF NOT EXISTS software_packages_status_idx ON endpoints.software_packages (status, id);
-CREATE INDEX IF NOT EXISTS software_packages_unlinked_idx ON endpoints.software_packages (management_provider, management_artifact_external_id)
-    WHERE management_artifact_external_id IS NOT NULL AND management_artifact_id IS NULL;
+-- One Management Artifact is the publication of at most one package.
+CREATE UNIQUE INDEX IF NOT EXISTS software_packages_artifact_unique ON endpoints.software_packages (management_provider, management_artifact_external_id)
+    WHERE management_artifact_external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS software_packages_version_idx ON endpoints.software_packages (software_version_id, id);
 
 -- Append-only: one row per meaningful change of a package's reported state.
 CREATE TABLE IF NOT EXISTS endpoints.software_package_observations (
@@ -195,22 +213,53 @@ DROP TRIGGER IF EXISTS software_versions_binding_immutable ON endpoints.software
 CREATE TRIGGER software_versions_binding_immutable BEFORE UPDATE ON endpoints.software_versions
     FOR EACH ROW EXECUTE FUNCTION endpoints.forbid_software_binding_change();
 
--- The constraint swaps below take ACCESS EXCLUSIVE locks on findings until the migration commits; they run last
--- and fail after 5s of waiting instead of queueing behind a long transaction.
-SET LOCAL statement_timeout = '30s';
-SET LOCAL lock_timeout = '5s';
+-- The approval lifecycle and separation of duties hold in the database too: registered -> pending ->
+-- approved | rejected, approved -> revoked; rejected and revoked are final. An approved version was decided by
+-- someone other than the person who registered it and the person who requested its approval.
+CREATE OR REPLACE FUNCTION endpoints.check_software_version_approval() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.approval_status IS DISTINCT FROM OLD.approval_status AND NOT (
+        (OLD.approval_status = 'registered' AND NEW.approval_status = 'pending')
+        OR (OLD.approval_status = 'pending' AND NEW.approval_status IN ('approved', 'rejected'))
+        OR (OLD.approval_status = 'approved' AND NEW.approval_status = 'revoked')) THEN
+        RAISE EXCEPTION 'software version approval % -> % is not allowed', OLD.approval_status, NEW.approval_status USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.approval_status = 'approved' AND (NEW.approval_decided_by IS NOT DISTINCT FROM NEW.registered_by
+        OR NEW.approval_decided_by IS NOT DISTINCT FROM NEW.approval_requested_by) THEN
+        RAISE EXCEPTION 'a software version is approved by someone other than its registrant and requester' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+DROP TRIGGER IF EXISTS software_versions_approval_transition ON endpoints.software_versions;
+CREATE TRIGGER software_versions_approval_transition BEFORE UPDATE ON endpoints.software_versions
+    FOR EACH ROW EXECUTE FUNCTION endpoints.check_software_version_approval();
 
--- package_hash_mismatch is an Endpoint Finding about a Software Package (not a Device): the installer hash the
--- provider reports differs from the approved hash. A finding has exactly one subject.
+-- Package findings are Endpoint Findings about a Software Package (not a Device). package_hash_mismatch: the
+-- installer hash (or another bound value) the provider reports differs from the approved binding.
+-- package_published_after_revoke: the provider reports a publication Turaco does not accept (the version or
+-- product approval was withdrawn, or nobody asked Turaco to publish), or the approval was withdrawn while a
+-- publication was in flight. A finding has exactly one subject.
+-- The new column and its foreign key are added separately so the reference check runs as its own step; the
+-- CHECK swaps are added NOT VALID and validated afterwards. All of them hold the findings lock until commit
+-- (bounded by lock_timeout above).
 ALTER TABLE endpoints.findings ALTER COLUMN device_id DROP NOT NULL;
-ALTER TABLE endpoints.findings ADD COLUMN IF NOT EXISTS software_package_id uuid REFERENCES endpoints.software_packages(id) ON DELETE CASCADE;
+ALTER TABLE endpoints.findings ADD COLUMN IF NOT EXISTS software_package_id uuid;
+ALTER TABLE endpoints.findings DROP CONSTRAINT IF EXISTS findings_software_package_fk;
+ALTER TABLE endpoints.findings ADD CONSTRAINT findings_software_package_fk FOREIGN KEY (software_package_id)
+    REFERENCES endpoints.software_packages(id) ON DELETE CASCADE NOT VALID;
+ALTER TABLE endpoints.findings VALIDATE CONSTRAINT findings_software_package_fk;
 ALTER TABLE endpoints.findings DROP CONSTRAINT IF EXISTS findings_kind_check;
 ALTER TABLE endpoints.findings ADD CONSTRAINT findings_kind_check
-    CHECK (kind IN ('no_asset_match', 'serial_conflict', 'duplicate_device', 'unmatched_software', 'provider_reported_error', 'assignment_ineffective', 'package_hash_mismatch')) NOT VALID;
+    CHECK (kind IN ('no_asset_match', 'serial_conflict', 'duplicate_device', 'unmatched_software', 'provider_reported_error', 'assignment_ineffective',
+        'package_hash_mismatch', 'package_published_after_revoke')) NOT VALID;
 ALTER TABLE endpoints.findings VALIDATE CONSTRAINT findings_kind_check;
 ALTER TABLE endpoints.findings DROP CONSTRAINT IF EXISTS findings_subject_check;
 ALTER TABLE endpoints.findings ADD CONSTRAINT findings_subject_check
-    CHECK (num_nonnulls(device_id, software_package_id) = 1 AND (kind = 'package_hash_mismatch') = (software_package_id IS NOT NULL)) NOT VALID;
+    CHECK (num_nonnulls(device_id, software_package_id) = 1
+        AND (kind IN ('package_hash_mismatch', 'package_published_after_revoke')) = (software_package_id IS NOT NULL)) NOT VALID;
 ALTER TABLE endpoints.findings VALIDATE CONSTRAINT findings_subject_check;
 CREATE UNIQUE INDEX IF NOT EXISTS findings_package_one_open ON endpoints.findings (kind, software_package_id)
     WHERE status = 'open' AND software_package_id IS NOT NULL;
