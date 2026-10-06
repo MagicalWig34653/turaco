@@ -33,14 +33,19 @@ export function IncidentBanner() {
     <section aria-label={t('incidents.banner.title')}>
       {error ? <ApiErrorAlert error={error} /> : null}
       {loaded.data.map((m) => (
-        <Alert key={m.id} kind="warning">
-          <p>
-            <strong>
-              <Link to={`/incidents/${encodeURIComponent(m.id)}`}>{m.title}</Link>
-            </strong>{' '}
-            – {t(`incidents.status.${m.status}`)}
-          </p>
-          <p>{m.summary}</p>
+        <Alert key={m.id} kind="warning" className="incident-banner">
+          <span className="incident-banner-icon" aria-hidden="true">
+            !
+          </span>
+          <div>
+            <p>
+              <strong>
+                <Link to={`/incidents/${encodeURIComponent(m.id)}`}>{m.title}</Link>
+              </strong>{' '}
+              · {t(`incidents.status.${m.status}`)}
+            </p>
+            <p>{m.summary}</p>
+          </div>
           <Button onClick={() => void follow(m.id, !m.subscribed)}>
             {t(m.subscribed ? 'incidents.unfollow' : 'incidents.follow')}
           </Button>

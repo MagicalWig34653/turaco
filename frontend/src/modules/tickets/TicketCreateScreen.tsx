@@ -123,8 +123,8 @@ export function TicketCreateScreen() {
           <h1>{t('reportPolish.title')}</h1>
           <p className="subtitle">{t('reportPolish.intro')}</p>
         </div>
-        <Link to="/support">
-          {t('tickets.back')} <span aria-hidden="true">↗</span>
+        <Link to="/support" className="back-link">
+          <span aria-hidden="true">←</span> {t('tickets.back')}
         </Link>
       </header>
       <IncidentBanner />
