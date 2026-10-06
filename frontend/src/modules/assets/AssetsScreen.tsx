@@ -9,6 +9,7 @@ import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { copyContextText, type MenuItem } from '../../platform/ui/ContextMenu';
 import { Select, TextField } from '../../platform/ui/Field';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { PageHeader } from '../../platform/ui/PageHeader';
@@ -64,12 +65,29 @@ export function AssetTable({
       render: (a) => <AssetStatusBadge status={a.status} />,
     },
   ];
+  const rowActions = (asset: Asset): MenuItem[] => [
+    {
+      id: 'open',
+      label: t('contextMenu.open'),
+      onSelect: () => navigate(`/assets/${encodeURIComponent(asset.id)}`),
+    },
+    {
+      id: 'copy-reference',
+      label: t('contextMenu.copyReference'),
+      onSelect: () => {
+        void copyContextText(asset.reference).then((copied) => {
+          if (!copied) window.prompt(t('contextMenu.copyFallback'), asset.reference);
+        });
+      },
+    },
+  ];
   return (
     <DataTable
       caption={caption}
       columns={columns}
       rows={list.items}
       rowKey={(a) => a.id}
+      rowActions={rowActions}
       loading={list.loading}
       error={list.error}
       onRetry={list.reload}

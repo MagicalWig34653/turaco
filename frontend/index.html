@@ -4,6 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+    <script>
+      (() => {
+        const read = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const preference = read('turaco.theme');
+        const theme = ['turaco', 'dark', 'cyberpunk'].includes(preference)
+          ? preference
+          : matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'turaco';
+        const density = read('turaco.density') === 'compact' ? 'compact' : 'comfortable';
+        const motion =
+          read('turaco.motion') === 'reduced' ||
+          matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'reduced'
+            : 'normal';
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.dataset.density = density;
+        document.documentElement.dataset.motion = motion;
+        document.documentElement.style.colorScheme = theme === 'turaco' ? 'light' : 'dark';
+      })();
+    </script>
     <title>Turaco</title>
   </head>
   <body>

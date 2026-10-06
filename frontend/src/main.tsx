@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { registerModuleNotifications } from './app/notificationCategories';
+import './platform/ui/tokens.css';
 import './app/app.css';
 
 registerModuleNotifications();

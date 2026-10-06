@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
-import { Link } from '../../platform/router/Router';
+import { Link, navigate } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { copyContextText, type MenuItem } from '../../platform/ui/ContextMenu';
 import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { IncidentBanner } from '../incidents/IncidentBanner';
@@ -63,6 +64,25 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       render: (x) => formatDateTime(locale, x.updatedAt),
     },
   ];
+  const rowActions = (ticket: Ticket): MenuItem[] => {
+    const path = `/support/${encodeURIComponent(ticket.id)}`;
+    const copy = async (value: string) => {
+      if (!(await copyContextText(value))) window.prompt(t('contextMenu.copyFallback'), value);
+    };
+    return [
+      { id: 'open', label: t('contextMenu.open'), onSelect: () => navigate(path) },
+      {
+        id: 'copy-reference',
+        label: t('contextMenu.copyReference'),
+        onSelect: () => void copy(ticket.reference),
+      },
+      {
+        id: 'copy-link',
+        label: t('contextMenu.copyLink'),
+        onSelect: () => void copy(new URL(path, window.location.origin).href),
+      },
+    ];
+  };
   return (
     <>
       <PageHeader
@@ -96,6 +116,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
         columns={columns}
         rows={list.items}
         rowKey={(x) => x.id}
+        rowActions={rowActions}
         loading={list.loading}
         error={list.error}
         onRetry={list.reload}

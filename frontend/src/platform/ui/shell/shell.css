@@ -1,0 +1,688 @@
+.turaco-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+}
+.turaco-shell-collapsed {
+  grid-template-columns: 70px minmax(0, 1fr);
+}
+.turaco-shell .turaco-rail {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 21px 12px 14px;
+  background: var(--rail-bg);
+  color: var(--rail-text);
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+.turaco-shell .turaco-rail::before {
+  display: none;
+}
+.turaco-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 7px 14px;
+  white-space: nowrap;
+}
+.turaco-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 31px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--rail-active);
+  color: var(--cyber-cyan);
+  font-size: 19px;
+  transition:
+    transform var(--motion-normal),
+    text-shadow var(--motion-normal);
+}
+.turaco-brand-mark:hover {
+  transform: rotate(-12deg) scale(1.07);
+  text-shadow: var(--glow-text);
+}
+.turaco-brand-name {
+  font-size: 19px;
+  letter-spacing: -0.04em;
+  font-weight: 700;
+}
+.turaco-rail-collapse {
+  margin-left: auto;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--rail-muted);
+  cursor: pointer;
+}
+.turaco-rail-collapse:hover {
+  background: var(--rail-active);
+  color: var(--rail-text);
+}
+.turaco-shell .turaco-rail nav {
+  display: block;
+}
+.turaco-shell .turaco-rail-section {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 9px;
+}
+.turaco-shell .turaco-rail-section .nav-heading {
+  margin: 13px 10px 4px;
+  padding: 0;
+  color: var(--rail-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.turaco-shell .turaco-rail-section a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--rail-muted);
+  font-size: 13px;
+  font-weight: 520;
+  white-space: nowrap;
+  transition:
+    background var(--motion-fast),
+    color var(--motion-fast),
+    transform var(--motion-fast);
+}
+.turaco-shell .turaco-rail-section a:hover,
+.turaco-shell .turaco-rail-section a:focus-visible {
+  background: var(--rail-active);
+  color: var(--rail-text);
+  border: 0;
+}
+.turaco-shell .turaco-rail-section a[aria-current='page'] {
+  background: var(--rail-active);
+  color: var(--rail-text);
+  box-shadow: var(--glow-selection);
+}
+.turaco-shell .turaco-rail-section a[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 4px;
+  background: var(--cyber-cyan);
+  box-shadow: var(--glow-action);
+  view-transition-name: turaco-active-nav;
+  transition:
+    top var(--motion-normal),
+    bottom var(--motion-normal);
+}
+.turaco-rail-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.turaco-rail-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turaco-shell .turaco-rail .nav-count {
+  margin-left: auto;
+}
+.turaco-rail-bottom {
+  margin-top: auto;
+  padding: 19px 10px 2px;
+  color: var(--rail-muted);
+  border-top: 1px solid var(--rail-active);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.turaco-rail-bottom-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--state-success);
+  box-shadow: var(--glow-action);
+}
+.turaco-shell-collapsed .turaco-brand-name,
+.turaco-shell-collapsed .turaco-rail-label,
+.turaco-shell-collapsed .turaco-rail-section .nav-heading,
+.turaco-shell-collapsed .turaco-rail-bottom {
+  display: none;
+}
+.turaco-shell-collapsed .turaco-rail-brand {
+  flex-direction: column;
+  padding: 0 0 14px;
+  gap: 3px;
+}
+.turaco-shell-collapsed .turaco-rail-collapse {
+  margin: 0;
+}
+.turaco-shell-collapsed .turaco-rail-section a {
+  justify-content: center;
+  padding: 8px;
+}
+.turaco-shell-collapsed .turaco-rail .nav-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  margin: 0;
+  font-size: 10px;
+  padding: 1px 3px;
+}
+.turaco-shell .turaco-content-column {
+  min-width: 0;
+}
+.turaco-shell .turaco-appbar {
+  height: 64px;
+  min-height: 64px;
+  padding: 0 24px;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--surface-base);
+  border-bottom: 1px solid var(--border-token);
+}
+.turaco-appbar-location {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.turaco-appbar-location strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turaco-appbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+.turaco-search-trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(320px, 27vw);
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.turaco-search-trigger:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+.turaco-search-trigger > span:first-child {
+  font-size: 22px;
+  line-height: 1;
+}
+.turaco-search-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.turaco-search-trigger kbd {
+  margin-left: auto;
+  padding: 2px 4px;
+  border: 1px solid var(--border-token);
+  border-radius: 3px;
+  font: 11px var(--font-mono);
+  white-space: nowrap;
+}
+.turaco-header-menu {
+  position: relative;
+}
+.turaco-header-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.turaco-header-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.turaco-header-menu > summary:hover,
+.turaco-header-menu[open] > summary {
+  background: var(--surface-hover);
+}
+.turaco-create-menu > summary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 650;
+  box-shadow: var(--glow-action);
+}
+.turaco-create-menu > summary:hover,
+.turaco-create-menu[open] > summary {
+  background: var(--accent-hover);
+}
+.turaco-header-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 9px);
+  width: max-content;
+  min-width: 180px;
+  max-width: min(330px, calc(100vw - 24px));
+  padding: 7px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-menu);
+  z-index: 80;
+  animation: turaco-pop-in var(--motion-normal) var(--motion-ease) both;
+}
+.turaco-header-popover button {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+.turaco-header-popover button:hover {
+  background: var(--surface-hover);
+}
+.turaco-bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.turaco-bell:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.turaco-bell .nav-count {
+  position: absolute;
+  top: -3px;
+  right: -8px;
+  font-size: 10px;
+  padding: 1px 4px;
+  box-shadow: var(--glow-action);
+}
+.turaco-avatar {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 50%;
+  background: var(--surface-selected);
+  color: var(--accent);
+  font-weight: 700;
+}
+.turaco-user-label {
+  display: grid;
+  max-width: 150px;
+  min-width: 0;
+  font-size: 12px;
+}
+.turaco-user-label .user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turaco-user-label small {
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.turaco-preferences {
+  width: 274px;
+  padding: 13px;
+}
+.turaco-popover-heading {
+  font-size: 14px;
+  font-weight: 700;
+}
+.turaco-session-detail {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  font: 11px var(--font-mono);
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border-token);
+}
+.turaco-preferences label {
+  display: grid;
+  gap: 4px;
+  margin-top: 11px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.turaco-preferences select {
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+.turaco-preferences .turaco-signout {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-token);
+  border-radius: 0;
+}
+.turaco-shell .turaco-main {
+  width: 100%;
+  max-width: 1760px;
+  padding: 28px;
+  background: transparent;
+}
+.turaco-route-enter {
+  animation: turaco-route-in var(--motion-normal) var(--motion-ease) both;
+}
+@keyframes turaco-route-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes turaco-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.turaco-mobile-trigger,
+.turaco-rail-shade {
+  display: none;
+}
+
+.turaco-command-dialog {
+  position: fixed;
+  width: min(640px, calc(100vw - 32px));
+  max-height: 80dvh;
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--border-strong-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-menu);
+  overflow: hidden;
+  animation: turaco-pop-in var(--motion-normal) var(--motion-ease) both;
+}
+.turaco-command-dialog::backdrop {
+  background: rgb(6 16 15 / 62%);
+}
+.turaco-command-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border-token);
+}
+.turaco-command-head > span {
+  font-size: 24px;
+  color: var(--accent);
+}
+.turaco-command-head input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: 15px var(--font-sans);
+  outline: none;
+}
+.turaco-command-head:focus-within {
+  box-shadow:
+    inset 0 -2px var(--focus-ring),
+    var(--glow-focus);
+}
+.turaco-command-head input::placeholder {
+  color: var(--text-secondary);
+}
+.turaco-command-close {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: 11px var(--font-mono);
+}
+.turaco-command-meta {
+  padding: 11px 17px 3px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.turaco-command-results {
+  max-height: min(50vh, 380px);
+  overflow: auto;
+  padding: 4px 9px 11px;
+}
+.turaco-command-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+}
+.turaco-command-option[aria-selected='true'],
+.turaco-command-option:hover {
+  background: var(--surface-selected);
+  box-shadow: var(--glow-selection);
+}
+.turaco-command-option-symbol {
+  color: var(--accent);
+}
+.turaco-command-option small {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font: 11px var(--font-mono);
+}
+.turaco-command-empty {
+  padding: 20px;
+  color: var(--text-secondary);
+}
+.turaco-command-footer {
+  padding: 10px 17px;
+  border-top: 1px solid var(--border-token);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+@media (max-width: 1100px) {
+  .turaco-search-trigger {
+    width: 40px;
+    justify-content: center;
+  }
+  .turaco-search-label,
+  .turaco-search-trigger kbd {
+    display: none;
+  }
+  .turaco-appbar-location > span:first-child,
+  .turaco-appbar-location > span:nth-child(2) {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .turaco-shell,
+  .turaco-shell-collapsed {
+    display: block;
+  }
+  .turaco-shell .turaco-rail {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: min(280px, 82vw);
+    height: 100dvh;
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition:
+      transform var(--motion-normal) var(--motion-ease),
+      visibility var(--motion-normal);
+    box-shadow: var(--shadow-menu);
+  }
+  .turaco-shell-mobile-open .turaco-rail {
+    transform: translateX(0);
+    visibility: visible;
+  }
+  .turaco-shell .turaco-rail-shade {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    border: 0;
+    background: rgb(6 16 15 / 62%);
+  }
+  .turaco-shell .turaco-mobile-trigger {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    flex: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .turaco-shell .turaco-appbar {
+    height: 58px;
+    min-height: 58px;
+    padding: 0 14px;
+    flex-wrap: nowrap;
+  }
+  .turaco-appbar-actions {
+    gap: 3px;
+  }
+  .turaco-user-label,
+  .turaco-user-menu summary > span:last-child {
+    display: none;
+  }
+  .turaco-create-menu > summary {
+    padding: 5px 8px;
+  }
+  .turaco-shell .turaco-main {
+    padding: 20px 16px;
+  }
+  .turaco-shell-collapsed .turaco-brand-name,
+  .turaco-shell-collapsed .turaco-rail-label,
+  .turaco-shell-collapsed .turaco-rail-section .nav-heading,
+  .turaco-shell-collapsed .turaco-rail-bottom {
+    display: initial;
+  }
+  .turaco-shell-collapsed .turaco-rail-brand {
+    flex-direction: row;
+  }
+  .turaco-shell-collapsed .turaco-rail-section a {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 420px) {
+  .turaco-appbar-location {
+    font-size: 11px;
+  }
+  .turaco-create-menu > summary span {
+    display: none;
+  }
+  .turaco-command-option small {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turaco-route-enter,
+  .turaco-header-popover,
+  .turaco-command-dialog {
+    animation: none;
+  }
+}
+html[data-motion='reduced'] .turaco-route-enter,
+html[data-motion='reduced'] .turaco-header-popover,
+html[data-motion='reduced'] .turaco-command-dialog {
+  animation: none;
+}
+
+::view-transition-old(turaco-active-nav),
+::view-transition-new(turaco-active-nav) {
+  animation-duration: var(--motion-normal);
+  animation-timing-function: var(--motion-ease);
+}
+html[data-theme='cyberpunk'] .turaco-search-trigger {
+  box-shadow: var(--glow-selection);
+}
+html[data-theme='cyberpunk'] .turaco-search-trigger::after {
+  content: '_';
+  color: var(--cyber-pink);
+  font: 15px var(--font-mono);
+  animation: turaco-cursor-blink 1.2s steps(1, end) infinite;
+}
+html[data-theme='cyberpunk'] .turaco-command-head:focus-within {
+  box-shadow:
+    inset 0 -2px var(--focus-ring),
+    var(--glow-focus),
+    var(--glow-action);
+}
+html[data-theme='cyberpunk'] .turaco-command-head input {
+  caret-color: var(--cyber-pink);
+}
+@keyframes turaco-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme='cyberpunk'] .turaco-search-trigger::after {
+    animation: none;
+  }
+}
+html[data-motion='reduced'][data-theme='cyberpunk'] .turaco-search-trigger::after {
+  animation: none;
+}
