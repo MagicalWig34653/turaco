@@ -1041,3 +1041,263 @@ html[data-motion='reduced'] *::after {
   transition-duration: 0ms !important;
   scroll-behavior: auto !important;
 }
+/* Shared controls also cover older module forms. */
+.turaco-main
+  button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
+    .turaco-search-trigger
+  ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close),
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: 1px solid var(--border-strong-token);
+  border-radius: var(--radius-sm);
+}
+.turaco-main
+  button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
+    .turaco-search-trigger
+  ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close) {
+  min-height: 36px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  min-height: 36px;
+  padding: 8px 10px;
+  max-width: 100%;
+}
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+input[type='date'],
+input[type='datetime-local'] {
+  color-scheme: inherit;
+  font-family: var(--font-sans);
+}
+:where(input, select, textarea, button):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: var(--glow-focus);
+}
+:where(button, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+:where(button, input, select, textarea)::placeholder {
+  color: var(--text-secondary);
+}
+* {
+  scrollbar-color: var(--border-strong-token) var(--surface-canvas);
+  scrollbar-width: thin;
+}
+html[data-theme='dark'] {
+  --rail-bg: #0d1712;
+}
+.btn-primary:disabled,
+.btn-primary[aria-busy='true'],
+html[data-theme='cyberpunk'] .btn-primary:disabled {
+  opacity: 1;
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  border-color: var(--border-token);
+  box-shadow: none;
+}
+.table th,
+.table td {
+  vertical-align: middle;
+}
+.table th {
+  white-space: nowrap;
+}
+.table td a {
+  overflow-wrap: normal;
+}
+.table td:has(time),
+.table td time,
+.table td:last-child {
+  font-variant-numeric: tabular-nums;
+}
+.table-wrap {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.table {
+  min-width: 680px;
+}
+.table-actions-trigger {
+  min-width: 32px;
+  min-height: 32px;
+}
+html[data-density='compact'] .table th,
+html[data-density='compact'] .table td {
+  padding: 5px 10px;
+}
+html[data-density='compact'] .table-actions-trigger {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+html[data-density='compact'] .filters {
+  gap: 0 12px;
+}
+html[data-density='compact'] .page-header {
+  margin-bottom: 12px;
+}
+.filters {
+  align-items: start;
+}
+.filters > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.filters > .checkbox,
+.filters > label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  min-height: 38px;
+  gap: 8px;
+}
+.filters > label:has(input[type='checkbox']) input {
+  order: -1;
+}
+.filters input[type='datetime-local'] {
+  width: 100%;
+}
+html[data-theme='cyberpunk'] .content {
+  box-shadow: none;
+  border-bottom: 0;
+}
+html[data-theme='cyberpunk'] .turaco-route-enter {
+  animation: none;
+}
+html[data-theme='cyberpunk'] .turaco-appbar {
+  box-shadow: none;
+}
+html[data-theme='cyberpunk'] .badge {
+  box-shadow: none;
+}
+@media (max-width: 700px) {
+  .table-wrap {
+    box-shadow:
+      inset -14px 0 12px -13px var(--accent),
+      var(--shadow-card);
+  }
+  .table td {
+    white-space: nowrap;
+  }
+  .table td:nth-child(2) {
+    white-space: normal;
+    min-width: 180px;
+  }
+}
+.assets-lookup > .btn {
+  align-self: start;
+  margin-top: 26px;
+}
+.turaco-command-head input:not([type='checkbox']):not([type='radio']) {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+  border-radius: 0;
+}
+.turaco-main table:not(.table) {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-base);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  font-size: var(--type-sm);
+}
+.turaco-main table:not(.table) th,
+.turaco-main table:not(.table) td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-token);
+}
+.turaco-main table:not(.table) th {
+  color: var(--text-secondary);
+  background: var(--surface-muted-token);
+  font-size: var(--type-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.turaco-main table:not(.table) caption {
+  text-align: left;
+  margin: 0 0 10px;
+  font-weight: 650;
+}
+.turaco-main table:not(.table) tr:last-child td {
+  border-bottom: 0;
+}
+@media (max-width: 700px) {
+  .assets-lookup > .btn {
+    margin-top: 0;
+  }
+  .turaco-main table:not(.table) {
+    display: block;
+    overflow-x: auto;
+  }
+}
+.changes-filters {
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+}
+.changes-filters .checkbox {
+  align-self: end;
+  margin-bottom: 14px;
+  min-height: 38px;
+}
+@media (max-width: 950px) {
+  .changes-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .changes-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.table time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.devices-filters .field label {
+  min-height: 2.5em;
+  display: flex;
+  align-items: flex-end;
+}
+.devices-filters .checkbox {
+  align-self: end;
+  margin-bottom: 14px;
+  min-height: 38px;
+}
+@media (max-width: 700px) {
+  .devices-filters .field label {
+    min-height: 0;
+  }
+}
+.filters > .btn {
+  align-self: end;
+  margin-bottom: 14px;
+}
+@media (max-width: 700px) {
+  html[data-density='compact'] .table-actions-trigger {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+.table-detail {
+  min-width: 560px;
+}
+.table-detail td:has(button) {
+  white-space: nowrap;
+}

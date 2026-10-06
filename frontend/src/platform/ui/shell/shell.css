@@ -686,3 +686,140 @@ html[data-theme='cyberpunk'] .turaco-command-head input {
 html[data-motion='reduced'][data-theme='cyberpunk'] .turaco-search-trigger::after {
   animation: none;
 }
+/* The legacy .sidebar nav grid must not become a multi-column grid in the drawer. */
+.turaco-shell {
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+.turaco-shell-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.turaco-shell .turaco-rail {
+  min-width: 0;
+}
+.turaco-shell .turaco-rail nav {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 100%;
+  gap: 0;
+}
+.turaco-shell .turaco-rail-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.turaco-shell .turaco-rail-section a {
+  flex: none;
+  min-width: 0;
+}
+.turaco-shell-collapsed .turaco-rail {
+  padding-inline: 7px;
+}
+.turaco-shell-collapsed .turaco-rail-brand {
+  align-items: center;
+}
+.turaco-shell-collapsed .turaco-brand-mark {
+  width: 30px;
+  height: 30px;
+}
+.turaco-shell-collapsed .turaco-rail-section a {
+  min-height: 40px;
+}
+.turaco-shell-collapsed .turaco-rail-section a[aria-current='page'] {
+  background: var(--rail-active);
+  color: var(--rail-text);
+}
+.turaco-session-name {
+  display: none;
+}
+.turaco-session-detail .turaco-avatar,
+.turaco-session-detail .turaco-user-label small {
+  display: none;
+}
+.turaco-session-detail .turaco-user-label {
+  max-width: none;
+  font: 12px var(--font-sans);
+}
+.turaco-user-menu[open] .turaco-header-popover {
+  animation: turaco-pop-in var(--motion-slow) var(--motion-ease) both;
+  transform-origin: top right;
+}
+.turaco-command-head input,
+html[data-theme='cyberpunk'] .turaco-command-head input {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+  border-radius: 0;
+}
+html[data-theme='cyberpunk'] .turaco-search-trigger::after {
+  display: none;
+}
+@media (max-width: 700px) {
+  .turaco-shell .turaco-rail {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .turaco-shell .turaco-rail nav,
+  .turaco-shell .turaco-rail-section {
+    display: flex;
+    flex-direction: column;
+  }
+  .turaco-shell .turaco-rail-section a {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .turaco-shell .turaco-rail-collapse {
+    display: none;
+  }
+  .turaco-shell-collapsed .turaco-rail {
+    padding: 21px 12px 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .turaco-user-menu[open] .turaco-header-popover {
+    animation: none;
+  }
+}
+html[data-motion='reduced'] .turaco-user-menu[open] .turaco-header-popover {
+  animation: none;
+}
+.turaco-mobile-close {
+  display: none;
+}
+@media (max-width: 700px) {
+  .turaco-mobile-close {
+    display: grid;
+    place-items: center;
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--rail-text);
+    font-size: 22px;
+    cursor: pointer;
+  }
+  .turaco-mobile-close:hover {
+    background: var(--rail-active);
+  }
+}
+.turaco-shell {
+  background: linear-gradient(to right, var(--rail-bg) 0 224px, var(--surface-canvas) 224px);
+}
+.turaco-shell-collapsed {
+  background: linear-gradient(to right, var(--rail-bg) 0 64px, var(--surface-canvas) 64px);
+}
+html[data-theme='dark'] .turaco-shell .turaco-rail {
+  border-right: 1px solid var(--border-token);
+}
+@media (max-width: 700px) {
+  .turaco-shell,
+  .turaco-shell-collapsed {
+    background: var(--surface-canvas);
+  }
+}

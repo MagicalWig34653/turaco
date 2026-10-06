@@ -9,6 +9,7 @@ import { Badge } from '../../platform/ui/Alert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
 import { endpointsApi } from './api';
 import { diffBadge, historyChanges, visibleGroupName } from './viewHelpers';
 import {
@@ -295,7 +296,7 @@ export function DeviceDiffScreen({ id }: { id: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit">{t('management.compare')}</button>
+        <Button type="submit">{t('management.compare')}</Button>
       </form>
       {candidates.data ? (
         <div className="filters">
@@ -413,7 +414,7 @@ export function GroupDiffScreen({ id }: { id: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit">{t('management.compare')}</button>
+        <Button type="submit">{t('management.compare')}</Button>
       </form>
       {candidates.data ? (
         <div className="filters">

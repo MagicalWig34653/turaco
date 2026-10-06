@@ -20,11 +20,16 @@ export function TasksScreen() {
   const { t } = useI18n();
   const { can } = useSession();
   const [status, setStatus] = useState<TaskStatus | ''>('');
-  const [priority, setPriority] = useState<TaskPriority | ''>('');
+  const [priority, setPriority] = useState<TaskPriority | ''>(() => {
+    const value = new URLSearchParams(window.location.search).get('priority');
+    return taskPriorities.includes(value as TaskPriority) ? (value as TaskPriority) : '';
+  });
   const [overdue, setOverdue] = useState(
     () => new URLSearchParams(window.location.search).get('overdue') === 'true',
   );
-  const [mine, setMine] = useState(false);
+  const [mine, setMine] = useState(
+    () => new URLSearchParams(window.location.search).get('mine') === 'true',
+  );
   const [query, setQuery] = useState('');
   const q = useDebouncedValue(query.trim(), 300);
 

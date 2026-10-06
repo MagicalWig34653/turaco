@@ -9,6 +9,7 @@ import { locales, type Locale } from '../platform/i18n/i18n';
 import { Link, navigate, useLocation } from '../platform/router/Router';
 import { useSession } from '../platform/session/SessionProvider';
 import { useTheme } from '../platform/theme/ThemeProvider';
+import { NavIcon } from '../platform/ui/NavIcon';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
 import { navigationCommands } from '../platform/ui/shell/paletteCommands';
 import { appRoutes, isNavActive, visibleNavItems, type NavGroup } from './routes';
@@ -45,52 +46,39 @@ function readCollapsed(): boolean {
   }
 }
 
-function RailIcon({ group }: { group: NavGroup }) {
-  const paths: Record<NavGroup, string> = {
-    main: 'M4 11.5 12 4l8 7.5M6 10v9h12v-9M10 19v-5h4v5',
-    logistics: 'M4 7h16v12H4zM4 10l8 4 8-4M8 4h8',
-    endpoints: 'M4 5h16v11H4zM9 20h6M12 16v4',
-    infrastructure: 'M3 8h7V3H3zM14 8h7V3h-7zM3 21h7v-9H3zM14 21h7v-9h-7z',
-    services:
-      'M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M18.4 5.6l-2.1 2.1m-8.6 8.6-2.1 2.1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
-    changes: 'M5 7h14M5 12h14M5 17h14M8 4v6m8 0v5',
-    planning: 'M5 4h14v16H5zM5 9h14M9 3v4m6-4v4m-6 6h2m3 0h2m-7 4h2',
-    security: 'M12 3 4 6v5c0 5 3 8 8 10 5-2 8-5 8-10V6zM9 12l2 2 4-4',
-    admin:
-      'M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M18.4 5.6l-2.1 2.1m-8.6 8.6-2.1 2.1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
-  };
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d={paths[group]} />
-    </svg>
-  );
-}
-
-function UserName() {
+function UserIdentity() {
+  const { t } = useI18n();
   const { session, can } = useSession();
-  const canViewUser = can('organization.view');
   const userId = session?.userId ?? '';
   const user = useAsync(
-    (signal) => (canViewUser ? organizationApi.user(userId, signal) : Promise.resolve(undefined)),
-    [canViewUser, userId],
+    (signal) =>
+      can('organization.view') ? organizationApi.user(userId, signal) : Promise.resolve(undefined),
+    [can, userId],
   );
-  return <span className="user-name">{user.data?.displayName ?? userId}</span>;
+  const name = user.data?.displayName || '';
+  const initials =
+    name
+      .match(/\p{L}+/gu)
+      ?.slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || '👤';
+  return (
+    <>
+      <span className="turaco-avatar" aria-hidden="true">
+        {initials}
+      </span>
+      <span className="turaco-user-label">
+        <span className="user-name">{name || t('nav.me')}</span>
+        <small>{session?.authMethod}</small>
+      </span>
+      <span className="turaco-session-name">{name || t('nav.me')}</span>
+    </>
+  );
 }
-
 /** Authenticated layout; routes and API authorization remain unchanged. */
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
-  const { can, session, logout } = useSession();
+  const { can, logout } = useSession();
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -112,6 +100,12 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))
     .sort((left, right) => right.path.length - left.path.length)[0]?.path;
+  const displayedNavPath =
+    pathname.startsWith('/support/') &&
+    pathname !== '/support/new' &&
+    (can('tickets.view') || can('tickets.manage'))
+      ? '/support/queue'
+      : activeNavPath;
   const quickCreate = appRoutes.filter(
     (route) =>
       (route.id === 'ticketNew' || route.id === 'catalog') &&
@@ -159,8 +153,13 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
       if (event.key === 'Tab' && mobileOpen && railRef.current) {
         const focusable = [
           ...railRef.current.querySelectorAll<HTMLElement>('a[href],button:not(:disabled)'),
-        ];
+        ].filter((element) => element.getClientRects().length > 0);
         if (!focusable.length) return;
+        if (!railRef.current.contains(document.activeElement)) {
+          event.preventDefault();
+          focusable[0]?.focus();
+          return;
+        }
         const firstItem = focusable[0];
         const lastItem = focusable[focusable.length - 1];
         if (event.shiftKey && document.activeElement === firstItem) {
@@ -175,6 +174,14 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, [mobileOpen]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
   }, [mobileOpen]);
   useEffect(() => {
     const onOutside = (event: PointerEvent) => {
@@ -235,6 +242,17 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
           <span className="turaco-brand-name">{t('app.name')}</span>
           <button
             type="button"
+            className="turaco-mobile-close"
+            aria-label={t('shell.closeMenu')}
+            onClick={() => {
+              setMobileOpen(false);
+              mobileTriggerRef.current?.focus();
+            }}
+          >
+            ×
+          </button>
+          <button
+            type="button"
             className="turaco-rail-collapse"
             onClick={toggleCollapsed}
             aria-label={collapsed ? t('shell.expand') : t('shell.collapse')}
@@ -256,25 +274,10 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
                     to={item.pattern}
                     title={collapsed ? t(item.titleKey) : undefined}
                     aria-label={collapsed ? t(item.titleKey) : undefined}
-                    aria-current={item.pattern === activeNavPath ? 'page' : undefined}
-                    onClick={(event) => {
-                      if (
-                        event.button !== 0 ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.shiftKey ||
-                        event.altKey ||
-                        !document.startViewTransition ||
-                        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-                        document.documentElement.dataset.motion === 'reduced'
-                      )
-                        return;
-                      event.preventDefault();
-                      document.startViewTransition(() => navigate(item.pattern));
-                    }}
+                    aria-current={item.pattern === displayedNavPath ? 'page' : undefined}
                   >
                     <span className="turaco-rail-icon">
-                      <RailIcon group={id} />
+                      <NavIcon id={item.id} />
                     </span>
                     <span className="turaco-rail-label">{t(item.titleKey)}</span>
                     {item.id === 'notifications' && unreadValue && (
@@ -327,7 +330,11 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             >
               <span aria-hidden="true">⌕</span>
               <span className="turaco-search-label">{t('shell.searchPlaceholder')}</span>
-              <kbd>⌘ K</kbd>
+              <kbd>
+                {typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+                  ? '⌘ K'
+                  : 'Ctrl K'}
+              </kbd>
             </button>
             {quickCreate.length > 0 && (
               <details className="turaco-header-menu turaco-create-menu">
@@ -381,18 +388,14 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             </Link>
             <details className="turaco-header-menu turaco-user-menu">
               <summary aria-label={t('shell.preferences')}>
-                <span className="turaco-avatar" aria-hidden="true">
-                  {session?.userId.slice(0, 1).toUpperCase() || 'T'}
-                </span>
-                <span className="turaco-user-label">
-                  <UserName />
-                  <small>{session?.authMethod}</small>
-                </span>
+                <UserIdentity />
                 <span aria-hidden="true">⌄</span>
               </summary>
               <div className="turaco-header-popover turaco-preferences">
                 <div className="turaco-popover-heading">{t('shell.preferences')}</div>
-                <div className="turaco-session-detail">{session?.userId}</div>
+                <div className="turaco-session-detail">
+                  <UserIdentity />
+                </div>
                 <label>
                   {t('shell.theme')}
                   <select

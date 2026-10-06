@@ -9,6 +9,8 @@ import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
+import { Table } from '../../platform/ui/Table';
 import { AssigneePicker, type Assignee, type AssigneeType } from '../tasks/AssigneePicker';
 import { changesApi } from '../changes/api';
 import { securityApi } from './api';
@@ -60,10 +62,12 @@ function TaskSection({
     <section>
       <h3>{t('security.remediationTasks')}</h3>
       {can('security.manage') && can('tasks.manage') && (
-        <button onClick={() => setOpen(true)}>{t('security.createTask')}</button>
+        <Button type="submit" onClick={() => setOpen(true)}>
+          {t('security.createTask')}
+        </Button>
       )}
       {tasks.error && <ApiErrorAlert error={tasks.error} onRetry={tasks.reload} />}
-      <table>
+      <Table>
         <thead>
           <tr>
             <th>{t('security.task')}</th>
@@ -92,7 +96,7 @@ function TaskSection({
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
       {open && (
         <Dialog title={t('security.createTask')} onClose={() => setOpen(false)}>
           <form className="form-stack" onSubmit={(event) => void create(event)}>
@@ -126,12 +130,12 @@ function TaskSection({
             </label>
             {error && <ApiErrorAlert error={error} />}
             <div className="actions">
-              <button type="submit" disabled={busy || !assignee || !dueAt}>
+              <Button type="submit" disabled={busy || !assignee || !dueAt}>
                 {t('security.createTask')}
-              </button>
-              <button type="button" onClick={() => setOpen(false)}>
+              </Button>
+              <Button type="button" onClick={() => setOpen(false)}>
                 {t('action.cancel')}
-              </button>
+              </Button>
             </div>
           </form>
         </Dialog>
@@ -292,11 +296,13 @@ export function AdvisoryRemediation({
       />
       <h3>{t('security.linkedChanges')}</h3>
       {can('security.manage') && (
-        <button onClick={() => setAdding(true)}>{t('security.addChange')}</button>
+        <Button type="submit" onClick={() => setAdding(true)}>
+          {t('security.addChange')}
+        </Button>
       )}
       {changes.error && <ApiErrorAlert error={changes.error} onRetry={changes.reload} />}
       {error && !adding && <ApiErrorAlert error={error} />}
-      <table>
+      <Table>
         <thead>
           <tr>
             <th>{t('security.reference')}</th>
@@ -319,20 +325,21 @@ export function AdvisoryRemediation({
               <td>{change.hidden ? '—' : t(`changes.status.${change.status}` as MessageKey)}</td>
               <td>
                 {can('security.manage') && !change.hidden && (
-                  <button
+                  <Button
+                    type="submit"
                     onClick={() => {
                       setError(undefined);
                       setRemoving({ id: change.changeId ?? '', reference: change.reference ?? '' });
                     }}
                   >
                     {t('security.remove')}
-                  </button>
+                  </Button>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
-      </table>
+      </Table>
       {adding && (
         <Dialog title={t('security.addChange')} onClose={() => setAdding(false)}>
           <form className="form-stack" onSubmit={(event) => void link(event)}>
@@ -365,10 +372,12 @@ export function AdvisoryRemediation({
             </label>
             {error && <ApiErrorAlert error={error} />}
             <div className="actions">
-              <button disabled={busy || !selected}>{t('security.addChange')}</button>
-              <button type="button" onClick={() => setAdding(false)}>
+              <Button type="submit" disabled={busy || !selected}>
+                {t('security.addChange')}
+              </Button>
+              <Button type="button" onClick={() => setAdding(false)}>
                 {t('action.cancel')}
-              </button>
+              </Button>
             </div>
           </form>
         </Dialog>
@@ -378,8 +387,12 @@ export function AdvisoryRemediation({
           <p>{t('security.removeChangeConfirm', { reference: removing.reference })}</p>
           {error && <ApiErrorAlert error={error} />}
           <div className="actions">
-            <button onClick={() => void remove(removing.id)}>{t('security.removeChange')}</button>
-            <button onClick={() => setRemoving(null)}>{t('action.cancel')}</button>
+            <Button type="submit" onClick={() => void remove(removing.id)}>
+              {t('security.removeChange')}
+            </Button>
+            <Button type="submit" onClick={() => setRemoving(null)}>
+              {t('action.cancel')}
+            </Button>
           </div>
         </Dialog>
       )}

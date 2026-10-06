@@ -6,6 +6,7 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
+import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
@@ -80,27 +81,43 @@ export function DevicesScreen() {
     {
       key: 'compliance',
       header: t('endpoints.compliance'),
-      render: (d) => t(`endpoints.compliance.${d.complianceState}` as MessageKey),
+      render: (d) => (
+        <Badge
+          tone={
+            d.complianceState === 'compliant'
+              ? 'success'
+              : d.complianceState === 'noncompliant'
+                ? 'danger'
+                : 'unknown'
+          }
+        >
+          {t(`endpoints.compliance.${d.complianceState}` as MessageKey)}
+        </Badge>
+      ),
     },
     {
       key: 'asset',
       header: t('endpoints.asset'),
       render: (d) =>
         d.assetId && (can('assets.view') || can('assets.manage')) ? (
-          <Link to={`/assets/${encodeURIComponent(d.assetId)}`}>{d.assetId}</Link>
+          <Link to={`/assets/${encodeURIComponent(d.assetId)}`}>{t('endpoints.linked.yes')}</Link>
+        ) : d.assetId ? (
+          t('endpoints.linked.yes')
         ) : (
-          (d.assetId ?? '–')
+          '–'
         ),
     },
     {
       key: 'observed',
       header: t('endpoints.observedAt'),
-      render: (d) => formatDateTime(locale, d.observedAt),
+      render: (d) => <time dateTime={d.observedAt}>{formatDateTime(locale, d.observedAt)}</time>,
     },
     {
       key: 'synced',
       header: t('endpoints.lastSyncedAt'),
-      render: (d) => formatDateTime(locale, d.lastSyncedAt),
+      render: (d) => (
+        <time dateTime={d.lastSyncedAt}>{formatDateTime(locale, d.lastSyncedAt)}</time>
+      ),
     },
   ];
   return (
@@ -129,7 +146,7 @@ export function DevicesScreen() {
           </dl>
         </section>
       ) : null}
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      <form className="filters devices-filters" role="search" onSubmit={(e) => e.preventDefault()}>
         <TextField
           label={t('endpoints.search')}
           type="search"

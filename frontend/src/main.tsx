@@ -4,6 +4,7 @@ import { App } from './app/App';
 import { registerModuleNotifications } from './app/notificationCategories';
 import './platform/ui/tokens.css';
 import './app/app.css';
+import './platform/ui/workspace.css';
 
 registerModuleNotifications();
 

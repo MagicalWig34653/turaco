@@ -8,6 +8,9 @@ import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { copyContextText, type MenuItem } from '../../platform/ui/ContextMenu';
 import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { useSession } from '../../platform/session/SessionProvider';
+import { useTheme } from '../../platform/theme/ThemeProvider';
+import { Toast } from '../../platform/ui/Workspace';
 import { IncidentBanner } from '../incidents/IncidentBanner';
 import { ticketsApi } from './api';
 import { ticketStatuses, type Ticket, type TicketStatus } from './types';
@@ -30,6 +33,9 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 /** "My tickets" for everyone, the full queue for people with tickets.view. */
 export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const { t, locale } = useI18n();
+  const { can, session } = useSession();
+  const { density, setDensity } = useTheme();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState<TicketStatus | ''>('');
   const [openOnly, setOpenOnly] = useState(true);
   const list = usePagedList(
@@ -61,7 +67,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     {
       key: 'updated',
       header: t('tickets.col.updated'),
-      render: (x) => formatDateTime(locale, x.updatedAt),
+      render: (x) => <time dateTime={x.updatedAt}>{formatDateTime(locale, x.updatedAt)}</time>,
     },
   ];
   const rowActions = (ticket: Ticket): MenuItem[] => {
@@ -71,6 +77,29 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     };
     return [
       { id: 'open', label: t('contextMenu.open'), onSelect: () => navigate(path) },
+      ...(scope === 'all' &&
+      can('tickets.manage') &&
+      session &&
+      ticket.assigneeId !== session.userId &&
+      !['closed', 'cancelled'].includes(ticket.status)
+        ? [
+            {
+              id: 'assign-me',
+              label: t('tickets.action.assignMe'),
+              onSelect: () => {
+                void ticketsApi
+                  .assign(ticket.id, ticket.version, { assigneeId: session.userId })
+                  .then(
+                    () => {
+                      setActionError(null);
+                      list.reload();
+                    },
+                    () => setActionError(t('error.generic')),
+                  );
+              },
+            },
+          ]
+        : []),
       {
         id: 'copy-reference',
         label: t('contextMenu.copyReference'),
@@ -95,7 +124,12 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
         }
       />
       {scope === 'mine' ? <IncidentBanner /> : null}
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      {actionError ? <Toast kind="error">{actionError}</Toast> : null}
+      <form
+        className="filters tickets-filterbar"
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('tickets.col.status')}
           value={status}
@@ -103,6 +137,15 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           options={[
             { value: '', label: t('tickets.filter.anyStatus') },
             ...ticketStatuses.map((value) => ({ value, label: t(`tickets.status.${value}`) })),
+          ]}
+        />
+        <Select
+          label={t('shell.density')}
+          value={density}
+          onChange={(event) => setDensity(event.target.value as typeof density)}
+          options={[
+            { value: 'comfortable', label: t('shell.densityComfortable') },
+            { value: 'compact', label: t('shell.densityCompact') },
           ]}
         />
         <Checkbox

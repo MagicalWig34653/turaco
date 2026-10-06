@@ -11,6 +11,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Button } from '../../platform/ui/Button';
 import { endpointsApi } from './api';
 import { orderedCounts, visibleGroupName } from './viewHelpers';
 import { HistorySection } from './HistoryDiffScreens';
@@ -482,9 +483,9 @@ function WhyDialog({
           </ol>
         </>
       ) : null}
-      <button type="button" onClick={onClose}>
+      <Button type="button" onClick={onClose}>
         {t('action.close')}
-      </button>
+      </Button>
     </Dialog>
   );
 }
@@ -525,9 +526,9 @@ export function DeviceManagementSection({ id }: { id: string }) {
       render: (x) => (
         <>
           <ExpectedView value={x.expected} />
-          <button type="button" onClick={() => setWhy(x.artifact.id)}>
+          <Button type="button" onClick={() => setWhy(x.artifact.id)}>
             {t('management.why')}
-          </button>
+          </Button>
         </>
       ),
     },

@@ -167,7 +167,11 @@ export function AssetsScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => void lookup(event)}>
+      <form
+        className="filters assets-lookup"
+        role="search"
+        onSubmit={(event) => void lookup(event)}
+      >
         <TextField
           label={t('assets.lookup.label')}
           hint={t('assets.lookup.hint')}

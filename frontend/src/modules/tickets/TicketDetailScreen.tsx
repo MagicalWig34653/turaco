@@ -12,6 +12,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextArea } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Card, SplitPane } from '../../platform/ui/Workspace';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
@@ -214,185 +215,213 @@ export function TicketDetailScreen({ id }: { id: string }) {
           </>
         }
       />
-      <p>
-        <Link to="/support">{t('tickets.back')}</Link>
+      <p className="ticket-back">
+        <Link to={staffReader ? '/support/queue' : '/support'}>← {t('tickets.back')}</Link>
       </p>
       {actionError ? <ApiErrorAlert error={actionError} onRetry={loaded.reload} /> : null}
-      <dl className="facts">
-        <dt>{t('tickets.col.status')}</dt>
-        <dd>
-          <TicketStatusBadge status={ticket.status} />
-          {ticket.waitingReason ? <> {t(`tickets.waiting.${ticket.waitingReason}`)}</> : null}
-          {ticket.statusReason ? <> {ticket.statusReason}</> : null}
-        </dd>
-        <dt>{t('tickets.col.priority')}</dt>
-        <dd>
-          {manage ? (
-            <Select
-              label={t('tickets.col.priority')}
-              value={ticket.priority}
-              onChange={(event) =>
-                void ticketsApi
-                  .setPriority(ticket.id, ticket.version, event.target.value)
-                  .then(loaded.reload, (cause: unknown) => setActionError(asApiError(cause)))
-              }
-              options={priorities.map((value) => ({
-                value,
-                label: t(`tickets.priority.${value}`),
-              }))}
-            />
-          ) : (
-            t(`tickets.priority.${ticket.priority}`)
-          )}
-        </dd>
-        <dt>{t('tickets.fact.reporter')}</dt>
-        <dd>{name(ticket.reporterId)}</dd>
-        {ticket.affectedUserId !== ticket.reporterId ? (
-          <>
-            <dt>{t('tickets.fact.affected')}</dt>
-            <dd>{name(ticket.affectedUserId)}</dd>
-          </>
-        ) : null}
-        <dt>{t('tickets.fact.assignee')}</dt>
-        <dd>{ticket.assigneeId ? name(ticket.assigneeId) : t('tickets.fact.unassigned')}</dd>
-        {staff && ticket.queueTeamId ? (
-          <>
-            <dt>{t('tickets.fact.queue')}</dt>
-            <dd>{name(ticket.queueTeamId)}</dd>
-          </>
-        ) : null}
-        {ticket.deviceSnapshot ? (
-          <>
-            <dt>{t('tickets.field.device')}</dt>
-            <dd>
-              {String(ticket.deviceSnapshot.product ?? '')} (
-              {String(ticket.deviceSnapshot.reference ?? '')}
-              {ticket.deviceSnapshot.serialNumber
-                ? `, ${String(ticket.deviceSnapshot.serialNumber)}`
-                : ''}
-              )
-            </dd>
-          </>
-        ) : null}
-        <dt>{t('tickets.fact.created')}</dt>
-        <dd>{formatDateTime(locale, ticket.createdAt)}</dd>
-      </dl>
-      {can('runbooks.execute') ? (
-        <p>
-          <Link to={`/runbooks?ticket=${encodeURIComponent(ticket.id)}`}>
-            {t('tickets.action.runbook')}
-          </Link>
-        </p>
-      ) : null}
-      {sync.data?.enabled ? (
-        <section>
-          <h2>{t('tickets.section.externalSync')}</h2>
-          <p>
-            <Badge>
-              {sync.data.syncState
-                ? t(`tickets.sync.${sync.data.syncState}` as MessageKey)
-                : t('tickets.sync.none')}
-            </Badge>
-            {sync.data.externalId ? ` ${sync.data.externalId}` : ''}
-            {sync.data.lastSyncedAt ? ` · ${formatDateTime(locale, sync.data.lastSyncedAt)}` : ''}
-          </p>
-          {sync.data.lastError ? <p className="preline">{sync.data.lastError}</p> : null}
-          {can('tickets.manage') ? (
-            <Button
-              busy={retrying}
-              onClick={async () => {
-                setRetrying(true);
-                try {
-                  await ticketsApi.retryExternalSync(id);
-                  sync.reload();
-                } catch (e) {
-                  setActionError(asApiError(e));
-                } finally {
-                  setRetrying(false);
-                }
-              }}
-            >
-              {t('tickets.sync.retry')}
-            </Button>
-          ) : null}
-        </section>
-      ) : null}
-      {known.data && known.data.length > 0 ? (
-        <section>
-          <h2>{t('tickets.section.knownErrors')}</h2>
-          <ul className="plain-list">
-            {known.data.map((k) => (
-              <li key={k.id}>
-                <Link to={`/problems/${encodeURIComponent(k.id)}`}>
-                  {k.reference} · {k.title}
-                </Link>
-                <p className="preline">{k.workaround}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {ticket.description ? (
-        <section>
-          <h2>{t('tickets.field.description')}</h2>
-          <p className="preline">{ticket.description}</p>
-        </section>
-      ) : null}
-      {ticket.resolution ? (
-        <section>
-          <h2>{t('tickets.fact.resolution')}</h2>
-          <p className="preline">{ticket.resolution}</p>
-          {can('knowledge.manage') ? (
-            <p>
-              <Link
-                to={`/knowledge/new?title=${encodeURIComponent(ticket.title)}&body=${encodeURIComponent(ticket.resolution)}`}
-              >
-                {t('tickets.action.makeArticle')}
-              </Link>
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-      <section>
-        <h2>{t('tickets.section.conversation')}</h2>
-        {ticket.comments.length === 0 ? (
-          <p className="empty">{t('tickets.comments.none')}</p>
-        ) : null}
-        <ul className="plain-list">
-          {ticket.comments.map((c) => (
-            <li key={c.id}>
-              <strong>{name(c.authorId)}</strong> · {formatDateTime(locale, c.createdAt)}{' '}
-              {c.internal ? <Badge tone="warning">{t('tickets.comment.internal')}</Badge> : null}
-              <p className="preline">{c.body}</p>
-            </li>
-          ))}
-        </ul>
-        {canComment ? (
-          <form className="form" onSubmit={(event) => void submitComment(event)}>
-            {commentError ? <ApiErrorAlert error={commentError} /> : null}
-            <TextArea
-              label={t('tickets.comment.label')}
-              value={comment}
-              rows={3}
-              maxLength={5000}
-              onChange={(event) => setComment(event.target.value)}
-            />
-            {manage ? (
-              <Checkbox
-                label={t('tickets.comment.internalOnly')}
-                description={t('tickets.comment.internalOnly.hint')}
-                checked={internal}
-                onChange={(event) => setInternal(event.target.checked)}
-              />
-            ) : null}
-            <div className="form-actions">
-              <Button type="submit" busy={commenting} disabled={comment.trim() === ''}>
-                {t('tickets.comment.send')}
-              </Button>
-            </div>
-          </form>
-        ) : null}
-      </section>
+      <div className="ticket-workspace">
+        <SplitPane
+          inspectorLabel={t('tickets.context')}
+          main={
+            <Card title={t('tickets.section.conversation')}>
+              {ticket.description ? (
+                <section>
+                  <h2>{t('tickets.field.description')}</h2>
+                  <p className="preline">{ticket.description}</p>
+                </section>
+              ) : null}
+              {ticket.resolution ? (
+                <section>
+                  <h2>{t('tickets.fact.resolution')}</h2>
+                  <p className="preline">{ticket.resolution}</p>
+                  {can('knowledge.manage') ? (
+                    <p>
+                      <Link
+                        to={`/knowledge/new?title=${encodeURIComponent(ticket.title)}&body=${encodeURIComponent(ticket.resolution)}`}
+                      >
+                        {t('tickets.action.makeArticle')}
+                      </Link>
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
+              <section>
+                <h2>{t('tickets.section.conversation')}</h2>
+                {ticket.comments.length === 0 ? (
+                  <p className="empty">{t('tickets.comments.none')}</p>
+                ) : null}
+                <ul className="ticket-conversation">
+                  {ticket.comments.map((c) => (
+                    <li key={c.id} className={`ticket-message${c.internal ? ' internal' : ''}`}>
+                      <header>
+                        <strong>{name(c.authorId)}</strong> · {formatDateTime(locale, c.createdAt)}{' '}
+                        {c.internal ? (
+                          <Badge tone="warning">{t('tickets.comment.internal')}</Badge>
+                        ) : null}
+                      </header>
+                      <p className="preline">{c.body}</p>
+                    </li>
+                  ))}
+                </ul>
+                {canComment ? (
+                  <form className="form" onSubmit={(event) => void submitComment(event)}>
+                    {commentError ? <ApiErrorAlert error={commentError} /> : null}
+                    <TextArea
+                      label={t('tickets.comment.label')}
+                      value={comment}
+                      rows={3}
+                      maxLength={5000}
+                      onChange={(event) => setComment(event.target.value)}
+                    />
+                    {manage ? (
+                      <Checkbox
+                        label={t('tickets.comment.internalOnly')}
+                        description={t('tickets.comment.internalOnly.hint')}
+                        checked={internal}
+                        onChange={(event) => setInternal(event.target.checked)}
+                      />
+                    ) : null}
+                    <div className="form-actions">
+                      <Button type="submit" busy={commenting} disabled={comment.trim() === ''}>
+                        {t('tickets.comment.send')}
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+              </section>
+            </Card>
+          }
+          inspector={
+            <>
+              <Card title={t('tickets.context')}>
+                <h2>{t('tickets.context')}</h2>
+                <dl className="facts">
+                  <dt>{t('tickets.col.status')}</dt>
+                  <dd>
+                    <TicketStatusBadge status={ticket.status} />
+                    {ticket.waitingReason ? (
+                      <> {t(`tickets.waiting.${ticket.waitingReason}`)}</>
+                    ) : null}
+                    {ticket.statusReason ? <> {ticket.statusReason}</> : null}
+                  </dd>
+                  <dt>{t('tickets.col.priority')}</dt>
+                  <dd>
+                    {manage ? (
+                      <Select
+                        label={t('tickets.col.priority')}
+                        value={ticket.priority}
+                        onChange={(event) =>
+                          void ticketsApi
+                            .setPriority(ticket.id, ticket.version, event.target.value)
+                            .then(loaded.reload, (cause: unknown) =>
+                              setActionError(asApiError(cause)),
+                            )
+                        }
+                        options={priorities.map((value) => ({
+                          value,
+                          label: t(`tickets.priority.${value}`),
+                        }))}
+                      />
+                    ) : (
+                      t(`tickets.priority.${ticket.priority}`)
+                    )}
+                  </dd>
+                  <dt>{t('tickets.fact.reporter')}</dt>
+                  <dd>{name(ticket.reporterId)}</dd>
+                  {ticket.affectedUserId !== ticket.reporterId ? (
+                    <>
+                      <dt>{t('tickets.fact.affected')}</dt>
+                      <dd>{name(ticket.affectedUserId)}</dd>
+                    </>
+                  ) : null}
+                  <dt>{t('tickets.fact.assignee')}</dt>
+                  <dd>
+                    {ticket.assigneeId ? name(ticket.assigneeId) : t('tickets.fact.unassigned')}
+                  </dd>
+                  {staff && ticket.queueTeamId ? (
+                    <>
+                      <dt>{t('tickets.fact.queue')}</dt>
+                      <dd>{name(ticket.queueTeamId)}</dd>
+                    </>
+                  ) : null}
+                  {ticket.deviceSnapshot ? (
+                    <>
+                      <dt>{t('tickets.field.device')}</dt>
+                      <dd>
+                        {String(ticket.deviceSnapshot.product ?? '')} (
+                        {String(ticket.deviceSnapshot.reference ?? '')}
+                        {ticket.deviceSnapshot.serialNumber
+                          ? `, ${String(ticket.deviceSnapshot.serialNumber)}`
+                          : ''}
+                        )
+                      </dd>
+                    </>
+                  ) : null}
+                  <dt>{t('tickets.fact.created')}</dt>
+                  <dd>{formatDateTime(locale, ticket.createdAt)}</dd>
+                </dl>
+                {can('runbooks.execute') ? (
+                  <p>
+                    <Link to={`/runbooks?ticket=${encodeURIComponent(ticket.id)}`}>
+                      {t('tickets.action.runbook')}
+                    </Link>
+                  </p>
+                ) : null}
+                {sync.data?.enabled ? (
+                  <section>
+                    <h2>{t('tickets.section.externalSync')}</h2>
+                    <p>
+                      <Badge>
+                        {sync.data.syncState
+                          ? t(`tickets.sync.${sync.data.syncState}` as MessageKey)
+                          : t('tickets.sync.none')}
+                      </Badge>
+                      {sync.data.externalId ? ` ${sync.data.externalId}` : ''}
+                      {sync.data.lastSyncedAt
+                        ? ` · ${formatDateTime(locale, sync.data.lastSyncedAt)}`
+                        : ''}
+                    </p>
+                    {sync.data.lastError ? <p className="preline">{sync.data.lastError}</p> : null}
+                    {can('tickets.manage') ? (
+                      <Button
+                        busy={retrying}
+                        onClick={async () => {
+                          setRetrying(true);
+                          try {
+                            await ticketsApi.retryExternalSync(id);
+                            sync.reload();
+                          } catch (e) {
+                            setActionError(asApiError(e));
+                          } finally {
+                            setRetrying(false);
+                          }
+                        }}
+                      >
+                        {t('tickets.sync.retry')}
+                      </Button>
+                    ) : null}
+                  </section>
+                ) : null}
+                {known.data && known.data.length > 0 ? (
+                  <section>
+                    <h2>{t('tickets.section.knownErrors')}</h2>
+                    <ul className="plain-list">
+                      {known.data.map((k) => (
+                        <li key={k.id}>
+                          <Link to={`/problems/${encodeURIComponent(k.id)}`}>
+                            {k.reference} · {k.title}
+                          </Link>
+                          <p className="preline">{k.workaround}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+              </Card>
+            </>
+          }
+        />
+      </div>
       {dialog?.kind === 'assign' ? (
         <AssignDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
       ) : null}

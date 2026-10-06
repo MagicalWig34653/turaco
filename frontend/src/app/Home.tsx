@@ -1,31 +1,24 @@
+import { useEffect } from 'react';
 import { useI18n } from '../platform/i18n/I18nProvider';
-import type { MessageKey } from '../platform/i18n/i18n';
-
-const cards: Array<{ title: MessageKey; body: MessageKey }> = [
-  { title: 'card.today.title', body: 'card.today.body' },
-  { title: 'card.briefing.title', body: 'card.briefing.body' },
-  { title: 'card.context.title', body: 'card.context.body' },
-];
+import { Link, navigate } from '../platform/router/Router';
+import { useSession } from '../platform/session/SessionProvider';
+import { PageHeader } from '../platform/ui/PageHeader';
+import { Card } from '../platform/ui/Workspace';
 
 export function Home() {
   const { t } = useI18n();
+  const { can } = useSession();
+  const destination =
+    can('tasks.view') || can('tasks.manage') || can('tasks.work') ? '/my-work' : '/requests';
+  useEffect(() => {
+    navigate(destination, { replace: true });
+  }, [destination]);
   return (
     <>
-      <div className="page-header">
-        <div>
-          <p className="eyebrow">{t('status.foundation')}</p>
-          <h1>{t('app.name')}</h1>
-          <p className="subtitle">{t('app.subtitle')}</p>
-        </div>
-      </div>
-      <section className="grid" aria-label={t('home.foundations')}>
-        {cards.map((card) => (
-          <article className="card" key={card.title}>
-            <h2>{t(card.title)}</h2>
-            <p>{t(card.body)}</p>
-          </article>
-        ))}
-      </section>
+      <PageHeader title={t('app.name')} intro={t('home.redirect')} />
+      <Card>
+        <Link to={destination}>{t('home.continue')}</Link>
+      </Card>
     </>
   );
 }

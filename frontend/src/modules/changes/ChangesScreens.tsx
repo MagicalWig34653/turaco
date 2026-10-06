@@ -8,6 +8,9 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
+import { DataTable, type Column } from '../../platform/ui/DataTable';
+import { Checkbox, Select, TextField } from '../../platform/ui/Field';
+import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { servicesApi } from '../services/api';
@@ -215,13 +218,13 @@ function ChangeForm({
       <Field label={t('changes.ownerId')} value={ownerId} onChange={setOwnerId} />
       <Error error={error} />
       <div className="actions">
-        <button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           {t('action.save')}
-        </button>
+        </Button>
         {onClose && (
-          <button type="button" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             {t('action.cancel')}
-          </button>
+          </Button>
         )}
       </div>
     </form>
@@ -260,98 +263,112 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
         title={title}
         actions={
           can('changes.manage') ? (
-            <button onClick={() => setShowCreate(true)}>{t('changes.create')}</button>
+            <Button variant="primary" onClick={() => setShowCreate(true)}>
+              {t('changes.create')}
+            </Button>
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
-        <Choice
+      <form className="filters changes-filters" role="search" onSubmit={(e) => e.preventDefault()}>
+        <Select
           label={t('changes.statusLabel')}
           value={status}
-          onChange={setStatus}
-          values={statuses}
-          prefix="changes.status"
-          all
+          onChange={(e) => setStatus(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...statuses.map((value) => ({ value, label: t(`changes.status.${value}`) })),
+          ]}
         />
-        <Choice
+        <Select
           label={t('changes.risk')}
           value={risk}
-          onChange={setRisk}
-          values={risks}
-          prefix="changes.risk"
-          all
+          onChange={(e) => setRisk(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...risks.map((value) => ({ value, label: t(`changes.risk.${value}`) })),
+          ]}
         />
-        <Choice
+        <Select
           label={t('changes.kind')}
           value={kind}
-          onChange={setKind}
-          values={kinds}
-          prefix="changes.kind"
-          all
+          onChange={(e) => setKind(e.target.value)}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...kinds.map((value) => ({ value, label: t(`changes.kind.${value}`) })),
+          ]}
         />
-        {!mine && (
-          <label>
-            {t('changes.mineFilter')}
-            <input
-              type="checkbox"
-              checked={!!owner}
-              onChange={(e) => setOwner(e.target.checked ? 'mine' : '')}
-            />
-          </label>
-        )}
-        <Field
+        <TextField
           label={t('changes.windowFrom')}
+          type="datetime-local"
           value={windowFrom}
-          onChange={setWindowFrom}
-          type="datetime-local"
+          onChange={(e) => setWindowFrom(e.target.value)}
         />
-        <Field
+        <TextField
           label={t('changes.windowTo')}
-          value={windowTo}
-          onChange={setWindowTo}
           type="datetime-local"
+          value={windowTo}
+          onChange={(e) => setWindowTo(e.target.value)}
         />
+        {!mine ? (
+          <Checkbox
+            label={t('changes.mineFilter')}
+            checked={!!owner}
+            onChange={(e) => setOwner(e.target.checked ? 'mine' : '')}
+          />
+        ) : null}
       </form>
-      <Error error={list.error} />
-      {list.loading && <p>{t('state.loading')}</p>}
-      <table>
-        <caption>{title}</caption>
-        <thead>
-          <tr>
-            <th>{t('changes.reference')}</th>
-            <th>{t('changes.title')}</th>
-            <th>{t('changes.statusLabel')}</th>
-            <th>{t('changes.kind')}</th>
-            <th>{t('changes.risk')}</th>
-            <th>{t('changes.windowStart')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.items.map((c) => (
-            <tr key={c.id}>
-              <td>
-                <Link to={`/changes/${enc(c.id)}`}>{c.reference}</Link>
-              </td>
-              <td>{c.title}</td>
-              <td>
-                <Status value={c.status} />
-              </td>
-              <td>{t(`changes.kind.${c.kind}`)}</td>
-              <td>{t(`changes.risk.${c.risk}`)}</td>
-              <td>
-                {c.windowStart
-                  ? new Intl.DateTimeFormat(locale, {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    }).format(new Date(c.windowStart))
-                  : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {!list.loading && list.items.length === 0 && <p>{t('changes.empty')}</p>}
-      {list.hasMore && <button onClick={list.loadMore}>{t('action.loadMore')}</button>}
+      <DataTable
+        caption={title}
+        columns={
+          [
+            {
+              key: 'reference',
+              header: t('changes.reference'),
+              render: (c: Change) => <Link to={`/changes/${enc(c.id)}`}>{c.reference}</Link>,
+            },
+            { key: 'title', header: t('changes.title'), render: (c: Change) => c.title },
+            {
+              key: 'status',
+              header: t('changes.statusLabel'),
+              render: (c: Change) => <Status value={c.status} />,
+            },
+            {
+              key: 'kind',
+              header: t('changes.kind'),
+              render: (c: Change) => t(`changes.kind.${c.kind}`),
+            },
+            {
+              key: 'risk',
+              header: t('changes.risk'),
+              render: (c: Change) => t(`changes.risk.${c.risk}`),
+            },
+            {
+              key: 'window',
+              header: t('changes.windowStart'),
+              render: (c: Change) => (
+                <time dateTime={c.windowStart ?? undefined}>
+                  {c.windowStart
+                    ? new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(c.windowStart))
+                    : '—'}
+                </time>
+              ),
+            },
+          ] satisfies Column<Change>[]
+        }
+        rows={list.items}
+        rowKey={(c) => c.id}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={t('changes.empty')}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
       {showCreate && (
         <Dialog title={t('changes.create')} onClose={() => setShowCreate(false)}>
           <ChangeForm
@@ -435,13 +452,13 @@ function AffectedDialog({
         />
         <Field label={t('changes.search')} value={query} onChange={setQuery} type="search" />
         {results.data?.map((x) => (
-          <button type="button" key={x.id} onClick={() => setTargetId(x.id)}>
+          <Button type="button" key={x.id} onClick={() => setTargetId(x.id)}>
             {x.label}
-          </button>
+          </Button>
         ))}
         <Field label={t('changes.targetId')} value={targetId} onChange={setTargetId} required />
         <Error error={results.error ?? error} />
-        <button type="submit">{t('changes.addAffected')}</button>
+        <Button type="submit">{t('changes.addAffected')}</Button>
       </form>
     </Dialog>
   );
@@ -605,9 +622,9 @@ function ActionDialog({
           </label>
         )}
         <Error error={error} />
-        <button type="submit" disabled={busy || (action === 'review' && !outcomeNote.trim())}>
+        <Button type="submit" disabled={busy || (action === 'review' && !outcomeNote.trim())}>
           {t(`changes.action.${action}` as MessageKey)}
-        </button>
+        </Button>
       </form>
     </Dialog>
   );
@@ -668,7 +685,7 @@ function TaskDialog({
         />
         <AssigneePicker type={assigneeType} value={assignee} onChange={setAssignee} />
         <Error error={error} />
-        <button type="submit">{t('changes.addTask')}</button>
+        <Button type="submit">{t('changes.addTask')}</Button>
       </form>
     </Dialog>
   );
@@ -789,7 +806,8 @@ export function ChangeDetailScreen({ id }: { id: string }) {
             <h2>{t('changes.actions')}</h2>
             <div className="actions">
               {actions.map((x) => (
-                <button
+                <Button
+                  type="submit"
                   key={x}
                   onClick={() =>
                     x === 'update'
@@ -802,7 +820,7 @@ export function ChangeDetailScreen({ id }: { id: string }) {
                   }
                 >
                   {t(`changes.action.${x}` as MessageKey)}
-                </button>
+                </Button>
               ))}
             </div>
           </section>
@@ -812,12 +830,16 @@ export function ChangeDetailScreen({ id }: { id: string }) {
               <p key={x.relationshipId}>
                 {t(`changes.type.${x.type}`)}: {label(x)}{' '}
                 {actions.includes('edit_affected') && !x.hidden && (
-                  <button onClick={() => void remove(x.type, x.id)}>{t('changes.remove')}</button>
+                  <Button type="submit" onClick={() => void remove(x.type, x.id)}>
+                    {t('changes.remove')}
+                  </Button>
                 )}
               </p>
             ))}
             {actions.includes('edit_affected') && (
-              <button onClick={() => setShowAffected(true)}>{t('changes.addAffected')}</button>
+              <Button type="submit" onClick={() => setShowAffected(true)}>
+                {t('changes.addAffected')}
+              </Button>
             )}
           </section>
           <section>
@@ -844,7 +866,9 @@ export function ChangeDetailScreen({ id }: { id: string }) {
               </p>
             ))}
             {actions.includes('add_task') && (
-              <button onClick={() => setShowTask(true)}>{t('changes.addTask')}</button>
+              <Button type="submit" onClick={() => setShowTask(true)}>
+                {t('changes.addTask')}
+              </Button>
             )}
           </section>
           <section>
@@ -863,7 +887,9 @@ export function ChangeDetailScreen({ id }: { id: string }) {
               </p>
             ))}
             {transitions.hasMore && (
-              <button onClick={transitions.loadMore}>{t('action.loadMore')}</button>
+              <Button type="submit" onClick={transitions.loadMore}>
+                {t('action.loadMore')}
+              </Button>
             )}
           </section>
           {canImpact && (
