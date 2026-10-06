@@ -9,16 +9,21 @@ export const escapeHTML = (value) =>
         c
       ],
   );
+const entityText = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" };
+// plainText is for titles and the search index only; every consumer escapes it
+// again (escapeHTML) or uses textContent, it is never inserted as HTML. Tags are
+// removed until none are left, entities are decoded in ONE pass (no double
+// unescaping, so "&amp;lt;" stays "&lt;").
 export function plainText(value, markdown = true) {
-  return value
-    .replace(/<[^>]*>/g, "")
+  let text = String(value);
+  for (let previous = ""; previous !== text; ) {
+    previous = text;
+    text = text.replace(/<[^<>]*>/g, "");
+  }
+  return text
     .replace(/!?(?:\[([^\]]*)\])\([^)]*\)/g, "$1")
     .replace(/[`*_~]/g, (character) => (markdown ? "" : character))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => entityText[entity]);
 }
 export function titleFromMarkdown(markdown, fallback = "Untitled") {
   const heading = new Marked()
