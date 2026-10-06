@@ -119,8 +119,8 @@ func (NotConfigured) PackageStatus(context.Context, []string) ([]PackageRecord, 
 // MaxCatalogResults bounds a catalog search of the Fake.
 const MaxCatalogResults = 50
 
-// Fake is a deterministic in-memory provider for tests. Package ids are pkg-1, pkg-2, ...; the published
-// artifact of pkg-N is app-pkg-N unless overridden.
+// Fake is a deterministic in-memory provider for tests. Package ids are pkg-1, pkg-2, ... (after an optional
+// prefix); the published artifact of a package is "app-" plus its id unless overridden.
 type Fake struct {
 	mu        sync.Mutex
 	catalog   []CatalogEntry
@@ -134,6 +134,7 @@ type Fake struct {
 	hashOver  map[string]string
 	artifact  map[string]string
 	initial   string
+	prefix    string
 	now       func() time.Time
 }
 
@@ -149,6 +150,13 @@ func (f *Fake) SetCatalog(entries ...CatalogEntry) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.catalog = append([]CatalogEntry(nil), entries...)
+}
+
+// SetIDPrefix prefixes the package ids the Fake hands out (tests that share a database).
+func (f *Fake) SetIDPrefix(prefix string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.prefix = prefix
 }
 
 // SetInitialStatus sets the status a new package starts with (default packaged).
@@ -260,7 +268,7 @@ func (f *Fake) Package(_ context.Context, req PackageRequest, opKey string) (Pac
 	if id, ok := f.packageOp[opKey]; ok {
 		return f.packages[id], nil
 	}
-	id := fmt.Sprintf("pkg-%d", len(f.order)+1)
+	id := fmt.Sprintf("%spkg-%d", f.prefix, len(f.order)+1)
 	hash := req.InstallerSHA256
 	if h, ok := f.hashOver[id]; ok {
 		hash = h
