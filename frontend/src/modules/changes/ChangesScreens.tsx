@@ -89,7 +89,11 @@ const tone: Record<ChangeStatus, 'neutral' | 'success' | 'warning' | 'danger' | 
 };
 function Status({ value }: { value: ChangeStatus }) {
   const { t } = useI18n();
-  return <StatusBadge tone={tone[value]}>{t(`changes.status.${value}`)}</StatusBadge>;
+  return (
+    <StatusBadge tone={tone[value]} live={value === 'in_progress'}>
+      {t(`changes.status.${value}`)}
+    </StatusBadge>
+  );
 }
 function Error({ error }: { error: ApiError | undefined }) {
   return error ? <ApiErrorAlert error={error} /> : null;

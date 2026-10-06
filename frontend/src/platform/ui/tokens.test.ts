@@ -49,12 +49,24 @@ describe('semantic token contrast', () => {
       ['--on-action', '--action'],
       ['--on-action', '--action-hover'],
       ...(theme === 'cyberpunk'
-        ? ['cyan', 'pink', 'yellow', 'green', 'orange'].flatMap((color) =>
-            ['base', 'raised', 'hover'].map((surface) => [
-              `--cyber-${color}`,
-              `--surface-${surface}`,
+        ? [
+            // Neon expression colors as text on every Cyberpunk surface, and dark text on neon fills.
+            ...['cyan', 'pink', 'yellow', 'green', 'orange', 'violet'].flatMap((color) => [
+              ...['canvas', 'base', 'raised', 'hover', 'muted-token', 'selected', 'inset'].map(
+                (surface) => [`--cyber-${color}`, `--surface-${surface}`],
+              ),
+              ['--on-cyber', `--cyber-${color}`],
             ]),
-          )
+            // Status foregrounds also appear as metric numerals and icons on panels and the canvas.
+            ...['critical', 'warning', 'info', 'success', 'unknown'].flatMap((state) =>
+              ['canvas', 'base', 'raised', 'inset'].map((surface) => [
+                `--state-${state}`,
+                `--surface-${surface}`,
+              ]),
+            ),
+            ['--text-primary', '--surface-inset'],
+            ['--text-secondary', '--surface-inset'],
+          ]
         : []),
       ...(['critical', 'warning', 'info', 'success', 'unknown'] as const).map((state) => [
         `--state-${state}`,

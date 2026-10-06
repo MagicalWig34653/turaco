@@ -69,6 +69,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     storePreference(motionKey, motion);
   }, [motion, reducedMotion]);
 
+  // Decorative theme animation pauses while the tab is hidden (see themes.css).
+  useEffect(() => {
+    const root = document.documentElement;
+    const update = () => {
+      root.dataset.visibility = document.visibilityState === 'hidden' ? 'hidden' : 'visible';
+    };
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+
   const value = useMemo(
     () => ({ theme, setTheme, density, setDensity, motion, setMotion, reducedMotion }),
     [theme, density, motion, reducedMotion],

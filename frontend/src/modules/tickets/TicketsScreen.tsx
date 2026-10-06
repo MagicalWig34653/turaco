@@ -27,7 +27,11 @@ const tone: Record<TicketStatus, 'neutral' | 'success' | 'warning' | 'danger' | 
 
 export function TicketStatusBadge({ status }: { status: TicketStatus }) {
   const { t } = useI18n();
-  return <Badge tone={tone[status]}>{t(`tickets.status.${status}`)}</Badge>;
+  return (
+    <Badge tone={tone[status]} live={status === 'in_progress'}>
+      {t(`tickets.status.${status}`)}
+    </Badge>
+  );
 }
 
 /** "My tickets" for everyone, the full queue for people with tickets.view. */

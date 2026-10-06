@@ -14,6 +14,7 @@ import './modules/my-work/work-dashboard.css';
 import './modules/tickets/ticket-workspace.css';
 import './platform/ui/themes.css';
 import './platform/ui/polish.css';
+import './platform/ui/cyberpunk.css';
 
 registerModuleNotifications();
 

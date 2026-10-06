@@ -116,12 +116,18 @@ export function MetricCard({
 
 export function StatusBadge({
   tone,
+  live,
   children,
 }: {
   tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'unknown';
+  live?: boolean;
   children: ReactNode;
 }) {
-  return <Badge tone={tone}>{children}</Badge>;
+  return (
+    <Badge tone={tone} live={live ?? false}>
+      {children}
+    </Badge>
+  );
 }
 
 export function Toolbar({ children }: { children: ReactNode }) {

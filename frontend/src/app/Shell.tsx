@@ -65,7 +65,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [recentPaths, setRecentPaths] = useState<string[]>([]);
-  const first = useRef(true);
+  const focusedPath = useRef(pathname);
   const unread = useAsync((signal) => notificationsApi.unreadCount(signal), []);
   const reloadUnread = unread.reload;
   const unreadValue = unread.data?.count ? unreadLabel(unread.data.count, unread.data.max) : null;
@@ -115,8 +115,9 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   }, [reloadUnread]);
   useEffect(() => {
     setMobileOpen(false);
-    if (!first.current) mainRef.current?.focus();
-    first.current = false;
+    // Move focus only on an actual route change; a repeated effect run must not scroll on load.
+    if (focusedPath.current !== pathname) mainRef.current?.focus();
+    focusedPath.current = pathname;
     setRecentPaths((paths) =>
       commands.some((command) => command.path === pathname)
         ? [pathname, ...paths.filter((path) => path !== pathname)].slice(0, 5)

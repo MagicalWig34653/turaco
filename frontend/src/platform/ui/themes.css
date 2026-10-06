@@ -1,135 +1,8 @@
-/* Presentation only. Keep decoration behind content and out of document flow. */
-html[data-theme='cyberpunk'] .turaco-main {
-  background:
-    radial-gradient(
-      ellipse at 100% 0%,
-      color-mix(in srgb, var(--cyber-pink) 9%, transparent),
-      transparent 45%
-    ),
-    linear-gradient(color-mix(in srgb, var(--cyber-cyan) 4%, transparent) 1px, transparent 1px),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--cyber-cyan) 4%, transparent) 1px,
-      transparent 1px
-    ),
-    var(--surface-canvas);
-  background-size:
-    auto,
-    48px 48px,
-    48px 48px,
-    auto;
-}
-html[data-theme='cyberpunk'] .turaco-shell .turaco-rail {
-  background: linear-gradient(165deg, var(--surface-muted-token), var(--rail-bg) 45%);
-  border-right: 1px solid var(--border-token);
-}
-html[data-theme='cyberpunk'] .turaco-appbar {
-  background: var(--rail-bg);
-  border-bottom-color: var(--border-token);
-  box-shadow: none;
-}
-html[data-theme='cyberpunk'] .turaco-brand-mark {
-  color: var(--on-accent);
-  background: var(--cyber-yellow);
-  border-radius: 2px;
-  clip-path: polygon(0 0, 78% 0, 100% 22%, 100% 100%, 22% 100%, 0 78%);
-}
-html[data-theme='cyberpunk'] :is(.turaco-brand, h1):hover {
-  text-shadow:
-    1px 0 var(--cyber-cyan),
-    -1px 0 var(--cyber-pink),
-    var(--glow-text);
-}
-/* Monospace only where a whole element is an identifier or code; never inside a sentence. */
-html[data-theme='cyberpunk'] .page-eyebrow {
-  font-family: var(--font-mono);
-  letter-spacing: 0.08em;
-}
-html[data-theme='cyberpunk'] :is(code, .mono, .table-reference) {
-  font-family: var(--font-mono);
-}
-html[data-theme='cyberpunk'] :is(time, .metric-card strong, .change-metric strong) {
-  font-variant-numeric: tabular-nums;
-}
-html[data-theme='cyberpunk'] .turaco-shell .turaco-rail-section a[aria-current='page'] {
-  border-color: color-mix(in srgb, var(--cyber-cyan) 45%, var(--rail-active));
-  box-shadow:
-    inset 3px 0 var(--cyber-cyan),
-    var(--glow-action);
-}
-html[data-theme='cyberpunk']
-  :is(.workspace-card, .card-plain, .dashboard-action-card):focus-within {
-  border-color: var(--cyber-pink);
-  box-shadow: var(--shadow-card), var(--glow-selection);
-}
-html[data-theme='cyberpunk'] .btn-primary:not(:disabled):not([aria-busy='true']),
-html[data-theme='cyberpunk'] .turaco-create-trigger {
-  box-shadow: var(--glow-action);
-  border-radius: 2px 10px 2px 10px;
-  font-weight: 700;
-}
-html[data-theme='cyberpunk'] .metric-card strong {
-  color: var(--cyber-cyan);
-  text-shadow: var(--glow-text);
-}
-html[data-theme='cyberpunk'] .metric-danger strong {
-  color: var(--state-critical);
-}
-html[data-theme='cyberpunk'] .metric-warning strong {
-  color: var(--state-warning);
-}
-html[data-theme='cyberpunk'] .metric-success strong {
-  color: var(--state-success);
-}
-html[data-theme='cyberpunk'] .badge {
-  border-color: currentColor;
-  box-shadow: none;
-  text-shadow: none;
-}
-html[data-theme='cyberpunk'] .badge-icon {
-  filter: drop-shadow(0 0 3px currentColor);
-}
-html[data-theme='cyberpunk']
-  :is(.context-menu, .turaco-header-popover, .workspace-toast, [role='tooltip']) {
-  color: var(--text-primary);
-  background-color: var(--surface-raised);
-  border-color: var(--border-strong-token);
-  box-shadow: var(--shadow-menu), var(--glow-selection);
-}
-html[data-theme='cyberpunk'] :is(input, textarea) {
-  caret-color: var(--cyber-pink);
-}
-html[data-theme='cyberpunk'] :focus-visible {
-  box-shadow: var(--glow-focus);
-}
-/* The palette frame owns focus; the editable text has only its native caret. */
-html[data-theme='cyberpunk'] .turaco-command-head:focus-within {
-  box-shadow: inset 0 -2px var(--focus-ring);
-}
-html[data-theme='cyberpunk'] .turaco-command-head input {
-  background: transparent;
-  border: 0;
-  outline: none;
-  box-shadow: none;
-}
-html[data-theme='cyberpunk'] progress {
-  accent-color: var(--cyber-cyan);
-  background: var(--surface-muted-token);
-}
-html[data-theme='cyberpunk'] progress::-webkit-progress-bar {
-  background: var(--surface-muted-token);
-}
-html[data-theme='cyberpunk'] progress::-webkit-progress-value {
-  background: var(--cyber-cyan);
-  box-shadow: var(--glow-action);
-}
-html[data-theme='cyberpunk'] progress::-moz-progress-bar {
-  background: var(--cyber-cyan);
-}
-html[data-theme='cyberpunk'] ::selection {
-  color: var(--on-accent);
-  background: var(--cyber-cyan);
-}
+/*
+ * Cross-theme presentation rules. Cyberpunk-only expression lives in cyberpunk.css, which is
+ * imported last and scoped to html[data-theme='cyberpunk'] so other themes pay nothing for it.
+ */
+
 /* Disabled controls remain readable; state is also indicated by native semantics. */
 html:is([data-theme='dark'], [data-theme='cyberpunk'])
   :is(button, input, select, textarea):disabled {
@@ -140,35 +13,12 @@ html:is([data-theme='dark'], [data-theme='cyberpunk'])
   border-color: var(--border-token);
   box-shadow: none;
   text-shadow: none;
+  filter: none;
 }
 html[data-theme='dark'] .turaco-appbar {
   background: var(--surface-base);
 }
-/* A single progressive boot reveal, never an ambient flashing loop. */
-@media (prefers-reduced-motion: no-preference) {
-  html[data-theme='cyberpunk']:not([data-motion='reduced']) :is(.page-header, .incident-heading) {
-    animation: cyber-boot 600ms steps(3, end) both;
-  }
-  html[data-theme='cyberpunk']:not([data-motion='reduced']) .dashboard-action-card {
-    animation: cyber-boot 600ms var(--motion-ease) backwards;
-  }
-  html[data-theme='cyberpunk']:not([data-motion='reduced']) .dashboard-action-card:nth-child(2) {
-    animation-delay: 70ms;
-  }
-  html[data-theme='cyberpunk']:not([data-motion='reduced']) .dashboard-action-card:nth-child(3) {
-    animation-delay: 140ms;
-  }
-}
-@keyframes cyber-boot {
-  from {
-    opacity: 0.65;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
+
 /* Cancel, rather than run infinite animations at a zero duration. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -185,4 +35,10 @@ html[data-motion='reduced'] *::after {
   animation: none !important;
   transition: none !important;
   scroll-behavior: auto !important;
+}
+/* A hidden tab pauses every running animation; ThemeProvider sets data-visibility. */
+html[data-visibility='hidden'] *,
+html[data-visibility='hidden'] *::before,
+html[data-visibility='hidden'] *::after {
+  animation-play-state: paused !important;
 }

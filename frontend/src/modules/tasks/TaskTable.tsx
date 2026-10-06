@@ -17,7 +17,11 @@ const statusTone: Record<TaskStatus, 'neutral' | 'success' | 'warning' | 'info'>
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
   const { t } = useI18n();
-  return <Badge tone={statusTone[status]}>{t(`tasks.status.${status}`)}</Badge>;
+  return (
+    <Badge tone={statusTone[status]} live={status === 'in_progress'}>
+      {t(`tasks.status.${status}`)}
+    </Badge>
+  );
 }
 
 export function assigneeLabel(task: Task, none: string): string {
