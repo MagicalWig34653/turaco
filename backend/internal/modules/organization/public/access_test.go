@@ -40,3 +40,22 @@ func TestIsActive(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionNames(t *testing.T) {
+	given := "Lena"
+	d, g, err := NewUserAccess(fakeReader{user: application.User{DisplayName: "Lena Hoffmann", GivenName: &given}}).SessionNames(context.Background(), "u")
+	if err != nil || d != "Lena Hoffmann" || g != "Lena" {
+		t.Fatalf("got %q %q %v", d, g, err)
+	}
+	d, g, err = NewUserAccess(fakeReader{user: application.User{DisplayName: "Development Admin"}}).SessionNames(context.Background(), "u")
+	if err != nil || d != "Development Admin" || g != "" {
+		t.Fatalf("got %q %q %v", d, g, err)
+	}
+	d, _, err = NewUserAccess(fakeReader{err: application.ErrNotFound}).SessionNames(context.Background(), "u")
+	if err != nil || d != "" {
+		t.Fatalf("not found: %q %v", d, err)
+	}
+	if _, _, err = NewUserAccess(fakeReader{err: errors.New("boom")}).SessionNames(context.Background(), "u"); err == nil {
+		t.Fatal("want error")
+	}
+}

@@ -30,3 +30,19 @@ func (a *UserAccess) IsActive(ctx context.Context, userID string) (bool, error) 
 	}
 	return u.Status == "active", nil
 }
+
+// SessionNames returns the user's own display name and given name for the
+// session response. An unknown user has no names and is not an error.
+func (a *UserAccess) SessionNames(ctx context.Context, userID string) (displayName, givenName string, err error) {
+	u, err := a.reader.GetUser(ctx, userID)
+	if errors.Is(err, application.ErrNotFound) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	if u.GivenName != nil {
+		givenName = *u.GivenName
+	}
+	return u.DisplayName, givenName, nil
+}

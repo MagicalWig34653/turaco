@@ -10482,6 +10482,12 @@ components:
           type: array
           items: {type: string}
           description: Sorted effective permission names.
+        displayName:
+          type: string
+          description: The session user's own display name, for presentation only. Omitted when unknown or temporarily unavailable.
+        givenName:
+          type: string
+          description: The session user's given name when the directory provides one. Omitted otherwise.
     Meta:
       type: object
       additionalProperties: false
