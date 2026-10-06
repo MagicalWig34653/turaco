@@ -159,7 +159,7 @@ func (r *Repository) ListTargetSets(ctx context.Context, f application.TargetSet
 const deploymentColumns = `d.id::text, d.reference, d.name, d.software_version_id::text, v.software_product_id::text, p.name, v.product_version,
 	d.intent, d.supersede, d.status, d.status_reason, d.owner_user_id::text, d.created_by::text, d.editors::text[], d.high_impact,
 	d.approval_id::text, d.submitted_by::text, d.submitted_at, d.plan_sha256, d.approved_at, d.scheduled_by::text, d.scheduled_at,
-	d.cancelled_by::text, d.cancelled_at, d.version, d.created_at, d.updated_at`
+	d.started_by::text, d.started_at, d.finished_at, d.cancelled_by::text, d.cancelled_at, d.version, d.created_at, d.updated_at`
 
 const deploymentFrom = ` FROM endpoints.deployments d JOIN endpoints.software_versions v ON v.id = d.software_version_id
 	JOIN endpoints.software_products p ON p.id = v.software_product_id`
@@ -169,7 +169,7 @@ func scanDeployment(row pgx.Row) (application.Deployment, error) {
 	err := row.Scan(&d.ID, &d.Reference, &d.Name, &d.SoftwareVersionID, &d.ProductID, &d.ProductName, &d.ProductVersion,
 		&d.Intent, &d.Supersede, &d.Status, &d.StatusReason, &d.OwnerUserID, &d.CreatedBy, &d.Editors, &d.HighImpact,
 		&d.ApprovalID, &d.SubmittedBy, &d.SubmittedAt, &d.PlanSHA256, &d.ApprovedAt, &d.ScheduledBy, &d.ScheduledAt,
-		&d.CancelledBy, &d.CancelledAt, &d.Version, &d.CreatedAt, &d.UpdatedAt)
+		&d.StartedBy, &d.StartedAt, &d.FinishedAt, &d.CancelledBy, &d.CancelledAt, &d.Version, &d.CreatedAt, &d.UpdatedAt)
 	if d.Editors == nil {
 		d.Editors = []string{}
 	}
@@ -210,9 +210,10 @@ func (r *Repository) UpdateDeploymentTx(ctx context.Context, tx pgx.Tx, d applic
 	tag, err := tx.Exec(ctx, `UPDATE endpoints.deployments SET name = $2, software_version_id = $3::uuid, intent = $4, supersede = $5, status = $6,
 		status_reason = $7, owner_user_id = $8::uuid, editors = $9::uuid[], high_impact = $10, approval_id = $11::uuid, submitted_by = $12::uuid,
 		submitted_at = $13, plan_sha256 = $14, approved_at = $15, scheduled_by = $16::uuid, scheduled_at = $17, cancelled_by = $18::uuid,
-		cancelled_at = $19, version = version + 1, updated_at = now() WHERE id = $1::uuid`,
+		cancelled_at = $19, started_by = $20::uuid, started_at = $21, finished_at = $22, version = version + 1, updated_at = now() WHERE id = $1::uuid`,
 		d.ID, d.Name, d.SoftwareVersionID, d.Intent, d.Supersede, d.Status, d.StatusReason, d.OwnerUserID, d.Editors, d.HighImpact,
-		d.ApprovalID, d.SubmittedBy, d.SubmittedAt, d.PlanSHA256, d.ApprovedAt, d.ScheduledBy, d.ScheduledAt, d.CancelledBy, d.CancelledAt)
+		d.ApprovalID, d.SubmittedBy, d.SubmittedAt, d.PlanSHA256, d.ApprovedAt, d.ScheduledBy, d.ScheduledAt, d.CancelledBy, d.CancelledAt,
+		d.StartedBy, d.StartedAt, d.FinishedAt)
 	if err != nil {
 		return application.Deployment{}, fmt.Errorf("update deployment: %w", err)
 	}

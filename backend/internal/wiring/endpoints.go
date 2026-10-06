@@ -158,13 +158,21 @@ func (x deploymentApprovers) TeamIDsOfUser(ctx context.Context, userID string) (
 type deploymentApprovals struct{ a *approvalspublic.Approvals }
 
 func (x deploymentApprovals) RequestInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver endpointsapp.Approver, excluded []string) (string, error) {
+	return x.request(ctx, tx, endpointsapp.DeploymentApprovalSubject, actor, correlationID, subjectID, label, approver, excluded)
+}
+
+func (x deploymentApprovals) RequestRingInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver endpointsapp.Approver, excluded []string) (string, error) {
+	return x.request(ctx, tx, endpointsapp.RingApprovalSubject, actor, correlationID, subjectID, label, approver, excluded)
+}
+
+func (x deploymentApprovals) request(ctx context.Context, tx pgx.Tx, subjectType string, actor audit.Actor, correlationID, subjectID, label string, approver endpointsapp.Approver, excluded []string) (string, error) {
 	var by *string
 	if actor.UserID != "" {
 		u := actor.UserID
 		by = &u
 	}
 	id, err := x.a.RequestInTx(ctx, tx, approvalspublic.Caller{Actor: actor, CorrelationID: correlationID}, approvalspublic.Request{
-		SubjectType: endpointsapp.DeploymentApprovalSubject, SubjectID: subjectID, SubjectLabel: label, StepIndex: 0,
+		SubjectType: subjectType, SubjectID: subjectID, SubjectLabel: label, StepIndex: 0,
 		ApproverUserID: approver.UserID, ApproverTeamID: approver.TeamID, ExcludedUserIDs: excluded, RequestedBy: by,
 	})
 	var inv *approvalspublic.InvalidInputError
@@ -179,8 +187,21 @@ func (x deploymentApprovals) CancelBySubjectInTx(ctx context.Context, tx pgx.Tx,
 	return err
 }
 
+func (x deploymentApprovals) CancelRingBySubjectInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID string) error {
+	_, err := x.a.CancelBySubjectInTx(ctx, tx, approvalspublic.Caller{Actor: actor, CorrelationID: correlationID}, endpointsapp.RingApprovalSubject, subjectID)
+	return err
+}
+
 func (x deploymentApprovals) ForSubject(ctx context.Context, subjectID string) ([]endpointsapp.DeploymentApprovalInfo, error) {
-	list, err := x.a.ForSubject(ctx, endpointsapp.DeploymentApprovalSubject, subjectID)
+	return x.forSubject(ctx, endpointsapp.DeploymentApprovalSubject, subjectID)
+}
+
+func (x deploymentApprovals) RingForSubject(ctx context.Context, subjectID string) ([]endpointsapp.DeploymentApprovalInfo, error) {
+	return x.forSubject(ctx, endpointsapp.RingApprovalSubject, subjectID)
+}
+
+func (x deploymentApprovals) forSubject(ctx context.Context, subjectType, subjectID string) ([]endpointsapp.DeploymentApprovalInfo, error) {
+	list, err := x.a.ForSubject(ctx, subjectType, subjectID)
 	if err != nil {
 		return nil, err
 	}

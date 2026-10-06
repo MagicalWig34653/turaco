@@ -1095,6 +1095,11 @@ func (s *Service) ScheduleDeployment(ctx context.Context, c Caller, p Principal,
 // CancelDeployment cancels a plan in any planning status with a reason code; a pending plan Approval is cancelled
 // too. Requires deployments.manage and expectedVersion.
 func (s *Service) CancelDeployment(ctx context.Context, c Caller, p Principal, id string, expected *int, reason string) (Deployment, error) {
+	originalManage := p.DeploymentsManage
+	if !p.DeploymentsManage && p.DeploymentsExecute {
+		// An executor may cancel Deployments in execution; the status decides below.
+		p.DeploymentsManage = true
+	}
 	if err := s.deploymentPreamble(c, p, expected, id); err != nil {
 		return Deployment{}, err
 	}
@@ -1110,8 +1115,22 @@ func (s *Service) CancelDeployment(ctx context.Context, c Caller, p Principal, i
 		if *expected != cur.Version {
 			return ErrVersionConflict
 		}
-		if cur.Status == DeploymentCancelled {
+		if slices.Contains(executionCancelable, cur.Status) {
+			if !p.DeploymentsExecute {
+				return ErrForbidden
+			}
+			st, err := s.lockExec(ctx, tx, cur.ID, nil, "cancel")
+			if err != nil {
+				return err
+			}
+			out, err = s.cancelRunning(ctx, tx, c, st, reason)
+			return err
+		}
+		if cur.Status == DeploymentCancelled || !slices.Contains(DeploymentBindingStatuses, cur.Status) && cur.Status != DeploymentDraft {
 			return &InvalidTransitionError{Operation: "cancel", From: cur.Status}
+		}
+		if !originalManage {
+			return ErrForbidden
 		}
 		if cur.Status == DeploymentPendingApproval {
 			if err := s.approvals.CancelBySubjectInTx(ctx, tx, c.Actor, c.CorrelationID, cur.ID); err != nil {
@@ -1129,6 +1148,9 @@ func (s *Service) CancelDeployment(ctx context.Context, c Caller, p Principal, i
 	})
 	return out, err
 }
+
+// executionCancelable are the execution statuses CancelDeployment cancels (with deployments.execute).
+var executionCancelable = []string{DeploymentResolvingTargets, DeploymentReady, DeploymentRunning, DeploymentPaused}
 
 // toDraft returns a pending plan to draft and clears its approval binding.
 func toDraft(cur Deployment, reason string) Deployment {
@@ -1205,6 +1227,9 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 	}
 	if err := json.Unmarshal(ev.Payload, &p); err != nil {
 		return events.Permanent(fmt.Errorf("decode ApprovalDecided payload: %w", err))
+	}
+	if p.SubjectType == RingApprovalSubject && (p.Decision == "approve" || p.Decision == "reject") && p.ApprovalID != "" {
+		return s.onRingApprovalDecided(ctx, tx, ev, p.SubjectID, p.ApprovalID, p.Decision)
 	}
 	if p.SubjectType != DeploymentApprovalSubject {
 		return nil

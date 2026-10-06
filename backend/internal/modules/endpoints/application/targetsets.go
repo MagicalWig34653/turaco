@@ -29,6 +29,15 @@ func (noApprovals) CancelBySubjectInTx(context.Context, pgx.Tx, audit.Actor, str
 func (noApprovals) ForSubject(context.Context, string) ([]DeploymentApprovalInfo, error) {
 	return nil, nil
 }
+func (noApprovals) RequestRingInTx(context.Context, pgx.Tx, audit.Actor, string, string, string, Approver, []string) (string, error) {
+	return "", ErrNoEligibleApprover
+}
+func (noApprovals) CancelRingBySubjectInTx(context.Context, pgx.Tx, audit.Actor, string, string) error {
+	return nil
+}
+func (noApprovals) RingForSubject(context.Context, string) ([]DeploymentApprovalInfo, error) {
+	return nil, nil
+}
 
 type noApprovers struct{}
 
