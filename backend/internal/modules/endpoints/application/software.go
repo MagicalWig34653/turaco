@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -53,17 +54,61 @@ func validHex64(s string) bool {
 	return true
 }
 
-// cleanHTTPSURL validates an absolute https URL with a host, without credentials or whitespace.
+// cleanHTTPSURL validates an absolute https URL with a public DNS host name: no credentials, whitespace,
+// IP literals, non-ASCII or IDN (punycode) labels, single-label names or names reserved for local networks.
+// Turaco only stores and shows the URL; the Software Management Provider downloads from it.
 func cleanHTTPSURL(raw string, max int) (string, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || len(raw) > max || !utf8.ValidString(raw) || strings.ContainsAny(raw, " \t\r\n\\\"<>`") || safetext.ContainsUnsafe(raw, false) {
 		return "", false
 	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] >= 0x80 {
+			return "", false
+		}
+	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" || !strings.HasPrefix(raw, "https://") {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Opaque != "" || !strings.HasPrefix(raw, "https://") ||
+		strings.Contains(u.Host, "@") || !publicHostName(u.Hostname()) {
 		return "", false
 	}
 	return raw, true
+}
+
+// localSuffixes are name suffixes of loopback, link-local and private networks.
+var localSuffixes = []string{".localhost", ".local", ".internal", ".intranet", ".lan", ".home", ".corp", ".home.arpa", ".localdomain", ".arpa"}
+
+// publicHostName reports an ASCII DNS name with at least two labels, a non-numeric top-level label, no IP
+// literal, no punycode label and no local-network name.
+func publicHostName(h string) bool {
+	h = strings.ToLower(strings.TrimSuffix(h, "."))
+	if h == "" || len(h) > 253 || net.ParseIP(h) != nil || strings.ContainsAny(h, "[]:%") || h == "localhost" {
+		return false
+	}
+	labels := strings.Split(h, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || strings.HasPrefix(l, "xn--") || l[0] == '-' || l[len(l)-1] == '-' {
+			return false
+		}
+		for _, r := range l {
+			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	tld := labels[len(labels)-1]
+	if strings.Trim(tld, "0123456789") == "" || strings.HasPrefix(tld, "0x") {
+		return false
+	}
+	for _, suf := range localSuffixes {
+		if strings.HasSuffix("."+h, suf) {
+			return false
+		}
+	}
+	return true
 }
 
 // cleanSoftwareLine validates a single line of at most max characters; empty means none.
@@ -200,6 +245,13 @@ func (s *Service) changeProduct(ctx context.Context, c Caller, p Principal, id s
 		if reason != "" {
 			meta["reason"] = reason
 		}
+		if op.to == ProductBlocked {
+			n, err := s.flagPublishingTx(ctx, tx, c, "", cur.ID, op.name)
+			if err != nil {
+				return err
+			}
+			meta["publishingPackagesFlagged"] = n
+		}
 		out = updated
 		return softwareAudit(ctx, tx, c, "endpoints.software_product."+op.audit, "software_product", cur.ID, productState(cur), productState(updated), meta)
 	})
@@ -230,7 +282,7 @@ func (s *Service) RegisterVersion(ctx context.Context, c Caller, p Principal, in
 	var out SoftwareVersion
 	var created bool
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		prod, err := s.store.LockProductTx(ctx, tx, v.ProductID)
+		prod, err := s.store.ShareProductTx(ctx, tx, v.ProductID)
 		if err != nil {
 			return err
 		}
@@ -344,7 +396,7 @@ func (s *Service) RequestVersionApproval(ctx context.Context, c Caller, p Princi
 		if err != nil {
 			return err
 		}
-		prod, err := s.store.LockProductTx(ctx, tx, cur.ProductID)
+		prod, err := s.store.ShareProductTx(ctx, tx, cur.ProductID)
 		if err != nil {
 			return err
 		}
@@ -378,7 +430,7 @@ func (s *Service) ApproveVersion(ctx context.Context, c Caller, p Principal, id 
 		if cur.RegisteredBy == c.Actor.UserID || (cur.RequestedBy != nil && *cur.RequestedBy == c.Actor.UserID) {
 			return ErrSeparationOfDuties
 		}
-		prod, err := s.store.LockProductTx(ctx, tx, cur.ProductID)
+		prod, err := s.store.ShareProductTx(ctx, tx, cur.ProductID)
 		if err != nil {
 			return err
 		}
@@ -441,6 +493,9 @@ func (s *Service) RevokeVersion(ctx context.Context, c Caller, p Principal, id, 
 		if out, err = s.recordVersionDecision(ctx, tx, c, cur, next, "revoke", "revoked", reason); err != nil {
 			return err
 		}
+		if _, err := s.flagPublishingTx(ctx, tx, c, cur.ID, "", "revoke"); err != nil {
+			return err
+		}
 		return publish(ctx, tx, c, EventSoftwareVersionRevoked, map[string]any{"versionId": out.ID, "productId": out.ProductID, "reason": reason})
 	})
 	return out, err
@@ -472,7 +527,25 @@ func (s *Service) ListSoftwareVersions(ctx context.Context, p Principal, f Softw
 		return SoftwareVersionResult{Items: []SoftwareVersion{}}, nil
 	}
 	f.Page = f.Page.Normalize()
-	return s.store.ListSoftwareVersions(ctx, f)
+	res, err := s.store.ListSoftwareVersions(ctx, f)
+	if err != nil {
+		return SoftwareVersionResult{}, err
+	}
+	for i := range res.Items {
+		res.Items[i] = redactVersion(p, res.Items[i])
+	}
+	return res, nil
+}
+
+// redactVersion removes the installer URL, install command and detection rule for a reader who holds only
+// software.view: they are operational detail of the installation, needed by approvers and packagers only.
+// The hashes stay, so the binding remains verifiable.
+func redactVersion(p Principal, v SoftwareVersion) SoftwareVersion {
+	if p.SoftwareApprove || p.SoftwarePackage {
+		return v
+	}
+	v.InstallerURL, v.InstallCommand, v.DetectionRule, v.DefinitionRedacted = "", "", "", true
+	return v
 }
 
 // GetSoftwareVersion returns a version with its approval history and packages. Requires a software permission.
@@ -495,7 +568,7 @@ func (s *Service) GetSoftwareVersion(ctx context.Context, p Principal, id string
 	if err != nil {
 		return SoftwareVersionDetail{}, err
 	}
-	return SoftwareVersionDetail{Version: v, Approvals: approvals, Packages: pkgs.Items}, nil
+	return SoftwareVersionDetail{Version: redactVersion(p, v), Approvals: approvals, Packages: pkgs.Items}, nil
 }
 
 // ListSoftwarePackages lists packages. Requires a software permission.

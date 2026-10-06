@@ -56,6 +56,10 @@ func (h *handler) softwareFail(w http.ResponseWriter, r *http.Request, err error
 		httpx.WriteError(w, http.StatusConflict, "endpoints.version_conflict", "The record was changed by someone else; reload and try again.")
 	case errors.Is(err, softwaremgmt.ErrNotConfigured):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.software_provider_not_configured", "The software management provider is not configured.")
+	case errors.Is(err, application.ErrSyncCooldown):
+		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.software_sync_cooldown", "The packages were synchronized a moment ago; try again shortly.")
+	case errors.Is(err, application.ErrRateLimited):
+		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.software_rate_limited", "Too many catalog searches; try again in a minute.")
 	case errors.Is(err, application.ErrSyncDisabled):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.software_sync_disabled", "Software package synchronization is not enabled.")
 	default:
@@ -100,11 +104,11 @@ type versionDTO struct {
 	ProductName          string  `json:"productName"`
 	ProductVersion       string  `json:"productVersion"`
 	InstallerSHA256      string  `json:"installerSha256"`
-	InstallerURL         string  `json:"installerUrl"`
+	InstallerURL         *string `json:"installerUrl"`
 	Publisher            *string `json:"publisher"`
-	InstallCommand       string  `json:"installCommand"`
+	InstallCommand       *string `json:"installCommand"`
 	InstallCommandSHA256 string  `json:"installCommandSha256"`
-	DetectionRule        string  `json:"detectionRule"`
+	DetectionRule        *string `json:"detectionRule"`
 	DetectionRuleSHA256  string  `json:"detectionRuleSha256"`
 	BindingSHA256        string  `json:"bindingSha256"`
 	RegisteredBy         string  `json:"registeredBy"`
@@ -118,10 +122,18 @@ type versionDTO struct {
 	CreatedAt            string  `json:"createdAt"`
 }
 
+// toVersion maps a version; installerUrl, installCommand and detectionRule are null when redacted for a reader
+// who holds software.view only.
 func toVersion(v application.SoftwareVersion) versionDTO {
+	def := func(s string) *string {
+		if v.DefinitionRedacted {
+			return nil
+		}
+		return &s
+	}
 	return versionDTO{ID: v.ID, ProductID: v.ProductID, ProductName: v.ProductName, ProductVersion: v.ProductVersion,
-		InstallerSHA256: v.InstallerSHA256, InstallerURL: v.InstallerURL, Publisher: v.Publisher, InstallCommand: v.InstallCommand,
-		InstallCommandSHA256: v.InstallCommandSHA256, DetectionRule: v.DetectionRule, DetectionRuleSHA256: v.DetectionRuleSHA256,
+		InstallerSHA256: v.InstallerSHA256, InstallerURL: def(v.InstallerURL), Publisher: v.Publisher, InstallCommand: def(v.InstallCommand),
+		InstallCommandSHA256: v.InstallCommandSHA256, DetectionRule: def(v.DetectionRule), DetectionRuleSHA256: v.DetectionRuleSHA256,
 		BindingSHA256: v.BindingSHA256, RegisteredBy: v.RegisteredBy, ApprovalStatus: v.ApprovalStatus, ApprovalReason: v.ApprovalReason,
 		RequestedBy: v.RequestedBy, RequestedAt: tsPtr(v.RequestedAt), DecidedBy: v.DecidedBy, DecidedAt: tsPtr(v.DecidedAt),
 		Version: v.Version, CreatedAt: ts(v.CreatedAt)}
@@ -155,6 +167,12 @@ type packageDTO struct {
 	ObservedAt                   *string `json:"observedAt"`
 	LastSyncedAt                 *string `json:"lastSyncedAt"`
 	PublishRequestedAt           *string `json:"publishRequestedAt"`
+	PackageAttempt               int     `json:"packageAttempt"`
+	PublishAttempt               int     `json:"publishAttempt"`
+	PublishedAt                  *string `json:"publishedAt"`
+	PublishedAfterRevoke         bool    `json:"publishedAfterRevoke"`
+	VersionRevoked               bool    `json:"versionRevoked"`
+	ProductBlocked               bool    `json:"productBlocked"`
 	Version                      int     `json:"version"`
 }
 
@@ -162,7 +180,9 @@ func toPackage(p application.SoftwarePackage) packageDTO {
 	return packageDTO{ID: p.ID, Provider: p.Provider, ProviderPackageID: p.ProviderPackageID, VersionID: p.VersionID, Status: p.Status,
 		InstallerSHA256: p.InstallerSHA256, HashMismatch: p.HashMismatch, ManagementProvider: p.ManagementProvider,
 		ManagementArtifactExternalID: p.ManagementArtifactExternalID, ManagementArtifactID: p.ManagementArtifactID, Source: p.Source,
-		ObservedAt: tsPtr(p.ObservedAt), LastSyncedAt: tsPtr(p.LastSyncedAt), PublishRequestedAt: tsPtr(p.PublishRequestedAt), Version: p.Version}
+		ObservedAt: tsPtr(p.ObservedAt), LastSyncedAt: tsPtr(p.LastSyncedAt), PublishRequestedAt: tsPtr(p.PublishRequestedAt),
+		PackageAttempt: p.PackageAttempt, PublishAttempt: p.PublishAttempt, PublishedAt: tsPtr(p.PublishedAt), PublishedAfterRevoke: p.PublishedAfterRevoke,
+		VersionRevoked: p.VersionRevoked, ProductBlocked: p.ProductBlocked, Version: p.Version}
 }
 
 func mapItems[T, D any](in []T, f func(T) D) []D {
@@ -394,5 +414,5 @@ func (h *handler) syncSoftwarePackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]int{"checked": res.Checked, "changed": res.Changed, "linked": res.Linked,
-		"findingsRaised": res.FindingsRaised, "findingsResolved": res.FindingsResolved})
+		"findingsRaised": res.FindingsRaised, "findingsResolved": res.FindingsResolved, "stale": res.Stale, "errors": res.Errors})
 }

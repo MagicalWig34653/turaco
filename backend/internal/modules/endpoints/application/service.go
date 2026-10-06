@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -46,6 +47,11 @@ type Service struct {
 	software       softwaremgmt.Provider
 	softwareKey    string
 	softwareSyncOn bool
+	// softwareSyncCooldown is the minimum time between the end of one package synchronization and a manual one.
+	softwareSyncCooldown time.Duration
+	// catalog limits catalog searches per user (guarded by catalogMu).
+	catalogMu sync.Mutex
+	catalog   catalogLimiter
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -58,7 +64,8 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 		provider = intune.NotConfigured{}
 	}
 	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
-		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey}
+		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
+		catalog: catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow}}
 }
 
 // WithSoftware sets the Software Management Provider (nil keeps "not configured") and switches the package

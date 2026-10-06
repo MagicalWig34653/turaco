@@ -40,7 +40,7 @@ func newSW(t *testing.T) *sw {
 	e := newEnv(t)
 	s := &sw{env: e, fake: softwaremgmt.NewFake(), approver: e.newID()}
 	s.fake.SetIDPrefix(strings.TrimPrefix(e.corr, "endpoints-") + "-")
-	e.svc.WithSoftware(s.fake, true).WithProviderKey(e.provider)
+	e.svc.WithSoftware(s.fake, true).WithProviderKey(e.provider).WithSoftwareSyncCooldown(0)
 	s.pkgr = application.Principal{UserID: e.user, SoftwarePackage: true}
 	s.appr = application.Principal{UserID: s.approver, SoftwareApprove: true}
 	s.viewer = application.Principal{UserID: e.user, SoftwareView: true}
@@ -208,9 +208,22 @@ func TestSoftwareVersionApprovalLifecycle(t *testing.T) {
 	if hv := s.register(changed); hv.ID == v.ID || hv.ID == nv.ID {
 		t.Fatal("changed hash must be a new version")
 	}
-	still, err := s.svc.GetSoftwareVersion(ctx, s.viewer, v.ID)
-	if err != nil || still.Version.ApprovalStatus != application.VersionApproved || still.Version.InstallerURL != ver(p.ID, hashA).InstallerURL {
+	still, err := s.svc.GetSoftwareVersion(ctx, s.appr, v.ID)
+	if err != nil || still.Version.ApprovalStatus != application.VersionApproved || still.Version.InstallerURL != ver(p.ID, hashA).InstallerURL ||
+		still.Version.DefinitionRedacted {
 		t.Fatalf("approved version changed: %v %+v", err, still.Version)
+	}
+	// A view-only reader gets the hashes but not the installer URL, command and rule.
+	viewed, err := s.svc.GetSoftwareVersion(ctx, s.viewer, v.ID)
+	if err != nil || !viewed.Version.DefinitionRedacted || viewed.Version.InstallerURL != "" || viewed.Version.InstallCommand != "" ||
+		viewed.Version.DetectionRule != "" || viewed.Version.InstallCommandSHA256 != still.Version.InstallCommandSHA256 {
+		t.Fatalf("view-only read not redacted: %v %+v", err, viewed.Version)
+	}
+	if list, err := s.svc.ListSoftwareVersions(ctx, s.viewer, application.SoftwareVersionFilter{ProductID: p.ID}); err != nil || len(list.Items) == 0 || !list.Items[0].DefinitionRedacted {
+		t.Fatalf("view-only list not redacted: %v", err)
+	}
+	if list, err := s.svc.ListSoftwareVersions(ctx, s.pkgr, application.SoftwareVersionFilter{ProductID: p.ID}); err != nil || len(list.Items) == 0 || list.Items[0].DefinitionRedacted {
+		t.Fatalf("packager list redacted: %v", err)
 	}
 
 	// Revoke needs a valid reason; the decision history is complete and bound to the hash.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -23,7 +24,15 @@ func scanProduct(row pgx.Row) (application.SoftwareProduct, error) {
 }
 
 func (r *Repository) LockProductTx(ctx context.Context, tx pgx.Tx, id string) (application.SoftwareProduct, error) {
-	p, err := scanProduct(tx.QueryRow(ctx, `SELECT `+productColumns+` FROM endpoints.software_products WHERE id = $1::uuid FOR UPDATE`, id))
+	return r.productTx(ctx, tx, id, "FOR NO KEY UPDATE")
+}
+
+func (r *Repository) ShareProductTx(ctx context.Context, tx pgx.Tx, id string) (application.SoftwareProduct, error) {
+	return r.productTx(ctx, tx, id, "FOR SHARE")
+}
+
+func (r *Repository) productTx(ctx context.Context, tx pgx.Tx, id, lock string) (application.SoftwareProduct, error) {
+	p, err := scanProduct(tx.QueryRow(ctx, `SELECT `+productColumns+` FROM endpoints.software_products WHERE id = $1::uuid `+lock, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.SoftwareProduct{}, application.ErrNotFound
 	}
@@ -151,7 +160,15 @@ func (r *Repository) InsertVersionTx(ctx context.Context, tx pgx.Tx, v applicati
 }
 
 func (r *Repository) LockVersionTx(ctx context.Context, tx pgx.Tx, id string) (application.SoftwareVersion, error) {
-	v, err := scanVersion(tx.QueryRow(ctx, `SELECT `+versionColumns+versionFrom+` WHERE v.id = $1::uuid FOR UPDATE OF v`, id))
+	return r.versionTx(ctx, tx, id, "FOR NO KEY UPDATE OF v")
+}
+
+func (r *Repository) ShareVersionTx(ctx context.Context, tx pgx.Tx, id string) (application.SoftwareVersion, error) {
+	return r.versionTx(ctx, tx, id, "FOR SHARE OF v")
+}
+
+func (r *Repository) versionTx(ctx context.Context, tx pgx.Tx, id, lock string) (application.SoftwareVersion, error) {
+	v, err := scanVersion(tx.QueryRow(ctx, `SELECT `+versionColumns+versionFrom+` WHERE v.id = $1::uuid `+lock, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.SoftwareVersion{}, application.ErrNotFound
 	}
@@ -274,14 +291,19 @@ func (r *Repository) ListSoftwareVersions(ctx context.Context, f application.Sof
 
 const packageColumns = `id::text, provider, provider_package_id, software_version_id::text, status, installer_sha256, management_provider,
 	management_artifact_external_id, management_artifact_id::text, source, observed_at, last_synced_at, requested_by::text,
-	publish_requested_by::text, publish_requested_at, version, created_at, updated_at,
-	EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.software_package_id = endpoints.software_packages.id AND f.status = 'open' AND f.kind = 'package_hash_mismatch')`
+	publish_requested_by::text, publish_requested_at, package_attempt, publish_attempt, published_at, version, created_at, updated_at,
+	EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.software_package_id = endpoints.software_packages.id AND f.status = 'open' AND f.kind = 'package_hash_mismatch'),
+	EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.software_package_id = endpoints.software_packages.id AND f.status = 'open' AND f.kind = 'package_published_after_revoke'),
+	EXISTS (SELECT 1 FROM endpoints.software_versions sv WHERE sv.id = endpoints.software_packages.software_version_id AND sv.approval_status = 'revoked'),
+	EXISTS (SELECT 1 FROM endpoints.software_versions sv JOIN endpoints.software_products sp ON sp.id = sv.software_product_id
+		WHERE sv.id = endpoints.software_packages.software_version_id AND sp.approval_status = 'blocked')`
 
 func scanPackage(row pgx.Row) (application.SoftwarePackage, error) {
 	var p application.SoftwarePackage
 	err := row.Scan(&p.ID, &p.Provider, &p.ProviderPackageID, &p.VersionID, &p.Status, &p.InstallerSHA256, &p.ManagementProvider,
 		&p.ManagementArtifactExternalID, &p.ManagementArtifactID, &p.Source, &p.ObservedAt, &p.LastSyncedAt, &p.RequestedBy,
-		&p.PublishRequestedBy, &p.PublishRequestedAt, &p.Version, &p.CreatedAt, &p.UpdatedAt, &p.HashMismatch)
+		&p.PublishRequestedBy, &p.PublishRequestedAt, &p.PackageAttempt, &p.PublishAttempt, &p.PublishedAt, &p.Version, &p.CreatedAt, &p.UpdatedAt,
+		&p.HashMismatch, &p.PublishedAfterRevoke, &p.VersionRevoked, &p.ProductBlocked)
 	return p, err
 }
 
@@ -297,16 +319,30 @@ func (r *Repository) InsertPackageTx(ctx context.Context, tx pgx.Tx, provider, v
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return application.SoftwarePackage{}, false, fmt.Errorf("insert software package: %w", err)
 	}
-	p, err = scanPackage(tx.QueryRow(ctx, `SELECT `+packageColumns+` FROM endpoints.software_packages WHERE provider = $1 AND software_version_id = $2::uuid FOR UPDATE`,
-		provider, versionID))
+	p, found, err := r.LockPackageOfVersionTx(ctx, tx, provider, versionID)
+	if err == nil && !found {
+		err = pgx.ErrNoRows
+	}
 	if err != nil {
 		return application.SoftwarePackage{}, false, fmt.Errorf("read software package: %w", err)
 	}
 	return p, false, nil
 }
 
+func (r *Repository) LockPackageOfVersionTx(ctx context.Context, tx pgx.Tx, provider, versionID string) (application.SoftwarePackage, bool, error) {
+	p, err := scanPackage(tx.QueryRow(ctx, `SELECT `+packageColumns+` FROM endpoints.software_packages WHERE provider = $1 AND software_version_id = $2::uuid FOR NO KEY UPDATE`,
+		provider, versionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.SoftwarePackage{}, false, nil
+	}
+	if err != nil {
+		return application.SoftwarePackage{}, false, fmt.Errorf("lock software package of version: %w", err)
+	}
+	return p, true, nil
+}
+
 func (r *Repository) LockPackageTx(ctx context.Context, tx pgx.Tx, id string) (application.SoftwarePackage, error) {
-	p, err := scanPackage(tx.QueryRow(ctx, `SELECT `+packageColumns+` FROM endpoints.software_packages WHERE id = $1::uuid FOR UPDATE`, id))
+	p, err := scanPackage(tx.QueryRow(ctx, `SELECT `+packageColumns+` FROM endpoints.software_packages WHERE id = $1::uuid FOR NO KEY UPDATE`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.SoftwarePackage{}, application.ErrNotFound
 	}
@@ -320,14 +356,58 @@ func (r *Repository) UpdatePackageTx(ctx context.Context, tx pgx.Tx, p applicati
 	out, err := scanPackage(tx.QueryRow(ctx, `
 		UPDATE endpoints.software_packages SET provider_package_id = $2, status = $3, installer_sha256 = $4, management_provider = $5,
 			management_artifact_external_id = $6, management_artifact_id = $7::uuid, source = $8, observed_at = $9, last_synced_at = $10,
-			publish_requested_by = $11::uuid, publish_requested_at = $12, version = version + 1, updated_at = now()
+			publish_requested_by = $11::uuid, publish_requested_at = $12, package_attempt = $13, publish_attempt = $14, published_at = $15,
+			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+packageColumns,
 		p.ID, p.ProviderPackageID, p.Status, p.InstallerSHA256, p.ManagementProvider, p.ManagementArtifactExternalID, p.ManagementArtifactID,
-		p.Source, p.ObservedAt, p.LastSyncedAt, p.PublishRequestedBy, p.PublishRequestedAt))
+		p.Source, p.ObservedAt, p.LastSyncedAt, p.PublishRequestedBy, p.PublishRequestedAt, p.PackageAttempt, p.PublishAttempt, p.PublishedAt))
 	if err != nil {
 		return application.SoftwarePackage{}, fmt.Errorf("update software package: %w", err)
 	}
 	return out, nil
+}
+
+func (r *Repository) TouchPackageTx(ctx context.Context, tx pgx.Tx, id string, observedAt *time.Time, source string, lastSyncedAt *time.Time) (application.SoftwarePackage, error) {
+	out, err := scanPackage(tx.QueryRow(ctx, `
+		UPDATE endpoints.software_packages SET observed_at = coalesce($2, observed_at), source = $3, last_synced_at = coalesce($4, last_synced_at)
+		WHERE id = $1::uuid RETURNING `+packageColumns, id, observedAt, source, lastSyncedAt))
+	if err != nil {
+		return application.SoftwarePackage{}, fmt.Errorf("touch software package: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repository) PackageIDByArtifactTx(ctx context.Context, tx pgx.Tx, managementProvider, externalID string) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id::text FROM endpoints.software_packages WHERE management_provider = $1 AND management_artifact_external_id = $2`,
+		managementProvider, externalID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find software package by artifact: %w", err)
+	}
+	return id, nil
+}
+
+func (r *Repository) PublishingPackagesTx(ctx context.Context, tx pgx.Tx, versionID, productID string) ([]string, error) {
+	q := `SELECT pk.id::text FROM endpoints.software_packages pk WHERE pk.software_version_id = $1::uuid`
+	arg := versionID
+	if versionID == "" {
+		q = `SELECT pk.id::text FROM endpoints.software_packages pk JOIN endpoints.software_versions v ON v.id = pk.software_version_id
+			WHERE v.software_product_id = $1::uuid`
+		arg = productID
+	}
+	rows, err := tx.Query(ctx, q+` AND pk.publish_requested_at IS NOT NULL AND pk.published_at IS NULL
+		AND (pk.observed_at IS NULL OR pk.observed_at < pk.publish_requested_at) ORDER BY pk.id LIMIT 1000`, arg)
+	if err != nil {
+		return nil, fmt.Errorf("list publishing software packages: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("list publishing software packages: %w", err)
+	}
+	return ids, nil
 }
 
 func (r *Repository) AppendPackageObservationTx(ctx context.Context, tx pgx.Tx, o application.PackageObservation) error {
@@ -396,7 +476,9 @@ func (r *Repository) RecordProviderReferenceTx(ctx context.Context, tx pgx.Tx, p
 	if err != nil {
 		return err
 	}
-	if ref.ExternalID != nil && *ref.ExternalID == providerPackageID && ref.SyncState == externalrefs.StateSynced {
+	if ref.ExternalID != nil && (*ref.ExternalID != providerPackageID || ref.SyncState == externalrefs.StateSynced) {
+		// The reference is set once: a retry after a failed attempt may get another provider package id, which
+		// the package row and its observation history carry.
 		return nil
 	}
 	return externalrefs.MarkSynced(ctx, tx, ref.ID, providerPackageID, ref.Version)
