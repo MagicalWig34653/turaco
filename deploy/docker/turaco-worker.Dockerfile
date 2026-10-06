@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=
 # Operator CLI (first administrator, emergency account); run with docker exec.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/turaco-admin ./backend/cmd/turaco-admin
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN addgroup -S app && adduser -S -G app app
 COPY --from=build /out/turaco-worker /usr/local/bin/turaco-worker
 COPY --from=build /out/turaco-admin /usr/local/bin/turaco-admin
