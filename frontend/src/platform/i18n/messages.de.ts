@@ -2304,6 +2304,10 @@ export const de: Record<MessageKey, string> = {
   'security.summaryCounts': 'Befundzahlen',
   'security.unmatchedCriteria': 'Nicht zugeordnete Kriterien',
   'security.criteriaNotEvaluated': '{count} Kriterien nicht ausgewertet',
+  'security.criteriaIncomplete': 'Kriterien unvollständig ({count} ausgelassen)',
+  'security.criteriaChangedUpstream': 'Kriterien upstream geändert',
+  'security.actionWarningIncomplete':
+    'Der Feed hat betroffene Software in den Kriterien ausgelassen. Behandeln Sie die Kriterien nicht als vollständig; prüfen Sie die Quelle, bevor Sie sich auf diese Entscheidung verlassen.',
   'security.knownExploited': 'Aktiv ausgenutzt',
   'security.knownExploitedDue': 'Aktiv ausgenutzt, fällig {date}',
   'security.actionWarningUnmatched':

@@ -82,3 +82,21 @@ func TestFindingDTOUsesRedactedDevice(t *testing.T) {
 		t.Fatalf("bad redaction DTO: %+v", out)
 	}
 }
+
+func TestResolvingAnAdvisoryWithIncompleteCriteriaWarns(t *testing.T) {
+	h := &handler{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/security/advisories/x/not-applicable", nil)
+	h.advisoryResponse(rec, req, application.Advisory{ID: "x", CriteriaIncomplete: true, CriteriaSkipped: 3}, nil)
+	var body struct {
+		Warnings           []string `json:"warnings"`
+		CriteriaIncomplete bool     `json:"criteriaIncomplete"`
+		CriteriaSkipped    int      `json:"criteriaSkipped"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.CriteriaIncomplete || body.CriteriaSkipped != 3 || len(body.Warnings) != 1 || body.Warnings[0] != "criteria_incomplete" {
+		t.Fatalf("%s", rec.Body.String())
+	}
+}

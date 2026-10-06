@@ -55,9 +55,13 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Version == "" {
 		cfg.Version = "dev"
 	}
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = &http.Client{}
+	hc := &http.Client{}
+	if cfg.HTTPClient != nil {
+		cp := *cfg.HTTPClient
+		hc = &cp
 	}
+	hc.CheckRedirect = advisories.SameHostHTTPS
+	cfg.HTTPClient = hc
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = 30 * time.Second
 	}

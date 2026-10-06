@@ -31,7 +31,8 @@ type fakeNVD struct {
 func (f *fakeNVD) Sync(_ context.Context, since time.Time) (advisories.SyncResult, error) {
 	f.since = since
 	if f.err != nil {
-		return advisories.SyncResult{}, f.err
+		// Progress made before the error (records read, windows completed) is reported with it.
+		return advisories.SyncResult{Records: f.records, Through: f.through}, f.err
 	}
 	return advisories.SyncResult{Records: f.records, Through: f.through, Complete: true}, nil
 }
@@ -176,8 +177,8 @@ func TestAdvisorySyncJobImportsIdempotentlyAndEnrichesKEV(t *testing.T) {
 	versionA, _ := readKEV(t, pool, a)
 	nvd.since = time.Time{}
 	runSyncJob(t, svc, "")
-	if !nvd.since.Equal(through) {
-		t.Fatalf("the next run starts at the cursor: %v", nvd.since)
+	if !nvd.since.Equal(through.Add(-securityapp.FeedOverlap)) {
+		t.Fatalf("the next run starts at the cursor minus the overlap: %v", nvd.since)
 	}
 	if got, _ := readKEV(t, pool, a); got.version != versionA.version {
 		t.Fatalf("an unchanged run must not touch advisories: version %d -> %d", versionA.version, got.version)
@@ -204,6 +205,10 @@ func TestAdvisorySyncJobImportsIdempotentlyAndEnrichesKEV(t *testing.T) {
 
 	// When every KEV CVE has an advisory the ETag is kept and the next catalog read is conditional.
 	nvd.byID[missing] = feedRecord(missing, mod)
+	// The failed by-id fetch of D is skipped for a week; simulate the wait.
+	if _, err := pool.Exec(ctx, `UPDATE security.feed_state SET kev_miss = '{}' WHERE source = 'cisa_kev'`); err != nil {
+		t.Fatal(err)
+	}
 	nvd.records = nil
 	runSyncJob(t, svc, `{"sources":["cisa_kev"]}`)
 	if err := pool.QueryRow(ctx, `SELECT etag FROM security.feed_state WHERE source = 'cisa_kev'`).Scan(&etag); err != nil || etag == nil || *etag != `"v1"` {

@@ -26,8 +26,15 @@ const DefaultBaseURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 const (
 	// MaxWindow is the longest lastMod window NVD accepts.
 	MaxWindow = 120 * 24 * time.Hour
-	// MinWindow is the smallest window the client splits to when a window holds more records than the bound.
+	// MinWindow is the smallest window the client splits to while a window holds more records than the
+	// per-run bound. A window of at most MinWindow is read completely up to MaxRecords*WindowBoundFactor
+	// records (a larger bound for that one window, so the cursor can always advance); a window above even
+	// that is split further, down to MinSplit.
 	MinWindow = time.Hour
+	// WindowBoundFactor multiplies the per-run bound for a window of at most MinWindow.
+	WindowBoundFactor = 5
+	// MinSplit is the smallest window; a window this small above the enlarged bound is an invalid response.
+	MinSplit = time.Second
 
 	maxResultsPerPage = 2000
 	rateWindow        = 30 * time.Second
@@ -41,15 +48,18 @@ type Config struct {
 	// APIKey is sent as the apiKey header and lifts the rate limit to 50 requests per 30 s. It is never logged.
 	APIKey string
 	// Version is shown in the User-Agent "turaco/<version>" (default "dev").
-	Version        string
-	HTTPClient     *http.Client
-	Clock          Clock
-	RequestTimeout time.Duration // default 30 s
-	MaxResponse    int64         // bytes per response, default 32 MiB
-	MaxRecords     int           // records per Sync, default 2000
-	PageSize       int           // resultsPerPage, default 500, at most 2000
-	MaxRetries     int           // retries per request, default 3
-	BackoffBase    time.Duration // default 2 s, doubled per retry
+	Version string
+	// AllowInsecureHTTP permits a plain http base URL (tests with httptest only). Without it the base URL
+	// must be https, because the API key travels in a request header.
+	AllowInsecureHTTP bool
+	HTTPClient        *http.Client
+	Clock             Clock
+	RequestTimeout    time.Duration // default 30 s
+	MaxResponse       int64         // bytes per response, default 32 MiB
+	MaxRecords        int           // records per Sync, default 2000
+	PageSize          int           // resultsPerPage, default 500, at most 2000
+	MaxRetries        int           // retries per request, default 3
+	BackoffBase       time.Duration // default 2 s, doubled per retry
 }
 
 // Client reads NVD. It is safe for concurrent use; all requests share one rate limiter.
@@ -67,15 +77,23 @@ func New(cfg Config) (*Client, error) {
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
 		return nil, errors.New("nvd: invalid base URL")
 	}
+	if u.Scheme != "https" && !cfg.AllowInsecureHTTP {
+		return nil, errors.New("nvd: the base URL must use https")
+	}
 	if strings.ContainsAny(cfg.APIKey, "\r\n") {
 		return nil, errors.New("nvd: invalid API key")
 	}
 	if cfg.Version == "" {
 		cfg.Version = "dev"
 	}
-	if cfg.HTTPClient == nil {
-		cfg.HTTPClient = &http.Client{}
+	// The client never follows a redirect to another host (or to plain http): the API key is a header.
+	hc := &http.Client{}
+	if cfg.HTTPClient != nil {
+		cp := *cfg.HTTPClient
+		hc = &cp
 	}
+	hc.CheckRedirect = advisories.SameHostHTTPS
+	cfg.HTTPClient = hc
 	if cfg.Clock == nil {
 		cfg.Clock = realClock{}
 	}
@@ -117,8 +135,10 @@ func (c *Client) Advisories(ctx context.Context, since time.Time) ([]advisories.
 }
 
 // Sync reads the CVEs modified since the given time (zero: the last MaxWindow) up to the present, window
-// by window. A window holding more records than the remaining bound is halved (down to MinWindow); when
-// the bound is reached the result is incomplete and Through marks where the next run continues.
+// by window. A window holding more records than the remaining bound is halved; a window of at most
+// MinWindow is read with an enlarged bound (see MinWindow), so Through always advances. When the bound is
+// reached the result is incomplete and Through marks where the next run continues. On an error the result
+// holds the records read so far and Through of the last completely read window.
 func (c *Client) Sync(ctx context.Context, since time.Time) (advisories.SyncResult, error) {
 	end := c.cfg.Clock.Now().UTC().Truncate(time.Second)
 	if since.IsZero() || since.After(end) {
@@ -137,14 +157,19 @@ func (c *Client) Sync(ctx context.Context, since time.Time) (advisories.SyncResu
 		if err != nil {
 			return res, err
 		}
-		if first.TotalResults > c.cfg.MaxRecords-len(res.Records) {
+		limit := c.cfg.MaxRecords - len(res.Records)
+		if winEnd.Sub(start) <= MinWindow && len(res.Records) == 0 {
+			// The per-run bound would stall the cursor here; read this window with the enlarged bound.
+			limit = c.cfg.MaxRecords * WindowBoundFactor
+		}
+		if first.TotalResults > limit {
 			if len(res.Records) > 0 {
 				return res, nil
 			}
-			if winEnd.Sub(start) <= MinWindow {
-				return res, fmt.Errorf("%w: a %s window holds %d records, above the bound of %d", advisories.ErrInvalidResponse, MinWindow, first.TotalResults, c.cfg.MaxRecords)
+			if winEnd.Sub(start) <= MinSplit {
+				return res, fmt.Errorf("%w: a %s window holds %d records, above the bound of %d", advisories.ErrInvalidResponse, MinSplit, first.TotalResults, limit)
 			}
-			span = max(MinWindow, winEnd.Sub(start)/2)
+			span = max(MinSplit, winEnd.Sub(start)/2)
 			continue
 		}
 		page, fetched := first, 0

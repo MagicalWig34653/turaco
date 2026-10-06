@@ -57,6 +57,9 @@ func runSecurity(ctx context.Context, e env, command string, args []string) erro
 	return json.NewEncoder(e.stdout).Encode(result)
 }
 
+// syncFeedsTimeout bounds the foreground sync run of the admin command.
+const syncFeedsTimeout = 30 * time.Minute
+
 // runSyncFeeds runs the advisory feed synchronization once, in the foreground, with the same code and
 // bounds as the worker job: turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD].
 // Sources come from ADVISORY_SOURCES; NVD_API_KEY_FILE is honored. The result is printed as JSON.
@@ -86,6 +89,8 @@ func runSyncFeeds(ctx context.Context, e env, args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(ctx, syncFeedsTimeout)
+	defer cancel()
 	results, err := service.SyncFeeds(ctx, securityapp.Caller{Actor: e.auditActor(), CorrelationID: fmt.Sprintf("security-sync:%d", time.Now().UnixNano())}, payload)
 	if encErr := json.NewEncoder(e.stdout).Encode(results); encErr != nil && err == nil {
 		err = encErr

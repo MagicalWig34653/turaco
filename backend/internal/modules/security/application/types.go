@@ -185,6 +185,13 @@ type Advisory struct {
 	MatchTruncated     bool
 	EditedByUser       bool
 	UnmatchedCriteria  int
+	// CriteriaIncomplete is set when the feed adapter had to leave affected software out
+	// (CriteriaSkipped counts it); analysts must not treat the criteria as complete.
+	CriteriaIncomplete bool
+	CriteriaSkipped    int
+	// CriteriaChangedUpstream is set when the feed reported different criteria for an advisory whose
+	// criteria the feed no longer changes (analyst decision taken); an analyst review clears it.
+	CriteriaChangedUpstream bool
 	// KnownExploited and its dates are set only by the CISA KEV enrichment of the feed sync.
 	KnownExploited        bool
 	KnownExploitedAddedAt *time.Time

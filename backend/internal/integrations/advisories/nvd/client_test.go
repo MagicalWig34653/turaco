@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func fixture(t *testing.T, name string) []byte {
 func newClient(t *testing.T, srv *httptest.Server, mod func(*Config)) (*Client, *fakeClock) {
 	t.Helper()
 	clock := &fakeClock{now: t0}
-	cfg := Config{BaseURL: srv.URL, HTTPClient: srv.Client(), Clock: clock, Version: "1.2.3", BackoffBase: time.Second}
+	cfg := Config{BaseURL: srv.URL, HTTPClient: srv.Client(), Clock: clock, Version: "1.2.3", BackoffBase: time.Second, AllowInsecureHTTP: true}
 	if mod != nil {
 		mod(&cfg)
 	}
@@ -273,7 +274,7 @@ func TestWindowIsSplitWhenOverBoundAndRunStopsAtBound(t *testing.T) {
 
 func TestWindowTooLargeAtMinimumFails(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"totalResults":50,"vulnerabilities":[]}`))
+		_, _ = w.Write([]byte(`{"totalResults":51,"vulnerabilities":[]}`))
 	}))
 	defer srv.Close()
 	c, _ := newClient(t, srv, func(cfg *Config) { cfg.MaxRecords = 10 })
@@ -462,7 +463,7 @@ func TestUnconstrainedMatchWidensTheProduct(t *testing.T) {
 		{Vulnerable: true, Criteria: "cpe:2.3:a:v:p:*:*:*:*:*:*:*:*", VersionEndExcluding: "2.0"},
 		{Vulnerable: true, Criteria: "cpe:2.3:a:v:p:*:*:*:*:*:*:*:*"},
 	}}}}}
-	got := criteria(cfg)
+	got, _ := criteria(cfg)
 	if len(got) != 1 || len(got[0].Rules) != 0 {
 		t.Fatalf("%v", got)
 	}
@@ -508,5 +509,104 @@ func TestInvalidConfig(t *testing.T) {
 	}
 	if _, err := New(Config{APIKey: "a\nb"}); err == nil {
 		t.Fatal("bad key accepted")
+	}
+}
+
+func TestMinimumWindowAboveBoundIsReadWithEnlargedBoundAndAdvances(t *testing.T) {
+	// 30 records in a 30 minute window with a per-run bound of 10: the window is read completely (bound
+	// x WindowBoundFactor = 50) so Through reaches the window end and the cursor can advance.
+	const total = 30
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		start, _ := strconv.Atoi(q.Get("startIndex"))
+		per, _ := strconv.Atoi(q.Get("resultsPerPage"))
+		var items []string
+		for i := start; i < min(start+per, total); i++ {
+			items = append(items, fmt.Sprintf(`{"cve":{"id":"CVE-2026-%04d","descriptions":[{"lang":"en","value":"d"}]}}`, 3000+i))
+		}
+		_, _ = fmt.Fprintf(w, `{"totalResults":%d,"vulnerabilities":[%s]}`, total, strings.Join(items, ","))
+	}))
+	defer srv.Close()
+	c, _ := newClient(t, srv, func(cfg *Config) { cfg.MaxRecords = 10; cfg.PageSize = 7 })
+	res, err := c.Sync(context.Background(), t0.Add(-30*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Records) != total || !res.Complete || !res.Through.Equal(t0) {
+		t.Fatalf("records %d complete %v through %v", len(res.Records), res.Complete, res.Through)
+	}
+}
+
+func TestErrorKeepsProgressOfCompletedWindowsAndPages(t *testing.T) {
+	// First window (120 days) answers; the second window fails: the records of the first stay in the
+	// result together with Through = end of the first window.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("lastModStartDate") == "2026-04-04T12:00:00.000+00:00" {
+			_, _ = w.Write([]byte(`{"totalResults":1,"vulnerabilities":[{"cve":{"id":"CVE-2026-4001","descriptions":[{"lang":"en","value":"d"}]}}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	c, _ := newClient(t, srv, nil)
+	res, err := c.Sync(context.Background(), t0.Add(-180*24*time.Hour))
+	if err == nil || len(res.Records) != 1 || res.Complete {
+		t.Fatalf("err %v records %d complete %v", err, len(res.Records), res.Complete)
+	}
+	if want := t0.Add(-180 * 24 * time.Hour).Add(MaxWindow); !res.Through.Equal(want) {
+		t.Fatalf("through %v, want %v", res.Through, want)
+	}
+}
+
+func TestRedirectToAnotherHostNeverReceivesTheAPIKey(t *testing.T) {
+	var leaked atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("apiKey") != "" {
+			leaked.Add(1)
+		}
+		_, _ = w.Write([]byte(`{"totalResults":0,"vulnerabilities":[]}`))
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/x", http.StatusFound)
+	}))
+	defer srv.Close()
+	c, _ := newClient(t, srv, func(cfg *Config) { cfg.APIKey = "secret-key"; cfg.HTTPClient = &http.Client{} })
+	if _, err := c.ByID(context.Background(), []string{"CVE-2026-0001"}); !errors.Is(err, advisories.ErrUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	if leaked.Load() != 0 {
+		t.Fatal("the API key was sent to another host")
+	}
+}
+
+func TestPlainHTTPNeedsTheExplicitOption(t *testing.T) {
+	if _, err := New(Config{BaseURL: "http://nvd.example/rest", APIKey: "k"}); err == nil {
+		t.Fatal("http base URL with an API key accepted")
+	}
+	if _, err := New(Config{BaseURL: "http://nvd.example/rest"}); err == nil {
+		t.Fatal("http base URL accepted without the explicit option")
+	}
+	if _, err := New(Config{BaseURL: "https://nvd.example/rest", APIKey: "k"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCriteriaCountsWhatItSkips(t *testing.T) {
+	var nodes []node
+	for i := 0; i < 55; i++ {
+		nodes = append(nodes, node{CPEMatch: []cpeMatch{{Vulnerable: true, Criteria: fmt.Sprintf("cpe:2.3:a:v%d:p%d:1.0:*:*:*:*:*:*:*", i, i)}}})
+	}
+	nodes = append(nodes, node{CPEMatch: []cpeMatch{{Vulnerable: true, Criteria: "cpe:2.3:a:v0:p0:*:*:*:*:*:*:*:*", VersionEndExcluding: "1 0 bad"}}})
+	got, skipped := criteria([]configuration{{Nodes: nodes}})
+	if len(got) != maxCriteria || skipped != 6 {
+		t.Fatalf("criteria %d skipped %d", len(got), skipped)
+	}
+	rec, ok := toRecord(cve{ID: "CVE-2026-0007", Configurations: []configuration{{Nodes: nodes}}})
+	if !ok || rec.CriteriaSkipped != 6 {
+		t.Fatalf("record skipped %d", rec.CriteriaSkipped)
+	}
+	if _, skipped := criteria([]configuration{{Nodes: nodes[:3]}}); skipped != 0 {
+		t.Fatalf("complete criteria reported %d skipped", skipped)
 	}
 }

@@ -78,6 +78,9 @@ export type Advisory = {
   matchedIngestionAt: string | null;
   matchTruncated: boolean;
   unmatchedCriteria: number;
+  criteriaIncomplete: boolean;
+  criteriaSkipped: number;
+  criteriaChangedUpstream: boolean;
   knownExploited: boolean;
   knownExploitedAddedAt: string | null;
   kevDueDate: string | null;

@@ -35,6 +35,18 @@ const (
 	DefaultFeedStart = 30 * 24 * time.Hour
 	// DefaultKEVFetchPerRun bounds the NVD by-id requests that create advisories for KEV CVEs per run.
 	DefaultKEVFetchPerRun = 50
+	// FeedOverlap is how far before the cursor a run starts reading again; imports are idempotent, so the
+	// overlap only protects against records NVD publishes late with an older modification time.
+	FeedOverlap = 2 * time.Hour
+	// KEVMissRetry is how long a KEV CVE that NVD could not provide is skipped by the by-id fetch, so
+	// unfetchable ids cannot starve the others.
+	KEVMissRetry = 7 * 24 * time.Hour
+	// Plausibility bounds of the KEV catalog: more entries than KEVMaxEntries or than the last accepted
+	// catalog plus KEVMaxGrowth, or more than KEVMaxNewlyFlagged newly flagged advisories in one run,
+	// abort the enrichment (FeedErrKEVImplausible).
+	KEVMaxEntries      = 5000
+	KEVMaxGrowth       = 200
+	KEVMaxNewlyFlagged = 500
 	// FeedStaleAfter is the age of the last success after which the feed counts as stale in the briefing.
 	FeedStaleAfter = 48 * time.Hour
 )
@@ -76,7 +88,17 @@ type FeedState struct {
 	LastSuccessAt *time.Time
 	LastAttemptAt *time.Time
 	LastError     string
+	// LeaseToken identifies the run that claimed the source; only that run may finish it.
+	LeaseToken string
+	// KEVMiss maps KEV CVE ids NVD could not provide to the time of the failed fetch; KEVCount is the size
+	// of the last accepted KEV catalog.
+	KEVMiss  map[string]time.Time
+	KEVCount int
 }
+
+// ErrFeedLeaseLost is returned by FinishFeed when another run took the source over (the lease of the
+// finishing run had expired); the late run records nothing.
+var ErrFeedLeaseLost = errors.New("security: feed lease lost")
 
 // FeedFinish is the outcome a run records. A nil Cursor or ETag keeps the stored value; an empty ETag clears it.
 type FeedFinish struct {
@@ -84,6 +106,9 @@ type FeedFinish struct {
 	ETag      *string
 	Success   bool
 	ErrorCode string
+	// KEVMiss and KEVCount replace the stored KEV state when set.
+	KEVMiss  *map[string]time.Time
+	KEVCount *int
 }
 
 // KEVEntry is one Known Exploited Vulnerabilities enrichment to apply.
@@ -95,7 +120,7 @@ type KEVEntry struct {
 
 type feedStore interface {
 	ClaimFeed(ctx context.Context, source string, lease time.Duration) (FeedState, bool, error)
-	FinishFeed(ctx context.Context, source string, f FeedFinish) error
+	FinishFeed(ctx context.Context, source, leaseToken string, f FeedFinish) error
 	FeedStates(ctx context.Context) ([]FeedState, error)
 	MissingExternalIDs(ctx context.Context, source string, ids []string) ([]string, error)
 	ApplyKEVTx(ctx context.Context, tx pgx.Tx, entries []KEVEntry) ([]string, error)
@@ -109,6 +134,8 @@ const (
 	FeedErrTimeout     = "timeout"
 	FeedErrImport      = "import_failed"
 	FeedErrFailed      = "failed"
+	// FeedErrKEVImplausible aborts a KEV enrichment whose catalog or effect is implausibly large.
+	FeedErrKEVImplausible = "kev_catalog_implausible"
 )
 
 func feedErrorCode(err error) string {
@@ -239,7 +266,11 @@ func (s *Service) syncSource(ctx context.Context, store feedStore, c Caller, src
 	// The outcome is recorded even when the run was cancelled; the lease must be released.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := store.FinishFeed(rctx, src, fin); err != nil {
+	if err := store.FinishFeed(rctx, src, st.LeaseToken, fin); err != nil {
+		if errors.Is(err, ErrFeedLeaseLost) {
+			slog.WarnContext(ctx, "advisory feed lease lost; the late run records nothing", "source", src)
+			return res, nil
+		}
 		return res, err
 	}
 	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errFeedInternal) {
@@ -258,27 +289,28 @@ func (s *Service) runNVD(ctx context.Context, c Caller, st FeedState, p Advisory
 	if st.Cursor != "" {
 		if t, err := time.Parse(time.RFC3339, st.Cursor); err == nil {
 			stored = t
-			since = t
+			since = t.Add(-FeedOverlap)
 		}
 	}
 	if p.Since != nil {
 		since = p.Since.UTC()
 	}
-	sync, err := s.feeds.NVD.Sync(ctx, since)
-	if err != nil {
-		return FeedFinish{}, err
-	}
-	res.Fetched, res.Complete = len(sync.Records), sync.Complete
-	if err := s.importRecords(ctx, c, sync.Records, &res.Import); err != nil {
-		return FeedFinish{ErrorCode: FeedErrImport}, fmt.Errorf("%w: %w", errFeedInternal, err)
+	sync, syncErr := s.feeds.NVD.Sync(ctx, since)
+	// The records read before an error are imported and the cursor advances to the last completely read
+	// window, so a failing run keeps its progress.
+	res.Fetched, res.Complete = len(sync.Records), sync.Complete && syncErr == nil
+	if len(sync.Records) > 0 {
+		if err := s.importRecords(ctx, c, sync.Records, &res.Import); err != nil {
+			return FeedFinish{ErrorCode: FeedErrImport}, fmt.Errorf("%w: %w", errFeedInternal, err)
+		}
 	}
 	// An explicit earlier start (backfill) never moves the cursor backwards.
-	through := sync.Through.UTC()
-	if through.After(stored) {
+	fin := FeedFinish{}
+	if through := sync.Through.UTC(); !through.IsZero() && through.After(stored) {
 		cursor := through.Format(time.RFC3339)
-		return FeedFinish{Cursor: &cursor}, nil
+		fin.Cursor = &cursor
 	}
-	return FeedFinish{}, nil
+	return fin, syncErr
 }
 
 func (s *Service) runKEV(ctx context.Context, store feedStore, c Caller, st FeedState, res *FeedRunResult) (FeedFinish, error) {
@@ -289,12 +321,26 @@ func (s *Service) runKEV(ctx context.Context, store feedStore, c Caller, st Feed
 	if cat.NotModified {
 		return FeedFinish{}, nil
 	}
-	res.Fetched = len(cat.Entries)
-	ids := make([]string, 0, len(cat.Entries))
-	entries := make([]KEVEntry, 0, len(cat.Entries))
+	n := len(cat.Entries)
+	res.Fetched = n
+	if n > KEVMaxEntries || (st.KEVCount > 0 && n > st.KEVCount+KEVMaxGrowth) {
+		return FeedFinish{ErrorCode: FeedErrKEVImplausible}, nil
+	}
+	ids := make([]string, 0, n)
+	inCatalog := make(map[string]bool, n)
+	entries := make([]KEVEntry, 0, n)
 	for _, e := range cat.Entries {
 		ids = append(ids, e.CVEID)
+		inCatalog[e.CVEID] = true
 		entries = append(entries, KEVEntry{CVEID: e.CVEID, AddedAt: e.DateAdded, DueDate: e.DueDate})
+	}
+	// Ids NVD could not provide are skipped for KEVMissRetry; expired entries and ids that left the catalog drop out.
+	now := s.now()
+	miss := map[string]time.Time{}
+	for id, at := range st.KEVMiss {
+		if inCatalog[id] && now.Sub(at) < KEVMissRetry {
+			miss[id] = at
+		}
 	}
 	var fetchErr error
 	if s.feeds.NVD != nil {
@@ -302,12 +348,14 @@ func (s *Service) runKEV(ctx context.Context, store feedStore, c Caller, st Feed
 		if err != nil {
 			return FeedFinish{}, fmt.Errorf("%w: %w", errFeedInternal, err)
 		}
-		res.KEVMissing = len(missing)
-		if len(missing) > s.feeds.KEVFetchPerRun {
-			missing = missing[:s.feeds.KEVFetchPerRun]
+		var candidates []string
+		for _, id := range missing {
+			if _, skip := miss[id]; !skip && len(candidates) < s.feeds.KEVFetchPerRun {
+				candidates = append(candidates, id)
+			}
 		}
-		if len(missing) > 0 {
-			records, err := s.feeds.NVD.ByID(ctx, missing)
+		if len(candidates) > 0 {
+			records, err := s.feeds.NVD.ByID(ctx, candidates)
 			fetchErr = err
 			if len(records) > 0 {
 				var imp ImportResult
@@ -316,30 +364,47 @@ func (s *Service) runKEV(ctx context.Context, store feedStore, c Caller, st Feed
 				}
 				res.Import = imp
 			}
-			still, err := store.MissingExternalIDs(ctx, FeedNVD, ids)
-			if err != nil {
-				return FeedFinish{}, fmt.Errorf("%w: %w", errFeedInternal, err)
+			if fetchErr == nil {
+				// Whatever is still missing was not found or was rejected: do not ask again for a while.
+				still, err := store.MissingExternalIDs(ctx, FeedNVD, candidates)
+				if err != nil {
+					return FeedFinish{}, fmt.Errorf("%w: %w", errFeedInternal, err)
+				}
+				for _, id := range still {
+					miss[id] = now
+				}
 			}
-			res.KEVMissing = len(still)
 		}
 	}
 	changed, err := s.applyKEV(ctx, store, c, entries)
+	if errors.Is(err, errKEVImplausible) {
+		return FeedFinish{ErrorCode: FeedErrKEVImplausible}, nil
+	}
 	if err != nil {
 		return FeedFinish{ErrorCode: FeedErrImport}, fmt.Errorf("%w: %w", errFeedInternal, err)
 	}
-	res.KEVEnriched, res.Complete = changed, res.KEVMissing == 0
-	// The ETag is kept only when every KEV CVE has an advisory; otherwise the next run re-reads the catalog
-	// to continue the bounded by-id fetch.
+	res.KEVEnriched = changed
+	// KEVMissing counts KEV CVEs without an advisory of any source.
+	missingAny, err := store.MissingExternalIDs(ctx, "", ids)
+	if err != nil {
+		return FeedFinish{}, fmt.Errorf("%w: %w", errFeedInternal, err)
+	}
+	res.KEVMissing, res.Complete = len(missingAny), len(missingAny) == 0
+	// The ETag is kept only when NVD is configured (otherwise missing CVEs can never be fetched) and every
+	// KEV CVE has an advisory; otherwise the next run re-reads the catalog.
 	etag := ""
-	if res.KEVMissing == 0 {
+	if s.feeds.NVD != nil && len(missingAny) == 0 {
 		etag = cat.ETag
 	}
-	fin := FeedFinish{ETag: &etag}
+	fin := FeedFinish{ETag: &etag, KEVMiss: &miss, KEVCount: &n}
 	if fetchErr != nil {
 		fin.ErrorCode = feedErrorCode(fetchErr)
 	}
 	return fin, nil
 }
+
+// errKEVImplausible aborts (and rolls back) a KEV enrichment that would flag implausibly many advisories.
+var errKEVImplausible = errors.New("security: implausible KEV enrichment")
 
 // importRecords imports in batches that respect the import bounds.
 func (s *Service) importRecords(ctx context.Context, c Caller, records []advisories.AdvisoryRecord, total *ImportResult) error {
@@ -349,7 +414,7 @@ func (s *Service) importRecords(ctx context.Context, c Caller, records []advisor
 		if len(batch) == 0 {
 			return nil
 		}
-		r, err := s.Import(ctx, c, Principal{Manage: true}, batch)
+		r, err := s.importBatch(ctx, c, Principal{Manage: true}, batch, true)
 		if err != nil {
 			return err
 		}
@@ -390,6 +455,9 @@ func (s *Service) applyKEV(ctx context.Context, store feedStore, c Caller, entri
 			if err := recordAudit(ctx, tx, c, "security.advisory.kev_enriched", "security_advisory", id, nil, nil, map[string]any{"via": FeedCISAKEV}); err != nil {
 				return err
 			}
+		}
+		if len(ids) > KEVMaxNewlyFlagged {
+			return errKEVImplausible
 		}
 		changed = len(ids)
 		return nil

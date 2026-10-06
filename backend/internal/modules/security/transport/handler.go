@@ -208,6 +208,9 @@ func (h *handler) advisoryResponse(w http.ResponseWriter, r *http.Request, a app
 		if a.UnmatchedCriteria > 0 {
 			warnings = append(warnings, "unmatched_criteria")
 		}
+		if a.CriteriaIncomplete {
+			warnings = append(warnings, "criteria_incomplete")
+		}
 		dto["warnings"] = warnings
 	}
 	httpx.JSON(w, 200, dto)
@@ -329,7 +332,7 @@ func (h *handler) findingTransitions(w http.ResponseWriter, r *http.Request) {
 }
 
 func advisoryDTO(a application.Advisory) map[string]any {
-	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "knownExploited": a.KnownExploited, "knownExploitedAddedAt": dateOnly(a.KnownExploitedAddedAt), "kevDueDate": dateOnly(a.KEVDueDate), "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
+	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "criteriaIncomplete": a.CriteriaIncomplete, "criteriaSkipped": a.CriteriaSkipped, "criteriaChangedUpstream": a.CriteriaChangedUpstream, "knownExploited": a.KnownExploited, "knownExploitedAddedAt": dateOnly(a.KnownExploitedAddedAt), "kevDueDate": dateOnly(a.KEVDueDate), "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
 }
 func criteriaDTO(criteria []application.Criterion) []any {
 	out := make([]any, 0, len(criteria))

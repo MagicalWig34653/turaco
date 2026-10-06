@@ -104,11 +104,12 @@ func toRecord(c cve) (advisories.AdvisoryRecord, bool) {
 			break
 		}
 	}
+	crit, skipped := criteria(c.Configurations)
 	rec := advisories.AdvisoryRecord{
 		Source: Source, ExternalID: id, Title: title(id, desc), Summary: summary(desc),
 		Severity: severity(c.Metrics), PublishedAt: parseTime(c.Published), ModifiedAt: parseTime(c.LastModified),
-		SourceURL: "https://nvd.nist.gov/vuln/detail/" + id, Criteria: criteria(c.Configurations),
-		References: references(c.References),
+		SourceURL: "https://nvd.nist.gov/vuln/detail/" + id, Criteria: crit,
+		CriteriaSkipped: skipped, References: references(c.References),
 	}
 	return rec, true
 }
@@ -227,8 +228,10 @@ type group struct {
 // criteria maps the vulnerable application CPE matches to Criteria, one per vendor/product/platform.
 // Hardware (h) and operating system (o) parts and non-vulnerable (context) matches are skipped, as are
 // negated nodes and matches whose versions the version rules cannot carry. Rules are alternatives: a
-// product with an unconstrained match is affected in every version (no rules).
-func criteria(configs []configuration) []advisories.Criteria {
+// product with an unconstrained match is affected in every version (no rules). Everything the bounds or
+// the version rules cannot carry is counted in skipped (never dropped silently): products beyond
+// maxCriteria, rules beyond maxRules, matches with an unusual version and unparseable CPE names.
+func criteria(configs []configuration) (out []advisories.Criteria, skipped int) {
 	var groups []*group
 	index := map[groupKey]*group{}
 	for _, cfg := range configs {
@@ -241,11 +244,16 @@ func criteria(configs []configuration) []advisories.Criteria {
 					continue
 				}
 				c, ok := parseCPE23(m.Criteria)
-				if !ok || c.part != "a" {
+				if !ok {
+					skipped++
+					continue
+				}
+				if c.part != "a" {
 					continue
 				}
 				rules, unconstrained, ok := rulesOf(m, c)
 				if !ok {
+					skipped++
 					continue
 				}
 				key := groupKey{displayName(c.vendor), displayName(c.product), platformOf(c.targetSW)}
@@ -255,6 +263,7 @@ func criteria(configs []configuration) []advisories.Criteria {
 				g := index[key]
 				if g == nil {
 					if len(groups) == maxCriteria {
+						skipped++
 						continue
 					}
 					g = &group{key: key}
@@ -265,14 +274,18 @@ func criteria(configs []configuration) []advisories.Criteria {
 					g.unconstrain = true
 				}
 				for _, r := range rules {
-					if !slices.Contains(g.rules, r) && len(g.rules) < maxRules {
+					if slices.Contains(g.rules, r) {
+						continue
+					}
+					if len(g.rules) < maxRules {
 						g.rules = append(g.rules, r)
+					} else {
+						skipped++
 					}
 				}
 			}
 		}
 	}
-	var out []advisories.Criteria
 	for _, g := range groups {
 		cr := advisories.Criteria{ProductName: g.key.product, Publisher: g.key.vendor, OSPlatform: g.key.platform}
 		if !g.unconstrain {
@@ -280,7 +293,7 @@ func criteria(configs []configuration) []advisories.Criteria {
 		}
 		out = append(out, cr)
 	}
-	return out
+	return out, skipped
 }
 
 // rulesOf maps the version fields of a cpeMatch. Ranges map to introduced/fixed (start inclusive, end

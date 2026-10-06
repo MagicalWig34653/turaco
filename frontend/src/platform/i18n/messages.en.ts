@@ -2259,6 +2259,10 @@ export const en = {
   'security.summaryCounts': 'Finding counts',
   'security.unmatchedCriteria': 'Unmatched criteria',
   'security.criteriaNotEvaluated': '{count} criteria not evaluated',
+  'security.criteriaIncomplete': 'Criteria incomplete ({count} left out)',
+  'security.criteriaChangedUpstream': 'Criteria changed upstream',
+  'security.actionWarningIncomplete':
+    'The feed left some affected software out of the criteria. Do not treat the criteria as complete; check the source advisory before relying on this decision.',
   'security.knownExploited': 'Known exploited',
   'security.knownExploitedDue': 'Known exploited, due {date}',
   'security.actionWarningUnmatched':

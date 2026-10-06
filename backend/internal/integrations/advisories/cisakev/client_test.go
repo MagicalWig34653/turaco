@@ -106,3 +106,18 @@ func TestErrors(t *testing.T) {
 		t.Fatalf("timeout: %v", err)
 	}
 }
+
+func TestRedirectToAnotherHostIsNotFollowed(t *testing.T) {
+	var hit bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hit = true }))
+	defer other.Close()
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}, func(cfg *Config) { cfg.HTTPClient = &http.Client{} })
+	if _, err := c.Catalog(context.Background(), ""); !errors.Is(err, advisories.ErrUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	if hit {
+		t.Fatal("the redirect was followed")
+	}
+}
