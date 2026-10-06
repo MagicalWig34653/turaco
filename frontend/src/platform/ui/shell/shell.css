@@ -451,7 +451,7 @@
   animation: turaco-pop-in var(--motion-normal) var(--motion-ease) both;
 }
 .turaco-command-dialog::backdrop {
-  background: rgb(6 16 15 / 62%);
+  background: var(--overlay-backdrop);
 }
 .turaco-command-head {
   display: flex;
@@ -579,7 +579,7 @@
     inset: 0;
     z-index: 39;
     border: 0;
-    background: rgb(6 16 15 / 62%);
+    background: var(--overlay-backdrop);
   }
   .turaco-shell .turaco-mobile-trigger {
     display: grid;
@@ -658,12 +658,6 @@ html[data-motion='reduced'] .turaco-command-dialog {
 html[data-theme='cyberpunk'] .turaco-search-trigger {
   box-shadow: var(--glow-selection);
 }
-html[data-theme='cyberpunk'] .turaco-search-trigger::after {
-  content: '_';
-  color: var(--cyber-pink);
-  font: 15px var(--font-mono);
-  animation: turaco-cursor-blink 1.2s steps(1, end) infinite;
-}
 html[data-theme='cyberpunk'] .turaco-command-head:focus-within {
   box-shadow:
     inset 0 -2px var(--focus-ring),
@@ -672,19 +666,6 @@ html[data-theme='cyberpunk'] .turaco-command-head:focus-within {
 }
 html[data-theme='cyberpunk'] .turaco-command-head input {
   caret-color: var(--cyber-pink);
-}
-@keyframes turaco-cursor-blink {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  html[data-theme='cyberpunk'] .turaco-search-trigger::after {
-    animation: none;
-  }
-}
-html[data-motion='reduced'][data-theme='cyberpunk'] .turaco-search-trigger::after {
-  animation: none;
 }
 /* The legacy .sidebar nav grid must not become a multi-column grid in the drawer. */
 .turaco-shell {

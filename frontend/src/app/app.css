@@ -644,7 +644,7 @@ code {
   width: min(720px, calc(100vw - 32px));
 }
 .dialog::backdrop {
-  background: rgb(5 12 10 / 55%);
+  background: var(--overlay-backdrop);
 }
 .dialog h2 {
   margin-top: 0;
@@ -916,123 +916,6 @@ html[data-density='compact'] .btn {
   }
 }
 
-html[data-theme='cyberpunk'] body {
-  background:
-    radial-gradient(circle at 95% 0%, rgb(236 154 255 / 10%), transparent 36%),
-    linear-gradient(rgb(104 223 255 / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(104 223 255 / 3%) 1px, transparent 1px), var(--surface-canvas);
-  background-size:
-    auto,
-    34px 34px,
-    34px 34px,
-    auto;
-}
-html[data-theme='cyberpunk'] body::after {
-  content: '';
-  position: fixed;
-  inset: -34px;
-  pointer-events: none;
-  z-index: 2;
-  background-image:
-    linear-gradient(rgb(104 223 255 / 3%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(104 223 255 / 3%) 1px, transparent 1px);
-  background-size: 34px 34px;
-  animation: cyber-grid 22s linear infinite;
-}
-html[data-theme='cyberpunk'] body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 3;
-  background: repeating-linear-gradient(transparent 0 3px, rgb(104 223 255 / 2%) 4px 5px);
-  opacity: 0.4;
-  animation: cyber-scan 8s linear infinite;
-}
-html[data-theme='cyberpunk'] .content {
-  background: transparent;
-}
-html[data-theme='cyberpunk'] .sidebar {
-  background: linear-gradient(180deg, #0c1630, var(--rail-bg) 65%);
-  border-right: 1px solid var(--cyber-cyan);
-}
-html[data-theme='cyberpunk'] .brand:hover {
-  text-shadow: var(--glow-text);
-  animation: cyber-flicker var(--motion-slow) steps(3, end);
-}
-html[data-theme='cyberpunk'] .sidebar nav a[aria-current='page'] {
-  box-shadow:
-    inset 2px 0 var(--accent),
-    var(--glow-action);
-}
-html[data-theme='cyberpunk'] .btn-primary,
-html[data-theme='cyberpunk'] .badge,
-html[data-theme='cyberpunk'] .card-plain:focus-within {
-  box-shadow: var(--glow-action);
-}
-html[data-theme='cyberpunk'] .card-plain:focus-within {
-  border-color: var(--cyber-pink);
-}
-html[data-theme='cyberpunk'] .card-plain:focus-within::after,
-html[data-theme='cyberpunk'] .card:focus-within::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    120deg,
-    var(--cyber-cyan),
-    var(--cyber-pink),
-    var(--accent),
-    var(--cyber-yellow)
-  );
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  animation: cyber-border 2.5s ease-in-out infinite alternate;
-}
-html[data-theme='cyberpunk'] .card-plain:focus-within {
-  position: relative;
-}
-html[data-theme='cyberpunk'] :focus-visible {
-  box-shadow: var(--glow-focus);
-}
-html[data-theme='cyberpunk'] code,
-html[data-theme='cyberpunk'] .mono {
-  font-family: var(--font-mono);
-}
-@keyframes cyber-grid {
-  to {
-    transform: translate(34px, 34px);
-  }
-}
-@keyframes cyber-scan {
-  to {
-    transform: translateY(5px);
-  }
-}
-@keyframes cyber-border {
-  from {
-    opacity: 0.45;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes cyber-flicker {
-  25% {
-    opacity: 0.75;
-  }
-  50% {
-    opacity: 1;
-  }
-  75% {
-    opacity: 0.87;
-  }
-}
 html[data-motion='reduced'] *,
 html[data-motion='reduced'] *::before,
 html[data-motion='reduced'] *::after {
@@ -1097,9 +980,6 @@ input[type='datetime-local'] {
 * {
   scrollbar-color: var(--border-strong-token) var(--surface-canvas);
   scrollbar-width: thin;
-}
-html[data-theme='dark'] {
-  --rail-bg: #0d1712;
 }
 .btn-primary:disabled,
 .btn-primary[aria-busy='true'],

@@ -286,13 +286,13 @@
   color: var(--text-primary);
 }
 html[data-theme='cyberpunk'] .briefing-card.severity-critical {
-  box-shadow: 0 0 19px rgb(255 100 150 / 13%);
+  box-shadow: 0 0 19px color-mix(in srgb, var(--state-critical) 13%, transparent);
 }
 html[data-theme='cyberpunk'] .briefing-card.severity-warning {
-  box-shadow: 0 0 19px rgb(244 212 138 / 11%);
+  box-shadow: 0 0 19px color-mix(in srgb, var(--state-warning) 11%, transparent);
 }
 html[data-theme='cyberpunk'] .briefing-card.severity-info {
-  box-shadow: 0 0 19px rgb(104 223 255 / 14%);
+  box-shadow: 0 0 19px color-mix(in srgb, var(--state-info) 14%, transparent);
 }
 .ticket-conversation {
   list-style: none;

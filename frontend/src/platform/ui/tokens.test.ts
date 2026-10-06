@@ -36,13 +36,24 @@ describe('semantic token contrast', () => {
   it.each(['turaco', 'dark', 'cyberpunk'] as const)('%s has AA body and state pairs', (theme) => {
     const tokens = tokensFor(theme);
     const pairs = [
-      ['--text-primary', '--surface-canvas'],
-      ['--text-primary', '--surface-base'],
-      ['--text-secondary', '--surface-base'],
+      ...['canvas', 'base', 'raised', 'muted-token', 'hover', 'selected'].flatMap((surface) =>
+        ['primary', 'secondary'].map((text) => [`--text-${text}`, `--surface-${surface}`]),
+      ),
       ['--rail-text', '--rail-bg'],
       ['--rail-muted', '--rail-bg'],
+      ['--rail-text', '--rail-active'],
+      ['--rail-muted', '--rail-active'],
+      ['--on-accent', '--accent-hover'],
       ['--accent', '--surface-base'],
       ['--on-accent', '--accent'],
+      ...(theme === 'cyberpunk'
+        ? ['cyan', 'pink', 'yellow', 'green', 'orange'].flatMap((color) =>
+            ['base', 'raised', 'hover'].map((surface) => [
+              `--cyber-${color}`,
+              `--surface-${surface}`,
+            ]),
+          )
+        : []),
       ...(['critical', 'warning', 'info', 'success', 'unknown'] as const).map((state) => [
         `--state-${state}`,
         `--state-${state}-bg`,
@@ -56,4 +67,22 @@ describe('semantic token contrast', () => {
       ).toBeGreaterThanOrEqual(4.5);
     }
   });
+});
+
+// Visible focus and control edges must remain distinguishable without decorative glow.
+describe('non-text contrast', () => {
+  it.each(['turaco', 'dark', 'cyberpunk'] as const)(
+    '%s exposes focus and control boundaries',
+    (theme) => {
+      const tokens = tokensFor(theme);
+      for (const surface of ['canvas', 'base', 'raised', 'muted-token', 'hover', 'selected']) {
+        for (const foreground of ['--focus-ring', '--border-strong-token']) {
+          expect(
+            contrast(tokens[foreground]!, tokens[`--surface-${surface}`]!),
+            `${theme}: ${foreground} on ${surface}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+    },
+  );
 });
