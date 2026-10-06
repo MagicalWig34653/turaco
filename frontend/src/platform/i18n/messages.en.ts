@@ -2482,7 +2482,7 @@ export const en = {
   'software.packages.noneApproved': 'No packages yet. Use Package to create one.',
   'software.packages.sync': 'Sync packages',
   'software.packages.syncResult':
-    'Synchronized: {checked} checked, {changed} changed, {linked} linked, {findingsRaised} hash mismatches raised, {findingsResolved} resolved.',
+    'Synchronized: {checked} checked, {changed} changed, {linked} linked, {findingsRaised} findings raised, {findingsResolved} resolved, {stale} stale reports ignored, {errors} errors.',
   'software.package.version': 'Version',
   'software.package.openVersion': 'Open version',
   'software.package.provider': 'Provider',
@@ -2566,6 +2566,11 @@ export const en = {
     'The software product is blocked or retired, so this package cannot be published.',
   'software.package.versionRevoked': 'Approval revoked',
   'software.package.productBlocked': 'Product blocked',
+  'endpoints.finding.package_hash_mismatch': 'Package hash mismatch',
+  'endpoints.finding.package_published_after_revoke': 'Published without valid approval',
+  'software.package.attempts': 'Attempts: package {package}, publish {publish}',
+  'software.package.publishedAfterRevokeHint':
+    'The provider reports a package as published although its version or product is no longer approved. Check the published package at the provider.',
 } as const;
 
 export type MessageKey = keyof typeof en;

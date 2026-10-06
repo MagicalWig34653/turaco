@@ -102,9 +102,14 @@ export type SoftwarePackage = {
   installerSha256: string | null;
   hashMismatch: boolean;
   /** The version's approval was revoked; publishing is refused. */
-  versionRevoked?: boolean;
+  versionRevoked: boolean;
   /** The product is blocked or retired; publishing is refused. */
-  productBlocked?: boolean;
+  productBlocked: boolean;
+  /** Open package_published_after_revoke finding: published although Turaco would refuse it. */
+  publishedAfterRevoke: boolean;
+  packageAttempt: number;
+  publishAttempt: number;
+  publishedAt: string | null;
   managementProvider: string | null;
   managementArtifactExternalId: string | null;
   managementArtifactId: string | null;
@@ -135,6 +140,10 @@ export type PackageSyncResult = {
   linked: number;
   findingsRaised: number;
   findingsResolved: number;
+  /** Reports older than the stored state, ignored. */
+  stale: number;
+  /** Packages the provider could not report on. */
+  errors: number;
 };
 
 export type RegisterVersionInput = {

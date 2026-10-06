@@ -45,6 +45,31 @@ export function HashMismatchBadge() {
   return <StatusBadge tone="danger">{t('software.package.hashMismatch')}</StatusBadge>;
 }
 
+export function PublishedAfterRevokeBadge() {
+  const { t } = useI18n();
+  return (
+    <StatusBadge tone="warning">
+      {t('endpoints.finding.package_published_after_revoke')}
+    </StatusBadge>
+  );
+}
+
+/** Packaging and publishing attempt counters as reported by Turaco. */
+export function AttemptCounts({
+  packageAttempt,
+  publishAttempt,
+}: {
+  packageAttempt: number;
+  publishAttempt: number;
+}) {
+  const { t } = useI18n();
+  return (
+    <span className="software-muted software-attempts">
+      {t('software.package.attempts', { package: packageAttempt, publish: publishAttempt })}
+    </span>
+  );
+}
+
 /** A hash in a monospace chip with a copy button; `short` abbreviates it in dense tables. */
 export function HashChip({
   value,

@@ -18,6 +18,8 @@ import {
   Actor,
   HashChip,
   HashMismatchBadge,
+  AttemptCounts,
+  PublishedAfterRevokeBadge,
   OperationDialog,
   PackageStatusBadge,
   VersionStatusBadge,
@@ -298,6 +300,7 @@ function PackagesCard({
                     <span className="software-badges">
                       <PackageStatusBadge status={pkg.status} />
                       {pkg.hashMismatch ? <HashMismatchBadge /> : null}
+                      {pkg.publishedAfterRevoke ? <PublishedAfterRevokeBadge /> : null}
                       {pkg.versionRevoked ? (
                         <StatusBadge tone="danger">
                           {t('software.package.versionRevoked')}
@@ -309,6 +312,10 @@ function PackagesCard({
                         </StatusBadge>
                       ) : null}
                     </span>
+                    <AttemptCounts
+                      packageAttempt={pkg.packageAttempt}
+                      publishAttempt={pkg.publishAttempt}
+                    />
                   </td>
                   <td>
                     {pkg.installerSha256 ? (
@@ -361,6 +368,9 @@ function PackagesCard({
           </tbody>
         </Table>
       )}
+      {packages.some((pkg) => pkg.publishedAfterRevoke) ? (
+        <Alert kind="warning">{t('software.package.publishedAfterRevokeHint')}</Alert>
+      ) : null}
       {packages.some((pkg) => pkg.hashMismatch) ? (
         <Alert kind="warning">{t('software.package.hashMismatchHint')}</Alert>
       ) : null}

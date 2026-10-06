@@ -2533,7 +2533,7 @@ export const de: Record<MessageKey, string> = {
   'software.packages.noneApproved': 'Noch keine Pakete. Erstellen Sie eines mit Paketieren.',
   'software.packages.sync': 'Pakete synchronisieren',
   'software.packages.syncResult':
-    'Synchronisiert: {checked} geprüft, {changed} geändert, {linked} verknüpft, {findingsRaised} Hash-Abweichungen gemeldet, {findingsResolved} behoben.',
+    'Synchronisiert: {checked} geprüft, {changed} geändert, {linked} verknüpft, {findingsRaised} Befunde gemeldet, {findingsResolved} behoben, {stale} veraltete Meldungen ignoriert, {errors} Fehler.',
   'software.package.version': 'Version',
   'software.package.openVersion': 'Version öffnen',
   'software.package.provider': 'Anbieter',
@@ -2619,4 +2619,9 @@ export const de: Record<MessageKey, string> = {
     'Das Softwareprodukt ist gesperrt oder außer Betrieb, daher kann dieses Paket nicht veröffentlicht werden.',
   'software.package.versionRevoked': 'Freigabe widerrufen',
   'software.package.productBlocked': 'Produkt gesperrt',
+  'endpoints.finding.package_hash_mismatch': 'Paket-Hash-Abweichung',
+  'endpoints.finding.package_published_after_revoke': 'Ohne gültige Freigabe veröffentlicht',
+  'software.package.attempts': 'Versuche: Paketierung {package}, Veröffentlichung {publish}',
+  'software.package.publishedAfterRevokeHint':
+    'Der Anbieter meldet ein Paket als veröffentlicht, obwohl Version oder Produkt nicht mehr freigegeben sind. Prüfen Sie das veröffentlichte Paket beim Anbieter.',
 };

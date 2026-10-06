@@ -98,17 +98,26 @@ describe('versionActions', () => {
 });
 
 describe('publishBlocker', () => {
+  const ok = { versionRevoked: false, productBlocked: false };
+  it('blocks a revoked version and a blocked product', () => {
+    expect(
+      publishBlocker({ status: 'packaged', hashMismatch: false, ...ok, versionRevoked: true }),
+    ).toBe('software.disabled.versionRevoked');
+    expect(
+      publishBlocker({ status: 'packaged', hashMismatch: false, ...ok, productBlocked: true }),
+    ).toBe('software.disabled.productBlocked');
+  });
   it('blocks a hash mismatch before anything else', () => {
-    expect(publishBlocker({ status: 'packaged', hashMismatch: true })).toBe(
+    expect(publishBlocker({ status: 'packaged', hashMismatch: true, ...ok })).toBe(
       'software.disabled.hashMismatch',
     );
   });
   it('requires a packaged package', () => {
-    expect(publishBlocker({ status: 'packaged', hashMismatch: false })).toBeUndefined();
-    expect(publishBlocker({ status: 'building', hashMismatch: false })).toBe(
+    expect(publishBlocker({ status: 'packaged', hashMismatch: false, ...ok })).toBeUndefined();
+    expect(publishBlocker({ status: 'building', hashMismatch: false, ...ok })).toBe(
       'software.disabled.packageNotReady',
     );
-    expect(publishBlocker({ status: 'published', hashMismatch: false })).toBe(
+    expect(publishBlocker({ status: 'published', hashMismatch: false, ...ok })).toBe(
       'software.disabled.alreadyPublished',
     );
   });

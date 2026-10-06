@@ -16,7 +16,13 @@ import { TableDate } from '../../platform/ui/TableDate';
 import { useFilterQuery } from '../../platform/ui/useFilterQuery';
 import { EmptyState, StatusBadge } from '../../platform/ui/Workspace';
 import { softwareApi } from './api';
-import { HashChip, HashMismatchBadge, PackageStatusBadge } from './components';
+import {
+  AttemptCounts,
+  HashChip,
+  HashMismatchBadge,
+  PackageStatusBadge,
+  PublishedAfterRevokeBadge,
+} from './components';
 import { isProviderNotConfigured, publishBlocker } from './helpers';
 import {
   packageStatuses,
@@ -98,16 +104,20 @@ export function SoftwarePackagesScreen() {
       header: t('software.package.status'),
       sortValue: (pkg) => pkg.status,
       render: (pkg) => (
-        <span className="software-badges">
-          <PackageStatusBadge status={pkg.status} />
-          {pkg.hashMismatch ? <HashMismatchBadge /> : null}
-          {pkg.versionRevoked ? (
-            <StatusBadge tone="danger">{t('software.package.versionRevoked')}</StatusBadge>
-          ) : null}
-          {pkg.productBlocked ? (
-            <StatusBadge tone="danger">{t('software.package.productBlocked')}</StatusBadge>
-          ) : null}
-        </span>
+        <>
+          <span className="software-badges">
+            <PackageStatusBadge status={pkg.status} />
+            {pkg.hashMismatch ? <HashMismatchBadge /> : null}
+            {pkg.publishedAfterRevoke ? <PublishedAfterRevokeBadge /> : null}
+            {pkg.versionRevoked ? (
+              <StatusBadge tone="danger">{t('software.package.versionRevoked')}</StatusBadge>
+            ) : null}
+            {pkg.productBlocked ? (
+              <StatusBadge tone="danger">{t('software.package.productBlocked')}</StatusBadge>
+            ) : null}
+          </span>
+          <AttemptCounts packageAttempt={pkg.packageAttempt} publishAttempt={pkg.publishAttempt} />
+        </>
       ),
     },
     {
