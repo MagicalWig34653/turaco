@@ -45,7 +45,7 @@
 ## Phase 5 — Endpoint Operations (provider-based)
 Revised 2026-10-03: Turaco integrates specialist providers instead of building a patch engine or a remote-desktop transport.
 - software lifecycle and patch orchestration: approved software, deployment rings, approvals and rollout state over IntuneGet → Intune ([ADR-0027](../decisions/ADR-0027-software-management-providers.md))
-- remote access through a Remote Access Provider, HopToDesk first, with Turaco-owned authorization, audit and ticket/device context ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md))
+- remote access through a Remote Access Provider, HopToDesk, RustDesk and AnyDesk as first providers, with Turaco-owned authorization, audit and ticket/device context ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md))
 - remediation/diagnostics as typed operations
 
 ## Phase 6 — People and assistance

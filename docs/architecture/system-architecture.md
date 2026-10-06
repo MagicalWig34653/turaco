@@ -77,7 +77,7 @@ Intune and future endpoint-management providers synchronize assignable artifacts
 Turaco integrates specialist providers where it owns the decision, context and audit but not the mechanics. Each provider kind has its own domain-specific port; there is no generic plugin framework.
 
 - Software lifecycle: Turaco approves software and orchestrates Deployment Rings; a Software Management Provider (IntuneGet) packages and publishes into Intune; Intune assigns and reports ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
-- Remote access: Turaco authorizes, audits and records sessions; a Remote Access Provider (HopToDesk) carries the session ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
+- Remote access: Turaco authorizes, audits and records sessions; a Remote Access Provider (HopToDesk, RustDesk or AnyDesk) carries the session ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
 - Workforce Presence: Turaco derives operational availability from its own entries and from Microsoft 365/HR sources ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
 - Turaco AI: a platform runtime calls AI Providers and exposes only typed AI Tools that run as the requesting User; a future MCP server reuses the same tools ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)).
 
