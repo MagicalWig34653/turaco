@@ -49,7 +49,8 @@ func registerDeployments(route func(string, func(http.Handler) http.Handler, htt
 	route("POST /api/v1/deployments/{id}/validate", manage, h.validateDeployment)
 	route("POST /api/v1/deployments/{id}/submit", manage, h.submitDeployment)
 	route("POST /api/v1/deployments/{id}/schedule", manage, h.scheduleDeployment)
-	route("POST /api/v1/deployments/{id}/cancel", manage, h.cancelDeployment)
+	route("POST /api/v1/deployments/{id}/cancel", authorization.RequireAny(auth, permDeploymentsManage, permDeploymentsExecute), h.cancelDeployment)
+	registerExecution(route, auth, h)
 }
 
 // deploymentFail maps the planning errors and hands everything else to softwareFail.
@@ -64,6 +65,8 @@ func (h *handler) deploymentFail(w http.ResponseWriter, r *http.Request, err err
 			mapItems(plan.Issues, toIssue)})
 	case errors.Is(err, application.ErrHighImpactForbidden):
 		httpx.WriteError(w, http.StatusForbidden, "endpoints.high_impact_required", "This plan is high impact and needs the deployments.high_impact permission.")
+	case errors.Is(err, application.ErrSeparationOfPlanning):
+		httpx.WriteError(w, http.StatusForbidden, "endpoints.separation_of_duties", "The person who planned a high-impact deployment cannot start it.")
 	case errors.Is(err, application.ErrNoEligibleApprover):
 		httpx.WriteError(w, http.StatusBadRequest, "endpoints.no_eligible_approver", "The approver is inactive, lacks deployments.approve or took part in the plan or its target sets.")
 	case errors.Is(err, application.ErrEditorsFull):
@@ -277,6 +280,9 @@ type deploymentDTO struct {
 	ApprovedAt        *string  `json:"approvedAt"`
 	ScheduledBy       *string  `json:"scheduledBy"`
 	ScheduledAt       *string  `json:"scheduledAt"`
+	StartedBy         *string  `json:"startedBy"`
+	StartedAt         *string  `json:"startedAt"`
+	FinishedAt        *string  `json:"finishedAt"`
 	CancelledBy       *string  `json:"cancelledBy"`
 	CancelledAt       *string  `json:"cancelledAt"`
 	Version           int      `json:"version"`
@@ -289,7 +295,7 @@ func toDeployment(d application.Deployment) deploymentDTO {
 		ProductName: d.ProductName, ProductVersion: d.ProductVersion, Intent: d.Intent, Supersede: d.Supersede, Status: d.Status,
 		StatusReason: d.StatusReason, OwnerUserID: d.OwnerUserID, CreatedBy: d.CreatedBy, Editors: d.Editors, HighImpact: d.HighImpact,
 		ApprovalID: d.ApprovalID, SubmittedBy: d.SubmittedBy, SubmittedAt: tsPtr(d.SubmittedAt), PlanSHA256: d.PlanSHA256,
-		ApprovedAt: tsPtr(d.ApprovedAt), ScheduledBy: d.ScheduledBy, ScheduledAt: tsPtr(d.ScheduledAt), CancelledBy: d.CancelledBy,
+		ApprovedAt: tsPtr(d.ApprovedAt), ScheduledBy: d.ScheduledBy, ScheduledAt: tsPtr(d.ScheduledAt), StartedBy: d.StartedBy, StartedAt: tsPtr(d.StartedAt), FinishedAt: tsPtr(d.FinishedAt), CancelledBy: d.CancelledBy,
 		CancelledAt: tsPtr(d.CancelledAt), Version: d.Version, CreatedAt: ts(d.CreatedAt), UpdatedAt: ts(d.UpdatedAt)}
 }
 

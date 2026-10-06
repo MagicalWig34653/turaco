@@ -64,6 +64,18 @@ func (f *fakeApprovals) ForSubject(_ context.Context, subjectID string) ([]appli
 	return out, nil
 }
 
+func (f *fakeApprovals) RequestRingInTx(ctx context.Context, tx pgx.Tx, a audit.Actor, corr, subjectID, label string, ap application.Approver, excluded []string) (string, error) {
+	return f.RequestInTx(ctx, tx, a, corr, subjectID, label, ap, excluded)
+}
+
+func (f *fakeApprovals) CancelRingBySubjectInTx(ctx context.Context, tx pgx.Tx, a audit.Actor, corr, subjectID string) error {
+	return f.CancelBySubjectInTx(ctx, tx, a, corr, subjectID)
+}
+
+func (f *fakeApprovals) RingForSubject(ctx context.Context, subjectID string) ([]application.DeploymentApprovalInfo, error) {
+	return f.ForSubject(ctx, subjectID)
+}
+
 // setDecided records a decision of approval id by user.
 func (f *fakeApprovals) setDecided(id, status, user string) {
 	f.mu.Lock()

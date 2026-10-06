@@ -89,6 +89,28 @@ func gateText(code string) string {
 		return "the plan is not high impact and is scheduled without a plan approval."
 	case application.CodePlanChanged:
 		return "the plan or one of its target sets changed after it was validated or approved; reload, validate and try again."
+	case application.CodeDeployWriteDisabled:
+		return "writing deployments to the management provider is not enabled (SOFTWARE_DEPLOY_WRITE)."
+	case application.CodeWindowClosed:
+		return "the change window of the ring is not open."
+	case application.CodeRingNotAwaiting:
+		return "the ring is not waiting for promotion."
+	case application.CodeSoakNotElapsed:
+		return "the soak time of the ring has not elapsed."
+	case application.CodeThresholdNotMet:
+		return "the success threshold of the ring is not met."
+	case application.CodeEvidenceNotFresh:
+		return "the evidence behind the success threshold is not fresh enough."
+	case application.CodePromotionApproval:
+		return "the ring needs an approved promotion approval."
+	case application.CodeRingHalted:
+		return "a ring is halted; resume the ring instead."
+	case application.CodeRingNotHalted:
+		return "the ring is not halted."
+	case application.CodeNoPreviousRing:
+		return "the ring is the last one; the Deployment completes by itself."
+	case application.ReasonVersionRevoked, application.ReasonPackageGateClosed, application.ReasonPackageNotPublish, application.ReasonArtifactUnlinked:
+		return "the approval or package gate of the software is closed."
 	case application.IssueNoWindowHighImpact:
 		return "a ring without a maintenance window cannot target a high-impact target set."
 	}

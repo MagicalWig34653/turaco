@@ -135,6 +135,10 @@ func main() {
 		logger.Error("configure software package synchronization", "error", err)
 		os.Exit(1)
 	}
+	if err := registerDeploymentEngine(runner, pool, cfg.SoftwareDeployWrite); err != nil {
+		logger.Error("configure deployment engine", "error", err)
+		os.Exit(1)
+	}
 	if cfg.AutotaskSync {
 		if err := registerExternalSync(runner, dispatcher, pool); err != nil {
 			logger.Error("configure Autotask synchronization", "error", err)
@@ -392,6 +396,21 @@ func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enable
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.SoftwarePackageSyncJobType, DedupeKey: endpointsapp.SoftwarePackageSyncJobType,
 		Interval: endpointsapp.SoftwarePackageSyncInterval, MaxAttempts: 3})
+}
+
+// registerDeploymentEngine registers the Deployment execution job; it is scheduled (every minute) only when
+// SOFTWARE_DEPLOY_WRITE is on. The writer is a placeholder until the Graph write client exists, so a ring that is
+// started with the capability on halts with assignment_failed.
+func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool) error {
+	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).WithDeployWrite(enabled, intune.NotConfiguredWriter{})
+	if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, svc.HandleDeploymentTick); err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.DeploymentTickJobType, DedupeKey: endpointsapp.DeploymentTickJobType,
+		Interval: endpointsapp.DeploymentTickInterval, MaxAttempts: 1})
 }
 
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
