@@ -1,6 +1,6 @@
 # ADR-0027: Software Lifecycle and Patch Orchestration Through Software Management Providers
 
-- Status: Accepted (2026-10-03). Planned capability; nothing is implemented.
+- Status: Accepted (2026-10-03). Slices G1 (software approvals and packages) and G2 (Target Sets and Deployment planning, backend) are implemented; execution is planned ([current status](../product/current-status.md)).
 - Related: [ADR-0020](ADR-0020-management-assignment-intelligence.md) (Assigned / Expected Applicable / Observed, still valid), [Intune](../integrations/intune.md), [Intune Assignment Intelligence](../integrations/intune-assignment-intelligence.md).
 
 ## Context
