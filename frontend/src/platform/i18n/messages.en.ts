@@ -931,6 +931,8 @@ export const en = {
   'briefing.feed.source': 'Source',
   'briefing.feed.manual_item': '{title}',
   'briefing.feed.security_advisory': 'Security advisory {reference}: {title}',
+  'briefing.feed.security_advisory_kev': 'Known exploited advisory {reference}: {title}',
+  'briefing.feed.advisory_feed': 'Advisory feed {source} is not up to date: {reason}',
   'briefing.feed.risk_review_due': 'Risk review due for {reference}',
   'briefing.feed.maintenance': 'Maintenance for change {reference}',
   'briefing.feed.milestone_due': 'Milestone due for {reference}: {title}',
@@ -2257,6 +2259,8 @@ export const en = {
   'security.summaryCounts': 'Finding counts',
   'security.unmatchedCriteria': 'Unmatched criteria',
   'security.criteriaNotEvaluated': '{count} criteria not evaluated',
+  'security.knownExploited': 'Known exploited',
+  'security.knownExploitedDue': 'Known exploited, due {date}',
   'security.actionWarningUnmatched':
     'Some criteria could not be matched to a software product and were not evaluated. Review them before relying on this decision.',
   'security.importIgnored':

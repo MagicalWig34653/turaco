@@ -13,6 +13,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
+	securityrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/security/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
@@ -287,5 +288,48 @@ func TestAdvisorySyncLeaseAndValidation(t *testing.T) {
 	}
 	if err := svc.HandleAdvisorySync(ctx, jobs.Job{ID: "x", Payload: []byte(`{`)}); err == nil {
 		t.Fatal("a malformed payload must fail")
+	}
+}
+
+// Known exploited advisories come first in the applicable list (the briefing feed) and are counted in the
+// security overview, ahead of higher-severity advisories that are not in the KEV catalog.
+func TestKnownExploitedAdvisoriesSortFirst(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	prefix := feedTestPrefix(t)
+	cleanFeedTest(t, pool, prefix)
+	mod := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	crit, kev := feedRecord(prefix+"CRIT", mod), feedRecord(prefix+"KEV", mod)
+	crit.Severity, kev.Severity = "critical", "low"
+	svc := wiring.Security(pool).WithFeeds(securityapp.FeedSources{NVD: &fakeNVD{records: []advisories.AdvisoryRecord{crit, kev}, through: mod}})
+	runSyncJob(t, svc, "")
+	if _, err := pool.Exec(ctx, `UPDATE security.advisories SET status = 'applicable', applicable_at = now() WHERE external_id LIKE $1`, prefix+"%"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE security.advisories SET known_exploited = true, known_exploited_added_at = '2026-09-28', kev_due_date = '2026-10-19' WHERE external_id = $1`, prefix+"KEV"); err != nil {
+		t.Fatal(err)
+	}
+	list, _, err := svc.ApplicableAdvisories(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) == 0 || !list[0].KnownExploited || list[0].KEVDueDate == nil || list[0].KEVDueDate.Format(time.DateOnly) != "2026-10-19" {
+		t.Fatalf("the known exploited advisory must come first: %+v", list)
+	}
+	seenPlain := false
+	for _, a := range list {
+		if !a.KnownExploited {
+			seenPlain = true
+		} else if seenPlain {
+			t.Fatal("known exploited advisories must precede all others")
+		}
+	}
+	overview, err := securityrepository.New(pool).OverviewCounts(ctx, time.Now())
+	if err != nil || overview.KnownExploitedApplicable < 1 {
+		t.Fatalf("overview %+v %v", overview, err)
+	}
+	// The mark and its dates are consistent: dates without the mark are refused by the database.
+	if _, err := pool.Exec(ctx, `UPDATE security.advisories SET kev_due_date = '2026-10-19' WHERE external_id = $1`, prefix+"CRIT"); err == nil {
+		t.Fatal("kev dates without known_exploited must violate the check constraint")
 	}
 }

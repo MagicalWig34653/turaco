@@ -67,6 +67,21 @@ function UnmatchedCriteriaBadge({ count }: { count: number }) {
     <Badge tone="warning">{t('security.criteriaNotEvaluated', { count })}</Badge>
   ) : null;
 }
+function KnownExploitedBadge({
+  advisory,
+}: {
+  advisory: Pick<Advisory, 'knownExploited' | 'kevDueDate'>;
+}) {
+  const { t } = useI18n();
+  if (!advisory.knownExploited) return null;
+  return (
+    <Badge tone="danger">
+      {advisory.kevDueDate
+        ? t('security.knownExploitedDue', { date: advisory.kevDueDate })
+        : t('security.knownExploited')}
+    </Badge>
+  );
+}
 function Field({
   label,
   value,
@@ -314,7 +329,8 @@ export function AdvisoriesScreen() {
               header: t('security.title'),
               render: (x: Advisory) => (
                 <>
-                  {x.title} <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />
+                  {x.title} <KnownExploitedBadge advisory={x} />{' '}
+                  <UnmatchedCriteriaBadge count={x.unmatchedCriteria} />
                 </>
               ),
             },
@@ -602,7 +618,7 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
         <>
           <p>
             {a.reference} · <Label kind="severity" value={a.severity} /> ·{' '}
-            <Label kind="status" value={a.status} />{' '}
+            <Label kind="status" value={a.status} /> <KnownExploitedBadge advisory={a} />{' '}
             <UnmatchedCriteriaBadge count={a.unmatchedCriteria} />
           </p>
           <section>
