@@ -63,7 +63,7 @@ Notifications to Teams need a tenant (the same trial tenant as above) and either
 ## Practical order
 
 1. Build real adapters for the public advisory feeds (no account).
-2. Add Mailpit, Keycloak and a Samba AD container as an optional `make infra-up-lab` compose profile for realistic local testing.
+2. ~~Add Mailpit, Keycloak and a Samba AD container for realistic local testing.~~ Done: optional `make lab-up` compose project, see [lab services](lab-services.md).
 3. Try the Business Premium trial for the Intune/Graph client; run IntuneGet's web app against it once an Entra app exists.
 4. Ask Kaseya/Datto about an Autotask sandbox in parallel (long lead time).
 5. Self-host RustDesk when F10 starts.

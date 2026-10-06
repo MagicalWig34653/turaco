@@ -1,0 +1,56 @@
+# LAB ONLY: optional local replacements for external services (mail relay, Active Directory, OIDC IdP).
+# Separate project, network and volumes from dev.yaml. All ports bind to 127.0.0.1.
+# Every password here is a public lab value. Never reuse them anywhere real.
+name: turaco-lab
+
+services:
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    ports:
+      - "127.0.0.1:1025:1025"   # SMTP
+      - "127.0.0.1:8025:8025"   # web UI / API
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  samba-ad:
+    build: ../lab/samba
+    image: turaco-lab-samba-ad:1
+    hostname: dc1
+    environment:
+      LAB_REALM: LAB.TURACO.TEST
+      LAB_DOMAIN: LAB
+      LAB_ADMIN_PASSWORD: "Lab-Only-Adm1n-Passw0rd!"      # LAB ONLY
+      LAB_USER_PASSWORD: "Lab-Only-Passw0rd!"             # LAB ONLY
+      LAB_SERVICE_PASSWORD: "Lab-Only-Svc-Passw0rd!"      # LAB ONLY
+    ports:
+      - "127.0.0.1:1389:389"
+      - "127.0.0.1:1636:636"
+      - "127.0.0.1:1088:88/tcp"
+      - "127.0.0.1:1088:88/udp"
+    volumes:
+      - samba-lab:/var/lib/samba
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin                   # LAB ONLY
+      KC_BOOTSTRAP_ADMIN_PASSWORD: lab-only-admin          # LAB ONLY
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8180:8080"
+      - "127.0.0.1:9100:9000"   # management (health)
+    volumes:
+      - ../lab/keycloak/turaco-lab-realm.json:/opt/keycloak/data/import/turaco-lab-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 20s
+
+volumes:
+  samba-lab:

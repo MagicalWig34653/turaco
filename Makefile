@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # which can contain Go packages (and tests) shipped by npm dependencies.
 GO_PACKAGES := ./backend/... ./agents/... ./tools/...
 
-.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
+.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down lab-up lab-down lab-reset lab-verify migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
 
 help:
 	@printf '%s\n' \
@@ -13,6 +13,9 @@ help:
 	  '  make doctor       Check local toolchain' \
 	  '  make bootstrap    Install dependencies and initialize local development' \
 	  '  make infra-up     Start PostgreSQL and local S3 mock in Colima/Docker' \
+	  '  make lab-up       Start optional lab services (Mailpit, Samba AD, Keycloak)' \
+	  '  make lab-down     Stop lab services (keeps data)' \
+	  '  make lab-reset    Stop lab services and delete their data' \
 	  '  make migrate      Apply database migrations' \
 	  '  make dev-setup    Start infra, migrate and create the dev admin' \
 	  '  make api          Run turaco-api natively' \
@@ -36,6 +39,18 @@ infra-up:
 
 infra-down:
 	@./scripts/compose.sh -f deploy/compose/dev.yaml down
+
+lab-up:
+	@./scripts/lab-up.sh
+
+lab-down:
+	@./scripts/compose.sh -f deploy/compose/lab.yaml down
+
+lab-verify:
+	@./scripts/lab-verify.sh
+
+lab-reset:
+	@./scripts/compose.sh -f deploy/compose/lab.yaml down -v
 
 migrate:
 	@./scripts/with-env.sh ./scripts/migrate.sh
