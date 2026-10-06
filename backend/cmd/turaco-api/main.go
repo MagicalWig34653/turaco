@@ -12,6 +12,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -166,7 +167,7 @@ func main() {
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
-	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync), sessionAuth, logger)
+	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)

@@ -7,11 +7,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
 	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 	endpointsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 // assetLookup adapts the Assets public contract to the questions Endpoints ask.
@@ -111,11 +114,20 @@ func (d directoryLookup) UserNames(ctx context.Context, ids []string) (map[strin
 	return d.names.UserNames(ctx, ids)
 }
 
-// Endpoints builds the Endpoints service over the Assets public contract, the Organization directory graph and
-// the endpoint provider. syncEnabled switches POST /api/v1/endpoint-sync on.
-func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool) *endpointsapp.Service {
+// Endpoints builds the Endpoints service over the Assets public contract, the Organization directory graph,
+// the endpoint provider and the Software Management Provider. syncEnabled switches POST /api/v1/endpoint-sync
+// on; softwareSync switches the Software Package synchronization on.
+func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool, software softwaremgmt.Provider, softwareSync bool) *endpointsapp.Service {
 	org := orgrepository.New(pool)
 	assets := assetspublic.New(Assets(pool))
 	dir := directoryLookup{graph: orgpublic.NewDirectoryGraph(org), names: orgpublic.NewWorkDirectory(org)}
-	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).WithViews(dir, assets)
+	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).
+		WithViews(dir, assets).WithSoftware(software, softwareSync)
+}
+
+// SoftwareNotifications builds the consumer that tells software.approve holders about approval requests.
+func SoftwareNotifications(pool *pgxpool.Pool, notifier *notifications.Service) *endpointsapp.SoftwareNotifications {
+	org := orgrepository.New(pool)
+	return endpointsapp.NewSoftwareNotifications(endpointsrepository.New(pool), orgpublic.NewWorkDirectory(org),
+		orgpublic.NewNotificationRecipients(org), roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)), notifier)
 }

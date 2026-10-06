@@ -153,6 +153,15 @@ type Principal struct {
 	ManagementView bool
 	// DirectoryView is organization.directory.view: it reveals provider group ids in assignments.
 	DirectoryView bool
+	// SoftwareView, SoftwareApprove and SoftwarePackage are software.view, software.approve and
+	// software.package (F9 G1). Approve and package include the software read access.
+	SoftwareView    bool
+	SoftwareApprove bool
+	SoftwarePackage bool
+}
+
+func (p Principal) canViewSoftware() bool {
+	return p.SoftwareView || p.SoftwareApprove || p.SoftwarePackage
 }
 
 func (p Principal) canView() bool { return p.View || p.Manage }
@@ -325,6 +334,7 @@ var (
 type Store interface {
 	ManagementStore
 	ViewStore
+	SoftwareStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.
