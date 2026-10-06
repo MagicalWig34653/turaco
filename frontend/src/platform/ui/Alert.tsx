@@ -25,5 +25,12 @@ export function Badge({
   tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'unknown';
   children: ReactNode;
 }) {
-  return <span className={`badge badge-${tone}`}>{children}</span>;
+  return (
+    <span className={`badge badge-${tone}`}>
+      <span className="badge-icon" aria-hidden="true">
+        {{ neutral: '•', success: '✓', warning: '!', danger: '!', info: '•', unknown: '?' }[tone]}
+      </span>
+      {children}
+    </span>
+  );
 }

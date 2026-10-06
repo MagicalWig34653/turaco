@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
@@ -151,6 +152,69 @@ export function ServicesListScreen() {
   const [filter, setFilter] = useState(form);
   const [create, setCreate] = useState(false);
   const list = usePagedList((cursor, signal) => servicesApi.list(filter, cursor, signal), [filter]);
+  const activeFilters = [
+    ...(filter.q
+      ? [
+          {
+            key: 'q',
+            label: `${t('services.search')}: ${filter.q}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, q: '' }));
+              setForm((current) => ({ ...current, q: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.status
+      ? [
+          {
+            key: 'status',
+            label: t(`services.status.${filter.status}` as MessageKey),
+            onRemove: () => {
+              setFilter((current) => ({ ...current, status: '' }));
+              setForm((current) => ({ ...current, status: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.criticality
+      ? [
+          {
+            key: 'criticality',
+            label: t(`services.criticality.${filter.criticality}` as MessageKey),
+            onRemove: () => {
+              setFilter((current) => ({ ...current, criticality: '' }));
+              setForm((current) => ({ ...current, criticality: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.ownerUserId
+      ? [
+          {
+            key: 'ownerUserId',
+            label: `${t('services.ownerUserId')}: ${filter.ownerUserId}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, ownerUserId: '' }));
+              setForm((current) => ({ ...current, ownerUserId: '' }));
+            },
+          },
+        ]
+      : []),
+    ...(filter.teamId
+      ? [
+          {
+            key: 'teamId',
+            label: `${t('services.teamId')}: ${filter.teamId}`,
+            onRemove: () => {
+              setFilter((current) => ({ ...current, teamId: '' }));
+              setForm((current) => ({ ...current, teamId: '' }));
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -161,8 +225,9 @@ export function ServicesListScreen() {
           ) : undefined
         }
       />
-      <form
-        className="filters"
+      <FilterBar
+        activeFilters={activeFilters}
+
         role="search"
         onSubmit={(e) => {
           e.preventDefault();
@@ -203,8 +268,9 @@ export function ServicesListScreen() {
           onChange={(e) => setForm({ ...form, teamId: e.target.value })}
         />
         <Button type="submit">{t('filters.apply')}</Button>
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('services.list')}
         columns={
           [

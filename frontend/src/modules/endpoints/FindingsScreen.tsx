@@ -1,6 +1,9 @@
+import { StatusBadge } from '../../platform/ui/Workspace';
+import { TableDate } from '../../platform/ui/TableDate';
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
@@ -11,7 +14,7 @@ import { endpointsApi } from './api';
 import { findingKinds, type Finding, type FindingFilters } from './types';
 
 export function FindingsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [filters, setFilters] = useState<FindingFilters>(() => ({
     kind: '',
     status: 'open',
@@ -19,6 +22,7 @@ export function FindingsScreen() {
   }));
   const change = (patch: Partial<FindingFilters>) =>
     setFilters((current) => ({ ...current, ...patch }));
+  useFilterQuery({ deviceId: filters.deviceId });
   const list = usePagedList(
     (cursor, signal) => endpointsApi.findings(filters, cursor, signal),
     [filters],
@@ -44,23 +48,52 @@ export function FindingsScreen() {
     {
       key: 'status',
       header: t('endpoints.findingStatus'),
-      render: (f) => t(`endpoints.findingStatus.${f.status}` as MessageKey),
+      render: (f) => (
+        <StatusBadge tone={f.status === 'resolved' ? 'success' : 'warning'}>
+          {t(`endpoints.findingStatus.${f.status}` as MessageKey)}
+        </StatusBadge>
+      ),
     },
     {
       key: 'raised',
       header: t('endpoints.raisedAt'),
-      render: (f) => formatDateTime(locale, f.raisedAt),
+      render: (f) => <TableDate value={f.raisedAt} />,
     },
     {
       key: 'resolved',
       header: t('endpoints.resolvedAt'),
-      render: (f) => (f.resolvedAt ? formatDateTime(locale, f.resolvedAt) : '–'),
+      render: (f) => <TableDate value={f.resolvedAt} />,
     },
   ];
+  const activeFilters = [
+    ...(filters.kind
+      ? [
+          {
+            key: 'kind',
+            label: t(`endpoints.finding.${filters.kind}` as MessageKey),
+            onRemove: () => {
+              change({ kind: '' });
+            },
+          },
+        ]
+      : []),
+    ...(filters.deviceId
+      ? [
+          {
+            key: 'device',
+            label: `${t('endpoints.deviceId')}: ${filters.deviceId}`,
+            onRemove: () => {
+              change({ deviceId: '' });
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('nav.endpointFindings')} />
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      <FilterBar activeFilters={activeFilters} role="search" onSubmit={(e) => e.preventDefault()}>
         <Select
           label={t('endpoints.findingKind')}
           value={filters.kind}
@@ -84,8 +117,9 @@ export function FindingsScreen() {
           value={filters.deviceId}
           onChange={(e) => change({ deviceId: e.target.value })}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.endpointFindings')}
         columns={columns}
         rows={list.items}

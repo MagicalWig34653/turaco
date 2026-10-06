@@ -1,6 +1,7 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
@@ -32,7 +33,7 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 
 /** "My tickets" for everyone, the full queue for people with tickets.view. */
 export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can, session } = useSession();
   const { density, setDensity } = useTheme();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -46,12 +47,19 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const columns: Column<Ticket>[] = [
     {
       key: 'reference',
+      sortValue: (x) => x.reference,
       header: t('tickets.col.reference'),
       render: (x) => <Link to={`/support/${encodeURIComponent(x.id)}`}>{x.reference}</Link>,
     },
-    { key: 'title', header: t('tickets.col.title'), render: (x) => x.title },
+    {
+      key: 'title',
+      sortValue: (x) => x.title,
+      header: t('tickets.col.title'),
+      render: (x) => x.title,
+    },
     {
       key: 'status',
+      sortValue: (x) => x.status,
       header: t('tickets.col.status'),
       render: (x) => <TicketStatusBadge status={x.status} />,
     },
@@ -59,6 +67,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       ? [
           {
             key: 'priority',
+            sortValue: (x: Ticket) => ({ low: 0, normal: 1, high: 2, urgent: 3 })[x.priority],
             header: t('tickets.col.priority'),
             render: (x: Ticket) => t(`tickets.priority.${x.priority}`),
           },
@@ -66,8 +75,9 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       : []),
     {
       key: 'updated',
+      sortValue: (x) => x.updatedAt,
       header: t('tickets.col.updated'),
-      render: (x) => <time dateTime={x.updatedAt}>{formatDateTime(locale, x.updatedAt)}</time>,
+      render: (x) => <TableDate value={x.updatedAt} />,
     },
   ];
   const rowActions = (ticket: Ticket): MenuItem[] => {
@@ -112,6 +122,31 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       },
     ];
   };
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`tickets.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(openOnly
+      ? [
+          {
+            key: 'open',
+            label: t('tickets.filter.openOnly'),
+            onRemove: () => {
+              setOpenOnly(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -125,8 +160,9 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       />
       {scope === 'mine' ? <IncidentBanner /> : null}
       {actionError ? <Toast kind="error">{actionError}</Toast> : null}
-      <form
-        className="filters tickets-filterbar"
+      <FilterBar
+        activeFilters={activeFilters}
+
         role="search"
         onSubmit={(event) => event.preventDefault()}
       >
@@ -153,8 +189,9 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           checked={openOnly}
           onChange={(event) => setOpenOnly(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={title}
         columns={columns}
         rows={list.items}

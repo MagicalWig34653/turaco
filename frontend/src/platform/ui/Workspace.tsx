@@ -90,9 +90,7 @@ export function StatusBadge({
 export function Toolbar({ children }: { children: ReactNode }) {
   return <div className="workspace-toolbar">{children}</div>;
 }
-export function FilterBar({ children }: { children: ReactNode }) {
-  return <div className="workspace-filterbar">{children}</div>;
-}
+export { FilterBar } from './FilterBar';
 
 export function EmptyState({
   title,

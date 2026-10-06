@@ -1,9 +1,11 @@
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import type { ApiError } from '../../platform/api/client';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
-import { Link, navigate } from '../../platform/router/Router';
+import { Link, navigate, useLocation } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
@@ -167,8 +169,16 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     </Dialog>
   );
 }
+function clearOverviewFilters(...keys: string[]) {
+  const url = new URL(window.location.href);
+  keys.forEach((key) => url.searchParams.delete(key));
+  navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true });
+}
+
 export function AdvisoriesScreen() {
   const { t } = useI18n();
+  const { search } = useLocation();
+  const applicable = new URLSearchParams(search).has('applicable');
   const { can } = useSession();
   const [status, setStatus] = useState(
     () => new URLSearchParams(window.location.search).get('status') ?? '',
@@ -177,16 +187,58 @@ export function AdvisoriesScreen() {
     () => new URLSearchParams(window.location.search).get('severity') ?? '',
   );
   const [q, setQ] = useState('');
+  useFilterQuery({ status, severity });
   const [importOpen, setImportOpen] = useState(false);
   const list = usePagedList(
     (cursor, signal) => securityApi.advisories({ status, severity, q }, cursor, signal),
     [status, severity, q],
   );
-  const visibleAdvisories = list.items.filter(
-    (x) =>
-      !new URLSearchParams(window.location.search).has('applicable') ||
-      isApplicableAdvisory(x.status),
-  );
+  const visibleAdvisories = list.items.filter((x) => !applicable || isApplicableAdvisory(x.status));
+  const activeFilters = [
+    ...(applicable
+      ? [
+          {
+            key: 'applicable',
+            label: t('security.filter.applicable'),
+            onRemove: () => clearOverviewFilters('applicable'),
+          },
+        ]
+      : []),
+    ...(q
+      ? [
+          {
+            key: 'search',
+            label: `${t('security.search')}: ${q}`,
+            onRemove: () => {
+              setQ('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`security.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(severity
+      ? [
+          {
+            key: 'severity',
+            label: t(`security.severity.${severity}` as MessageKey),
+            onRemove: () => {
+              setSeverity('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -202,7 +254,15 @@ export function AdvisoriesScreen() {
           ) : undefined
         }
       />
-      <div className="filters">
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setQ('');
+          setStatus('');
+          setSeverity('');
+          clearOverviewFilters('applicable');
+        }}
+      >
         <Select
           label={t('security.status')}
           value={status}
@@ -233,14 +293,16 @@ export function AdvisoriesScreen() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-      </div>
+      </FilterBar>
       <p aria-live="polite">{t('security.loadedCount', { count: visibleAdvisories.length })}</p>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('security.advisories')}
         columns={
           [
             {
               key: 'reference',
+              sortValue: (x) => x.reference,
               header: t('security.reference'),
               render: (x: Advisory) => (
                 <Link to={`/security/advisories/${enc(x.id)}`}>{x.reference}</Link>
@@ -248,6 +310,7 @@ export function AdvisoriesScreen() {
             },
             {
               key: 'title',
+              sortValue: (x) => x.title,
               header: t('security.title'),
               render: (x: Advisory) => (
                 <>
@@ -257,15 +320,22 @@ export function AdvisoriesScreen() {
             },
             {
               key: 'severity',
+              sortValue: (x) => x.severity,
               header: t('security.severity'),
               render: (x: Advisory) => <Label kind="severity" value={x.severity} />,
             },
             {
               key: 'status',
+              sortValue: (x) => x.status,
               header: t('security.status'),
               render: (x: Advisory) => <Label kind="status" value={x.status} />,
             },
-            { key: 'source', header: t('security.source'), render: (x: Advisory) => x.source },
+            {
+              key: 'source',
+              sortValue: (x) => x.source,
+              header: t('security.source'),
+              render: (x: Advisory) => x.source,
+            },
           ] satisfies Column<Advisory>[]
         }
         rows={visibleAdvisories}
@@ -697,16 +767,26 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
     </>
   );
 }
-function FindingTable({ items, loading = false }: { items: Finding[]; loading?: boolean }) {
+function FindingTable({
+  items,
+  loading = false,
+  filterSummary = '',
+}: {
+  items: Finding[];
+  loading?: boolean;
+  filterSummary?: string;
+}) {
   const { t } = useI18n();
   const { can } = useSession();
   return (
     <DataTable
+      filterSummary={filterSummary}
       caption={t('security.findings')}
       columns={
         [
           {
             key: 'reference',
+            sortValue: (x) => x.reference,
             header: t('security.reference'),
             render: (x: Finding) => (
               <Link to={`/security/findings/${enc(x.id)}`}>{x.reference}</Link>
@@ -714,6 +794,7 @@ function FindingTable({ items, loading = false }: { items: Finding[]; loading?: 
           },
           {
             key: 'advisory',
+            sortValue: (x) => x.advisoryReference,
             header: t('security.advisory'),
             render: (x: Finding) => (
               <Link to={`/security/advisories/${enc(x.advisoryId)}`}>{x.advisoryReference}</Link>
@@ -721,6 +802,7 @@ function FindingTable({ items, loading = false }: { items: Finding[]; loading?: 
           },
           {
             key: 'device',
+            sortValue: (x) => x.deviceName,
             header: t('security.device'),
             render: (x: Finding) =>
               devicePath(x, can('endpoints.view') || can('endpoints.manage')) ? (
@@ -731,16 +813,19 @@ function FindingTable({ items, loading = false }: { items: Finding[]; loading?: 
           },
           {
             key: 'product',
+            sortValue: (x) => x.productName,
             header: t('security.productName'),
             render: (x: Finding) => x.productName ?? x.softwareProductId,
           },
           {
             key: 'version',
+            sortValue: (x) => x.installedVersion,
             header: t('security.installedVersion'),
             render: (x: Finding) => x.installedVersion ?? '—',
           },
           {
             key: 'confidence',
+            sortValue: (x) => x.confidence,
             header: t('security.confidence'),
             render: (x: Finding) => (
               <span title={t('security.confidenceHelp')}>
@@ -750,6 +835,7 @@ function FindingTable({ items, loading = false }: { items: Finding[]; loading?: 
           },
           {
             key: 'status',
+            sortValue: (x) => x.status,
             header: t('security.status'),
             render: (x: Finding) => <Label kind="status" value={x.status} />,
           },
@@ -764,11 +850,13 @@ function FindingTable({ items, loading = false }: { items: Finding[]; loading?: 
 }
 export function SecurityFindingsScreen() {
   const { t } = useI18n();
-  const query = new URLSearchParams(window.location.search);
+  const { search } = useLocation();
+  const query = new URLSearchParams(search);
   const [status, setStatus] = useState(() =>
     query.get('riskDue') === 'true' ? 'risk_accepted' : '',
   );
   const [confidence, setConfidence] = useState(() => query.get('confidence') ?? '');
+  useFilterQuery({ confidence });
   const [advisoryId, setAdvisoryId] = useState('');
   const [device, setDevice] = useState('');
   const list = usePagedList(
@@ -783,11 +871,85 @@ export function SecurityFindingsScreen() {
         x.deviceName?.toLowerCase().includes(device.toLowerCase()) ||
         x.deviceId === device),
   );
+  const activeFilters = [
+    ...(query.has('open')
+      ? [
+          {
+            key: 'open',
+            label: t('security.filter.open'),
+            onRemove: () => clearOverviewFilters('open'),
+          },
+        ]
+      : []),
+    ...(query.has('riskDue')
+      ? [
+          {
+            key: 'riskDue',
+            label: t('security.riskDue30'),
+            onRemove: () => clearOverviewFilters('riskDue'),
+          },
+        ]
+      : []),
+    ...(device
+      ? [
+          {
+            key: 'device',
+            label: `${t('security.device')}: ${device}`,
+            onRemove: () => {
+              setDevice('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`security.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(confidence
+      ? [
+          {
+            key: 'confidence',
+            label: t(`security.confidence.${confidence}` as MessageKey),
+            onRemove: () => {
+              setConfidence('');
+            },
+          },
+        ]
+      : []),
+    ...(advisoryId
+      ? [
+          {
+            key: 'advisory',
+            label: `${t('security.advisoryId')}: ${advisoryId}`,
+            onRemove: () => {
+              setAdvisoryId('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('security.findings')} />
       <p>{t('security.confidenceHelp')}</p>
-      <div className="filters">
+      <FilterBar
+        activeFilters={activeFilters}
+        onClear={() => {
+          setStatus('');
+          setConfidence('');
+          setAdvisoryId('');
+          setDevice('');
+          clearOverviewFilters('open', 'riskDue');
+        }}
+      >
         <Select
           label={t('security.status')}
           value={status}
@@ -823,14 +985,18 @@ export function SecurityFindingsScreen() {
           value={device}
           onChange={(e) => setDevice(e.target.value)}
         />
-      </div>
+      </FilterBar>
       <p>
         {t('security.loadedCount', {
           count: visible.length,
         })}
       </p>
       {list.error && <ApiErrorAlert error={list.error} onRetry={list.reload} />}
-      <FindingTable items={visible} loading={list.loading} />
+      <FindingTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        items={visible}
+        loading={list.loading}
+      />
       {list.hasMore && (
         <Button onClick={list.loadMore} busy={list.loadingMore}>
           {t('action.loadMore')}

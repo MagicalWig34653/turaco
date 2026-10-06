@@ -1,3 +1,4 @@
+import { DateFilter, FilterBar } from '../../platform/ui/FilterBar';
 import { useState, type FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
@@ -172,6 +173,64 @@ export function InitiativesListScreen({ mine = false }: { mine?: boolean }) {
       ),
     [status, owner, q, targetFrom, targetTo, mine, session?.userId],
   );
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`planning.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(!mine && owner
+      ? [
+          {
+            key: 'owner',
+            label: `${t('planning.ownerId')}: ${owner}`,
+            onRemove: () => {
+              setOwner('');
+            },
+          },
+        ]
+      : []),
+    ...(q
+      ? [
+          {
+            key: 'q',
+            label: `${t('planning.search')}: ${q}`,
+            onRemove: () => {
+              setQ('');
+            },
+          },
+        ]
+      : []),
+    ...(targetFrom
+      ? [
+          {
+            key: 'from',
+            label: `${t('planning.targetFrom')}: ${targetFrom}`,
+            onRemove: () => {
+              setTargetFrom('');
+            },
+          },
+        ]
+      : []),
+    ...(targetTo
+      ? [
+          {
+            key: 'to',
+            label: `${t('planning.targetTo')}: ${targetTo}`,
+            onRemove: () => {
+              setTargetTo('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -184,7 +243,7 @@ export function InitiativesListScreen({ mine = false }: { mine?: boolean }) {
           ) : undefined
         }
       />
-      <div className="filters">
+      <FilterBar activeFilters={activeFilters}>
         <Select
           label={t('planning.status')}
           value={status}
@@ -210,38 +269,47 @@ export function InitiativesListScreen({ mine = false }: { mine?: boolean }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <TextField
+        <DateFilter
           label={t('planning.targetFrom')}
           type="date"
           value={targetFrom}
-          onChange={(e) => setTargetFrom(e.target.value)}
+          onChange={setTargetFrom}
         />
-        <TextField
+        <DateFilter
           label={t('planning.targetTo')}
           type="date"
           value={targetTo}
-          onChange={(e) => setTargetTo(e.target.value)}
+          onChange={setTargetTo}
         />
-      </div>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t(mine ? 'planning.mine' : 'planning.list')}
         columns={
           [
             {
               key: 'reference',
+              sortValue: (x) => x.reference,
               header: t('planning.reference'),
               render: (x: Initiative) => (
                 <Link to={`/initiatives/${enc(x.id)}`}>{x.reference}</Link>
               ),
             },
-            { key: 'title', header: t('planning.title'), render: (x: Initiative) => x.title },
+            {
+              key: 'title',
+              sortValue: (x) => x.title,
+              header: t('planning.title'),
+              render: (x: Initiative) => x.title,
+            },
             {
               key: 'status',
+              sortValue: (x) => x.status,
               header: t('planning.status'),
               render: (x: Initiative) => <Status value={x.status} />,
             },
             {
               key: 'owner',
+              sortValue: (x) => x.ownerId,
               header: t('planning.owner'),
               render: (x: Initiative) => x.ownerId ?? '—',
             },
@@ -836,7 +904,7 @@ export function MaintenanceCalendarScreen() {
   return (
     <>
       <PageHeader title={t('planning.calendar')} />
-      <div className="filters">
+      <FilterBar>
         <label>
           {t('planning.calendar.view')}
           <select
@@ -851,7 +919,7 @@ export function MaintenanceCalendarScreen() {
             <option value="week">{t('planning.calendar.week')}</option>
           </select>
         </label>
-        <Field
+        <DateFilter
           label={t('planning.calendar.date')}
           value={anchor}
           onChange={(date) => {
@@ -860,14 +928,19 @@ export function MaintenanceCalendarScreen() {
           }}
           type="date"
         />
-        <Field
+        <DateFilter
           label={t('planning.calendar.from')}
           value={fromDate}
           onChange={setFromDate}
           type="date"
         />
-        <Field label={t('planning.calendar.to')} value={toDate} onChange={setToDate} type="date" />
-      </div>
+        <DateFilter
+          label={t('planning.calendar.to')}
+          value={toDate}
+          onChange={setToDate}
+          type="date"
+        />
+      </FilterBar>
       {calendar.error && <ApiErrorAlert error={calendar.error} onRetry={calendar.reload} />}
       {calendar.loading && <p>{t('state.loading')}</p>}
       {!calendar.loading && calendar.data?.items.length === 0 && (

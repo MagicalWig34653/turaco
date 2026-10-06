@@ -5,6 +5,9 @@ import { registerModuleNotifications } from './app/notificationCategories';
 import './platform/ui/tokens.css';
 import './app/app.css';
 import './platform/ui/workspace.css';
+import './platform/ui/collections.css';
+import './modules/changes/changes.css';
+import './modules/tickets/report-problem.css';
 
 registerModuleNotifications();
 

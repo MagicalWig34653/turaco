@@ -1,8 +1,10 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import type { MessageKey } from '../../platform/i18n/i18n';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -90,7 +92,7 @@ function FulfillDialog({
 }
 
 export function ReservationsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const manage = can('inventory.manage');
   const [status, setStatus] = useState('active');
@@ -113,7 +115,7 @@ export function ReservationsScreen() {
     {
       key: 'time',
       header: t('inventory.col.time'),
-      render: (r) => formatDateTime(locale, r.createdAt),
+      render: (r) => <TableDate value={r.createdAt} />,
     },
     {
       key: 'product',
@@ -165,10 +167,28 @@ export function ReservationsScreen() {
     setDialog(null);
     list.reload();
   };
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`inventory.reservation.status.${status}` as MessageKey),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('nav.reservations')} intro={t('inventory.reservation.intro')} />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('inventory.col.status')}
           value={status}
@@ -181,8 +201,9 @@ export function ReservationsScreen() {
             })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.reservations')}
         columns={columns}
         rows={list.items}

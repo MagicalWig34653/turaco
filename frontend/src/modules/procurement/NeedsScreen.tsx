@@ -1,8 +1,9 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
@@ -76,7 +77,7 @@ function NewNeedDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
 }
 
 export function NeedsScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const manage = can('procurement.manage');
   const [status, setStatus] = useState<NeedStatus | ''>('open');
@@ -112,7 +113,7 @@ export function NeedsScreen() {
     {
       key: 'created',
       header: t('procurement.col.created'),
-      render: (n) => formatDateTime(locale, n.createdAt),
+      render: (n) => <TableDate value={n.createdAt} />,
     },
     ...(manage
       ? [
@@ -129,6 +130,20 @@ export function NeedsScreen() {
         ]
       : []),
   ];
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`procurement.need.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -142,7 +157,11 @@ export function NeedsScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('procurement.col.status')}
           value={status}
@@ -155,8 +174,9 @@ export function NeedsScreen() {
             })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.procurementRequests')}
         columns={columns}
         rows={list.items}

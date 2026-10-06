@@ -1,6 +1,47 @@
 import type { MessageKey } from './messages.en';
 
 export const de: Record<MessageKey, string> = {
+  'table.showingTotal': '{count} von {total} angezeigt',
+  'table.showingLoaded': '{count} geladene Einträge',
+  'table.filteredBy': 'gefiltert nach {filters}',
+  'table.sortedLoaded': 'Sortierung der geladenen Einträge',
+  'table.scrollHint': 'Scrollen, um alle Spalten zu sehen',
+  'table.selected': '{count} ausgewählt',
+  'table.selectAll': 'Alle geladenen Einträge auswählen',
+  'table.clearSelection': 'Auswahl aufheben',
+  'table.allFilters': 'Alle Filter',
+  'table.activeFilters': 'Aktive Filter',
+  'table.filtered': 'Gefiltert nach',
+  'table.removeFilter': 'Filter entfernen: {filter}',
+  'table.clearFilters': 'Alle zurücksetzen',
+  'table.anyDate': 'Beliebiges Datum',
+
+  'changes.polish.eyebrow': 'Change-Arbeitsbereich',
+  'changes.polish.intro': 'Sicher planen. Risiken, Zeitfenster und Umsetzung im Blick behalten.',
+  'changes.polish.basics': '01 · Change beschreiben',
+  'changes.polish.basicsHint':
+    'Wählen Sie einen klaren Titel und beschreiben Sie die geplante Verbesserung.',
+  'changes.polish.planning': '02 · Sichere Umsetzung planen',
+  'changes.polish.planningHint':
+    'Verantwortliche Person und Wartungsfenster festlegen. Vor der Bewertung einen Rollback-Plan ergänzen.',
+  'changes.polish.scheduled': 'Diese Woche geplant',
+  'changes.polish.awaiting': 'Freigabe ausstehend',
+  'changes.polish.failed': 'Fehlgeschlagen · letzte 30 Tage',
+  'changes.polish.loadedScope':
+    'Basierend auf {count} geladenen Changes für Ihre Filter. Kennzahl auswählen, um diese Einträge anzuzeigen.',
+  'changes.polish.unavailable': 'Nicht verfügbar',
+  'changes.polish.unscheduled': 'Noch nicht geplant',
+  'changes.polish.duration': 'Zeitfenster: {count} Min.',
+  'changes.polish.lifecycle': 'Change-Verlauf',
+  'changes.polish.noResources': 'Noch keine betroffenen Ressourcen verknüpft.',
+  'changes.polish.noApprovals': 'Noch keine Freigabe angefordert.',
+  'changes.polish.noTasks': 'Ausführungsaufgaben erscheinen hier, sobald sie hinzugefügt werden.',
+  'changes.polish.noHistory': 'Noch keine Statusänderungen erfasst.',
+  'changes.polish.noImpact': 'Für die verknüpften Ressourcen liegen keine Auswirkungspfade vor.',
+  'changes.polish.windowHint':
+    'Das Ende muss nach dem Beginn liegen. Ein Wartungsfenster benötigt beide Angaben.',
+  'changes.polish.windowInvalid':
+    'Wählen Sie ein Ende nach dem Beginn und füllen Sie beide Zeitangaben aus.',
   'shell.search': 'Suche',
   'shell.searchPlaceholder': 'Seiten und Befehle suchen',
   'shell.commandTitle': 'Gehe zu…',
@@ -1344,6 +1385,46 @@ export const de: Record<MessageKey, string> = {
   'tickets.back': 'Zurück zu den Tickets',
   'tickets.detail.title': 'Ticket',
   'tickets.create.action': 'Problem melden',
+  'reportPolish.eyebrow': 'Dein Support-Team',
+  'reportPolish.title': 'Damit es für dich weitergeht.',
+  'reportPolish.intro': 'Sag uns, was dich gerade aufhält. Wir helfen dir weiter.',
+  'reportPolish.describe': 'Wobei können wir dir helfen?',
+  'reportPolish.describeHint':
+    'Beginne mit einer kurzen Zusammenfassung und ergänze hilfreiche Details.',
+  'reportPolish.titleHint':
+    'Eine kurze, konkrete Zusammenfassung hilft uns, das Problem zu verstehen.',
+  'reportPolish.titlePlaceholder': 'Zum Beispiel: Ich kann mich nicht mit dem Büro-WLAN verbinden',
+  'reportPolish.descriptionPlaceholder':
+    'Was wolltest du tun? Was ist stattdessen passiert? Ergänze eine Fehlermeldung, falls vorhanden.',
+  'reportPolish.characters': '{count} / {max} Zeichen',
+  'reportPolish.equipment': 'Geht es um ein Gerät?',
+  'reportPolish.optional': 'Optional',
+  'reportPolish.noDeviceHint': 'Eine App, ein Konto oder etwas anderes',
+  'reportPolish.devicesUnavailable':
+    'Deine Geräte konnten nicht geladen werden. Du kannst das Problem trotzdem ohne Geräteauswahl melden.',
+  'reportPolish.submitHint':
+    'In deinem Ticket kannst du weitere Details ergänzen und das Gespräch verfolgen.',
+  'reportPolish.submit': 'An den Support senden',
+  'reportPolish.sending': 'Wird gesendet…',
+  'reportPolish.help': 'Vielleicht hilft das schon',
+  'reportPolish.helpTitle': 'Vielleicht gibt es schon eine Lösung.',
+  'reportPolish.helpIntro':
+    'Während du deine Zusammenfassung schreibst, erscheinen hier passende Hilfeartikel. Du entscheidest, ob du deine Meldung sendest.',
+  'reportPolish.browse': 'Hilfeartikel durchsehen',
+  'reportPolish.tips': 'Diese Details helfen uns',
+  'reportPolish.tipWhen': 'Seit wann tritt das Problem auf – und passiert es jedes Mal?',
+  'reportPolish.tipTried': 'Sag uns, was du bereits ausprobiert hast.',
+  'reportPolish.tipPrivacy':
+    'Bitte keine Passwörter oder andere vertrauliche Informationen angeben.',
+  'reportPolish.sent': 'Meldung eingegangen',
+  'reportPolish.successTitle': 'Wir kümmern uns darum.',
+  'reportPolish.successIntro':
+    'Dein Ticket wurde erstellt. Alle Angaben sind unter dieser Referenz gespeichert.',
+  'reportPolish.openTicket': 'Dein Ticket ansehen',
+  'reportPolish.next': 'So geht es weiter',
+  'reportPolish.nextReview': 'Das Support-Team kann jetzt deine Meldung und deine Angaben prüfen.',
+  'reportPolish.nextFollow':
+    'Öffne dein Ticket, um Antworten zu lesen, Details zu ergänzen und den Fortschritt zu verfolgen.',
   'tickets.create.title': 'Problem melden',
   'tickets.create.intro':
     'Sag uns, was nicht funktioniert. Wir leiten es weiter und halten dich auf dem Laufenden.',
@@ -2011,6 +2092,8 @@ export const de: Record<MessageKey, string> = {
   'security.selectChange': 'Change auswählen',
   'security.applicableBySeverity': 'Anwendbare Hinweise nach Schweregrad',
   'security.openByConfidence': 'Offene Befunde nach Konfidenz',
+  'security.filter.applicable': 'Zutreffende Hinweise',
+  'security.filter.open': 'Offene Funde',
   'security.riskDue30': 'Risikoakzeptanzen mit Prüfung in 30 Tagen',
   'security.advisories': 'Sicherheitshinweise',
   'security.advisory': 'Sicherheitshinweis',

@@ -1,3 +1,5 @@
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -31,6 +33,7 @@ export function TasksScreen() {
     () => new URLSearchParams(window.location.search).get('mine') === 'true',
   );
   const [query, setQuery] = useState('');
+  useFilterQuery({ priority, overdue, mine });
   const q = useDebouncedValue(query.trim(), 300);
 
   const filter: TaskFilter = {
@@ -45,6 +48,64 @@ export function TasksScreen() {
     [status, priority, overdue, mine, q],
   );
 
+  const activeFilters = [
+    ...(query
+      ? [
+          {
+            key: 'search',
+            label: `${t('tasks.filter.search')}: ${query}`,
+            onRemove: () => {
+              setQuery('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`tasks.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+    ...(priority
+      ? [
+          {
+            key: 'priority',
+            label: t(`tasks.priority.${priority}`),
+            onRemove: () => {
+              setPriority('');
+            },
+          },
+        ]
+      : []),
+    ...(overdue
+      ? [
+          {
+            key: 'overdue',
+            label: t('tasks.filter.overdue'),
+            onRemove: () => {
+              setOverdue(false);
+            },
+          },
+        ]
+      : []),
+    ...(mine
+      ? [
+          {
+            key: 'mine',
+            label: t('tasks.filter.mine'),
+            onRemove: () => {
+              setMine(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -58,7 +119,11 @@ export function TasksScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('tasks.filter.search')}
           type="search"
@@ -95,8 +160,13 @@ export function TasksScreen() {
           checked={mine}
           onChange={(event) => setMine(event.target.checked)}
         />
-      </form>
-      <TaskTable caption={t('nav.tasks')} emptyText={t('tasks.empty')} list={list} />
+      </FilterBar>
+      <TaskTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
+        caption={t('nav.tasks')}
+        emptyText={t('tasks.empty')}
+        list={list}
+      />
     </>
   );
 }

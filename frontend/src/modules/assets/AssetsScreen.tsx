@@ -1,3 +1,4 @@
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -36,11 +37,13 @@ export function AssetStatusBadge({ status }: { status: AssetStatus }) {
 /** The table shared by "My equipment" and the asset list. */
 export function AssetTable({
   caption,
+  filterSummary = '',
   emptyText,
   list,
   productNames,
 }: {
   caption: string;
+  filterSummary?: string;
   emptyText: string;
   list: PagedState<Asset>;
   productNames: Record<string, string>;
@@ -49,18 +52,31 @@ export function AssetTable({
   const columns: Column<Asset>[] = [
     {
       key: 'reference',
+      sortValue: (a) => a.reference,
       header: t('assets.col.reference'),
       render: (a) => <Link to={`/assets/${encodeURIComponent(a.id)}`}>{a.reference}</Link>,
     },
     {
       key: 'product',
+      sortValue: (a) => productNames[a.productId] ?? a.productId,
       header: t('assets.col.product'),
       render: (a) => productNames[a.productId] ?? '–',
     },
-    { key: 'serial', header: t('assets.col.serial'), render: (a) => a.serialNumber ?? '–' },
-    { key: 'tag', header: t('assets.col.tag'), render: (a) => a.assetTag ?? '–' },
+    {
+      key: 'serial',
+      sortValue: (a) => a.serialNumber,
+      header: t('assets.col.serial'),
+      render: (a) => a.serialNumber ?? '–',
+    },
+    {
+      key: 'tag',
+      sortValue: (a) => a.assetTag,
+      header: t('assets.col.tag'),
+      render: (a) => a.assetTag ?? '–',
+    },
     {
       key: 'status',
+      sortValue: (a) => a.status,
       header: t('assets.col.status'),
       render: (a) => <AssetStatusBadge status={a.status} />,
     },
@@ -83,6 +99,7 @@ export function AssetTable({
   ];
   return (
     <DataTable
+      filterSummary={filterSummary}
       caption={caption}
       columns={columns}
       rows={list.items}
@@ -154,6 +171,31 @@ export function AssetsScreen() {
     }
   };
 
+  const activeFilters = [
+    ...(query
+      ? [
+          {
+            key: 'search',
+            label: `${t('assets.filter.search')}: ${query}`,
+            onRemove: () => {
+              setQuery('');
+            },
+          },
+        ]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`assets.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -167,11 +209,7 @@ export function AssetsScreen() {
           ) : null
         }
       />
-      <form
-        className="filters assets-lookup"
-        role="search"
-        onSubmit={(event) => void lookup(event)}
-      >
+      <FilterBar role="search" onSubmit={(event) => void lookup(event)}>
         <TextField
           label={t('assets.lookup.label')}
           hint={t('assets.lookup.hint')}
@@ -183,9 +221,13 @@ export function AssetsScreen() {
         <Button type="submit" disabled={code.trim() === ''}>
           {t('assets.lookup.action')}
         </Button>
-      </form>
+      </FilterBar>
       {lookupError ? <ApiErrorAlert error={lookupError} /> : null}
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <TextField
           label={t('assets.filter.search')}
           type="search"
@@ -203,8 +245,9 @@ export function AssetsScreen() {
             ...assetStatuses.map((value) => ({ value, label: t(`assets.status.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <AssetTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.assets')}
         emptyText={t('assets.empty')}
         list={list}

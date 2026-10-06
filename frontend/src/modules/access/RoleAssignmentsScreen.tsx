@@ -1,3 +1,6 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { errorMessageKey } from '../../platform/api/errorMessages';
 import type { ApiError } from '../../platform/api/client';
@@ -24,6 +27,7 @@ export function RoleAssignmentsScreen() {
   const canManage = can('platform.roles.manage');
 
   const [roleId, setRoleId] = useState(() => new URLSearchParams(search).get('roleId') ?? '');
+  useFilterQuery({ roleId });
   const [subjectType, setSubjectType] = useState<SubjectType | ''>('');
   const [includeRevoked, setIncludeRevoked] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -69,7 +73,7 @@ export function RoleAssignmentsScreen() {
     {
       key: 'created',
       header: t('assignments.col.created'),
-      render: (a) => formatDateTime(locale, a.createdAt),
+      render: (a) => <TableDate value={a.createdAt} />,
     },
     {
       key: 'status',
@@ -107,6 +111,42 @@ export function RoleAssignmentsScreen() {
       : []),
   ];
 
+  const activeFilters = [
+    ...(roleId
+      ? [
+          {
+            key: 'role',
+            label: `${t('assignments.filter.role')}: ${roles.data?.items.find((role) => role.id === roleId)?.name ?? roleId}`,
+            onRemove: () => {
+              setRoleId('');
+            },
+          },
+        ]
+      : []),
+    ...(subjectType
+      ? [
+          {
+            key: 'subject',
+            label: `${t('assignments.filter.subjectType')}: ${t(`subject.${subjectType}`)}`,
+            onRemove: () => {
+              setSubjectType('');
+            },
+          },
+        ]
+      : []),
+    ...(includeRevoked
+      ? [
+          {
+            key: 'revoked',
+            label: t('assignments.filter.includeRevoked'),
+            onRemove: () => {
+              setIncludeRevoked(false);
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -121,8 +161,8 @@ export function RoleAssignmentsScreen() {
         }
       />
       {roles.error ? <ApiErrorAlert error={roles.error} onRetry={roles.reload} /> : null}
-      <form
-        className="filters"
+      <FilterBar
+        activeFilters={activeFilters}
         onSubmit={(event) => event.preventDefault()}
         aria-label={t('filters.title')}
       >
@@ -150,8 +190,9 @@ export function RoleAssignmentsScreen() {
           checked={includeRevoked}
           onChange={(event) => setIncludeRevoked(event.target.checked)}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.roleAssignments')}
         columns={columns}
         rows={list.items}

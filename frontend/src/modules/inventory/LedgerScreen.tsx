@@ -1,6 +1,8 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import type { MessageKey } from '../../platform/i18n/i18n';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Select } from '../../platform/ui/Field';
@@ -9,7 +11,7 @@ import { inventoryApi } from './api';
 import { transactionTypes, type InventoryTransaction } from './types';
 
 export function LedgerScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [type, setType] = useState('');
   const [products, setProducts] = useState<Record<string, string>>({});
   const [locations, setLocations] = useState<Record<string, string>>({});
@@ -26,7 +28,7 @@ export function LedgerScreen() {
     {
       key: 'time',
       header: t('inventory.col.time'),
-      render: (r) => formatDateTime(locale, r.createdAt),
+      render: (r) => <TableDate value={r.createdAt} />,
     },
     { key: 'type', header: t('inventory.col.type'), render: (r) => t(`inventory.type.${r.type}`) },
     {
@@ -47,10 +49,28 @@ export function LedgerScreen() {
     },
     { key: 'reason', header: t('inventory.col.reason'), render: (r) => r.reason ?? '' },
   ];
+  const activeFilters = [
+    ...(type
+      ? [
+          {
+            key: 'type',
+            label: t(`inventory.type.${type}` as MessageKey),
+            onRemove: () => {
+              setType('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader title={t('nav.ledger')} intro={t('inventory.ledger.intro')} />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('inventory.col.type')}
           value={type}
@@ -60,8 +80,9 @@ export function LedgerScreen() {
             ...transactionTypes.map((value) => ({ value, label: t(`inventory.type.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.ledger')}
         columns={columns}
         rows={list.items}

@@ -5,11 +5,14 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link, navigate } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
-import { Badge } from '../../platform/ui/Alert';
+import { Avatar, FilterBar, Skeleton, StatusBadge, useCountUp } from '../../platform/ui/Workspace';
+import { useContextMenu } from '../../platform/ui/ContextMenu';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Dialog } from '../../platform/ui/Dialog';
+import { relativeDate } from '../../platform/ui/tableModel';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
-import { Checkbox, Select, TextField } from '../../platform/ui/Field';
+import { Checkbox, Select } from '../../platform/ui/Field';
+import { DateFilter } from '../../platform/ui/FilterBar';
 import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
@@ -17,7 +20,15 @@ import { servicesApi } from '../services/api';
 import { infrastructureApi } from '../infrastructure/api';
 import { assetsApi } from '../assets/api';
 import { changesApi, type ChangeFields } from './api';
-import { allowedActions, resourceLabel } from './helpers';
+import {
+  allowedActions,
+  resourceLabel,
+  changeMetrics,
+  lifecycle,
+  windowMinutes,
+  matchesChangeMetric,
+  type ChangeMetricKey,
+} from './helpers';
 import {
   cancelReasons,
   failReasons,
@@ -76,7 +87,7 @@ const tone: Record<ChangeStatus, 'neutral' | 'success' | 'warning' | 'danger' | 
 };
 function Status({ value }: { value: ChangeStatus }) {
   const { t } = useI18n();
-  return <Badge tone={tone[value]}>{t(`changes.status.${value}`)}</Badge>;
+  return <StatusBadge tone={tone[value]}>{t(`changes.status.${value}`)}</StatusBadge>;
 }
 function Error({ error }: { error: ApiError | undefined }) {
   return error ? <ApiErrorAlert error={error} /> : null;
@@ -138,8 +149,10 @@ function ChangeForm({
   const [ownerId, setOwnerId] = useState(existing?.ownerId ?? '');
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
+  const invalidWindow = !!(start || end) && windowMinutes(start, end) === null;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (invalidWindow) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -166,59 +179,73 @@ function ChangeForm({
     }
   };
   return (
-    <form onSubmit={(e) => void submit(e)} className="form-stack">
-      <Field label={t('changes.title')} value={title} onChange={setTitle} required />
-      <label>
-        {t('changes.description')}
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <Choice
-        label={t('changes.kind')}
-        value={kind}
-        onChange={(v) => setKind(v as Change['kind'])}
-        values={kinds}
-        prefix="changes.kind"
-      />
-      <Choice
-        label={t('changes.risk')}
-        value={risk}
-        onChange={(v) => setRisk(v as Change['risk'])}
-        values={risks}
-        prefix="changes.risk"
-      />
-      <Field
-        label={t('changes.windowStart')}
-        value={start}
-        onChange={setStart}
-        type="datetime-local"
-      />
-      <Field label={t('changes.windowEnd')} value={end} onChange={setEnd} type="datetime-local" />
-      <label>
-        {t('changes.rollbackPlan')}
-        <textarea value={rollbackPlan} onChange={(e) => setRollbackPlan(e.target.value)} />
-      </label>
-      {kind === 'emergency' && (
+    <form onSubmit={(e) => void submit(e)} className="form-stack change-form">
+      <section className="change-form-section">
+        <h3>{t('changes.polish.basics')}</h3>
+        <p>{t('changes.polish.basicsHint')}</p>
+        <Field label={t('changes.title')} value={title} onChange={setTitle} required />
         <label>
-          {t('changes.emergencyJustification')}
-          <textarea
-            value={emergencyJustification}
-            onChange={(e) => setEmergencyJustification(e.target.value)}
-          />
+          {t('changes.description')}
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
-      )}
-      <p>{t('changes.owner')}</p>
-      <AssigneePicker
-        type="user"
-        value={owner}
-        onChange={(value) => {
-          setOwner(value);
-          setOwnerId(value?.id ?? '');
-        }}
-      />
-      <Field label={t('changes.ownerId')} value={ownerId} onChange={setOwnerId} />
+        <Choice
+          label={t('changes.kind')}
+          value={kind}
+          onChange={(v) => setKind(v as Change['kind'])}
+          values={kinds}
+          prefix="changes.kind"
+        />
+        <Choice
+          label={t('changes.risk')}
+          value={risk}
+          onChange={(v) => setRisk(v as Change['risk'])}
+          values={risks}
+          prefix="changes.risk"
+        />
+      </section>
+      <section className="change-form-section">
+        <h3>{t('changes.polish.planning')}</h3>
+        <p>{t('changes.polish.planningHint')}</p>
+        <Field
+          label={t('changes.windowStart')}
+          value={start}
+          onChange={setStart}
+          type="datetime-local"
+        />
+        <Field label={t('changes.windowEnd')} value={end} onChange={setEnd} type="datetime-local" />
+        <p
+          className={invalidWindow ? 'change-validation' : undefined}
+          role={invalidWindow ? 'alert' : undefined}
+        >
+          {t(invalidWindow ? 'changes.polish.windowInvalid' : 'changes.polish.windowHint')}
+        </p>
+        <label>
+          {t('changes.rollbackPlan')}
+          <textarea value={rollbackPlan} onChange={(e) => setRollbackPlan(e.target.value)} />
+        </label>
+        {kind === 'emergency' && (
+          <label>
+            {t('changes.emergencyJustification')}
+            <textarea
+              value={emergencyJustification}
+              onChange={(e) => setEmergencyJustification(e.target.value)}
+            />
+          </label>
+        )}
+        <p>{t('changes.owner')}</p>
+        <AssigneePicker
+          type="user"
+          value={owner}
+          onChange={(value) => {
+            setOwner(value);
+            setOwnerId(value?.id ?? '');
+          }}
+        />
+        <Field label={t('changes.ownerId')} value={ownerId} onChange={setOwnerId} />
+      </section>
       <Error error={error} />
-      <div className="actions">
-        <Button type="submit" disabled={busy}>
+      <div className="actions change-form-footer">
+        <Button variant="primary" type="submit" disabled={busy || invalidWindow}>
           {t('action.save')}
         </Button>
         {onClose && (
@@ -230,8 +257,62 @@ function ChangeForm({
     </form>
   );
 }
-export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
+function Person({ name }: { name?: string | null | undefined }) {
+  const { t } = useI18n();
+  return (
+    <span className="change-person">
+      <Avatar name={name ?? null} />
+      <span>{name || t('changes.polish.unavailable')}</span>
+    </span>
+  );
+}
+function ChangeWindow({ change }: { change: Change }) {
   const { t, locale } = useI18n();
+  const minutes = windowMinutes(change.windowStart, change.windowEnd);
+  return (
+    <span className="change-window">
+      <time
+        dateTime={change.windowStart ?? undefined}
+        title={change.windowStart ? new Date(change.windowStart).toLocaleString(locale) : undefined}
+      >
+        {change.windowStart
+          ? relativeDate(change.windowStart, locale, Date.now())
+          : t('changes.polish.unscheduled')}
+      </time>
+      {minutes !== null && <small>{t('changes.polish.duration', { count: minutes })}</small>}
+    </span>
+  );
+}
+function ChangeMetric({
+  label,
+  value,
+  onClick,
+  selected,
+}: {
+  label: string;
+  value: number;
+  onClick: () => void;
+  selected: boolean;
+}) {
+  const count = useCountUp(value);
+  return (
+    <button
+      type="button"
+      className="change-metric"
+      onClick={onClick}
+      aria-pressed={selected}
+      aria-label={`${label}: ${value}`}
+    >
+      <span>{label}</span>
+      <strong aria-hidden="true">{count}</strong>
+      <span className="change-metric-arrow" aria-hidden="true">
+        ↗
+      </span>
+    </button>
+  );
+}
+export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
+  const { t } = useI18n();
   const { can, session } = useSession();
   const [status, setStatus] = useState('');
   const [risk, setRisk] = useState('');
@@ -240,6 +321,7 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
   const [windowTo, setWindowTo] = useState('');
   const [owner, setOwner] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [metric, setMetric] = useState<ChangeMetricKey | null>(null);
   const filter = {
     status,
     risk,
@@ -253,14 +335,27 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
         : {}),
   };
   const list = usePagedList(
-    (cursor, signal) => changesApi.list(filter, cursor, signal),
+    async (cursor, signal) => {
+      const page = await changesApi.list(filter, cursor, signal);
+      return {
+        ...page,
+        items: page.items.map((item) => ({
+          ...item,
+          ownerName: item.ownerId ? page.names?.users[item.ownerId] : undefined,
+          requesterName: page.names?.users[item.requesterId],
+        })),
+      };
+    },
     [status, risk, kind, windowFrom, windowTo, owner, mine, session?.userId],
   );
   const title = t(mine ? 'changes.mine' : 'nav.changes');
+  const metrics = changeMetrics(list.items, new Date());
   return (
-    <>
+    <div className="changes-workspace">
+      <p className="changes-eyebrow">{t('changes.polish.eyebrow')}</p>
       <PageHeader
         title={title}
+        intro={t('changes.polish.intro')}
         actions={
           can('changes.manage') ? (
             <Button variant="primary" onClick={() => setShowCreate(true)}>
@@ -269,7 +364,97 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
           ) : null
         }
       />
-      <form className="filters changes-filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      {!list.loading && !list.error && (
+        <>
+          <div className="change-metrics">
+            <ChangeMetric
+              label={t('changes.polish.scheduled')}
+              value={metrics.scheduled}
+              selected={metric === 'scheduled'}
+              onClick={() => setMetric(metric === 'scheduled' ? null : 'scheduled')}
+            />
+            <ChangeMetric
+              label={t('changes.polish.awaiting')}
+              value={metrics.awaiting}
+              selected={metric === 'awaiting'}
+              onClick={() => setMetric(metric === 'awaiting' ? null : 'awaiting')}
+            />
+            <ChangeMetric
+              label={t('changes.status.in_progress')}
+              value={metrics.running}
+              selected={metric === 'running'}
+              onClick={() => setMetric(metric === 'running' ? null : 'running')}
+            />
+            <ChangeMetric
+              label={t('changes.polish.failed')}
+              value={metrics.failed}
+              selected={metric === 'failed'}
+              onClick={() => setMetric(metric === 'failed' ? null : 'failed')}
+            />
+          </div>
+          <p className="change-scope">
+            {t('changes.polish.loadedScope', { count: list.items.length })}
+          </p>
+        </>
+      )}
+      <FilterBar
+        primaryCount={3}
+        activeFilters={[
+          ...(status
+            ? [
+                {
+                  key: 'status',
+                  label: t(`changes.status.${status}` as MessageKey),
+                  onRemove: () => setStatus(''),
+                },
+              ]
+            : []),
+          ...(risk
+            ? [
+                {
+                  key: 'risk',
+                  label: t(`changes.risk.${risk}` as MessageKey),
+                  onRemove: () => setRisk(''),
+                },
+              ]
+            : []),
+          ...(kind
+            ? [
+                {
+                  key: 'kind',
+                  label: t(`changes.kind.${kind}` as MessageKey),
+                  onRemove: () => setKind(''),
+                },
+              ]
+            : []),
+          ...(windowFrom
+            ? [{ key: 'from', label: t('changes.windowFrom'), onRemove: () => setWindowFrom('') }]
+            : []),
+          ...(windowTo
+            ? [{ key: 'to', label: t('changes.windowTo'), onRemove: () => setWindowTo('') }]
+            : []),
+          ...(owner
+            ? [{ key: 'owner', label: t('changes.mineFilter'), onRemove: () => setOwner('') }]
+            : []),
+          ...(metric
+            ? [
+                {
+                  key: 'metric',
+                  label: t(
+                    metric === 'scheduled'
+                      ? 'changes.polish.scheduled'
+                      : metric === 'awaiting'
+                        ? 'changes.polish.awaiting'
+                        : metric === 'running'
+                          ? 'changes.status.in_progress'
+                          : 'changes.polish.failed',
+                  ),
+                  onRemove: () => setMetric(null),
+                },
+              ]
+            : []),
+        ]}
+      >
         <Select
           label={t('changes.statusLabel')}
           value={status}
@@ -297,17 +482,17 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
             ...kinds.map((value) => ({ value, label: t(`changes.kind.${value}`) })),
           ]}
         />
-        <TextField
+        <DateFilter
           label={t('changes.windowFrom')}
           type="datetime-local"
           value={windowFrom}
-          onChange={(e) => setWindowFrom(e.target.value)}
+          onChange={setWindowFrom}
         />
-        <TextField
+        <DateFilter
           label={t('changes.windowTo')}
           type="datetime-local"
           value={windowTo}
-          onChange={(e) => setWindowTo(e.target.value)}
+          onChange={setWindowTo}
         />
         {!mine ? (
           <Checkbox
@@ -316,49 +501,109 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
             onChange={(e) => setOwner(e.target.checked ? 'mine' : '')}
           />
         ) : null}
-      </form>
+      </FilterBar>
       <DataTable
         caption={title}
+        filterSummary={[
+          status && t(`changes.status.${status}` as MessageKey),
+          risk && t(`changes.risk.${risk}` as MessageKey),
+          kind && t(`changes.kind.${kind}` as MessageKey),
+          windowFrom && t('changes.windowFrom'),
+          windowTo && t('changes.windowTo'),
+          owner && t('changes.mineFilter'),
+          metric &&
+            t(
+              metric === 'scheduled'
+                ? 'changes.polish.scheduled'
+                : metric === 'awaiting'
+                  ? 'changes.polish.awaiting'
+                  : metric === 'running'
+                    ? 'changes.status.in_progress'
+                    : 'changes.polish.failed',
+            ),
+        ]
+          .filter(Boolean)
+          .join(', ')}
+        rowActions={(c) => [
+          {
+            id: 'open',
+            label: t('contextMenu.open'),
+            onSelect: () => navigate(`/changes/${enc(c.id)}`),
+          },
+        ]}
         columns={
           [
             {
               key: 'reference',
+              sortValue: (c) => c.reference,
               header: t('changes.reference'),
-              render: (c: Change) => <Link to={`/changes/${enc(c.id)}`}>{c.reference}</Link>,
+              render: (c: Change) => (
+                <Link className="change-reference" to={`/changes/${enc(c.id)}`}>
+                  {c.reference}
+                </Link>
+              ),
             },
-            { key: 'title', header: t('changes.title'), render: (c: Change) => c.title },
+            {
+              key: 'title',
+              sortValue: (c) => c.title,
+              header: t('changes.title'),
+              render: (c: Change) => (
+                <Link className={`change-title change-risk-${c.risk}`} to={`/changes/${enc(c.id)}`}>
+                  {c.title}
+                </Link>
+              ),
+            },
             {
               key: 'status',
+              sortValue: (c) => t(`changes.status.${c.status}`),
               header: t('changes.statusLabel'),
               render: (c: Change) => <Status value={c.status} />,
             },
             {
               key: 'kind',
+              sortValue: (c) => t(`changes.kind.${c.kind}`),
               header: t('changes.kind'),
-              render: (c: Change) => t(`changes.kind.${c.kind}`),
+              render: (c: Change) => (
+                <StatusBadge tone={c.kind === 'emergency' ? 'warning' : 'neutral'}>
+                  {t(`changes.kind.${c.kind}`)}
+                </StatusBadge>
+              ),
             },
             {
               key: 'risk',
+              sortValue: (c) => risks.indexOf(c.risk),
               header: t('changes.risk'),
-              render: (c: Change) => t(`changes.risk.${c.risk}`),
+              render: (c: Change) => (
+                <StatusBadge
+                  tone={c.risk === 'high' ? 'danger' : c.risk === 'medium' ? 'warning' : 'success'}
+                >
+                  {t(`changes.risk.${c.risk}`)}
+                </StatusBadge>
+              ),
             },
             {
               key: 'window',
+              sortValue: (c) => (c.windowStart ? Date.parse(c.windowStart) : null),
               header: t('changes.windowStart'),
-              render: (c: Change) => (
-                <time dateTime={c.windowStart ?? undefined}>
-                  {c.windowStart
-                    ? new Intl.DateTimeFormat(locale, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }).format(new Date(c.windowStart))
-                    : '—'}
-                </time>
-              ),
+              render: (c: Change) => <ChangeWindow change={c} />,
             },
-          ] satisfies Column<Change>[]
+            {
+              key: 'owner',
+              sortValue: (c) => c.ownerName,
+              header: t('changes.owner'),
+              render: (c) => <Person name={c.ownerName} />,
+            },
+            {
+              key: 'requester',
+              sortValue: (c) => c.requesterName,
+              header: t('changes.requester'),
+              render: (c) => <Person name={c.requesterName} />,
+            },
+          ] satisfies Column<(typeof list.items)[number]>[]
         }
-        rows={list.items}
+        rows={
+          metric ? list.items.filter((c) => matchesChangeMetric(c, metric, new Date())) : list.items
+        }
         rowKey={(c) => c.id}
         loading={list.loading}
         error={list.error}
@@ -370,21 +615,22 @@ export function ChangesListScreen({ mine = false }: { mine?: boolean }) {
         onLoadMore={list.loadMore}
       />
       {showCreate && (
-        <Dialog title={t('changes.create')} onClose={() => setShowCreate(false)}>
+        <Dialog wide title={t('changes.create')} onClose={() => setShowCreate(false)}>
           <ChangeForm
             onClose={() => setShowCreate(false)}
             onDone={(id) => navigate(`/changes/${enc(id)}`)}
           />
         </Dialog>
       )}
-    </>
+    </div>
   );
 }
 export function ChangeCreateScreen() {
   const { t } = useI18n();
   return (
     <>
-      <PageHeader title={t('changes.create')} />
+      <p className="changes-eyebrow">{t('changes.polish.eyebrow')}</p>
+      <PageHeader title={t('changes.create')} intro={t('changes.polish.intro')} />
       <ChangeForm onDone={(id) => navigate(`/changes/${enc(id)}`)} />
     </>
   );
@@ -693,6 +939,7 @@ function TaskDialog({
 export function ChangeDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
+  const menu = useContextMenu();
   const detail = useAsync((signal) => changesApi.get(id, signal), [id]);
   const transitions = usePagedList(
     (cursor, signal) => changesApi.transitions(id, cursor, signal),
@@ -711,6 +958,25 @@ export function ChangeDetailScreen({ id }: { id: string }) {
   const [mutationError, setMutationError] = useState<ApiError>();
   const c = detail.data;
   const actions = c ? allowedActions(c) : [];
+  const primary = actions.find(
+    (x) => !['update', 'edit_affected', 'add_task', 'cancel', 'fail'].includes(x),
+  );
+  const runAction = (x: string) =>
+    x === 'update'
+      ? setShowEdit(true)
+      : x === 'edit_affected'
+        ? setShowAffected(true)
+        : x === 'add_task'
+          ? setShowTask(true)
+          : setAction(x);
+  const secondary = actions
+    .filter((x) => x !== primary)
+    .map((x) => ({
+      id: x,
+      label: t(`changes.action.${x}` as MessageKey),
+      danger: x === 'cancel' || x === 'fail',
+      onSelect: () => runAction(x),
+    }));
   const reload = () => {
     detail.reload();
     transitions.reload();
@@ -738,199 +1004,272 @@ export function ChangeDetailScreen({ id }: { id: string }) {
     }
   };
   return (
-    <>
+    <div className="changes-workspace">
+      <p className="changes-eyebrow">{c?.reference ?? t('changes.polish.eyebrow')}</p>
       <PageHeader
-        title={c ? `${c.reference} · ${c.title}` : t('changes.detail')}
-        actions={<Link to="/changes">{t('changes.back')}</Link>}
+        title={c ? c.title : t('changes.detail')}
+        actions={
+          <>
+            <Link to="/changes">{t('changes.back')}</Link>
+            {primary && (
+              <Button variant="primary" onClick={() => runAction(primary)}>
+                {t(`changes.action.${primary}` as MessageKey)}
+              </Button>
+            )}
+            {secondary.length > 0 && (
+              <Button
+                aria-label={t('changes.actions')}
+                aria-haspopup="menu"
+                onClick={(event) =>
+                  menu.openAtElement(secondary, event.currentTarget, t('changes.actions'))
+                }
+              >
+                •••
+              </Button>
+            )}
+          </>
+        }
       />
       <Error error={detail.error ?? mutationError} />
-      {detail.loading && <p>{t('state.loading')}</p>}
+      {detail.loading && <Skeleton lines={6} />}
+      {menu.menu}
       {c && (
         <>
-          <section>
-            <h2>{t('changes.facts')}</h2>
-            <dl>
-              <dt>{t('changes.statusLabel')}</dt>
-              <dd>
-                <Status value={c.status} />
-              </dd>
-              <dt>{t('changes.kind')}</dt>
-              <dd>{t(`changes.kind.${c.kind}`)}</dd>
-              <dt>{t('changes.risk')}</dt>
-              <dd>{t(`changes.risk.${c.risk}`)}</dd>
-              <dt>{t('changes.description')}</dt>
-              <dd>{c.description || '—'}</dd>
-              <dt>{t('changes.requester')}</dt>
-              <dd>{c.names.users[c.requesterId] ?? c.requesterId}</dd>
-              <dt>{t('changes.owner')}</dt>
-              <dd>{c.ownerId ? (c.names.users[c.ownerId] ?? c.ownerId) : '—'}</dd>
-              <dt>{t('changes.windowStart')}</dt>
-              <dd>
-                {c.windowStart
-                  ? new Intl.DateTimeFormat(locale, {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    }).format(new Date(c.windowStart))
-                  : '—'}
-              </dd>
-              <dt>{t('changes.windowEnd')}</dt>
-              <dd>
-                {c.windowEnd
-                  ? new Intl.DateTimeFormat(locale, {
-                      dateStyle: 'medium',
-                      timeStyle: 'short',
-                    }).format(new Date(c.windowEnd))
-                  : '—'}
-              </dd>
-              <dt>{t('changes.approvedWindow')}</dt>
-              <dd>
-                {c.approvedWindowStart && c.approvedWindowEnd
-                  ? `${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowStart))} – ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowEnd))}`
-                  : '—'}
-              </dd>
-              {c.emergencyApprovedBy && (
-                <>
-                  <dt>{t('changes.emergencyApprover')}</dt>
-                  <dd>{c.names.users[c.emergencyApprovedBy] ?? c.emergencyApprovedBy}</dd>
-                </>
-              )}
-              <dt>{t('changes.rollbackPlan')}</dt>
-              <dd>{c.rollbackPlan || '—'}</dd>
-              <dt>{t('changes.emergencyJustification')}</dt>
-              <dd>{c.emergencyJustification || '—'}</dd>
-              <dt>{t('changes.outcomeNote')}</dt>
-              <dd>{c.outcomeNote || '—'}</dd>
-            </dl>
-          </section>
-          <section>
-            <h2>{t('changes.actions')}</h2>
-            <div className="actions">
-              {actions.map((x) => (
-                <Button
-                  type="submit"
-                  key={x}
-                  onClick={() =>
-                    x === 'update'
-                      ? setShowEdit(true)
-                      : x === 'edit_affected'
-                        ? setShowAffected(true)
-                        : x === 'add_task'
-                          ? setShowTask(true)
-                          : setAction(x)
-                  }
-                >
-                  {t(`changes.action.${x}` as MessageKey)}
-                </Button>
-              ))}
+          <div className="change-lifecycle">
+            <div className="change-lifecycle-heading">
+              <h2>{t('changes.polish.lifecycle')}</h2>
+              <Status value={c.status} />
             </div>
-          </section>
-          <section>
-            <h2>{t('changes.affected')}</h2>
-            {c.affected.map((x) => (
-              <p key={x.relationshipId}>
-                {t(`changes.type.${x.type}`)}: {label(x)}{' '}
-                {actions.includes('edit_affected') && !x.hidden && (
-                  <Button type="submit" onClick={() => void remove(x.type, x.id)}>
-                    {t('changes.remove')}
-                  </Button>
+            <ol aria-label={t('changes.polish.lifecycle')}>
+              {lifecycle.map((step, index) => (
+                <li key={step} aria-current={step === c.status ? 'step' : undefined}>
+                  <span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  {t(`changes.status.${step}`)}
+                </li>
+              ))}
+              {['failed', 'rejected', 'cancelled'].includes(c.status) && (
+                <li className={`change-lifecycle-${c.status}`} aria-current="step">
+                  <span aria-hidden="true">{c.status === 'cancelled' ? '−' : '!'}</span>
+                  {t(`changes.status.${c.status}`)}
+                </li>
+              )}
+            </ol>
+          </div>
+          <div className="change-detail-grid">
+            <section className="change-card change-facts">
+              <h2>{t('changes.facts')}</h2>
+              <dl>
+                <dt>{t('changes.statusLabel')}</dt>
+                <dd>
+                  <Status value={c.status} />
+                </dd>
+                <dt>{t('changes.kind')}</dt>
+                <dd>{t(`changes.kind.${c.kind}`)}</dd>
+                <dt>{t('changes.risk')}</dt>
+                <dd>{t(`changes.risk.${c.risk}`)}</dd>
+                <dt>{t('changes.description')}</dt>
+                <dd>{c.description || '—'}</dd>
+                <dt>{t('changes.requester')}</dt>
+                <dd>
+                  <Person name={c.names.users[c.requesterId]} />
+                </dd>
+                <dt>{t('changes.owner')}</dt>
+                <dd>
+                  <Person name={c.ownerId ? c.names.users[c.ownerId] : undefined} />
+                </dd>
+                <dt>{t('changes.windowStart')}</dt>
+                <dd>
+                  {c.windowStart
+                    ? new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(c.windowStart))
+                    : '—'}
+                </dd>
+                <dt>{t('changes.windowEnd')}</dt>
+                <dd>
+                  {c.windowEnd
+                    ? new Intl.DateTimeFormat(locale, {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }).format(new Date(c.windowEnd))
+                    : '—'}
+                </dd>
+                <dt>{t('changes.approvedWindow')}</dt>
+                <dd>
+                  {c.approvedWindowStart && c.approvedWindowEnd
+                    ? `${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowStart))} – ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowEnd))}`
+                    : '—'}
+                </dd>
+                {c.emergencyApprovedBy && (
+                  <>
+                    <dt>{t('changes.emergencyApprover')}</dt>
+                    <dd>{c.names.users[c.emergencyApprovedBy] ?? c.emergencyApprovedBy}</dd>
+                  </>
                 )}
-              </p>
-            ))}
-            {actions.includes('edit_affected') && (
-              <Button type="submit" onClick={() => setShowAffected(true)}>
-                {t('changes.addAffected')}
-              </Button>
-            )}
-          </section>
-          <section>
-            <h2>{t('changes.approvals')}</h2>
-            {c.approvals.map((x) => (
-              <p key={x.id}>
-                {x.status} ·{' '}
-                {x.approverUserId
-                  ? (c.names.users[x.approverUserId] ?? x.approverUserId)
-                  : (x.approverTeamId ?? '—')}
-                {x.decidedAt
-                  ? ` · ${new Intl.DateTimeFormat(locale).format(new Date(x.decidedAt))}`
-                  : ''}
-              </p>
-            ))}
-          </section>
-          <section>
-            <h2>{t('changes.tasks')}</h2>
-            <p>{t('changes.taskCount', { open: c.tasks.open, total: c.tasks.total })}</p>
-            {c.tasks.items.map((x) => (
-              <p key={x.id}>
-                <Link to={`/tasks/${enc(x.id)}`}>{x.title}</Link> ·{' '}
-                {t(`tasks.status.${x.status}` as MessageKey)}
-              </p>
-            ))}
-            {actions.includes('add_task') && (
-              <Button type="submit" onClick={() => setShowTask(true)}>
-                {t('changes.addTask')}
-              </Button>
-            )}
-          </section>
-          <section>
-            <h2>{t('changes.transitions')}</h2>
-            <Error error={transitions.error} />
-            {transitions.items.map((x) => (
-              <p key={x.id}>
-                {new Intl.DateTimeFormat(locale, {
-                  dateStyle: 'medium',
-                  timeStyle: 'short',
-                }).format(new Date(x.createdAt))}{' '}
-                · {x.fromStatus ? t(`changes.status.${x.fromStatus}` as MessageKey) : '—'} →{' '}
-                {t(`changes.status.${x.toStatus}` as MessageKey)} ·{' '}
-                {t(`changes.action.${x.operation}` as MessageKey)}
-                {x.reason ? ` · ${t(`changes.reason.${x.reason}` as MessageKey)}` : ''}
-              </p>
-            ))}
-            {transitions.hasMore && (
-              <Button type="submit" onClick={transitions.loadMore}>
-                {t('action.loadMore')}
-              </Button>
-            )}
-          </section>
-          {canImpact && (
-            <section>
-              <h2>{t('changes.impact')}</h2>
-              <Choice
-                label={t('changes.depth')}
-                value={String(depth)}
-                values={['1', '2', '3', '4', '5', '6']}
-                prefix="changes.depthValue"
-                onChange={(v) => setDepth(Number(v))}
-              />
-              <Error error={impact.error} />
-              {impact.data && (
-                <>
-                  {impact.data.starts.map((start) => (
-                    <div key={`${start.type}-${start.id}`}>
-                      <h3>{label(start)}</h3>
-                      {start.nodes.map((node, index) => (
-                        <p key={`${node.type}-${node.id}-${index}`}>
-                          {t(`changes.type.${node.type}`)} · {label(node)} · {t('changes.depth')}:{' '}
-                          {node.depth}
-                          {node.criticality &&
-                            ` · ${t('changes.criticality')}: ${t(`services.criticality.${node.criticality}` as MessageKey)}`}
-                        </p>
-                      ))}
-                      {(start.truncated || start.depthLimited || start.nodeLimited) && (
-                        <p>{t('changes.truncated')}</p>
-                      )}
-                    </div>
-                  ))}
-                  {impact.data.skipped > 0 && (
-                    <p>{t('changes.skipped', { count: impact.data.skipped })}</p>
-                  )}
-                  {impact.data.truncated && <p>{t('changes.truncated')}</p>}
-                </>
+                <dt>{t('changes.rollbackPlan')}</dt>
+                <dd>{c.rollbackPlan || '—'}</dd>
+                <dt>{t('changes.emergencyJustification')}</dt>
+                <dd>{c.emergencyJustification || '—'}</dd>
+                <dt>{t('changes.outcomeNote')}</dt>
+                <dd>{c.outcomeNote || '—'}</dd>
+              </dl>
+            </section>
+            <section className="change-card">
+              <h2>{t('changes.affected')}</h2>
+              {!c.affected.length && (
+                <p className="change-empty">{t('changes.polish.noResources')}</p>
+              )}
+              <div className="change-resources">
+                {c.affected.map((x) => (
+                  <div className="change-resource" key={x.relationshipId}>
+                    <span className="change-resource-icon" aria-hidden="true">
+                      {{ service: '◇', vm: '▤', asset: '▣', location: '⌖' }[x.type]}
+                    </span>
+                    <span>
+                      <small>{t(`changes.type.${x.type}`)}</small>
+                      {label(x)}
+                    </span>{' '}
+                    {actions.includes('edit_affected') && !x.hidden && (
+                      <Button type="submit" onClick={() => void remove(x.type, x.id)}>
+                        {t('changes.remove')}
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {actions.includes('edit_affected') && (
+                <Button type="submit" onClick={() => setShowAffected(true)}>
+                  {t('changes.addAffected')}
+                </Button>
               )}
             </section>
-          )}
+            <section className="change-card change-approval-card">
+              <h2>{t('changes.approvals')}</h2>
+              {!c.approvals.length && (
+                <p className="change-empty">{t('changes.polish.noApprovals')}</p>
+              )}
+              {c.approvals.map((x) => (
+                <p key={x.id}>
+                  <StatusBadge
+                    tone={
+                      x.status === 'approved'
+                        ? 'success'
+                        : x.status === 'rejected'
+                          ? 'danger'
+                          : 'warning'
+                    }
+                  >
+                    {t(`approvals.status.${x.status}` as MessageKey)}
+                  </StatusBadge>{' '}
+                  {x.approverUserId
+                    ? (c.names.users[x.approverUserId] ?? x.approverUserId)
+                    : (x.approverTeamId ?? '—')}
+                  {x.decidedAt
+                    ? ` · ${new Intl.DateTimeFormat(locale).format(new Date(x.decidedAt))}`
+                    : ''}
+                </p>
+              ))}
+            </section>
+            <section className="change-card">
+              <h2>{t('changes.tasks')}</h2>
+              <p>{t('changes.taskCount', { open: c.tasks.open, total: c.tasks.total })}</p>
+              <progress
+                className="change-task-progress"
+                aria-label={t('changes.tasks')}
+                value={c.tasks.total - c.tasks.open}
+                max={Math.max(1, c.tasks.total)}
+              />
+              {!c.tasks.items.length && (
+                <p className="change-empty">{t('changes.polish.noTasks')}</p>
+              )}
+              {c.tasks.items.map((x) => (
+                <p className="change-task" key={x.id}>
+                  <span
+                    className={x.status === 'completed' ? 'change-task-done' : 'change-task-open'}
+                    aria-hidden="true"
+                  >
+                    {x.status === 'completed' ? '✓' : '○'}
+                  </span>
+                  <Link to={`/tasks/${enc(x.id)}`}>{x.title}</Link> ·{' '}
+                  {t(`tasks.status.${x.status}` as MessageKey)}
+                </p>
+              ))}
+              {actions.includes('add_task') && (
+                <Button type="submit" onClick={() => setShowTask(true)}>
+                  {t('changes.addTask')}
+                </Button>
+              )}
+            </section>
+            <section className="change-card change-history">
+              <h2>{t('changes.transitions')}</h2>
+              <Error error={transitions.error} />
+              {transitions.loading && <Skeleton />}
+              {!transitions.loading && !transitions.items.length && (
+                <p className="change-empty">{t('changes.polish.noHistory')}</p>
+              )}
+              {transitions.items.map((x) => (
+                <p className="change-history-entry" key={x.id}>
+                  {new Intl.DateTimeFormat(locale, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(x.createdAt))}{' '}
+                  · {x.fromStatus ? t(`changes.status.${x.fromStatus}` as MessageKey) : '—'} →{' '}
+                  {t(`changes.status.${x.toStatus}` as MessageKey)} ·{' '}
+                  {t(`changes.action.${x.operation}` as MessageKey)}
+                  {x.reason ? ` · ${t(`changes.reason.${x.reason}` as MessageKey)}` : ''}
+                </p>
+              ))}
+              {transitions.hasMore && (
+                <Button type="submit" onClick={transitions.loadMore}>
+                  {t('action.loadMore')}
+                </Button>
+              )}
+            </section>
+            {canImpact && (
+              <section className="change-card change-impact">
+                <h2>{t('changes.impact')}</h2>
+                <Choice
+                  label={t('changes.depth')}
+                  value={String(depth)}
+                  values={['1', '2', '3', '4', '5', '6']}
+                  prefix="changes.depthValue"
+                  onChange={(v) => setDepth(Number(v))}
+                />
+                <Error error={impact.error} />
+                {impact.loading && <Skeleton />}
+                {impact.data && !impact.data.starts.length && (
+                  <p className="change-empty">{t('changes.polish.noImpact')}</p>
+                )}
+                {impact.data && (
+                  <>
+                    {impact.data.starts.map((start) => (
+                      <div key={`${start.type}-${start.id}`}>
+                        <h3>{label(start)}</h3>
+                        {start.nodes.map((node, index) => (
+                          <p key={`${node.type}-${node.id}-${index}`}>
+                            {t(`changes.type.${node.type}`)} · {label(node)} · {t('changes.depth')}:{' '}
+                            {node.depth}
+                            {node.criticality &&
+                              ` · ${t('changes.criticality')}: ${t(`services.criticality.${node.criticality}` as MessageKey)}`}
+                          </p>
+                        ))}
+                        {(start.truncated || start.depthLimited || start.nodeLimited) && (
+                          <p>{t('changes.truncated')}</p>
+                        )}
+                      </div>
+                    ))}
+                    {impact.data.skipped > 0 && (
+                      <p>{t('changes.skipped', { count: impact.data.skipped })}</p>
+                    )}
+                    {impact.data.truncated && <p>{t('changes.truncated')}</p>}
+                  </>
+                )}
+              </section>
+            )}
+          </div>
           {showEdit && (
-            <Dialog title={t('changes.edit')} onClose={() => setShowEdit(false)}>
+            <Dialog wide title={t('changes.edit')} onClose={() => setShowEdit(false)}>
               <ChangeForm existing={c} onDone={reload} onClose={() => setShowEdit(false)} />
             </Dialog>
           )}
@@ -960,6 +1299,6 @@ export function ChangeDetailScreen({ id }: { id: string }) {
           )}
         </>
       )}
-    </>
+    </div>
   );
 }

@@ -1042,10 +1042,12 @@ html[data-motion='reduced'] *::after {
   scroll-behavior: auto !important;
 }
 /* Shared controls also cover older module forms. */
-.turaco-main
-  button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
-    .turaco-search-trigger
-  ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close),
+:where(
+  .turaco-main
+    button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
+      .turaco-search-trigger
+    ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close)
+),
 input:not([type='checkbox']):not([type='radio']),
 select,
 textarea {
@@ -1055,10 +1057,12 @@ textarea {
   border: 1px solid var(--border-strong-token);
   border-radius: var(--radius-sm);
 }
-.turaco-main
-  button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
-    .turaco-search-trigger
-  ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close) {
+:where(
+  .turaco-main
+    button:not(.btn):not(.turaco-rail-collapse):not(.turaco-mobile-trigger):not(
+      .turaco-search-trigger
+    ):not(.table-actions-trigger):not(.turaco-rail-shade):not(.turaco-command-close)
+) {
   min-height: 36px;
   padding: 7px 12px;
   cursor: pointer;

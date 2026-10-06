@@ -1,8 +1,9 @@
+import { TableDate } from '../../platform/ui/TableDate';
+import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
-import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -94,7 +95,7 @@ function NewOrderDialog({ onClose }: { onClose: () => void }) {
 }
 
 export function OrdersScreen() {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { can } = useSession();
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [creating, setCreating] = useState(false);
@@ -128,9 +129,23 @@ export function OrdersScreen() {
     {
       key: 'created',
       header: t('procurement.col.created'),
-      render: (o) => formatDateTime(locale, o.createdAt),
+      render: (o) => <TableDate value={o.createdAt} />,
     },
   ];
+  const activeFilters = [
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: t(`procurement.status.${status}`),
+            onRemove: () => {
+              setStatus('');
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <PageHeader
@@ -144,7 +159,11 @@ export function OrdersScreen() {
           ) : null
         }
       />
-      <form className="filters" role="search" onSubmit={(event) => event.preventDefault()}>
+      <FilterBar
+        activeFilters={activeFilters}
+        role="search"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <Select
           label={t('procurement.col.status')}
           value={status}
@@ -154,8 +173,9 @@ export function OrdersScreen() {
             ...orderStatuses.map((value) => ({ value, label: t(`procurement.status.${value}`) })),
           ]}
         />
-      </form>
+      </FilterBar>
       <DataTable
+        filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.purchaseOrders')}
         columns={columns}
         rows={list.items}

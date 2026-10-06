@@ -1,3 +1,4 @@
+import { SegmentedFilter } from '../../platform/ui/FilterBar';
 import { useMemo } from 'react';
 import { useAsync, usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
@@ -120,16 +121,22 @@ export function MyWorkScreen() {
               <h2>{t('myWork.queue')}</h2>
               <Link to="/tasks">{t('nav.tasks')} ↗</Link>
             </div>
-            <div className="workspace-toolbar" role="group" aria-label={t('myWork.filter')}>
-              {(['all', 'high', 'urgent', 'overdue'] as const).map((key) => (
-                <Button
-                  key={key}
-                  aria-pressed={shown === key}
-                  onClick={() => navigate(key === 'all' ? '/my-work' : `/my-work?focus=${key}`)}
-                >
-                  {t(`myWork.filter.${key}`)}
-                </Button>
-              ))}
+            <div className="workspace-toolbar">
+              <SegmentedFilter
+                label={t('myWork.filter')}
+                value={shown}
+                onChange={(key) => navigate(key === 'all' ? '/my-work' : `/my-work?focus=${key}`)}
+                options={(['all', 'high', 'urgent', 'overdue'] as const).map((key) => ({
+                  value: key,
+                  label: t(`myWork.filter.${key}`),
+                  count: {
+                    all: ordered.length,
+                    high: high.length,
+                    urgent: critical.length,
+                    overdue: overdue.length,
+                  }[key],
+                }))}
+              />
             </div>
             {list.loading && !list.items.length ? <Skeleton lines={5} /> : null}
             {list.error ? (
