@@ -72,6 +72,12 @@ import {
   DirectoryGroupManagementScreen,
   UserManagementScreen,
 } from '../modules/endpoints/ManagementScreens';
+import { SoftwareProductsScreen } from '../modules/software/ProductsScreen';
+import {
+  SoftwareVersionDetailScreen,
+  SoftwareVersionRegisterScreen,
+} from '../modules/software/VersionScreens';
+import { SoftwareCatalogScreen, SoftwarePackagesScreen } from '../modules/software/PackagesScreens';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
 import { ReceiptsScreen } from '../modules/inventory/ReceiptsScreen';
@@ -169,6 +175,16 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UserManagementScreen key={params.id} id={params.id ?? ''} />;
     case 'managementFilters':
       return <ManagementFiltersScreen />;
+    case 'softwareProducts':
+      return <SoftwareProductsScreen />;
+    case 'softwareCatalog':
+      return <SoftwareCatalogScreen />;
+    case 'softwarePackages':
+      return <SoftwarePackagesScreen />;
+    case 'softwareVersionNew':
+      return <SoftwareVersionRegisterScreen />;
+    case 'softwareVersionDetail':
+      return <SoftwareVersionDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'initiatives':
       return <InitiativesListScreen />;
     case 'myInitiatives':

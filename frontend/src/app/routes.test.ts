@@ -405,3 +405,30 @@ describe('security routes', () => {
     expect(canViewRoute(createCan({ permissions: ['security.view'] }), detail)).toBe(true);
   });
 });
+
+describe('software routes', () => {
+  it('shows the software screens to any software permission holder', () => {
+    for (const permission of ['software.view', 'software.approve', 'software.package']) {
+      expect(ids([permission], 'endpoints')).toEqual([
+        'softwareProducts',
+        'softwareCatalog',
+        'softwarePackages',
+      ]);
+    }
+    expect(ids(['endpoints.view'], 'endpoints')).not.toContain('softwareProducts');
+  });
+
+  it('matches static software paths before the version detail', () => {
+    expect(matchRoute(appRoutes, '/software')?.route.id).toBe('softwareProducts');
+    expect(matchRoute(appRoutes, '/software/catalog')?.route.id).toBe('softwareCatalog');
+    expect(matchRoute(appRoutes, '/software/packages')?.route.id).toBe('softwarePackages');
+    expect(matchRoute(appRoutes, '/software/versions/new')?.route.id).toBe('softwareVersionNew');
+    expect(matchRoute(appRoutes, '/software/versions/v1')?.route.id).toBe('softwareVersionDetail');
+  });
+
+  it('lets only packagers register versions', () => {
+    const register = appRoutes.find((route) => route.id === 'softwareVersionNew')!;
+    expect(canViewRoute(createCan({ permissions: ['software.approve'] }), register)).toBe(false);
+    expect(canViewRoute(createCan({ permissions: ['software.package'] }), register)).toBe(true);
+  });
+});
