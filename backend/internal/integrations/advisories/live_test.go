@@ -21,7 +21,7 @@ func liveOnly(t *testing.T) {
 
 func TestLiveNVD(t *testing.T) {
 	liveOnly(t)
-	cfg := nvd.Config{MaxRecords: 50, PageSize: 50, Version: "live-test"}
+	cfg := nvd.Config{MaxRecords: 2000, PageSize: 100, Version: "live-test"}
 	if path := os.Getenv("NVD_API_KEY_FILE"); path != "" {
 		b, err := os.ReadFile(path)
 		if err != nil {
