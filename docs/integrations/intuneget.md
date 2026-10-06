@@ -7,13 +7,16 @@
 - `SearchCatalog(ctx, query)` returns `CatalogEntry{ProviderID, Name, Publisher, LatestVersion, SourceURL}`; Turaco drops entries with invalid values and keeps at most 50.
 - `Package(ctx, PackageRequest, opKey)` packages exactly the approved binding (product key, name, publisher, version, installer URL and SHA-256, install command, detection rule). Idempotent per operation key (`versionId:installerSha256`).
 - `Publish(ctx, providerPackageID, ProviderTarget{ManagementProvider}, opKey)` publishes or updates the package into the Management Provider (Intune). Idempotent per operation key (`packageId:publish:installerSha256`).
-- `PackageStatus(ctx, ids)` reports `PackageRecord{ProviderPackageID, ProductKey, Version, InstallerSHA256, InstallerURL, Publisher, Status (building|packaged|published|failed), ManagementArtifactExternalID, ObservedAt}`; unknown ids are left out.
+- `PackageStatus(ctx, ids)` reports `PackageRecord{ProviderPackageID, ProductKey, Version, InstallerSHA256, InstallerURL, Publisher, InstallCommandSHA256, DetectionRuleSHA256, Status (building|packaged|published|failed), ManagementArtifactExternalID, ObservedAt}`; unknown ids are left out. Product key, version, publisher and the two definition hashes are optional; when reported, Turaco compares them with the approved binding.
+- `Publish(ctx, PublishRequest{ProviderPackageID, Target, ExpectedInstallerSHA256}, opKey)` must refuse (`ErrHashDiffers`) when the packaged installer's hash differs from the expected approved hash.
 
 Every provider value is untrusted: Turaco validates ids, hashes (64 lower-case hex, otherwise unknown), statuses (unknown becomes `failed`) and timestamps (future or implausible times become the receive time) before storing them with source and freshness.
 
 ## What Turaco relies on
 
-- The provider reports the SHA-256 of the installer it actually packaged; Turaco compares it with the approved hash before publishing and raises `package_hash_mismatch` when they differ.
+- The provider reports the SHA-256 of the installer it actually packaged; Turaco compares it with the approved hash (again right before publishing) and raises `package_hash_mismatch` when they differ. The provider checks the expected hash once more when publishing.
+- Operation keys carry an attempt number (`...:attemptN`); the provider treats a repeated key as the same operation and a new key as a new one.
+- Reports carry a meaningful `ObservedAt`; reports older than Turaco's stored observation are ignored.
 - A published package becomes an ordinary Management Artifact (an Intune app) that the normal management sync ingests; the package records the artifact's external id and Turaco links it once the artifact exists. Publication never means assignment, installation or deployment success.
 
 ## Unverified (needs a real IntuneGet instance)
