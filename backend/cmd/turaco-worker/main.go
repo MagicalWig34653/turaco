@@ -70,13 +70,15 @@ func main() {
 		logger.Error("load directory configuration", "error", err)
 		os.Exit(1)
 	}
-	opts := jobs.RunnerOptions{}
+	// A job must not outlive its lock, or another worker would reclaim it. The advisory
+	// feed job (45 m) is registered on every worker, so the default 30 m lock is too short.
+	lockTimeout := securityapp.AdvisorySyncJobTimeout + 5*time.Minute
 	if ldapCfg.Enabled() {
-		// A job must not outlive its lock, or another worker would reclaim it.
-		if minLock := ldapCfg.SyncTimeout + directorySyncMargin + 5*time.Minute; minLock > 30*time.Minute {
-			opts.LockTimeout = minLock
+		if minLock := ldapCfg.SyncTimeout + directorySyncMargin + 5*time.Minute; minLock > lockTimeout {
+			lockTimeout = minLock
 		}
 	}
+	opts := jobs.RunnerOptions{LockTimeout: lockTimeout}
 	runner := jobs.NewRunner(pool, opts, logger)
 
 	if ldapCfg.Enabled() {
