@@ -15,6 +15,7 @@ import { Checkbox, Select } from '../../platform/ui/Field';
 import { DateFilter } from '../../platform/ui/FilterBar';
 import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { DateTimeField } from '../../platform/ui/DateTimeField';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { servicesApi } from '../services/api';
 import { infrastructureApi } from '../infrastructure/api';
@@ -37,6 +38,7 @@ import {
   risks,
   statuses,
   type Change,
+  type ChangeDetail,
   type ChangeStatus,
   type ResourceType,
 } from './types';
@@ -105,6 +107,8 @@ function Field({
   type?: string;
   required?: boolean;
 }) {
+  if (type === 'datetime-local')
+    return <DateTimeField label={label} value={value} onChange={onChange} required={required} />;
   return (
     <label>
       {label}
@@ -128,7 +132,7 @@ function ChangeForm({
   onDone,
   onClose,
 }: {
-  existing?: Change;
+  existing?: ChangeDetail;
   onDone: (id: string) => void;
   onClose?: () => void;
 }) {
@@ -144,9 +148,13 @@ function ChangeForm({
     existing?.emergencyJustification ?? '',
   );
   const [owner, setOwner] = useState<Assignee | null>(
-    existing?.ownerId ? { id: existing.ownerId, label: existing.ownerId } : null,
+    existing?.ownerId
+      ? {
+          id: existing.ownerId,
+          label: existing.names.users[existing.ownerId] ?? t('changes.polish.unavailable'),
+        }
+      : null,
   );
-  const [ownerId, setOwnerId] = useState(existing?.ownerId ?? '');
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const invalidWindow = !!(start || end) && windowMinutes(start, end) === null;
@@ -161,7 +169,7 @@ function ChangeForm({
         description,
         kind,
         risk,
-        ownerUserId: owner?.id ?? ownerId,
+        ownerUserId: owner?.id ?? '',
         rollbackPlan,
         window: { start: iso(start), end: iso(end) },
       };
@@ -206,15 +214,22 @@ function ChangeForm({
       <section className="change-form-section">
         <h3>{t('changes.polish.planning')}</h3>
         <p>{t('changes.polish.planningHint')}</p>
-        <Field
-          label={t('changes.windowStart')}
-          value={start}
-          onChange={setStart}
-          type="datetime-local"
-        />
-        <Field label={t('changes.windowEnd')} value={end} onChange={setEnd} type="datetime-local" />
+        <div className="change-form-window">
+          <Field
+            label={t('changes.windowStart')}
+            value={start}
+            onChange={setStart}
+            type="datetime-local"
+          />
+          <Field
+            label={t('changes.windowEnd')}
+            value={end}
+            onChange={setEnd}
+            type="datetime-local"
+          />
+        </div>
         <p
-          className={invalidWindow ? 'change-validation' : undefined}
+          className={invalidWindow ? 'change-validation' : 'field-hint'}
           role={invalidWindow ? 'alert' : undefined}
         >
           {t(invalidWindow ? 'changes.polish.windowInvalid' : 'changes.polish.windowHint')}
@@ -222,6 +237,7 @@ function ChangeForm({
         <label>
           {t('changes.rollbackPlan')}
           <textarea value={rollbackPlan} onChange={(e) => setRollbackPlan(e.target.value)} />
+          <span className="field-hint">{t('changes.polish.rollbackHint')}</span>
         </label>
         {kind === 'emergency' && (
           <label>
@@ -232,31 +248,56 @@ function ChangeForm({
             />
           </label>
         )}
-        <p>{t('changes.owner')}</p>
-        <AssigneePicker
-          type="user"
-          value={owner}
-          onChange={(value) => {
-            setOwner(value);
-            setOwnerId(value?.id ?? '');
-          }}
-        />
-        <Field label={t('changes.ownerId')} value={ownerId} onChange={setOwnerId} />
+      </section>
+      <section className="change-form-section change-form-owner">
+        <h3>{t('changes.polish.ownership')}</h3>
+        <p>{t('changes.polish.ownershipHint')}</p>
+        {owner ? (
+          <div className="change-owner-selected">
+            <Person name={owner.label} />
+            <Button type="button" onClick={() => setOwner(null)}>
+              {t('changes.polish.changeOwner')}
+            </Button>
+          </div>
+        ) : (
+          <AssigneePicker
+            type="user"
+            label={t('changes.owner')}
+            value={owner}
+            onChange={setOwner}
+          />
+        )}
       </section>
       <Error error={error} />
       <div className="actions change-form-footer">
-        <Button variant="primary" type="submit" disabled={busy || invalidWindow}>
-          {t('action.save')}
+        <Button type="button" onClick={onClose ?? (() => window.history.back())}>
+          {t('action.cancel')}
         </Button>
-        {onClose && (
-          <Button type="button" onClick={onClose}>
-            {t('action.cancel')}
-          </Button>
-        )}
+        <Button variant="primary" type="submit" disabled={busy || invalidWindow}>
+          {existing ? t('action.save') : t('changes.create')}
+        </Button>
       </div>
     </form>
   );
 }
+const operations = new Set([
+  'update',
+  'edit_affected',
+  'submit',
+  'assess',
+  'schedule',
+  'start',
+  'complete',
+  'fail',
+  'review',
+  'close',
+  'cancel',
+  'add_task',
+  'create',
+  'approval_decided',
+  'affected_added',
+  'affected_removed',
+]);
 function Person({ name }: { name?: string | null | undefined }) {
   const { t } = useI18n();
   return (
@@ -937,6 +978,9 @@ function TaskDialog({
   );
 }
 export function ChangeDetailScreen({ id }: { id: string }) {
+  const { t: translate } = useI18n();
+  const operationLabel = (operation: string) =>
+    operations.has(operation) ? translate(`changes.action.${operation}` as MessageKey) : '';
   const { t, locale } = useI18n();
   const { can } = useSession();
   const menu = useContextMenu();
@@ -1056,217 +1100,242 @@ export function ChangeDetailScreen({ id }: { id: string }) {
             </ol>
           </div>
           <div className="change-detail-grid">
-            <section className="change-card change-facts">
-              <h2>{t('changes.facts')}</h2>
-              <dl>
-                <dt>{t('changes.statusLabel')}</dt>
-                <dd>
-                  <Status value={c.status} />
-                </dd>
-                <dt>{t('changes.kind')}</dt>
-                <dd>{t(`changes.kind.${c.kind}`)}</dd>
-                <dt>{t('changes.risk')}</dt>
-                <dd>{t(`changes.risk.${c.risk}`)}</dd>
-                <dt>{t('changes.description')}</dt>
-                <dd>{c.description || '—'}</dd>
-                <dt>{t('changes.requester')}</dt>
-                <dd>
-                  <Person name={c.names.users[c.requesterId]} />
-                </dd>
-                <dt>{t('changes.owner')}</dt>
-                <dd>
-                  <Person name={c.ownerId ? c.names.users[c.ownerId] : undefined} />
-                </dd>
-                <dt>{t('changes.windowStart')}</dt>
-                <dd>
-                  {c.windowStart
-                    ? new Intl.DateTimeFormat(locale, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }).format(new Date(c.windowStart))
-                    : '—'}
-                </dd>
-                <dt>{t('changes.windowEnd')}</dt>
-                <dd>
-                  {c.windowEnd
-                    ? new Intl.DateTimeFormat(locale, {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      }).format(new Date(c.windowEnd))
-                    : '—'}
-                </dd>
-                <dt>{t('changes.approvedWindow')}</dt>
-                <dd>
-                  {c.approvedWindowStart && c.approvedWindowEnd
-                    ? `${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowStart))} – ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowEnd))}`
-                    : '—'}
-                </dd>
-                {c.emergencyApprovedBy && (
-                  <>
-                    <dt>{t('changes.emergencyApprover')}</dt>
-                    <dd>{c.names.users[c.emergencyApprovedBy] ?? c.emergencyApprovedBy}</dd>
-                  </>
+            <div className="change-detail-main">
+              <section className="change-card change-facts">
+                <h2>{t('changes.facts')}</h2>
+                <dl>
+                  <dt>{t('changes.statusLabel')}</dt>
+                  <dd>
+                    <Status value={c.status} />
+                  </dd>
+                  <dt>{t('changes.kind')}</dt>
+                  <dd>{t(`changes.kind.${c.kind}`)}</dd>
+                  <dt>{t('changes.risk')}</dt>
+                  <dd>{t(`changes.risk.${c.risk}`)}</dd>
+                  <dt>{t('changes.description')}</dt>
+                  <dd>{c.description || '—'}</dd>
+                  <dt>{t('changes.requester')}</dt>
+                  <dd>
+                    <Person name={c.names.users[c.requesterId]} />
+                  </dd>
+                  <dt>{t('changes.owner')}</dt>
+                  <dd>
+                    <Person name={c.ownerId ? c.names.users[c.ownerId] : undefined} />
+                  </dd>
+                  <dt>{t('changes.windowStart')}</dt>
+                  <dd>
+                    {c.windowStart
+                      ? new Intl.DateTimeFormat(locale, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(new Date(c.windowStart))
+                      : '—'}
+                  </dd>
+                  <dt>{t('changes.windowEnd')}</dt>
+                  <dd>
+                    {c.windowEnd
+                      ? new Intl.DateTimeFormat(locale, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(new Date(c.windowEnd))
+                      : '—'}
+                  </dd>
+                  <dt>{t('changes.approvedWindow')}</dt>
+                  <dd>
+                    {c.approvedWindowStart && c.approvedWindowEnd
+                      ? `${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowStart))} – ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(c.approvedWindowEnd))}`
+                      : '—'}
+                  </dd>
+                  {c.emergencyApprovedBy && (
+                    <>
+                      <dt>{t('changes.emergencyApprover')}</dt>
+                      <dd>{c.names.users[c.emergencyApprovedBy] ?? c.emergencyApprovedBy}</dd>
+                    </>
+                  )}
+                  <dt>{t('changes.rollbackPlan')}</dt>
+                  <dd>{c.rollbackPlan || '—'}</dd>
+                  <dt>{t('changes.emergencyJustification')}</dt>
+                  <dd>{c.emergencyJustification || '—'}</dd>
+                  <dt>{t('changes.outcomeNote')}</dt>
+                  <dd>{c.outcomeNote || '—'}</dd>
+                </dl>
+              </section>
+              <section className="change-card">
+                <h2>{t('changes.tasks')}</h2>
+                {c.tasks.total > 0 && (
+                  <p>{t('changes.taskCount', { open: c.tasks.open, total: c.tasks.total })}</p>
                 )}
-                <dt>{t('changes.rollbackPlan')}</dt>
-                <dd>{c.rollbackPlan || '—'}</dd>
-                <dt>{t('changes.emergencyJustification')}</dt>
-                <dd>{c.emergencyJustification || '—'}</dd>
-                <dt>{t('changes.outcomeNote')}</dt>
-                <dd>{c.outcomeNote || '—'}</dd>
-              </dl>
-            </section>
-            <section className="change-card">
-              <h2>{t('changes.affected')}</h2>
-              {!c.affected.length && (
-                <p className="change-empty">{t('changes.polish.noResources')}</p>
-              )}
-              <div className="change-resources">
-                {c.affected.map((x) => (
-                  <div className="change-resource" key={x.relationshipId}>
-                    <span className="change-resource-icon" aria-hidden="true">
-                      {{ service: '◇', vm: '▤', asset: '▣', location: '⌖' }[x.type]}
+                {c.tasks.total > 0 && (
+                  <progress
+                    className="change-task-progress"
+                    aria-label={t('changes.tasks')}
+                    value={c.tasks.total - c.tasks.open}
+                    max={c.tasks.total}
+                  />
+                )}
+                {!c.tasks.items.length && (
+                  <p className="change-empty">{t('changes.polish.noTasks')}</p>
+                )}
+                {c.tasks.items.map((x) => (
+                  <p className="change-task" key={x.id}>
+                    <span
+                      className={x.status === 'completed' ? 'change-task-done' : 'change-task-open'}
+                      aria-hidden="true"
+                    >
+                      {x.status === 'completed' ? '✓' : '○'}
                     </span>
-                    <span>
-                      <small>{t(`changes.type.${x.type}`)}</small>
-                      {label(x)}
-                    </span>{' '}
-                    {actions.includes('edit_affected') && !x.hidden && (
-                      <Button type="submit" onClick={() => void remove(x.type, x.id)}>
-                        {t('changes.remove')}
-                      </Button>
-                    )}
-                  </div>
+                    <Link to={`/tasks/${enc(x.id)}`}>{x.title}</Link> ·{' '}
+                    {t(`tasks.status.${x.status}` as MessageKey)}
+                  </p>
                 ))}
-              </div>
-              {actions.includes('edit_affected') && (
-                <Button type="submit" onClick={() => setShowAffected(true)}>
-                  {t('changes.addAffected')}
-                </Button>
-              )}
-            </section>
-            <section className="change-card change-approval-card">
-              <h2>{t('changes.approvals')}</h2>
-              {!c.approvals.length && (
-                <p className="change-empty">{t('changes.polish.noApprovals')}</p>
-              )}
-              {c.approvals.map((x) => (
-                <p key={x.id}>
-                  <StatusBadge
-                    tone={
-                      x.status === 'approved'
-                        ? 'success'
-                        : x.status === 'rejected'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  >
-                    {t(`approvals.status.${x.status}` as MessageKey)}
-                  </StatusBadge>{' '}
-                  {x.approverUserId
-                    ? (c.names.users[x.approverUserId] ?? x.approverUserId)
-                    : (x.approverTeamId ?? '—')}
-                  {x.decidedAt
-                    ? ` · ${new Intl.DateTimeFormat(locale).format(new Date(x.decidedAt))}`
-                    : ''}
-                </p>
-              ))}
-            </section>
-            <section className="change-card">
-              <h2>{t('changes.tasks')}</h2>
-              <p>{t('changes.taskCount', { open: c.tasks.open, total: c.tasks.total })}</p>
-              <progress
-                className="change-task-progress"
-                aria-label={t('changes.tasks')}
-                value={c.tasks.total - c.tasks.open}
-                max={Math.max(1, c.tasks.total)}
-              />
-              {!c.tasks.items.length && (
-                <p className="change-empty">{t('changes.polish.noTasks')}</p>
-              )}
-              {c.tasks.items.map((x) => (
-                <p className="change-task" key={x.id}>
-                  <span
-                    className={x.status === 'completed' ? 'change-task-done' : 'change-task-open'}
-                    aria-hidden="true"
-                  >
-                    {x.status === 'completed' ? '✓' : '○'}
-                  </span>
-                  <Link to={`/tasks/${enc(x.id)}`}>{x.title}</Link> ·{' '}
-                  {t(`tasks.status.${x.status}` as MessageKey)}
-                </p>
-              ))}
-              {actions.includes('add_task') && (
-                <Button type="submit" onClick={() => setShowTask(true)}>
-                  {t('changes.addTask')}
-                </Button>
-              )}
-            </section>
-            <section className="change-card change-history">
-              <h2>{t('changes.transitions')}</h2>
-              <Error error={transitions.error} />
-              {transitions.loading && <Skeleton />}
-              {!transitions.loading && !transitions.items.length && (
-                <p className="change-empty">{t('changes.polish.noHistory')}</p>
-              )}
-              {transitions.items.map((x) => (
-                <p className="change-history-entry" key={x.id}>
-                  {new Intl.DateTimeFormat(locale, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                  }).format(new Date(x.createdAt))}{' '}
-                  · {x.fromStatus ? t(`changes.status.${x.fromStatus}` as MessageKey) : '—'} →{' '}
-                  {t(`changes.status.${x.toStatus}` as MessageKey)} ·{' '}
-                  {t(`changes.action.${x.operation}` as MessageKey)}
-                  {x.reason ? ` · ${t(`changes.reason.${x.reason}` as MessageKey)}` : ''}
-                </p>
-              ))}
-              {transitions.hasMore && (
-                <Button type="submit" onClick={transitions.loadMore}>
-                  {t('action.loadMore')}
-                </Button>
-              )}
-            </section>
-            {canImpact && (
-              <section className="change-card change-impact">
-                <h2>{t('changes.impact')}</h2>
-                <Choice
-                  label={t('changes.depth')}
-                  value={String(depth)}
-                  values={['1', '2', '3', '4', '5', '6']}
-                  prefix="changes.depthValue"
-                  onChange={(v) => setDepth(Number(v))}
-                />
-                <Error error={impact.error} />
-                {impact.loading && <Skeleton />}
-                {impact.data && !impact.data.starts.length && (
-                  <p className="change-empty">{t('changes.polish.noImpact')}</p>
-                )}
-                {impact.data && (
-                  <>
-                    {impact.data.starts.map((start) => (
-                      <div key={`${start.type}-${start.id}`}>
-                        <h3>{label(start)}</h3>
-                        {start.nodes.map((node, index) => (
-                          <p key={`${node.type}-${node.id}-${index}`}>
-                            {t(`changes.type.${node.type}`)} · {label(node)} · {t('changes.depth')}:{' '}
-                            {node.depth}
-                            {node.criticality &&
-                              ` · ${t('changes.criticality')}: ${t(`services.criticality.${node.criticality}` as MessageKey)}`}
-                          </p>
-                        ))}
-                        {(start.truncated || start.depthLimited || start.nodeLimited) && (
-                          <p>{t('changes.truncated')}</p>
-                        )}
-                      </div>
-                    ))}
-                    {impact.data.skipped > 0 && (
-                      <p>{t('changes.skipped', { count: impact.data.skipped })}</p>
-                    )}
-                    {impact.data.truncated && <p>{t('changes.truncated')}</p>}
-                  </>
+                {actions.includes('add_task') && (
+                  <Button type="submit" onClick={() => setShowTask(true)}>
+                    {t('changes.addTask')}
+                  </Button>
                 )}
               </section>
-            )}
+              {canImpact && (
+                <section className="change-card change-impact">
+                  <h2>{t('changes.impact')}</h2>
+                  <Choice
+                    label={t('changes.depth')}
+                    value={String(depth)}
+                    values={['1', '2', '3', '4', '5', '6']}
+                    prefix="changes.depthValue"
+                    onChange={(v) => setDepth(Number(v))}
+                  />
+                  <Error error={impact.error} />
+                  {impact.loading && <Skeleton />}
+                  {impact.data && !impact.data.starts.length && (
+                    <p className="change-empty">{t('changes.polish.noImpact')}</p>
+                  )}
+                  {impact.data && (
+                    <>
+                      {impact.data.starts.map((start) => (
+                        <div key={`${start.type}-${start.id}`}>
+                          <h3>{label(start)}</h3>
+                          {start.nodes.map((node, index) => (
+                            <p key={`${node.type}-${node.id}-${index}`}>
+                              {t(`changes.type.${node.type}`)} · {label(node)} ·{' '}
+                              {t('changes.depth')}: {node.depth}
+                              {node.criticality &&
+                                ` · ${t('changes.criticality')}: ${t(`services.criticality.${node.criticality}` as MessageKey)}`}
+                            </p>
+                          ))}
+                          {(start.truncated || start.depthLimited || start.nodeLimited) && (
+                            <p>{t('changes.truncated')}</p>
+                          )}
+                        </div>
+                      ))}
+                      {impact.data.skipped > 0 && (
+                        <p>{t('changes.skipped', { count: impact.data.skipped })}</p>
+                      )}
+                      {impact.data.truncated && <p>{t('changes.truncated')}</p>}
+                    </>
+                  )}
+                </section>
+              )}
+            </div>
+            <div className="change-detail-side">
+              <section className="change-card">
+                <h2>{t('changes.affected')}</h2>
+                {!c.affected.length && (
+                  <p className="change-empty">{t('changes.polish.noResources')}</p>
+                )}
+                <div className="change-resources">
+                  {c.affected.map((x) => (
+                    <div className="change-resource" key={x.relationshipId}>
+                      <span className="change-resource-icon" aria-hidden="true">
+                        {{ service: '◇', vm: '▤', asset: '▣', location: '⌖' }[x.type]}
+                      </span>
+                      <span>
+                        <small>{t(`changes.type.${x.type}`)}</small>
+                        {label(x)}
+                      </span>{' '}
+                      {actions.includes('edit_affected') && !x.hidden && (
+                        <Button type="submit" onClick={() => void remove(x.type, x.id)}>
+                          {t('changes.remove')}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {actions.includes('edit_affected') && (
+                  <Button type="submit" onClick={() => setShowAffected(true)}>
+                    {t('changes.addAffected')}
+                  </Button>
+                )}
+              </section>
+              <section className="change-card change-approval-card">
+                <h2>{t('changes.approvals')}</h2>
+                {!c.approvals.length && (
+                  <p className="change-empty">{t('changes.polish.noApprovals')}</p>
+                )}
+                {c.approvals.map((x) => (
+                  <p key={x.id}>
+                    <StatusBadge
+                      tone={
+                        x.status === 'approved'
+                          ? 'success'
+                          : x.status === 'rejected'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
+                      {t(`approvals.status.${x.status}` as MessageKey)}
+                    </StatusBadge>{' '}
+                    {x.approverUserId
+                      ? (c.names.users[x.approverUserId] ?? x.approverUserId)
+                      : (x.approverTeamId ?? '—')}
+                    {x.decidedAt
+                      ? ` · ${new Intl.DateTimeFormat(locale).format(new Date(x.decidedAt))}`
+                      : ''}
+                  </p>
+                ))}
+              </section>
+              <section className="change-card change-history">
+                <h2>{t('changes.transitions')}</h2>
+                <Error error={transitions.error} />
+                {transitions.loading && <Skeleton />}
+                {!transitions.loading && !transitions.items.length && (
+                  <p className="change-empty">{t('changes.polish.noHistory')}</p>
+                )}
+                {transitions.items.length > 0 && (
+                  <ol className="change-history-list">
+                    {transitions.items.map((x) => (
+                      <li className="change-history-entry" key={x.id}>
+                        <span className="change-history-dot" aria-hidden="true" />
+                        <div>
+                          <strong>
+                            {x.fromStatus
+                              ? `${t(`changes.status.${x.fromStatus}` as MessageKey)} → `
+                              : ''}
+                            {t(`changes.status.${x.toStatus}` as MessageKey)}
+                          </strong>
+                          <small>
+                            {[
+                              new Intl.DateTimeFormat(locale, {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              }).format(new Date(x.createdAt)),
+                              operationLabel(x.operation),
+                              x.reason ? t(`changes.reason.${x.reason}` as MessageKey) : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </small>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                {transitions.hasMore && (
+                  <Button type="submit" onClick={transitions.loadMore}>
+                    {t('action.loadMore')}
+                  </Button>
+                )}
+              </section>
+            </div>
           </div>
           {showEdit && (
             <Dialog wide title={t('changes.edit')} onClose={() => setShowEdit(false)}>

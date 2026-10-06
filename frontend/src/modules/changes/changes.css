@@ -75,8 +75,8 @@
 }
 .change-title {
   display: block;
-  min-width: 190px;
-  max-width: 340px;
+  min-width: 150px;
+  max-width: 240px;
   padding-left: 11px;
   border-left: 3px solid var(--state-success);
   color: var(--text-primary);
@@ -101,8 +101,16 @@
 .change-person {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  min-width: 110px;
+  gap: 8px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.change-person > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.data-table .change-person > span:last-child {
+  max-width: 108px;
 }
 .change-person .workspace-avatar {
   flex: 0 0 28px;
@@ -112,9 +120,16 @@
 }
 .change-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
   gap: 20px;
   align-items: start;
+}
+.change-detail-main,
+.change-detail-side {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  min-width: 0;
 }
 .change-card,
 .change-lifecycle {
@@ -157,17 +172,19 @@
 }
 .change-lifecycle li span {
   display: block;
-  margin-bottom: 7px;
-  font-family: ui-monospace, monospace;
+  margin-bottom: 6px;
   font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.change-lifecycle li[aria-current='step'] span {
+  color: inherit;
 }
 .change-lifecycle li[aria-current='step'] {
   color: var(--accent);
   border-color: var(--accent);
   font-weight: 700;
-}
-.change-facts {
-  grid-row: span 2;
 }
 .change-facts dl {
   display: grid;
@@ -247,23 +264,52 @@
 .change-task-open {
   color: var(--text-secondary);
 }
-.change-history-entry {
-  position: relative;
-  padding: 0 0 18px 20px;
-  margin: 0;
-  border-left: 1px solid var(--border-token);
-  font-size: 13px;
-  line-height: 1.7;
+.change-history-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
 }
-.change-history-entry::before {
+.change-history-entry {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 0 16px;
+  position: relative;
+  font-size: 13px;
+}
+.change-history-entry:not(:last-child)::after {
   position: absolute;
-  top: 7px;
-  left: -4px;
-  width: 7px;
-  height: 7px;
+  top: 14px;
+  bottom: 0;
+  left: 6px;
+  width: 1px;
+  background: var(--border-token);
+  content: '';
+}
+.change-history-dot {
+  width: 9px;
+  height: 9px;
+  margin: 5px 0 0 2px;
   border-radius: 50%;
   background: var(--accent);
-  content: '';
+  box-shadow: 0 0 0 4px var(--surface-selected);
+}
+.change-history-entry strong {
+  display: block;
+  font-weight: 600;
+}
+.change-history-entry small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.change-impact label {
+  display: inline-grid;
+  gap: 6px;
+  min-width: 140px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .change-impact {
   background: color-mix(in srgb, var(--accent) 4%, var(--surface-base));
@@ -279,8 +325,52 @@
 .change-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
+  grid-template-areas:
+    'basics planning'
+    'basics owner'
+    'alert alert'
+    'footer footer';
+  gap: 20px 24px;
   align-items: start;
+}
+.change-form > .change-form-section:nth-of-type(1) {
+  grid-area: basics;
+}
+.change-form > .change-form-section:nth-of-type(2) {
+  grid-area: planning;
+}
+.change-form > .change-form-owner {
+  grid-area: owner;
+}
+.change-form > [role='alert'] {
+  grid-area: alert;
+}
+.change-form > .change-form-footer {
+  grid-area: footer;
+}
+.change-form-window {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.change-form-window .field {
+  margin: 0;
+}
+.change-form-section .field-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.change-owner-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted-token);
 }
 .change-form-section {
   display: flex;
@@ -365,8 +455,16 @@ html[data-motion='reduced'] .change-metrics {
   .change-form {
     grid-template-columns: minmax(0, 1fr);
   }
-  .change-facts {
-    grid-row: auto;
+  .change-form {
+    grid-template-areas:
+      'basics'
+      'planning'
+      'owner'
+      'alert'
+      'footer';
+  }
+  .change-form-window {
+    grid-template-columns: minmax(0, 1fr);
   }
   .change-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -418,6 +516,7 @@ html[data-density='compact'] .change-facts dd {
 .change-form-footer {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
 }
 .change-form-section .picker-option {
@@ -439,4 +538,17 @@ html[data-density='compact'] .change-facts dd {
   .change-form-footer > .btn {
     flex: 1;
   }
+}
+.data-table .change-person {
+  gap: 6px;
+}
+.data-table .change-person .workspace-avatar {
+  flex-basis: 24px;
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+.data-table .table-actions-cell {
+  width: 44px;
+  padding-inline: 4px;
 }

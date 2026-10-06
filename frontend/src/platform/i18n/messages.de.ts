@@ -141,7 +141,21 @@ export const de: Record<MessageKey, string> = {
     'Wählen Sie einen klaren Titel und beschreiben Sie die geplante Verbesserung.',
   'changes.polish.planning': '02 · Sichere Umsetzung planen',
   'changes.polish.planningHint':
-    'Verantwortliche Person und Wartungsfenster festlegen. Vor der Bewertung einen Rollback-Plan ergänzen.',
+    'Wartungsfenster wählen und vor der Bewertung festhalten, wie zurückgerollt wird.',
+  'changes.polish.ownership': '03 · Verantwortung',
+  'changes.polish.ownershipHint':
+    'Die verantwortliche Person koordiniert die Umsetzung und beantwortet Fragen im Wartungsfenster.',
+  'changes.polish.changeOwner': 'Verantwortliche Person ändern',
+  'changes.polish.rollbackHint':
+    'Beschreiben Sie die Schritte, die bei Problemen den vorherigen Zustand wiederherstellen.',
+  'tasks.assign.searchPlaceholder': 'Nach Name oder E-Mail suchen',
+  'dateTime.placeholder': 'Datum und Uhrzeit wählen',
+  'dateTime.previousMonth': 'Vorheriger Monat',
+  'dateTime.nextMonth': 'Nächster Monat',
+  'dateTime.hour': 'Stunde',
+  'dateTime.minute': 'Minute',
+  'dateTime.done': 'Fertig',
+  'dateTime.clear': '{label} leeren',
   'changes.polish.scheduled': 'Diese Woche geplant',
   'changes.polish.awaiting': 'Freigabe ausstehend',
   'changes.polish.failed': 'Fehlgeschlagen · letzte 30 Tage',

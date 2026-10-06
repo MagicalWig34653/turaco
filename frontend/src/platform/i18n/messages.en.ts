@@ -136,7 +136,21 @@ export const en = {
   'changes.polish.basicsHint': 'Give this change a clear title and explain what will improve.',
   'changes.polish.planning': '02 · Plan a safe execution',
   'changes.polish.planningHint':
-    'Set an owner and maintenance window. Capture a rollback plan before assessment.',
+    'Choose a maintenance window and capture how to roll back before assessment.',
+  'changes.polish.ownership': '03 · Ownership',
+  'changes.polish.ownershipHint':
+    'The owner coordinates execution and answers questions during the window.',
+  'changes.polish.changeOwner': 'Change owner',
+  'changes.polish.rollbackHint':
+    'Describe the steps that restore the previous state if something goes wrong.',
+  'tasks.assign.searchPlaceholder': 'Search by name or email',
+  'dateTime.placeholder': 'Select date and time',
+  'dateTime.previousMonth': 'Previous month',
+  'dateTime.nextMonth': 'Next month',
+  'dateTime.hour': 'Hour',
+  'dateTime.minute': 'Minute',
+  'dateTime.done': 'Done',
+  'dateTime.clear': 'Clear {label}',
   'changes.polish.scheduled': 'Scheduled this week',
   'changes.polish.awaiting': 'Awaiting approval',
   'changes.polish.failed': 'Failed · last 30 days',
