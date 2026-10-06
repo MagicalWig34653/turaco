@@ -1669,6 +1669,9 @@ export const de: Record<MessageKey, string> = {
   'notifications.security.risk_review_due':
     'Eine akzeptierte Sicherheitsgefährdung muss überprüft werden: {title}',
   'notifications.category.security.risk_review_due': 'Sicherheitsrisiko prüfen',
+  'notifications.software.approval_requested':
+    'Eine Softwareversion wartet auf Ihre Freigabe: {title}',
+  'notifications.category.software.approval_requested': 'Softwarefreigabe angefordert',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',

@@ -1630,6 +1630,8 @@ export const en = {
   'notifications.category.security.advisory': 'Security advisory applicable',
   'notifications.security.risk_review_due': 'A security risk acceptance is due for review: {title}',
   'notifications.category.security.risk_review_due': 'Security risk review due',
+  'notifications.software.approval_requested': 'A software version awaits your approval: {title}',
+  'notifications.category.software.approval_requested': 'Software approval requested',
   'notifications.majorincident.update': 'News on an incident you follow: {title}',
   'notifications.category.majorincident.update': 'An incident I follow has news',
   'incidents.detail.title': 'Incident',

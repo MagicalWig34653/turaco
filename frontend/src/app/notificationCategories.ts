@@ -57,6 +57,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.security.risk_review_due',
       labelKey: 'notifications.category.security.risk_review_due',
     },
+    'software.approval_requested': {
+      textKey: 'notifications.software.approval_requested',
+      labelKey: 'notifications.category.software.approval_requested',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',
@@ -86,6 +90,10 @@ export function registerModuleNotifications(): void {
   registerNotificationLink(
     'security_finding',
     (id) => `/security/findings/${encodeURIComponent(id)}`,
+  );
+  registerNotificationLink(
+    'software_version',
+    (id) => `/software/versions/${encodeURIComponent(id)}`,
   );
   registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
