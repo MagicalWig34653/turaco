@@ -1,7 +1,7 @@
 :root,
 html[data-theme='turaco'] {
   color-scheme: light;
-  --surface-canvas: #f3f5f5;
+  --surface-canvas: #f5f6f2;
   --surface-base: #ffffff;
   --surface-raised: #ffffff;
   --surface-muted-token: #f7f9f8;
@@ -15,10 +15,10 @@ html[data-theme='turaco'] {
   --accent-hover: #194e35;
   --on-accent: #ffffff;
   --focus-ring: #176bc1;
-  --rail-bg: #142e25;
-  --rail-text: #e4eee9;
-  --rail-muted: #a9beb3;
-  --rail-active: #2a483b;
+  --rail-bg: #edf0e8;
+  --rail-text: #243e33;
+  --rail-muted: #58695e;
+  --rail-active: #dce8d8;
   --state-critical: #a4353c;
   --state-critical-bg: #faecee;
   --state-warning: #855606;

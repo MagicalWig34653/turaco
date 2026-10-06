@@ -59,19 +59,35 @@ export function MetricCard({
   value,
   to,
   tone = 'info',
+  caption,
+  denominator,
+  icon,
 }: {
   label: string;
   value: number;
   to: string;
   tone?: 'info' | 'warning' | 'danger' | 'success';
+  caption?: string;
+  denominator?: number;
+  icon?: ReactNode;
 }) {
   const display = useCountUp(value);
   return (
-    <Link className={`metric-card metric-${tone}`} to={to} aria-label={`${label}: ${value}`}>
+    <Link
+      className={`metric-card metric-${tone}`}
+      to={to}
+      aria-label={`${label}: ${value}${denominator !== undefined ? ` / ${denominator}` : ''}${caption ? ` · ${caption}` : ''}`}
+    >
       <span className="metric-label">{label}</span>
-      <strong aria-hidden="true">{display}</strong>
+      <strong aria-hidden="true">
+        {display}
+        {denominator !== undefined ? (
+          <small className="metric-denominator"> / {denominator}</small>
+        ) : null}
+      </strong>
+      {caption ? <span className="metric-caption">{caption}</span> : null}
       <span className="metric-arrow" aria-hidden="true">
-        ↗
+        {icon ?? '↗'}
       </span>
     </Link>
   );

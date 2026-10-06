@@ -12,31 +12,9 @@ import { useTheme } from '../platform/theme/ThemeProvider';
 import { NavIcon } from '../platform/ui/NavIcon';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
 import { navigationCommands } from '../platform/ui/shell/paletteCommands';
-import { appRoutes, isNavActive, visibleNavItems, type NavGroup } from './routes';
-import '../platform/ui/shell/shell.css';
-
-const groups: {
-  id: NavGroup;
-  label?:
-    | 'nav.admin'
-    | 'nav.logistics'
-    | 'nav.endpoints'
-    | 'nav.infrastructure'
-    | 'nav.services'
-    | 'nav.changes'
-    | 'nav.planning'
-    | 'nav.security';
-}[] = [
-  { id: 'main' },
-  { id: 'logistics', label: 'nav.logistics' },
-  { id: 'endpoints', label: 'nav.endpoints' },
-  { id: 'infrastructure', label: 'nav.infrastructure' },
-  { id: 'services', label: 'nav.services' },
-  { id: 'changes', label: 'nav.changes' },
-  { id: 'planning', label: 'nav.planning' },
-  { id: 'security', label: 'nav.security' },
-  { id: 'admin', label: 'nav.admin' },
-];
+import { appRoutes, isNavActive } from './routes';
+import { shellNavigation } from './shellNavigation';
+import type { MessageKey } from '../platform/i18n/i18n';
 
 function readCollapsed(): boolean {
   try {
@@ -46,16 +24,8 @@ function readCollapsed(): boolean {
   }
 }
 
-function UserIdentity() {
+function UserIdentity({ name, method }: { name: string; method?: string | undefined }) {
   const { t } = useI18n();
-  const { session, can } = useSession();
-  const userId = session?.userId ?? '';
-  const user = useAsync(
-    (signal) =>
-      can('organization.view') ? organizationApi.user(userId, signal) : Promise.resolve(undefined),
-    [can, userId],
-  );
-  const name = user.data?.displayName || '';
   const initials =
     name
       .match(/\p{L}+/gu)
@@ -69,7 +39,11 @@ function UserIdentity() {
       </span>
       <span className="turaco-user-label">
         <span className="user-name">{name || t('nav.me')}</span>
-        <small>{session?.authMethod}</small>
+        <small>
+          {method === 'password' || method === 'kerberos' || method === 'emergency'
+            ? t(`auth.method.${method}`)
+            : t('nav.me')}
+        </small>
       </span>
       <span className="turaco-session-name">{name || t('nav.me')}</span>
     </>
@@ -78,7 +52,15 @@ function UserIdentity() {
 /** Authenticated layout; routes and API authorization remain unchanged. */
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
-  const { can, logout } = useSession();
+  const { session, can, logout } = useSession();
+  const userId = session?.userId ?? '';
+  const user = useAsync(
+    (signal) =>
+      can('organization.view') ? organizationApi.user(userId, signal) : Promise.resolve(undefined),
+    [can, userId],
+  );
+  const userName = user.data?.displayName || '';
+  const navigation = shellNavigation(can);
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -104,8 +86,20 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
     pathname.startsWith('/support/') &&
     pathname !== '/support/new' &&
     (can('tickets.view') || can('tickets.manage'))
-      ? '/support/queue'
+      ? appRoutes.find((route) => route.id === 'ticketQueue')?.pattern
       : activeNavPath;
+  const area =
+    navigation.find(({ items }) => items.some((item) => item.pattern === displayedNavPath))
+      ?.label ?? 'shell.workspace';
+  const themeLabels: Record<typeof theme, MessageKey> = {
+    auto: 'shell.themeAuto',
+    turaco: 'shell.themeTuraco',
+    dark: 'shell.themeDark',
+    cyberpunk: 'shell.themeCyberpunk',
+  };
+  const nextTheme = (
+    { auto: 'turaco', turaco: 'dark', dark: 'cyberpunk', cyberpunk: 'auto' } as const
+  )[theme];
   const quickCreate = appRoutes.filter(
     (route) =>
       (route.id === 'ticketNew' || route.id === 'catalog') &&
@@ -262,11 +256,9 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
           </button>
         </div>
         <nav aria-label={t('nav.primary')}>
-          {groups.map(({ id, label }) => {
-            const items = visibleNavItems(can, id);
-            if (!items.length) return null;
+          {navigation.map(({ label, items }) => {
             return (
-              <div className="nav-section turaco-rail-section" key={id}>
+              <div className="nav-section turaco-rail-section" key={label}>
                 {label && <p className="nav-heading">{t(label)}</p>}
                 {items.map((item) => (
                   <Link
@@ -294,9 +286,45 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             );
           })}
         </nav>
-        <div className="turaco-rail-bottom">
-          <span className="turaco-rail-bottom-dot" aria-hidden="true" />
-          <span>{t('app.name')}</span>
+        <div className="turaco-rail-footer">
+          <Link to="/notifications" className="turaco-rail-bottom">
+            <span
+              className={`turaco-rail-bottom-dot${unread.error ? ' is-unknown' : ''}`}
+              aria-hidden="true"
+            />
+            <span>
+              {unread.error
+                ? t('shell.notificationsUnavailable')
+                : unread.loading && !unread.data
+                  ? t('state.loading')
+                  : t('shell.notificationStatus', { count: unreadValue ?? 0 })}
+            </span>
+          </Link>
+          <div className="turaco-rail-user">
+            <Link to="/me" title={t('nav.me')} aria-label={t('nav.me')}>
+              <UserIdentity name={userName} method={session?.authMethod} />
+            </Link>
+            <button
+              type="button"
+              className="turaco-theme-toggle"
+              onClick={() => setTheme(nextTheme)}
+              title={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
+              aria-label={t('shell.nextTheme', { theme: t(themeLabels[nextTheme]) })}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" />
+              </svg>
+            </button>
+          </div>
         </div>
       </aside>
       <div className="content-column turaco-content-column" inert={mobileOpen}>
@@ -316,11 +344,11 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
           >
             ☰
           </button>
-          <div className="turaco-appbar-location">
-            <span>{t('app.name')}</span>
+          <nav className="turaco-appbar-location" aria-label={t('shell.breadcrumb')}>
+            <span>{t(area)}</span>
             <span aria-hidden="true">/</span>
-            <strong>{title}</strong>
-          </div>
+            <strong aria-current="page">{title}</strong>
+          </nav>
           <div className="turaco-appbar-actions">
             <button
               type="button"
@@ -388,13 +416,13 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             </Link>
             <details className="turaco-header-menu turaco-user-menu">
               <summary aria-label={t('shell.preferences')}>
-                <UserIdentity />
+                <UserIdentity name={userName} method={session?.authMethod} />
                 <span aria-hidden="true">⌄</span>
               </summary>
               <div className="turaco-header-popover turaco-preferences">
                 <div className="turaco-popover-heading">{t('shell.preferences')}</div>
                 <div className="turaco-session-detail">
-                  <UserIdentity />
+                  <UserIdentity name={userName} method={session?.authMethod} />
                 </div>
                 <label>
                   {t('shell.theme')}

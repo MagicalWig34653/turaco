@@ -1,6 +1,75 @@
 import type { MessageKey } from './messages.en';
 
 export const de: Record<MessageKey, string> = {
+  'dashboard.metricOpen': 'Ihre geladenen Aufgaben',
+  'dashboard.metricHigh': 'Diese Aufgaben haben Vorrang',
+  'dashboard.metricUrgent': 'Besondere Aufmerksamkeit nötig',
+  'dashboard.metricOverdue': 'Fälligkeit überschritten',
+
+  'dashboard.overviewEyebrow': 'Ihr IT-Arbeitsbereich',
+  'dashboard.workEyebrow': 'Ihr Fokus heute',
+  'dashboard.overviewTitle': 'Alles im Blick.',
+  'dashboard.overviewIntro':
+    'Ihre Aufgaben, betrieblicher Kontext und aktuelle Meldungen — an einem Ort.',
+  'dashboard.loadedScope':
+    'Die Kennzahlen beziehen sich auf die geladenen Aufgaben. Laden Sie in der Liste weitere Aufgaben nach.',
+  'dashboard.needsYou': 'Hier sind Sie gefragt',
+  'dashboard.topItems': 'Die {count} wichtigsten Aufgaben',
+  'dashboard.openTask': 'Aufgabe öffnen',
+  'dashboard.pendingApprovals': 'Freigaben warten auf Ihre Entscheidung',
+  'dashboard.infoContext': 'Aus Ihrem Briefing. Öffnen Sie die Quelle für aktuelle Details.',
+  'dashboard.viewDetails': 'Details ansehen',
+  'dashboard.recent': 'Zuletzt passiert',
+  'dashboard.fromBriefing': 'Aus Ihrem Briefing',
+  'dashboard.noRecent': 'Keine datierten Meldungen im aktuellen Briefing.',
+  'dashboard.task': 'Aufgabe',
+  'dashboard.feedLimited':
+    'Einige Quellen enthalten weitere Einträge. Öffnen Sie das Briefing für den vollständigen Kontext.',
+  'dashboard.employeeEyebrow': 'Ihr persönlicher Arbeitsbereich',
+  'dashboard.employeeTitle': 'Wie können wir helfen?',
+  'dashboard.employeeIntro':
+    'Ausstattung, Unterstützung und Anfragen — alles für Ihren Arbeitsalltag.',
+  'dashboard.supportEyebrow': 'Wir helfen weiter',
+  'dashboard.supportTitle': 'Etwas funktioniert nicht?',
+  'dashboard.supportIntro':
+    'Beschreiben Sie Ihrem IT-Team das Problem. Die Unterhaltung und Neuigkeiten finden Sie in Ihren Support-Tickets.',
+  'dashboard.yourWorkspace': 'Ihr Arbeitsbereich',
+  'dashboard.requestsIntro': 'Verfolgen Sie Ihre Anfragen und ihren aktuellen Stand.',
+  'dashboard.viewRequests': 'Ihre Anfragen ansehen',
+  'dashboard.equipmentIntro': 'Finden Sie Ihre zugewiesene Ausstattung und alle Details.',
+  'dashboard.viewEquipment': 'Ihre Ausstattung ansehen',
+  'dashboard.ticketsIntro':
+    'Setzen Sie die Unterhaltung mit der IT fort oder prüfen Sie ein gemeldetes Problem.',
+  'dashboard.viewTickets': 'Ihre Tickets ansehen',
+  'dashboard.catalogTitle': 'Was brauchen Sie für Ihre Arbeit?',
+  'dashboard.catalogIntro':
+    'Entdecken Sie verfügbare Produkte und Leistungen und senden Sie eine Anfrage an Ihr Team.',
+  'dashboard.browseCatalog': 'Katalog entdecken',
+
+  'ticketWorkspace.unknownPerson': 'Unbekannte Person',
+  'ticketWorkspace.actions': 'Ticketaktionen',
+  'ticketWorkspace.more': 'Mehr',
+  'ticketWorkspace.noDescription': 'Keine Beschreibung angegeben.',
+  'ticketWorkspace.reply': 'Antwort',
+  'ticketWorkspace.replyHint': 'Für die anfragende Person und das Supportteam sichtbar.',
+  'ticketWorkspace.draftHint': 'Entwürfe bleiben beim Wechsel zwischen Antwort und Notiz getrennt.',
+  'ticketWorkspace.requester': 'Anfragende Person & Gerät',
+  'ticketWorkspace.handling': 'Bearbeitung',
+  'ticketWorkspace.insertWorkaround': 'Workaround einfügen',
+  'ticketWorkspace.noKnownErrors': 'Keine passenden bekannten Fehler.',
+  'ticketWorkspace.runbook': 'Runbook',
+  'ticketWorkspace.runbookHint': 'Einen bewährten Ablauf für dieses Ticket nutzen.',
+  'ticketWorkspace.activity': 'Aktivität',
+  'ticketWorkspace.updated': 'Zuletzt aktualisiert',
+
+  'shell.workspace': 'Arbeitsbereich',
+  'shell.personal': 'Mein Bereich',
+  'shell.serviceDesk': 'Service Desk',
+  'shell.breadcrumb': 'Seitennavigation',
+  'shell.nextTheme': 'Zum Design {theme} wechseln',
+  'shell.notificationsUnavailable': 'Benachrichtigungen nicht verfügbar',
+  'shell.notificationStatus': '{count} ungelesene Benachrichtigungen',
+
   'table.showingTotal': '{count} von {total} angezeigt',
   'table.showingLoaded': '{count} geladene Einträge',
   'table.filteredBy': 'gefiltert nach {filters}',
