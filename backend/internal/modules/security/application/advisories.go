@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -40,6 +41,9 @@ type AdvisoryInput struct {
 func FromRecord(r advisories.AdvisoryRecord) AdvisoryInput {
 	in := AdvisoryInput{Source: r.Source, ExternalID: r.ExternalID, Title: r.Title, Summary: r.Summary, Severity: r.Severity,
 		SourceURL: r.SourceURL, PublishedAt: r.PublishedAt, ModifiedAt: r.ModifiedAt}
+	if len(r.References) > 0 {
+		in.Summary = withReferences(in.Summary, r.References)
+	}
 	for _, c := range r.Criteria {
 		ci := CriterionInput{ProductName: c.ProductName, Publisher: c.Publisher, OSPlatform: c.OSPlatform}
 		for _, rule := range c.Rules {
@@ -48,6 +52,28 @@ func FromRecord(r advisories.AdvisoryRecord) AdvisoryInput {
 		in.Criteria = append(in.Criteria, ci)
 	}
 	return in
+}
+
+// withReferences appends the source's reference URLs to the summary text as long as the summary limit allows.
+func withReferences(summary string, refs []string) string {
+	out := summary
+	header := "References:"
+	added := false
+	for _, ref := range refs {
+		add := "\n" + ref
+		if !added {
+			add = "\n\n" + header + add
+			if summary == "" {
+				add = add[2:]
+			}
+		}
+		if utf8.RuneCountInString(out)+utf8.RuneCountInString(add) > maxSummary {
+			break
+		}
+		out += add
+		added = true
+	}
+	return out
 }
 
 // cleanCriteria validates criteria without resolving products.

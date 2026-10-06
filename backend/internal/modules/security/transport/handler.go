@@ -329,7 +329,7 @@ func (h *handler) findingTransitions(w http.ResponseWriter, r *http.Request) {
 }
 
 func advisoryDTO(a application.Advisory) map[string]any {
-	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
+	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "knownExploited": a.KnownExploited, "knownExploitedAddedAt": dateOnly(a.KnownExploitedAddedAt), "kevDueDate": dateOnly(a.KEVDueDate), "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
 }
 func criteriaDTO(criteria []application.Criterion) []any {
 	out := make([]any, 0, len(criteria))
@@ -345,4 +345,12 @@ func criteriaDTO(criteria []application.Criterion) []any {
 func findingDTO(v application.FindingView) map[string]any {
 	f := v.Finding
 	return map[string]any{"id": f.ID, "reference": f.Reference, "advisoryId": f.AdvisoryID, "advisoryReference": v.AdvisoryReference, "advisoryTitle": v.AdvisoryTitle, "deviceId": f.DeviceID, "deviceHidden": v.DeviceHidden, "deviceName": v.DeviceName, "softwareProductId": f.SoftwareProductID, "productName": v.ProductName, "installedVersion": f.InstalledVersion, "confidence": f.Confidence, "status": f.Status, "statusReason": f.StatusReason, "riskAcceptedBy": f.RiskAcceptedBy, "riskAcceptedAt": f.RiskAcceptedAt, "riskReviewBy": f.RiskReviewBy, "firstSeenAt": f.FirstSeenAt, "lastSeenAt": f.LastSeenAt, "remediatedAt": f.RemediatedAt, "version": f.Version, "createdAt": f.CreatedAt, "updatedAt": f.UpdatedAt}
+}
+
+// dateOnly renders a calendar date (the KEV catalog's dates) as YYYY-MM-DD; nil stays null.
+func dateOnly(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.Format(time.DateOnly)
 }

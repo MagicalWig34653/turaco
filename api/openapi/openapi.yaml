@@ -14692,20 +14692,24 @@ components:
         residualRisk: {type: string, enum: [none, low, medium, high, unknown], description: Unknown when the Advisory is outside the applicable family, matching is missing/incomplete/truncated or matched inventory ingestion is over 48 hours old. Otherwise derived from severity and live probable/potential findings including accepted risk.}
     SecurityOverview:
       type: object
-      required: [source, applicableBySeverity, openFindingsByConfidence, overdueTasks, riskAcceptancesDueWithin30Days]
+      required: [source, applicableBySeverity, openFindingsByConfidence, knownExploitedApplicable, overdueTasks, riskAcceptancesDueWithin30Days]
       properties:
         source: {type: string, enum: [turaco_derived]}
         applicableBySeverity: {type: object, additionalProperties: {type: integer}}
         openFindingsByConfidence: {type: object, additionalProperties: {type: integer}}
+        knownExploitedApplicable: {type: integer, description: Live advisories listed in the CISA Known Exploited Vulnerabilities catalog.}
         overdueTasks: {type: integer}
         riskAcceptancesDueWithin30Days: {type: integer}
     SecurityAdvisory:
       type: object
-      required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, version, createdAt, updatedAt]
+      required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, knownExploited, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string}
         source: {type: string}
+        knownExploited: {type: boolean, description: Listed in the CISA Known Exploited Vulnerabilities catalog. Set only by the feed sync, never by manual edit.}
+        knownExploitedAddedAt: {type: string, format: date, nullable: true}
+        kevDueDate: {type: string, format: date, nullable: true, description: Remediation due date of the KEV catalog.}
         externalId: {type: string, nullable: true}
         title: {type: string}
         summary: {type: string, nullable: true}

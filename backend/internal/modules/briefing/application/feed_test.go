@@ -10,13 +10,23 @@ import (
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 )
 
-type feedSecurity struct{ fail bool }
+type feedSecurity struct {
+	fail   bool
+	items  []securitypublic.ApplicableSummary
+	health []securitypublic.FeedHealth
+}
 
 func (f feedSecurity) ApplicableAdvisorySummaries(_ context.Context, scope securitypublic.ReadScope) ([]securitypublic.ApplicableSummary, error) {
 	if f.fail {
 		return nil, errors.New("unavailable")
 	}
+	if f.items != nil {
+		return f.items, nil
+	}
 	return []securitypublic.ApplicableSummary{{ID: "adv", Reference: "ADV-1", Title: "private", Severity: "critical", AffectedDevices: 5}}, nil
+}
+func (f feedSecurity) AdvisoryFeedHealth(context.Context) ([]securitypublic.FeedHealth, error) {
+	return f.health, nil
 }
 func (f feedSecurity) RiskReviewsDuePage(context.Context, securitypublic.ReadScope) (securitypublic.RiskReviewPage, error) {
 	return securitypublic.RiskReviewPage{}, nil
@@ -166,5 +176,43 @@ func TestFeedMarksSourceTimeoutWithoutLeakingError(t *testing.T) {
 	}
 	if len(result.Unavailable) == 0 || result.Unavailable[0] != (FeedFailure{Source: "security_advisory", Reason: "source_timeout"}) {
 		t.Fatalf("unavailable = %+v", result.Unavailable)
+	}
+}
+
+func TestFeedKnownExploitedFirstAndFeedHealth(t *testing.T) {
+	now := time.Now()
+	due := now.Add(72 * time.Hour)
+	last := now.Add(-time.Hour)
+	old := now.Add(-100 * time.Hour)
+	sec := feedSecurity{
+		items: []securitypublic.ApplicableSummary{
+			{ID: "plain", Reference: "ADV-1", Title: "plain critical", Severity: "critical", AffectedDevices: 9},
+			{ID: "kev", Reference: "ADV-2", Title: "exploited medium", Severity: "medium", KnownExploited: true, KEVDueDate: &due, AffectedDevices: 1},
+		},
+		health: []securitypublic.FeedHealth{
+			{Source: "nvd", LastSuccessAt: &last},
+			{Source: "cisa_kev", LastSuccessAt: &old, Stale: true},
+			{Source: "other", LastSuccessAt: &last, LastError: "rate_limited"},
+		},
+	}
+	out, err := NewFeedService(nil, FeedSources{Security: sec}).Feed(context.Background(), FeedPrincipal{UserID: "user", Security: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var advisories []FeedEntry
+	reasons := map[string]string{}
+	for _, e := range out.Entries {
+		switch e.Kind {
+		case "security_advisory":
+			advisories = append(advisories, e)
+		case "integration_health":
+			reasons[e.Params["source"].(string)] = e.Params["reason"].(string)
+		}
+	}
+	if len(advisories) != 2 || advisories[0].Reference.ID != "kev" || advisories[0].Severity != SeverityCritical || advisories[0].TitleKey != "briefing.feed.security_advisory_kev" || advisories[0].DueAt == nil {
+		t.Fatalf("known exploited advisory must come first and be critical: %+v", advisories)
+	}
+	if len(reasons) != 2 || reasons["cisa_kev"] != "stale" || reasons["other"] != "rate_limited" {
+		t.Fatalf("health entries: %v", reasons)
 	}
 }

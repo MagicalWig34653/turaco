@@ -185,13 +185,17 @@ type Advisory struct {
 	MatchTruncated     bool
 	EditedByUser       bool
 	UnmatchedCriteria  int
-	CreatedBy          *string
-	ApplicableAt       *time.Time
-	ResolvedAt         *time.Time
-	ArchivedAt         *time.Time
-	Version            int
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// KnownExploited and its dates are set only by the CISA KEV enrichment of the feed sync.
+	KnownExploited        bool
+	KnownExploitedAddedAt *time.Time
+	KEVDueDate            *time.Time
+	CreatedBy             *string
+	ApplicableAt          *time.Time
+	ResolvedAt            *time.Time
+	ArchivedAt            *time.Time
+	Version               int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Criterion names affected software of an Advisory.

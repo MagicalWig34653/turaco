@@ -53,6 +53,7 @@ func isUnique(err error) bool {
 const advisoryCols = `id::text, reference, source, external_id, title, summary, severity, edited_by_user, published_at, modified_at, source_url,
 	status, status_reason, criteria_revision, criteria_changed_at, matched_revision, matched_at, matched_ingestion_at, match_truncated, created_by::text,
 	applicable_at, resolved_at, archived_at, version, created_at, updated_at,
+	known_exploited, known_exploited_added_at, kev_due_date,
 	(SELECT count(*) FROM security.advisory_criteria c WHERE c.advisory_id = security.advisories.id AND c.normalization = 'unmatched')`
 
 func scanAdvisory(row pgx.Row) (application.Advisory, error) {
@@ -60,7 +61,7 @@ func scanAdvisory(row pgx.Row) (application.Advisory, error) {
 	err := row.Scan(&a.ID, &a.Reference, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Severity, &a.EditedByUser, &a.PublishedAt, &a.ModifiedAt,
 		&a.SourceURL, &a.Status, &a.StatusReason, &a.CriteriaRevision, &a.CriteriaChangedAt, &a.MatchedRevision, &a.MatchedAt, &a.MatchedIngestionAt,
 		&a.MatchTruncated, &a.CreatedBy, &a.ApplicableAt, &a.ResolvedAt, &a.ArchivedAt, &a.Version, &a.CreatedAt, &a.UpdatedAt,
-		&a.UnmatchedCriteria)
+		&a.KnownExploited, &a.KnownExploitedAddedAt, &a.KEVDueDate, &a.UnmatchedCriteria)
 	return a, err
 }
 

@@ -10,6 +10,7 @@
 //	turaco-admin emergency set-password --login <name> [--password-stdin]
 //	turaco-admin emergency enable|disable --login <name>
 //	turaco-admin security import < advisories.json
+//	turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
 //	turaco-admin demo seed   (APP_ENV=development only)
 package main
 
@@ -54,6 +55,7 @@ const usage = `usage:
   turaco-admin emergency enable  --login <name>
   turaco-admin emergency disable --login <name>
   turaco-admin security import < advisories.json
+  turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
   turaco-admin demo seed   (development only)`
 
 func main() {
