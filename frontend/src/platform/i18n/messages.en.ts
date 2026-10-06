@@ -3007,6 +3007,34 @@ export const en = {
   'deployments.error.evaluationBusy': 'Too many evaluations are running; try again in a moment.',
   'deployments.error.editorsFull': 'Too many people have edited this plan.',
   'deployments.error.approverNotAuthorized': 'The approver may not approve deployment plans.',
+  'deployments.error.noWindowHighImpact':
+    'A ring on an all-devices or nested-root-group target set needs a Change window, even as pilot.',
+  'deployments.issue.no_window_high_impact':
+    'A ring on an all-devices or nested-root-group target set needs a Change window, even as pilot.',
+  'deployments.issue.overlap_check_truncated':
+    'Not every other plan of this product was compared for overlapping devices.',
+  'deployments.highImpactReason.nested_root_group':
+    'a ring targets a root group including its nested groups',
+  'deployments.highImpactReason.target_count': 'the plan targets many devices',
+  'deployments.highImpactReason.unknown': 'see the validation',
+  'deployments.tsHighImpact.all_devices':
+    'This target set selects all devices. Plans that use it are high impact.',
+  'deployments.tsHighImpact.nested_root_group':
+    'This target set uses a root group with its nested groups. Plans that use it are high impact.',
+  'deployments.tsHighImpact.unknown': 'Plans that use this target set are high impact.',
+  'deployments.operation.approver_not_authorized': 'Returned to draft: approver not authorized',
+  'deployments.reason.revalidate': 'The plan or a target set changed; validate again.',
+  'deployments.ring.windowHighImpact':
+    'This target set is high impact, so even the pilot needs a Change window.',
+  'deployments.validate.total': '{count} devices in all rings',
+  'deployments.eval.examplesRedacted': 'Example devices are hidden for your permissions.',
+  'deployments.explain.needsDevices':
+    'Explaining a single device needs the endpoints.view permission.',
+  'deployments.def.devicesHidden':
+    'Device lists are hidden for your permissions: {include} included, {exclude} excluded. Device groups and asset locations also need endpoints.view.',
+  'deployments.ts.devicesLocked':
+    'This target set uses devices, groups or locations; changing it needs the endpoints.view permission.',
+  'deployments.window.hidden': 'Change not visible to you',
 } as const;
 
 export type MessageKey = keyof typeof en;

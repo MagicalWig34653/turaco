@@ -28,6 +28,7 @@ registerErrorMessages({
   'endpoints.approval_required': 'deployments.error.approvalRequired',
   'endpoints.approval_not_required': 'deployments.error.approvalNotRequired',
   'endpoints.plan_changed': 'deployments.error.planChanged',
+  'endpoints.no_window_high_impact': 'deployments.error.noWindowHighImpact',
   'endpoints.evaluation_busy': 'deployments.error.evaluationBusy',
   'endpoints.editors_full': 'deployments.error.editorsFull',
   'endpoints.approver_not_authorized': 'deployments.error.approverNotAuthorized',

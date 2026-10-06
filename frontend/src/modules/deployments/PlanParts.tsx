@@ -211,7 +211,6 @@ export function RingDialog({
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError>();
-  const errors = validateRingForm(values, pilot);
   const canReadSets =
     can('deployments.view') || can('deployments.manage') || can('deployments.execute');
   const sets = useAsync(
@@ -224,6 +223,10 @@ export function RingDialog({
   const set = (patch: Partial<RingFormValues>) => setValues((prev) => ({ ...prev, ...patch }));
   const err = (key: keyof RingFormValues) => (tried && errors[key] ? t(errors[key]) : undefined);
   const chosenSet = sets.data?.find((item) => item.id === values.targetSetId);
+  // Only the pilot may run without a window, and not on an all-devices or nested-root-group set.
+  const windowFree = pilot && !chosenSet?.allDevices && !chosenSet?.highImpactReason;
+  const effective = windowFree ? values : { ...values, noWindowRequired: false };
+  const errors = validateRingForm(effective, pilot);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
@@ -231,8 +234,9 @@ export function RingDialog({
     setBusy(true);
     setError(undefined);
     try {
-      if (ring) await deploymentsApi.updateRing(plan.id, ring.id, ringInput(values), plan.version);
-      else await deploymentsApi.addRing(plan.id, ringInput(values), plan.version);
+      if (ring)
+        await deploymentsApi.updateRing(plan.id, ring.id, ringInput(effective), plan.version);
+      else await deploymentsApi.addRing(plan.id, ringInput(effective), plan.version);
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
@@ -353,7 +357,7 @@ export function RingDialog({
         </fieldset>
         <fieldset className="deployments-gate">
           <legend>{t('deployments.ring.window')}</legend>
-          {pilot ? (
+          {windowFree ? (
             <Checkbox
               label={t('deployments.ring.noWindow')}
               description={t('deployments.ring.noWindowHint')}
@@ -361,9 +365,13 @@ export function RingDialog({
               onChange={(event) => set({ noWindowRequired: event.target.checked })}
             />
           ) : (
-            <p className="deployments-muted">{t('deployments.ring.windowRequired')}</p>
+            <p className="deployments-muted">
+              {pilot
+                ? t('deployments.ring.windowHighImpact')
+                : t('deployments.ring.windowRequired')}
+            </p>
           )}
-          {!values.noWindowRequired ? (
+          {!effective.noWindowRequired ? (
             <ChangePicker
               value={values.changeId}
               known={values.changeId ? plan.changes[values.changeId] : undefined}
@@ -695,6 +703,12 @@ export function ValidationPanel({
           {validation.valid ? t('deployments.validate.valid') : t('deployments.validate.invalid')}
         </StatusBadge>
         {validation.highImpact ? <HighImpactBadge /> : null}
+        {validation.incomplete ? (
+          <StatusBadge tone="warning">{t('deployments.ring.incomplete')}</StatusBadge>
+        ) : null}
+        {validation.evaluated && validation.totalTargets != null ? (
+          <span>{t('deployments.validate.total', { count: validation.totalTargets })}</span>
+        ) : null}
         <span className="deployments-muted">
           {validation.evaluated
             ? t('deployments.validate.evaluated')

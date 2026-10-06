@@ -430,12 +430,6 @@ function ScheduleDialog({
 
 // ---- Plan workspace ----
 
-function highImpactReasons(plan: DeploymentDetail): string[] {
-  const raw = plan.highImpactReason;
-  if (!raw) return [];
-  return Array.isArray(raw) ? raw : [raw];
-}
-
 export function DeploymentPlanScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can } = useSession();
@@ -461,6 +455,10 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
     setValidateError(undefined);
     try {
       setFull(await deploymentsApi.validate(id));
+      // A fresh validation answers plan_changed for drafts; an approved plan stays changed.
+      setLastError((code) =>
+        code === 'endpoints.plan_changed' && plan?.status === 'approved' ? code : undefined,
+      );
     } catch (cause) {
       setValidateError(asApiError(cause));
     } finally {
@@ -483,7 +481,9 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
   if (!plan) return <Skeleton lines={8} />;
 
   const validation = full ?? plan.validation;
-  const actions = planActions({ ...plan, validation }, can, lastError);
+  // The stored flag of a draft is a snapshot; the validation recomputes it.
+  const highImpact = validation.highImpact;
+  const actions = planActions({ ...plan, highImpact, validation }, can, lastError);
   const primary = actions.find((action) => action.id !== 'cancel' && !action.disabledReason);
   const editable = plan.status === 'draft' && can('deployments.manage');
   const menuItems = [
@@ -505,9 +505,9 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
         onSelect: () => setDialog('cancel'),
       })),
   ];
-  const steps = planSteps(plan.status, plan.highImpact);
+  const steps = planSteps(plan.status, highImpact || (plan.status !== 'draft' && plan.highImpact));
   const actionLabel = (action: PlanAction) => t(`deployments.action.${action.id}`);
-  const reasons = highImpactReasons(plan);
+  const reason = validation.highImpactReason;
   const openApproval = plan.approvals.find((approval) => approval.status === 'pending');
 
   return (
@@ -542,7 +542,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
       {menu.menu}
       <p className="deployments-badges">
         <DeploymentStatusBadge status={plan.status} />
-        {plan.highImpact ? <HighImpactBadge /> : null}
+        {highImpact ? <HighImpactBadge /> : null}
         <StatusBadge tone="neutral">
           <IntentLabel plan={plan} />
         </StatusBadge>
@@ -573,16 +573,12 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
           )}
         </Alert>
       ) : null}
-      {plan.highImpact ? (
+      {highImpact ? (
         <Alert kind="warning">
-          {t('deployments.plan.highImpactNotice')}
-          {reasons.length > 0
-            ? ` ${reasons
-                .map((reason) =>
-                  t(codeKey('deployments.highImpactReason', reason, 'deployments.highImpact')),
-                )
-                .join(', ')}`
-            : ''}
+          {t('deployments.plan.highImpactNotice')}{' '}
+          {t(
+            codeKey('deployments.highImpactReason', reason, 'deployments.highImpactReason.unknown'),
+          )}
         </Alert>
       ) : null}
 
@@ -697,7 +693,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
             </dl>
           </Section>
           <Section title={t('deployments.approval.title')}>
-            {!plan.highImpact && plan.approvals.length === 0 ? (
+            {!highImpact && plan.approvals.length === 0 ? (
               <p className="deployments-muted">{t('deployments.approval.notNeeded')}</p>
             ) : plan.approvals.length === 0 ? (
               <p className="deployments-muted">{t('deployments.approval.notRequested')}</p>
@@ -1002,7 +998,7 @@ export function DeploymentWizardScreen() {
               <dt>{t('deployments.list.rings')}</dt>
               <dd>{plan.rings.length}</dd>
             </dl>
-            {plan.highImpact ? (
+            {(validation ?? plan.validation).highImpact ? (
               <Alert kind="warning">{t('deployments.wizard.highImpactNext')}</Alert>
             ) : null}
           </Section>

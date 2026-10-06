@@ -313,6 +313,7 @@ export function GroupPicker({ onPick }: { onPick: (item: PickItem) => void }) {
 export function WindowPeriod({ change }: { change: ChangeWindow | undefined }) {
   const { t, locale } = useI18n();
   if (!change) return <>{t('deployments.window.unknown')}</>;
+  if (change.hidden) return <>{t('deployments.window.hidden')}</>;
   const state = windowState(change, new Date());
   return (
     <span className="deployments-window">
@@ -598,7 +599,9 @@ export function EvaluationCard({
             <p className="deployments-muted">{t('deployments.eval.countsOnly')}</p>
           )}
           <h3>{t('deployments.eval.examples')}</h3>
-          {(ev.examples ?? []).length === 0 ? (
+          {ev.examplesRedacted ? (
+            <p className="deployments-muted">{t('deployments.eval.examplesRedacted')}</p>
+          ) : (ev.examples ?? []).length === 0 ? (
             <p className="deployments-muted">{t('deployments.eval.noExamples')}</p>
           ) : (
             <ul className="deployments-examples">
@@ -628,12 +631,14 @@ export function EvaluationCard({
                       ),
                     )}
                   </span>
-                  <Button
-                    className="deployments-link-button"
-                    onClick={() => onExplain(example.deviceId)}
-                  >
-                    {t('deployments.explain.why')}
-                  </Button>
+                  {linkDevices ? (
+                    <Button
+                      className="deployments-link-button"
+                      onClick={() => onExplain(example.deviceId)}
+                    >
+                      {t('deployments.explain.why')}
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -644,7 +649,12 @@ export function EvaluationCard({
           </p>
         </div>
       ) : null}
-      <Button onClick={() => onExplain()}>{t('deployments.explain.open')}</Button>
+      {/* Explaining a Device needs endpoints.view (the API answers 403 otherwise). */}
+      {linkDevices ? (
+        <Button onClick={() => onExplain()}>{t('deployments.explain.open')}</Button>
+      ) : (
+        <p className="deployments-muted">{t('deployments.explain.needsDevices')}</p>
+      )}
     </section>
   );
 }

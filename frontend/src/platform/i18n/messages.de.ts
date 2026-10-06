@@ -3079,4 +3079,35 @@ export const de: Record<MessageKey, string> = {
   'deployments.error.editorsFull': 'Zu viele Personen haben diesen Plan bearbeitet.',
   'deployments.error.approverNotAuthorized':
     'Die freigebende Stelle darf keine Verteilungspläne freigeben.',
+  'deployments.error.noWindowHighImpact':
+    'Ein Ring auf einer Zielgruppe mit allen Geräten oder einer Stammgruppe mit Untergruppen benötigt ein Change-Fenster, auch als Pilot.',
+  'deployments.issue.no_window_high_impact':
+    'Ein Ring auf einer Zielgruppe mit allen Geräten oder einer Stammgruppe mit Untergruppen benötigt ein Change-Fenster, auch als Pilot.',
+  'deployments.issue.overlap_check_truncated':
+    'Nicht alle anderen Pläne dieses Produkts wurden auf gemeinsame Geräte verglichen.',
+  'deployments.highImpactReason.nested_root_group':
+    'ein Ring zielt auf eine Stammgruppe mit ihren Untergruppen',
+  'deployments.highImpactReason.target_count': 'der Plan zielt auf sehr viele Geräte',
+  'deployments.highImpactReason.unknown': 'siehe Prüfung',
+  'deployments.tsHighImpact.all_devices':
+    'Diese Zielgruppe wählt alle Geräte. Pläne, die sie verwenden, haben hohe Auswirkung.',
+  'deployments.tsHighImpact.nested_root_group':
+    'Diese Zielgruppe verwendet eine Stammgruppe mit ihren Untergruppen. Pläne, die sie verwenden, haben hohe Auswirkung.',
+  'deployments.tsHighImpact.unknown':
+    'Pläne, die diese Zielgruppe verwenden, haben hohe Auswirkung.',
+  'deployments.operation.approver_not_authorized':
+    'Zurück im Entwurf: freigebende Stelle nicht berechtigt',
+  'deployments.reason.revalidate':
+    'Der Plan oder eine Zielgruppe hat sich geändert; prüfen Sie erneut.',
+  'deployments.ring.windowHighImpact':
+    'Diese Zielgruppe hat hohe Auswirkung, daher benötigt auch der Pilot ein Change-Fenster.',
+  'deployments.validate.total': '{count} Geräte in allen Ringen',
+  'deployments.eval.examplesRedacted': 'Beispielgeräte sind für Ihre Berechtigungen verborgen.',
+  'deployments.explain.needsDevices':
+    'Die Erklärung für ein einzelnes Gerät benötigt die Berechtigung endpoints.view.',
+  'deployments.def.devicesHidden':
+    'Gerätelisten sind für Ihre Berechtigungen verborgen: {include} aufgenommen, {exclude} ausgeschlossen. Gerätegruppen und Asset-Standorte benötigen ebenfalls endpoints.view.',
+  'deployments.ts.devicesLocked':
+    'Diese Zielgruppe verwendet Geräte, Gruppen oder Standorte; zum Ändern ist die Berechtigung endpoints.view nötig.',
+  'deployments.window.hidden': 'Change für Sie nicht sichtbar',
 };

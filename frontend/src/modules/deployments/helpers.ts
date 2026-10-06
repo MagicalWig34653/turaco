@@ -330,6 +330,7 @@ export function planActions(
   if (plan.status === 'draft' && plan.highImpact) {
     const disabledReason = reason(
       [!highImpactAllowed, 'deployments.reason.needsHighImpact'],
+      [lastErrorCode === 'endpoints.plan_changed', 'deployments.reason.revalidate'],
       [blocking.length > 0, 'deployments.reason.blocking'],
     );
     actions.push({ id: 'submit', ...(disabledReason ? { disabledReason } : {}) });
@@ -339,7 +340,12 @@ export function planActions(
       [plan.highImpact && !highImpactAllowed, 'deployments.reason.needsHighImpact'],
       [plan.status === 'pending_approval', 'deployments.reason.approvalPending'],
       [plan.highImpact && plan.status === 'draft', 'deployments.reason.approvalFirst'],
-      [lastErrorCode === 'endpoints.plan_changed', 'deployments.reason.planChanged'],
+      [
+        lastErrorCode === 'endpoints.plan_changed',
+        plan.status === 'approved'
+          ? 'deployments.reason.planChanged'
+          : 'deployments.reason.revalidate',
+      ],
       [blocking.length > 0, 'deployments.reason.blocking'],
     );
     actions.push({ id: 'schedule', ...(disabledReason ? { disabledReason } : {}) });

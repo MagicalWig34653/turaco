@@ -27,11 +27,13 @@ import {
   IdChips,
   LocationPicker,
   Section,
+  HighImpactBadge,
   canViewDevices,
 } from './components';
 import {
   availableKinds,
   buildDefinition,
+  codeKey,
   definitionLimits,
   definitionToForm,
   emptyRow,
@@ -115,7 +117,10 @@ export function TargetSetsScreen() {
         set.allDevices ? (
           <StatusBadge tone="warning">{t('deployments.ts.allDevices')}</StatusBadge>
         ) : (
-          t('deployments.ts.clauses', { count: clauseCount(set) })
+          <>
+            {t('deployments.ts.clauses', { count: clauseCount(set) })}{' '}
+            {set.highImpactReason ? <HighImpactBadge /> : null}
+          </>
         ),
     },
     {
@@ -123,8 +128,8 @@ export function TargetSetsScreen() {
       header: t('deployments.ts.explicit'),
       render: (set) =>
         t('deployments.ts.explicitCounts', {
-          include: set.definition.includeDeviceIds.length,
-          exclude: set.definition.excludeDeviceIds.length,
+          include: set.includeDeviceCount ?? set.definition.includeDeviceIds.length,
+          exclude: set.excludeDeviceCount ?? set.definition.excludeDeviceIds.length,
         }),
     },
     {
@@ -470,16 +475,23 @@ export function DefinitionEditor({
   form,
   onChange,
   errors,
+  savedCounts,
 }: {
   form: DefinitionForm;
   onChange: (form: DefinitionForm) => void;
   errors: DefinitionError[];
+  /** Explicit list sizes of the saved set (the lists themselves may be withheld). */
+  savedCounts?: { include: number; exclude: number } | undefined;
 }) {
   const { t } = useI18n();
   const { can } = useSession();
   const [names, setNames] = useState<Record<string, string>>({});
   const remember = (id: string, name: string) => setNames((prev) => ({ ...prev, [id]: name }));
-  const kinds = availableKinds(form.rows);
+  const devicesVisible = canViewDevices(can);
+  // Device groups and asset locations need endpoints.view to be saved (403 otherwise).
+  const kinds = availableKinds(form.rows).filter(
+    (kind) => devicesVisible || (kind !== 'groups' && kind !== 'assetLocationIds'),
+  );
   const [nextKind, setNextKind] = useState<FilterKind | ''>('');
   const errorsFor = (field: string) => errors.filter((error) => error.field === field);
   const definition = buildDefinition(form);
@@ -539,7 +551,15 @@ export function DefinitionEditor({
       </Section>
       <Section title={t('deployments.def.explicit')}>
         <p className="deployments-muted">{t('deployments.def.explicitIntro')}</p>
-        <div className="deployments-two-col">
+        {!devicesVisible ? (
+          <Alert kind="info">
+            {t('deployments.def.devicesHidden', {
+              include: savedCounts?.include ?? 0,
+              exclude: savedCounts?.exclude ?? 0,
+            })}
+          </Alert>
+        ) : null}
+        <div className="deployments-two-col" hidden={!devicesVisible}>
           <div>
             <h3>{t('deployments.def.include')}</h3>
             <DevicePicker
@@ -637,7 +657,16 @@ export function TargetSetEditorScreen({ id }: { id?: string }) {
   const definition = useMemo(() => buildDefinition(form), [form]);
   const errors = useMemo(() => validateDefinition(definition), [definition]);
   const nameError = triedSubmit && !name.trim() ? t('deployments.ts.nameRequired') : undefined;
-  const readOnly = !can('deployments.manage') || !!saved?.archivedAt;
+  // Without endpoints.view the device lists, groups and locations cannot be saved (and the lists
+  // are withheld, so saving would drop them): such a set is shown read-only.
+  const needsDevices =
+    !!saved &&
+    ((saved.includeDeviceCount ?? saved.definition.includeDeviceIds.length) > 0 ||
+      (saved.excludeDeviceCount ?? saved.definition.excludeDeviceIds.length) > 0 ||
+      !!saved.definition.filters.groups?.length ||
+      !!saved.definition.filters.assetLocationIds?.length);
+  const devicesLocked = needsDevices && !canViewDevices(can);
+  const readOnly = !can('deployments.manage') || !!saved?.archivedAt || devicesLocked;
   const dirty = !!saved && !sameDefinition(saved.definition, definition);
 
   const submit = async (event: FormEvent) => {
@@ -713,10 +742,19 @@ export function TargetSetEditorScreen({ id }: { id?: string }) {
         }
       />
       {saved?.archivedAt ? <Alert kind="info">{t('deployments.ts.archivedNotice')}</Alert> : null}
-      {saved?.allDevices ? (
-        <p className="deployments-badges">
-          <StatusBadge tone="warning">{t('deployments.ts.allDevices')}</StatusBadge>
-        </p>
+      {devicesLocked && can('deployments.manage') && !saved?.archivedAt ? (
+        <Alert kind="info">{t('deployments.ts.devicesLocked')}</Alert>
+      ) : null}
+      {saved?.allDevices || saved?.highImpactReason ? (
+        <Alert kind="warning">
+          {t(
+            codeKey(
+              'deployments.tsHighImpact',
+              saved.highImpactReason ?? 'all_devices',
+              'deployments.tsHighImpact.unknown',
+            ),
+          )}
+        </Alert>
       ) : null}
       {error ? <ApiErrorAlert error={error} /> : null}
       {notice ? <Alert kind="success">{notice}</Alert> : null}
@@ -762,7 +800,19 @@ export function TargetSetEditorScreen({ id }: { id?: string }) {
                 />
               ) : null}
             </Section>
-            <DefinitionEditor form={form} onChange={setForm} errors={errors} />
+            <DefinitionEditor
+              form={form}
+              onChange={setForm}
+              errors={errors}
+              savedCounts={
+                saved
+                  ? {
+                      include: saved.includeDeviceCount ?? saved.definition.includeDeviceIds.length,
+                      exclude: saved.excludeDeviceCount ?? saved.definition.excludeDeviceIds.length,
+                    }
+                  : undefined
+              }
+            />
           </fieldset>
         </form>
         <aside className="deployments-detail-side" aria-label={t('deployments.eval.title')}>

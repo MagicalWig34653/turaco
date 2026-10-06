@@ -262,6 +262,16 @@ describe('plan actions', () => {
       disabledReason: 'deployments.reason.planChanged',
     });
     expect(planActions(plan('scheduled', true), full)).toEqual([{ id: 'cancel' }]);
+    expect(
+      planActions(plan('draft', true, [approvalRequired]), full, 'endpoints.plan_changed')[0],
+    ).toEqual({
+      id: 'submit',
+      disabledReason: 'deployments.reason.revalidate',
+    });
+    expect(planActions(plan('draft', false), full, 'endpoints.plan_changed')[0]).toEqual({
+      id: 'schedule',
+      disabledReason: 'deployments.reason.revalidate',
+    });
   });
 });
 

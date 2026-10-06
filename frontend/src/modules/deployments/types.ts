@@ -41,6 +41,13 @@ export type TargetSet = {
   ownerUserId: string;
   definition: TargetDefinition;
   allDevices: boolean;
+  /** all_devices or nested_root_group when plans using the set are high impact. */
+  highImpactReason?: string | null;
+  includeDeviceCount?: number;
+  excludeDeviceCount?: number;
+  /** Without endpoints.view the explicit lists come back empty; the counts remain. */
+  deviceListsRedacted?: boolean;
+  updatedBy?: string | null;
   archivedAt: string | null;
   createdBy: string;
   version: number;
@@ -74,6 +81,8 @@ export type TargetEvaluation = {
   byCompliance?: Record<string, number>;
   evaluatedAt: string;
   examples?: TargetExample[];
+  /** Examples are withheld (no endpoints.view, or an approver-only read). */
+  examplesRedacted?: boolean;
 };
 
 export const clauseNames = [
@@ -147,8 +156,6 @@ export type Deployment = {
   createdBy: string;
   editors: string[];
   highImpact: boolean;
-  /** Why the plan is high impact (codes), when the API reports it. */
-  highImpactReason?: string | string[] | null;
   approvalId: string | null;
   submittedBy: string | null;
   submittedAt: string | null;
@@ -204,11 +211,13 @@ export const issueCodes = [
   'target_set_archived',
   'window_required',
   'change_window_invalid',
+  'no_window_high_impact',
   'approval_required',
   'too_many_targets',
   'no_targets',
   'evaluation_incomplete',
   'overlapping_deployment',
+  'overlap_check_truncated',
   'high_impact',
 ] as const;
 
@@ -230,6 +239,10 @@ export type RingTargets = {
 export type PlanValidation = {
   valid: boolean;
   highImpact: boolean;
+  /** uninstall, supersede, all_devices, nested_root_group or target_count. */
+  highImpactReason?: string | null;
+  incomplete?: boolean;
+  totalTargets?: number | null;
   evaluated: boolean;
   validatedAt: string;
   issues: PlanIssue[];
@@ -261,7 +274,7 @@ export type ChangeWindow = {
   /** May be absent or a placeholder when the caller may not see the Change. */
   reference?: string | null;
   hidden?: boolean;
-  status: string;
+  status: string | null;
   windowStart: string | null;
   windowEnd: string | null;
 };
