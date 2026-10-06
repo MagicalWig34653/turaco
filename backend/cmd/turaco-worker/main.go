@@ -14,13 +14,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
 	assetsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/repository"
 	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
+	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
@@ -122,6 +125,10 @@ func main() {
 	}
 	if err := registerSecurityRiskReminders(runner, pool, categories, smtpCfg.Enabled()); err != nil {
 		logger.Error("configure security risk reminders", "error", err)
+		os.Exit(1)
+	}
+	if err := registerSoftwarePackageSync(runner, pool, cfg.SoftwareProviderSync); err != nil {
+		logger.Error("configure software package synchronization", "error", err)
 		os.Exit(1)
 	}
 	if cfg.AutotaskSync {
@@ -260,6 +267,12 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 			return err
 		}
 	}
+	softwareNotes := wiring.SoftwareNotifications(pool, notifier)
+	for _, event := range []string{endpointsapp.EventSoftwareVersionApprovalRequested, endpointsapp.EventSoftwareVersionApprovalRequestedFanOut} {
+		if err := d.Register(event, "endpoints.notify-software-approval", softwareNotes.OnApprovalRequested); err != nil {
+			return err
+		}
+	}
 	if err := d.Register("VirtualMachineChanged", "services.sync-vm-hypervisor-link", wiring.ServiceVMLinks(pool).OnVirtualMachineChanged); err != nil {
 		return err
 	}
@@ -357,6 +370,21 @@ func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgx
 	})
 }
 
+// registerSoftwarePackageSync registers the Software Package synchronization job; it is scheduled only when
+// SOFTWARE_PROVIDER_SYNC is on. The provider is a placeholder until a real client exists, so a run with the
+// switch on reports "not configured".
+func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool) error {
+	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, enabled)
+	if err := runner.Register(endpointsapp.SoftwarePackageSyncJobType, endpointsapp.SoftwarePackageSyncJobTimeout, svc.HandleSoftwarePackageSync); err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.SoftwarePackageSyncJobType, DedupeKey: endpointsapp.SoftwarePackageSyncJobType,
+		Interval: endpointsapp.SoftwarePackageSyncInterval, MaxAttempts: 3})
+}
+
 func registerSecurityMatching(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	service := wiring.Security(pool)
 	if err := runner.Register(securityapp.MatchJobType, securityapp.MatchJobTimeout, service.HandleMatch); err != nil {
@@ -402,6 +430,7 @@ func allCategories() []notifications.Category {
 	out = append(out, changesapp.NotificationCategories()...)
 	out = append(out, planningapp.NotificationCategories()...)
 	out = append(out, securityapp.NotificationCategories()...)
+	out = append(out, endpointsapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 

@@ -31,6 +31,9 @@ type Config struct {
 	AutotaskSync bool
 	// IntuneSync allows POST /api/v1/endpoint-sync to read devices from the Intune provider.
 	IntuneSync bool
+	// SoftwareProviderSync allows the Software Package synchronization (POST /api/v1/software/packages/sync and
+	// the scheduled job) against the Software Management Provider.
+	SoftwareProviderSync bool
 
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
@@ -152,6 +155,7 @@ var Registry = []Descriptor{
 	{Name: "SMTP_SECURITY", Type: "string", Default: "starttls", Description: "Connection protection: `starttls` (required upgrade before credentials or mail are sent), `tls` (implicit TLS) or `none` (clear text; requires SMTP_ALLOW_PLAINTEXT=true and APP_ENV=development). Certificate verification is never disabled."},
 	{Name: "AUTOTASK_SYNC", Type: "bool", Default: "false", Description: "Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible \"not configured\" state."},
 	{Name: "INTUNE_SYNC", Type: "bool", Default: "false", Description: "Allow endpoint synchronization (POST /api/v1/endpoint-sync) from the Intune provider. The Graph client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
+	{Name: "SOFTWARE_PROVIDER_SYNC", Type: "bool", Default: "false", Description: "Allow the Software Package synchronization (POST /api/v1/software/packages/sync and the scheduled worker job) against the Software Management Provider (IntuneGet). The provider client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
 	{Name: "SMTP_ALLOW_PLAINTEXT", Type: "bool", Default: "false", Description: "Allow SMTP_SECURITY=none (clear text, credentials included). Accepted only together with APP_ENV=development, for local test relays."},
 	{Name: "SMTP_USERNAME", Type: "string", Description: "Relay account. Requires SMTP_PASSWORD_FILE."},
 	{Name: "SMTP_PASSWORD_FILE", Type: "string", Secret: true, Description: "Path to a file containing the relay password (for example a Docker secret). Requires SMTP_USERNAME. The password is never stored in the database or logged."},
@@ -190,9 +194,10 @@ func Load() (Config, error) {
 		S3PathStyle: getenv("S3_PATH_STYLE", "true") != "false",
 		LogLevel:    getenv("LOG_LEVEL", "info"),
 
-		SessionCookieSecure: getenv("SESSION_COOKIE_SECURE", "true") != "false",
-		AutotaskSync:        getenv("AUTOTASK_SYNC", "false") == "true",
-		IntuneSync:          getenv("INTUNE_SYNC", "false") == "true",
+		SessionCookieSecure:  getenv("SESSION_COOKIE_SECURE", "true") != "false",
+		AutotaskSync:         getenv("AUTOTASK_SYNC", "false") == "true",
+		IntuneSync:           getenv("INTUNE_SYNC", "false") == "true",
+		SoftwareProviderSync: getenv("SOFTWARE_PROVIDER_SYNC", "false") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

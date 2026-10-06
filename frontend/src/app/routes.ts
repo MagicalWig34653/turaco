@@ -49,6 +49,11 @@ export type RouteId =
   | 'managementFilters'
   | 'endpointGroupManagement'
   | 'endpointUserManagement'
+  | 'softwareProducts'
+  | 'softwareCatalog'
+  | 'softwarePackages'
+  | 'softwareVersionNew'
+  | 'softwareVersionDetail'
   | 'assetNew'
   | 'assetDetail'
   | 'stock'
@@ -118,6 +123,8 @@ export type AppRoute = {
   requiresAny?: readonly string[];
   nav?: NavGroup;
 };
+
+const softwareViewPermissions = ['software.view', 'software.approve', 'software.package'] as const;
 
 const taskViewPermissions = ['tasks.view', 'tasks.manage', 'tasks.work'] as const;
 
@@ -245,6 +252,39 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'management.userPage',
     requires: ['organization.directory.view'],
     requiresAny: ['endpoint.management.view', 'endpoints.manage'],
+  },
+  {
+    id: 'softwareProducts',
+    pattern: '/software',
+    titleKey: 'nav.software',
+    requiresAny: softwareViewPermissions,
+    nav: 'endpoints',
+  },
+  {
+    id: 'softwareCatalog',
+    pattern: '/software/catalog',
+    titleKey: 'nav.softwareCatalog',
+    requiresAny: softwareViewPermissions,
+    nav: 'endpoints',
+  },
+  {
+    id: 'softwarePackages',
+    pattern: '/software/packages',
+    titleKey: 'nav.softwarePackages',
+    requiresAny: softwareViewPermissions,
+    nav: 'endpoints',
+  },
+  {
+    id: 'softwareVersionNew',
+    pattern: '/software/versions/new',
+    titleKey: 'software.register.title',
+    requires: ['software.package'],
+  },
+  {
+    id: 'softwareVersionDetail',
+    pattern: '/software/versions/:id',
+    titleKey: 'software.version.detail',
+    requiresAny: softwareViewPermissions,
   },
   { id: 'myChanges', pattern: '/changes/mine', titleKey: 'changes.mine', nav: 'main' },
   {

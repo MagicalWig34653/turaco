@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
@@ -40,6 +42,16 @@ type Service struct {
 	reconcileBudget time.Duration
 	// reconcileMax bounds the Devices evaluated per run.
 	reconcileMax int
+	// software is the Software Management Provider (F9 G1) with its package key; softwareSyncOn switches the
+	// package synchronization on.
+	software       softwaremgmt.Provider
+	softwareKey    string
+	softwareSyncOn bool
+	// softwareSyncCooldown is the minimum time between the end of one package synchronization and a manual one.
+	softwareSyncCooldown time.Duration
+	// catalog limits catalog searches per user (guarded by catalogMu).
+	catalogMu sync.Mutex
+	catalog   catalogLimiter
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -51,7 +63,19 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices}
+	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
+		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
+		catalog: catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow}}
+}
+
+// WithSoftware sets the Software Management Provider (nil keeps "not configured") and switches the package
+// synchronization on or off (SOFTWARE_PROVIDER_SYNC).
+func (s *Service) WithSoftware(provider softwaremgmt.Provider, syncEnabled bool) *Service {
+	if provider != nil {
+		s.software = provider
+	}
+	s.softwareSyncOn = syncEnabled
+	return s
 }
 
 // WithViews connects the management views to the Organization directory graph and to the Asset holders.

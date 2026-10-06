@@ -56,6 +56,9 @@ var Registry = []Permission{
 	{Name: "security.view", Description: "View security advisories and vulnerability findings. Device names additionally require endpoints.view.", Risk: "normal"},
 	{Name: "security.manage", Description: "Create, import, analyze and manage security advisories and vulnerability findings, excluding risk acceptance.", Risk: "elevated"},
 	{Name: "security.accept_risk", Description: "Accept vulnerability finding risk with a reason code and review date.", Risk: "elevated"},
+	{Name: "software.view", Description: "View Software Products with their Software Approval Status, Software Versions with their approval history, Software Packages and the provider catalog search.", Risk: "normal"},
+	{Name: "software.approve", Description: "Approve, reject and revoke Software Version approvals (never for a version the same person registered or requested) and change a Software Product's approval status (approve, deprecate, retire, block, unblock). Includes software.view.", Risk: "elevated"},
+	{Name: "software.package", Description: "Register Software Versions, request their approval, package approved versions through the Software Management Provider, publish packages whose reported installer hash equals the approved hash and run the package synchronization. Includes software.view.", Risk: "elevated"},
 	{Name: "deployments.execute", Description: "Start endpoint software/remediation deployments.", Risk: "high"},
 	// Remote Access (ADR-0026): reserved, planned and not implemented; no route checks these yet.
 	{Name: "remote_access.view", Description: "Planned: see whether remote access is available for a Device or Ticket (provider mapping, supported modes); does not allow starting a session.", Risk: "normal"},

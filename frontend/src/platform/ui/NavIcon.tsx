@@ -33,6 +33,9 @@ const paths: Partial<Record<RouteId, string>> = {
   endpointFindings: 'M4 5h16v12H4zM9 21h6m-3-4v4M12 8v4m0 2v1',
   managementArtifacts: 'M4 4h16v16H4zM8 8h8v8H8zM12 8v8',
   managementFilters: 'M3 5h18M6 12h12M9 19h6M8 3v4m8 3v4m-4 3v4',
+  softwareProducts: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM14 17l2 2 4-4',
+  softwareCatalog: 'M4 4h12v16H4zM8 8h4m-4 4h4M15 15l5 5m-2-8a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
+  softwarePackages: 'M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5',
   infrastructureTree: 'M12 3v6M5 9h14M5 9v5m14-5v5M2 14h6v6H2zm8 0h6v6h-6zm8 0h4v6h-4z',
   infrastructureVMs: 'M3 4h18v14H3zM7 21h10M8 9l3 3-3 3m5 0h4',
   services:
