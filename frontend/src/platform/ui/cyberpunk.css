@@ -369,7 +369,9 @@ html[data-theme='cyberpunk'] .filter-count {
 html[data-theme='cyberpunk'] .turaco-main a:not(.btn):not([class*='card']) {
   transition: text-shadow var(--motion-fast);
 }
-html[data-theme='cyberpunk'] .turaco-main a:not(.btn):is(:hover, :focus-visible) {
+html[data-theme='cyberpunk']
+  .turaco-main
+  a:not(.btn):not([class*='card']):not(.overview-actions a):is(:hover, :focus-visible) {
   text-shadow: 0 0 10px rgb(0 240 255 / 55%);
 }
 html[data-theme='cyberpunk'] ::selection {
@@ -947,14 +949,15 @@ html[data-theme='cyberpunk'] .turaco-main :is(.table, table) tbody td {
 html[data-theme='cyberpunk'] .turaco-main .table tbody tr {
   transition: background-color var(--motion-fast);
 }
+/* Opaque tints: the pinned first column must hide cells scrolled beneath it. */
 html[data-theme='cyberpunk'] .turaco-main .table tbody tr:hover td {
-  background-color: rgb(0 240 255 / 6%);
+  background-color: color-mix(in srgb, var(--cyber-cyan) 6%, var(--surface-base));
 }
 html[data-theme='cyberpunk'] .turaco-main .table tbody tr:hover td:first-child {
   box-shadow: inset 2px 0 var(--cyber-cyan);
 }
 html[data-theme='cyberpunk'] .turaco-main .table tr[data-selected] td {
-  background-color: rgb(255 43 214 / 9%);
+  background-color: color-mix(in srgb, var(--cyber-pink) 9%, var(--surface-base));
 }
 html[data-theme='cyberpunk'] :is(.table-reference > a, .reference-chip) {
   border: 1px solid rgb(0 240 255 / 35%);
