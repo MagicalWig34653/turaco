@@ -40,13 +40,15 @@ html[data-theme='cyberpunk'] :is(.turaco-brand, h1):hover {
     -1px 0 var(--cyber-pink),
     var(--glow-text);
 }
-html[data-theme='cyberpunk'] :is(.page-eyebrow, .turaco-rail-section h2, .table th, .metric-label) {
+/* Monospace only where a whole element is an identifier or code; never inside a sentence. */
+html[data-theme='cyberpunk'] .page-eyebrow {
   font-family: var(--font-mono);
   letter-spacing: 0.08em;
 }
-html[data-theme='cyberpunk']
-  :is(code, .mono, time, .table-reference, .metric-card strong, .change-metric strong) {
+html[data-theme='cyberpunk'] :is(code, .mono, .table-reference) {
   font-family: var(--font-mono);
+}
+html[data-theme='cyberpunk'] :is(time, .metric-card strong, .change-metric strong) {
   font-variant-numeric: tabular-nums;
 }
 html[data-theme='cyberpunk'] .turaco-shell .turaco-rail-section a[aria-current='page'] {
@@ -54,35 +56,6 @@ html[data-theme='cyberpunk'] .turaco-shell .turaco-rail-section a[aria-current='
   box-shadow:
     inset 3px 0 var(--cyber-cyan),
     var(--glow-action);
-}
-html[data-theme='cyberpunk']
-  :is(
-    .workspace-card,
-    .card-plain,
-    .dashboard-action-card,
-    .dashboard-metrics,
-    .change-metrics,
-    .data-table,
-    .dialog,
-    .turaco-command-dialog
-  ) {
-  /* HUD brackets are background layers: no pseudo-element can escape a panel. */
-  background-image:
-    linear-gradient(var(--cyber-cyan), var(--cyber-cyan)),
-    linear-gradient(var(--cyber-cyan), var(--cyber-cyan)),
-    linear-gradient(var(--cyber-pink), var(--cyber-pink)),
-    linear-gradient(var(--cyber-pink), var(--cyber-pink));
-  background-size:
-    18px 1px,
-    1px 18px,
-    18px 1px,
-    1px 18px;
-  background-position:
-    left top,
-    left top,
-    right bottom,
-    right bottom;
-  background-repeat: no-repeat;
 }
 html[data-theme='cyberpunk']
   :is(.workspace-card, .card-plain, .dashboard-action-card):focus-within {

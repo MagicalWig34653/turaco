@@ -14,6 +14,9 @@ html[data-theme='turaco'] {
   --accent: #246747;
   --accent-hover: #194e35;
   --on-accent: #ffffff;
+  --action: #246747;
+  --action-hover: #194e35;
+  --on-action: #ffffff;
   --focus-ring: #176bc1;
   --rail-bg: #edf0e8;
   --rail-text: #243e33;
@@ -65,19 +68,22 @@ html[data-theme='turaco'] {
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --surface-canvas: #171e20;
-  --surface-base: #20292b;
-  --surface-raised: #273235;
-  --surface-muted-token: #273235;
-  --surface-hover: #303e40;
-  --surface-selected: #263e2f;
+  --surface-canvas: #131a1c;
+  --surface-base: #1c2527;
+  --surface-raised: #243032;
+  --surface-muted-token: #222c2e;
+  --surface-hover: #2a3638;
+  --surface-selected: #233a2c;
   --text-primary: #e6eee8;
   --text-secondary: #a9bab0;
-  --border-token: #3d5051;
+  --border-token: #34474a;
   --border-strong-token: #748b7b;
   --accent: #86cba1;
   --accent-hover: #a2ddba;
   --on-accent: #11271b;
+  --action: #31845a;
+  --action-hover: #2b7550;
+  --on-action: #ffffff;
   --focus-ring: #9ac8ff;
   --rail-bg: #0c1417;
   --rail-text: #e4eee9;
@@ -93,7 +99,7 @@ html[data-theme='dark'] {
   --state-success-bg: #243c2e;
   --state-unknown: #d2c0ec;
   --state-unknown-bg: #352e40;
-  --shadow-card: 0 4px 20px rgb(0 0 0 / 14%);
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 3%) inset, 0 6px 20px rgb(0 0 0 / 26%);
   --shadow-menu: 0 18px 48px rgb(0 0 0 / 38%);
 }
 
@@ -112,6 +118,9 @@ html[data-theme='cyberpunk'] {
   --accent: #00f0ff;
   --accent-hover: #89f8ff;
   --on-accent: #07151e;
+  --action: #00f0ff;
+  --action-hover: #89f8ff;
+  --on-action: #07151e;
   --focus-ring: #fcee0a;
   --rail-bg: #0c0a1b;
   --rail-text: #f1f3ff;

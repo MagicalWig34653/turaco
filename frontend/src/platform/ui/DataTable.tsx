@@ -7,6 +7,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import { Button } from './Button';
 import { ApiErrorAlert } from './ApiErrorAlert';
 import { useContextMenu, copyContextText, type MenuItem } from './ContextMenu';
+import { useHorizontalOverflow } from './hooks';
 
 export type Column<T> = {
   key: string;
@@ -108,6 +109,8 @@ export function DataTable<T>({
         }
       : undefined);
   const contextMenu = useContextMenu();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const overflowing = useHorizontalOverflow(wrapRef, [rows.length, columns.length, loading]);
   const hasShownRows = useRef(false);
   const animateRows = rows.length > 0 && !hasShownRows.current;
   useEffect(() => {
@@ -125,9 +128,11 @@ export function DataTable<T>({
               : t('table.showingLoaded', { count: rows.length })}
           {filterSummary ? ` · ${t('table.filteredBy', { filters: filterSummary })}` : ''}
         </span>
-        <span className="table-meta-hint">
-          {sort ? t('table.sortedLoaded') : t('table.scrollHint')}
-        </span>
+        {sort || overflowing ? (
+          <span className="table-meta-hint">
+            {sort ? t('table.sortedLoaded') : t('table.scrollHint')}
+          </span>
+        ) : null}
       </div>
       {selection && selectedCount > 0 ? (
         <div className="table-bulk">
@@ -136,7 +141,13 @@ export function DataTable<T>({
           <Button onClick={() => selection.onChange(new Set())}>{t('table.clearSelection')}</Button>
         </div>
       ) : null}
-      <div className="table-wrap" tabIndex={0} role="region" aria-label={caption}>
+      <div
+        ref={wrapRef}
+        className={`table-wrap${overflowing ? ' is-overflowing' : ''}`}
+        tabIndex={overflowing ? 0 : undefined}
+        role="region"
+        aria-label={caption}
+      >
         <table
           className={`table ${animateRows ? 'table-entrance' : ''} ${zebra ? 'table-zebra' : ''}`}
         >

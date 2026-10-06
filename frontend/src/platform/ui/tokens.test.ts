@@ -46,6 +46,8 @@ describe('semantic token contrast', () => {
       ['--on-accent', '--accent-hover'],
       ['--accent', '--surface-base'],
       ['--on-accent', '--accent'],
+      ['--on-action', '--action'],
+      ['--on-action', '--action-hover'],
       ...(theme === 'cyberpunk'
         ? ['cyan', 'pink', 'yellow', 'green', 'orange'].flatMap((color) =>
             ['base', 'raised', 'hover'].map((surface) => [
