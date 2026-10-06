@@ -326,13 +326,13 @@ func (s *Service) ExplainTargetSet(ctx context.Context, p Principal, id, deviceI
 			return TargetExplanation{}, err
 		}
 		r := resolveDefinition(t.Definition, exts)
-		facts, cut, err := s.targetFacts(ctx, r, ds)
+		facts, err := s.targetFacts(ctx, r, ds)
 		if err != nil {
 			return TargetExplanation{}, err
 		}
 		matched, clauses := matchDevice(r, facts[0])
 		out := TargetExplanation{TargetSetID: t.ID, DeviceID: ds[0].ID, DeviceName: ds[0].Name, Matched: matched, Clauses: clauses,
-			Incomplete: incomplete || cut, EvaluatedAt: s.now()}
+			Incomplete: incomplete, EvaluatedAt: s.now()}
 		if !p.canView() {
 			out.DeviceName, out.Redacted = "", true
 		}
@@ -375,9 +375,8 @@ func (s *Service) resolveTargetGroups(ctx context.Context, groups []TargetGroup)
 	return out, cut || cutDown, nil
 }
 
-// targetFacts loads the memberships and Asset locations the definition needs for a batch of Devices. cut is set
-// when an Asset location lookup failed to answer for the whole batch.
-func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices []Device) ([]deviceFacts, bool, error) {
+// targetFacts loads the memberships and Asset locations the definition needs for a batch of Devices.
+func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices []Device) ([]deviceFacts, error) {
 	facts := make([]deviceFacts, len(devices))
 	idx := make(map[string]int, len(devices))
 	ids := make([]string, 0, len(devices))
@@ -393,7 +392,7 @@ func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices
 	if len(r.Filters.Groups) > 0 {
 		ms, err := s.store.DeviceMemberships(ctx, ids)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		for _, m := range ms {
 			if i, ok := idx[m.DeviceID]; ok {
@@ -404,7 +403,7 @@ func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices
 	if len(r.Filters.AssetLocationIDs) > 0 && len(assets) > 0 {
 		locs, err := s.locations.Locations(ctx, uniq(assets))
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		for i := range facts {
 			if a := facts[i].Device.AssetID; a != nil {
@@ -414,11 +413,11 @@ func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices
 			}
 		}
 	}
-	return facts, false, nil
+	return facts, nil
 }
 
 // evaluateDefinition scans the provider's live Devices in batches of targetBatch (at most MaxTargetScan) and keeps
-// at most MaxTargetDevices matches. A definition without filters but with an explicit include list only reads
+// at most targetCap (MaxTargetDevices) matches. A definition without filters but with an explicit include list only reads
 // the listed Devices.
 func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition) (TargetEvaluation, error) {
 	ev := TargetEvaluation{ByPlatform: map[string]int{}, ByCompliance: map[string]int{}, EvaluatedAt: s.now(), Examples: []TargetExample{}}
@@ -429,16 +428,15 @@ func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition) 
 	ev.Incomplete = incomplete
 	r := resolveDefinition(def, exts)
 	process := func(batch []Device) (bool, error) {
-		facts, cut, err := s.targetFacts(ctx, r, batch)
+		facts, err := s.targetFacts(ctx, r, batch)
 		if err != nil {
 			return false, err
 		}
-		ev.Incomplete = ev.Incomplete || cut
 		for _, f := range facts {
 			if ok, _ := matchDevice(r, f); !ok {
 				continue
 			}
-			if ev.Matched == MaxTargetDevices {
+			if ev.Matched == s.targetCap {
 				ev.Truncated = true
 				return true, nil
 			}

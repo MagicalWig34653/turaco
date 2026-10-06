@@ -56,6 +56,8 @@ type Service struct {
 	approvals DeploymentApprovals
 	changes   ChangeWindows
 	locations AssetLocations
+	// targetCap bounds the Devices one Target Set evaluation keeps (MaxTargetDevices).
+	targetCap int
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -70,7 +72,15 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
 		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
 		catalog:   catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow},
-		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}}
+		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}, targetCap: MaxTargetDevices}
+}
+
+// WithTargetCap lowers the number of Devices one Target Set evaluation keeps (default and maximum MaxTargetDevices).
+func (s *Service) WithTargetCap(n int) *Service {
+	if n > 0 && n < MaxTargetDevices {
+		s.targetCap = n
+	}
+	return s
 }
 
 // WithDeployments connects Deployment planning to the Approvals, Changes and Assets public contracts. Without it
