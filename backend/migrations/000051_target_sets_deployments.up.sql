@@ -26,7 +26,10 @@ AS $$
 $$;
 
 -- definition is the canonical JSON the application validated (filters, explicit include/exclude Device ids).
--- all_devices is derived from it: no filter and no explicit include means every live Device (high impact).
+-- all_devices and high_impact_reason are derived from it when it is saved: all_devices means the definition selects
+-- every live Device (no effective filter, a filter list covering its whole enum counts as unset); high_impact_reason
+-- is all_devices or nested_root_group (an includeNested group without a parent). They are a snapshot used while a
+-- plan is a draft; validation, submission and scheduling recompute high impact from the evaluated targets.
 CREATE TABLE IF NOT EXISTS endpoints.target_sets (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     reference text NOT NULL DEFAULT endpoints.next_target_set_reference() UNIQUE,
@@ -35,20 +38,28 @@ CREATE TABLE IF NOT EXISTS endpoints.target_sets (
     owner_user_id uuid NOT NULL,
     definition jsonb NOT NULL CHECK (jsonb_typeof(definition) = 'object' AND octet_length(definition::text) <= 65536),
     all_devices boolean NOT NULL,
+    high_impact_reason text CHECK (high_impact_reason IS NULL OR high_impact_reason IN ('all_devices', 'nested_root_group')),
     archived_at timestamptz,
     archived_by uuid,
     created_by uuid NOT NULL,
+    -- The last person who changed the definition (created_by at first); excluded from approving plans using it.
+    updated_by uuid NOT NULL,
     version integer NOT NULL DEFAULT 1 CHECK (version > 0),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT target_sets_all_devices_reason CHECK (NOT all_devices OR high_impact_reason = 'all_devices'),
     CONSTRAINT target_sets_archived_matches CHECK ((archived_at IS NULL) = (archived_by IS NULL))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS target_sets_name_unique ON endpoints.target_sets (lower(name));
+-- Names are unique among the Target Sets in use; an archived set frees its name.
+CREATE UNIQUE INDEX IF NOT EXISTS target_sets_name_unique ON endpoints.target_sets (lower(name)) WHERE archived_at IS NULL;
 
 -- A Deployment: one Software Version, one intent (install | update | uninstall), optionally superseding earlier
--- versions. high_impact is derived (a ring targets all Devices, uninstall or supersede) and needs
--- deployments.high_impact plus an approved plan Approval (subject deployment) before it can be scheduled.
--- plan_sha256 binds the submitted plan (version, intent, rings, gates, Target Set versions) to its Approval.
+-- versions. high_impact needs deployments.high_impact plus an approved plan Approval (subject deployment) before
+-- the plan can be scheduled. While a plan is a draft it is a snapshot (uninstall, supersede, a ring on a high-impact
+-- Target Set); validation, submission and scheduling recompute it including the evaluated target counts, and it is
+-- frozen once the plan left draft except on the transitions that recompute it.
+-- plan_sha256 binds the submitted plan (version, intent, rings, gates, Target Set versions) to its Approval; the
+-- approval binding (approval_id, plan_sha256, submitted_*) is cleared when a pending plan returns to draft.
 CREATE TABLE IF NOT EXISTS endpoints.deployments (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     reference text NOT NULL DEFAULT endpoints.next_deployment_reference() UNIQUE,
@@ -78,7 +89,8 @@ CREATE TABLE IF NOT EXISTS endpoints.deployments (
     CONSTRAINT deployments_scheduled_matches CHECK ((scheduled_by IS NULL) = (scheduled_at IS NULL)),
     CONSTRAINT deployments_cancelled_matches CHECK ((cancelled_by IS NULL) = (cancelled_at IS NULL)),
     CONSTRAINT deployments_status_fields CHECK (CASE status
-        WHEN 'draft' THEN approved_at IS NULL AND scheduled_at IS NULL AND cancelled_at IS NULL
+        WHEN 'draft' THEN approval_id IS NULL AND plan_sha256 IS NULL AND submitted_at IS NULL
+            AND approved_at IS NULL AND scheduled_at IS NULL AND cancelled_at IS NULL
         WHEN 'pending_approval' THEN approval_id IS NOT NULL AND submitted_at IS NOT NULL AND plan_sha256 IS NOT NULL
             AND approved_at IS NULL AND scheduled_at IS NULL AND cancelled_at IS NULL AND status_reason IS NULL
         WHEN 'approved' THEN approval_id IS NOT NULL AND plan_sha256 IS NOT NULL AND approved_at IS NOT NULL
@@ -93,7 +105,8 @@ CREATE INDEX IF NOT EXISTS deployments_owner_idx ON endpoints.deployments (owner
 CREATE INDEX IF NOT EXISTS deployments_creator_idx ON endpoints.deployments (created_by, id);
 
 -- Ordered rings of a Deployment. Position 1 is the pilot ring; only it may run without a Change window.
--- The position constraint is deferred so a reorder can swap positions inside one transaction.
+-- The position constraint is deferred so a reorder can swap positions inside one transaction; the application sets
+-- it IMMEDIATE at the end of every ring change so a violation surfaces before commit.
 CREATE TABLE IF NOT EXISTS endpoints.deployment_rings (
     id uuid PRIMARY KEY DEFAULT uuidv7(),
     deployment_id uuid NOT NULL REFERENCES endpoints.deployments(id) ON DELETE RESTRICT,
@@ -104,7 +117,8 @@ CREATE TABLE IF NOT EXISTS endpoints.deployment_rings (
     success_threshold_percent integer NOT NULL CHECK (success_threshold_percent BETWEEN 1 AND 100),
     min_fresh_evidence_percent integer CHECK (min_fresh_evidence_percent IS NULL OR min_fresh_evidence_percent BETWEEN 1 AND 100),
     soak_minutes integer NOT NULL DEFAULT 0 CHECK (soak_minutes BETWEEN 0 AND 43200),
-    -- A Change (by id; the Changes module owns it) whose maintenance window gates the ring.
+    -- The ring is GATED_BY this Change (by id; the Changes module owns it): its maintenance window gates the ring.
+    -- That the Change is about this software is not enforced.
     change_id uuid,
     no_window_required boolean NOT NULL DEFAULT false,
     max_targets integer NOT NULL DEFAULT 5000 CHECK (max_targets BETWEEN 1 AND 5000),
@@ -160,8 +174,11 @@ DROP TRIGGER IF EXISTS target_sets_no_truncate ON endpoints.target_sets;
 CREATE TRIGGER target_sets_no_truncate BEFORE TRUNCATE ON endpoints.target_sets
     FOR EACH STATEMENT EXECUTE FUNCTION endpoints.forbid_deployment_history_change();
 
--- The planning lifecycle holds in the database too, and the planned content (version, intent, supersede) is
--- frozen once a plan left draft.
+-- The planning lifecycle holds in the database too. Once a plan left draft its planned content (version, intent,
+-- supersede) is frozen, and so are its approval binding, approval, scheduling and high-impact fields except on the
+-- transition that sets them: pending_approval -> draft clears the binding, pending_approval -> approved sets
+-- approved_at, approved -> scheduled sets scheduled_*, and high_impact is recomputed only on a status change that is
+-- not a cancellation.
 CREATE OR REPLACE FUNCTION endpoints.check_deployment_transition() RETURNS trigger
 LANGUAGE plpgsql
 AS $$
@@ -173,9 +190,26 @@ BEGIN
         OR (OLD.status = 'scheduled' AND NEW.status = 'cancelled')) THEN
         RAISE EXCEPTION 'deployment % -> % is not allowed', OLD.status, NEW.status USING ERRCODE = 'check_violation';
     END IF;
-    IF OLD.status <> 'draft' AND (NEW.software_version_id IS DISTINCT FROM OLD.software_version_id
-        OR NEW.intent IS DISTINCT FROM OLD.intent OR NEW.supersede IS DISTINCT FROM OLD.supersede) THEN
-        RAISE EXCEPTION 'a deployment plan is changed only in draft' USING ERRCODE = 'check_violation';
+    IF OLD.status <> 'draft' THEN
+        IF NEW.software_version_id IS DISTINCT FROM OLD.software_version_id
+            OR NEW.intent IS DISTINCT FROM OLD.intent OR NEW.supersede IS DISTINCT FROM OLD.supersede THEN
+            RAISE EXCEPTION 'a deployment plan is changed only in draft' USING ERRCODE = 'check_violation';
+        END IF;
+        IF (NEW.approval_id IS DISTINCT FROM OLD.approval_id OR NEW.plan_sha256 IS DISTINCT FROM OLD.plan_sha256
+            OR NEW.submitted_by IS DISTINCT FROM OLD.submitted_by OR NEW.submitted_at IS DISTINCT FROM OLD.submitted_at)
+            AND NOT (OLD.status = 'pending_approval' AND NEW.status = 'draft') THEN
+            RAISE EXCEPTION 'the approval binding of a deployment is frozen' USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.approved_at IS DISTINCT FROM OLD.approved_at AND NOT (OLD.status = 'pending_approval' AND NEW.status = 'approved') THEN
+            RAISE EXCEPTION 'approved_at is set only by the approval' USING ERRCODE = 'check_violation';
+        END IF;
+        IF (NEW.scheduled_by IS DISTINCT FROM OLD.scheduled_by OR NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at)
+            AND NOT (OLD.status = 'approved' AND NEW.status = 'scheduled') THEN
+            RAISE EXCEPTION 'scheduled_* are set only by scheduling' USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.high_impact IS DISTINCT FROM OLD.high_impact AND (NEW.status = OLD.status OR NEW.status = 'cancelled') THEN
+            RAISE EXCEPTION 'high_impact is recomputed only by a lifecycle step' USING ERRCODE = 'check_violation';
+        END IF;
     END IF;
     RETURN NEW;
 END
@@ -184,14 +218,16 @@ DROP TRIGGER IF EXISTS deployments_transition ON endpoints.deployments;
 CREATE TRIGGER deployments_transition BEFORE UPDATE ON endpoints.deployments
     FOR EACH ROW EXECUTE FUNCTION endpoints.check_deployment_transition();
 
--- Rings change only while their Deployment is a draft.
+-- Rings change only while their Deployment is a draft. The status is read FOR SHARE so a concurrent lifecycle step
+-- (which locks the deployment row) cannot move the plan out of draft between this check and the ring change.
 CREATE OR REPLACE FUNCTION endpoints.check_deployment_ring_change() RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
     st text;
 BEGIN
-    SELECT status INTO st FROM endpoints.deployments WHERE id = CASE WHEN TG_OP = 'DELETE' THEN OLD.deployment_id ELSE NEW.deployment_id END;
+    SELECT status INTO st FROM endpoints.deployments WHERE id = CASE WHEN TG_OP = 'DELETE' THEN OLD.deployment_id ELSE NEW.deployment_id END
+        FOR SHARE;
     IF st IS DISTINCT FROM 'draft' THEN
         RAISE EXCEPTION 'deployment rings change only while the deployment is a draft' USING ERRCODE = 'check_violation';
     END IF;

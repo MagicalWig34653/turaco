@@ -87,8 +87,10 @@ func gateText(code string) string {
 		return "the plan is high impact and needs an approved plan approval first."
 	case "approval_not_required":
 		return "the plan is not high impact and is scheduled without a plan approval."
-	case "plan_changed":
-		return "the plan changed after its approval; submit it again."
+	case application.CodePlanChanged:
+		return "the plan or one of its target sets changed after it was validated or approved; reload, validate and try again."
+	case application.IssueNoWindowHighImpact:
+		return "a ring without a maintenance window cannot target a high-impact target set."
 	}
 	return "a precondition does not hold."
 }

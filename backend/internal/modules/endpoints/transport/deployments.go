@@ -11,7 +11,9 @@ import (
 )
 
 // Target Sets and Deployment planning (F9 G2) under /api/v1/target-sets and /api/v1/deployments. Target Set reads
-// need deployments.view, deployments.manage or deployments.execute; changes need deployments.manage. Deployment
+// need deployments.view, deployments.manage or deployments.execute; a single set and its evaluation are also open
+// to approvers of a plan using it (checked by the service), explanations also need endpoints.view; changes need
+// deployments.manage. Deployment
 // reads need only a session: the service shows all plans to holders of a deployments read permission and only
 // their own (owner, creator, approver) to everybody else. Changes need deployments.manage; high-impact plans
 // additionally deployments.high_impact (checked by the service).
@@ -31,10 +33,10 @@ func registerDeployments(route func(string, func(http.Handler) http.Handler, htt
 	session := authorization.RequireAuthenticated(auth)
 	route("GET /api/v1/target-sets", read, h.listTargetSets)
 	route("POST /api/v1/target-sets", manage, h.createTargetSet)
-	route("GET /api/v1/target-sets/{id}", read, h.getTargetSet)
+	route("GET /api/v1/target-sets/{id}", session, h.getTargetSet)
 	route("PATCH /api/v1/target-sets/{id}", manage, h.updateTargetSet)
 	route("POST /api/v1/target-sets/{id}/archive", manage, h.archiveTargetSet)
-	route("GET /api/v1/target-sets/{id}/evaluate", read, h.evaluateTargetSet)
+	route("GET /api/v1/target-sets/{id}/evaluate", session, h.evaluateTargetSet)
 	route("GET /api/v1/target-sets/{id}/explain", read, h.explainTargetSet)
 	route("GET /api/v1/deployments", session, h.listDeployments)
 	route("POST /api/v1/deployments", manage, h.createDeployment)
@@ -63,9 +65,13 @@ func (h *handler) deploymentFail(w http.ResponseWriter, r *http.Request, err err
 	case errors.Is(err, application.ErrHighImpactForbidden):
 		httpx.WriteError(w, http.StatusForbidden, "endpoints.high_impact_required", "This plan is high impact and needs the deployments.high_impact permission.")
 	case errors.Is(err, application.ErrNoEligibleApprover):
-		httpx.WriteError(w, http.StatusBadRequest, "endpoints.no_eligible_approver", "The approver is inactive or took part in the plan.")
+		httpx.WriteError(w, http.StatusBadRequest, "endpoints.no_eligible_approver", "The approver is inactive, lacks deployments.approve or took part in the plan or its target sets.")
+	case errors.Is(err, application.ErrEditorsFull):
+		httpx.WriteError(w, http.StatusConflict, "endpoints.editors_full", "The deployment has the maximum number of editors.")
+	case errors.Is(err, application.ErrEvaluationBusy):
+		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.evaluation_busy", "Another evaluation of yours is running; try again when it has finished.")
 	case errors.Is(err, application.ErrTargetSetInUse):
-		httpx.WriteError(w, http.StatusConflict, "endpoints.target_set_in_use", "The target set belongs to a submitted, approved or scheduled deployment.")
+		httpx.WriteError(w, http.StatusConflict, "endpoints.target_set_in_use", "The target set belongs to a deployment that is submitted, approved, scheduled or running.")
 	case errors.Is(err, application.ErrTargetSetNameTaken):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.target_set_name_taken", "A target set with this name exists.")
 	default:
@@ -84,18 +90,23 @@ func decodeBig(w http.ResponseWriter, r *http.Request, dst any) bool {
 // ---- target sets ----
 
 type targetSetDTO struct {
-	ID          string                       `json:"id"`
-	Reference   string                       `json:"reference"`
-	Name        string                       `json:"name"`
-	Description *string                      `json:"description"`
-	OwnerUserID string                       `json:"ownerUserId"`
-	Definition  application.TargetDefinition `json:"definition"`
-	AllDevices  bool                         `json:"allDevices"`
-	ArchivedAt  *string                      `json:"archivedAt"`
-	CreatedBy   string                       `json:"createdBy"`
-	Version     int                          `json:"version"`
-	CreatedAt   string                       `json:"createdAt"`
-	UpdatedAt   string                       `json:"updatedAt"`
+	ID                  string                       `json:"id"`
+	Reference           string                       `json:"reference"`
+	Name                string                       `json:"name"`
+	Description         *string                      `json:"description"`
+	OwnerUserID         string                       `json:"ownerUserId"`
+	Definition          application.TargetDefinition `json:"definition"`
+	AllDevices          bool                         `json:"allDevices"`
+	HighImpactReason    *string                      `json:"highImpactReason"`
+	IncludeDeviceCount  int                          `json:"includeDeviceCount"`
+	ExcludeDeviceCount  int                          `json:"excludeDeviceCount"`
+	DeviceListsRedacted bool                         `json:"deviceListsRedacted"`
+	ArchivedAt          *string                      `json:"archivedAt"`
+	CreatedBy           string                       `json:"createdBy"`
+	UpdatedBy           string                       `json:"updatedBy"`
+	Version             int                          `json:"version"`
+	CreatedAt           string                       `json:"createdAt"`
+	UpdatedAt           string                       `json:"updatedAt"`
 }
 
 func toTargetSet(t application.TargetSet) targetSetDTO {
@@ -107,8 +118,9 @@ func toTargetSet(t application.TargetSet) targetSetDTO {
 		def.ExcludeDeviceIDs = []string{}
 	}
 	return targetSetDTO{ID: t.ID, Reference: t.Reference, Name: t.Name, Description: t.Description, OwnerUserID: t.OwnerUserID,
-		Definition: def, AllDevices: t.AllDevices, ArchivedAt: tsPtr(t.ArchivedAt), CreatedBy: t.CreatedBy, Version: t.Version,
-		CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
+		Definition: def, AllDevices: t.AllDevices, HighImpactReason: t.HighImpactReason, IncludeDeviceCount: t.IncludeDeviceCount,
+		ExcludeDeviceCount: t.ExcludeDeviceCount, DeviceListsRedacted: t.DeviceListsRedacted, ArchivedAt: tsPtr(t.ArchivedAt),
+		CreatedBy: t.CreatedBy, UpdatedBy: t.UpdatedBy, Version: t.Version, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
 }
 
 // targetSetBody is the full editable state of a Target Set (PATCH replaces all of it). The definition is decoded
@@ -210,12 +222,9 @@ func (h *handler) evaluateTargetSet(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"matched": ev.Matched, "scanned": ev.Scanned, "truncated": ev.Truncated, "incomplete": ev.Incomplete,
 		"cap": application.MaxTargetDevices, "byPlatform": ev.ByPlatform, "byCompliance": ev.ByCompliance, "evaluatedAt": ts(ev.EvaluatedAt),
+		"examplesRedacted": ev.ExamplesRedacted,
 		"examples": mapItems(ev.Examples, func(e application.TargetExample) targetExampleDTO {
-			out := targetExampleDTO{DeviceID: e.DeviceID, Redacted: e.Redacted, OSPlatform: e.OSPlatform, ComplianceState: e.ComplianceState}
-			if !e.Redacted {
-				out.Name = &e.Name
-			}
-			return out
+			return targetExampleDTO{DeviceID: e.DeviceID, Name: &e.Name, OSPlatform: e.OSPlatform, ComplianceState: e.ComplianceState}
 		})})
 }
 
@@ -231,11 +240,7 @@ func (h *handler) explainTargetSet(w http.ResponseWriter, r *http.Request) {
 		h.deploymentFail(w, r, err)
 		return
 	}
-	var name *string
-	if !ex.Redacted {
-		name = &ex.DeviceName
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"targetSetId": ex.TargetSetID, "deviceId": ex.DeviceID, "deviceName": name, "redacted": ex.Redacted,
+	httpx.JSON(w, http.StatusOK, map[string]any{"targetSetId": ex.TargetSetID, "deviceId": ex.DeviceID, "deviceName": ex.DeviceName, "redacted": false,
 		"matched": ex.Matched, "incomplete": ex.Incomplete, "evaluatedAt": ts(ex.EvaluatedAt),
 		"clauses": mapItems(ex.Clauses, func(c application.ClauseResult) clauseDTO {
 			out := clauseDTO{Clause: c.Clause, Result: c.Result}
@@ -331,7 +336,12 @@ type ringTargetsDTO struct {
 }
 
 func toValidation(v application.PlanValidation) map[string]any {
-	return map[string]any{"valid": v.Valid, "highImpact": v.HighImpact, "evaluated": v.Evaluated, "validatedAt": ts(v.ValidatedAt),
+	var reason *string
+	if v.HighImpactReason != "" {
+		reason = &v.HighImpactReason
+	}
+	return map[string]any{"valid": v.Valid, "highImpact": v.HighImpact, "highImpactReason": reason, "evaluated": v.Evaluated,
+		"incomplete": v.Incomplete, "totalTargets": v.TotalTargets, "validatedAt": ts(v.ValidatedAt),
 		"issues": mapItems(v.Issues, toIssue),
 		"rings": mapItems(v.Rings, func(t application.RingTargets) ringTargetsDTO {
 			return ringTargetsDTO{RingID: t.RingID, Matched: t.Matched, Truncated: t.Truncated, Incomplete: t.Incomplete}
@@ -359,16 +369,22 @@ func (h *handler) getDeployment(w http.ResponseWriter, r *http.Request) {
 		h.deploymentFail(w, r, err)
 		return
 	}
+	// A Change the reader may not read is a placeholder: id and hidden only.
 	type changeDTO struct {
 		ID          string  `json:"id"`
-		Reference   string  `json:"reference"`
-		Status      string  `json:"status"`
+		Hidden      bool    `json:"hidden"`
+		Reference   *string `json:"reference"`
+		Status      *string `json:"status"`
 		WindowStart *string `json:"windowStart"`
 		WindowEnd   *string `json:"windowEnd"`
 	}
 	changes := map[string]changeDTO{}
 	for id, c := range d.Changes {
-		changes[id] = changeDTO{ID: c.ID, Reference: c.Reference, Status: c.Status, WindowStart: tsPtr(c.WindowStart), WindowEnd: tsPtr(c.WindowEnd)}
+		if c.Hidden {
+			changes[id] = changeDTO{ID: c.ID, Hidden: true}
+			continue
+		}
+		changes[id] = changeDTO{ID: c.ID, Reference: &c.Reference, Status: &c.Status, WindowStart: tsPtr(c.WindowStart), WindowEnd: tsPtr(c.WindowEnd)}
 	}
 	type approvalStateDTO struct {
 		ID              string  `json:"id"`

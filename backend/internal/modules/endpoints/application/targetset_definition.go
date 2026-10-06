@@ -80,10 +80,54 @@ func (f TargetFilters) empty() bool {
 		len(f.Manufacturer) == 0 && len(f.Model) == 0 && len(f.Groups) == 0 && len(f.AssetLocationIDs) == 0
 }
 
-// AllDevices reports a definition that selects every live Device (minus the excluded ones). Targeting it is
+// effective returns the filters that can exclude a Device: a platform, ownership or compliance list that names
+// every value of its enum matches every Device and counts as unset.
+func (f TargetFilters) effective() TargetFilters {
+	covers := func(values, enum []string) bool {
+		for _, e := range enum {
+			if !slices.Contains(values, e) {
+				return false
+			}
+		}
+		return true
+	}
+	if covers(f.Platform, OSPlatforms) {
+		f.Platform = nil
+	}
+	if covers(f.Ownership, Ownerships) {
+		f.Ownership = nil
+	}
+	if covers(f.Compliance, ComplianceStates) {
+		f.Compliance = nil
+	}
+	return f
+}
+
+// AllDevices reports a definition that selects every live Device (minus the excluded ones): no filter and no
+// explicit include, or filters that cannot exclude any Device (lists covering their whole enum). Targeting it is
 // high impact.
 func (d TargetDefinition) AllDevices() bool {
-	return d.Filters.empty() && len(d.IncludeDeviceIDs) == 0
+	if d.Filters.empty() {
+		return len(d.IncludeDeviceIDs) == 0
+	}
+	return d.Filters.effective().empty()
+}
+
+// nestedGroups returns the external ids of the groups whose nested Directory Groups are included.
+func (d TargetDefinition) nestedGroups() []string {
+	var out []string
+	for _, g := range d.Filters.Groups {
+		if g.IncludeNested {
+			out = append(out, g.ExternalID)
+		}
+	}
+	return out
+}
+
+// revealsDevices reports a definition naming Devices, provider groups or Asset locations: authoring it needs
+// endpoints.view.
+func (d TargetDefinition) revealsDevices() bool {
+	return len(d.IncludeDeviceIDs) > 0 || len(d.ExcludeDeviceIDs) > 0 || len(d.Filters.Groups) > 0 || len(d.Filters.AssetLocationIDs) > 0
 }
 
 // ParseTargetDefinition strictly decodes a stored or submitted definition: one JSON object, no unknown fields,

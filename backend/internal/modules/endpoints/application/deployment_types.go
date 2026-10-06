@@ -19,6 +19,8 @@ const (
 	PermDeploymentsManage     = "deployments.manage"
 	PermDeploymentsExecute    = "deployments.execute"
 	PermDeploymentsHighImpact = "deployments.high_impact"
+	// PermDeploymentsApprove is what a plan approver must hold (checked at submission and at the decision).
+	PermDeploymentsApprove = "deployments.approve"
 )
 
 // Deployment events.
@@ -41,6 +43,12 @@ const (
 // DeploymentStatuses lists every planning status.
 var DeploymentStatuses = []string{DeploymentDraft, DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled, DeploymentCancelled}
 
+// DeploymentBindingStatuses are the statuses in which a plan binds its Target Sets: they cannot be changed or
+// archived, and other plans compare their targets with it (overlap). It lists the planned G3 execution statuses
+// too (running, paused, halted, resolving_targets, ready) so G3 cannot forget them; every check uses this list.
+var DeploymentBindingStatuses = []string{DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled,
+	"resolving_targets", "ready", "running", "paused", "halted"}
+
 // Deployment intents.
 const (
 	IntentInstall   = "install"
@@ -56,7 +64,39 @@ var (
 	DeploymentCancelReasons = []string{"superseded", "no_longer_needed", "plan_error", "security_risk", "other"}
 	// ReasonApprovalRejected is the status reason of a plan whose Approval was rejected (back to draft).
 	ReasonApprovalRejected = "approval_rejected"
+	// ReasonApproverNotAuthorized is the status reason of a plan whose decided Approval could not be verified: it
+	// is not the pending one, its status differs from the event, or the decider lacks deployments.approve or took
+	// part in the plan (back to draft).
+	ReasonApproverNotAuthorized = "approver_not_authorized"
 )
+
+// High-impact reasons, in the order they are reported.
+const (
+	HighImpactUninstall       = "uninstall"
+	HighImpactSupersede       = "supersede"
+	HighImpactAllDevices      = "all_devices"
+	HighImpactNestedRootGroup = "nested_root_group"
+	HighImpactTargetCount     = "target_count"
+)
+
+// High-impact thresholds: a plan whose rings together target at least HighImpactTargetThreshold Devices or at
+// least HighImpactFleetPercent percent of the provider's live Devices is high impact.
+const (
+	HighImpactTargetThreshold = 200
+	HighImpactFleetPercent    = 25
+)
+
+// Evaluation bounds of one request: at most MaxEvaluationScans Devices looked at over all Target Sets it evaluates
+// and at most EvaluationDeadline wall time; a request that hits either gets an incomplete evaluation. One user runs
+// at most one evaluating request at a time (ErrEvaluationBusy).
+const (
+	MaxEvaluationScans = 200000
+	EvaluationDeadline = 20 * time.Second
+)
+
+// CodePlanChanged refuses a submission or scheduling whose plan changed after it was validated, or an approved plan
+// whose hash differs from the approved one.
+const CodePlanChanged = "plan_changed"
 
 // Limits of Target Sets and Deployments.
 const (
@@ -71,8 +111,10 @@ const (
 	MaxRings          = 10
 	MaxSoakMinutes    = 30 * 24 * 60
 	maxEditors        = 50
-	// maxOverlapDeployments bounds the other Deployments compared for overlapping targets.
+	// maxOverlapDeployments bounds the other Deployments compared for overlapping targets; maxOverlapSets the
+	// Target Sets of those Deployments evaluated for it (overlap_check_truncated beyond).
 	maxOverlapDeployments = 10
+	maxOverlapSets        = 5
 )
 
 // Validation issue codes. Blocking issues prevent submission and scheduling; warnings never block.
@@ -91,6 +133,11 @@ const (
 	IssueEvaluationIncomplete = "evaluation_incomplete"
 	IssueOverlap              = "overlapping_deployment"
 	IssueHighImpact           = "high_impact"
+	// IssueNoWindowHighImpact: a ring without a maintenance window targets a high-impact Target Set or at least
+	// the high-impact threshold of Devices.
+	IssueNoWindowHighImpact = "no_window_high_impact"
+	// IssueOverlapTruncated: more Target Sets of other plans than maxOverlapSets would have to be compared.
+	IssueOverlapTruncated = "overlap_check_truncated"
 )
 
 var (
@@ -98,8 +145,12 @@ var (
 	ErrNoEligibleApprover = errors.New("endpoints: the approver is not eligible for this deployment")
 	// ErrTargetSetInUse means the Target Set belongs to a plan that is submitted, approved or scheduled.
 	ErrTargetSetInUse = errors.New("endpoints: the target set is used by a submitted, approved or scheduled deployment")
-	// ErrTargetSetNameTaken means another Target Set has that name (case-insensitive).
+	// ErrTargetSetNameTaken means another Target Set in use has that name (case-insensitive).
 	ErrTargetSetNameTaken = errors.New("endpoints: a target set with this name exists")
+	// ErrEditorsFull means the plan has the maximum number of editors and the caller is not one of them.
+	ErrEditorsFull = errors.New("endpoints: the deployment has the maximum number of editors")
+	// ErrEvaluationBusy means the user already runs an evaluating request.
+	ErrEvaluationBusy = errors.New("endpoints: another evaluation of this user is running")
 )
 
 // PlanInvalidError means submission or scheduling is refused because the plan has blocking issues.
@@ -116,10 +167,18 @@ type TargetSet struct {
 	OwnerUserID string
 	Definition  TargetDefinition
 	AllDevices  bool
-	ArchivedAt  *time.Time
-	ArchivedBy  *string
-	CreatedBy   string
-	Version     int
+	// HighImpactReason is all_devices or nested_root_group when the saved definition is high impact (snapshot).
+	HighImpactReason *string
+	ArchivedAt       *time.Time
+	ArchivedBy       *string
+	CreatedBy        string
+	UpdatedBy        string
+	// IncludeDeviceCount and ExcludeDeviceCount are the sizes of the explicit lists; DeviceListsRedacted says the
+	// lists were removed from Definition because the reader lacks endpoints.view.
+	IncludeDeviceCount  int
+	ExcludeDeviceCount  int
+	DeviceListsRedacted bool
+	Version             int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -143,27 +202,28 @@ type TargetSetResult struct {
 	NextCursor string
 }
 
-// TargetExample is an example Device of an evaluation. Name is empty when Redacted (no endpoints.view).
+// TargetExample is an example Device of an evaluation (only for readers with endpoints.view).
 type TargetExample struct {
 	DeviceID        string
 	Name            string
-	Redacted        bool
 	OSPlatform      string
 	ComplianceState string
 }
 
 // TargetEvaluation is the bounded result of evaluating a Target Set now. Truncated: more than MaxTargetDevices
 // matched or more than MaxTargetScan Devices exist (counts are then lower bounds). Incomplete: a directory lookup
-// for nested groups or an Asset location lookup was cut, so Devices may be missing.
+// for nested groups was cut or the request's scan budget or deadline was reached, so Devices may be missing.
+// ExamplesRedacted: the reader gets counts only (no endpoints.view, or read access only as a plan approver).
 type TargetEvaluation struct {
-	Matched      int
-	Scanned      int
-	Truncated    bool
-	Incomplete   bool
-	ByPlatform   map[string]int
-	ByCompliance map[string]int
-	Examples     []TargetExample
-	EvaluatedAt  time.Time
+	Matched          int
+	Scanned          int
+	Truncated        bool
+	Incomplete       bool
+	ByPlatform       map[string]int
+	ByCompliance     map[string]int
+	Examples         []TargetExample
+	ExamplesRedacted bool
+	EvaluatedAt      time.Time
 	// deviceIDs are the matched Devices (internal: overlap checks).
 	deviceIDs []string
 }
@@ -173,7 +233,6 @@ type TargetExplanation struct {
 	TargetSetID string
 	DeviceID    string
 	DeviceName  string
-	Redacted    bool
 	Matched     bool
 	Clauses     []ClauseResult
 	Incomplete  bool
@@ -288,23 +347,33 @@ type RingTargets struct {
 }
 
 // PlanValidation is the result of validating a plan. Evaluated says the ring Target Sets were evaluated
-// (Validate); a detail read only runs the structural checks.
+// (Validate, submission, scheduling); a detail read only runs the structural checks and reports the high-impact
+// snapshot. HighImpactReason is the first reason (uninstall, supersede, all_devices, nested_root_group,
+// target_count). TotalTargets is the sum of the rings' evaluated target counts.
 type PlanValidation struct {
-	Valid       bool
-	HighImpact  bool
-	Evaluated   bool
-	Issues      []PlanIssue
-	Rings       []RingTargets
-	ValidatedAt time.Time
+	Valid            bool
+	HighImpact       bool
+	HighImpactReason string
+	Evaluated        bool
+	Incomplete       bool
+	TotalTargets     int
+	Issues           []PlanIssue
+	Rings            []RingTargets
+	ValidatedAt      time.Time
 }
 
-// ChangeWindow is what Deployment planning may know about a Change (changes/public, zero read scope).
+// ChangeWindow is what Deployment planning may know about a Change (changes/public): reference, status and window,
+// plus requester and owner to apply the Changes read rule. Hidden is set in a detail read for a Change the reader
+// may not read: then only ID is filled.
 type ChangeWindow struct {
 	ID          string
 	Reference   string
 	Status      string
+	RequesterID string
+	OwnerID     *string
 	WindowStart *time.Time
 	WindowEnd   *time.Time
+	Hidden      bool
 }
 
 // DeploymentDetail is a Deployment with its rings, history, approvals and structural validation.
@@ -355,11 +424,20 @@ type DeploymentApprovals interface {
 	RequestInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver Approver, excluded []string) (string, error)
 	CancelBySubjectInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID string) error
 	ForSubject(ctx context.Context, subjectID string) ([]DeploymentApprovalInfo, error)
-	// CanView reports whether the User is or was an approver of the plan.
-	CanView(ctx context.Context, subjectID, userID string) (bool, error)
 }
 
-// ChangeWindows is the port to the Changes module: id -> Change for the existing Changes among ids.
+// DeploymentApprovers answers who may approve plans: the effective permissions of a User
+// (platform/authorization/roles) and Team memberships (Organization work directory).
+type DeploymentApprovers interface {
+	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
+	// TeamMemberIDs returns the current members of an active Team (none for an inactive or unknown Team).
+	TeamMemberIDs(ctx context.Context, teamID string) ([]string, error)
+	// TeamIDsOfUser returns the Teams the User currently belongs to.
+	TeamIDsOfUser(ctx context.Context, userID string) ([]string, error)
+}
+
+// ChangeWindows is the port to the Changes module: id -> Change for the existing Changes among ids, with requester
+// and owner so the caller applies the Changes read rule (changes/public.ReadScope with details).
 type ChangeWindows interface {
 	Lookup(ctx context.Context, ids []string) (map[string]ChangeWindow, error)
 }
@@ -380,22 +458,31 @@ type DeploymentStore interface {
 	UpdateTargetSetTx(ctx context.Context, tx pgx.Tx, t TargetSet) (TargetSet, error)
 	// TargetSetInUseTx reports whether a Deployment in one of statuses has a ring on the Target Set.
 	TargetSetInUseTx(ctx context.Context, tx pgx.Tx, id string, statuses []string) (bool, error)
+	// DeploymentsUsingTargetSet returns up to limit ids of Deployments in one of statuses with a ring on the set.
+	DeploymentsUsingTargetSet(ctx context.Context, id string, statuses []string, limit int) ([]string, error)
 	GetTargetSet(ctx context.Context, id string) (TargetSet, error)
 	ListTargetSets(ctx context.Context, f TargetSetFilter) (TargetSetResult, error)
 
 	InsertDeploymentTx(ctx context.Context, tx pgx.Tx, d Deployment) (Deployment, error)
 	LockDeploymentTx(ctx context.Context, tx pgx.Tx, id string) (Deployment, error)
+	// DeploymentTx reads a Deployment in tx without locking it.
+	DeploymentTx(ctx context.Context, tx pgx.Tx, id string) (Deployment, error)
 	UpdateDeploymentTx(ctx context.Context, tx pgx.Tx, d Deployment) (Deployment, error)
 	AppendDeploymentTransitionTx(ctx context.Context, tx pgx.Tx, t DeploymentTransition) error
 	RingsTx(ctx context.Context, tx pgx.Tx, deploymentID string) ([]DeploymentRing, error)
 	InsertRingTx(ctx context.Context, tx pgx.Tx, r DeploymentRing) (DeploymentRing, error)
 	UpdateRingTx(ctx context.Context, tx pgx.Tx, r DeploymentRing) (DeploymentRing, error)
 	DeleteRingTx(ctx context.Context, tx pgx.Tx, ringID string) error
+	// CheckRingPositionsTx checks the deferred ring position uniqueness now (ErrVersionConflict on a collision).
+	CheckRingPositionsTx(ctx context.Context, tx pgx.Tx) error
+	// PackageGateTx reports for a version whether any package has a closed gate (open hash mismatch or publication
+	// after revoke, revoked version, blocked product) and whether any package is published.
+	PackageGateTx(ctx context.Context, tx pgx.Tx, versionID string) (closed, published bool, err error)
 	GetDeployment(ctx context.Context, id string) (Deployment, error)
 	Rings(ctx context.Context, deploymentID string) ([]DeploymentRing, error)
 	DeploymentTransitions(ctx context.Context, deploymentID string) ([]DeploymentTransition, error)
 	ListDeployments(ctx context.Context, f DeploymentFilter) (DeploymentResult, error)
-	// ActiveDeploymentsOfProduct returns up to limit Deployments of the product's versions that are submitted,
-	// approved or scheduled, except excludeID.
-	ActiveDeploymentsOfProduct(ctx context.Context, productID, excludeID string, limit int) ([]Deployment, error)
+	// ActiveDeploymentsOfProduct returns up to limit Deployments of the product's versions in one of statuses,
+	// except excludeID.
+	ActiveDeploymentsOfProduct(ctx context.Context, productID, excludeID string, statuses []string, limit int) ([]Deployment, error)
 }

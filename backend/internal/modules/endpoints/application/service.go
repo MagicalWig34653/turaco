@@ -52,12 +52,24 @@ type Service struct {
 	// catalog limits catalog searches per user (guarded by catalogMu).
 	catalogMu sync.Mutex
 	catalog   catalogLimiter
-	// approvals, changes and locations serve Deployment planning (F9 G2, WithDeployments).
+	// approvals, changes and locations serve Deployment planning (F9 G2, WithDeployments); approvers answers
+	// who may approve plans (WithDeploymentApprovers).
 	approvals DeploymentApprovals
 	changes   ChangeWindows
 	locations AssetLocations
+	approvers DeploymentApprovers
 	// targetCap bounds the Devices one Target Set evaluation keeps (MaxTargetDevices).
 	targetCap int
+	// hiTargets and hiPercent are the high-impact thresholds (HighImpactTargetThreshold, HighImpactFleetPercent;
+	// a percent of 0 switches the share rule off).
+	hiTargets int
+	hiPercent int
+	// evalScans and evalDeadline bound the evaluation of one request; evalBusy holds the users with a running
+	// evaluating request (guarded by evalMu).
+	evalScans    int
+	evalDeadline time.Duration
+	evalMu       sync.Mutex
+	evalBusy     map[string]bool
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -72,7 +84,42 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
 		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
 		catalog:   catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow},
-		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}, targetCap: MaxTargetDevices}
+		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}, approvers: noApprovers{}, targetCap: MaxTargetDevices,
+		hiTargets: HighImpactTargetThreshold, hiPercent: HighImpactFleetPercent, evalScans: MaxEvaluationScans, evalDeadline: EvaluationDeadline,
+		evalBusy: map[string]bool{}}
+}
+
+// WithHighImpactThresholds sets the high-impact thresholds (tests): targets >= 1 Devices, percent 0-100 of the live
+// Devices (0 switches the share rule off).
+func (s *Service) WithHighImpactThresholds(targets, percent int) *Service {
+	if targets > 0 {
+		s.hiTargets = targets
+	}
+	if percent >= 0 && percent <= 100 {
+		s.hiPercent = percent
+	}
+	return s
+}
+
+// WithEvaluationBudget lowers the Devices one request may scan and its wall time (default and maximum
+// MaxEvaluationScans and EvaluationDeadline).
+func (s *Service) WithEvaluationBudget(scans int, deadline time.Duration) *Service {
+	if scans > 0 && scans < MaxEvaluationScans {
+		s.evalScans = scans
+	}
+	if deadline > 0 && deadline < EvaluationDeadline {
+		s.evalDeadline = deadline
+	}
+	return s
+}
+
+// WithDeploymentApprovers connects plan approver checks to the permission evaluator and the Team directory.
+// Without it nobody holds deployments.approve, so no plan can be submitted.
+func (s *Service) WithDeploymentApprovers(a DeploymentApprovers) *Service {
+	if a != nil {
+		s.approvers = a
+	}
+	return s
 }
 
 // WithTargetCap lowers the number of Devices one Target Set evaluation keeps (default and maximum MaxTargetDevices).

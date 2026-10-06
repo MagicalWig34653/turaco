@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -11,8 +12,10 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
-// Target Sets (F9 G2). Reads need deployments.view, deployments.manage or deployments.execute; changes need
-// deployments.manage. Audit actions endpoints.target_set.<created|updated|archived> carry ids, the reference,
+// Target Sets (F9 G2). Reads need deployments.view, deployments.manage or deployments.execute, or being an approver
+// of a plan using the set (definition and counts only); changes need deployments.manage, and a definition naming
+// Devices, groups or locations also endpoints.view. Explicit Device lists, example Devices and explanations need
+// endpoints.view. Audit actions endpoints.target_set.<created|updated|archived> carry ids, the reference,
 // counts and flags only; names, descriptions and filter values are never copied into audit.
 
 type noApprovals struct{}
@@ -26,7 +29,14 @@ func (noApprovals) CancelBySubjectInTx(context.Context, pgx.Tx, audit.Actor, str
 func (noApprovals) ForSubject(context.Context, string) ([]DeploymentApprovalInfo, error) {
 	return nil, nil
 }
-func (noApprovals) CanView(context.Context, string, string) (bool, error) { return false, nil }
+
+type noApprovers struct{}
+
+func (noApprovers) Permissions(context.Context, string) (map[string]struct{}, error) {
+	return map[string]struct{}{}, nil
+}
+func (noApprovers) TeamMemberIDs(context.Context, string) ([]string, error) { return nil, nil }
+func (noApprovers) TeamIDsOfUser(context.Context, string) ([]string, error) { return nil, nil }
 
 type noChanges struct{}
 
@@ -76,7 +86,7 @@ func (s *Service) ownerOf(ctx context.Context, c Caller, owner string) (string, 
 }
 
 func targetSetState(t TargetSet) map[string]any {
-	return map[string]any{"version": t.Version, "allDevices": t.AllDevices, "archived": t.ArchivedAt != nil,
+	return map[string]any{"version": t.Version, "allDevices": t.AllDevices, "highImpactReason": t.HighImpactReason, "archived": t.ArchivedAt != nil,
 		"filters": definitionShape(t.Definition), "includeCount": len(t.Definition.IncludeDeviceIDs), "excludeCount": len(t.Definition.ExcludeDeviceIDs)}
 }
 
@@ -113,7 +123,51 @@ func (s *Service) targetSetPreamble(c Caller, p Principal) error {
 	return nil
 }
 
-func (s *Service) validTargetSetInput(ctx context.Context, c Caller, in TargetSetInput) (TargetSet, error) {
+// setHighImpact returns why a definition is high impact: it selects all Devices, or it includes the nested groups of
+// a root group (a Directory Group without a parent). A cut or failed directory lookup counts as a root (unknown
+// groups only match their direct members and are not).
+func (s *Service) setHighImpact(ctx context.Context, def TargetDefinition) (string, error) {
+	if def.AllDevices() {
+		return HighImpactAllDevices, nil
+	}
+	nested := def.nestedGroups()
+	if len(nested) == 0 {
+		return "", nil
+	}
+	gs, cut, err := s.dir.GroupsByExternalIDs(ctx, s.viewProvider, nested)
+	if err != nil {
+		return "", err
+	}
+	if cut {
+		return HighImpactNestedRootGroup, nil
+	}
+	if len(gs) == 0 {
+		return "", nil
+	}
+	ids := make([]string, 0, len(gs))
+	for _, g := range gs {
+		ids = append(ids, g.ID)
+	}
+	edges, cut, err := s.dir.NestingUp(ctx, s.viewProvider, ids)
+	if err != nil {
+		return "", err
+	}
+	if cut {
+		return HighImpactNestedRootGroup, nil
+	}
+	hasParent := map[string]bool{}
+	for _, e := range edges {
+		hasParent[e.ChildID] = true
+	}
+	for _, id := range ids {
+		if !hasParent[id] {
+			return HighImpactNestedRootGroup, nil
+		}
+	}
+	return "", nil
+}
+
+func (s *Service) validTargetSetInput(ctx context.Context, c Caller, p Principal, in TargetSetInput) (TargetSet, error) {
 	name, ok := cleanName(in.Name, 150)
 	if !ok {
 		return TargetSet{}, invalid("name must be 1-150 characters without control or invisible formatting characters")
@@ -126,11 +180,28 @@ func (s *Service) validTargetSetInput(ctx context.Context, c Caller, in TargetSe
 	if err != nil {
 		return TargetSet{}, err
 	}
+	if def.revealsDevices() && !p.canView() {
+		return TargetSet{}, ErrForbidden
+	}
 	owner, err := s.ownerOf(ctx, c, in.OwnerUserID)
 	if err != nil {
 		return TargetSet{}, err
 	}
-	return TargetSet{Name: name, Description: desc, OwnerUserID: owner, Definition: def, AllDevices: def.AllDevices()}, nil
+	reason, err := s.setHighImpact(ctx, def)
+	if err != nil {
+		return TargetSet{}, err
+	}
+	return TargetSet{Name: name, Description: desc, OwnerUserID: owner, Definition: def, AllDevices: def.AllDevices(), HighImpactReason: strPtr(reason),
+		UpdatedBy: c.Actor.UserID}, nil
+}
+
+// redactTargetSet removes the explicit Device lists for readers without endpoints.view (the counts stay).
+func redactTargetSet(p Principal, t TargetSet) TargetSet {
+	t.IncludeDeviceCount, t.ExcludeDeviceCount = len(t.Definition.IncludeDeviceIDs), len(t.Definition.ExcludeDeviceIDs)
+	if !p.canView() {
+		t.Definition.IncludeDeviceIDs, t.Definition.ExcludeDeviceIDs, t.DeviceListsRedacted = []string{}, []string{}, true
+	}
+	return t
 }
 
 func (s *Service) recordTargetSet(ctx context.Context, tx pgx.Tx, c Caller, op string, before *TargetSet, after TargetSet) error {
@@ -150,7 +221,7 @@ func (s *Service) CreateTargetSet(ctx context.Context, c Caller, p Principal, in
 	if err := s.targetSetPreamble(c, p); err != nil {
 		return TargetSet{}, err
 	}
-	t, err := s.validTargetSetInput(ctx, c, in)
+	t, err := s.validTargetSetInput(ctx, c, p, in)
 	if err != nil {
 		return TargetSet{}, err
 	}
@@ -162,12 +233,13 @@ func (s *Service) CreateTargetSet(ctx context.Context, c Caller, p Principal, in
 		}
 		return s.recordTargetSet(ctx, tx, c, "created", nil, out)
 	})
-	return out, err
+	return redactTargetSet(p, out), err
 }
 
-// UpdateTargetSet replaces name, description, owner and definition. A Target Set used by a plan that is submitted,
-// approved or scheduled cannot change (ErrTargetSetInUse): the approved plan binds its version. Requires
-// deployments.manage and expectedVersion.
+// UpdateTargetSet replaces name, description, owner and definition. A Target Set used by a plan in one of
+// DeploymentBindingStatuses cannot change (ErrTargetSetInUse): the submitted plan binds its version. Requires
+// deployments.manage and expectedVersion, and endpoints.view when the old or new definition names Devices, groups
+// or locations.
 func (s *Service) UpdateTargetSet(ctx context.Context, c Caller, p Principal, id string, expectedVersion *int, in TargetSetInput) (TargetSet, error) {
 	if err := s.targetSetPreamble(c, p); err != nil {
 		return TargetSet{}, err
@@ -178,7 +250,7 @@ func (s *Service) UpdateTargetSet(ctx context.Context, c Caller, p Principal, id
 	if !validUUID(id) {
 		return TargetSet{}, ErrNotFound
 	}
-	next, err := s.validTargetSetInput(ctx, c, in)
+	next, err := s.validTargetSetInput(ctx, c, p, in)
 	if err != nil {
 		return TargetSet{}, err
 	}
@@ -194,7 +266,10 @@ func (s *Service) UpdateTargetSet(ctx context.Context, c Caller, p Principal, id
 		if cur.ArchivedAt != nil {
 			return &InvalidTransitionError{Operation: "update", From: "archived"}
 		}
-		inUse, err := s.store.TargetSetInUseTx(ctx, tx, cur.ID, []string{DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled})
+		if cur.Definition.revealsDevices() && !p.canView() {
+			return ErrForbidden
+		}
+		inUse, err := s.store.TargetSetInUseTx(ctx, tx, cur.ID, DeploymentBindingStatuses)
 		if err != nil {
 			return err
 		}
@@ -202,17 +277,18 @@ func (s *Service) UpdateTargetSet(ctx context.Context, c Caller, p Principal, id
 			return ErrTargetSetInUse
 		}
 		upd := cur
-		upd.Name, upd.Description, upd.OwnerUserID, upd.Definition, upd.AllDevices = next.Name, next.Description, next.OwnerUserID, next.Definition, next.AllDevices
+		upd.Name, upd.Description, upd.OwnerUserID, upd.Definition, upd.AllDevices, upd.HighImpactReason, upd.UpdatedBy =
+			next.Name, next.Description, next.OwnerUserID, next.Definition, next.AllDevices, next.HighImpactReason, c.Actor.UserID
 		if out, err = s.store.UpdateTargetSetTx(ctx, tx, upd); err != nil {
 			return err
 		}
 		return s.recordTargetSet(ctx, tx, c, "updated", &cur, out)
 	})
-	return out, err
+	return redactTargetSet(p, out), err
 }
 
 // ArchiveTargetSet retires a Target Set; it can no longer be used by new rings and draft plans using it become
-// invalid. A Target Set of a plan that is submitted, approved or scheduled cannot be archived. Requires
+// invalid. A Target Set of a plan in one of DeploymentBindingStatuses cannot be archived. Requires
 // deployments.manage and expectedVersion.
 func (s *Service) ArchiveTargetSet(ctx context.Context, c Caller, p Principal, id string, expectedVersion *int) (TargetSet, error) {
 	if err := s.targetSetPreamble(c, p); err != nil {
@@ -236,7 +312,7 @@ func (s *Service) ArchiveTargetSet(ctx context.Context, c Caller, p Principal, i
 		if cur.ArchivedAt != nil {
 			return &InvalidTransitionError{Operation: "archive", From: "archived"}
 		}
-		inUse, err := s.store.TargetSetInUseTx(ctx, tx, cur.ID, []string{DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled})
+		inUse, err := s.store.TargetSetInUseTx(ctx, tx, cur.ID, DeploymentBindingStatuses)
 		if err != nil {
 			return err
 		}
@@ -252,7 +328,7 @@ func (s *Service) ArchiveTargetSet(ctx context.Context, c Caller, p Principal, i
 		}
 		return s.recordTargetSet(ctx, tx, c, "archived", &cur, out)
 	})
-	return out, err
+	return redactTargetSet(p, out), err
 }
 
 // ListTargetSets lists Target Sets (without archived ones unless asked). Requires deployments read access.
@@ -261,52 +337,117 @@ func (s *Service) ListTargetSets(ctx context.Context, p Principal, f TargetSetFi
 		return TargetSetResult{}, ErrForbidden
 	}
 	f.Page = f.Page.Normalize()
-	return s.store.ListTargetSets(ctx, f)
+	res, err := s.store.ListTargetSets(ctx, f)
+	for i := range res.Items {
+		res.Items[i] = redactTargetSet(p, res.Items[i])
+	}
+	return res, err
 }
 
-// GetTargetSet returns a Target Set. Requires deployments read access.
-func (s *Service) GetTargetSet(ctx context.Context, p Principal, id string) (TargetSet, error) {
-	if !p.canViewDeployments() {
-		return TargetSet{}, ErrForbidden
-	}
+// maxApproverSetPlans bounds the plans checked when a plan approver reads a Target Set.
+const maxApproverSetPlans = 20
+
+// readTargetSet returns a Target Set the caller may read: with deployments read access, or as an approver of a plan
+// that binds it (approverOnly; definition and counts only).
+func (s *Service) readTargetSet(ctx context.Context, p Principal, id string) (t TargetSet, approverOnly bool, err error) {
 	if !validUUID(id) {
-		return TargetSet{}, ErrNotFound
+		return TargetSet{}, false, ErrNotFound
 	}
-	return s.store.GetTargetSet(ctx, strings.ToLower(id))
+	id = strings.ToLower(id)
+	if p.canViewDeployments() {
+		t, err = s.store.GetTargetSet(ctx, id)
+		return t, false, err
+	}
+	if p.UserID == "" {
+		return TargetSet{}, false, ErrForbidden
+	}
+	plans, err := s.store.DeploymentsUsingTargetSet(ctx, id, DeploymentBindingStatuses, maxApproverSetPlans)
+	if err != nil {
+		return TargetSet{}, false, err
+	}
+	for _, dep := range plans {
+		ok, err := s.isPlanApprover(ctx, dep, p.UserID)
+		if err != nil {
+			return TargetSet{}, false, err
+		}
+		if ok {
+			t, err = s.store.GetTargetSet(ctx, id)
+			return t, true, err
+		}
+	}
+	return TargetSet{}, false, ErrForbidden
 }
+
+// GetTargetSet returns a Target Set. Requires deployments read access or being an approver of a plan using it.
+func (s *Service) GetTargetSet(ctx context.Context, p Principal, id string) (TargetSet, error) {
+	t, _, err := s.readTargetSet(ctx, p, id)
+	if err != nil {
+		return TargetSet{}, err
+	}
+	return redactTargetSet(p, t), nil
+}
+
+// beginEvaluation reserves the user's single evaluation slot (ErrEvaluationBusy when taken); the returned function
+// releases it.
+func (s *Service) beginEvaluation(userID string) (func(), error) {
+	s.evalMu.Lock()
+	defer s.evalMu.Unlock()
+	if s.evalBusy[userID] {
+		return nil, ErrEvaluationBusy
+	}
+	s.evalBusy[userID] = true
+	return func() {
+		s.evalMu.Lock()
+		delete(s.evalBusy, userID)
+		s.evalMu.Unlock()
+	}, nil
+}
+
+// evalBudget bounds the Devices one request scans and its wall time.
+type evalBudget struct {
+	scans    int
+	deadline time.Time
+}
+
+func (s *Service) newBudget() *evalBudget {
+	return &evalBudget{scans: s.evalScans, deadline: time.Now().Add(s.evalDeadline)}
+}
+
+func (b *evalBudget) exhausted() bool { return b.scans <= 0 || time.Now().After(b.deadline) }
 
 // EvaluateTargetSet evaluates a Target Set now over the live Devices of the endpoint provider: the bounded count,
-// counts by platform and compliance and a few example Devices (names only with endpoints.view). Requires
-// deployments read access.
+// counts by platform and compliance and a few example Devices. Examples need endpoints.view and deployments read
+// access (approvers get counts only). One evaluation per user at a time. Requires deployments read access or being
+// an approver of a plan using the set.
 func (s *Service) EvaluateTargetSet(ctx context.Context, p Principal, id string) (TargetEvaluation, error) {
-	t, err := s.GetTargetSet(ctx, p, id)
+	t, approverOnly, err := s.readTargetSet(ctx, p, id)
 	if err != nil {
 		return TargetEvaluation{}, err
 	}
-	ev, err := inSnapshot(ctx, s, func(ctx context.Context) (TargetEvaluation, error) { return s.evaluateDefinition(ctx, t.Definition) })
+	done, err := s.beginEvaluation(p.UserID)
 	if err != nil {
 		return TargetEvaluation{}, err
 	}
-	ev.Examples = s.redactExamples(p, ev.Examples)
+	defer done()
+	b := s.newBudget()
+	ev, err := inSnapshot(ctx, s, func(ctx context.Context) (TargetEvaluation, error) { return s.evaluateDefinition(ctx, t.Definition, b) })
+	if err != nil {
+		return TargetEvaluation{}, err
+	}
+	if approverOnly || !p.canView() {
+		ev.Examples, ev.ExamplesRedacted = []TargetExample{}, true
+	}
 	ev.deviceIDs = nil
 	return ev, nil
 }
 
-func (s *Service) redactExamples(p Principal, in []TargetExample) []TargetExample {
-	out := make([]TargetExample, 0, len(in))
-	for _, e := range in {
-		if !p.canView() {
-			e.Name, e.Redacted = "", true
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// ExplainTargetSet says which clauses of a Target Set a live Device matches. Requires deployments read access;
-// the Device name needs endpoints.view.
+// ExplainTargetSet says which clauses of a Target Set a live Device matches. Requires deployments read access and
+// endpoints.view (it names a Device).
 func (s *Service) ExplainTargetSet(ctx context.Context, p Principal, id, deviceID string) (TargetExplanation, error) {
-	t, err := s.GetTargetSet(ctx, p, id)
+	if !p.canViewDeployments() || !p.canView() {
+		return TargetExplanation{}, ErrForbidden
+	}
+	t, _, err := s.readTargetSet(ctx, p, id)
 	if err != nil {
 		return TargetExplanation{}, err
 	}
@@ -331,12 +472,8 @@ func (s *Service) ExplainTargetSet(ctx context.Context, p Principal, id, deviceI
 			return TargetExplanation{}, err
 		}
 		matched, clauses := matchDevice(r, facts[0])
-		out := TargetExplanation{TargetSetID: t.ID, DeviceID: ds[0].ID, DeviceName: ds[0].Name, Matched: matched, Clauses: clauses,
-			Incomplete: incomplete, EvaluatedAt: s.now()}
-		if !p.canView() {
-			out.DeviceName, out.Redacted = "", true
-		}
-		return out, nil
+		return TargetExplanation{TargetSetID: t.ID, DeviceID: ds[0].ID, DeviceName: ds[0].Name, Matched: matched, Clauses: clauses,
+			Incomplete: incomplete, EvaluatedAt: s.now()}, nil
 	})
 }
 
@@ -417,15 +554,20 @@ func (s *Service) targetFacts(ctx context.Context, r resolvedDefinition, devices
 }
 
 // evaluateDefinition scans the provider's live Devices in batches of targetBatch (at most MaxTargetScan) and keeps
-// at most targetCap (MaxTargetDevices) matches. A definition without filters but with an explicit include list only reads
-// the listed Devices.
-func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition) (TargetEvaluation, error) {
+// at most targetCap (MaxTargetDevices) matches. A definition without filters but with an explicit include list only
+// reads the listed Devices. Every scanned Device is taken from the request budget b; an exhausted budget or passed
+// deadline stops the scan and marks the evaluation incomplete.
+func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition, b *evalBudget) (TargetEvaluation, error) {
 	ev := TargetEvaluation{ByPlatform: map[string]int{}, ByCompliance: map[string]int{}, EvaluatedAt: s.now(), Examples: []TargetExample{}}
 	exts, incomplete, err := s.resolveTargetGroups(ctx, def.Filters.Groups)
 	if err != nil {
 		return TargetEvaluation{}, err
 	}
 	ev.Incomplete = incomplete
+	if b.exhausted() {
+		ev.Incomplete = true
+		return ev, nil
+	}
 	r := resolveDefinition(def, exts)
 	process := func(batch []Device) (bool, error) {
 		facts, err := s.targetFacts(ctx, r, batch)
@@ -462,11 +604,16 @@ func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition) 
 			}
 		}
 		ev.Scanned = len(live)
+		b.scans -= len(live)
 		_, err = process(live)
 		return ev, err
 	}
 	after := ""
 	for ev.Scanned < MaxTargetScan {
+		if b.exhausted() {
+			ev.Incomplete = true
+			return ev, nil
+		}
 		page, err := s.store.LiveDevicesPage(ctx, s.viewProvider, after, targetBatch)
 		if err != nil {
 			return TargetEvaluation{}, err
@@ -475,6 +622,7 @@ func (s *Service) evaluateDefinition(ctx context.Context, def TargetDefinition) 
 			return ev, nil
 		}
 		ev.Scanned += len(page)
+		b.scans -= len(page)
 		stop, err := process(page)
 		if err != nil || stop {
 			return ev, err

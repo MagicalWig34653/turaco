@@ -128,9 +128,30 @@ func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool, s
 	assets := assetspublic.New(Assets(pool))
 	dir := directoryLookup{graph: orgpublic.NewDirectoryGraph(org), names: orgpublic.NewWorkDirectory(org)}
 	approvals := deploymentApprovals{a: approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(org), nil))}
+	approvers := deploymentApprovers{perms: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)), teams: orgpublic.NewWorkDirectory(org)}
 	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).
 		WithViews(dir, assets).WithSoftware(software, softwareSync).
-		WithDeployments(approvals, changeWindows{c: changespublic.NewChanges(Changes(pool))}, assets)
+		WithDeployments(approvals, changeWindows{c: changespublic.NewChanges(Changes(pool))}, assets).
+		WithDeploymentApprovers(approvers)
+}
+
+// deploymentApprovers answers who may approve plans: effective permissions (platform/authorization/roles) and
+// current Team memberships (Organization work directory).
+type deploymentApprovers struct {
+	perms *roles.Evaluator
+	teams *orgpublic.WorkDirectory
+}
+
+func (x deploymentApprovers) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
+	return x.perms.Permissions(ctx, userID)
+}
+
+func (x deploymentApprovers) TeamMemberIDs(ctx context.Context, teamID string) ([]string, error) {
+	return x.teams.CurrentMemberIDs(ctx, teamID)
+}
+
+func (x deploymentApprovers) TeamIDsOfUser(ctx context.Context, userID string) ([]string, error) {
+	return x.teams.CurrentTeamIDs(ctx, userID)
 }
 
 // deploymentApprovals adapts the Approvals contract to Deployment planning (subject deployment).
@@ -171,21 +192,19 @@ func (x deploymentApprovals) ForSubject(ctx context.Context, subjectID string) (
 	return out, nil
 }
 
-func (x deploymentApprovals) CanView(ctx context.Context, subjectID, userID string) (bool, error) {
-	return x.a.CanView(ctx, endpointsapp.DeploymentApprovalSubject, subjectID, userID)
-}
-
-// changeWindows reads Changes with the zero read scope: reference, status and maintenance window only.
+// changeWindows reads Changes with details so Deployment planning can apply the Changes read rule (requester,
+// owner) to the caller; it passes on reference, status, window, requester and owner only (never the title).
 type changeWindows struct{ c *changespublic.Changes }
 
 func (x changeWindows) Lookup(ctx context.Context, ids []string) (map[string]endpointsapp.ChangeWindow, error) {
-	found, err := x.c.Lookup(ctx, ids, changespublic.ReadScope{})
+	found, err := x.c.Lookup(ctx, ids, changespublic.ReadScope{IncludeDetails: true})
 	if err != nil {
 		return nil, err
 	}
 	out := make(map[string]endpointsapp.ChangeWindow, len(found))
 	for id, c := range found {
-		out[id] = endpointsapp.ChangeWindow{ID: c.ID, Reference: c.Reference, Status: c.Status, WindowStart: c.WindowStart, WindowEnd: c.WindowEnd}
+		out[id] = endpointsapp.ChangeWindow{ID: c.ID, Reference: c.Reference, Status: c.Status, RequesterID: c.RequesterID, OwnerID: c.OwnerID,
+			WindowStart: c.WindowStart, WindowEnd: c.WindowEnd}
 	}
 	return out, nil
 }

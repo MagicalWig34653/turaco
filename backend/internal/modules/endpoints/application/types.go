@@ -164,6 +164,9 @@ type Principal struct {
 	DeploymentsManage     bool
 	DeploymentsExecute    bool
 	DeploymentsHighImpact bool
+	// ChangesRead is changes.view, changes.manage or changes.execute: it reads every Change. Without it a Change
+	// is readable only by its requester and owner (the Changes read rule).
+	ChangesRead bool
 }
 
 func (p Principal) canViewDeployments() bool {

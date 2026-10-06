@@ -13,14 +13,14 @@ import (
 
 // Target Sets and Deployment planning (F9 G2).
 
-const targetSetColumns = `id::text, reference, name, description, owner_user_id::text, definition, all_devices, archived_at,
-	archived_by::text, created_by::text, version, created_at, updated_at`
+const targetSetColumns = `id::text, reference, name, description, owner_user_id::text, definition, all_devices, high_impact_reason, archived_at,
+	archived_by::text, created_by::text, updated_by::text, version, created_at, updated_at`
 
 func scanTargetSet(row pgx.Row) (application.TargetSet, error) {
 	var t application.TargetSet
 	var def []byte
-	if err := row.Scan(&t.ID, &t.Reference, &t.Name, &t.Description, &t.OwnerUserID, &def, &t.AllDevices, &t.ArchivedAt,
-		&t.ArchivedBy, &t.CreatedBy, &t.Version, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Reference, &t.Name, &t.Description, &t.OwnerUserID, &def, &t.AllDevices, &t.HighImpactReason, &t.ArchivedAt,
+		&t.ArchivedBy, &t.CreatedBy, &t.UpdatedBy, &t.Version, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return application.TargetSet{}, err
 	}
 	d, err := application.ParseTargetDefinition(def)
@@ -36,9 +36,9 @@ func (r *Repository) InsertTargetSetTx(ctx context.Context, tx pgx.Tx, t applica
 	if err != nil {
 		return application.TargetSet{}, err
 	}
-	out, err := scanTargetSet(tx.QueryRow(ctx, `INSERT INTO endpoints.target_sets (name, description, owner_user_id, definition, all_devices, created_by)
-		VALUES ($1, $2, $3::uuid, $4::jsonb, $5, $6::uuid) RETURNING `+targetSetColumns,
-		t.Name, t.Description, t.OwnerUserID, string(def), t.AllDevices, t.CreatedBy))
+	out, err := scanTargetSet(tx.QueryRow(ctx, `INSERT INTO endpoints.target_sets (name, description, owner_user_id, definition, all_devices, high_impact_reason, created_by, updated_by)
+		VALUES ($1, $2, $3::uuid, $4::jsonb, $5, $6, $7::uuid, $7::uuid) RETURNING `+targetSetColumns,
+		t.Name, t.Description, t.OwnerUserID, string(def), t.AllDevices, t.HighImpactReason, t.CreatedBy))
 	if pgCode(err) == "23505" {
 		return application.TargetSet{}, application.ErrTargetSetNameTaken
 	}
@@ -85,9 +85,10 @@ func (r *Repository) UpdateTargetSetTx(ctx context.Context, tx pgx.Tx, t applica
 		return application.TargetSet{}, err
 	}
 	out, err := scanTargetSet(tx.QueryRow(ctx, `UPDATE endpoints.target_sets SET name = $2, description = $3, owner_user_id = $4::uuid,
-		definition = $5::jsonb, all_devices = $6, archived_at = $7, archived_by = $8::uuid, version = version + 1, updated_at = now()
+		definition = $5::jsonb, all_devices = $6, high_impact_reason = $7, archived_at = $8, archived_by = $9::uuid, updated_by = $10::uuid,
+		version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+targetSetColumns,
-		t.ID, t.Name, t.Description, t.OwnerUserID, string(def), t.AllDevices, t.ArchivedAt, t.ArchivedBy))
+		t.ID, t.Name, t.Description, t.OwnerUserID, string(def), t.AllDevices, t.HighImpactReason, t.ArchivedAt, t.ArchivedBy, t.UpdatedBy))
 	if pgCode(err) == "23505" {
 		return application.TargetSet{}, application.ErrTargetSetNameTaken
 	}
@@ -105,6 +106,15 @@ func (r *Repository) TargetSetInUseTx(ctx context.Context, tx pgx.Tx, id string,
 		return false, fmt.Errorf("target set in use: %w", err)
 	}
 	return used, nil
+}
+
+func (r *Repository) DeploymentsUsingTargetSet(ctx context.Context, id string, statuses []string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT d.id::text FROM endpoints.deployment_rings rg JOIN endpoints.deployments d ON d.id = rg.deployment_id
+		WHERE rg.target_set_id = $1::uuid AND d.status = ANY($2) ORDER BY 1 DESC LIMIT $3`, id, statuses, limit)
+	if err != nil {
+		return nil, fmt.Errorf("deployments using target set: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (r *Repository) GetTargetSet(ctx context.Context, id string) (application.TargetSet, error) {
@@ -185,6 +195,10 @@ func (r *Repository) InsertDeploymentTx(ctx context.Context, tx pgx.Tx, d applic
 	if err != nil {
 		return application.Deployment{}, fmt.Errorf("insert deployment: %w", err)
 	}
+	return r.deploymentTx(ctx, tx, id, "")
+}
+
+func (r *Repository) DeploymentTx(ctx context.Context, tx pgx.Tx, id string) (application.Deployment, error) {
 	return r.deploymentTx(ctx, tx, id, "")
 }
 
@@ -300,6 +314,35 @@ func (r *Repository) DeleteRingTx(ctx context.Context, tx pgx.Tx, ringID string)
 	return nil
 }
 
+// CheckRingPositionsTx makes the deferred position uniqueness check run now, so a collision surfaces as a conflict
+// of the edit instead of a commit failure.
+func (r *Repository) CheckRingPositionsTx(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `SET CONSTRAINTS endpoints.deployment_rings_position_unique IMMEDIATE`)
+	if pgCode(err) == "23505" {
+		return application.ErrVersionConflict
+	}
+	if err != nil {
+		return fmt.Errorf("check ring positions: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) PackageGateTx(ctx context.Context, tx pgx.Tx, versionID string) (bool, bool, error) {
+	var closed, published bool
+	err := tx.QueryRow(ctx, `SELECT
+		EXISTS (SELECT 1 FROM endpoints.software_packages pk WHERE pk.software_version_id = $1::uuid AND (
+			EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.software_package_id = pk.id AND f.status = 'open'
+				AND f.kind IN ('package_hash_mismatch', 'package_published_after_revoke'))
+			OR EXISTS (SELECT 1 FROM endpoints.software_versions sv JOIN endpoints.software_products sp ON sp.id = sv.software_product_id
+				WHERE sv.id = pk.software_version_id AND (sv.approval_status = 'revoked' OR sp.approval_status = 'blocked')))),
+		EXISTS (SELECT 1 FROM endpoints.software_packages pk WHERE pk.software_version_id = $1::uuid AND pk.published_at IS NOT NULL)`,
+		versionID).Scan(&closed, &published)
+	if err != nil {
+		return false, false, fmt.Errorf("package gate: %w", err)
+	}
+	return closed, published, nil
+}
+
 func (r *Repository) GetDeployment(ctx context.Context, id string) (application.Deployment, error) {
 	d, err := scanDeployment(r.q(ctx).QueryRow(ctx, `SELECT `+deploymentColumns+deploymentFrom+` WHERE d.id = $1::uuid`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -385,9 +428,9 @@ func (r *Repository) ListDeployments(ctx context.Context, f application.Deployme
 	return res, nil
 }
 
-func (r *Repository) ActiveDeploymentsOfProduct(ctx context.Context, productID, excludeID string, limit int) ([]application.Deployment, error) {
+func (r *Repository) ActiveDeploymentsOfProduct(ctx context.Context, productID, excludeID string, statuses []string, limit int) ([]application.Deployment, error) {
 	rows, err := r.q(ctx).Query(ctx, `SELECT `+deploymentColumns+deploymentFrom+` WHERE v.software_product_id = $1::uuid AND d.id <> $2::uuid
-		AND d.status IN ('pending_approval', 'approved', 'scheduled') ORDER BY d.id DESC LIMIT $3`, productID, excludeID, limit)
+		AND d.status = ANY($3) ORDER BY d.id DESC LIMIT $4`, productID, excludeID, statuses, limit)
 	if err != nil {
 		return nil, fmt.Errorf("active deployments of product: %w", err)
 	}
