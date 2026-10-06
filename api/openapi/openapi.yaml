@@ -9493,7 +9493,7 @@ paths:
     post:
       operationId: packageSoftwareVersion
       summary: Package an approved version at the Software Management Provider.
-      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the Software Version's version. Requires an approved version (409 endpoints.version_not_approved) of an approved product (409 endpoints.product_not_approved). One package per provider and version; the provider is called with the idempotency key `versionId:installerSha256`, so a retry cannot create a second package. 409 endpoints.software_provider_not_configured when no provider is configured. Audited with ids, statuses, hashes and reason codes only."
+      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the Software Version's version. Requires an approved version (409 endpoints.version_not_approved) of an approved product (409 endpoints.product_not_approved). One package per provider and version; the provider is called with the idempotency key `versionId:installerSha256`, so a retry cannot create a second package. A `failed` package can be packaged again; this increments `packageAttempt`. 409 endpoints.software_provider_not_configured when no provider is configured. Audited with ids, statuses, hashes and reason codes only."
       security:
         - sessionAuth: []
       parameters:
@@ -9519,7 +9519,7 @@ paths:
     get:
       operationId: searchSoftwareCatalog
       summary: Search the Software Management Provider's catalog.
-      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. `q` must be 2-100 characters without control characters (400 otherwise). At most 50 results; provider data is sanitized and entries that fail sanitization are dropped; `sourceUrl` is https only. 409 endpoints.software_provider_not_configured when no provider is configured."
+      description: "Needs `software.view`, `software.approve` or `software.package`; callers without any of them get 403. `q` must be 2-100 characters without control characters (400 otherwise). At most 50 results; provider data is sanitized and entries that fail sanitization are dropped; `sourceUrl` is https only. 409 endpoints.software_provider_not_configured when no provider is configured. At most 10 searches per user and minute (429 endpoints.software_rate_limited)."
       security:
         - sessionAuth: []
       parameters:
@@ -9532,6 +9532,11 @@ paths:
               schema: {$ref: '#/components/schemas/SoftwareCatalogList'}
         '400': {$ref: '#/components/responses/SoftwareInvalid'}
         '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '429':
+          description: endpoints.software_rate_limited - more than 10 catalog searches by this user in the last minute.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -9561,7 +9566,7 @@ paths:
     post:
       operationId: syncSoftwarePackages
       summary: Read package status from the Software Management Provider now.
-      description: "Needs `software.package` (elevated). Takes no body. Updates status and the provider-reported installer hash with source and freshness, raises or resolves `package_hash_mismatch` findings and links the published Management Artifact once the management sync has ingested it. 409 endpoints.software_sync_disabled when the synchronization is switched off, 409 endpoints.software_provider_not_configured without a provider. Audited."
+      description: "Needs `software.package` (elevated). Takes no body. Updates status and the provider-reported installer hash with source and freshness, raises or resolves the package findings `package_hash_mismatch` and `package_published_after_revoke` and links the published Management Artifact once the management sync has ingested it. 409 endpoints.software_sync_disabled when the synchronization is switched off, 409 endpoints.software_provider_not_configured without a provider. At most one manual run per 30 seconds (429 endpoints.software_sync_cooldown). Audited."
       security:
         - sessionAuth: []
       responses:
@@ -9571,6 +9576,11 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SoftwarePackageSyncResult'}
         '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '429':
+          description: endpoints.software_sync_cooldown - a manual package synchronization ran less than 30 seconds ago.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -9578,7 +9588,7 @@ paths:
     post:
       operationId: publishSoftwarePackage
       summary: Publish a packaged Software Package to the Management Provider.
-      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the package's version. Requires the package to be packaged (409 endpoints.package_not_ready), the version and product approved, and the provider-reported installer hash to equal the approved hash (409 endpoints.hash_mismatch). Idempotency key `packageId:publish:installerSha256`; publishing an already published package returns it unchanged. 409 endpoints.software_provider_not_configured without a provider. Audited with ids, statuses, hashes and reason codes only."
+      description: "Needs `software.package` (elevated). `expectedVersion` is required (400 endpoints.invalid_request when missing; 409 endpoints.version_conflict when stale). `expectedVersion` is the package's version. Requires the package to be packaged (409 endpoints.package_not_ready), the version approved and not revoked and the product approved, and the provider-reported installer hash to equal the approved hash (409 endpoints.hash_mismatch). Idempotency key `packageId:publish:installerSha256`; publishing an already published package returns it unchanged. 409 endpoints.software_provider_not_configured without a provider. Audited with ids, statuses, hashes and reason codes only."
       security:
         - sessionAuth: []
       parameters:
@@ -12671,11 +12681,11 @@ components:
         productName: {type: string}
         productVersion: {type: string}
         installerSha256: {type: string, pattern: '^[0-9a-f]{64}$'}
-        installerUrl: {type: string, description: https only.}
+        installerUrl: {type: [string, "null"], description: 'https only. Null for callers with only software.view (redacted); the hashes stay visible.'}
         publisher: {type: [string, "null"]}
-        installCommand: {type: string}
+        installCommand: {type: [string, "null"], description: Null for callers with only software.view (redacted).}
         installCommandSha256: {type: string}
-        detectionRule: {type: string}
+        detectionRule: {type: [string, "null"], description: Null for callers with only software.view (redacted).}
         detectionRuleSha256: {type: string}
         bindingSha256: {type: string, description: 'SHA-256 over version, installer hash, URL, publisher, command hash and rule hash; unique per product.'}
         registeredBy: {type: string, format: uuid}
@@ -12721,7 +12731,7 @@ components:
     SoftwarePackage:
       type: object
       additionalProperties: false
-      required: [id, provider, providerPackageId, versionId, status, installerSha256, hashMismatch, managementProvider, managementArtifactExternalId, managementArtifactId, source, observedAt, lastSyncedAt, publishRequestedAt, version]
+      required: [id, provider, providerPackageId, versionId, status, installerSha256, hashMismatch, versionRevoked, productBlocked, publishedAfterRevoke, packageAttempt, publishAttempt, publishedAt, managementProvider, managementArtifactExternalId, managementArtifactId, source, observedAt, lastSyncedAt, publishRequestedAt, version]
       properties:
         id: {type: string, format: uuid}
         provider: {type: string}
@@ -12730,6 +12740,12 @@ components:
         status: {type: string, enum: [requested, building, packaged, published, failed], description: 'requested is Turaco''s request before the provider answered; the others are provider-reported.'}
         installerSha256: {type: [string, "null"], description: Installer hash reported by the provider.}
         hashMismatch: {type: boolean, description: 'An open package_hash_mismatch finding: the provider-reported hash differs from the approved hash. Publishing is refused.'}
+        versionRevoked: {type: boolean, description: The version's approval was revoked; publishing is refused.}
+        productBlocked: {type: boolean, description: The product is blocked or retired; publishing is refused.}
+        publishedAfterRevoke: {type: boolean, description: 'An open package_published_after_revoke finding: the provider reports the package published although Turaco would refuse publishing.'}
+        packageAttempt: {type: integer, description: 'Packaging attempt number; a failed package can be packaged again, which increments it.'}
+        publishAttempt: {type: integer, description: Publishing attempt number.}
+        publishedAt: {type: [string, "null"], format: date-time}
         managementProvider: {type: [string, "null"]}
         managementArtifactExternalId: {type: [string, "null"]}
         managementArtifactId: {type: [string, "null"], format: uuid}
@@ -12738,6 +12754,10 @@ components:
         lastSyncedAt: {type: [string, "null"], format: date-time}
         publishRequestedAt: {type: [string, "null"], format: date-time}
         version: {type: integer}
+    SoftwarePackageFindingKind:
+      type: string
+      description: "Endpoint Finding kinds with a Software Package subject. They are shown with the package (`hashMismatch`, `publishedAfterRevoke`), never in the device findings list. package_hash_mismatch detail carries `reason` (hash_differs, binding_differs) and `differingFields`; package_published_after_revoke detail carries `reason` (version_not_approved, product_not_approved, published_without_request, artifact_already_linked, publish_in_flight)."
+      enum: [package_hash_mismatch, package_published_after_revoke]
     SoftwarePackageList:
       type: object
       additionalProperties: false
@@ -12748,9 +12768,11 @@ components:
     SoftwarePackageSyncResult:
       type: object
       additionalProperties: false
-      required: [checked, changed, linked, findingsRaised, findingsResolved]
+      required: [checked, changed, linked, findingsRaised, findingsResolved, stale, errors]
       properties:
         checked: {type: integer}
+        stale: {type: integer, description: Packages whose provider report was older than the stored one and was ignored.}
+        errors: {type: integer, description: Packages the provider could not report on.}
         changed: {type: integer}
         linked: {type: integer}
         findingsRaised: {type: integer}
