@@ -9610,6 +9610,443 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /target-sets:
+    get:
+      operationId: listTargetSets
+      summary: List Target Sets.
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute` (403 otherwise). Sorted by name, keyset paged. Archived Target Sets are left out unless `includeArchived=true`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: includeArchived, in: query, description: 'Include archived Target Sets.', schema: {type: boolean}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSetList'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTargetSet
+      summary: Create a Target Set.
+      description: "Needs `deployments.manage` (elevated). The definition is decoded strictly (unknown fields at any depth are 400 endpoints.invalid_request), validated, normalized (sorted, de-duplicated, lower-case ids) and stored canonically (at most 64 KiB; request body at most 96 KiB). A definition without filters and without explicit includes selects every Device (`allDevices`), which makes every plan using it high impact. `ownerUserId` defaults to the caller. A new Target Set takes no `expectedVersion` (400). Names are unique (409 endpoints.target_set_name_taken). Audited with ids and counts only; emits `TargetSetChanged`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetSetWrite'}
+      responses:
+        '201':
+          description: The created Target Set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSet'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /target-sets/{id}:
+    get:
+      operationId: getTargetSet
+      summary: Get a Target Set.
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The Target Set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSet'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateTargetSet
+      summary: Replace a Target Set's name, description, owner and definition.
+      description: "Needs `deployments.manage` (elevated). PATCH replaces the full editable state (send every field); `expectedVersion` is required (400 when missing, 409 endpoints.version_conflict when stale). The definition rules of create apply. A Target Set used by a submitted, approved or scheduled Deployment cannot change (409 endpoints.target_set_in_use); an archived one cannot change either (409 endpoints.invalid_transition). Audited; emits `TargetSetChanged`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetSetWrite'}
+      responses:
+        '200':
+          description: The updated Target Set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSet'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /target-sets/{id}/archive:
+    post:
+      operationId: archiveTargetSet
+      summary: Archive a Target Set.
+      description: "Needs `deployments.manage` (elevated) and `expectedVersion`. Target Sets are never deleted. A Target Set used by a submitted, approved or scheduled Deployment cannot be archived (409 endpoints.target_set_in_use); draft plans that use it report `target_set_archived` as a blocking issue. Audited; emits `TargetSetChanged`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The archived Target Set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSet'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /target-sets/{id}/evaluate:
+    get:
+      operationId: evaluateTargetSet
+      summary: Evaluate a Target Set now (bounded preview).
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute`. Evaluates the stored definition over the live Devices of the endpoint provider in keyset batches of 1000: at most 50 000 Devices are scanned and at most `cap` (5000) matches kept. `truncated` means more Devices matched or existed, so counts are lower bounds; `incomplete` means a nested Directory Group or Asset location lookup was cut, so Devices may be missing. At most 10 example Devices; their names need `endpoints.view` (otherwise `redacted: true` and `name: null`). Nothing is stored; G3 snapshots targets when a ring starts."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The evaluation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSetEvaluation'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /target-sets/{id}/explain:
+    get:
+      operationId: explainTargetSet
+      summary: Explain why one Device is or is not in a Target Set.
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute`. Returns one result per clause that is set. An exclude always wins, an include matches regardless of filters, otherwise all set filters must match (AND; a list clause matches any of its values). A Device that is unknown, deleted or of another provider is 404. The Device name needs `endpoints.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: deviceId, in: query, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The explanation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetSetExplanation'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments:
+    get:
+      operationId: listDeployments
+      summary: List Deployment plans.
+      description: "Needs a session. Holders of `deployments.view`, `deployments.manage` or `deployments.execute` see every plan; everybody else sees only the plans they own or created. Newest first, keyset paged. An invalid status is 400."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/DeploymentStatus'}}
+        - {name: productId, in: query, schema: {type: string, format: uuid}}
+        - {name: versionId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentList'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createDeployment
+      summary: Create a draft Deployment plan.
+      description: "Needs `deployments.manage` (elevated); intent `uninstall` or `supersede: true` makes the plan high impact and additionally needs `deployments.high_impact` (403 endpoints.high_impact_required). `softwareVersionId` must name an existing Software Version (400) that is approved, of an approved product (409 endpoints.version_not_approved, endpoints.product_not_approved). `ownerUserId` defaults to the caller. A new plan takes no `expectedVersion` (400). Audited."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentWrite'}
+      responses:
+        '201':
+          description: The draft plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}:
+    get:
+      operationId: getDeployment
+      summary: Get a Deployment plan with rings, transitions, approvals, Change windows and structural validation.
+      description: "Needs a session. Holders of a deployments permission read every plan; the owner, the creator and approvers of the plan Approval read theirs; everybody else gets 404. `validation` holds only the structural checks (`evaluated: false`, no ring counts); `POST validate` evaluates the rings. `changes` maps the Change ids of the rings to reference, status and window (read with the minimal read scope)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentDetail'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateDeployment
+      summary: Change a draft plan's name, version, intent, supersede and owner.
+      description: "Needs `deployments.manage` (elevated) and `expectedVersion`; only in `draft` (409 endpoints.invalid_transition otherwise). Send every field; an empty `ownerUserId` keeps the owner. Making or keeping the plan high impact needs `deployments.high_impact` (403 endpoints.high_impact_required); the version gate of create applies (409). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentWrite'}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings:
+    post:
+      operationId: addDeploymentRing
+      summary: Append a ring to a draft plan.
+      description: "Needs `deployments.manage` (elevated) and the plan's `expectedVersion`; draft only (rings of other statuses are frozen by a database trigger). At most 10 rings. The first ring is the pilot: only it may set `noWindowRequired`; every other ring needs `changeId` naming an `approved` or `scheduled` Change whose window has not ended (409 endpoints.change_window_invalid). A ring on an all-Devices Target Set needs `deployments.high_impact` (403 endpoints.high_impact_required); an archived Target Set is 409 endpoints.target_set_archived. `maxTargets` defaults to and is capped at 5000. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentRingWrite'}
+      responses:
+        '201':
+          description: The plan and the new ring.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentRingResult'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/reorder:
+    post:
+      operationId: reorderDeploymentRings
+      summary: Reorder the rings of a draft plan.
+      description: "Needs `deployments.manage` (elevated) and `expectedVersion`; draft only. `ringIds` must list every ring exactly once in the new order (400 otherwise). A ring with `noWindowRequired` can only stay at position 1 (400). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentRingReorder'}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/rings/{ringId}:
+    patch:
+      operationId: updateDeploymentRing
+      summary: Replace a ring's name, Target Set and gate configuration.
+      description: "Needs `deployments.manage` (elevated) and the plan's `expectedVersion`; draft only. The rules of adding a ring apply. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentRingWrite'}
+      responses:
+        '200':
+          description: The plan and the ring.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentRingResult'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: removeDeploymentRing
+      summary: Remove a ring from a draft plan.
+      description: "Needs `deployments.manage` (elevated) and the plan's version as `?expectedVersion=` (400 when missing or not a number); draft only. The later rings move up one position. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ringId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: expectedVersion, in: query, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/validate:
+    post:
+      operationId: validateDeployment
+      summary: Validate a plan including a bounded evaluation of every ring.
+      description: "Needs `deployments.manage` (elevated). Takes no body and changes nothing. Returns blocking issues and warnings plus per-ring target counts (`evaluated: true`). Blocking: version_not_approved, product_not_approved, package_gate_closed (hash mismatch, revoked version, blocked product or publication after revoke), no_rings, target_set_archived, window_required, change_window_invalid, too_many_targets, approval_required. Warnings: package_not_published, no_targets, evaluation_incomplete, high_impact, overlapping_deployment (another submitted, approved or scheduled plan of the same product, `deploymentId` and the shared Device `count`; at most 10 plans compared)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The validation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentValidation'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/submit:
+    post:
+      operationId: submitDeployment
+      summary: Submit a high-impact draft plan for its plan Approval.
+      description: "Needs `deployments.manage` and `deployments.high_impact` (403 endpoints.high_impact_required) and `expectedVersion`; draft only. Only high-impact plans are submitted (409 endpoints.approval_not_required otherwise; they are scheduled directly). The plan must have no blocking issue except approval_required (409 endpoints.deployment_invalid with `issues`). Exactly one approver, a User or a Team (400 otherwise); the owner, creator, editors and submitter are excluded (400 endpoints.no_eligible_approver). The Approval (subject `deployment`) is bound to the plan hash `planSha256` over version, intent, supersede and every ring (gates, Change, cap and Target Set version). Moves the plan to `pending_approval`. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentSubmit'}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/schedule:
+    post:
+      operationId: scheduleDeployment
+      summary: Schedule a valid plan.
+      description: "Needs `deployments.manage` and `expectedVersion`. A plan that is not high impact is scheduled from `draft`. A high-impact plan additionally needs `deployments.high_impact` (403 endpoints.high_impact_required) and must be `approved` (409 endpoints.approval_required); when the plan hash differs from the approved one it is refused with 409 endpoints.plan_changed (submit again). Blocking issues are 409 endpoints.deployment_invalid with `issues`. The structural check and the plan hash are re-run inside the transaction. Emits `DeploymentScheduled`; audited. Nothing is executed in G2."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/cancel:
+    post:
+      operationId: cancelDeployment
+      summary: Cancel a plan.
+      description: "Needs `deployments.manage` (elevated), `expectedVersion` and a reason code. Allowed from every planning status except `cancelled` (409 endpoints.invalid_transition); a pending plan Approval is cancelled too. Plans are never deleted. Emits `DeploymentCancelled`; audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeploymentCancel'}
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Deployment'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '409': {$ref: '#/components/responses/DeploymentsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -10004,6 +10441,24 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    DeploymentsNotFound:
+      description: Target Set, Deployment, ring or Device not found (endpoints.not_found). Plans the caller may not read are also 404.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    DeploymentsInvalid:
+      description: "Invalid body, definition, reason code, approver, status filter, cursor or limit (endpoints.invalid_request, endpoints.no_eligible_approver, endpoints.invalid_cursor, endpoints.invalid_limit)."
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    DeploymentsConflict:
+      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), Target Set name taken (endpoints.target_set_name_taken) or used by a submitted, approved or scheduled plan (endpoints.target_set_in_use), a gate (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.target_set_archived, endpoints.change_window_invalid, endpoints.approval_required, endpoints.approval_not_required, endpoints.plan_changed) or blocking validation issues (endpoints.deployment_invalid, body DeploymentInvalidError with `issues`)."
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - {$ref: '#/components/schemas/Error'}
+              - {$ref: '#/components/schemas/DeploymentInvalidError'}
     TasksInvalid:
       description: Invalid input (tasks.invalid_request, tasks.assignee_invalid, tasks.invalid_cursor, tasks.invalid_limit).
       content:
@@ -12799,6 +13254,313 @@ components:
       required: [expectedVersion]
       properties:
         expectedVersion: {type: integer}
+    TargetGroup:
+      type: object
+      additionalProperties: false
+      required: [externalId]
+      properties:
+        externalId: {type: string, minLength: 1, maxLength: 200, description: 'External id of the provider Device Group (no spaces or control characters). Matches current provider memberships.'}
+        includeNested: {type: boolean, description: 'Also match Devices in Directory Groups nested below it (expanded through the Organization directory graph; `incomplete` when a lookup was cut).'}
+    TargetFilters:
+      type: object
+      additionalProperties: false
+      description: "Every set clause must match (AND). A list clause matches any of its values; manufacturer and model compare case-insensitively. Empty clauses are left out of the stored definition."
+      properties:
+        platform: {type: array, maxItems: 20, items: {type: string, enum: [windows, macos, ios, android, linux, other]}}
+        osVersionPrefix: {type: string, maxLength: 50, description: Case-insensitive prefix of the OS version.}
+        ownership: {type: array, maxItems: 20, items: {type: string, enum: [corporate, personal, unknown]}}
+        compliance: {type: array, maxItems: 20, items: {type: string, enum: [compliant, noncompliant, in_grace_period, unknown]}}
+        manufacturer: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 100}}
+        model: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 100}}
+        groups: {type: array, maxItems: 20, items: {$ref: '#/components/schemas/TargetGroup'}}
+        assetLocationIds: {type: array, maxItems: 20, items: {type: string, format: uuid}, description: Location of the Device's linked Asset (read through assets/public).}
+    TargetDefinition:
+      type: object
+      additionalProperties: false
+      description: "Closed structure, decoded strictly: unknown fields at any depth are refused (400). Normalized (sorted, de-duplicated, lower-case ids) and stored canonically, at most 64 KiB. An explicit include matches regardless of filters; an exclude always wins; a Device cannot be in both lists. Without filters and includes the definition selects every Device (`allDevices`, high impact)."
+      properties:
+        filters: {$ref: '#/components/schemas/TargetFilters'}
+        includeDeviceIds: {type: array, maxItems: 500, items: {type: string, format: uuid}}
+        excludeDeviceIds: {type: array, maxItems: 500, items: {type: string, format: uuid}}
+    TargetSet:
+      type: object
+      additionalProperties: false
+      required: [id, reference, name, description, ownerUserId, definition, allDevices, archivedAt, createdBy, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: 'TS-xxxxxx'}
+        name: {type: string}
+        description: {type: [string, "null"]}
+        ownerUserId: {type: string, format: uuid}
+        definition: {$ref: '#/components/schemas/TargetDefinition'}
+        allDevices: {type: boolean, description: The definition selects every Device; plans using it are high impact.}
+        archivedAt: {type: [string, "null"], format: date-time}
+        createdBy: {type: string, format: uuid}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TargetSetList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/TargetSet'}}
+        nextCursor: {type: [string, "null"], description: 'Empty or absent when there is no further page.'}
+    TargetSetWrite:
+      type: object
+      additionalProperties: false
+      required: [name, definition]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 150}
+        description: {type: string, maxLength: 1000}
+        ownerUserId: {type: string, format: uuid, description: Defaults to the caller.}
+        definition: {$ref: '#/components/schemas/TargetDefinition'}
+        expectedVersion: {type: integer, description: Required on PATCH; refused on create.}
+    TargetExample:
+      type: object
+      additionalProperties: false
+      required: [deviceId, name, redacted, osPlatform, complianceState]
+      properties:
+        deviceId: {type: string, format: uuid}
+        name: {type: [string, "null"], description: Null when redacted (caller lacks endpoints.view).}
+        redacted: {type: boolean}
+        osPlatform: {type: string}
+        complianceState: {type: string}
+    TargetSetEvaluation:
+      type: object
+      additionalProperties: false
+      required: [matched, scanned, truncated, incomplete, cap, byPlatform, byCompliance, evaluatedAt, examples]
+      properties:
+        matched: {type: integer, description: Matched Devices (at most `cap`; a lower bound when `truncated`).}
+        scanned: {type: integer, description: Live Devices looked at (at most 50 000).}
+        truncated: {type: boolean, description: More than `cap` Devices matched or more than 50 000 Devices exist.}
+        incomplete: {type: boolean, description: A nested group or Asset location lookup was cut; Devices may be missing.}
+        cap: {type: integer, description: Maximum kept matches and ring targets (5000).}
+        byPlatform: {type: object, additionalProperties: {type: integer}}
+        byCompliance: {type: object, additionalProperties: {type: integer}}
+        evaluatedAt: {type: string, format: date-time}
+        examples: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/TargetExample'}}
+    TargetClauseResult:
+      type: object
+      additionalProperties: false
+      required: [clause, result, reason]
+      properties:
+        clause: {type: string, enum: [platform, os_version_prefix, ownership, compliance, manufacturer, model, group, asset_location_id, include, exclude, all_devices]}
+        result: {type: string, enum: [matched, failed]}
+        reason: {type: [string, "null"], description: 'Why a clause failed: value_differs, value_missing, not_listed, not_member, no_asset_link, no_location.'}
+    TargetSetExplanation:
+      type: object
+      additionalProperties: false
+      required: [targetSetId, deviceId, deviceName, redacted, matched, incomplete, evaluatedAt, clauses]
+      properties:
+        targetSetId: {type: string, format: uuid}
+        deviceId: {type: string, format: uuid}
+        deviceName: {type: [string, "null"], description: Null when redacted (caller lacks endpoints.view).}
+        redacted: {type: boolean}
+        matched: {type: boolean}
+        incomplete: {type: boolean}
+        evaluatedAt: {type: string, format: date-time}
+        clauses: {type: array, items: {$ref: '#/components/schemas/TargetClauseResult'}}
+    DeploymentStatus:
+      type: string
+      enum: [draft, pending_approval, approved, scheduled, cancelled]
+      description: "Planning lifecycle: draft → pending_approval → approved → scheduled (high impact), draft → scheduled (otherwise), any planning status → cancelled. A rejected plan Approval returns the plan to draft with statusReason approval_rejected."
+    Deployment:
+      type: object
+      additionalProperties: false
+      required: [id, reference, name, softwareVersionId, productId, productName, productVersion, intent, supersede, status, statusReason, ownerUserId, createdBy, editors, highImpact, approvalId, submittedBy, submittedAt, planSha256, approvedAt, scheduledBy, scheduledAt, cancelledBy, cancelledAt, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string, description: 'DEP-xxxxxx'}
+        name: {type: string}
+        softwareVersionId: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        productName: {type: string}
+        productVersion: {type: string}
+        intent: {type: string, enum: [install, update, uninstall]}
+        supersede: {type: boolean}
+        status: {$ref: '#/components/schemas/DeploymentStatus'}
+        statusReason: {type: [string, "null"], description: 'approval_rejected or a cancel reason code.'}
+        ownerUserId: {type: string, format: uuid}
+        createdBy: {type: string, format: uuid}
+        editors: {type: array, items: {type: string, format: uuid}, description: Users who changed the plan; excluded as approvers.}
+        highImpact: {type: boolean, description: 'A ring on an all-Devices Target Set, intent uninstall or supersede. Needs deployments.high_impact and an approved plan Approval.'}
+        approvalId: {type: [string, "null"], format: uuid}
+        submittedBy: {type: [string, "null"], format: uuid}
+        submittedAt: {type: [string, "null"], format: date-time}
+        planSha256: {type: [string, "null"], description: 'Hash of the submitted (and later scheduled) plan; scheduling an approved plan with a different hash is refused (plan_changed).'}
+        approvedAt: {type: [string, "null"], format: date-time}
+        scheduledBy: {type: [string, "null"], format: uuid}
+        scheduledAt: {type: [string, "null"], format: date-time}
+        cancelledBy: {type: [string, "null"], format: uuid}
+        cancelledAt: {type: [string, "null"], format: date-time}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    DeploymentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Deployment'}}
+        nextCursor: {type: [string, "null"], description: 'Empty or absent when there is no further page.'}
+    DeploymentRing:
+      type: object
+      additionalProperties: false
+      required: [id, position, name, targetSetId, targetSetReference, targetSetName, approvalRequired, successThresholdPercent, minFreshEvidencePercent, soakMinutes, changeId, noWindowRequired, maxTargets]
+      properties:
+        id: {type: string, format: uuid}
+        position: {type: integer, minimum: 1, maximum: 10, description: 1 is the pilot ring.}
+        name: {type: string}
+        targetSetId: {type: string, format: uuid}
+        targetSetReference: {type: string}
+        targetSetName: {type: string}
+        approvalRequired: {type: boolean, description: Promotion into this ring needs an Approval (G3).}
+        successThresholdPercent: {type: integer, minimum: 1, maximum: 100}
+        minFreshEvidencePercent: {type: [integer, "null"], minimum: 1, maximum: 100}
+        soakMinutes: {type: integer, minimum: 0, maximum: 43200}
+        changeId: {type: [string, "null"], format: uuid, description: The Change whose maintenance window gates the ring.}
+        noWindowRequired: {type: boolean, description: Pilot ring only.}
+        maxTargets: {type: integer, minimum: 1, maximum: 5000}
+    DeploymentRingWrite:
+      type: object
+      additionalProperties: false
+      required: [name, targetSetId, successThresholdPercent, expectedVersion]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        targetSetId: {type: string, format: uuid}
+        approvalRequired: {type: boolean}
+        successThresholdPercent: {type: integer, minimum: 1, maximum: 100}
+        minFreshEvidencePercent: {type: [integer, "null"], minimum: 1, maximum: 100}
+        soakMinutes: {type: integer, minimum: 0, maximum: 43200}
+        changeId: {type: [string, "null"], format: uuid, description: 'An approved or scheduled Change whose window has not ended. Required unless noWindowRequired.'}
+        noWindowRequired: {type: boolean, description: 'Pilot ring (position 1) only; exclusive with changeId.'}
+        maxTargets: {type: [integer, "null"], minimum: 1, maximum: 5000, description: Defaults to 5000.}
+        expectedVersion: {type: integer, description: The plan's version.}
+    DeploymentRingResult:
+      type: object
+      additionalProperties: false
+      required: [deployment, ring]
+      properties:
+        deployment: {$ref: '#/components/schemas/Deployment'}
+        ring: {$ref: '#/components/schemas/DeploymentRing'}
+    DeploymentRingReorder:
+      type: object
+      additionalProperties: false
+      required: [ringIds, expectedVersion]
+      properties:
+        ringIds: {type: array, maxItems: 10, items: {type: string, format: uuid}}
+        expectedVersion: {type: integer}
+    DeploymentIssue:
+      type: object
+      additionalProperties: false
+      required: [code, blocking, ringId, count, deploymentId]
+      properties:
+        code: {type: string, enum: [version_not_approved, product_not_approved, package_gate_closed, package_not_published, no_rings, target_set_archived, window_required, change_window_invalid, approval_required, too_many_targets, no_targets, evaluation_incomplete, overlapping_deployment, high_impact]}
+        blocking: {type: boolean, description: Blocking issues prevent submission and scheduling; warnings never block.}
+        ringId: {type: [string, "null"], format: uuid}
+        count: {type: [integer, "null"], description: 'Matched Devices (too_many_targets) or shared Devices (overlapping_deployment).'}
+        deploymentId: {type: [string, "null"], format: uuid, description: The overlapping plan.}
+    DeploymentRingTargets:
+      type: object
+      additionalProperties: false
+      required: [ringId, matched, truncated, incomplete]
+      properties:
+        ringId: {type: string, format: uuid}
+        matched: {type: integer}
+        truncated: {type: boolean}
+        incomplete: {type: boolean}
+    DeploymentValidation:
+      type: object
+      additionalProperties: false
+      required: [valid, highImpact, evaluated, validatedAt, issues, rings]
+      properties:
+        valid: {type: boolean, description: No blocking issue.}
+        highImpact: {type: boolean}
+        evaluated: {type: boolean, description: 'True when the rings were evaluated (POST validate); the detail read runs only the structural checks.'}
+        validatedAt: {type: string, format: date-time}
+        issues: {type: array, items: {$ref: '#/components/schemas/DeploymentIssue'}}
+        rings: {type: array, items: {$ref: '#/components/schemas/DeploymentRingTargets'}}
+    DeploymentTransition:
+      type: object
+      additionalProperties: false
+      required: [fromStatus, toStatus, operation, reason, planSha256, actorUserId, actorSystem, createdAt]
+      properties:
+        fromStatus: {oneOf: [{$ref: '#/components/schemas/DeploymentStatus'}, {type: "null"}]}
+        toStatus: {$ref: '#/components/schemas/DeploymentStatus'}
+        operation: {type: string, description: 'created, updated, ring_added, ring_updated, ring_removed, rings_reordered, submitted, approved, approval_rejected, scheduled, cancelled.'}
+        reason: {type: [string, "null"]}
+        planSha256: {type: [string, "null"]}
+        actorUserId: {type: [string, "null"], format: uuid}
+        actorSystem: {type: [string, "null"]}
+        createdAt: {type: string, format: date-time}
+    DeploymentApprovalState:
+      type: object
+      additionalProperties: false
+      required: [id, status, approverUserId, approverTeamId, decidedByUserId, decidedAt]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [pending, approved, rejected, cancelled]}
+        approverUserId: {type: [string, "null"], format: uuid}
+        approverTeamId: {type: [string, "null"], format: uuid}
+        decidedByUserId: {type: [string, "null"], format: uuid}
+        decidedAt: {type: [string, "null"], format: date-time}
+    DeploymentChangeWindow:
+      type: object
+      additionalProperties: false
+      required: [id, reference, status, windowStart, windowEnd]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string}
+        status: {type: string}
+        windowStart: {type: [string, "null"], format: date-time}
+        windowEnd: {type: [string, "null"], format: date-time}
+    DeploymentDetail:
+      allOf:
+        - {$ref: '#/components/schemas/Deployment'}
+        - type: object
+          required: [rings, transitions, approvals, changes, validation]
+          properties:
+            rings: {type: array, maxItems: 10, items: {$ref: '#/components/schemas/DeploymentRing'}}
+            transitions: {type: array, items: {$ref: '#/components/schemas/DeploymentTransition'}}
+            approvals: {type: array, items: {$ref: '#/components/schemas/DeploymentApprovalState'}}
+            changes: {type: object, additionalProperties: {$ref: '#/components/schemas/DeploymentChangeWindow'}, description: Keyed by Change id.}
+            validation: {$ref: '#/components/schemas/DeploymentValidation'}
+    DeploymentWrite:
+      type: object
+      additionalProperties: false
+      required: [name, softwareVersionId, intent]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 150}
+        softwareVersionId: {type: string, format: uuid}
+        intent: {type: string, enum: [install, update, uninstall]}
+        supersede: {type: boolean, description: High impact.}
+        ownerUserId: {type: string, format: uuid, description: 'Defaults to the caller on create; empty keeps the owner on PATCH.'}
+        expectedVersion: {type: integer, description: Required on PATCH; refused on create.}
+    DeploymentSubmit:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      description: Exactly one of approverUserId and approverTeamId.
+      properties:
+        approverUserId: {type: [string, "null"], format: uuid}
+        approverTeamId: {type: [string, "null"], format: uuid}
+        expectedVersion: {type: integer}
+    DeploymentCancel:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {type: string, enum: [superseded, no_longer_needed, plan_error, security_risk, other]}
+        expectedVersion: {type: integer}
+    DeploymentInvalidError:
+      type: object
+      additionalProperties: false
+      required: [error, issues]
+      description: 409 endpoints.deployment_invalid with the blocking issues.
+      properties:
+        error: {$ref: '#/components/schemas/Error/properties/error'}
+        issues: {type: array, items: {$ref: '#/components/schemas/DeploymentIssue'}}
     SoftwareVersionRegister:
       type: object
       additionalProperties: false
