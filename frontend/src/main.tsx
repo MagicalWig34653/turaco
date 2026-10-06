@@ -8,6 +8,7 @@ import './platform/ui/workspace.css';
 import './platform/ui/collections.css';
 import './modules/changes/changes.css';
 import './modules/software/software.css';
+import './modules/deployments/deployments.css';
 import './modules/tickets/report-problem.css';
 // Screen refinements follow the shared foundation so equal-specificity rules are predictable.
 import './platform/ui/shell/shell.css';

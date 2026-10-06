@@ -19,7 +19,9 @@
 | `ChangeScheduledFanOut` | 1 | changes (internal) | Continuation of the change.scheduled notification fan-out to a large audience (the next chunk of recipients). Payload: changeId, after (the last recipient id already notified). |
 | `ChangeStarted` | 1 | changes | A scheduled Change started execution. Payload: changeId. |
 | `ChangeSubmitted` | 1 | changes | A draft Change was submitted for assessment. Payload: changeId, kind, risk. |
+| `DeploymentCancelled` | 1 | endpoints | A Deployment plan was cancelled with a reason code. Payload: deploymentId, reason, previousStatus. |
 | `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |
+| `DeploymentScheduled` | 1 | endpoints | A valid Deployment plan was scheduled (high-impact plans only after their plan Approval, with an unchanged plan). Payload: deploymentId, versionId, productId, intent, highImpact, ringCount. |
 | `DeploymentStarted` | 1 | endpoint | A deployment began target execution. |
 | `DeploymentTargetFailed` | 1 | endpoint | A deployment target attempt failed. |
 | `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
@@ -55,6 +57,7 @@
 | `SoftwareVersionApproved` | 1 | endpoints | A Software Version was approved, bound to its installer hash. Payload: versionId, productId, installerSha256. |
 | `SoftwareVersionRevoked` | 1 | endpoints | The approval of a Software Version was revoked. Payload: versionId, productId, reason. |
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
+| `TargetSetChanged` | 1 | endpoints | A Target Set was created, changed or archived. Payload: targetSetId, operation (created|updated|archived), version, allDevices. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |
 | `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |

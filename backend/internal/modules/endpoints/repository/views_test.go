@@ -25,6 +25,8 @@ type fakeDir struct {
 	cutNesting     bool
 	cutMembers     bool
 	keys           map[string]bool // provider keys the views asked for
+	// onGroups runs on every group lookup by external id (tests interleave a change there).
+	onGroups func()
 }
 
 func (f *fakeDir) key(k string) {
@@ -45,6 +47,9 @@ func (f *fakeDir) UsersWithIdentity(_ context.Context, key string, users []strin
 
 func (f *fakeDir) GroupsByExternalIDs(_ context.Context, key string, exts []string) ([]application.DirectoryGroup, bool, error) {
 	f.key(key)
+	if f.onGroups != nil {
+		f.onGroups()
+	}
 	var out []application.DirectoryGroup
 	for _, g := range f.groups {
 		for _, x := range exts {

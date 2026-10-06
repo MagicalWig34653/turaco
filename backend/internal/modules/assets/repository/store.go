@@ -349,6 +349,27 @@ func validUUIDs(in []string) []string {
 	return out
 }
 
+// Locations returns assetID -> location id for the assets among ids that have a location.
+func (r *Repository) Locations(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if assetIDs = validUUIDs(assetIDs); len(assetIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT id::text, location_id::text FROM assets.assets WHERE id = ANY($1::uuid[]) AND location_id IS NOT NULL`, assetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("asset locations: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var asset, loc string
+		if err := rows.Scan(&asset, &loc); err != nil {
+			return nil, fmt.Errorf("asset locations: scan: %w", err)
+		}
+		out[asset] = loc
+	}
+	return out, rows.Err()
+}
+
 // MaxHeldAssetsRows bounds AssetsHeldByUsers whatever the caller asks for.
 const MaxHeldAssetsRows = 5000
 

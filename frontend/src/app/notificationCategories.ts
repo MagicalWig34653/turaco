@@ -95,6 +95,8 @@ export function registerModuleNotifications(): void {
     'software_version',
     (id) => `/software/versions/${encodeURIComponent(id)}`,
   );
+  registerNotificationLink('deployment', (id) => `/deployments/${encodeURIComponent(id)}`);
+  registerNotificationLink('target_set', (id) => `/target-sets/${encodeURIComponent(id)}`);
   registerNotificationLink('change', (id) => `/changes/${encodeURIComponent(id)}`);
   registerNotificationLink('major_incident', (id) => `/incidents/${encodeURIComponent(id)}`);
   registerNotificationLink('ticket', (id) => `/support/${encodeURIComponent(id)}`);

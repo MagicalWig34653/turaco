@@ -66,6 +66,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/devices/{id}/management/diff", mgmt, h.deviceDiff)
 	route("GET /api/v1/directory-groups/{id}/management/diff", mgmt, h.groupDiff)
 	registerSoftware(route, auth, h)
+	registerDeployments(route, auth, h)
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -102,7 +103,9 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), AssetsView: p.Has(permAssetsView), ManagementView: p.Has(permMgmtView), DirectoryView: p.Has(permDirView),
-		SoftwareView: p.Has(permSoftwareView), SoftwareApprove: p.Has(permSoftwareApprove), SoftwarePackage: p.Has(permSoftwarePackage)}
+		SoftwareView: p.Has(permSoftwareView), SoftwareApprove: p.Has(permSoftwareApprove), SoftwarePackage: p.Has(permSoftwarePackage),
+		DeploymentsView: p.Has(permDeploymentsView), DeploymentsManage: p.Has(permDeploymentsManage), DeploymentsExecute: p.Has(permDeploymentsExecute),
+		DeploymentsHighImpact: p.Has(permDeploymentsHighImpact), ChangesRead: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

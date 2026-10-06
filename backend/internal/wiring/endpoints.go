@@ -4,15 +4,21 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
+	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
+	approvalspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/public"
+	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
+	changespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/public"
 	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 	endpointsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
@@ -121,8 +127,86 @@ func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool, s
 	org := orgrepository.New(pool)
 	assets := assetspublic.New(Assets(pool))
 	dir := directoryLookup{graph: orgpublic.NewDirectoryGraph(org), names: orgpublic.NewWorkDirectory(org)}
+	approvals := deploymentApprovals{a: approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(org), nil))}
+	approvers := deploymentApprovers{perms: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)), teams: orgpublic.NewWorkDirectory(org)}
 	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).
-		WithViews(dir, assets).WithSoftware(software, softwareSync)
+		WithViews(dir, assets).WithSoftware(software, softwareSync).
+		WithDeployments(approvals, changeWindows{c: changespublic.NewChanges(Changes(pool))}, assets).
+		WithDeploymentApprovers(approvers)
+}
+
+// deploymentApprovers answers who may approve plans: effective permissions (platform/authorization/roles) and
+// current Team memberships (Organization work directory).
+type deploymentApprovers struct {
+	perms *roles.Evaluator
+	teams *orgpublic.WorkDirectory
+}
+
+func (x deploymentApprovers) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
+	return x.perms.Permissions(ctx, userID)
+}
+
+func (x deploymentApprovers) TeamMemberIDs(ctx context.Context, teamID string) ([]string, error) {
+	return x.teams.CurrentMemberIDs(ctx, teamID)
+}
+
+func (x deploymentApprovers) TeamIDsOfUser(ctx context.Context, userID string) ([]string, error) {
+	return x.teams.CurrentTeamIDs(ctx, userID)
+}
+
+// deploymentApprovals adapts the Approvals contract to Deployment planning (subject deployment).
+type deploymentApprovals struct{ a *approvalspublic.Approvals }
+
+func (x deploymentApprovals) RequestInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver endpointsapp.Approver, excluded []string) (string, error) {
+	var by *string
+	if actor.UserID != "" {
+		u := actor.UserID
+		by = &u
+	}
+	id, err := x.a.RequestInTx(ctx, tx, approvalspublic.Caller{Actor: actor, CorrelationID: correlationID}, approvalspublic.Request{
+		SubjectType: endpointsapp.DeploymentApprovalSubject, SubjectID: subjectID, SubjectLabel: label, StepIndex: 0,
+		ApproverUserID: approver.UserID, ApproverTeamID: approver.TeamID, ExcludedUserIDs: excluded, RequestedBy: by,
+	})
+	var inv *approvalspublic.InvalidInputError
+	if errors.Is(err, approvalspublic.ErrApproverInvalid) || errors.As(err, &inv) {
+		return "", endpointsapp.ErrNoEligibleApprover
+	}
+	return id, err
+}
+
+func (x deploymentApprovals) CancelBySubjectInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID string) error {
+	_, err := x.a.CancelBySubjectInTx(ctx, tx, approvalspublic.Caller{Actor: actor, CorrelationID: correlationID}, endpointsapp.DeploymentApprovalSubject, subjectID)
+	return err
+}
+
+func (x deploymentApprovals) ForSubject(ctx context.Context, subjectID string) ([]endpointsapp.DeploymentApprovalInfo, error) {
+	list, err := x.a.ForSubject(ctx, endpointsapp.DeploymentApprovalSubject, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]endpointsapp.DeploymentApprovalInfo, 0, len(list))
+	for _, a := range list {
+		out = append(out, endpointsapp.DeploymentApprovalInfo{ID: a.ID, Status: a.Status, ApproverUserID: a.ApproverUserID,
+			ApproverTeamID: a.ApproverTeamID, DecidedByUserID: a.DecidedByUserID, DecidedAt: a.DecidedAt})
+	}
+	return out, nil
+}
+
+// changeWindows reads Changes with details so Deployment planning can apply the Changes read rule (requester,
+// owner) to the caller; it passes on reference, status, window, requester and owner only (never the title).
+type changeWindows struct{ c *changespublic.Changes }
+
+func (x changeWindows) Lookup(ctx context.Context, ids []string) (map[string]endpointsapp.ChangeWindow, error) {
+	found, err := x.c.Lookup(ctx, ids, changespublic.ReadScope{IncludeDetails: true})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]endpointsapp.ChangeWindow, len(found))
+	for id, c := range found {
+		out[id] = endpointsapp.ChangeWindow{ID: c.ID, Reference: c.Reference, Status: c.Status, RequesterID: c.RequesterID, OwnerID: c.OwnerID,
+			WindowStart: c.WindowStart, WindowEnd: c.WindowEnd}
+	}
+	return out, nil
 }
 
 // SoftwareNotifications builds the consumer that tells software.approve holders about approval requests.

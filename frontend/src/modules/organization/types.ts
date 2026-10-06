@@ -29,3 +29,11 @@ export type Team = {
   active: boolean;
   updatedAt: string;
 };
+
+export type Location = {
+  id: string;
+  name: string;
+  externalKey?: string | null;
+  active: boolean;
+  updatedAt: string;
+};

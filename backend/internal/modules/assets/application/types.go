@@ -221,6 +221,8 @@ type Store interface {
 	UserHolders(ctx context.Context, assetIDs []string) (map[string]string, error)
 	// AssetsHeldByUsers returns userID -> asset ids currently assigned to the User, at most limit assets in total.
 	AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error)
+	// Locations returns assetID -> location id for the given assets that have a location.
+	Locations(ctx context.Context, assetIDs []string) (map[string]string, error)
 	// InTx runs fn in one transaction.
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 }

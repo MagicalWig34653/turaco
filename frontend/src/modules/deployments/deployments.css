@@ -1,0 +1,520 @@
+/* F9 G2 Target Sets and Deployment planning. Semantic tokens only; status meaning comes from badges. */
+.deployments-workspace {
+  min-width: 0;
+}
+.deployments-muted {
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.deployments-mono,
+.deployments-ref {
+  font-family: var(--font-mono);
+}
+.deployments-ref {
+  color: var(--text-secondary);
+  font-size: var(--type-xs);
+}
+.deployments-name-cell {
+  display: inline-grid;
+  gap: 2px;
+  text-align: start;
+}
+.deployments-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 16px;
+}
+.deployments-card,
+.deployments-lifecycle {
+  min-width: 0;
+  margin: 0;
+  padding: 24px;
+  border: 1px solid var(--border-token);
+  border-radius: 14px;
+  background: var(--surface-base);
+}
+.deployments-card h2,
+.deployments-lifecycle h2 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.deployments-card h3 {
+  margin: 16px 0 8px;
+  font-size: var(--type-sm);
+  font-weight: 650;
+}
+.deployments-card-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.deployments-lifecycle {
+  margin-bottom: 24px;
+}
+.deployments-lifecycle ol {
+  display: flex;
+  margin: 0;
+  padding: 0 0 6px;
+  overflow-x: auto;
+  list-style: none;
+}
+.deployments-step {
+  flex: 1;
+  min-width: 104px;
+  padding: 12px 12px 0 0;
+  border-top: 2px solid var(--border-token);
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.deployments-step > span:first-child {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--type-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.deployments-step-done {
+  border-color: var(--state-success);
+  color: var(--text-primary);
+}
+.deployments-step-current {
+  border-color: var(--state-warning);
+  color: var(--text-primary);
+}
+.deployments-step-failed {
+  border-color: var(--state-critical);
+  color: var(--state-critical);
+}
+.deployments-step[aria-current='step'] {
+  font-weight: 700;
+}
+.deployments-step-button {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.deployments-step-button:disabled {
+  cursor: default;
+}
+.deployments-action-bar,
+.deployments-wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.deployments-wizard-actions {
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+.deployments-disabled-note {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.deployments-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.deployments-detail-main,
+.deployments-detail-side {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.deployments-fieldset {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.deployments-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.deployments-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0 16px;
+}
+.deployments-gate,
+.deployments-checks {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+}
+.deployments-gate legend,
+.deployments-checks legend {
+  padding: 0 4px;
+  font-weight: 650;
+}
+.deployments-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+/* Filter rows */
+.deployments-filter-rows {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-filter-row {
+  padding: 12px 14px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.deployments-filter-row-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.deployments-filter-row-head > strong {
+  flex: 1;
+}
+.deployments-filter-and {
+  color: var(--text-secondary);
+  font-size: var(--type-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.deployments-filter-row:first-child .deployments-filter-and {
+  visibility: hidden;
+}
+.deployments-group-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-group-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.deployments-group-list li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Pickers and chips */
+.deployments-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.deployments-picker-row > .field {
+  flex: 1 1 220px;
+}
+.deployments-picker-row > .btn {
+  margin-bottom: 14px;
+}
+.deployments-picker-results {
+  display: grid;
+  max-height: 220px;
+  margin: 0 0 12px;
+  padding: 4px;
+  overflow: auto;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+.deployments-picker-option {
+  display: grid;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.deployments-picker-option:hover,
+.deployments-picker-option:focus-visible {
+  background: var(--surface-muted-token);
+}
+.deployments-picker-option small {
+  color: var(--text-secondary);
+}
+.deployments-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.deployments-chip {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border-token);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  font-size: var(--type-sm);
+}
+.deployments-chip > span,
+.deployments-chip > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deployments-chip button {
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.deployments-chip button:hover,
+.deployments-chip button:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-muted-token);
+}
+
+/* Evaluation preview */
+.deployments-big-number {
+  margin: 0 0 12px;
+}
+.deployments-big-number strong {
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.deployments-breakdowns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+.deployments-bars dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.deployments-bars dl > div {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+  align-items: center;
+}
+.deployments-bars dt {
+  font-size: var(--type-sm);
+}
+.deployments-bars dd {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+}
+.deployments-bar {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted-token);
+}
+.deployments-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-secondary);
+}
+.deployments-count {
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.deployments-examples {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+.deployments-examples li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+.deployments-clauses {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+}
+.deployments-clauses th,
+.deployments-clauses td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-token);
+  text-align: start;
+}
+.deployments-explain-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Ring timeline */
+.deployments-timeline {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-ring {
+  position: relative;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.deployments-ring::before {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  left: 17px;
+  width: 2px;
+  background: var(--border-token);
+  content: '';
+}
+.deployments-ring:last-child::before {
+  display: none;
+}
+.deployments-ring[draggable='true'] .deployments-ring-card {
+  cursor: grab;
+}
+.deployments-ring-dragging .deployments-ring-card {
+  opacity: 0.6;
+}
+.deployments-ring-marker {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 2px solid var(--border-token);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.deployments-ring-card {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+.deployments-ring-card header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.deployments-ring-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.deployments-ring-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.deployments-ring-facts,
+.deployments-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 12px 0 0;
+}
+.deployments-ring-facts dt,
+.deployments-facts dt {
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.deployments-ring-facts dd,
+.deployments-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.deployments-window {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.deployments-issues,
+.deployments-approvals,
+.deployments-history,
+.deployments-ring-counts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-ring-issues {
+  margin-top: 12px;
+}
+.deployments-ring-counts li {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+.deployments-ring-counts strong {
+  font-variant-numeric: tabular-nums;
+}
+.deployments-history li {
+  padding-left: 12px;
+  border-left: 2px solid var(--border-token);
+}
+
+@media (max-width: 900px) {
+  .deployments-detail-grid,
+  .deployments-two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .deployments-card,
+  .deployments-lifecycle {
+    padding: 18px;
+  }
+  .deployments-ring-facts,
+  .deployments-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

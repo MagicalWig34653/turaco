@@ -258,6 +258,11 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if err := d.Register("ApprovalDecided", "planning.approval", wiring.Planning(pool).OnApprovalDecided); err != nil {
 		return err
 	}
+	// Deployment plan Approvals (F9 G2): the decision moves a pending plan to approved or back to draft.
+	if err := d.Register("ApprovalDecided", "endpoints.deployment-approval",
+		wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).OnApprovalDecided); err != nil {
+		return err
+	}
 	if err := d.Register(planningapp.EventStatusChanged, "planning.notify-state", wiring.PlanningNotifications(pool, notifier).OnStatusChanged); err != nil {
 		return err
 	}

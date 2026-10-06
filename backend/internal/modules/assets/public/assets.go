@@ -188,3 +188,9 @@ func (a *Assets) UserHolders(ctx context.Context, assetIDs []string) (map[string
 func (a *Assets) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit int) (map[string][]string, error) {
 	return a.svc.AssetsHeldByUsers(ctx, userIDs, limit)
 }
+
+// Locations returns assetID -> location id for the assets among ids (at most 1000) that have a location. The
+// caller decides who may see it.
+func (a *Assets) Locations(ctx context.Context, assetIDs []string) (map[string]string, error) {
+	return a.svc.Locations(ctx, assetIDs)
+}

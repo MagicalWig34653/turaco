@@ -54,6 +54,12 @@ export type RouteId =
   | 'softwarePackages'
   | 'softwareVersionNew'
   | 'softwareVersionDetail'
+  | 'deployments'
+  | 'deploymentNew'
+  | 'deploymentDetail'
+  | 'targetSets'
+  | 'targetSetNew'
+  | 'targetSetDetail'
   | 'assetNew'
   | 'assetDetail'
   | 'stock'
@@ -125,6 +131,13 @@ export type AppRoute = {
 };
 
 const softwareViewPermissions = ['software.view', 'software.approve', 'software.package'] as const;
+
+const deploymentReadPermissions = [
+  'deployments.view',
+  'deployments.manage',
+  'deployments.execute',
+  'deployments.approve',
+] as const;
 
 const taskViewPermissions = ['tasks.view', 'tasks.manage', 'tasks.work'] as const;
 
@@ -285,6 +298,46 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/software/versions/:id',
     titleKey: 'software.version.detail',
     requiresAny: softwareViewPermissions,
+  },
+  // The plan list answers every signed-in User with the plans they own, created or approve; the
+  // entry is shown to deployments and software users.
+  {
+    id: 'deployments',
+    pattern: '/deployments',
+    titleKey: 'nav.deployments',
+    requiresAny: [
+      ...deploymentReadPermissions,
+      'deployments.high_impact',
+      ...softwareViewPermissions,
+    ],
+    nav: 'endpoints',
+  },
+  {
+    id: 'deploymentNew',
+    pattern: '/deployments/new',
+    titleKey: 'deployments.wizard.title',
+    requires: ['deployments.manage'],
+  },
+  // Owners, creators and approvers read their plan without a deployments permission (404 otherwise).
+  { id: 'deploymentDetail', pattern: '/deployments/:id', titleKey: 'deployments.plan.title' },
+  {
+    id: 'targetSets',
+    pattern: '/target-sets',
+    titleKey: 'nav.targetSets',
+    requiresAny: deploymentReadPermissions,
+    nav: 'endpoints',
+  },
+  {
+    id: 'targetSetNew',
+    pattern: '/target-sets/new',
+    titleKey: 'deployments.ts.newTitle',
+    requires: ['deployments.manage'],
+  },
+  {
+    id: 'targetSetDetail',
+    pattern: '/target-sets/:id',
+    titleKey: 'deployments.ts.detailTitle',
+    requiresAny: deploymentReadPermissions,
   },
   { id: 'myChanges', pattern: '/changes/mine', titleKey: 'changes.mine', nav: 'main' },
   {
