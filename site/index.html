@@ -334,9 +334,9 @@
           <span aria-hidden="true">↳</span>
           <p>
             <strong>A project, not a promise of production readiness.</strong>
-            Intune uses a fake adapter; advisory ingestion is
-            manual/import-based. Live Graph and advisory feeds, the Autotask
-            REST client and webhook are not implemented.
+            Intune uses a fake adapter; advisories come from the NVD and
+            CISA KEV feeds or manual import. The live Graph client, the
+            Autotask REST client and webhook are not implemented.
             <a href="docs/product/current-status.html"
               >Read the full implementation status.</a
             >
@@ -522,8 +522,8 @@
           </svg>
           <p>
             * Connector / Endpoint: separate trust boundaries. Intune: fake
-            adapter; advisories: manual/import. Live Graph, advisory feeds and
-            Autotask REST are planned.
+            adapter; advisories: NVD and CISA KEV feeds or manual import. Live
+            Graph and Autotask REST are planned.
           </p>
         </div>
       </section>
@@ -607,7 +607,7 @@
             <h3>Security &amp; IT briefing</h3>
             <p>
               Advisories, findings, remediation tracking and the computed IT
-              briefing. Live advisory feeds remain.
+              briefing. NVD and CISA KEV feeds are implemented; OSV and MSRC remain.
             </p>
           </li>
           <li>
