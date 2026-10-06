@@ -26,6 +26,6 @@ Every privileged command includes command ID, agent/device/tenant identity, capa
 
 ## Remote access
 
-Remote access is delivered by a Remote Access Provider (HopToDesk first), not by either agent ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)). Neither the Connector Agent nor the Endpoint Agent carries remote-desktop, terminal or file-transfer traffic. The provider's endpoint client and relay are a separate third-party trust boundary; the client is version-pinned, signature-verified and installed as ordinary managed software.
+Remote access is delivered by a Remote Access Provider (HopToDesk, RustDesk, AnyDesk as first providers), not by either agent ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)). Neither the Connector Agent nor the Endpoint Agent carries remote-desktop, terminal or file-transfer traffic. The provider's endpoint client and relay are a separate third-party trust boundary; the client is version-pinned, signature-verified and installed as ordinary managed software.
 
 Turaco still enforces the session rules: identity of the initiating User, a dedicated permission, MFA/step-up and policy evaluation, user consent by default, unattended access only for Devices named by an explicit unattended-access policy record and only when the provider supports per-session expiring credentials, a visible session indicator, session audit and no reusable or permanent session token. A native provider would need its own ADR and threat model.

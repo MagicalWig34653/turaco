@@ -55,7 +55,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 
 `backend/internal/integrations/` translates external systems into public domain/application contracts. Vendor SDK/types do not leak across the domain model.
 
-Each provider kind has its own port that names the capabilities the owning domain needs; there is no shared generic provider or plugin framework. Planned ports: Remote Access Provider (owner Remote Access, HopToDesk first, ADR-0026), Software Management Provider (owner Endpoint, IntuneGet first, ADR-0027), presence sources such as Microsoft 365 and HR systems (owner Workforce Presence, ADR-0028) and AI Providers (owner platform AI runtime, ADR-0029).
+Each provider kind has its own port that names the capabilities the owning domain needs; there is no shared generic provider or plugin framework. Planned ports: Remote Access Provider (owner Remote Access, HopToDesk, RustDesk and AnyDesk as first providers, ADR-0026), Software Management Provider (owner Endpoint, IntuneGet first, ADR-0027), presence sources such as Microsoft 365 and HR systems (owner Workforce Presence, ADR-0028) and AI Providers (owner platform AI runtime, ADR-0029).
 
 ## Communication
 

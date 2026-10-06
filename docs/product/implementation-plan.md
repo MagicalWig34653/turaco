@@ -6,6 +6,10 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 
 **Plan revision 2026-10-03 (after F6 slice 1):** F9 and F10 were re-scoped to integrate specialist providers instead of building a patch engine and a remote-desktop transport ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md), [ADR-0027](../decisions/ADR-0027-software-management-providers.md)); F11 Workforce Presence ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)) and F12 Turaco AI ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)) were added; Endpoint Agent management moved to "Later / optional". F0–F8 are unchanged. Earlier sessions planned F9 as "Endpoint Management" (Endpoint Agent command transport and a native WinGet provider) and F10 as a Turaco-built "Remote Support" subsystem; that plan is superseded. The F-number order is not a commitment; F9–F12 sequencing is an open product decision.
 
+## Delivery status (2026-10-06)
+
+F0–F8 are implemented with documented gaps; [current status](current-status.md) is authoritative. Remaining gaps inside those phases: Autotask REST client and webhook (F5), live Microsoft Graph client (F6), live advisory feeds (F8), real AD verification (F1). The UI design pass (themes, shell, workbench screens) runs between F8 and F9. F9–F12 are planned.
+
 ## F0 — Repository Foundation
 
 Already scaffolded:
@@ -136,10 +140,10 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F10 — Remote Access (provider-based)
 
-[ADR-0026](../decisions/ADR-0026-remote-access-providers.md). Turaco owns authorization, audit, context and session records; the provider (HopToDesk first) owns the transport. Do not build a remote-desktop transport.
+[ADR-0026](../decisions/ADR-0026-remote-access-providers.md). Turaco owns authorization, audit, context and session records; the provider (HopToDesk, RustDesk and AnyDesk as first providers) owns the transport. Do not build a remote-desktop transport.
 
-1. threat model of the chosen provider and verification of its integration surface,
-2. Remote Access Provider port and HopToDesk connector (device mapping, session start with one-time launch handle, session records),
+1. threat model per provider (HopToDesk, RustDesk, AnyDesk) and verification of each integration surface (API, per-session credentials, device identity, session records); a provider whose surface is insufficient ships with reduced capabilities (attended only) or not at all,
+2. Remote Access Provider port and connectors for the first providers (HopToDesk, RustDesk, AnyDesk), one connector per provider (device mapping, session start with one-time launch handle, session records),
 3. Remote Access Session lifecycle with Ticket/Device context and audit,
 4. attended sessions with user consent,
 5. unattended-access policy records and unattended sessions only if the provider meets ADR-0026's constraints,
