@@ -1,0 +1,127 @@
+{
+  "realm": "turaco-lab",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "groups": [
+    {
+      "name": "GRP-IT",
+      "path": "/GRP-IT",
+      "subGroups": [
+        { "name": "GRP-IT-Helpdesk", "path": "/GRP-IT/GRP-IT-Helpdesk" }
+      ]
+    },
+    { "name": "GRP-Finance", "path": "/GRP-Finance" },
+    { "name": "GRP-All-Staff", "path": "/GRP-All-Staff" }
+  ],
+  "clientScopes": [
+    {
+      "name": "turaco-groups",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "turaco",
+      "name": "Turaco (lab)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "lab-only-turaco-oidc-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*", "http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:5173", "http://localhost:8080"],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "email",
+        "roles",
+        "turaco-groups"
+      ],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice.admin",
+      "email": "alice.admin@lab.turaco.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Lab-Only-Passw0rd!",
+          "temporary": false
+        }
+      ],
+      "groups": ["/GRP-IT", "/GRP-All-Staff"]
+    },
+    {
+      "username": "bob.helpdesk",
+      "email": "bob.helpdesk@lab.turaco.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Bob",
+      "lastName": "Helpdesk",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Lab-Only-Passw0rd!",
+          "temporary": false
+        }
+      ],
+      "groups": ["/GRP-IT/GRP-IT-Helpdesk", "/GRP-All-Staff"]
+    },
+    {
+      "username": "dieter.finance",
+      "email": "dieter.finance@lab.turaco.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Dieter",
+      "lastName": "Finanz",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Lab-Only-Passw0rd!",
+          "temporary": false
+        }
+      ],
+      "groups": ["/GRP-Finance", "/GRP-All-Staff"]
+    },
+    {
+      "username": "jonas.sales",
+      "email": "jonas.sales@lab.turaco.test",
+      "emailVerified": true,
+      "enabled": false,
+      "firstName": "Jonas",
+      "lastName": "Ehemalig",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Lab-Only-Passw0rd!",
+          "temporary": false
+        }
+      ],
+      "groups": ["/GRP-All-Staff"]
+    }
+  ]
+}

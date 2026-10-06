@@ -33,6 +33,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 - [Optional Codex Review](development/codex-review.md)
 - [Local Development](development/local-development.md)
 - [Integration sandboxes and demo access](development/integration-sandboxes.md)
+- [Lab services: Mailpit, Samba AD, Keycloak](development/lab-services.md)
 - [Public Website Development](development/website.md)
 - [Claude Code Cloud Development](development/cloud-development.md)
 - [Repository Bootstrap](development/repository-bootstrap.md)

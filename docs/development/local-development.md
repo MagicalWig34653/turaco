@@ -70,7 +70,7 @@ The shared GoLand run configurations live in `.idea/runConfigurations/`:
 | Turaco Web Tests | frontend unit tests |
 | Turaco Quality Gate (make check) | the full local gate |
 
-Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` and `EMAIL_BASE_URL=http://localhost:5173` on the worker at a local test relay such as MailHog.
+Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` and `EMAIL_BASE_URL=http://localhost:5173` on the worker at a local test relay; the optional [lab services](lab-services.md) (`make lab-up`) provide Mailpit, a Samba AD directory and Keycloak with ready-made values.
 
 ## Development processes
 
