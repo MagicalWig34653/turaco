@@ -44,8 +44,13 @@ export function matchesChangeMetric(change: Change, metric: ChangeMetricKey, now
   monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
   const nextMonday = new Date(monday);
   nextMonday.setDate(nextMonday.getDate() + 7);
+  // Planned work this week: approved, scheduled or running Changes whose window overlaps it.
+  if (!['approved', 'scheduled', 'in_progress'].includes(change.status)) return false;
   const start = Date.parse(change.windowStart ?? '');
-  return change.status === 'scheduled' && start >= monday.getTime() && start < nextMonday.getTime();
+  if (!Number.isFinite(start)) return false;
+  const parsedEnd = Date.parse(change.windowEnd ?? '');
+  const end = Number.isFinite(parsedEnd) && parsedEnd > start ? parsedEnd : start;
+  return start < nextMonday.getTime() && end >= monday.getTime();
 }
 export function changeMetrics(changes: Change[], now: Date): Record<ChangeMetricKey, number> {
   return Object.fromEntries(

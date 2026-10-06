@@ -40,6 +40,25 @@ describe('loaded change overview', () => {
       ).scheduled,
     ).toBe(1);
   });
+  it('counts approved, scheduled and running Changes whose window overlaps this week', () => {
+    const now = new Date(2026, 9, 7, 12);
+    const change = (status: Change['status'], start: Date, end?: Date) =>
+      ({
+        status,
+        windowStart: start.toISOString(),
+        windowEnd: end ? end.toISOString() : null,
+      }) as Change;
+    const changes = [
+      change('approved', new Date(2026, 9, 8, 22)),
+      change('scheduled', new Date(2026, 9, 9)),
+      change('in_progress', new Date(2026, 9, 3), new Date(2026, 9, 6, 2)),
+      change('in_progress', new Date(2026, 9, 2), new Date(2026, 9, 4)),
+      change('pending_approval', new Date(2026, 9, 7)),
+      change('completed', new Date(2026, 9, 6)),
+      { status: 'approved', windowStart: null, windowEnd: null } as Change,
+    ];
+    expect(changeMetrics(changes, now).scheduled).toBe(3);
+  });
   it('counts failures by completion time and never infers a failure from updatedAt', () => {
     const now = new Date('2026-10-07T12:00:00Z');
     const changes = [

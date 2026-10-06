@@ -10,7 +10,6 @@ import { copyContextText, type MenuItem } from '../../platform/ui/ContextMenu';
 import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { useSession } from '../../platform/session/SessionProvider';
-import { useTheme } from '../../platform/theme/ThemeProvider';
 import { Toast } from '../../platform/ui/Workspace';
 import { IncidentBanner } from '../incidents/IncidentBanner';
 import { ticketsApi } from './api';
@@ -35,7 +34,6 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const { t } = useI18n();
   const { can, session } = useSession();
-  const { density, setDensity } = useTheme();
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState<TicketStatus | ''>('');
   const [openOnly, setOpenOnly] = useState(true);
@@ -162,7 +160,6 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       {actionError ? <Toast kind="error">{actionError}</Toast> : null}
       <FilterBar
         activeFilters={activeFilters}
-
         role="search"
         onSubmit={(event) => event.preventDefault()}
       >
@@ -173,15 +170,6 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           options={[
             { value: '', label: t('tickets.filter.anyStatus') },
             ...ticketStatuses.map((value) => ({ value, label: t(`tickets.status.${value}`) })),
-          ]}
-        />
-        <Select
-          label={t('shell.density')}
-          value={density}
-          onChange={(event) => setDensity(event.target.value as typeof density)}
-          options={[
-            { value: 'comfortable', label: t('shell.densityComfortable') },
-            { value: 'compact', label: t('shell.densityCompact') },
           ]}
         />
         <Checkbox

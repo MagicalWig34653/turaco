@@ -17,24 +17,53 @@ export type MenuItem =
 
 export type MenuPosition = { x: number; y: number };
 
+/** The area the menu must not cover: a trigger, a row band or a zero-size pointer. */
+export type MenuAnchor = { left: number; top: number; right: number; bottom: number };
+
 type MenuState = {
   items: readonly MenuItem[];
-  position: MenuPosition;
+  anchor: MenuAnchor;
   opener: HTMLElement;
   label: string;
 };
 
-/** Clamp a fixed-position menu within the visual viewport. */
+/**
+ * Place a fixed-position menu beside its anchor: below and start-aligned when it fits,
+ * flipped above or end-aligned when it would leave the viewport, clamped as a last resort.
+ */
 export function positionContextMenu(
-  point: MenuPosition,
+  anchor: MenuAnchor,
   size: { width: number; height: number },
   viewport: { width: number; height: number },
   margin = 8,
+  gap = 4,
 ): MenuPosition {
+  const clamp = (value: number, max: number) => Math.max(margin, Math.min(value, max));
+  let x = anchor.left;
+  if (x + size.width > viewport.width - margin) x = anchor.right - size.width;
+  let y = anchor.bottom + gap;
+  if (y + size.height > viewport.height - margin) {
+    const above = anchor.top - gap - size.height;
+    y = above >= margin ? above : y;
+  }
   return {
-    x: Math.max(margin, Math.min(point.x, viewport.width - size.width - margin)),
-    y: Math.max(margin, Math.min(point.y, viewport.height - size.height - margin)),
+    x: clamp(x, viewport.width - size.width - margin),
+    y: clamp(y, viewport.height - size.height - margin),
   };
+}
+
+/** A pointer anchor keeps the opener's row band visible when the pointer lies inside it. */
+export function pointerAnchor(point: MenuPosition, opener?: DOMRect | null): MenuAnchor {
+  if (
+    opener &&
+    opener.height > 0 &&
+    opener.height <= 160 &&
+    point.y >= opener.top &&
+    point.y <= opener.bottom
+  ) {
+    return { left: point.x, right: point.x, top: opener.top, bottom: opener.bottom };
+  }
+  return { left: point.x, right: point.x, top: point.y, bottom: point.y };
 }
 
 export function nextMenuIndex(current: number, length: number, key: string): number {
@@ -67,12 +96,27 @@ export function useContextMenu() {
     label: string,
   ) => {
     if (!items.some((item) => !('separator' in item))) return;
-    setMenu({ items, position, opener, label });
+    setMenu({
+      items,
+      anchor: pointerAnchor(position, opener.getBoundingClientRect()),
+      opener,
+      label,
+    });
   };
 
   const openAtElement = (items: readonly MenuItem[], opener: HTMLElement, label: string) => {
-    const bounds = opener.getBoundingClientRect();
-    openAtPoint(items, { x: bounds.left, y: bounds.bottom + 4 }, opener, label);
+    if (!items.some((item) => !('separator' in item))) return;
+    // A keyboard-opened row anchors to its visible actions trigger, never over the row content.
+    const trigger = opener.matches('button, a')
+      ? opener
+      : (opener.querySelector<HTMLElement>('.table-actions-trigger') ?? opener);
+    const bounds = trigger.getBoundingClientRect();
+    setMenu({
+      items,
+      anchor: { left: bounds.left, top: bounds.top, right: bounds.right, bottom: bounds.bottom },
+      opener,
+      label,
+    });
   };
 
   const close = (restoreFocus = false) => {
@@ -97,7 +141,10 @@ function ContextMenu({
   onClose: (restoreFocus?: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<MenuPosition>(state.position);
+  const [position, setPosition] = useState<MenuPosition>({
+    x: state.anchor.left,
+    y: state.anchor.bottom + 4,
+  });
 
   useLayoutEffect(() => {
     const element = ref.current;
@@ -105,7 +152,7 @@ function ContextMenu({
     const bounds = element.getBoundingClientRect();
     setPosition(
       positionContextMenu(
-        state.position,
+        state.anchor,
         { width: bounds.width, height: bounds.height },
         { width: window.innerWidth, height: window.innerHeight },
       ),
