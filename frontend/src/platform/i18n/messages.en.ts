@@ -95,6 +95,7 @@ export const en = {
   'ticketWorkspace.actions': 'Ticket actions',
   'ticketWorkspace.more': 'More',
   'ticketWorkspace.noDescription': 'No description provided.',
+  'ticketWorkspace.internalNote': 'Internal note',
   'ticketWorkspace.reply': 'Reply',
   'ticketWorkspace.replyHint': 'Visible to the requester and the support team.',
   'ticketWorkspace.draftHint': 'Drafts stay separate while you switch between reply and note.',

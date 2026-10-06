@@ -99,6 +99,7 @@ export const de: Record<MessageKey, string> = {
   'ticketWorkspace.actions': 'Ticketaktionen',
   'ticketWorkspace.more': 'Mehr',
   'ticketWorkspace.noDescription': 'Keine Beschreibung angegeben.',
+  'ticketWorkspace.internalNote': 'Interne Notiz',
   'ticketWorkspace.reply': 'Antwort',
   'ticketWorkspace.replyHint': 'Für die anfragende Person und das Supportteam sichtbar.',
   'ticketWorkspace.draftHint': 'Entwürfe bleiben beim Wechsel zwischen Antwort und Notiz getrennt.',

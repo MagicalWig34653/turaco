@@ -213,6 +213,8 @@ html .turaco-shell .filter-segments {
   border-radius: var(--radius-md);
 }
 html .turaco-shell .filter-segments button {
+  white-space: nowrap;
+  flex: none;
   min-height: 30px;
   padding: 4px 10px;
   font-size: 13px;
@@ -1017,4 +1019,27 @@ html .turaco-main .back-link {
   display: inline-flex;
   gap: 6px;
   font-size: 13px;
+}
+
+/* ---------- Ticket composer mode toggle ---------- */
+html .turaco-main .incident-composer-mode {
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted-token);
+}
+html .turaco-main .incident-composer-mode .btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+html .turaco-main .incident-composer-mode .btn[aria-pressed='true'] {
+  background: var(--surface-base);
+  border-color: var(--border-token);
+  color: var(--text-primary);
 }

@@ -409,13 +409,13 @@ function TicketWorkspace({ id }: { id: string }) {
                       aria-pressed={internal}
                       onClick={() => setInternal(true)}
                     >
-                      {t('tickets.comment.internal')}
+                      {t('ticketWorkspace.internalNote')}
                     </Button>
                   </div>
                 ) : null}
                 {commentError ? <ApiErrorAlert error={commentError} /> : null}
                 <TextArea
-                  label={t(internal ? 'tickets.comment.internal' : 'tickets.comment.label')}
+                  label={t(internal ? 'ticketWorkspace.internalNote' : 'tickets.comment.label')}
                   hint={t(
                     internal ? 'tickets.comment.internalOnly.hint' : 'ticketWorkspace.replyHint',
                   )}
