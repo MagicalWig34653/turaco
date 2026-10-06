@@ -1,7 +1,7 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { DirectoryGroup, Team, User } from './types';
+import type { DirectoryGroup, Location, Team, User } from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
@@ -20,4 +20,6 @@ export const organizationApi = {
     api.get<Page<Team>>('/teams', { signal, query: { q, limit: 10 } }),
   searchDirectoryGroups: (q: string, signal?: Signal) =>
     api.get<Page<DirectoryGroup>>('/directory-groups', { signal, query: { q, limit: 10 } }),
+  searchLocations: (q: string, signal?: Signal) =>
+    api.get<Page<Location>>('/locations', { signal, query: { q, limit: 10 } }),
 };
