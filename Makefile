@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # which can contain Go packages (and tests) shipped by npm dependencies.
 GO_PACKAGES := ./backend/... ./agents/... ./tools/...
 
-.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean
+.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
 
 help:
 	@printf '%s\n' \
@@ -21,6 +21,8 @@ help:
 	  '  make dev          Print the recommended local dev commands' \
 	  '  make check        Run the repository quality gate' \
 	  '  make build        Build backend, agents, and frontend' \
+	  '  make site-build   Install dependencies and build the public website' \
+	  '  make site-serve   Serve the built public website locally' \
 	  '  make docker-build Build production container images'
 
 doctor:
@@ -111,6 +113,12 @@ build:
 	@go build -trimpath -o dist/bin/connector-agent ./agents/connector
 	@go build -trimpath -o dist/bin/endpoint-agent ./agents/endpoint
 	@cd frontend && npm run build
+
+site-build:
+	@cd site && npm ci && npm run build
+
+site-serve:
+	@cd site && npm run serve
 
 # Uses the same Dockerfiles as CI/release.
 docker-build:
