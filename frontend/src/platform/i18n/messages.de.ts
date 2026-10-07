@@ -1681,6 +1681,10 @@ export const de: Record<MessageKey, string> = {
   'notifications.initiative.state':
     'Der Status einer Initiative, die du verantwortest, wurde aktualisiert: {title}',
   'notifications.category.initiative.state': 'Meine Initiative hat ihren Status geändert',
+  'notifications.remoteaccess.session_started':
+    'Ein Techniker hat eine Fernwartungssitzung auf einem dir zugewiesenen Gerät gestartet: {title}',
+  'notifications.category.remoteaccess.session_started':
+    'Ein Techniker hat sich auf mein Gerät verbunden',
   'notifications.security.advisory':
     'Ein Sicherheitshinweis wurde als zutreffend markiert: {title}',
   'notifications.category.security.advisory': 'Zutreffender Sicherheitshinweis',

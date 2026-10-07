@@ -49,6 +49,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.initiative.state',
       labelKey: 'notifications.category.initiative.state',
     },
+    'remoteaccess.session_started': {
+      textKey: 'notifications.remoteaccess.session_started',
+      labelKey: 'notifications.category.remoteaccess.session_started',
+    },
     'security.advisory': {
       textKey: 'notifications.security.advisory',
       labelKey: 'notifications.category.security.advisory',

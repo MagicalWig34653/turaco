@@ -1,6 +1,6 @@
 # ADR-0026: Remote Access Through Remote Access Providers
 
-- Status: Accepted (2026-10-03). Planned capability; nothing is implemented.
+- Status: Accepted (2026-10-03). Implemented in part: F10 slice R-A (attended sessions through launch-link connectors, backend only; see [current status](../product/current-status.md)). Unattended mode, terminal, file transfer and provider API connectors are not implemented.
 - Related: [ADR-0008](ADR-0008-separate-agents.md) (separate agents, still valid), [agent boundaries](../security/agent-boundaries.md), [security architecture](../security/security-architecture.md).
 
 ## Context
@@ -19,7 +19,7 @@ Technicians need to see and control an employee's device from a ticket. Earlier 
    - read provider session records (actual connect/disconnect, provider account, features used) as observations with source and observed time;
    - declare supported capabilities (attended, unattended, file transfer, terminal, recording).
    There is no "execute command" or other action operation on this port.
-5. A Remote Access Session keeps **Turaco-authorized facts** (initiating User, Device, Ticket, policy decision, approval) separate from **consent** (`granted | declined | not_required | unknown`) and from **provider-observed facts** (what the provider reports actually happened). Missing provider records are shown as unknown, never inferred. Lifecycle: [state machines](../domain/state-machines.md#remote-access-session-planned).
+5. A Remote Access Session keeps **Turaco-authorized facts** (initiating User, Device, Ticket, policy decision, approval) separate from **consent** (`granted | declined | not_required | unknown`) and from **provider-observed facts** (what the provider reports actually happened). Missing provider records are shown as unknown, never inferred. Lifecycle: [state machines](../domain/state-machines.md#remote-access-session).
 6. **High-level remote actions** (for example restart, collect diagnostics) offered in a session are typed Endpoint operations: the Remote Access module calls the Endpoint module's public contract, which executes them through a Management Provider action or a future Endpoint Agent capability, with their own permission and audit. The Remote Access module never calls a management adapter directly, and free-form command text is never accepted.
 7. Neither the Connector Agent nor the Endpoint Agent becomes a remote-access transport. The provider's endpoint client and relay are a **third-party trust boundary**; installing the client is an ordinary software deployment, not an agent capability.
 8. A native Turaco provider remains possible and requires its own ADR and threat model.

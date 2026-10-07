@@ -37,6 +37,8 @@
 | `LDAP_USER_FILTER` | string | false | false | `` | User search filter. Default depends on LDAP_DIRECTORY_TYPE. |
 | `LOG_LEVEL` | string | false | false | `info` | Application log level. |
 | `NVD_API_KEY_FILE` | string | false | true | `` | Path to a file containing an optional NVD API key (for example a Docker secret). With a key the NVD rate limit rises from 5 to 50 requests per 30 seconds. The key is sent only to the NVD API and never stored or logged. |
+| `REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP` | string | false | false | `` | Comma-separated Device ownerships (`corporate`, `personal`, `unknown`) whose Remote Access Sessions need a second approver holding remote_access.admin before they can be launched. Empty requires no approval. |
+| `REMOTE_ACCESS_PROVIDERS` | string | false | false | `` | Comma-separated Remote Access Provider keys to enable (`rustdesk`, `anydesk`, `hoptodesk`; launch-link connectors, attended sessions only). Empty switches Remote Access off: no session can be requested. Unknown keys stop turaco-api and turaco-worker at startup. API and worker must use the same value. |
 | `S3_ACCESS_KEY_ID` | string | false | true | `` | S3 access key when required. |
 | `S3_BUCKET` | string | false | false | `turaco-dev` | Object-storage bucket/namespace. |
 | `S3_ENDPOINT` | string | false | false | `` | S3-compatible endpoint; set for non-AWS/local providers. |

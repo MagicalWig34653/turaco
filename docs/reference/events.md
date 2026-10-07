@@ -39,6 +39,10 @@
 | `PurchaseOrderReceived` | 1 | procurement | Every line of a purchase order was received. Payload: orderId, supplierId. |
 | `PurchaseOrderSent` | 1 | procurement | A purchase order was sent to the supplier. Payload: orderId, supplierId. |
 | `RackPlacementChanged` | 1 | infrastructure | An Asset was placed into, moved within or removed from a Rack. Payload: placementId, rackId, assetId, operation (placed, moved, removed), uPosition, heightU, face; removals also reason. |
+| `RemoteAccessSessionAuthorized` | 1 | remoteaccess | A Remote Access Session was authorized, at once or by its approver. Payload: sessionId, deviceId, ticketId, provider, status, previousStatus, operation. |
+| `RemoteAccessSessionClosed` | 1 | remoteaccess | A Remote Access Session ended: closed, rejected, cancelled, expired or failed. Payload: sessionId, deviceId, ticketId, provider, status, previousStatus, operation, reason. |
+| `RemoteAccessSessionLaunched` | 1 | remoteaccess | The technician exchanged the one-time launch handle and the provider client was launched. Payload: sessionId, deviceId, ticketId, provider, status, previousStatus, operation. Never carries the launch link. |
+| `RemoteAccessSessionRequested` | 1 | remoteaccess | A Remote Access Session was requested. Payload: sessionId, deviceId, ticketId, provider, approvalRequired. |
 | `ReservationFulfilled` | 1 | inventory | A reservation was fulfilled: stock was issued or the reserved asset was assigned. Payload as StockReserved. |
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
 | `RingActivated` | 1 | endpoints | A Deployment Ring became active (first ring after target resolution, next ring after a promotion). Payload: deploymentId, ringId, ringRunId, position. |

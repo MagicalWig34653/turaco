@@ -1642,6 +1642,9 @@ export const en = {
   'notifications.category.change.state': 'My change was approved, rejected or failed',
   'notifications.initiative.state': 'The status of an initiative you own was updated: {title}',
   'notifications.category.initiative.state': 'My initiative changed status',
+  'notifications.remoteaccess.session_started':
+    'A technician started a remote support session on a device assigned to you: {title}',
+  'notifications.category.remoteaccess.session_started': 'A technician connected to my device',
   'notifications.security.advisory': 'A security advisory was marked as applicable: {title}',
   'notifications.category.security.advisory': 'Security advisory applicable',
   'notifications.security.risk_review_due': 'A security risk acceptance is due for review: {title}',
