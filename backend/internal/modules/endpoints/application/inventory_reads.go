@@ -27,3 +27,14 @@ type SoftwareProductRow struct {
 	Name      string
 	Publisher *string
 }
+
+// DeviceIdentityRow is the identity and last observation of one Device.
+type DeviceIdentityRow struct {
+	ID            string
+	Name          string
+	AssetID       *string
+	Ownership     string
+	ObservedAt    time.Time
+	LastCheckinAt *time.Time
+	RetiredAt     *time.Time
+}
