@@ -10329,6 +10329,84 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/report:
+    get:
+      operationId: getDeploymentReport
+      summary: Rollout report of a Deployment (F9 G4).
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute` (404 otherwise, also for a Deployment that is not visible). Totals by target state, success rate and median time to success (on decided targets), per ring the counts and the gate outcomes (passed, or failed with a reason), top failure reasons (the provider's raw status or Turaco's reason code), open failure clusters, the people involved, the transition history and the follow-up Tasks. Clusters are derived by Turaco (error code, model, manufacturer, OS version, ring) and distinct from provider-reported errors. Contains no device names."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentReport'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/report.csv:
+    get:
+      operationId: getDeploymentReportCsv
+      summary: Download the per-target report as CSV (F9 G4).
+      description: "Same read rule as the report. One row per target with ring, device id, device name, state, reason, error code and timestamps. `device_name` is empty without `endpoints.view`. Cells that a spreadsheet would read as a formula are neutralized. At most 50 000 rows; a final `truncated` row marks a cut export. Served as an attachment with `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: CSV file.
+          content:
+            text/csv:
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /deployments/{id}/security-context:
+    get:
+      operationId: getDeploymentSecurityContext
+      summary: Security advisories on the deployed product and target devices (F9 G4).
+      description: "Same read rule as the report. Asks Security for the advisories (applicable, remediation planned, remediating) of the Deployment's product with open findings on the Deployment's target Devices (at most 20 000 are considered; `truncated` says more existed). With `security.view` `advisories` lists them and `detailed` is true; without it `advisories` is empty and only the counts are returned."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeploymentSecurityContext'}
+        '404': {$ref: '#/components/responses/DeploymentsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /software/rollouts:
+    get:
+      operationId: listSoftwareRollouts
+      summary: Rollout overview of Deployments (F9 G4, keyset).
+      description: "Needs `deployments.view`, `deployments.manage` or `deployments.execute` (403 otherwise). `status` is a comma-separated list of Deployment statuses (400 for an unknown one); the default is the active rollouts (resolving_targets, ready, running, paused, scheduled). Newest first. Each row carries the current ring and target counts by state."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: status, in: query, schema: {type: string}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+      responses:
+        '200':
+          description: Result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RolloutPage'}
+        '400': {$ref: '#/components/responses/DeploymentsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -11762,7 +11840,7 @@ components:
         assignedUserName: {type: [string, "null"]}
         assignedTeamId: {type: [string, "null"], format: uuid}
         assignedTeamName: {type: [string, "null"]}
-        contextType: {type: [string, "null"]}
+        contextType: {type: [string, "null"], description: 'Context type `deployment` (F9 G4 follow-up Tasks) names a Deployment in `contextId`.'}
         contextId: {type: [string, "null"], format: uuid}
         dueAt: {type: [string, "null"], format: date-time}
         completedAt: {type: [string, "null"], format: date-time}
@@ -13356,7 +13434,7 @@ components:
       required: [id, kind, deviceId, deviceName, status, detail, raisedAt, resolvedAt]
       properties:
         id: {type: string, format: uuid}
-        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective], description: 'deployment_evidence_conflict is Turaco-derived (a provider observation contradicts a decided Deployment target); assignment_ineffective is Turaco-derived and distinct from provider_reported_error, which is provider-reported.'}
+        kind: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective], description: 'deployment_evidence_conflict is Turaco-derived (a provider observation contradicts a decided Deployment target); assignment_ineffective is Turaco-derived and distinct from provider_reported_error, which is provider-reported. deployment_failure_cluster (F9 G4, Turaco-derived) has the Deployment as its subject, not a Device: it never appears in Device finding lists and is reported in GET /deployments/{id}/report.'}
         deviceId: {type: string, format: uuid}
         deviceName: {type: string}
         status: {type: string, enum: [open, resolved]}
@@ -13661,7 +13739,7 @@ components:
     Deployment:
       type: object
       additionalProperties: false
-      required: [id, reference, name, softwareVersionId, productId, productName, productVersion, intent, supersede, status, statusReason, ownerUserId, createdBy, editors, highImpact, approvalId, submittedBy, submittedAt, planSha256, approvedAt, scheduledBy, scheduledAt, cancelledBy, cancelledAt, version, createdAt, updatedAt]
+      required: [id, reference, name, softwareVersionId, productId, productName, productVersion, intent, supersede, status, statusReason, ownerUserId, createdBy, editors, highImpact, createTasks, approvalId, submittedBy, submittedAt, planSha256, approvedAt, scheduledBy, scheduledAt, cancelledBy, cancelledAt, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string, description: 'DEP-xxxxxx'}
@@ -13672,6 +13750,7 @@ components:
         productVersion: {type: string}
         intent: {type: string, enum: [install, update, uninstall]}
         supersede: {type: boolean}
+        createTasks: {type: boolean, description: 'Follow-up Tasks (context type deployment) are created for failure clusters and halts while the Deployment runs.'}
         status: {$ref: '#/components/schemas/DeploymentStatus'}
         statusReason: {type: [string, "null"], description: 'approval_rejected, approver_not_authorized or a cancel reason code.'}
         ownerUserId: {type: string, format: uuid}
@@ -13832,6 +13911,7 @@ components:
         softwareVersionId: {type: string, format: uuid}
         intent: {type: string, enum: [install, update, uninstall]}
         supersede: {type: boolean, description: High impact.}
+        createTasks: {type: boolean, description: 'Create follow-up Tasks for failures and halts (draft only). Omitted on PATCH keeps the stored value.'}
         ownerUserId: {type: string, format: uuid, description: 'Defaults to the caller on create; empty keeps the owner on PATCH.'}
         expectedVersion: {type: integer, description: Required on PATCH; refused on create.}
     DeploymentSubmit:
@@ -13917,6 +13997,154 @@ components:
         clearPending: {type: boolean, description: Assignments are being withdrawn and need deploy write enabled.}
         resolvingStuck: {type: boolean, description: resolving_targets for more than 15 minutes.}
         rings: {type: array, items: {$ref: '#/components/schemas/DeploymentRingProgress'}}
+    DeploymentReport:
+      type: object
+      required: [deployment, generatedAt, totals, rings, topFailureReasons, clusters, people, transitions, followUps]
+      properties:
+        deployment: {$ref: '#/components/schemas/Deployment'}
+        generatedAt: {type: string, format: date-time}
+        totals: {type: object, additionalProperties: {type: integer}, description: Target counts by state across all rings.}
+        successRatePercent: {type: number, nullable: true, description: 'successful / (successful + failed + expired); null while nothing was decided.'}
+        medianSecondsToSuccess: {type: integer, nullable: true}
+        rings:
+          type: array
+          items:
+            type: object
+            required: [ringId, ringRunId, position, name, status, successThresholdPercent, counts, gates]
+            properties:
+              ringId: {type: string, format: uuid}
+              ringRunId: {type: string, format: uuid}
+              position: {type: integer}
+              name: {type: string}
+              status: {type: string}
+              statusReason: {type: string, nullable: true}
+              startedAt: {type: string, format: date-time, nullable: true}
+              endedAt: {type: string, format: date-time, nullable: true}
+              successThresholdPercent: {type: integer}
+              counts: {type: object, additionalProperties: {type: integer}}
+              successRatePercent: {type: number, nullable: true}
+              medianSecondsToSuccess: {type: integer, nullable: true}
+              gates:
+                type: array
+                items:
+                  type: object
+                  required: [gate, passed, at]
+                  properties:
+                    gate: {type: string, description: 'success_threshold, soak or promotion when passed; the halt reason code when failed.'}
+                    passed: {type: boolean}
+                    at: {type: string, format: date-time}
+                    reason: {type: string, nullable: true}
+        topFailureReasons:
+          type: array
+          items:
+            type: object
+            required: [code, count]
+            properties:
+              code: {type: string, description: "The provider's raw status or Turaco's reason code."}
+              count: {type: integer}
+        clusters:
+          type: array
+          description: 'Open failure clusters derived by Turaco (finding kind deployment_failure_cluster).'
+          items:
+            type: object
+            required: [findingId, dimension, value, failed, total, raisedAt]
+            properties:
+              findingId: {type: string, format: uuid}
+              dimension: {type: string, enum: [error_code, model, manufacturer, os_version, ring]}
+              value: {type: string}
+              failed: {type: integer}
+              total: {type: integer}
+              raisedAt: {type: string, format: date-time}
+        people:
+          type: object
+          properties:
+            ownerUserId: {type: string, format: uuid}
+            createdBy: {type: string, format: uuid}
+            submittedBy: {type: string, format: uuid, nullable: true}
+            scheduledBy: {type: string, format: uuid, nullable: true}
+            startedBy: {type: string, format: uuid, nullable: true}
+            cancelledBy: {type: string, format: uuid, nullable: true}
+            approvedAt: {type: string, format: date-time, nullable: true}
+            promotions:
+              type: array
+              items:
+                type: object
+                properties:
+                  ringId: {type: string, format: uuid}
+                  by: {type: string, format: uuid, nullable: true}
+                  at: {type: string, format: date-time}
+        transitions:
+          type: array
+          items:
+            type: object
+            properties:
+              from: {type: string, nullable: true}
+              to: {type: string}
+              operation: {type: string}
+              reason: {type: string, nullable: true}
+              actorUserId: {type: string, format: uuid, nullable: true}
+              actorSystem: {type: string, nullable: true}
+              at: {type: string, format: date-time}
+        followUps:
+          type: array
+          description: 'Follow-up Tasks created when `createTasks` is set (Task context type `deployment`, context id = the Deployment).'
+          items:
+            type: object
+            required: [reason, taskId, createdAt]
+            properties:
+              reason: {type: string, description: 'failure_cluster or another reason code.'}
+              ringId: {type: string, format: uuid, nullable: true}
+              taskId: {type: string, format: uuid}
+              createdAt: {type: string, format: date-time}
+    DeploymentSecurityContext:
+      type: object
+      required: [deploymentId, productId, productName, productVersion, detailed, advisoryCount, openFindingCount, targetDevices, truncated]
+      properties:
+        deploymentId: {type: string, format: uuid}
+        productId: {type: string, format: uuid}
+        productName: {type: string}
+        productVersion: {type: string}
+        detailed: {type: boolean, description: True with `security.view`; otherwise only the counts are returned.}
+        advisories:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              reference: {type: string}
+              title: {type: string}
+              severity: {type: string}
+              status: {type: string}
+              knownExploited: {type: boolean}
+              openFindings: {type: integer}
+              affectedDevices: {type: integer}
+        advisoryCount: {type: integer}
+        openFindingCount: {type: integer}
+        targetDevices: {type: integer}
+        truncated: {type: boolean}
+    RolloutPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [deployment, ringCount, awaitingPromotion, haltedRings, counts, targetTotal, decided]
+            properties:
+              deployment: {$ref: '#/components/schemas/Deployment'}
+              ringCount: {type: integer}
+              currentPosition: {type: integer, nullable: true}
+              currentRingName: {type: string, nullable: true}
+              currentRingStatus: {type: string, nullable: true}
+              awaitingPromotion: {type: boolean}
+              haltedRings: {type: integer}
+              counts: {type: object, additionalProperties: {type: integer}}
+              targetTotal: {type: integer}
+              decided: {type: integer}
+              successRatePercent: {type: number, nullable: true}
+        nextCursor: {type: string, nullable: true}
     DeploymentTarget:
       type: object
       required: [id, deviceId, state, resolvedAt]
