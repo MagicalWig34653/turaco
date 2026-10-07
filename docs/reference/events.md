@@ -22,12 +22,11 @@
 | `DeploymentCancelled` | 1 | endpoints | A Deployment plan was cancelled with a reason code. Payload: deploymentId, reason, previousStatus. |
 | `DeploymentCompleted` | 1 | endpoints | A Deployment finished all rings. Payload: deploymentId, status (completed|completed_with_errors), successful, failed. |
 | `DeploymentFailed` | 1 | endpoints | A Deployment failed before or during execution (target resolution refused, gates closed). Payload: deploymentId, reason. |
-| `DeploymentFailureClusterDetected` | 1 | endpoints | The correlation found a failure cluster of a Deployment (failed or expired targets sharing an error code, device model, manufacturer, OS version or ring); the Endpoint Finding deployment_failure_cluster was raised. Payload: deploymentId, findingId, dimension, failed. |
 | `DeploymentScheduled` | 1 | endpoints | A valid Deployment plan was scheduled (high-impact plans only after their plan Approval, with an unchanged plan). Payload: deploymentId, versionId, productId, intent, highImpact, ringCount. |
 | `DeploymentStarted` | 1 | endpoints | A scheduled Deployment was started (target resolution begins). Payload: deploymentId, versionId, intent, ringCount, highImpact. |
 | `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
 | `DeviceUnlinked` | 1 | endpoints | A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method. |
-| `EndpointFindingRaised` | 1 | endpoints | An endpoint finding was raised. Payload: findingId, kind and deviceId, softwarePackageId for the package findings package_hash_mismatch and package_published_after_revoke, or deploymentId for deployment_failure_cluster. |
+| `EndpointFindingRaised` | 1 | endpoints | An endpoint finding was raised. Payload: findingId, kind and deviceId, or softwarePackageId for the package findings package_hash_mismatch and package_published_after_revoke. |
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `InitiativeStatusChanged` | 1 | planning | An Initiative changed status (planning started, proposed, approved, approval rejected, activated, held, resumed, completed, cancelled). Payload: initiativeId, operation, status, previousStatus; hold, cancel and rejection also reason. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |
