@@ -21,10 +21,12 @@ const feedLimit = 20
 type FeedPrincipal struct {
 	UserID                                                                               string
 	Briefing, Security, Planning, Changes, Desk, Tickets, Autotask, Endpoints, Directory bool
+	// Deployments is deployments.view, manage or execute: it adds Deployment names to the rollout entries.
+	Deployments bool
 }
 
 func (p FeedPrincipal) Allowed() bool {
-	return p.UserID != "" && (p.Briefing || p.Security || p.Planning || p.Changes || p.Desk || p.Tickets || p.Endpoints || p.Autotask || p.Directory)
+	return p.UserID != "" && (p.Briefing || p.Security || p.Planning || p.Changes || p.Desk || p.Tickets || p.Endpoints || p.Autotask || p.Directory || p.Deployments)
 }
 
 type FeedReference struct {
@@ -74,6 +76,13 @@ type EndpointFeed interface {
 	SyncHealth(context.Context) ([]endpointspublic.SyncStatus, error)
 	OpenProviderErrors(context.Context) (int, error)
 }
+
+// DeploymentFeed is the Endpoints read contract for rollouts: counts and references, names only with IncludeNames, and
+// the health of the execution engine.
+type DeploymentFeed interface {
+	RolloutSummary(context.Context, endpointspublic.DeploymentScope) (endpointspublic.RolloutSummary, error)
+	DeploymentEngineStatus(context.Context) (endpointspublic.EngineStatus, error)
+}
 type DirectoryFeed interface {
 	DirectorySyncStatus(context.Context, orgpublic.SyncScope) ([]orgpublic.DirectorySyncStatus, error)
 }
@@ -81,12 +90,13 @@ type ApprovalFeed interface {
 	PendingForUserCount(context.Context, string) (int, error)
 }
 type FeedSources struct {
-	Security  SecurityFeed
-	Planning  PlanningFeed
-	Desk      DeskFeed
-	Endpoints EndpointFeed
-	Directory DirectoryFeed
-	Approvals ApprovalFeed
+	Security    SecurityFeed
+	Planning    PlanningFeed
+	Desk        DeskFeed
+	Endpoints   EndpointFeed
+	Deployments DeploymentFeed
+	Directory   DirectoryFeed
+	Approvals   ApprovalFeed
 }
 type FeedService struct {
 	manual  *Service
@@ -327,6 +337,54 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			fail("endpoint_errors", e)
 		} else if n > 0 {
 			add("endpoint_errors", []FeedEntry{{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.endpoint_errors", Params: map[string]any{}, Count: count(n), LinkPath: "/endpoint-findings", Source: "endpoints"}}, false)
+		}
+	}
+	if (p.Endpoints || p.Deployments) && s.sources.Deployments != nil {
+		sum, e := sourceCall(ctx, func(c context.Context) (endpointspublic.RolloutSummary, error) {
+			return s.sources.Deployments.RolloutSummary(c, endpointspublic.DeploymentScope{IncludeNames: p.Deployments, Limit: feedLimit})
+		})
+		if e != nil {
+			fail("deployments", e)
+		} else {
+			v := []FeedEntry{}
+			for _, x := range sum.Items {
+				sev, key := SeverityInfo, "briefing.feed.deployment_awaiting_promotion"
+				switch x.Kind {
+				case endpointspublic.RolloutRingHalted:
+					sev, key = SeverityCritical, "briefing.feed.deployment_ring_halted"
+				case endpointspublic.RolloutPaused:
+					sev, key = SeverityWarning, "briefing.feed.deployment_paused"
+				}
+				params := map[string]any{"reference": x.Reference}
+				if p.Deployments {
+					params["name"], params["product"] = x.Name, x.ProductName
+				}
+				since := x.Since
+				v = append(v, FeedEntry{Kind: "deployment_" + x.Kind, Severity: sev, TitleKey: key, Params: params, Reference: &FeedReference{"deployment", x.ID}, LinkPath: "/deployments/" + x.ID, OccurredAt: &since, Source: "endpoints"})
+			}
+			if sum.InProgress > 0 {
+				v = append(v, FeedEntry{Kind: "deployments_in_progress", Severity: SeverityInfo, TitleKey: "briefing.feed.deployments_in_progress", Params: map[string]any{}, Count: count(sum.InProgress), LinkPath: "/deployments", Source: "endpoints"})
+			}
+			add("deployments", v, sum.More)
+		}
+	}
+	if p.Endpoints && s.sources.Deployments != nil {
+		eh, e := sourceCall(ctx, s.sources.Deployments.DeploymentEngineStatus)
+		if e != nil {
+			fail("deployment_engine", e)
+		} else {
+			v := []FeedEntry{}
+			for _, problem := range []struct {
+				reason string
+				n      int
+				bad    bool
+			}{{"stale", eh.Active, eh.Stale}, {"clear_pending", eh.ClearPending, eh.ClearPending > 0}, {"resolving_stuck", eh.ResolvingStuck, eh.ResolvingStuck > 0}} {
+				if problem.bad {
+					v = append(v, FeedEntry{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.deployment_engine", Params: map[string]any{"reason": problem.reason},
+						Count: count(problem.n), OccurredAt: eh.LastTickAt, LinkPath: "/deployments", Source: "endpoints"})
+				}
+			}
+			add("deployment_engine", v, false)
 		}
 	}
 	if p.Directory && s.sources.Directory != nil {

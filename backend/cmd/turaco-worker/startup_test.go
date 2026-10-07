@@ -35,7 +35,7 @@ func TestWorkerRegistersEveryJob(t *testing.T) {
 		t.Fatalf("registerJobs: %v", err)
 	}
 	registered := runner.RegisteredJobs()
-	for _, want := range []string{endpointsapp.DeploymentTickJobType, securityapp.AdvisorySyncJobType, notifications.EmailJobType, servicedeskapp.PushJobType} {
+	for _, want := range []string{endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentCorrelationJobType, securityapp.AdvisorySyncJobType, notifications.EmailJobType, servicedeskapp.PushJobType} {
 		if _, ok := registered[want]; !ok {
 			t.Errorf("job %s is not registered", want)
 		}

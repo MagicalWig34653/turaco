@@ -187,6 +187,9 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			return registerSoftwarePackageSync(runner, pool, d.SoftwareProviderSync)
 		}},
 		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite) }},
+		{"deployment correlation", func() error {
+			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
+		}},
 		{"Autotask synchronization", func() error {
 			if !d.AutotaskSync {
 				return nil
@@ -443,6 +446,21 @@ func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled b
 	// Scheduled even with the capability off: the tick then only runs the kill-switch sweep (pause, halt, queue clearing).
 	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.DeploymentTickJobType, DedupeKey: endpointsapp.DeploymentTickJobType,
 		Interval: endpointsapp.DeploymentTickInterval, MaxAttempts: 1})
+}
+
+// registerDeploymentCorrelation registers the failure correlation and follow-up job of the Deployments and schedules it every
+// ten minutes. It needs no capability: it only reads Deployment data and creates findings, Tasks and notifications.
+func registerDeploymentCorrelation(runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+	notifier := notifications.NewService(pool, categories)
+	if email {
+		notifier = notifier.WithEmail()
+	}
+	svc := wiring.DeploymentCorrelation(pool, notifier)
+	if err := runner.Register(endpointsapp.DeploymentCorrelationJobType, endpointsapp.DeploymentCorrelationJobTimeout, svc.HandleDeploymentCorrelation); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.DeploymentCorrelationJobType, DedupeKey: endpointsapp.DeploymentCorrelationJobType,
+		Interval: endpointsapp.DeploymentCorrelationInterval, MaxAttempts: 1})
 }
 
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
