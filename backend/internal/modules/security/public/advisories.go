@@ -186,3 +186,33 @@ func (a *Advisories) AdvisoryFeedHealth(ctx context.Context) ([]FeedHealth, erro
 	}
 	return out, nil
 }
+
+// DeploymentAdvisory is an applicable Advisory with open Findings on the given Devices for a product.
+type DeploymentAdvisory = application.DeploymentAdvisory
+
+// DeploymentContext is the security context of a Deployment: Advisories and open Finding counts for one Software
+// Product on an explicit set of Devices. Zero details return counts only (no references or titles); the caller must
+// authorize security.view before enabling them. The Device ids are the scope; nothing else is read.
+type DeploymentContext struct {
+	Advisories    []DeploymentAdvisory
+	AdvisoryCount int
+	OpenFindings  int
+	Truncated     bool
+}
+
+// deploymentContextLimit bounds the advisories listed for a Deployment.
+const deploymentContextLimit = 50
+
+func (a *Advisories) DeploymentContext(ctx context.Context, productID string, deviceIDs []string, details bool) (DeploymentContext, error) {
+	list, totals, err := a.service.DeploymentAdvisories(ctx, productID, deviceIDs, deploymentContextLimit)
+	if err != nil {
+		return DeploymentContext{}, err
+	}
+	out := DeploymentContext{AdvisoryCount: totals.Advisories, OpenFindings: totals.Findings, Truncated: totals.Advisories > len(list)}
+	if details {
+		out.Advisories = list
+	} else {
+		out.Truncated = false
+	}
+	return out, nil
+}

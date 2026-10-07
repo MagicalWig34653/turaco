@@ -80,6 +80,16 @@ type Service struct {
 	// evidence must be.
 	obsExpiry     time.Duration
 	evidenceFresh time.Duration
+	// followTasks and followNotes create the follow-up Tasks and notifications (WithFollowUps); security answers the
+	// security context of a Deployment (WithSecurity).
+	followTasks FollowUpTasks
+	followNotes FollowUpNotifier
+	followCap   int
+	security    DeploymentSecurity
+	// exportsRunning counts the running CSV exports (at most MaxConcurrentExports); secCache caches security contexts.
+	exportsRunning atomic.Int32
+	secMu          sync.Mutex
+	secCache       map[string]secCacheEntry
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);

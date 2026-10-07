@@ -26,6 +26,13 @@ func NotificationCategories() []notifications.Category {
 			"en": {Subject: "Software version awaits approval: %s", Intro: "A software version awaits your approval:", Action: "Open version"},
 			"de": {Subject: "Softwareversion wartet auf Freigabe: %s", Intro: "Eine Softwareversion wartet auf Ihre Freigabe:", Action: "Version öffnen"},
 		},
+	}, {
+		// deployment.attention carries only the Deployment reference and goes to the Deployment owner (F9 G4).
+		Name: DeploymentAttentionCategory, Owner: "endpoints", LinkType: "deployment", LinkPath: "/deployments/{id}",
+		Email: map[string]notifications.EmailText{
+			"en": {Subject: "Deployment needs attention: %s", Intro: "A software deployment you own needs a decision:", Action: "Open deployment"},
+			"de": {Subject: "Verteilung benötigt Aufmerksamkeit: %s", Intro: "Eine Softwareverteilung in Ihrer Verantwortung braucht eine Entscheidung:", Action: "Verteilung öffnen"},
+		},
 	}}
 }
 
