@@ -4,10 +4,13 @@ import type { Page } from '../../platform/api/types';
 import { normalizePage } from '../software/helpers';
 import type {
   Deployment,
+  DeploymentAttempt,
   DeploymentDetail,
   DeploymentFilter,
   DeploymentInput,
+  DeploymentProgress,
   DeploymentRing,
+  DeploymentTarget,
   PlanValidation,
   RingInput,
   TargetEvaluation,
@@ -32,6 +35,21 @@ registerErrorMessages({
   'endpoints.evaluation_busy': 'deployments.error.evaluationBusy',
   'endpoints.editors_full': 'deployments.error.editorsFull',
   'endpoints.approver_not_authorized': 'deployments.error.approverNotAuthorized',
+  'endpoints.deploy_write_disabled': 'deployments.error.deployWriteDisabled',
+  'endpoints.separation_of_duties': 'deployments.error.separationOfDuties',
+  'endpoints.change_window_closed': 'deployments.error.windowClosed',
+  'endpoints.soak_not_elapsed': 'deployments.error.soakNotElapsed',
+  'endpoints.threshold_not_met': 'deployments.error.thresholdNotMet',
+  'endpoints.evidence_not_fresh': 'deployments.error.evidenceNotFresh',
+  'endpoints.promotion_approval_required': 'deployments.error.promotionApprovalRequired',
+  'endpoints.ring_not_awaiting_promotion': 'deployments.error.ringNotAwaiting',
+  'endpoints.ring_not_halted': 'deployments.error.ringNotHalted',
+  'endpoints.no_evidence': 'deployments.error.noEvidence',
+  'endpoints.retry_required': 'deployments.error.retryRequired',
+  'endpoints.retry_limit_reached': 'deployments.error.retryLimit',
+  'endpoints.clear_pending': 'deployments.error.clearPending',
+  'endpoints.assignment_cleared': 'deployments.error.assignmentCleared',
+  'endpoints.no_next_ring': 'deployments.error.noNextRing',
 });
 
 const enc = encodeURIComponent;
@@ -105,4 +123,57 @@ export const deploymentsApi = {
     api.post<Deployment>(`/deployments/${enc(id)}/schedule`, { expectedVersion }),
   cancel: (id: string, reason: string, expectedVersion: number) =>
     api.post<Deployment>(`/deployments/${enc(id)}/cancel`, { reason, expectedVersion }),
+};
+
+const op = (id: string, action: string, body: object) =>
+  api.post<Deployment>(`/deployments/${enc(id)}/${action}`, body);
+
+/** Execution operations (F9 G3); every one carries the Deployment's version. */
+export const executionApi = {
+  start: (id: string, expectedVersion: number) => op(id, 'start', { expectedVersion }),
+  pause: (id: string, expectedVersion: number) => op(id, 'pause', { expectedVersion }),
+  resume: (id: string, expectedVersion: number) => op(id, 'resume', { expectedVersion }),
+  halt: (id: string, reason: string, expectedVersion: number) =>
+    op(id, 'halt', { reason, expectedVersion }),
+  haltRing: (id: string, ringId: string, reason: string, expectedVersion: number) =>
+    op(id, `rings/${enc(ringId)}/halt`, { reason, expectedVersion }),
+  resumeRing: (id: string, ringId: string, expectedVersion: number, retry = false) =>
+    op(id, `rings/${enc(ringId)}/resume`, {
+      expectedVersion,
+      ...(retry ? { reason: 'retry' } : {}),
+    }),
+  promoteRing: (id: string, ringId: string, expectedVersion: number) =>
+    op(id, `rings/${enc(ringId)}/promote`, { expectedVersion }),
+  requestApproval: (
+    id: string,
+    ringId: string,
+    approver: { type: 'user' | 'team'; id: string },
+    expectedVersion: number,
+  ) =>
+    op(id, `rings/${enc(ringId)}/request-approval`, {
+      [approver.type === 'user' ? 'approverUserId' : 'approverTeamId']: approver.id,
+      expectedVersion,
+    }),
+  progress: (id: string, signal?: AbortSignal) =>
+    api.get<DeploymentProgress>(`/deployments/${enc(id)}/progress`, { signal }),
+  targets: async (
+    id: string,
+    ringId: string,
+    state: string,
+    cursor?: string,
+    signal?: AbortSignal,
+  ) =>
+    normalizePage(
+      await api.get<Page<DeploymentTarget> & { namesRedacted?: boolean }>(
+        `/deployments/${enc(id)}/rings/${enc(ringId)}/targets`,
+        { query: { state: state || undefined, cursor, limit: pageSize }, signal },
+      ),
+    ),
+  attempts: async (id: string, cursor?: string, signal?: AbortSignal) =>
+    normalizePage(
+      await api.get<Page<DeploymentAttempt>>(`/deployments/${enc(id)}/attempts`, {
+        query: { cursor, limit: pageSize },
+        signal,
+      }),
+    ),
 };

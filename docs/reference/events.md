@@ -20,10 +20,10 @@
 | `ChangeStarted` | 1 | changes | A scheduled Change started execution. Payload: changeId. |
 | `ChangeSubmitted` | 1 | changes | A draft Change was submitted for assessment. Payload: changeId, kind, risk. |
 | `DeploymentCancelled` | 1 | endpoints | A Deployment plan was cancelled with a reason code. Payload: deploymentId, reason, previousStatus. |
-| `DeploymentCompleted` | 1 | endpoint | A deployment reached a terminal completion state. |
+| `DeploymentCompleted` | 1 | endpoints | A Deployment finished all rings. Payload: deploymentId, status (completed|completed_with_errors), successful, failed. |
+| `DeploymentFailed` | 1 | endpoints | A Deployment failed before or during execution (target resolution refused, gates closed). Payload: deploymentId, reason. |
 | `DeploymentScheduled` | 1 | endpoints | A valid Deployment plan was scheduled (high-impact plans only after their plan Approval, with an unchanged plan). Payload: deploymentId, versionId, productId, intent, highImpact, ringCount. |
-| `DeploymentStarted` | 1 | endpoint | A deployment began target execution. |
-| `DeploymentTargetFailed` | 1 | endpoint | A deployment target attempt failed. |
+| `DeploymentStarted` | 1 | endpoints | A scheduled Deployment was started (target resolution begins). Payload: deploymentId, versionId, intent, ringCount, highImpact. |
 | `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
 | `DeviceUnlinked` | 1 | endpoints | A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method. |
 | `EndpointFindingRaised` | 1 | endpoints | An endpoint finding was raised. Payload: findingId, kind and deviceId, or softwarePackageId for the package findings package_hash_mismatch and package_published_after_revoke. |
@@ -40,6 +40,9 @@
 | `RackPlacementChanged` | 1 | infrastructure | An Asset was placed into, moved within or removed from a Rack. Payload: placementId, rackId, assetId, operation (placed, moved, removed), uPosition, heightU, face; removals also reason. |
 | `ReservationFulfilled` | 1 | inventory | A reservation was fulfilled: stock was issued or the reserved asset was assigned. Payload as StockReserved. |
 | `ReservationReleased` | 1 | inventory | A reservation was released and its stock or asset is available again. Payload as StockReserved. |
+| `RingActivated` | 1 | endpoints | A Deployment Ring became active (first ring after target resolution, next ring after a promotion). Payload: deploymentId, ringId, ringRunId, position. |
+| `RingHalted` | 1 | endpoints | A Deployment Ring was halted (failure threshold, assignment failure, kill switch, a person or cancellation). Payload: deploymentId, ringId, ringRunId, reason. |
+| `RingPromoted` | 1 | endpoints | A Deployment Ring was promoted (by a person, or the last ring by the engine when the Deployment completes). Payload: deploymentId, ringId, ringRunId, position. |
 | `RunbookExecutionCompleted` | 1 | knowledge | Every task of a runbook execution finished. Payload: executionId, runbookId. |
 | `RunbookExecutionStarted` | 1 | knowledge | A runbook execution started and created its tasks. Payload: executionId, runbookId. |
 | `SecurityAdvisoryPublished` | 1 | security | A Security Advisory became applicable. Payload: advisoryId, severity. |

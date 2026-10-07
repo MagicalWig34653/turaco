@@ -41,13 +41,14 @@ const (
 )
 
 // DeploymentStatuses lists every planning status.
-var DeploymentStatuses = []string{DeploymentDraft, DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled, DeploymentCancelled}
+var DeploymentStatuses = []string{DeploymentDraft, DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled, DeploymentResolvingTargets,
+	DeploymentReady, DeploymentRunning, DeploymentPaused, DeploymentCompleted, DeploymentCompletedWithError, DeploymentFailed, DeploymentCancelled}
 
 // DeploymentBindingStatuses are the statuses in which a plan binds its Target Sets: they cannot be changed or
-// archived, and other plans compare their targets with it (overlap). It lists the planned G3 execution statuses
-// too (running, paused, halted, resolving_targets, ready) so G3 cannot forget them; every check uses this list.
+// archived, and other plans compare their targets with it (overlap). It lists every non-terminal status (planning
+// and execution); every check uses this list.
 var DeploymentBindingStatuses = []string{DeploymentPendingApproval, DeploymentApproved, DeploymentScheduled,
-	"resolving_targets", "ready", "running", "paused", "halted"}
+	DeploymentResolvingTargets, DeploymentReady, DeploymentRunning, DeploymentPaused}
 
 // Deployment intents.
 const (
@@ -263,11 +264,16 @@ type Deployment struct {
 	ApprovedAt        *time.Time
 	ScheduledBy       *string
 	ScheduledAt       *time.Time
-	CancelledBy       *string
-	CancelledAt       *time.Time
-	Version           int
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// ScheduledTargets is the evaluated target total of the plan at scheduling (nil: not recorded).
+	ScheduledTargets *int
+	StartedBy        *string
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	CancelledBy      *string
+	CancelledAt      *time.Time
+	Version          int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // DeploymentRing is one stage of a Deployment with its gate configuration.
@@ -424,6 +430,11 @@ type DeploymentApprovals interface {
 	RequestInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver Approver, excluded []string) (string, error)
 	CancelBySubjectInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID string) error
 	ForSubject(ctx context.Context, subjectID string) ([]DeploymentApprovalInfo, error)
+	// RequestRingInTx, CancelRingBySubjectInTx and RingForSubject are the same for the promotion Approval of a ring
+	// (subject deployment_ring, subject id: the ring run).
+	RequestRingInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID, label string, approver Approver, excluded []string) (string, error)
+	CancelRingBySubjectInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID, subjectID string) error
+	RingForSubject(ctx context.Context, subjectID string) ([]DeploymentApprovalInfo, error)
 }
 
 // DeploymentApprovers answers who may approve plans: the effective permissions of a User

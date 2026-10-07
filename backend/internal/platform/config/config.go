@@ -34,6 +34,9 @@ type Config struct {
 	// SoftwareProviderSync allows the Software Package synchronization (POST /api/v1/software/packages/sync and
 	// the scheduled job) against the Software Management Provider.
 	SoftwareProviderSync bool
+	// SoftwareDeployWrite is the capability SOFTWARE_DEPLOY_WRITE: Deployments may write ring assignments to the
+	// Management Provider (start, resume, promote) and the engine job runs.
+	SoftwareDeployWrite bool
 
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
@@ -156,6 +159,7 @@ var Registry = []Descriptor{
 	{Name: "AUTOTASK_SYNC", Type: "bool", Default: "false", Description: "Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible \"not configured\" state."},
 	{Name: "INTUNE_SYNC", Type: "bool", Default: "false", Description: "Allow endpoint synchronization (POST /api/v1/endpoint-sync) from the Intune provider. The Graph client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
 	{Name: "SOFTWARE_PROVIDER_SYNC", Type: "bool", Default: "false", Description: "Allow the Software Package synchronization (POST /api/v1/software/packages/sync and the scheduled worker job) against the Software Management Provider (IntuneGet). The provider client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
+	{Name: "SOFTWARE_DEPLOY_WRITE", Type: "bool", Default: "false", Description: "Capability: allow Deployments to write ring assignments to the Management Provider (start, resume, promote, resolving targets, clearing after a cancel or kill switch). The worker job endpoints.deployment_tick runs every minute either way; with the capability off it only runs the kill-switch sweep (pause, halt, queue clearing). API and worker must use the same value. Off by default; enabling is audited (endpoints.deploy_write.enabled). The Graph write client is not implemented yet: the writer is a placeholder whose writes fail permanently, so a ring halts with assignment_failed."},
 	{Name: "ADVISORY_SYNC", Type: "bool", Default: "false", Description: "Synchronize security advisories from the public NVD and CISA KEV feeds (scheduled worker job security.advisory_sync and `turaco-admin security sync-feeds`). No account is needed. Imported advisories start in status new; criteria come from the feed's CPE data and analysts decide applicability."},
 	{Name: "ADVISORY_SOURCES", Type: "string", Default: "nvd,cisa_kev", Description: "Comma-separated advisory feeds to synchronize: `nvd` (NVD API 2.0) and/or `cisa_kev` (CISA Known Exploited Vulnerabilities catalog). Used when ADVISORY_SYNC is on and by the admin command."},
 	{Name: "NVD_API_KEY_FILE", Type: "string", Secret: true, Description: "Path to a file containing an optional NVD API key (for example a Docker secret). With a key the NVD rate limit rises from 5 to 50 requests per 30 seconds. The key is sent only to the NVD API and never stored or logged."},
@@ -202,6 +206,7 @@ func Load() (Config, error) {
 		AutotaskSync:         getenv("AUTOTASK_SYNC", "false") == "true",
 		IntuneSync:           getenv("INTUNE_SYNC", "false") == "true",
 		SoftwareProviderSync: getenv("SOFTWARE_PROVIDER_SYNC", "false") == "true",
+		SoftwareDeployWrite:  getenv("SOFTWARE_DEPLOY_WRITE", "false") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -70,6 +71,15 @@ type Service struct {
 	evalDeadline time.Duration
 	evalMu       sync.Mutex
 	evalBusy     map[string]bool
+	// writer is the Management Assignment Writer and deployWrite the capability SOFTWARE_DEPLOY_WRITE (F9 G3);
+	// deployWriteAudited records that the enabling was audited by this process.
+	writer             intune.AssignmentWriter
+	deployWrite        bool
+	deployWriteAudited atomic.Bool
+	// obsExpiry is how long a target waits for evidence after read-back; evidenceFresh how recent promotion
+	// evidence must be.
+	obsExpiry     time.Duration
+	evidenceFresh time.Duration
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
@@ -86,7 +96,7 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 		catalog:   catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow},
 		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}, approvers: noApprovers{}, targetCap: MaxTargetDevices,
 		hiTargets: HighImpactTargetThreshold, hiPercent: HighImpactFleetPercent, evalScans: MaxEvaluationScans, evalDeadline: EvaluationDeadline,
-		evalBusy: map[string]bool{}}
+		evalBusy: map[string]bool{}, writer: intune.NotConfiguredWriter{}, obsExpiry: DefaultObservationExpiry, evidenceFresh: DefaultEvidenceFreshness}
 }
 
 // WithHighImpactThresholds sets the high-impact thresholds (tests): targets >= 1 Devices, percent 0-100 of the live

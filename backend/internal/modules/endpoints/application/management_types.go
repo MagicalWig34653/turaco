@@ -288,6 +288,8 @@ type ObjectRef struct {
 type ObservationInput struct {
 	ArtifactID, DeviceID, State, RawStatus string
 	ObservedAt                             time.Time
+	// ProviderTime says ObservedAt is the provider's own timestamp (not the time of the synchronization).
+	ProviderTime bool
 }
 
 // ObservationOutcome is what an upsert did to one observation row.

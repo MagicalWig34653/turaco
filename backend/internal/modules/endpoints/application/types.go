@@ -349,6 +349,7 @@ type Store interface {
 	ViewStore
 	SoftwareStore
 	DeploymentStore
+	ExecutionStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.

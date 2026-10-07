@@ -74,7 +74,10 @@ var Registry = []Definition{
 	{Name: "TargetSetChanged", Version: 1, Owner: "endpoints", Description: "A Target Set was created, changed or archived. Payload: targetSetId, operation (created|updated|archived), version, allDevices."},
 	{Name: "DeploymentScheduled", Version: 1, Owner: "endpoints", Description: "A valid Deployment plan was scheduled (high-impact plans only after their plan Approval, with an unchanged plan). Payload: deploymentId, versionId, productId, intent, highImpact, ringCount."},
 	{Name: "DeploymentCancelled", Version: 1, Owner: "endpoints", Description: "A Deployment plan was cancelled with a reason code. Payload: deploymentId, reason, previousStatus."},
-	{Name: "DeploymentStarted", Version: 1, Owner: "endpoint", Description: "A deployment began target execution."},
-	{Name: "DeploymentCompleted", Version: 1, Owner: "endpoint", Description: "A deployment reached a terminal completion state."},
-	{Name: "DeploymentTargetFailed", Version: 1, Owner: "endpoint", Description: "A deployment target attempt failed."},
+	{Name: "DeploymentStarted", Version: 1, Owner: "endpoints", Description: "A scheduled Deployment was started (target resolution begins). Payload: deploymentId, versionId, intent, ringCount, highImpact."},
+	{Name: "RingActivated", Version: 1, Owner: "endpoints", Description: "A Deployment Ring became active (first ring after target resolution, next ring after a promotion). Payload: deploymentId, ringId, ringRunId, position."},
+	{Name: "RingPromoted", Version: 1, Owner: "endpoints", Description: "A Deployment Ring was promoted (by a person, or the last ring by the engine when the Deployment completes). Payload: deploymentId, ringId, ringRunId, position."},
+	{Name: "RingHalted", Version: 1, Owner: "endpoints", Description: "A Deployment Ring was halted (failure threshold, assignment failure, kill switch, a person or cancellation). Payload: deploymentId, ringId, ringRunId, reason."},
+	{Name: "DeploymentCompleted", Version: 1, Owner: "endpoints", Description: "A Deployment finished all rings. Payload: deploymentId, status (completed|completed_with_errors), successful, failed."},
+	{Name: "DeploymentFailed", Version: 1, Owner: "endpoints", Description: "A Deployment failed before or during execution (target resolution refused, gates closed). Payload: deploymentId, reason."},
 }

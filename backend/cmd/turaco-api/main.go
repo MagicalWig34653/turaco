@@ -167,7 +167,7 @@ func main() {
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
-	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync), sessionAuth, logger)
+	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync).WithDeployWrite(cfg.SoftwareDeployWrite, intune.NotConfiguredWriter{}), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
