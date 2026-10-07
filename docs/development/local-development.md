@@ -103,6 +103,16 @@ Claude Code cloud sessions use this same environment through an automatic adapte
 
 `.env` is ignored. `.env.example` contains non-secret examples only. Never place real customer/production credentials into the repository.
 
+## Deployment write capability: API and worker
+
+`SOFTWARE_DEPLOY_WRITE` must have the same value for the API and for the worker (`turaco-worker`). The API checks it when a person starts, resumes or promotes a Deployment; the worker needs it to resolve targets, write ring assignments and clear them. Hazards of a split:
+
+- API on, worker off: a started Deployment stays in `resolving_targets` (the worker only runs the kill-switch sweep). The progress read reports `resolvingStuck` after 15 minutes; check the worker's environment first.
+- API off, worker on: running Deployments continue, but nobody can start, resume or promote.
+- Worker off while the kill switch or a cancel queued the clearing of ring assignments: the assignments stay at the provider until the worker runs with the capability on; the progress read reports `clearPending` for the Deployment and the ring.
+
+Enabling the capability is audited once per process (`endpoints.deploy_write.enabled`). Change the value for both processes in the same deployment step.
+
 ## Real integrations
 
 Normal local development should not require production LDAP/Intune/Autotask. Use local fakes/fixtures/contract tests. Explicit integration testing against real systems belongs in controlled environments with dedicated test credentials.
