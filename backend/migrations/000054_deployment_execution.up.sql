@@ -202,11 +202,11 @@ BEGIN
         RAISE EXCEPTION 'a ring run of a cancelled deployment is final' USING ERRCODE = 'check_violation';
     END IF;
     -- Promotion approval: none -> pending -> approved | rejected, rejected -> pending (new request); only a halt withdraws it.
-    IF NEW.promotion_approval_status IS DISTINCT FROM OLD.promotion_approval_status AND NOT (
+    IF NEW.promotion_approval_status IS DISTINCT FROM OLD.promotion_approval_status AND NOT COALESCE(
         (OLD.promotion_approval_status IS NULL AND NEW.promotion_approval_status = 'pending')
         OR (OLD.promotion_approval_status = 'pending' AND NEW.promotion_approval_status IN ('approved', 'rejected'))
         OR (OLD.promotion_approval_status = 'rejected' AND NEW.promotion_approval_status = 'pending')
-        OR (OLD.promotion_approval_status IS NOT NULL AND NEW.promotion_approval_status IS NULL AND NEW.status = 'halted')) THEN
+        OR (OLD.promotion_approval_status IS NOT NULL AND NEW.promotion_approval_status IS NULL AND NEW.status = 'halted'), false) THEN
         RAISE EXCEPTION 'promotion approval % -> % is not allowed', OLD.promotion_approval_status, NEW.promotion_approval_status USING ERRCODE = 'check_violation';
     END IF;
     RETURN NEW;

@@ -63,7 +63,7 @@ func newExEnv(t *testing.T, name string, ext ...string) *exEnv {
 		for _, tbl := range []string{"deployment_attempts", "deployment_target_transitions", "deployment_targets", "deployment_ring_transitions", "deployment_ring_runs"} {
 			_, _ = conn.Exec(ctx, `DELETE FROM endpoints.`+tbl+` WHERE deployment_id IN (SELECT id FROM endpoints.deployments WHERE created_by = $1)`, d.user)
 		}
-		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.findings WHERE kind = 'deployment_evidence_conflict' AND device_id IN (SELECT id FROM endpoints.devices WHERE provider = $1)`, d.provider)
+		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.findings WHERE kind IN ('deployment_evidence_conflict', 'deployment_clear_failed') AND device_id IN (SELECT id FROM endpoints.devices WHERE provider = $1)`, d.provider)
 		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 	})
 	if len(ext) == 0 {

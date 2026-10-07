@@ -67,3 +67,29 @@ func TestDeploymentStatusSetsAreConsistent(t *testing.T) {
 		t.Errorf("halted gate %q", got)
 	}
 }
+
+func TestNoEvidenceIsNeverSuccess(t *testing.T) {
+	now := time.Now()
+	settled := now.Add(-2 * time.Hour)
+	run := DeploymentRingRun{SettledAt: &settled}
+	ring := DeploymentRing{SuccessThresholdPercent: 80, SoakMinutes: 60}
+	// Every target was satisfied or not applicable: denominator 0 (the threshold arithmetic alone would pass 0 >= 0).
+	none := RingCounts{ByState: map[string]int{TargetAlreadySatisfied: 4, TargetNotApplicable: 1}}
+	if got := evidenceCode(run, ring, none, now); got != CodeNoEvidence {
+		t.Fatalf("den=0: %q", got)
+	}
+	cases := []struct {
+		den, na, want int
+	}{{0, 0, 1}, {1, 0, 1}, {2, 0, 2}, {3, 0, 3}, {40, 0, MinAutoHaltSample}, {1, 2, 3}}
+	for _, c := range cases {
+		rc := RingCounts{ByState: map[string]int{TargetSuccessful: c.den}, ProviderNA: c.na}
+		if got := rc.MinEvidence(); got != c.want {
+			t.Errorf("MinEvidence(den %d, na %d) = %d, want %d", c.den, c.na, got, c.want)
+		}
+	}
+	// Two targets of two succeeded: a small ring needs all of its targets, not MinAutoHaltSample of them.
+	small := RingCounts{ByState: map[string]int{TargetSuccessful: 2}, FreshSuccessful: 2, FreshObserved: 2}
+	if got := evidenceCode(run, ring, small, now); got != "" {
+		t.Fatalf("small ring: %q", got)
+	}
+}
