@@ -108,18 +108,6 @@ func (r *Runner) Register(jobType string, timeout time.Duration, h Handler) erro
 	return nil
 }
 
-// RegisteredJobs returns the timeout of every registered job type. It lets a startup test assert the
-// registrations of the real worker.
-func (r *Runner) RegisteredJobs() map[string]time.Duration {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make(map[string]time.Duration, len(r.handlers))
-	for t, reg := range r.handlers {
-		out[t] = reg.timeout
-	}
-	return out
-}
-
 // AddSchedule registers a recurring enqueue evaluated on every Run iteration.
 // The job type must already be registered.
 func (r *Runner) AddSchedule(s Schedule) error {

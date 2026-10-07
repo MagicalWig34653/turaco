@@ -152,8 +152,6 @@ var (
 	ErrEditorsFull = errors.New("endpoints: the deployment has the maximum number of editors")
 	// ErrEvaluationBusy means the user already runs an evaluating request.
 	ErrEvaluationBusy = errors.New("endpoints: another evaluation of this user is running")
-	// ErrExportBusy means MaxConcurrentExports report exports are already running.
-	ErrExportBusy = errors.New("endpoints: too many report exports are running")
 )
 
 // PlanInvalidError means submission or scheduling is refused because the plan has blocking issues.
@@ -259,15 +257,13 @@ type Deployment struct {
 	CreatedBy         string
 	Editors           []string
 	HighImpact        bool
-	// CreateTasks switches the follow-up Tasks and notifications of the correlation job (default true).
-	CreateTasks bool
-	ApprovalID  *string
-	SubmittedBy *string
-	SubmittedAt *time.Time
-	PlanSHA256  *string
-	ApprovedAt  *time.Time
-	ScheduledBy *string
-	ScheduledAt *time.Time
+	ApprovalID        *string
+	SubmittedBy       *string
+	SubmittedAt       *time.Time
+	PlanSHA256        *string
+	ApprovedAt        *time.Time
+	ScheduledBy       *string
+	ScheduledAt       *time.Time
 	// ScheduledTargets is the evaluated target total of the plan at scheduling (nil: not recorded).
 	ScheduledTargets *int
 	StartedBy        *string
@@ -321,8 +317,6 @@ type DeploymentInput struct {
 	Intent            string
 	Supersede         bool
 	OwnerUserID       string
-	// CreateTasks nil means true on create and unchanged on update.
-	CreateTasks *bool
 }
 
 // DeploymentTransition is one append-only lifecycle row.

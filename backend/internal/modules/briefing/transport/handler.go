@@ -70,9 +70,6 @@ var feedPermissionTable = []feedPermission{
 	{"majorincidents.manage", func(p *application.FeedPrincipal) { p.Desk = true }},
 	{"endpoints.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
 	{"integrations.intune.manage", func(p *application.FeedPrincipal) { p.Endpoints = true; p.Directory = true }},
-	{"deployments.view", func(p *application.FeedPrincipal) { p.Deployments = true }},
-	{"deployments.manage", func(p *application.FeedPrincipal) { p.Deployments = true }},
-	{"deployments.execute", func(p *application.FeedPrincipal) { p.Deployments = true }},
 	{"organization.directory.sync", func(p *application.FeedPrincipal) { p.Directory = true }},
 }
 

@@ -50,11 +50,6 @@ func Middleware(logger *slog.Logger, next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", requestID)
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				if recovered == http.ErrAbortHandler {
-					// A handler aborted a streamed response on purpose (net/http closes the connection): log, then pass it on.
-					logger.Warn("http response aborted", "request_id", requestID, "method", r.Method, "path", r.URL.Path)
-					panic(recovered)
-				}
 				logger.Error("http panic", "request_id", requestID, "error", recovered, "stack", string(debug.Stack()))
 				JSON(w, http.StatusInternalServerError, ErrorEnvelope{Error: APIError{Code: "platform.internal_error", Message: "An internal error occurred.", RequestID: requestID}})
 			}

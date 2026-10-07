@@ -49,31 +49,3 @@ func (r *Repository) ApplicableAdvisories(ctx context.Context) ([]application.Ad
 	}
 	return out, truncated, nil
 }
-
-// DeploymentAdvisories reads the applicable Advisories with open Findings for a product on a set of Devices (F9 G4).
-func (r *Repository) DeploymentAdvisories(ctx context.Context, productID string, deviceIDs []string, limit int) ([]application.DeploymentAdvisory, application.DeploymentContextTotals, error) {
-	var totals application.DeploymentContextTotals
-	const scope = `FROM security.vulnerability_findings f JOIN security.advisories a ON a.id = f.advisory_id
-		WHERE f.software_product_id = $1::uuid AND f.device_id = ANY($2::uuid[])
-		  AND f.status IN ('open', 'investigating', 'accepted', 'remediation_planned', 'remediating')
-		  AND a.status IN ('applicable', 'remediation_planned', 'remediating')`
-	if err := r.pool.QueryRow(ctx, `SELECT count(DISTINCT f.advisory_id), count(*) `+scope, productID, deviceIDs).Scan(&totals.Advisories, &totals.Findings); err != nil {
-		return nil, totals, err
-	}
-	rows, err := r.pool.Query(ctx, `SELECT a.id::text, a.reference, a.title, a.severity, a.status, a.known_exploited, count(*), count(DISTINCT f.device_id) `+scope+`
-		GROUP BY a.id ORDER BY a.known_exploited DESC, CASE a.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, a.id DESC LIMIT $3`,
-		productID, deviceIDs, limit)
-	if err != nil {
-		return nil, totals, err
-	}
-	defer rows.Close()
-	out := []application.DeploymentAdvisory{}
-	for rows.Next() {
-		var a application.DeploymentAdvisory
-		if err := rows.Scan(&a.ID, &a.Reference, &a.Title, &a.Severity, &a.Status, &a.KnownExploited, &a.OpenFindings, &a.AffectedDevices); err != nil {
-			return nil, totals, err
-		}
-		out = append(out, a)
-	}
-	return out, totals, rows.Err()
-}

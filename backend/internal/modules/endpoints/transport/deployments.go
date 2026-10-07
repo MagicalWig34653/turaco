@@ -51,7 +51,6 @@ func registerDeployments(route func(string, func(http.Handler) http.Handler, htt
 	route("POST /api/v1/deployments/{id}/schedule", manage, h.scheduleDeployment)
 	route("POST /api/v1/deployments/{id}/cancel", authorization.RequireAny(auth, permDeploymentsManage, permDeploymentsExecute), h.cancelDeployment)
 	registerExecution(route, auth, h)
-	registerReports(route, auth, h)
 }
 
 // deploymentFail maps the planning errors and hands everything else to softwareFail.
@@ -74,8 +73,6 @@ func (h *handler) deploymentFail(w http.ResponseWriter, r *http.Request, err err
 		httpx.WriteError(w, http.StatusConflict, "endpoints.editors_full", "The deployment has the maximum number of editors.")
 	case errors.Is(err, application.ErrEvaluationBusy):
 		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.evaluation_busy", "Another evaluation of yours is running; try again when it has finished.")
-	case errors.Is(err, application.ErrExportBusy):
-		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.export_busy", "Too many report exports are running; try again in a moment.")
 	case errors.Is(err, application.ErrTargetSetInUse):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.target_set_in_use", "The target set belongs to a deployment that is submitted, approved, scheduled or running.")
 	case errors.Is(err, application.ErrTargetSetNameTaken):
@@ -276,7 +273,6 @@ type deploymentDTO struct {
 	CreatedBy         string   `json:"createdBy"`
 	Editors           []string `json:"editors"`
 	HighImpact        bool     `json:"highImpact"`
-	CreateTasks       bool     `json:"createTasks"`
 	ApprovalID        *string  `json:"approvalId"`
 	SubmittedBy       *string  `json:"submittedBy"`
 	SubmittedAt       *string  `json:"submittedAt"`
@@ -297,7 +293,7 @@ type deploymentDTO struct {
 func toDeployment(d application.Deployment) deploymentDTO {
 	return deploymentDTO{ID: d.ID, Reference: d.Reference, Name: d.Name, SoftwareVersionID: d.SoftwareVersionID, ProductID: d.ProductID,
 		ProductName: d.ProductName, ProductVersion: d.ProductVersion, Intent: d.Intent, Supersede: d.Supersede, Status: d.Status,
-		StatusReason: d.StatusReason, OwnerUserID: d.OwnerUserID, CreatedBy: d.CreatedBy, Editors: d.Editors, HighImpact: d.HighImpact, CreateTasks: d.CreateTasks,
+		StatusReason: d.StatusReason, OwnerUserID: d.OwnerUserID, CreatedBy: d.CreatedBy, Editors: d.Editors, HighImpact: d.HighImpact,
 		ApprovalID: d.ApprovalID, SubmittedBy: d.SubmittedBy, SubmittedAt: tsPtr(d.SubmittedAt), PlanSHA256: d.PlanSHA256,
 		ApprovedAt: tsPtr(d.ApprovedAt), ScheduledBy: d.ScheduledBy, ScheduledAt: tsPtr(d.ScheduledAt), StartedBy: d.StartedBy, StartedAt: tsPtr(d.StartedAt), FinishedAt: tsPtr(d.FinishedAt), CancelledBy: d.CancelledBy,
 		CancelledAt: tsPtr(d.CancelledAt), Version: d.Version, CreatedAt: ts(d.CreatedAt), UpdatedAt: ts(d.UpdatedAt)}
@@ -438,12 +434,11 @@ type deploymentBody struct {
 	Intent            string `json:"intent"`
 	Supersede         bool   `json:"supersede"`
 	OwnerUserID       string `json:"ownerUserId"`
-	CreateTasks       *bool  `json:"createTasks"`
 	ExpectedVersion   *int   `json:"expectedVersion"`
 }
 
 func (b deploymentBody) input() application.DeploymentInput {
-	return application.DeploymentInput{Name: b.Name, SoftwareVersionID: b.SoftwareVersionID, Intent: b.Intent, Supersede: b.Supersede, OwnerUserID: b.OwnerUserID, CreateTasks: b.CreateTasks}
+	return application.DeploymentInput{Name: b.Name, SoftwareVersionID: b.SoftwareVersionID, Intent: b.Intent, Supersede: b.Supersede, OwnerUserID: b.OwnerUserID}
 }
 
 func (h *handler) createDeployment(w http.ResponseWriter, r *http.Request) {

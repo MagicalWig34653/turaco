@@ -18,8 +18,6 @@ import (
 	endpointsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/repository"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
-	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
-	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
@@ -134,54 +132,7 @@ func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool, s
 	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).
 		WithViews(dir, assets).WithSoftware(software, softwareSync).
 		WithDeployments(approvals, changeWindows{c: changespublic.NewChanges(Changes(pool))}, assets).
-		WithDeploymentApprovers(approvers).
-		WithSecurity(deploymentSecurity{a: securitypublic.NewAdvisories(Security(pool))})
-}
-
-// DeploymentCorrelation is the Endpoints service of the correlation job: the engine service plus the follow-up Tasks
-// (Tasks contract, context type deployment) and notifications.
-func DeploymentCorrelation(pool *pgxpool.Pool, notifier *notifications.Service) *endpointsapp.Service {
-	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
-	return Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).
-		WithFollowUps(deploymentTasks{c: taskspublicCreator(pool, dir, endpointsapp.FollowUpTaskContext)}, notifier)
-}
-
-// deploymentTasks adapts the Tasks contract to the follow-up Tasks of a Deployment. A Task whose assignee is no longer
-// active is created unassigned rather than not at all.
-type deploymentTasks struct{ c *taskspublic.Creator }
-
-func (t deploymentTasks) CreateInTx(ctx context.Context, tx pgx.Tx, in endpointsapp.FollowUpTask) (string, bool, error) {
-	due := in.DueAt
-	create := taskspublic.CreateInput{Title: in.Title, DueAt: &due, ContextType: endpointsapp.FollowUpTaskContext, ContextID: in.DeploymentID}
-	if in.AssignedUserID != "" {
-		u := in.AssignedUserID
-		create.AssignedUserID = &u
-	}
-	caller := taskspublic.Caller{Actor: in.Actor, CorrelationID: in.CorrelationID}
-	id, err := t.c.CreateInTx(ctx, tx, caller, create)
-	if errors.Is(err, taskspublic.ErrAssigneeInvalid) {
-		// An inactive owner: the Task is created unassigned and reported as such.
-		create.AssignedUserID = nil
-		id, err = t.c.CreateInTx(ctx, tx, caller, create)
-		return id, false, err
-	}
-	return id, create.AssignedUserID != nil, err
-}
-
-// deploymentSecurity adapts the Security public contract to the security context of a Deployment.
-type deploymentSecurity struct{ a *securitypublic.Advisories }
-
-func (d deploymentSecurity) DeploymentContext(ctx context.Context, productID string, deviceIDs []string, details bool) (endpointsapp.SecurityContext, error) {
-	res, err := d.a.DeploymentContext(ctx, productID, deviceIDs, details)
-	if err != nil {
-		return endpointsapp.SecurityContext{}, err
-	}
-	out := endpointsapp.SecurityContext{AdvisoryCount: res.AdvisoryCount, OpenFindings: res.OpenFindings, Truncated: res.Truncated}
-	for _, a := range res.Advisories {
-		out.Advisories = append(out.Advisories, endpointsapp.SecurityContextAdvisory{ID: a.ID, Reference: a.Reference, Title: a.Title, Severity: a.Severity,
-			Status: a.Status, KnownExploited: a.KnownExploited, OpenFindings: a.OpenFindings, AffectedDevices: a.AffectedDevices})
-	}
-	return out, nil
+		WithDeploymentApprovers(approvers)
 }
 
 // deploymentApprovers answers who may approve plans: effective permissions (platform/authorization/roles) and

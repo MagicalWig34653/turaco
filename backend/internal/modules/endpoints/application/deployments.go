@@ -153,7 +153,7 @@ func planSHA256(d Deployment, rings []DeploymentRing, sets map[string]TargetSet)
 
 func deploymentState(d Deployment) map[string]any {
 	return map[string]any{"status": d.Status, "statusReason": d.StatusReason, "version": d.Version, "highImpact": d.HighImpact,
-		"softwareVersionId": d.SoftwareVersionID, "intent": d.Intent, "supersede": d.Supersede, "createTasks": d.CreateTasks}
+		"softwareVersionId": d.SoftwareVersionID, "intent": d.Intent, "supersede": d.Supersede}
 }
 
 // addEditor adds user to the plan's editors; a full list refuses the edit (ErrEditorsFull) instead of dropping
@@ -310,7 +310,7 @@ func (s *Service) CreateDeployment(ctx context.Context, c Caller, p Principal, i
 			return err
 		}
 		d := Deployment{Name: in.Name, SoftwareVersionID: in.SoftwareVersionID, Intent: in.Intent, Supersede: in.Supersede, Status: DeploymentDraft,
-			OwnerUserID: owner, CreatedBy: c.Actor.UserID, Editors: []string{c.Actor.UserID}, CreateTasks: in.CreateTasks == nil || *in.CreateTasks}
+			OwnerUserID: owner, CreatedBy: c.Actor.UserID, Editors: []string{c.Actor.UserID}}
 		d.HighImpact = staticHighImpact(d, nil, nil) != ""
 		if out, err = s.store.InsertDeploymentTx(ctx, tx, d); err != nil {
 			return err
@@ -407,9 +407,6 @@ func (s *Service) UpdateDeployment(ctx context.Context, c Caller, p Principal, i
 		next.Name, next.SoftwareVersionID, next.Intent, next.Supersede = in.Name, in.SoftwareVersionID, in.Intent, in.Supersede
 		if owner != "" {
 			next.OwnerUserID = owner
-		}
-		if in.CreateTasks != nil {
-			next.CreateTasks = *in.CreateTasks
 		}
 		return nil
 	})
