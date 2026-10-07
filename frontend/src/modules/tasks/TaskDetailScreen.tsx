@@ -126,6 +126,16 @@ export function TaskDetailScreen({ id }: { id: string }) {
             <dd>{formatDateTime(locale, task.completedAt)}</dd>
           </>
         ) : null}
+        {task.contextType === 'deployment' && task.contextId ? (
+          <>
+            <dt>{t('tasks.fact.context')}</dt>
+            <dd>
+              <Link to={`/deployments/${encodeURIComponent(task.contextId)}`}>
+                {t('tasks.context.deployment')}
+              </Link>
+            </dd>
+          </>
+        ) : null}
         <dt>{t('tasks.fact.created')}</dt>
         <dd>{formatDateTime(locale, task.createdAt)}</dd>
         <dt>{t('tasks.col.updated')}</dt>

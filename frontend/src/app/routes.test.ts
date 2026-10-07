@@ -444,7 +444,11 @@ describe('deployment routes', () => {
       'deployments.execute',
       'deployments.approve',
     ]) {
-      expect(ids([permission], 'endpoints')).toEqual(['deployments', 'targetSets']);
+      expect(ids([permission], 'endpoints')).toEqual([
+        'deployments',
+        'softwareRollouts',
+        'targetSets',
+      ]);
     }
     expect(ids(['deployments.high_impact'], 'endpoints')).toEqual(['deployments']);
     expect(ids(['endpoints.view'], 'endpoints')).not.toContain('deployments');
@@ -453,6 +457,7 @@ describe('deployment routes', () => {
   it('matches static paths before detail routes', () => {
     expect(matchRoute(appRoutes, '/deployments')?.route.id).toBe('deployments');
     expect(matchRoute(appRoutes, '/deployments/new')?.route.id).toBe('deploymentNew');
+    expect(matchRoute(appRoutes, '/software/rollouts')?.route.id).toBe('softwareRollouts');
     expect(matchRoute(appRoutes, '/deployments/d1')?.route.id).toBe('deploymentDetail');
     expect(matchRoute(appRoutes, '/target-sets')?.route.id).toBe('targetSets');
     expect(matchRoute(appRoutes, '/target-sets/new')?.route.id).toBe('targetSetNew');

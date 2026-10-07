@@ -55,6 +55,7 @@ export type RouteId =
   | 'softwareVersionNew'
   | 'softwareVersionDetail'
   | 'deployments'
+  | 'softwareRollouts'
   | 'deploymentNew'
   | 'deploymentDetail'
   | 'targetSets'
@@ -310,6 +311,13 @@ export const appRoutes: readonly AppRoute[] = [
       'deployments.high_impact',
       ...softwareViewPermissions,
     ],
+    nav: 'endpoints',
+  },
+  {
+    id: 'softwareRollouts',
+    pattern: '/software/rollouts',
+    titleKey: 'nav.softwareRollouts',
+    requiresAny: deploymentReadPermissions,
     nav: 'endpoints',
   },
   {

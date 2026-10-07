@@ -83,6 +83,7 @@ import {
   DeploymentWizardScreen,
   DeploymentsScreen,
 } from '../modules/deployments/DeploymentScreens';
+import { RolloutsScreen } from '../modules/deployments/RolloutsScreen';
 import { TargetSetEditorScreen, TargetSetsScreen } from '../modules/deployments/TargetSetScreens';
 import { LedgerScreen } from '../modules/inventory/LedgerScreen';
 import { ReceiptCreateScreen } from '../modules/inventory/ReceiptCreateScreen';
@@ -193,6 +194,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <SoftwareVersionDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'deployments':
       return <DeploymentsScreen />;
+    case 'softwareRollouts':
+      return <RolloutsScreen />;
     case 'deploymentNew':
       return <DeploymentWizardScreen />;
     case 'deploymentDetail':

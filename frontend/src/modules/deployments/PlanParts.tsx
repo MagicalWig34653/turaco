@@ -58,6 +58,7 @@ export type PlanFieldValues = {
   versionLabel: string;
   intent: DeploymentIntent;
   supersede: boolean;
+  createTasks: boolean;
   owner: Assignee | null;
 };
 
@@ -68,6 +69,7 @@ export function planFieldValues(plan?: DeploymentDetail | undefined): PlanFieldV
     versionLabel: plan ? `${plan.productName} ${plan.productVersion}` : '',
     intent: plan?.intent ?? 'install',
     supersede: plan?.supersede ?? false,
+    createTasks: plan?.createTasks ?? false,
     owner: null,
   };
 }
@@ -78,6 +80,7 @@ export function planInput(values: PlanFieldValues): DeploymentInput {
     softwareVersionId: values.versionId,
     intent: values.intent,
     supersede: values.supersede,
+    createTasks: values.createTasks,
     ...(values.owner ? { ownerUserId: values.owner.id } : {}),
   };
 }
@@ -126,6 +129,12 @@ export function PlanFields({
         description={t('deployments.field.supersedeHint')}
         checked={values.supersede}
         onChange={(event) => onChange({ ...values, supersede: event.target.checked })}
+      />
+      <Checkbox
+        label={t('deployments.field.createTasks')}
+        description={t('deployments.field.createTasksHint')}
+        checked={values.createTasks}
+        onChange={(event) => onChange({ ...values, createTasks: event.target.checked })}
       />
       {highImpact ? (
         <Alert kind="warning">
