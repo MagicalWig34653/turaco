@@ -84,7 +84,12 @@ type Service struct {
 	// security context of a Deployment (WithSecurity).
 	followTasks FollowUpTasks
 	followNotes FollowUpNotifier
+	followCap   int
 	security    DeploymentSecurity
+	// exportsRunning counts the running CSV exports (at most MaxConcurrentExports); secCache caches security contexts.
+	exportsRunning atomic.Int32
+	secMu          sync.Mutex
+	secCache       map[string]secCacheEntry
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);

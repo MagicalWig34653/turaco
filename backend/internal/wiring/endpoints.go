@@ -150,7 +150,7 @@ func DeploymentCorrelation(pool *pgxpool.Pool, notifier *notifications.Service) 
 // active is created unassigned rather than not at all.
 type deploymentTasks struct{ c *taskspublic.Creator }
 
-func (t deploymentTasks) CreateInTx(ctx context.Context, tx pgx.Tx, in endpointsapp.FollowUpTask) (string, error) {
+func (t deploymentTasks) CreateInTx(ctx context.Context, tx pgx.Tx, in endpointsapp.FollowUpTask) (string, bool, error) {
 	due := in.DueAt
 	create := taskspublic.CreateInput{Title: in.Title, DueAt: &due, ContextType: endpointsapp.FollowUpTaskContext, ContextID: in.DeploymentID}
 	if in.AssignedUserID != "" {
@@ -160,10 +160,12 @@ func (t deploymentTasks) CreateInTx(ctx context.Context, tx pgx.Tx, in endpoints
 	caller := taskspublic.Caller{Actor: in.Actor, CorrelationID: in.CorrelationID}
 	id, err := t.c.CreateInTx(ctx, tx, caller, create)
 	if errors.Is(err, taskspublic.ErrAssigneeInvalid) {
+		// An inactive owner: the Task is created unassigned and reported as such.
 		create.AssignedUserID = nil
 		id, err = t.c.CreateInTx(ctx, tx, caller, create)
+		return id, false, err
 	}
-	return id, err
+	return id, create.AssignedUserID != nil, err
 }
 
 // deploymentSecurity adapts the Security public contract to the security context of a Deployment.

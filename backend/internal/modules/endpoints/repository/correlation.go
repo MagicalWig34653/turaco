@@ -20,7 +20,7 @@ func (r *Repository) CorrelationDeployments(ctx context.Context, recentSince tim
 		WHERE d.status IN ('running', 'paused')
 		   OR (d.status IN ('completed_with_errors', 'failed') AND d.finished_at >= $1)
 		   OR EXISTS (SELECT 1 FROM endpoints.findings f WHERE f.deployment_id = d.id AND f.status = 'open')
-		ORDER BY d.id DESC LIMIT $2`, recentSince, limit)
+		ORDER BY d.last_correlated_at NULLS FIRST, d.id LIMIT $2`, recentSince, limit)
 	if err != nil {
 		return nil, fmt.Errorf("correlation deployments: %w", err)
 	}
@@ -36,9 +36,30 @@ func (r *Repository) CorrelationDeployments(ctx context.Context, recentSince tim
 	return ids, rows.Err()
 }
 
-// errorCodeSQL is the failure code of a target: the provider's raw status of the pinned artifact on the Device, or
-// Turaco's reason code when the provider reported none. Expects the aliases t (target), o (observation).
-const errorCodeSQL = `COALESCE(NULLIF(left(btrim(o.raw_status), 200), ''), t.state_reason)`
+// MarkCorrelated records that the Deployment was correlated now, whatever the outcome, so one failing Deployment
+// does not hold back the others at the head of the queue.
+func (r *Repository) MarkCorrelated(ctx context.Context, deploymentID string) error {
+	if _, err := r.pool.Exec(ctx, `UPDATE endpoints.deployments SET last_correlated_at = now() WHERE id = $1::uuid`, deploymentID); err != nil {
+		return fmt.Errorf("mark correlated: %w", err)
+	}
+	return nil
+}
+
+// cleanSQL cleans a provider or inventory string in the database exactly as the application does before it stores it
+// (control characters become spaces, Unicode format characters such as bidi overrides are dropped, white space is
+// collapsed, at most 100 characters), so that grouping happens on the cleaned value and distinct raw strings cannot
+// collide on one cluster key. NULL stays NULL; the result may be empty.
+func cleanSQL(expr string) string {
+	return `left(btrim(regexp_replace(regexp_replace(regexp_replace(` + expr + `, '[\u0001-\u001F\u007F-\u009F]', ' ', 'g'),
+		'[\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF]', '', 'g'), '\s+', ' ', 'g')), 100)`
+}
+
+// errorCodeSQL is the failure code of a target, cleaned. An expired target has only Turaco's reason code. A failed
+// target takes the provider's raw status of the pinned artifact only while that observation is current (not retired)
+// and itself says failed or conflict; otherwise (a stale, retired or contradicting observation) Turaco's own reason
+// code. Expects the aliases t (target), o (observation).
+var errorCodeSQL = `NULLIF(` + cleanSQL(`CASE WHEN t.state = 'failed' AND o.retired_at IS NULL AND o.normalized_state IN ('failed', 'conflict')
+		THEN COALESCE(NULLIF(btrim(o.raw_status), ''), t.state_reason) ELSE t.state_reason END`) + `, '')`
 
 const targetJoins = `FROM endpoints.deployment_targets t
 	JOIN endpoints.deployment_ring_runs rr ON rr.id = t.ring_run_id
@@ -49,7 +70,8 @@ const targetJoins = `FROM endpoints.deployment_targets t
 func (r *Repository) FailureGroupsTx(ctx context.Context, tx pgx.Tx, deploymentID string) (int, int, []application.FailureGroup, error) {
 	rows, err := tx.Query(ctx, `
 		WITH t AS (
-			SELECT t.state, rr.ring_id::text AS ring_id, rg.name AS ring_name, dv.manufacturer, dv.model, dv.os_version, `+errorCodeSQL+` AS code
+			SELECT t.state, rr.ring_id::text AS ring_id, rg.name AS ring_name, `+
+		cleanSQL("dv.manufacturer")+` AS manufacturer, `+cleanSQL("dv.model")+` AS model, `+cleanSQL("dv.os_version")+` AS os_version, `+errorCodeSQL+` AS code
 			`+targetJoins+`
 			WHERE t.deployment_id = $1::uuid AND t.state NOT IN ('cancelled', 'not_applicable', 'already_satisfied')
 		), f AS (SELECT * FROM t WHERE state IN ('failed', 'expired'))
@@ -91,8 +113,8 @@ func (r *Repository) OpenClusterFindingTx(ctx context.Context, tx pgx.Tx, deploy
 	var inserted bool
 	err := tx.QueryRow(ctx, `
 		INSERT INTO endpoints.findings (kind, deployment_id, cluster_key, detail) VALUES ('deployment_failure_cluster', $1::uuid, $2, $3::jsonb)
-		ON CONFLICT (kind, deployment_id, cluster_key) WHERE status = 'open' AND deployment_id IS NOT NULL DO UPDATE SET detail = EXCLUDED.detail
-			WHERE endpoints.findings.detail IS DISTINCT FROM EXCLUDED.detail
+		ON CONFLICT (kind, deployment_id, cluster_key) WHERE status = 'open' AND deployment_id IS NOT NULL DO UPDATE SET detail = EXCLUDED.detail, below_runs = 0
+			WHERE endpoints.findings.detail IS DISTINCT FROM EXCLUDED.detail OR endpoints.findings.below_runs <> 0
 		RETURNING id::text, (xmax = 0)`, deploymentID, key, detail).Scan(&id, &inserted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", false, nil
@@ -118,6 +140,21 @@ func (r *Repository) OpenClusterKeysTx(ctx context.Context, tx pgx.Tx, deploymen
 		keys = append(keys, k)
 	}
 	return keys, rows.Err()
+}
+
+// BelowClusterTx counts one more run in which the open cluster was below the threshold and returns the number of
+// consecutive runs (0 when the cluster is not open).
+func (r *Repository) BelowClusterTx(ctx context.Context, tx pgx.Tx, deploymentID, key string) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `UPDATE endpoints.findings SET below_runs = LEAST(below_runs + 1, 100)
+		WHERE kind = 'deployment_failure_cluster' AND deployment_id = $1::uuid AND cluster_key = $2 AND status = 'open' RETURNING below_runs`, deploymentID, key).Scan(&n)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("below cluster: %w", err)
+	}
+	return n, nil
 }
 
 func (r *Repository) ResolveClusterFindingTx(ctx context.Context, tx pgx.Tx, deploymentID, key string) (bool, error) {
@@ -163,18 +200,11 @@ func (r *Repository) FollowupExistsTx(ctx context.Context, tx pgx.Tx, deployment
 	return ok, nil
 }
 
-func (r *Repository) InsertFollowupTx(ctx context.Context, tx pgx.Tx, deploymentID, reason string, ringID *string, taskID string) error {
-	_, err := tx.Exec(ctx, `INSERT INTO endpoints.deployment_followups (deployment_id, reason, ring_id, task_id) VALUES ($1::uuid, $2, $3::uuid, $4::uuid)`,
-		deploymentID, reason, ringID, taskID)
+func (r *Repository) InsertFollowupTx(ctx context.Context, tx pgx.Tx, deploymentID, reason string, ringID *string, taskID string, unassigned bool) error {
+	_, err := tx.Exec(ctx, `INSERT INTO endpoints.deployment_followups (deployment_id, reason, ring_id, task_id, unassigned) VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5)`,
+		deploymentID, reason, ringID, taskID, unassigned)
 	if err != nil {
 		return fmt.Errorf("insert followup: %w", err)
-	}
-	return nil
-}
-
-func (r *Repository) LockFollowupsTx(ctx context.Context, tx pgx.Tx, deploymentID string) error {
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('endpoints.followup:' || $1, 0))`, deploymentID); err != nil {
-		return fmt.Errorf("lock followups: %w", err)
 	}
 	return nil
 }

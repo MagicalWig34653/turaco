@@ -74,6 +74,8 @@ func (h *handler) deploymentFail(w http.ResponseWriter, r *http.Request, err err
 		httpx.WriteError(w, http.StatusConflict, "endpoints.editors_full", "The deployment has the maximum number of editors.")
 	case errors.Is(err, application.ErrEvaluationBusy):
 		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.evaluation_busy", "Another evaluation of yours is running; try again when it has finished.")
+	case errors.Is(err, application.ErrExportBusy):
+		httpx.WriteError(w, http.StatusTooManyRequests, "endpoints.export_busy", "Too many report exports are running; try again in a moment.")
 	case errors.Is(err, application.ErrTargetSetInUse):
 		httpx.WriteError(w, http.StatusConflict, "endpoints.target_set_in_use", "The target set belongs to a deployment that is submitted, approved, scheduled or running.")
 	case errors.Is(err, application.ErrTargetSetNameTaken):

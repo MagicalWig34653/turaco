@@ -5,6 +5,10 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 // Rollout reporting (F9 G4). Everything is derived from the Deployment, ring runs, targets, transitions and findings;
@@ -15,6 +19,8 @@ const (
 	MaxReportFailureReasons = 10
 	// MaxCSVRows bounds the targets of one CSV export.
 	MaxCSVRows = 50000
+	// MaxConcurrentExports is the number of report exports that may run at the same time on one instance.
+	MaxConcurrentExports = 2
 	// csvPage is the rows read per step of an export.
 	csvPage = 2000
 	// MaxRollouts bounds one page of the rollout list.
@@ -307,9 +313,22 @@ func (s *Service) ListRollouts(ctx context.Context, p Principal, statuses []stri
 
 // ExportReportRows reads the targets of a Deployment in pages (at most MaxCSVRows). begin is called once with the
 // Deployment before the first row (nothing is called for an unknown Deployment); emit gets every row. It reports
-// whether the export was cut at the cap. Names are cleared unless the caller holds endpoints.view.
-func (s *Service) ExportReportRows(ctx context.Context, p Principal, id string, begin func(Deployment), emit func(ReportRow) error) (bool, error) {
+// whether the export was cut at the cap. Names are cleared unless the caller holds endpoints.view. At most
+// MaxConcurrentExports run at once (ErrExportBusy), and every export is audited (ids only) before the first row.
+func (s *Service) ExportReportRows(ctx context.Context, p Principal, c Caller, id string, begin func(Deployment), emit func(ReportRow) error) (bool, error) {
 	d, err := s.reportDeployment(ctx, p, id)
+	if err != nil {
+		return false, err
+	}
+	if s.exportsRunning.Add(1) > MaxConcurrentExports {
+		s.exportsRunning.Add(-1)
+		return false, ErrExportBusy
+	}
+	defer s.exportsRunning.Add(-1)
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		return audit.Record(ctx, tx, audit.Change{Action: "endpoints.deployment.report_exported", TargetType: "deployment", TargetID: d.ID,
+			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"deploymentId": d.ID, "format": "csv"}})
+	})
 	if err != nil {
 		return false, err
 	}

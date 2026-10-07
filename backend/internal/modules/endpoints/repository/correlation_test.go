@@ -11,6 +11,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
@@ -20,14 +21,22 @@ type fakeFollowTasks struct {
 	x     *exEnv
 	tasks []application.FollowUpTask
 	fail  bool
+	// inactive makes the Tasks contract refuse the assignee (the Task is then created unassigned).
+	inactive bool
 }
 
-func (f *fakeFollowTasks) CreateInTx(_ context.Context, _ pgx.Tx, in application.FollowUpTask) (string, error) {
+func (f *fakeFollowTasks) CreateInTx(_ context.Context, _ pgx.Tx, in application.FollowUpTask) (string, bool, error) {
 	if f.fail {
-		return "", errors.New("tasks unavailable")
+		return "", false, errors.New("tasks unavailable")
 	}
 	f.tasks = append(f.tasks, in)
-	return f.x.newID(), nil
+	return f.x.newID(), in.AssignedUserID != "" && !f.inactive, nil
+}
+
+// grantOwner gives the Deployment owner a deployments read permission (what a follow-up Task needs to be assigned).
+func (x *exEnv) grantOwner() {
+	owner := x.cur().OwnerUserID
+	x.approvers.perms[owner] = append(x.approvers.perms[owner], application.PermDeploymentsView)
 }
 
 type fakeFollowNotes struct{ intents []notifications.Intent }
@@ -38,6 +47,7 @@ func (f *fakeFollowNotes) Create(_ context.Context, _ pgx.Tx, in notifications.I
 }
 
 type fakeSecurity struct {
+	calls     int
 	productID string
 	devices   []string
 	details   bool
@@ -45,6 +55,7 @@ type fakeSecurity struct {
 }
 
 func (f *fakeSecurity) DeploymentContext(_ context.Context, productID string, devices []string, details bool) (application.SecurityContext, error) {
+	f.calls++
 	f.productID, f.devices, f.details = productID, devices, details
 	return f.res, nil
 }
@@ -90,8 +101,8 @@ func clusterEnv(t *testing.T, name string) (*exEnv, *fakeFollowTasks, *fakeFollo
 	return x, ft, fn
 }
 
-func (x *exEnv) correlate() {
-	x.t.Helper()
+// cleanupCorrelation removes the findings and follow-ups of the Deployment after the test (they have no delete path).
+func (x *exEnv) cleanupCorrelation() {
 	x.t.Cleanup(func() {
 		ctx := context.Background()
 		conn, err := x.pool.Acquire(ctx)
@@ -104,6 +115,12 @@ func (x *exEnv) correlate() {
 		_, _ = conn.Exec(ctx, `DELETE FROM endpoints.findings WHERE deployment_id = $1::uuid`, x.dep.ID)
 		_, _ = conn.Exec(ctx, `RESET session_replication_role`)
 	})
+}
+
+func (x *exEnv) correlate() {
+	x.t.Helper()
+	x.grantOwner()
+	x.cleanupCorrelation()
 	if err := x.svc.CorrelateDeployment(context.Background(), x.dep.ID, x.corr); err != nil {
 		x.t.Fatalf("correlate: %v", err)
 	}
@@ -196,14 +213,19 @@ func TestFailureClustersAreRaisedIdempotentlyAndResolvedWhenTheDeploymentEnds(t 
 	}
 }
 
-func TestFollowUpTaskFailureRollsBackAndTheFlagSwitchesTasksOff(t *testing.T) {
+func exportCaller(p application.Principal) application.Caller {
+	return application.Caller{Actor: audit.UserActor(p.UserID), CorrelationID: "req-export"}
+}
+
+func TestFollowUpTaskFailureKeepsTheFindingsAndTheFlagSwitchesTasksOff(t *testing.T) {
 	x, ft, fn := clusterEnv(t, "Flag App")
 	ft.fail = true
-	if err := x.svc.CorrelateDeployment(context.Background(), x.dep.ID, x.corr); err == nil {
-		t.Fatal("a failing Task creation must fail the step")
+	x.grantOwner()
+	if err := x.svc.CorrelateDeployment(context.Background(), x.dep.ID, x.corr); err != nil {
+		t.Fatalf("a failing Task creation must not fail the step: %v", err)
 	}
-	if len(x.openClusters()) != 0 {
-		t.Fatal("findings were kept although the transaction failed")
+	if len(x.openClusters()) != 2 {
+		t.Fatal("findings were rolled back by the failing follow-up")
 	}
 	var n int
 	if err := x.pool.QueryRow(context.Background(), `SELECT count(*) FROM endpoints.deployment_followups WHERE deployment_id = $1::uuid`, x.dep.ID).Scan(&n); err != nil || n != 0 {
@@ -332,7 +354,7 @@ func TestReportAndRolloutPermissionsAndExport(t *testing.T) {
 		if _, _, err := x.svc.ListRollouts(ctx, p, nil, application.Page{}); !errors.Is(err, application.ErrForbidden) {
 			t.Fatalf("rollouts without permission: %v", err)
 		}
-		if _, err := x.svc.ExportReportRows(ctx, p, x.dep.ID, func(application.Deployment) {}, func(application.ReportRow) error { return nil }); !errors.Is(err, application.ErrNotFound) {
+		if _, err := x.svc.ExportReportRows(ctx, p, exportCaller(p), x.dep.ID, func(application.Deployment) {}, func(application.ReportRow) error { return nil }); !errors.Is(err, application.ErrNotFound) {
 			t.Fatalf("export without permission: %v", err)
 		}
 	}
@@ -341,7 +363,7 @@ func TestReportAndRolloutPermissionsAndExport(t *testing.T) {
 	}
 	// Names only with endpoints.view.
 	export := func(p application.Principal) (rows int, names int) {
-		_, err := x.svc.ExportReportRows(ctx, p, x.dep.ID, func(application.Deployment) {}, func(r application.ReportRow) error {
+		_, err := x.svc.ExportReportRows(ctx, p, exportCaller(p), x.dep.ID, func(application.Deployment) {}, func(r application.ReportRow) error {
 			rows++
 			if r.DeviceName != "" {
 				names++

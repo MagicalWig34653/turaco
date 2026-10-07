@@ -119,6 +119,19 @@ func csvTime(t *time.Time) string {
 }
 
 func (h *handler) deploymentReportCSV(w http.ResponseWriter, r *http.Request) {
+	p, c, id := principal(r), caller(w, r), r.PathValue("id")
+	h.streamReportCSV(w, r, func(begin func(application.Deployment), emit func(application.ReportRow) error) (bool, error) {
+		return h.svc.ExportReportRows(r.Context(), p, c, id, begin, emit)
+	})
+}
+
+// reportExporter reads the report rows: begin once before the first row, emit for every row.
+type reportExporter func(begin func(application.Deployment), emit func(application.ReportRow) error) (truncated bool, err error)
+
+// streamReportCSV writes the export as CSV. An error before the first byte becomes an error response (404, 429, 500).
+// An error after the response began cannot change the 200 any more: the connection is aborted, so the client sees a
+// failed download and never a complete-looking, silently partial file.
+func (h *handler) streamReportCSV(w http.ResponseWriter, r *http.Request, export reportExporter) {
 	var cw *csv.Writer
 	begin := func(d application.Deployment) {
 		name := "deployment-" + strings.Map(func(r rune) rune {
@@ -134,7 +147,7 @@ func (h *handler) deploymentReportCSV(w http.ResponseWriter, r *http.Request) {
 		cw = csv.NewWriter(w)
 		_ = cw.Write([]string{"ring_position", "ring", "device_id", "device_name", "state", "state_reason", "error_code", "resolved_at", "assignment_requested_at", "decided_at"})
 	}
-	truncated, err := h.svc.ExportReportRows(r.Context(), principal(r), r.PathValue("id"), begin, func(x application.ReportRow) error {
+	truncated, err := export(begin, func(x application.ReportRow) error {
 		reason := ""
 		if x.StateReason != nil {
 			reason = *x.StateReason
@@ -143,11 +156,15 @@ func (h *handler) deploymentReportCSV(w http.ResponseWriter, r *http.Request) {
 			csvCell(x.ErrorCode), ts(x.ResolvedAt), csvTime(x.AssignmentRequestedAt), csvTime(x.DecidedAt)})
 	})
 	if cw == nil {
-		// Nothing was written: the Deployment is unknown to the caller or the store failed.
+		// Nothing was written: the Deployment is unknown to the caller, too many exports run, or the store failed.
 		h.deploymentFail(w, r, err)
 		return
 	}
-	if err == nil && truncated {
+	if err != nil {
+		cw.Flush()
+		panic(http.ErrAbortHandler)
+	}
+	if truncated {
 		_ = cw.Write([]string{"truncated", "export cut at " + strconv.Itoa(application.MaxCSVRows) + " rows"})
 	}
 	cw.Flush()

@@ -26,6 +26,11 @@ type RolloutOverview struct {
 	Attention  []RolloutAttention
 	More       bool
 	InProgress int
+	// AttentionCounts counts all rollouts that need a look per kind (not bounded by the list limit).
+	AttentionCounts map[string]int
+	// UnassignedFollowups counts the follow-up Tasks created without an assignee for Deployments that are still
+	// running, paused or recently finished with errors.
+	UnassignedFollowups int
 }
 
 func (r *Repository) RolloutOverview(ctx context.Context, limit int) (RolloutOverview, error) {
@@ -58,6 +63,35 @@ func (r *Repository) RolloutOverview(ctx context.Context, limit int) (RolloutOve
 	}
 	if len(out.Attention) > limit {
 		out.Attention, out.More = out.Attention[:limit], true
+	}
+	out.AttentionCounts = map[string]int{}
+	crows, err := r.pool.Query(ctx, `SELECT kind, count(*) FROM (
+			SELECT CASE WHEN EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs rr WHERE rr.deployment_id = d.id AND rr.status = 'halted') THEN 'ring_halted'
+					WHEN d.status = 'paused' THEN 'paused'
+					WHEN EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs rr WHERE rr.deployment_id = d.id AND rr.status = 'awaiting_promotion') THEN 'awaiting_promotion'
+					ELSE 'in_progress' END AS kind
+			FROM endpoints.deployments d WHERE d.status IN ('running', 'paused')) x
+		WHERE kind <> 'in_progress' GROUP BY kind`)
+	if err != nil {
+		return out, fmt.Errorf("rollout overview: counts: %w", err)
+	}
+	for crows.Next() {
+		var kind string
+		var n int
+		if err := crows.Scan(&kind, &n); err != nil {
+			crows.Close()
+			return out, fmt.Errorf("rollout overview: counts: scan: %w", err)
+		}
+		out.AttentionCounts[kind] = n
+	}
+	crows.Close()
+	if err := crows.Err(); err != nil {
+		return out, err
+	}
+	err = r.pool.QueryRow(ctx, `SELECT count(*) FROM endpoints.deployment_followups f JOIN endpoints.deployments d ON d.id = f.deployment_id
+		WHERE f.unassigned AND (d.status IN ('running', 'paused') OR d.finished_at > now() - interval '14 days')`).Scan(&out.UnassignedFollowups)
+	if err != nil {
+		return out, fmt.Errorf("rollout overview: unassigned followups: %w", err)
 	}
 	err = r.pool.QueryRow(ctx, `SELECT count(*) FROM endpoints.deployments d WHERE d.status = 'running'
 		AND NOT EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs rr WHERE rr.deployment_id = d.id AND rr.status IN ('halted', 'awaiting_promotion'))`).Scan(&out.InProgress)

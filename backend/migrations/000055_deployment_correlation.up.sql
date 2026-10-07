@@ -7,11 +7,18 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
 ALTER TABLE endpoints.deployments ADD COLUMN IF NOT EXISTS create_tasks boolean NOT NULL DEFAULT true;
+-- last_correlated_at orders the correlation job: the least recently correlated Deployments go first, so a large backlog
+-- is covered over several runs.
+ALTER TABLE endpoints.deployments ADD COLUMN IF NOT EXISTS last_correlated_at timestamptz;
+CREATE INDEX IF NOT EXISTS deployments_last_correlated_idx ON endpoints.deployments (last_correlated_at NULLS FIRST, id);
 
 -- A finding has exactly one subject: a Device, a Software Package or a Deployment. cluster_key (dimension and value) tells
 -- the clusters of one Deployment apart; at most one is open per Deployment and key.
 ALTER TABLE endpoints.findings ADD COLUMN IF NOT EXISTS deployment_id uuid;
 ALTER TABLE endpoints.findings ADD COLUMN IF NOT EXISTS cluster_key text;
+-- below_runs counts the consecutive correlation runs in which an open cluster was below the threshold; the cluster is
+-- resolved after the third (hysteresis), so a flapping group does not raise and resolve in turn.
+ALTER TABLE endpoints.findings ADD COLUMN IF NOT EXISTS below_runs smallint NOT NULL DEFAULT 0;
 ALTER TABLE endpoints.findings DROP CONSTRAINT IF EXISTS findings_deployment_fk;
 ALTER TABLE endpoints.findings ADD CONSTRAINT findings_deployment_fk FOREIGN KEY (deployment_id)
     REFERENCES endpoints.deployments(id) ON DELETE CASCADE NOT VALID;
@@ -45,6 +52,8 @@ CREATE TABLE IF NOT EXISTS endpoints.deployment_followups (
     reason text NOT NULL CHECK (reason ~ '^[a-z][a-z_]{0,39}$'),
     ring_id uuid,
     task_id uuid NOT NULL,
+    -- unassigned: the owner was not an active user with deployments read access, the Task has no assignee.
+    unassigned boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT deployment_followups_ring_fk FOREIGN KEY (ring_id, deployment_id) REFERENCES endpoints.deployment_rings (id, deployment_id) ON DELETE RESTRICT
 );

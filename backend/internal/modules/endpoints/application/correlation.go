@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -23,9 +24,12 @@ import (
 // inference from its own data; the provider's own statements (provider_reported_error) and contradictions with the
 // software inventory (deployment_evidence_conflict) are separate findings and are never merged with it.
 //
-// The step is idempotent and bounded: it reads at most MaxCorrelationDeployments Deployments per run, aggregates in
-// the database and raises at most MaxClustersPerDeployment findings per Deployment. A cluster that no longer holds
-// (or whose Deployment completed, was cancelled or is older than CorrelationRecentWindow) is resolved by the same run.
+// The step is idempotent and bounded: it reads at most MaxCorrelationDeployments Deployments per run (the least
+// recently correlated first), aggregates in the database and raises at most MaxClustersPerDeployment findings per
+// Deployment. A cluster that stays below the threshold for ClusterResolveAfterRuns consecutive runs is resolved
+// (hysteresis); one whose Deployment completed, was cancelled or is older than CorrelationRecentWindow is resolved at
+// once. Findings are written in their own transaction; the follow-up Tasks are created afterwards, one transaction per
+// candidate, so a failing Task creation never rolls the findings back.
 const (
 	DeploymentCorrelationJobType    = "endpoints.deployment_correlation"
 	DeploymentCorrelationJobTimeout = 4 * time.Minute
@@ -38,6 +42,11 @@ const (
 	ClusterGroupFailurePercent = 50
 	MaxClustersPerDeployment   = 10
 	MaxCorrelationDeployments  = 200
+	// ClusterResolveAfterRuns is the number of consecutive runs below the threshold after which a cluster is resolved.
+	ClusterResolveAfterRuns = 3
+	// MaxFollowUpsPerRun bounds the new follow-up Tasks of one correlation run (a first run over many Deployments
+	// must not flood the Task list); the rest follows in the next runs.
+	MaxFollowUpsPerRun = 50
 	// CorrelationRecentWindow is how long after its end a Deployment that finished with errors or failed is still correlated.
 	CorrelationRecentWindow = 14 * 24 * time.Hour
 	// maxClusterValueRunes bounds a dimension value stored in a finding.
@@ -111,12 +120,16 @@ func DetectClusters(totalFailures, totalTargets int, groups []FailureGroup) []Fa
 	return out
 }
 
-// cleanClusterValue trims a provider or inventory string for storage in a finding: no control characters, at most
-// maxClusterValueRunes runes.
+// cleanClusterValue trims a provider or inventory string for storage in a finding: no control or format characters,
+// at most maxClusterValueRunes runes. The database applies the same cleaning before it groups (cleanSQL).
 func cleanClusterValue(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		switch {
+		case unicode.IsControl(r):
 			return ' '
+		case unicode.Is(unicode.Cf, r):
+			// Format characters (bidi overrides, zero-width marks) would let a value look like another one.
+			return -1
 		}
 		return r
 	}, s)
@@ -132,17 +145,20 @@ type CorrelationStore interface {
 	// CorrelationDeployments returns at most limit Deployments to correlate: running, paused, and completed with errors
 	// or failed since recentSince, plus every Deployment with an open cluster finding (to resolve it).
 	CorrelationDeployments(ctx context.Context, recentSince time.Time, limit int) ([]string, error)
+	// MarkCorrelated stamps the Deployment as correlated now (orders the next run).
+	MarkCorrelated(ctx context.Context, deploymentID string) error
 	// FailureGroupsTx aggregates the targets of a Deployment: the failed and expired ones and the targets that count
 	// (not cancelled, not applicable, not already satisfied), then the failure groups per dimension.
 	FailureGroupsTx(ctx context.Context, tx pgx.Tx, deploymentID string) (totalFailures, totalTargets int, groups []FailureGroup, err error)
 	OpenClusterFindingTx(ctx context.Context, tx pgx.Tx, deploymentID, key string, detail []byte) (id string, raised bool, err error)
 	OpenClusterKeysTx(ctx context.Context, tx pgx.Tx, deploymentID string) ([]string, error)
+	// BelowClusterTx counts one more consecutive run below the threshold of an open cluster and returns the count.
+	BelowClusterTx(ctx context.Context, tx pgx.Tx, deploymentID, key string) (int, error)
 	ResolveClusterFindingTx(ctx context.Context, tx pgx.Tx, deploymentID, key string) (bool, error)
 	// EngineHaltedRingsTx lists the halted rings whose halt was made by the engine (not by a person).
 	EngineHaltedRingsTx(ctx context.Context, tx pgx.Tx, deploymentID string) ([]HaltedRing, error)
 	FollowupExistsTx(ctx context.Context, tx pgx.Tx, deploymentID, reason string, ringID *string) (bool, error)
-	InsertFollowupTx(ctx context.Context, tx pgx.Tx, deploymentID, reason string, ringID *string, taskID string) error
-	LockFollowupsTx(ctx context.Context, tx pgx.Tx, deploymentID string) error
+	InsertFollowupTx(ctx context.Context, tx pgx.Tx, deploymentID, reason string, ringID *string, taskID string, unassigned bool) error
 	ReportStore
 }
 
@@ -157,39 +173,66 @@ func (s *Service) HandleDeploymentCorrelation(ctx context.Context, job jobs.Job)
 	return s.RunCorrelation(ctx, "job:"+job.ID)
 }
 
-// RunCorrelation correlates the failures of the candidate Deployments and creates their follow-up. A failing
-// Deployment does not stop the others.
+// followBudget bounds the new follow-up Tasks of one run.
+type followBudget struct {
+	left   int
+	capped bool
+}
+
+func (b *followBudget) take() bool {
+	if b.left <= 0 {
+		b.capped = true
+		return false
+	}
+	b.left--
+	return true
+}
+
+// RunCorrelation correlates the failures of the candidate Deployments (the least recently correlated first) and creates
+// their follow-up, at most MaxFollowUpsPerRun new Tasks per run. A failing Deployment does not stop the others.
 func (s *Service) RunCorrelation(ctx context.Context, corr string) error {
 	ids, err := s.store.CorrelationDeployments(ctx, s.now().Add(-CorrelationRecentWindow), MaxCorrelationDeployments)
 	if err != nil {
 		return err
 	}
+	budget := s.newFollowBudget()
 	var errs []error
 	for _, id := range ids {
-		if err := s.CorrelateDeployment(ctx, id, corr); err != nil {
+		if err := s.correlateDeployment(ctx, id, corr, budget); err != nil {
 			errs = append(errs, fmt.Errorf("deployment %s: %w", id, err))
 		}
+		if err := s.store.MarkCorrelated(ctx, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if budget.capped {
+		slog.Warn("deployment correlation: follow-up cap reached, the remaining follow-ups follow in the next runs", "cap", MaxFollowUpsPerRun, "correlation_id", corr)
 	}
 	return errors.Join(errs...)
 }
 
-// CorrelateDeployment correlates the failures of one Deployment, raises and resolves its cluster findings and creates the
-// missing follow-up. It is one transaction: a failing Task creation leaves nothing behind.
+// CorrelateDeployment correlates the failures of one Deployment, raises and resolves its cluster findings (one
+// transaction) and then creates the missing follow-up (one transaction per Task). A failing follow-up is logged and
+// does not fail the step or undo the findings.
 func (s *Service) CorrelateDeployment(ctx context.Context, id, corr string) error {
+	return s.correlateDeployment(ctx, id, corr, s.newFollowBudget())
+}
+
+func (s *Service) correlateDeployment(ctx context.Context, id, corr string, budget *followBudget) error {
 	c := Caller{Actor: audit.SystemActor(DeploymentCorrelationActor), CorrelationID: corr}
-	return s.store.InTx(ctx, func(tx pgx.Tx) error {
-		// One correlation of a Deployment at a time (two workers): the follow-up check and insert must not interleave.
-		if err := s.store.LockFollowupsTx(ctx, tx, id); err != nil {
-			return err
-		}
-		d, err := s.store.DeploymentTx(ctx, tx, id)
-		if err != nil {
+	var d Deployment
+	var active bool
+	var clusters []FailureCluster
+	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+		// One correlation of a Deployment at a time (two workers); the lock also orders it against a change of create_tasks.
+		var err error
+		if d, err = s.store.LockDeploymentTx(ctx, tx, id); err != nil {
 			return err
 		}
 		recent := d.FinishedAt != nil && s.now().Sub(*d.FinishedAt) <= CorrelationRecentWindow
-		active := d.Status == DeploymentRunning || d.Status == DeploymentPaused ||
+		active = d.Status == DeploymentRunning || d.Status == DeploymentPaused ||
 			(d.Status == DeploymentCompletedWithError || d.Status == DeploymentFailed) && recent
-		var clusters []FailureCluster
+		clusters = nil
 		if active {
 			total, targets, groups, err := s.store.FailureGroupsTx(ctx, tx, id)
 			if err != nil {
@@ -197,18 +240,20 @@ func (s *Service) CorrelateDeployment(ctx context.Context, id, corr string) erro
 			}
 			clusters = DetectClusters(total, targets, cleanGroups(groups))
 		}
-		if err := s.syncClusterFindings(ctx, tx, c, d, clusters); err != nil {
-			return err
-		}
-		if !active || !d.CreateTasks {
-			return nil
-		}
-		return s.followUp(ctx, tx, c, d, len(clusters) > 0)
+		return s.syncClusterFindings(ctx, tx, c, d, clusters, active)
 	})
+	if err != nil {
+		return err
+	}
+	if active && d.CreateTasks {
+		s.followUp(ctx, c, d, len(clusters) > 0, budget)
+	}
+	return nil
 }
 
-// syncClusterFindings raises the findings of the current clusters and resolves the open ones that no longer hold.
-func (s *Service) syncClusterFindings(ctx context.Context, tx pgx.Tx, c Caller, d Deployment, clusters []FailureCluster) error {
+// syncClusterFindings raises the findings of the current clusters and resolves the open ones that no longer hold (a
+// Deployment that is no longer active: at once; an active one: after ClusterResolveAfterRuns runs below the threshold).
+func (s *Service) syncClusterFindings(ctx context.Context, tx pgx.Tx, c Caller, d Deployment, clusters []FailureCluster, active bool) error {
 	current := make([]string, 0, len(clusters))
 	for _, cl := range clusters {
 		key := cl.FindingKey()
@@ -244,6 +289,16 @@ func (s *Service) syncClusterFindings(ctx context.Context, tx pgx.Tx, c Caller, 
 		if slices.Contains(current, key) {
 			continue
 		}
+		if active {
+			// Hysteresis: resolve only after ClusterResolveAfterRuns consecutive runs below the threshold.
+			runs, err := s.store.BelowClusterTx(ctx, tx, d.ID, key)
+			if err != nil {
+				return err
+			}
+			if runs < ClusterResolveAfterRuns {
+				continue
+			}
+		}
 		resolved, err := s.store.ResolveClusterFindingTx(ctx, tx, d.ID, key)
 		if err != nil {
 			return err
@@ -258,18 +313,20 @@ func (s *Service) syncClusterFindings(ctx context.Context, tx pgx.Tx, c Caller, 
 	return nil
 }
 
-// cleanGroups cleans the provider and inventory strings of the groups (control characters, length) and drops empty ones.
-// The ring key is an id and stays as it is.
+// cleanGroups cleans the provider and inventory strings of the groups (control and format characters, length) and
+// drops empty ones and repeated keys. The ring key is an id and stays as it is.
 func cleanGroups(groups []FailureGroup) []FailureGroup {
 	out := make([]FailureGroup, 0, len(groups))
+	seen := map[string]bool{}
 	for _, g := range groups {
 		g.Value = cleanClusterValue(g.Value)
 		if g.Dimension != DimensionRing {
 			g.Key = g.Value
 		}
-		if g.Value == "" || g.Key == "" {
+		if g.Value == "" || g.Key == "" || seen[g.FindingKey()] {
 			continue
 		}
+		seen[g.FindingKey()] = true
 		out = append(out, g)
 	}
 	return out

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,6 +230,9 @@ func (f *feedDeployments) RolloutSummary(_ context.Context, scope endpointspubli
 	f.scope = scope
 	f.calls++
 	out := f.summary
+	if !scope.IncludeItems {
+		out.Items = nil
+	}
 	if !scope.IncludeNames {
 		items := make([]endpointspublic.RolloutItem, len(out.Items))
 		copy(items, out.Items)
@@ -246,10 +250,11 @@ func (f *feedDeployments) DeploymentEngineStatus(context.Context) (endpointspubl
 func TestFeedDeploymentsSourcePermissionsAndHealth(t *testing.T) {
 	now := time.Now()
 	f := &feedDeployments{
-		summary: endpointspublic.RolloutSummary{InProgress: 2, Items: []endpointspublic.RolloutItem{
-			{ID: "d1", Reference: "DEP-1", Kind: endpointspublic.RolloutRingHalted, Name: "Secret rollout", ProductName: "Secret product", Since: now},
-			{ID: "d2", Reference: "DEP-2", Kind: endpointspublic.RolloutPaused, Since: now},
-			{ID: "d3", Reference: "DEP-3", Kind: endpointspublic.RolloutAwaitingPromotion, Since: now}}},
+		summary: endpointspublic.RolloutSummary{InProgress: 2, UnassignedFollowups: 3,
+			AttentionCounts: map[string]int{endpointspublic.RolloutRingHalted: 1, endpointspublic.RolloutPaused: 1, endpointspublic.RolloutAwaitingPromotion: 1}, Items: []endpointspublic.RolloutItem{
+				{ID: "d1", Reference: "DEP-1", Kind: endpointspublic.RolloutRingHalted, Name: "Secret rollout", ProductName: "Secret product", Since: now},
+				{ID: "d2", Reference: "DEP-2", Kind: endpointspublic.RolloutPaused, Since: now},
+				{ID: "d3", Reference: "DEP-3", Kind: endpointspublic.RolloutAwaitingPromotion, Since: now}}},
 		engine: endpointspublic.EngineStatus{Active: 1, Stale: true, ClearPending: 2},
 	}
 	s := NewFeedService(nil, FeedSources{Deployments: f})
@@ -284,15 +289,32 @@ func TestFeedDeploymentsSourcePermissionsAndHealth(t *testing.T) {
 	if _, ok := got["briefing.feed.deployment_engine_stale"]; ok {
 		t.Fatal("engine health without endpoints.manage")
 	}
-	// endpoints.manage only: references and counts, no names; plus the engine health.
+	if e := got["briefing.feed.deployments_unassigned_followups"]; e.Count == nil || *e.Count != 3 || e.Reference != nil {
+		t.Fatalf("unassigned follow-ups entry %+v", e)
+	}
+	// endpoints.manage only: counts per kind and engine health, no ids, references, names or links to single rollouts.
 	s = NewFeedService(nil, FeedSources{Deployments: f})
 	got = entries(FeedPrincipal{UserID: "u", Endpoints: true})
-	if f.scope.IncludeNames {
-		t.Fatal("names requested without deployments.view")
+	if f.scope.IncludeNames || f.scope.IncludeItems {
+		t.Fatal("names or items requested without deployments.view")
 	}
-	e := got["briefing.feed.deployment_ring_halted"]
-	if _, leaked := e.Params["name"]; leaked || e.Params["reference"] != "DEP-1" {
-		t.Fatalf("params %+v", e.Params)
+	out, err := s.Feed(context.Background(), FeedPrincipal{UserID: "u", Endpoints: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range out.Entries {
+		if e.Reference != nil || strings.Contains(e.LinkPath, "/deployments/") || e.Params["reference"] != nil || e.Params["name"] != nil {
+			t.Fatalf("entry with a rollout id or reference for endpoints.manage only: %+v", e)
+		}
+	}
+	if e := got["briefing.feed.deployments_ring_halted_count"]; e.Count == nil || *e.Count != 1 || e.Severity != SeverityCritical {
+		t.Fatalf("halted count entry %+v", e)
+	}
+	if e := got["briefing.feed.deployments_paused_count"]; e.Count == nil || *e.Count != 1 {
+		t.Fatalf("paused count entry %+v", e)
+	}
+	if _, ok := got["briefing.feed.deployment_ring_halted"]; ok {
+		t.Fatal("single rollout entry for endpoints.manage only")
 	}
 	if _, ok := got["briefing.feed.deployment_engine_stale"]; !ok {
 		t.Fatal("stale engine not reported")

@@ -102,7 +102,7 @@ func main() {
 		LDAP: ldapCfg, SMTP: smtpCfg, Categories: categories, Logger: logger,
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 	}
-	if err := registerJobs(runner, dispatcher, pool, deps); err != nil {
+	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
 		os.Exit(1)
 	}
@@ -144,6 +144,10 @@ type jobDeps struct {
 	SoftwareDeployWrite  bool
 	AutotaskSync         bool
 }
+
+// registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
+// the jobs without the test noticing.
+var registerJobsFn = registerJobs
 
 // registerJobs registers every job type of the worker and its schedules. It is separate from main so a
 // startup smoke test builds the same registrations: one invalid timeout would otherwise keep the worker

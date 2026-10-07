@@ -152,6 +152,8 @@ var (
 	ErrEditorsFull = errors.New("endpoints: the deployment has the maximum number of editors")
 	// ErrEvaluationBusy means the user already runs an evaluating request.
 	ErrEvaluationBusy = errors.New("endpoints: another evaluation of this user is running")
+	// ErrExportBusy means MaxConcurrentExports report exports are already running.
+	ErrExportBusy = errors.New("endpoints: too many report exports are running")
 )
 
 // PlanInvalidError means submission or scheduling is refused because the plan has blocking issues.

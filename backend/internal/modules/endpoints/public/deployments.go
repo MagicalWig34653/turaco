@@ -14,6 +14,9 @@ import (
 type DeploymentScope struct {
 	// IncludeNames adds the Deployment and product names (caller holds deployments.view).
 	IncludeNames bool
+	// IncludeItems returns the rollouts with ids and references (caller holds deployments.view, manage or execute).
+	// Without it only AttentionCounts and InProgress are returned.
+	IncludeItems bool
 	Limit        int
 }
 
@@ -40,6 +43,11 @@ type RolloutSummary struct {
 	Items      []RolloutItem
 	More       bool
 	InProgress int
+	// AttentionCounts is the number of rollouts per kind (all of them, whatever Limit says); Items carries ids and
+	// references and is filled only when the scope allows it.
+	AttentionCounts map[string]int
+	// UnassignedFollowups is the number of follow-up Tasks that had no eligible owner to be assigned to.
+	UnassignedFollowups int
 }
 
 // EngineStatus is the health of the Deployment execution engine.
@@ -66,7 +74,12 @@ func (h *Health) RolloutSummary(ctx context.Context, scope DeploymentScope) (Rol
 	if err != nil {
 		return RolloutSummary{}, err
 	}
-	out := RolloutSummary{More: o.More, InProgress: o.InProgress, Items: make([]RolloutItem, 0, len(o.Attention))}
+	out := RolloutSummary{More: o.More, InProgress: o.InProgress, Items: make([]RolloutItem, 0, len(o.Attention)),
+		AttentionCounts: o.AttentionCounts, UnassignedFollowups: o.UnassignedFollowups}
+	if !scope.IncludeItems {
+		out.Items, out.More = []RolloutItem{}, false
+		return out, nil
+	}
 	for _, a := range o.Attention {
 		it := RolloutItem{ID: a.ID, Reference: a.Reference, Kind: a.Kind, Since: a.Since}
 		if scope.IncludeNames {

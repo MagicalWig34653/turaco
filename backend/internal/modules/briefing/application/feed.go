@@ -341,7 +341,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 	}
 	if (p.Endpoints || p.Deployments) && s.sources.Deployments != nil {
 		sum, e := sourceCall(ctx, func(c context.Context) (endpointspublic.RolloutSummary, error) {
-			return s.sources.Deployments.RolloutSummary(c, endpointspublic.DeploymentScope{IncludeNames: p.Deployments, Limit: feedLimit})
+			return s.sources.Deployments.RolloutSummary(c, endpointspublic.DeploymentScope{IncludeNames: p.Deployments, IncludeItems: p.Deployments, Limit: feedLimit})
 		})
 		if e != nil {
 			fail("deployments", e)
@@ -361,6 +361,28 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 				}
 				since := x.Since
 				v = append(v, FeedEntry{Kind: "deployment_" + x.Kind, Severity: sev, TitleKey: key, Params: params, Reference: &FeedReference{"deployment", x.ID}, LinkPath: "/deployments/" + x.ID, OccurredAt: &since, Source: "endpoints"})
+			}
+			if !p.Deployments {
+				// endpoints.manage alone: counts per kind, never ids, references or links to single rollouts.
+				for _, kind := range []string{endpointspublic.RolloutRingHalted, endpointspublic.RolloutPaused, endpointspublic.RolloutAwaitingPromotion} {
+					n := sum.AttentionCounts[kind]
+					if n <= 0 {
+						continue
+					}
+					sev := SeverityInfo
+					switch kind {
+					case endpointspublic.RolloutRingHalted:
+						sev = SeverityCritical
+					case endpointspublic.RolloutPaused:
+						sev = SeverityWarning
+					}
+					v = append(v, FeedEntry{Kind: "deployments_" + kind, Severity: sev, TitleKey: "briefing.feed.deployments_" + kind + "_count", Params: map[string]any{},
+						Count: count(n), LinkPath: "/deployments", Source: "endpoints"})
+				}
+			}
+			if sum.UnassignedFollowups > 0 {
+				v = append(v, FeedEntry{Kind: "deployments_unassigned_followups", Severity: SeverityWarning, TitleKey: "briefing.feed.deployments_unassigned_followups", Params: map[string]any{},
+					Count: count(sum.UnassignedFollowups), LinkPath: "/deployments", Source: "endpoints"})
 			}
 			if sum.InProgress > 0 {
 				v = append(v, FeedEntry{Kind: "deployments_in_progress", Severity: SeverityInfo, TitleKey: "briefing.feed.deployments_in_progress", Params: map[string]any{}, Count: count(sum.InProgress), LinkPath: "/deployments", Source: "endpoints"})
