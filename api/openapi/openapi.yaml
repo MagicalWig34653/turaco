@@ -10412,6 +10412,307 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/capabilities:
+    get:
+      operationId: getRemoteAccessCapabilities
+      summary: Remote access availability for a Device.
+      description: "Needs `remote_access.view`, `remote_access.start_attended` or `remote_access.admin`. Reports, per enabled provider, whether a peer is mapped and whether an attended session could start, with refusal codes in `reasons` (see `RemoteAccessRefusalCode`). Peer ids are masked beyond their last three characters unless the caller holds `remote_access.admin`. The response is `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: deviceId, in: query, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Capabilities.
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessCapabilities'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions:
+    get:
+      operationId: listRemoteAccessSessions
+      summary: List Remote Access Sessions.
+      description: "Needs `remote_access.start_attended` (own sessions only) or `remote_access.view_sessions` (all sessions). Newest first, keyset paged. `no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/RemoteAccessSessionStatus'}}
+        - {name: deviceId, in: query, schema: {type: string, format: uuid}}
+        - {name: ticketId, in: query, schema: {type: string, format: uuid}}
+        - {name: initiatedBy, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSessionPage'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: requestRemoteAccessSession
+      summary: Request an attended Remote Access Session.
+      description: "Needs `remote_access.start_attended`. Policy gates answer 409 with `remoteaccess.<code>` for each code of `RemoteAccessRefusalCode` (a refusal never creates a session); 429 `remoteaccess.rate_limited` after 20 requests per User and hour. `note` is plain text (500 characters) and never audited. Devices whose ownership requires approval need exactly one of `approverUserId` or `approverTeamId`; the session then starts in `pending_approval`, otherwise it is authorized at once."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessSessionRequest'}
+      responses:
+        '201':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSession'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '429':
+          description: remoteaccess.rate_limited.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions/{id}:
+    get:
+      operationId: getRemoteAccessSession
+      summary: One Remote Access Session with its transitions.
+      description: "Visible to the initiator, holders of `remote_access.view_sessions` and the named approvers. `no-store`. Provider-observed fields (`observed*`) are reported by the provider with source and observation time; null means unknown and is never inferred."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSessionDetail'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions/{id}/launch:
+    post:
+      operationId: launchRemoteAccessSession
+      summary: Issue the one-time launch handle.
+      description: "Needs `remote_access.start_attended`; initiator only, session `authorized`. Returns the handle token exactly once: 256-bit random, base64url, valid 60 seconds, bound to the caller, only its SHA-256 is stored, at most one valid handle per session (409 `remoteaccess.handle_active` while one is valid). The token is not a provider credential and carries no launch link; resolve it with `/remote-access/launch-handles/exchange`. Never log the token. `no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessVersionRequest'}
+      responses:
+        '200':
+          description: The one-time handle.
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessLaunchHandle'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '410':
+          description: remoteaccess.handle_expired - the session expired.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions/{id}/consent:
+    post:
+      operationId: recordRemoteAccessConsent
+      summary: Record the user's consent decision.
+      description: "Needs `remote_access.start_attended`; initiator only. `decision` is `granted` or `declined`; consent can be recorded once (409 `remoteaccess.consent_recorded`). Declining ends the session. Consent is separate from authorization and from provider records."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessConsentRequest'}
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSession'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions/{id}/close:
+    post:
+      operationId: closeRemoteAccessSession
+      summary: Close a launched session.
+      description: "Needs `remote_access.start_attended`; initiator only, session `launched`. `reason` is one of `completed`, `technician_aborted`, `connection_failed`, `other`. Turaco never infers an end from provider data."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessReasonRequest'}
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSession'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/sessions/{id}/cancel:
+    post:
+      operationId: cancelRemoteAccessSession
+      summary: Cancel a session that was not launched.
+      description: "Needs `remote_access.start_attended`; initiator only, session `requested`, `pending_approval` or `authorized`. `reason` is one of `no_longer_needed`, `wrong_device`, `ticket_resolved`, `other`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessReasonRequest'}
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessSession'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/launch-handles/exchange:
+    post:
+      operationId: exchangeRemoteAccessLaunchHandle
+      summary: Exchange a launch handle for the provider launch link, once.
+      description: "Needs `remote_access.start_attended`. The only response that carries `launchUri`, in the body only; never put it in a redirect, URL, log or storage, and hand it to the browser at once (custom scheme). The handle works once for the User it was issued to: unknown token or other User 404, used 409 `remoteaccess.handle_used`, expired 410 `remoteaccess.handle_expired`, provider failure 502 `remoteaccess.launch_failed` (the session becomes `failed`). Moves the session to `launched`. `no-store`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessExchangeRequest'}
+      responses:
+        '200':
+          description: The launch link and the session.
+          headers:
+            Cache-Control: {schema: {type: string, enum: [no-store]}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessExchange'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '410':
+          description: remoteaccess.handle_expired.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '502':
+          description: remoteaccess.launch_failed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/peer-mappings:
+    get:
+      operationId: listRemoteAccessPeerMappings
+      summary: Provider peer mappings of a Device.
+      description: "Needs `remote_access.view`, `remote_access.start_attended` or `remote_access.admin`. Peer ids are masked beyond their last three characters unless the caller holds `remote_access.admin`. `no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: deviceId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: includeClosed, in: query, description: Include replaced and removed mappings (history)., schema: {type: boolean}}
+      responses:
+        '200':
+          description: Mappings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessPeerMappingList'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: mapRemoteAccessPeer
+      summary: Map a Device to a provider peer.
+      description: "Needs `remote_access.admin`. Replaces the active mapping of the Device for that provider (the old row is closed and kept). One active Device per peer id (409 `remoteaccess.peer_taken`). Audited with ids and reason codes only, never the peer id. Mapping is by explicit administrator action, never by hostname."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteAccessPeerMappingRequest'}
+      responses:
+        '200':
+          description: The mapping.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessPeerMapping'}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '409': {$ref: '#/components/responses/RemoteAccessConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: unmapRemoteAccessPeer
+      summary: Remove the active peer mapping of a Device.
+      description: "Needs `remote_access.admin`. The mapping row is closed and kept. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: deviceId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: provider, in: query, required: true, schema: {type: string}}
+        - {name: reason, in: query, required: true, description: "One of no_longer_valid, wrong_device, decommissioned, other.", schema: {type: string}}
+      responses:
+        '204': {description: Removed.}
+        '400': {$ref: '#/components/responses/RemoteAccessInvalid'}
+        '404': {$ref: '#/components/responses/RemoteAccessNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -10861,6 +11162,24 @@ components:
             $ref: '#/components/schemas/Error'
     AuthorizationConflict:
       description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RemoteAccessNotFound:
+      description: Not found or not visible to the caller (remoteaccess.not_found); also an unknown, foreign or already consumed launch handle.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RemoteAccessInvalid:
+      description: Invalid input (remoteaccess.invalid_request, remoteaccess.invalid_limit, remoteaccess.invalid_cursor).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RemoteAccessConflict:
+      description: "Policy refusal or state conflict. Codes: remoteaccess.version_conflict, remoteaccess.invalid_transition, remoteaccess.handle_used, remoteaccess.handle_active, remoteaccess.consent_recorded, remoteaccess.peer_taken, remoteaccess.no_eligible_approver and remoteaccess.<code> for each RemoteAccessRefusalCode."
       content:
         application/json:
           schema:
@@ -15584,3 +15903,176 @@ components:
         expectedVersion: {type: integer, minimum: 1}
         reason: {type: string, description: Required for not-applicable, false-positive, accept-risk and reopen.}
         reviewBy: {type: string, format: date, description: Required for accept-risk and at most twelve months ahead.}
+    RemoteAccessRefusalCode:
+      type: string
+      description: Policy refusal; the HTTP code is `remoteaccess.<value>` (409). In capabilities the same values explain why no session can start.
+      enum: [provider_disabled, device_unknown, device_retired, stale_device, no_peer_mapping, ticket_unknown, ticket_not_open, holder_mismatch, session_open, approver_required]
+    RemoteAccessSessionStatus:
+      type: string
+      enum: [requested, pending_approval, authorized, launched, closed, rejected, cancelled, expired, failed]
+    RemoteAccessCapabilities:
+      type: object
+      required: [deviceId, enabled, deviceKnown, observedAt, stale, providers]
+      properties:
+        deviceId: {type: string, format: uuid}
+        enabled: {type: boolean, description: At least one provider is enabled in this deployment.}
+        deviceKnown: {type: boolean}
+        observedAt: {type: string, format: date-time, nullable: true, description: Last observation of the Device (source of freshness).}
+        stale: {type: boolean, description: No observation for 7 days.}
+        providers:
+          type: array
+          items:
+            type: object
+            required: [provider, capabilities, mapped, available, reasons]
+            properties:
+              provider: {type: string}
+              capabilities:
+                type: object
+                properties:
+                  attended: {type: boolean}
+                  observeSessions: {type: boolean}
+                  closeSessions: {type: boolean}
+              mapped: {type: boolean}
+              peerId: {type: string, description: Masked unless the caller holds remote_access.admin. Omitted when not mapped.}
+              available: {type: boolean}
+              reasons:
+                type: array
+                items: {$ref: '#/components/schemas/RemoteAccessRefusalCode'}
+    RemoteAccessSession:
+      type: object
+      required: [id, reference, deviceId, ticketId, provider, mode, status, initiatedBy, consent, expiresAt, version, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string}
+        deviceId: {type: string, format: uuid}
+        ticketId: {type: string, format: uuid}
+        provider: {type: string}
+        mode: {type: string, enum: [attended]}
+        status: {$ref: '#/components/schemas/RemoteAccessSessionStatus'}
+        statusReason: {type: string, nullable: true}
+        initiatedBy: {type: string, format: uuid}
+        approvalId: {type: string, format: uuid, nullable: true}
+        consent: {type: string, enum: [unknown, granted, declined, not_required], description: Turaco-recorded consent; separate from authorization and from provider records.}
+        consentRecordedBy: {type: string, format: uuid, nullable: true}
+        consentRecordedAt: {type: string, format: date-time, nullable: true}
+        mismatchReason: {type: string, enum: [holder_changed, shared_device, on_behalf], nullable: true}
+        launchedAt: {type: string, format: date-time, nullable: true}
+        closedAt: {type: string, format: date-time, nullable: true}
+        expiresAt: {type: string, format: date-time}
+        note: {type: string, nullable: true}
+        observedConnectedAt: {type: string, format: date-time, nullable: true, description: Reported by the provider; null is unknown.}
+        observedEndedAt: {type: string, format: date-time, nullable: true, description: Reported by the provider; null is unknown.}
+        observedSource: {type: string, nullable: true}
+        observedAt: {type: string, format: date-time, nullable: true}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    RemoteAccessSessionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RemoteAccessSession'}
+        nextCursor: {type: string, nullable: true}
+    RemoteAccessTransition:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        fromStatus: {type: string, nullable: true}
+        toStatus: {type: string}
+        operation: {type: string}
+        reason: {type: string, nullable: true}
+        actorUserId: {type: string, format: uuid, nullable: true}
+        actorSystem: {type: string, nullable: true}
+        createdAt: {type: string, format: date-time}
+    RemoteAccessSessionDetail:
+      type: object
+      required: [session, transitions]
+      properties:
+        session: {$ref: '#/components/schemas/RemoteAccessSession'}
+        transitions:
+          type: array
+          items: {$ref: '#/components/schemas/RemoteAccessTransition'}
+    RemoteAccessSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [deviceId, ticketId, provider]
+      properties:
+        deviceId: {type: string, format: uuid}
+        ticketId: {type: string, format: uuid}
+        provider: {type: string}
+        reason: {type: string, enum: [holder_changed, shared_device, on_behalf], description: Required when the Ticket's affected User is not the Device's holder.}
+        note: {type: string, maxLength: 500, description: Plain text, never audited.}
+        approverUserId: {type: string, format: uuid}
+        approverTeamId: {type: string, format: uuid}
+    RemoteAccessVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    RemoteAccessConsentRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, decision]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        decision: {type: string, enum: [granted, declined]}
+    RemoteAccessReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, description: "Close: completed, technician_aborted, connection_failed, other. Cancel: no_longer_needed, wrong_device, ticket_resolved, other."}
+    RemoteAccessLaunchHandle:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token: {type: string, description: One-time handle, returned exactly once and never stored in clear text. Not a provider credential.}
+        expiresAt: {type: string, format: date-time, description: 60 seconds after issue.}
+    RemoteAccessExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: {type: string}
+    RemoteAccessExchange:
+      type: object
+      required: [sessionId, reference, provider, launchUri, session]
+      properties:
+        sessionId: {type: string, format: uuid}
+        reference: {type: string}
+        provider: {type: string}
+        launchUri: {type: string, description: Provider launch link (custom scheme). Present only in this response; never log, store or place it in a URL.}
+        session: {$ref: '#/components/schemas/RemoteAccessSession'}
+    RemoteAccessPeerMapping:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        deviceId: {type: string, format: uuid}
+        provider: {type: string}
+        peerId: {type: string, description: Masked unless the caller holds remote_access.admin.}
+        source: {type: string}
+        reason: {type: string, nullable: true}
+        mappedBy: {type: string, format: uuid, nullable: true}
+        mappedAt: {type: string, format: date-time}
+        closedAt: {type: string, format: date-time, nullable: true}
+        closeReason: {type: string, nullable: true}
+    RemoteAccessPeerMappingList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/RemoteAccessPeerMapping'}
+    RemoteAccessPeerMappingRequest:
+      type: object
+      additionalProperties: false
+      required: [deviceId, provider, peerId, reason]
+      properties:
+        deviceId: {type: string, format: uuid}
+        provider: {type: string}
+        peerId: {type: string}
+        reason: {type: string, enum: [initial_mapping, correction, provider_change, other]}
