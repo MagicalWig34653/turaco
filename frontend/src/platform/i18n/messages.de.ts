@@ -3331,4 +3331,38 @@ export const de: Record<MessageKey, string> = {
   'deployments.error.ringNotHalted': 'Der Ring ist nicht gestoppt.',
   'deployments.error.noNextRing': 'Es gibt keinen nächsten Ring.',
   'endpoints.finding.deployment_evidence_conflict': 'Widerspruch bei Deployment-Nachweis',
+  'deployments.run.clearPending':
+    'Zuweisungen werden zurückgenommen. Dafür muss das Deploy-Schreiben aktiviert sein; es läuft weiter, sobald es aktiv ist.',
+  'deployments.run.resolvingStuck':
+    'Die Zielermittlung hängt. Prüfen Sie, ob API und Worker dasselbe SOFTWARE_DEPLOY_WRITE verwenden.',
+  'deployments.run.clearFailed':
+    'Das Zurücknehmen einer Zuweisung ist bei mindestens einem Gerät fehlgeschlagen. Siehe Befunde zum fehlgeschlagenen Zurücknehmen.',
+  'deployments.run.retries': 'Genutzte Wiederholungen: {n} von {max}',
+  'deployments.run.ringAction.retry': 'Erneut versuchen',
+  'deployments.run.notice.ringRetried': 'Der Ring wird erneut versucht.',
+  'deployments.run.reason.retryLimit':
+    'Das Wiederholungslimit ist erreicht; prüfen Sie die Anbieter-Verbindung.',
+  'deployments.run.nextGate.evidence': 'Nachweise',
+  'deployments.run.reason.code.no_evidence': 'Für den Ring gingen keine aktuellen Nachweise ein.',
+  'deployments.run.reason.code.not_applicable_ratio': 'Zu viele Ziele sind nicht anwendbar.',
+  'deployments.run.reason.code.became_high_impact':
+    'Der Plan hat während des Laufs hohe Auswirkung erhalten.',
+  'deployments.run.reason.code.targets_grew':
+    'Die Zahl der Ziele ist über den Plan hinaus gewachsen.',
+  'deployments.run.reason.code.artifact_changed':
+    'Das Anbieter-Artefakt des Pakets hat sich geändert.',
+  'deployments.run.reason.code.read_back_missing':
+    'Die Zuweisung wurde beim Zurücklesen nicht gefunden.',
+  'deployments.run.reason.code.provider_mismatch':
+    'Der Anbieter meldet etwas, das nicht zum Paket passt.',
+  'deployments.run.outcome.in_flight': 'In Bearbeitung',
+  'deployments.run.outcome.interrupted': 'Unterbrochen',
+  'deployments.error.noEvidence': 'Für diese Entscheidung liegen keine aktuellen Nachweise vor.',
+  'deployments.error.retryRequired':
+    'Der Ring wurde nach fehlgeschlagenen Zuweisungen gestoppt; nutzen Sie Erneut versuchen.',
+  'deployments.error.retryLimit': 'Das Wiederholungslimit dieses Rings ist erreicht.',
+  'deployments.error.clearPending':
+    'Zuweisungen werden noch zurückgenommen; versuchen Sie es gleich erneut.',
+  'deployments.error.assignmentCleared': 'Die Zuweisungen wurden bereits zurückgenommen.',
+  'endpoints.finding.deployment_clear_failed': 'Zurücknehmen fehlgeschlagen',
 };

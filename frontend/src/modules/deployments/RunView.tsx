@@ -17,12 +17,13 @@ import { TableDate } from '../../platform/ui/TableDate';
 import { Skeleton, StatusBadge } from '../../platform/ui/Workspace';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { executionApi } from './api';
-import { CancelDialog } from './DeploymentScreens';
+import { CancelDialog } from './CancelDialog';
 import { Section } from './components';
 import { codeKey, sortRings } from './helpers';
 import {
   attemptTone,
   focusRing,
+  maxRingRetries,
   formatCountdown,
   gateChecklist,
   pollIntervalMs,
@@ -165,6 +166,10 @@ export function RunView({ plan, onChanged }: { plan: DeploymentDetail; onChanged
   const onRingAction = (action: RingAction, ring: RingProgress) => {
     if (action.id === 'halt') setDialog({ kind: 'ringHalt', ring });
     else if (action.id === 'requestApproval') setDialog({ kind: 'ringApproval', ring });
+    else if (action.id === 'retry')
+      void perform(`retry-${ring.ringId}`, 'deployments.run.notice.ringRetried', () =>
+        executionApi.resumeRing(plan.id, ring.ringId, version, true),
+      );
     else if (action.id === 'resume')
       void perform(`resume-${ring.ringId}`, 'deployments.run.notice.ringResumed', () =>
         executionApi.resumeRing(plan.id, ring.ringId, version),
@@ -190,6 +195,16 @@ export function RunView({ plan, onChanged }: { plan: DeploymentDetail; onChanged
       </div>
       {progress.error ? <ApiErrorAlert error={progress.error} onRetry={progress.reload} /> : null}
       <RunBanner status={status} reason={reasonCode} />
+      {data.clearPending ? <Alert kind="warning">{t('deployments.run.clearPending')}</Alert> : null}
+      {data.resolvingStuck ? (
+        <Alert kind="warning">{t('deployments.run.resolvingStuck')}</Alert>
+      ) : null}
+      {rings.some((ring) => ring.clearFailed) ? (
+        <Alert kind="warning">
+          {t('deployments.run.clearFailed')}{' '}
+          <Link to="/endpoint-findings">{t('deployments.run.targets.conflictLink')}</Link>
+        </Alert>
+      ) : null}
       {notice ? <Alert kind="success">{notice}</Alert> : null}
       {opError ? <ApiErrorAlert error={opError} /> : null}
       {actions.length > 0 ? (
@@ -405,6 +420,11 @@ function RingRunCard({
               code: ring.statusReason,
             },
           )}
+        </p>
+      ) : null}
+      {ring.status === 'halted' && ring.statusReason === 'assignment_failed' ? (
+        <p className="deployments-muted">
+          {t('deployments.run.retries', { n: ring.retryCount ?? 0, max: maxRingRetries })}
         </p>
       ) : null}
       <div

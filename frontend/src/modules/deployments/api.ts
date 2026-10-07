@@ -44,6 +44,11 @@ registerErrorMessages({
   'endpoints.promotion_approval_required': 'deployments.error.promotionApprovalRequired',
   'endpoints.ring_not_awaiting_promotion': 'deployments.error.ringNotAwaiting',
   'endpoints.ring_not_halted': 'deployments.error.ringNotHalted',
+  'endpoints.no_evidence': 'deployments.error.noEvidence',
+  'endpoints.retry_required': 'deployments.error.retryRequired',
+  'endpoints.retry_limit_reached': 'deployments.error.retryLimit',
+  'endpoints.clear_pending': 'deployments.error.clearPending',
+  'endpoints.assignment_cleared': 'deployments.error.assignmentCleared',
   'endpoints.no_next_ring': 'deployments.error.noNextRing',
 });
 
@@ -132,8 +137,11 @@ export const executionApi = {
     op(id, 'halt', { reason, expectedVersion }),
   haltRing: (id: string, ringId: string, reason: string, expectedVersion: number) =>
     op(id, `rings/${enc(ringId)}/halt`, { reason, expectedVersion }),
-  resumeRing: (id: string, ringId: string, expectedVersion: number) =>
-    op(id, `rings/${enc(ringId)}/resume`, { expectedVersion }),
+  resumeRing: (id: string, ringId: string, expectedVersion: number, retry = false) =>
+    op(id, `rings/${enc(ringId)}/resume`, {
+      expectedVersion,
+      ...(retry ? { reason: 'retry' } : {}),
+    }),
   promoteRing: (id: string, ringId: string, expectedVersion: number) =>
     op(id, `rings/${enc(ringId)}/promote`, { expectedVersion }),
   requestApproval: (

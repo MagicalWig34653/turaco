@@ -13,6 +13,7 @@ export const findingKinds = [
   'provider_reported_error',
   'assignment_ineffective',
   'deployment_evidence_conflict',
+  'deployment_clear_failed',
 ] as const;
 /** Finding kinds with a Software Package subject; shown with the package, not in device lists. */
 export const packageFindingKinds = [

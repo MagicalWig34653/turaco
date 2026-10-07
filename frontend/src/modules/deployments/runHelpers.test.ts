@@ -137,6 +137,8 @@ describe('reason codes', () => {
     expect(reasonCategory('assignment_failed')).toBe('writer');
     expect(reasonCategory('change_window_closed')).toBe('schedule');
     expect(reasonCategory('manual_pause')).toBe('manual');
+    expect(reasonCategory('artifact_changed')).toBe('gate');
+    expect(reasonCategory('no_evidence')).toBe('quality');
     expect(reasonCategory('brand_new_code')).toBe('other');
     expect(reasonCategory(null)).toBe('other');
     expect(reasonNeedsAttention('product_blocked')).toBe(true);
@@ -197,5 +199,12 @@ describe('run actions', () => {
       'resume',
     ]);
     expect(ringActions(ring(), 'completed', all, false)).toEqual([]);
+    const failed = { status: 'halted', statusReason: 'assignment_failed' } as const;
+    expect(ringActions(ring({ ...failed, retryCount: 1 }), 'paused', all, false)).toEqual([
+      { id: 'retry' },
+    ]);
+    expect(
+      ringActions(ring({ ...failed, retryCount: 3 }), 'paused', all, false)[0]?.disabledReason,
+    ).toBe('deployments.run.reason.retryLimit');
   });
 });

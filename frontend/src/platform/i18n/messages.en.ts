@@ -3243,6 +3243,35 @@ export const en = {
   'deployments.error.ringNotHalted': 'The ring is not halted.',
   'deployments.error.noNextRing': 'There is no next ring.',
   'endpoints.finding.deployment_evidence_conflict': 'Deployment evidence conflict',
+  'deployments.run.clearPending':
+    'Assignments are being withdrawn. This needs deploy write to be enabled; it continues once it is.',
+  'deployments.run.resolvingStuck':
+    'Target resolution is stuck. Check that the API and the worker share SOFTWARE_DEPLOY_WRITE.',
+  'deployments.run.clearFailed':
+    'Withdrawing an assignment failed for at least one device. See the deployment clear failed findings.',
+  'deployments.run.retries': 'Retries used: {n} of {max}',
+  'deployments.run.ringAction.retry': 'Retry',
+  'deployments.run.notice.ringRetried': 'The ring is being retried.',
+  'deployments.run.reason.retryLimit':
+    'The retry limit is reached; investigate the provider connection.',
+  'deployments.run.nextGate.evidence': 'Evidence',
+  'deployments.run.reason.code.no_evidence': 'No fresh evidence arrived for the ring.',
+  'deployments.run.reason.code.not_applicable_ratio': 'Too many targets turned out not applicable.',
+  'deployments.run.reason.code.became_high_impact': 'The plan became high impact while running.',
+  'deployments.run.reason.code.targets_grew': 'The target count grew beyond the plan.',
+  'deployments.run.reason.code.artifact_changed': 'The provider artifact of the package changed.',
+  'deployments.run.reason.code.read_back_missing':
+    'The assignment was not found when reading back.',
+  'deployments.run.reason.code.provider_mismatch':
+    'The provider reports something that does not match the package.',
+  'deployments.run.outcome.in_flight': 'In flight',
+  'deployments.run.outcome.interrupted': 'Interrupted',
+  'deployments.error.noEvidence': 'No fresh evidence is available for this decision.',
+  'deployments.error.retryRequired': 'The ring stopped after failed assignments; use Retry.',
+  'deployments.error.retryLimit': 'The retry limit of this ring is reached.',
+  'deployments.error.clearPending': 'Assignments are still being withdrawn; try again shortly.',
+  'deployments.error.assignmentCleared': 'The assignments were already withdrawn.',
+  'endpoints.finding.deployment_clear_failed': 'Deployment clear failed',
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -4702,7 +4702,7 @@ paths:
         - name: hasFinding
           in: query
           description: Open finding kind. `assignment_ineffective` is Turaco-derived and distinct from provider-reported errors.
-          schema: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective, deployment_evidence_conflict]}
+          schema: {type: string, enum: [no_asset_match, serial_conflict, duplicate_device, unmatched_software, provider_reported_error, assignment_ineffective, deployment_evidence_conflict, deployment_clear_failed]}
         - name: osVersion
           in: query
           description: OS version prefix.
@@ -10186,7 +10186,7 @@ paths:
     post:
       operationId: resumeDeploymentRing
       summary: Resume a halted ring.
-      description: "Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
+      description: "A ring halted with assignment_failed is resumed only with reason `retry` (409 endpoints.retry_required otherwise), which resets its attempt counter at most 3 times (409 endpoints.retry_limit_reached) and is audited. 409 endpoints.clear_pending while assignments are still withdrawn; 409 endpoints.assignment_cleared. Promote and resume-ring on high-impact plans are also 403 endpoints.separation_of_duties for the planner. Needs `deployments.execute` and `expectedVersion` (the Deployment's version). Refused with 409 endpoints.deploy_write_disabled while the deploy-write capability is off, 403 endpoints.separation_of_duties when the planner of a high-impact plan tries to start it, 403 endpoints.high_impact_required, 409 endpoints.plan_changed and the gates (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required). Audited."
       security:
         - sessionAuth: []
       parameters:
@@ -10196,7 +10196,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/SoftwareVersionRequest'}
+            schema: {$ref: '#/components/schemas/DeploymentRingResume'}
       responses:
         '200':
           description: The Deployment.
@@ -10739,7 +10739,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     DeploymentsConflict:
-      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), Target Set name taken (endpoints.target_set_name_taken), too many editors (endpoints.editors_full), a high-impact ring without window (endpoints.no_window_high_impact) or used by a submitted, approved or scheduled plan (endpoints.target_set_in_use), a gate (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.target_set_archived, endpoints.change_window_invalid, endpoints.approval_required, endpoints.approval_not_required, endpoints.plan_changed, endpoints.deploy_write_disabled and the execution gates endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required, endpoints.ring_not_awaiting_promotion, endpoints.ring_not_halted) or blocking validation issues (endpoints.deployment_invalid, body DeploymentInvalidError with `issues`)."
+      description: "Refused: stale version (endpoints.version_conflict), operation not allowed in the current status (endpoints.invalid_transition), Target Set name taken (endpoints.target_set_name_taken), too many editors (endpoints.editors_full), a high-impact ring without window (endpoints.no_window_high_impact) or used by a submitted, approved or scheduled plan (endpoints.target_set_in_use), a gate (endpoints.version_not_approved, endpoints.product_not_approved, endpoints.target_set_archived, endpoints.change_window_invalid, endpoints.approval_required, endpoints.approval_not_required, endpoints.plan_changed, endpoints.deploy_write_disabled and the execution gates endpoints.change_window_closed, endpoints.soak_not_elapsed, endpoints.threshold_not_met, endpoints.evidence_not_fresh, endpoints.promotion_approval_required, endpoints.ring_not_awaiting_promotion, endpoints.ring_not_halted, endpoints.no_evidence, endpoints.retry_required, endpoints.retry_limit_reached, endpoints.clear_pending, endpoints.assignment_cleared, endpoints.artifact_changed) or blocking validation issues (endpoints.deployment_invalid, body DeploymentInvalidError with `issues`)."
       content:
         application/json:
           schema:
@@ -13657,7 +13657,7 @@ components:
     DeploymentStatus:
       type: string
       enum: [draft, pending_approval, approved, scheduled, cancelled, resolving_targets, ready, running, paused, completed, completed_with_errors, failed]
-      description: "Execution (F9 G3) continues after scheduled: resolving_targets, ready, running, paused (statusReason says why), completed, completed_with_errors, failed. Planning lifecycle: draft → pending_approval → approved → scheduled (high impact), draft → scheduled (otherwise), any planning status → cancelled. A rejected plan Approval returns the plan to draft with statusReason approval_rejected; an approver who lost deployments.approve returns it with approver_not_authorized. Both clear approvalId, planSha256, submittedBy and submittedAt."
+      description: "Execution (F9 G3) continues after scheduled: resolving_targets, ready, running, paused (statusReason says why: manual_pause, failure_threshold, version_revoked, product_blocked, window_closed, artifact_changed, ...), completed, completed_with_errors, failed (became_high_impact, targets_grew, ...). Ring halted reasons include assignment_failed, no_evidence and not_applicable_ratio; target reasons include read_back_missing (expired) and provider_mismatch (not_applicable). Planning lifecycle: draft → pending_approval → approved → scheduled (high impact), draft → scheduled (otherwise), any planning status → cancelled. A rejected plan Approval returns the plan to draft with statusReason approval_rejected; an approver who lost deployments.approve returns it with approver_not_authorized. Both clear approvalId, planSha256, submittedBy and submittedAt."
     Deployment:
       type: object
       additionalProperties: false
@@ -13857,6 +13857,13 @@ components:
       properties:
         reason: {type: string, enum: [manual_halt, quality_issue, security_risk, other]}
         expectedVersion: {type: integer}
+    DeploymentRingResume:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        reason: {type: string, enum: ["", retry], description: "Other values are 400 endpoints.invalid_request."}
+        expectedVersion: {type: integer}
     DeploymentRingApprovalRequest:
       type: object
       additionalProperties: false
@@ -13898,12 +13905,17 @@ components:
         freshObserved: {type: integer}
         successRatePercent: {type: number, nullable: true}
         soakRemainingSeconds: {type: integer}
-        nextGate: {type: string}
+        nextGate: {type: string, description: "previous_ring, resume, none, observations, evidence, soak, threshold, fresh_evidence, completion, approval, promotion"}
+        clearPending: {type: boolean}
+        clearFailed: {type: boolean, description: "Withdrawing an assignment failed; see the deployment_clear_failed Finding."}
+        retryCount: {type: integer, description: "Explicit retries used after assignment_failed (at most 3)."}
     DeploymentProgress:
       type: object
       required: [deployment, rings]
       properties:
         deployment: {$ref: '#/components/schemas/Deployment'}
+        clearPending: {type: boolean, description: Assignments are being withdrawn and need deploy write enabled.}
+        resolvingStuck: {type: boolean, description: resolving_targets for more than 15 minutes.}
         rings: {type: array, items: {$ref: '#/components/schemas/DeploymentRingProgress'}}
     DeploymentTarget:
       type: object
@@ -13937,7 +13949,8 @@ components:
         attempt: {type: integer}
         operationId: {type: string}
         requestedAt: {type: string, format: date-time}
-        outcomeCode: {type: string, enum: [accepted, transient_error, permanent_error]}
+        outcomeCode: {type: string, enum: [accepted, transient_error, permanent_error, in_flight, interrupted]}
+        finishedAt: {type: string, format: date-time, nullable: true}
     DeploymentAttemptPage:
       type: object
       required: [items]

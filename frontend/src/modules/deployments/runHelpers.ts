@@ -241,6 +241,11 @@ const reasonCategories: Record<string, ReasonCategory> = {
   package_gate_closed: 'gate',
   package_not_published: 'gate',
   artifact_not_linked: 'gate',
+  artifact_changed: 'gate',
+  became_high_impact: 'gate',
+  targets_grew: 'gate',
+  no_evidence: 'quality',
+  not_applicable_ratio: 'quality',
   assignment_failed: 'writer',
   change_window_closed: 'schedule',
   window_closed: 'schedule',
@@ -293,7 +298,10 @@ export function runActions(
   return actions;
 }
 
-export type RingActionId = 'halt' | 'resume' | 'promote' | 'requestApproval';
+export type RingActionId = 'halt' | 'resume' | 'retry' | 'promote' | 'requestApproval';
+
+/** Explicit retries of a ring halted with assignment_failed, as the backend allows them. */
+export const maxRingRetries = 3;
 export type RingAction = { id: RingActionId; disabledReason?: MessageKey };
 
 /** Ring-level operations for one ring of a running or paused Deployment. */
@@ -309,7 +317,17 @@ export function ringActions(
   const add = (id: RingActionId, reason: MessageKey | undefined) =>
     actions.push({ id, ...(reason ? { disabledReason: reason } : {}) });
   if (ring.status === 'active' || ring.status === 'awaiting_promotion') add('halt', needs);
-  if (ring.status === 'halted')
+  if (ring.status === 'halted' && ring.statusReason === 'assignment_failed') {
+    add(
+      'retry',
+      needs ??
+        (writeDisabled
+          ? 'deployments.run.reason.writeDisabled'
+          : (ring.retryCount ?? 0) >= maxRingRetries
+            ? 'deployments.run.reason.retryLimit'
+            : undefined),
+    );
+  } else if (ring.status === 'halted')
     add('resume', needs ?? (writeDisabled ? 'deployments.run.reason.writeDisabled' : undefined));
   if (ring.status === 'awaiting_promotion') {
     if (ring.nextGate === 'approval') add('requestApproval', needs);

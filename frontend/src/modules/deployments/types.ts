@@ -349,9 +349,18 @@ export type RingProgress = {
   soakRemainingSeconds: number;
   /** previous_ring, resume, none, observations, soak, threshold, fresh_evidence, completion, approval, promotion. */
   nextGate: string;
+  clearPending?: boolean;
+  clearFailed?: boolean;
+  retryCount?: number;
 };
 
-export type DeploymentProgress = { deployment: Deployment; rings: RingProgress[] };
+export type DeploymentProgress = {
+  deployment: Deployment;
+  rings: RingProgress[];
+  clearPending?: boolean;
+  /** resolving_targets for more than 15 minutes. */
+  resolvingStuck?: boolean;
+};
 
 export type DeploymentTarget = {
   id: string;
@@ -376,4 +385,5 @@ export type DeploymentAttempt = {
   operationId: string;
   requestedAt: string;
   outcomeCode: string;
+  finishedAt?: string | null;
 };
