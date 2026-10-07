@@ -112,8 +112,10 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Vulnerability Finding** — Turaco-derived match of one Advisory, Device and Software Product (reference `VUL-xxxxxx`), with installed version, first/last observation time, confidence `probable` or `potential` and explicit triage/remediation state. It is distinct from an Endpoint Finding. Automatic `confirmed` confidence is not supported.
 - **Risk Acceptance** — a Vulnerability Finding state recorded by a User with `security.accept_risk`, a reason code and a review date no later than twelve months ahead; it does not erase the observed exposure.
 
-## Remote access *(planned, ADR-0026)*
+## Remote access *(ADR-0026; attended sessions implemented in F10 R-A)*
 - **Remote Access Provider** — external system that provides remote screen/input, terminal and file-transfer transport, NAT traversal and relays (HopToDesk, RustDesk and AnyDesk as first providers); integrated through a Connector, never through the Connector or Endpoint Agent.
+- **Peer Mapping** — explicit, audited link between a Device and its identity (peer id) at one Remote Access Provider; one active mapping per Device and provider, replaced mappings are closed, never deleted; never inferred from hostnames.
+- **Launch Handle** — one-time, 60-second, user-bound token that Turaco exchanges for the provider launch link at the moment of use; only its hash is stored and the link is never stored.
 - **Remote Access Session** — Turaco's record of one authorized remote session on a Device: initiating User, optional Ticket, mode (attended/unattended), policy decision, consent outcome and provider session reference, with provider-reported session facts kept separately with source and freshness. "Remote Access" is the canonical term; its permissions use the `remote_access.*` namespace (formerly `remote_support.start`).
 
 ## Workforce presence *(planned, ADR-0028)*

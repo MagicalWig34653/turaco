@@ -41,6 +41,8 @@ export type RouteId =
   | 'infrastructureVM'
   | 'devices'
   | 'deviceDetail'
+  | 'remoteAccessSessions'
+  | 'remoteAccessSessionDetail'
   | 'deviceManagementDiff'
   | 'groupManagementDiff'
   | 'endpointFindings'
@@ -130,6 +132,12 @@ export type AppRoute = {
   requiresAny?: readonly string[];
   nav?: NavGroup;
 };
+
+const remoteAccessPermissions = [
+  'remote_access.view',
+  'remote_access.start_attended',
+  'remote_access.view_sessions',
+] as const;
 
 const softwareViewPermissions = ['software.view', 'software.approve', 'software.package'] as const;
 
@@ -225,6 +233,19 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/devices/:id',
     titleKey: 'endpoints.detailTitle',
     requiresAny: ['endpoints.view', 'endpoints.manage'],
+  },
+  {
+    id: 'remoteAccessSessions',
+    pattern: '/remote-access/sessions',
+    titleKey: 'nav.remoteAccess',
+    requiresAny: remoteAccessPermissions,
+    nav: 'endpoints',
+  },
+  {
+    id: 'remoteAccessSessionDetail',
+    pattern: '/remote-access/sessions/:id',
+    titleKey: 'remoteaccess.sessionTitle',
+    requiresAny: remoteAccessPermissions,
   },
   {
     id: 'endpointFindings',

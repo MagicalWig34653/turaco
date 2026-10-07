@@ -16,6 +16,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -27,6 +28,7 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
+	remoteaccessapp "github.com/MagicalWig34653/turaco/backend/internal/modules/remoteaccess/application"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
@@ -101,6 +103,7 @@ func main() {
 	deps := jobDeps{
 		LDAP: ldapCfg, SMTP: smtpCfg, Categories: categories, Logger: logger,
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
+		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -143,6 +146,10 @@ type jobDeps struct {
 	SoftwareProviderSync bool
 	SoftwareDeployWrite  bool
 	AutotaskSync         bool
+	// RemoteAccessProviders and RemoteAccessApprovalOwnership are REMOTE_ACCESS_PROVIDERS and
+	// REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP; the jobs are registered either way and do nothing without providers.
+	RemoteAccessProviders         []string
+	RemoteAccessApprovalOwnership []string
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -193,6 +200,9 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite) }},
 		{"deployment correlation", func() error {
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
+		}},
+		{"remote access", func() error {
+			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
 		{"Autotask synchronization", func() error {
 			if !d.AutotaskSync {
@@ -308,6 +318,14 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		return err
 	}
 	if err := d.Register("ApprovalDecided", "planning.approval", wiring.Planning(pool).OnApprovalDecided); err != nil {
+		return err
+	}
+	// Remote Access Session Approvals (F10): the decision authorizes or rejects a pending session. The consumers
+	// need no provider connectors, so they run with an empty registry.
+	if err := d.Register("ApprovalDecided", "remoteaccess.approval", wiring.RemoteAccess(pool, remoteaccess.NewRegistryOf(), nil).OnApprovalDecided); err != nil {
+		return err
+	}
+	if err := d.Register(remoteaccessapp.EventLaunched, "remoteaccess.notify-launched", wiring.RemoteAccessNotifications(pool, notifier).OnSessionLaunched); err != nil {
 		return err
 	}
 	// Deployment plan Approvals (F9 G2): the decision moves a pending plan to approved or back to draft.
@@ -467,6 +485,33 @@ func registerDeploymentCorrelation(runner *jobs.Runner, pool *pgxpool.Pool, cate
 		Interval: endpointsapp.DeploymentCorrelationInterval, MaxAttempts: 1})
 }
 
+// registerRemoteAccess registers the Remote Access session expiry and provider observation jobs. Both are
+// scheduled even without providers (expiry also ends sessions of a provider that was switched off since).
+func registerRemoteAccess(runner *jobs.Runner, pool *pgxpool.Pool, providerKeys, approvalOwnership []string) error {
+	providers, err := remoteaccess.NewRegistry(providerKeys)
+	if err != nil {
+		return err
+	}
+	svc := wiring.RemoteAccess(pool, providers, approvalOwnership)
+	for _, j := range []struct {
+		typ      string
+		timeout  time.Duration
+		interval time.Duration
+		handler  jobs.Handler
+	}{
+		{remoteaccessapp.ExpireJobType, remoteaccessapp.ExpireJobTimeout, remoteaccessapp.ExpireInterval, svc.HandleExpire},
+		{remoteaccessapp.ObserveJobType, remoteaccessapp.ObserveJobTimeout, remoteaccessapp.ObserveInterval, svc.HandleObserve},
+	} {
+		if err := runner.Register(j.typ, j.timeout, j.handler); err != nil {
+			return err
+		}
+		if err := runner.AddSchedule(jobs.Schedule{JobType: j.typ, DedupeKey: j.typ, Interval: j.interval, MaxAttempts: 2}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
 // when ADVISORY_SYNC is on. The dedupe key keeps several workers from queueing the same run.
 func registerAdvisorySync(runner *jobs.Runner, pool *pgxpool.Pool) error {
@@ -532,6 +577,7 @@ func allCategories() []notifications.Category {
 	out = append(out, assetsapp.NotificationCategories()...)
 	out = append(out, changesapp.NotificationCategories()...)
 	out = append(out, planningapp.NotificationCategories()...)
+	out = append(out, remoteaccessapp.NotificationCategories()...)
 	out = append(out, securityapp.NotificationCategories()...)
 	out = append(out, endpointsapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)

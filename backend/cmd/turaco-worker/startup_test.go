@@ -27,6 +27,8 @@ var goldenJobTypes = []string{
 	"endpoints.software_package_sync",
 	"notifications.email.send",
 	"organization.directory_sync",
+	"remoteaccess.expire_sessions",
+	"remoteaccess.observe",
 	"security.advisory_sync",
 	"security.match",
 	"security.match_all",

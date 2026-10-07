@@ -44,13 +44,13 @@
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |
 | `products.manage` | elevated | Create and change products, manufacturers and product categories. |
 | `products.view` | normal | View the product catalog: products, manufacturers and product categories. |
-| `remote_access.admin` | high | Planned: configure Remote Access Providers, their credentials and unattended-access policy records. |
-| `remote_access.file_transfer` | high | Planned: transfer files inside an authorized remote-access session. |
-| `remote_access.start_attended` | high | Planned: start an attended remote-access session (user consent required) through a Remote Access Provider when policy allows it. |
-| `remote_access.start_unattended` | high | Planned: start an unattended remote-access session on a Device named by an unattended-access policy record, with a linked Ticket. |
-| `remote_access.terminal` | high | Planned: use the provider's terminal channel inside an authorized remote-access session. |
-| `remote_access.view` | normal | Planned: see whether remote access is available for a Device or Ticket (provider mapping, supported modes); does not allow starting a session. |
-| `remote_access.view_sessions` | elevated | Planned: view all Remote Access Session records and their audit trail, including other technicians' sessions. |
+| `remote_access.admin` | high | Map and unmap Devices to provider peer ids, see unmasked peer ids, cancel or close other technicians' sessions and approve sessions that need a second approver. Provider credentials and unattended-access policy records stay planned. |
+| `remote_access.file_transfer` | high | Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): transfer files inside an authorized remote-access session. |
+| `remote_access.start_attended` | high | Request and launch an attended remote-access session for a Device from an open Ticket whose affected User is the Device's holder (or with a reason code), through an enabled Remote Access Provider; the user consents in the provider client. Policy may require a second approver. Rate limited; see the own sessions. |
+| `remote_access.start_unattended` | high | Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): start an unattended remote-access session on a Device named by an unattended-access policy record, with a linked Ticket. |
+| `remote_access.terminal` | high | Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): use the provider's terminal channel inside an authorized remote-access session. |
+| `remote_access.view` | normal | See whether attended remote access is available for a Device: enabled providers, mapped peers (peer ids masked), freshness of the last observation and why a session is blocked. Does not allow starting a session. |
+| `remote_access.view_sessions` | elevated | View all Remote Access Session records and their transitions, including other technicians' sessions. Provider launch links are never stored. |
 | `requests.manage` | elevated | Cancel, put on hold, resume and complete any service request. |
 | `requests.view` | elevated | View all service requests, their answers, approvals and fulfillment tasks. |
 | `runbooks.execute` | elevated | Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission. |

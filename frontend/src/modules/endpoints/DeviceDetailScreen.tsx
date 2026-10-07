@@ -14,6 +14,7 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
+import { DeviceRemoteSupport } from '../remoteaccess/RemoteSupportCard';
 import { DeviceManagementSection } from './ManagementScreens';
 import { HistorySection } from './HistoryDiffScreens';
 import {
@@ -203,6 +204,7 @@ export function DeviceDetailScreen({ id }: { id: string }) {
         <dt>{t('endpoints.deletedObservedAt')}</dt>
         <dd>{date(d.deletedObservedAt)}</dd>
       </dl>
+      {can('remote_access.view') ? <DeviceRemoteSupport deviceId={d.id} /> : null}
       <section>
         <h2>{t('endpoints.software')}</h2>
         <DataTable

@@ -474,3 +474,25 @@ describe('deployment routes', () => {
     expect(canViewRoute(createCan({ permissions: [] }), route('targetSetDetail'))).toBe(false);
   });
 });
+
+describe('remote access', () => {
+  it('shows the sessions entry with remote access permissions only', () => {
+    expect(ids([], 'endpoints')).not.toContain('remoteAccessSessions');
+    expect(ids(['endpoints.view'], 'endpoints')).not.toContain('remoteAccessSessions');
+    for (const permission of [
+      'remote_access.view',
+      'remote_access.start_attended',
+      'remote_access.view_sessions',
+    ]) {
+      expect(ids([permission], 'endpoints')).toEqual(['remoteAccessSessions']);
+    }
+    expect(ids(['remote_access.admin'], 'endpoints')).toEqual([]);
+  });
+
+  it('matches the session routes', () => {
+    expect(matchRoute(appRoutes, '/remote-access/sessions')?.route.id).toBe('remoteAccessSessions');
+    expect(matchRoute(appRoutes, '/remote-access/sessions/7')?.route.id).toBe(
+      'remoteAccessSessionDetail',
+    );
+  });
+});
