@@ -3502,8 +3502,6 @@ export const en = {
     'The device was not seen for more than 7 days, so it is probably offline or outdated.',
   'remoteaccess.reason.no_peer_mapping':
     'No provider peer is mapped to this device yet. An administrator can map it.',
-  'remoteaccess.reason.ticket_unknown': 'The ticket was not found.',
-  'remoteaccess.reason.ticket_not_open': 'The ticket is not open.',
   'remoteaccess.reason.holder_mismatch':
     'The affected user is not the current holder of this device. Choose a reason to continue.',
   'remoteaccess.reason.session_open':
@@ -3525,6 +3523,17 @@ export const en = {
   'remoteaccess.error.no_eligible_approver': 'The chosen approver cannot approve this session.',
   'remoteaccess.error.launch_failed':
     'The provider could not prepare the launch. The session was ended.',
+  'remoteaccess.reason.ticket_unavailable':
+    'The ticket is unavailable: it is not open, or you may not act on it (you need to be its assignee or hold ticket management rights, and not be the reporter).',
+  'remoteaccess.reason.mapping_changed':
+    'The peer mapping of this device changed, so the session ended.',
+  'remoteaccess.reason.no_recipient':
+    'Nobody can be told about the session because the device has no current holder.',
+  'remoteaccess.reason.approval_required': 'The approval needed for this session is missing.',
+  'remoteaccess.statusReason': 'Status reason',
+  'remoteaccess.lastCheckin': 'Last check-in',
+  'remoteaccess.observations.note':
+    '{count} provider records could not be matched to a session (since {since}). They never create or change sessions.',
 } as const;
 
 export type MessageKey = keyof typeof en;

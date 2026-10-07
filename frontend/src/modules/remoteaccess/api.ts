@@ -6,6 +6,7 @@ import { refusalCodes } from './types';
 import type {
   Capabilities,
   NewSession,
+  ObservationsSummary,
   PeerMapping,
   RemoteSession,
   SessionDetail,
@@ -91,6 +92,8 @@ export const remoteAccessApi = {
     });
     return out.launchUri;
   },
+  observationsSummary: (signal?: AbortSignal) =>
+    api.get<ObservationsSummary>('/remote-access/observations/summary', { signal }),
   mappings: (deviceId: string, signal?: AbortSignal) =>
     api.get<{ items: PeerMapping[] }>('/remote-access/peer-mappings', {
       signal,

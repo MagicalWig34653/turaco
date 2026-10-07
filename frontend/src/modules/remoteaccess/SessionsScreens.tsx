@@ -14,7 +14,7 @@ import { TableDate } from '../../platform/ui/TableDate';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
 import { useFilterQuery } from '../../platform/ui/useFilterQuery';
 import { remoteAccessApi } from './api';
-import { sessionFacts } from './model';
+import { reasonKey, sessionFacts } from './model';
 import { SessionPanel, SessionStatusBadge, UserName } from './SessionPanel';
 import { sessionStatuses, type RemoteSession, type Transition } from './types';
 
@@ -28,12 +28,16 @@ function initialFilters() {
 }
 
 export function SessionsScreen() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can, session: auth } = useSession();
   const seeAll = can('remote_access.view_sessions');
   const [filters, setFilters] = useState(initialFilters);
   const [mine, setMine] = useState(!seeAll);
   useFilterQuery(filters);
+  const summary = useAsync(
+    (signal) => (seeAll ? remoteAccessApi.observationsSummary(signal) : Promise.resolve(undefined)),
+    [seeAll],
+  );
   const list = usePagedList(
     (cursor, signal) =>
       remoteAccessApi.sessions(
@@ -126,6 +130,14 @@ export function SessionsScreen() {
   return (
     <>
       <PageHeader title={t('remoteaccess.sessions.title')} />
+      {seeAll && summary.data && summary.data.unattributedRecords > 0 ? (
+        <p role="note">
+          {t('remoteaccess.observations.note', {
+            count: summary.data.unattributedRecords,
+            since: formatDateTime(locale, summary.data.since),
+          })}
+        </p>
+      ) : null}
       <FilterBar
         activeFilters={activeFilters}
         onClear={() => setFilters({ status: '', deviceId: '', ticketId: '' })}
@@ -243,6 +255,12 @@ export function SessionDetailScreen({ id }: { id: string }) {
             <>
               <dt>{t('remoteaccess.mismatchReason')}</dt>
               <dd>{t(`remoteaccess.mismatch.${s.mismatchReason}` as MessageKey)}</dd>
+            </>
+          ) : null}
+          {s.statusReason ? (
+            <>
+              <dt>{t('remoteaccess.statusReason')}</dt>
+              <dd>{t(reasonKey(s.statusReason))}</dd>
             </>
           ) : null}
           <dt>{t('remoteaccess.expiresAt')}</dt>

@@ -41,6 +41,12 @@ function CapabilityList({ caps }: { caps: Capabilities }) {
       <p className="ra-fresh">
         {t('remoteaccess.lastObserved')}:{' '}
         {caps.observedAt ? <TableDate value={caps.observedAt} /> : t('remoteaccess.unknown')}
+        {caps.lastCheckinAt ? (
+          <>
+            {' · '}
+            {t('remoteaccess.lastCheckin')}: <TableDate value={caps.lastCheckinAt} />
+          </>
+        ) : null}
         {caps.stale ? <Badge tone="warning">{t('remoteaccess.stale')}</Badge> : null}
       </p>
       <ul className="ra-providers">

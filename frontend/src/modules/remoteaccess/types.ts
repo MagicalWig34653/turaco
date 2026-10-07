@@ -17,8 +17,10 @@ export const refusalCodes = [
   'device_retired',
   'stale_device',
   'no_peer_mapping',
-  'ticket_unknown',
-  'ticket_not_open',
+  'ticket_unavailable',
+  'mapping_changed',
+  'no_recipient',
+  'approval_required',
   'holder_mismatch',
   'session_open',
   'approver_required',
@@ -58,6 +60,7 @@ export type Capabilities = {
   enabled: boolean;
   deviceKnown: boolean;
   observedAt: string | null;
+  lastCheckinAt?: string | null;
   stale: boolean;
   providers: ProviderCapability[];
 };
@@ -126,4 +129,10 @@ export type NewSession = {
   note?: string;
   approverUserId?: string;
   approverTeamId?: string;
+};
+
+export type ObservationsSummary = {
+  unattributedRecords: number;
+  byReason: { unattributed: number; duplicate: number; after_close: number };
+  since: string;
 };

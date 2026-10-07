@@ -3602,8 +3602,6 @@ export const de: Record<MessageKey, string> = {
     'Das Gerät wurde seit mehr als 7 Tagen nicht gesehen und ist vermutlich offline oder veraltet.',
   'remoteaccess.reason.no_peer_mapping':
     'Diesem Gerät ist noch keine Gegenstelle zugeordnet. Eine Administratorin oder ein Administrator kann sie zuordnen.',
-  'remoteaccess.reason.ticket_unknown': 'Das Ticket wurde nicht gefunden.',
-  'remoteaccess.reason.ticket_not_open': 'Das Ticket ist nicht offen.',
   'remoteaccess.reason.holder_mismatch':
     'Die betroffene Person ist nicht die aktuelle Besitzerin bzw. der aktuelle Besitzer des Geräts. Wähle einen Grund, um fortzufahren.',
   'remoteaccess.reason.session_open':
@@ -3626,4 +3624,15 @@ export const de: Record<MessageKey, string> = {
     'Die gewählte Person bzw. das gewählte Team kann diese Sitzung nicht freigeben.',
   'remoteaccess.error.launch_failed':
     'Der Anbieter konnte den Start nicht vorbereiten. Die Sitzung wurde beendet.',
+  'remoteaccess.reason.ticket_unavailable':
+    'Das Ticket ist nicht verfügbar: Es ist nicht offen, oder du darfst darauf nicht handeln (du musst zugewiesen sein oder Ticket-Verwaltungsrechte haben und darfst nicht die meldende Person sein).',
+  'remoteaccess.reason.mapping_changed':
+    'Die Zuordnung der Gegenstelle dieses Geräts hat sich geändert, die Sitzung wurde beendet.',
+  'remoteaccess.reason.no_recipient':
+    'Niemand kann über die Sitzung informiert werden, weil das Gerät keinen aktuellen Besitzer hat.',
+  'remoteaccess.reason.approval_required': 'Die für diese Sitzung nötige Freigabe fehlt.',
+  'remoteaccess.statusReason': 'Statusgrund',
+  'remoteaccess.lastCheckin': 'Letzter Check-in',
+  'remoteaccess.observations.note':
+    '{count} Anbieterdatensätze konnten keiner Sitzung zugeordnet werden (seit {since}). Sie erzeugen oder ändern nie Sitzungen.',
 };

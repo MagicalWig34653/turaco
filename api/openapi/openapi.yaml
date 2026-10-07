@@ -10461,7 +10461,7 @@ paths:
     post:
       operationId: requestRemoteAccessSession
       summary: Request an attended Remote Access Session.
-      description: "Needs `remote_access.start_attended`. Policy gates answer 409 with `remoteaccess.<code>` for each code of `RemoteAccessRefusalCode` (a refusal never creates a session); 429 `remoteaccess.rate_limited` after 20 requests per User and hour. `note` is plain text (500 characters) and never audited. Devices whose ownership requires approval need exactly one of `approverUserId` or `approverTeamId`; the session then starts in `pending_approval`, otherwise it is authorized at once."
+      description: "Needs `remote_access.start_attended`. Policy gates answer 409 with `remoteaccess.<code>` for each code of `RemoteAccessRefusalCode` (a refusal never creates a session; `ticket_unavailable` and `no_recipient` are possible here). Refused attempts count toward the rate limit: 429 `remoteaccess.rate_limited` after 20 requests per User and hour. The initiator must hold `tickets.manage` or be the Ticket assignee and not its reporter; at most one open session per Device. A mismatch `reason` always yields `pending_approval`, so an approver is required (`approver_required` otherwise). `note` is plain text (500 characters) and never audited. Devices whose ownership requires approval need exactly one of `approverUserId` or `approverTeamId`; the session then starts in `pending_approval`, otherwise it is authorized at once."
       security:
         - sessionAuth: []
       requestBody:
@@ -10620,7 +10620,7 @@ paths:
     post:
       operationId: exchangeRemoteAccessLaunchHandle
       summary: Exchange a launch handle for the provider launch link, once.
-      description: "Needs `remote_access.start_attended`. The only response that carries `launchUri`, in the body only; never put it in a redirect, URL, log or storage, and hand it to the browser at once (custom scheme). The handle works once for the User it was issued to: unknown token or other User 404, used 409 `remoteaccess.handle_used`, expired 410 `remoteaccess.handle_expired`, provider failure 502 `remoteaccess.launch_failed` (the session becomes `failed`). Moves the session to `launched`. `no-store`."
+      description: "Needs `remote_access.start_attended`. The only response that carries `launchUri`, in the body only; never put it in a redirect, URL, log or storage, and hand it to the browser at once (custom scheme). The handle works once for the User it was issued to: unknown token or other User 404, used 409 `remoteaccess.handle_used`, expired 410 `remoteaccess.handle_expired`, provider failure 502 `remoteaccess.launch_failed` (the session becomes `failed`). Moves the session to `launched`. Policy is re-checked: `mapping_changed`, `ticket_unavailable`, `device_retired`, `stale_device`, `holder_mismatch`, `approval_required` and `no_recipient` answer 409, consume the handle and end the session as `failed` with that code as `statusReason`. `no-store`."
       security:
         - sessionAuth: []
       requestBody:
@@ -10649,6 +10649,22 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /remote-access/observations/summary:
+    get:
+      operationId: getRemoteAccessObservationsSummary
+      summary: Provider observation records that could not be attributed to a session.
+      description: "Needs `remote_access.view_sessions`. Counts only; unmatched provider records never create or change sessions. `no-store`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Summary.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteAccessObservationsSummary'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -11195,7 +11211,7 @@ components:
         goal: {type: string, nullable: true}
         ownerId: {type: string}
         status: {type: string, enum: [idea, planning, proposed, approved, active, on_hold, completed, cancelled]}
-        statusReason: {type: string, nullable: true}
+        statusReason: {type: string, nullable: true, description: "Reason code. A failed exchange carries the refusal code; `mapping_changed` marks sessions ended by a peer remap or unmap."}
         targetDate: {type: string, format: date, nullable: true}
         approvalId: {type: string, nullable: true}
         proposedBy: {type: string, nullable: true}
@@ -15906,7 +15922,7 @@ components:
     RemoteAccessRefusalCode:
       type: string
       description: Policy refusal; the HTTP code is `remoteaccess.<value>` (409). In capabilities the same values explain why no session can start.
-      enum: [provider_disabled, device_unknown, device_retired, stale_device, no_peer_mapping, ticket_unknown, ticket_not_open, holder_mismatch, session_open, approver_required]
+      enum: [provider_disabled, device_unknown, device_retired, stale_device, no_peer_mapping, ticket_unavailable, mapping_changed, no_recipient, approval_required, holder_mismatch, session_open, approver_required]
     RemoteAccessSessionStatus:
       type: string
       enum: [requested, pending_approval, authorized, launched, closed, rejected, cancelled, expired, failed]
@@ -15918,6 +15934,7 @@ components:
         enabled: {type: boolean, description: At least one provider is enabled in this deployment.}
         deviceKnown: {type: boolean}
         observedAt: {type: string, format: date-time, nullable: true, description: Last observation of the Device (source of freshness).}
+        lastCheckinAt: {type: string, format: date-time, nullable: true, description: Last check-in reported by the provider; `stale` derives from it.}
         stale: {type: boolean, description: No observation for 7 days.}
         providers:
           type: array
@@ -16076,3 +16093,15 @@ components:
         provider: {type: string}
         peerId: {type: string}
         reason: {type: string, enum: [initial_mapping, correction, provider_change, other]}
+    RemoteAccessObservationsSummary:
+      type: object
+      required: [unattributedRecords, byReason, since]
+      properties:
+        unattributedRecords: {type: integer}
+        byReason:
+          type: object
+          properties:
+            unattributed: {type: integer}
+            duplicate: {type: integer}
+            after_close: {type: integer}
+        since: {type: string, format: date-time}
