@@ -188,8 +188,9 @@ type gateResult struct {
 
 // executionGate re-checks, inside the caller's transaction, everything the rollout depends on: the version and its
 // product are approved, the package is published, linked to its Management Artifact, has no open hash or
-// publication finding and carries the approved installer hash. A non-empty code closes the gate.
-func (s *Service) executionGate(ctx context.Context, tx pgx.Tx, d Deployment) (gateResult, error) {
+// publication finding, carries the approved installer hash and is still the artifact that the ring runs pinned at their
+// first write (a relinked artifact closes the gate: artifact_changed). A non-empty code closes the gate.
+func (s *Service) executionGate(ctx context.Context, tx pgx.Tx, d Deployment, runs []DeploymentRingRun) (gateResult, error) {
 	v, err := s.store.ShareVersionTx(ctx, tx, d.SoftwareVersionID)
 	if err != nil {
 		return gateResult{}, err
@@ -234,7 +235,25 @@ func (s *Service) executionGate(ctx context.Context, tx pgx.Tx, d Deployment) (g
 		out.code = ReasonHashMismatch
 	}
 	out.pkg = pkg
+	if out.code == "" {
+		for _, r := range runs {
+			if r.ManagementArtifactID != nil && (*r.ManagementArtifactID != *pkg.ArtifactID ||
+				r.ManagementArtifactExternalID == nil || *r.ManagementArtifactExternalID != pkg.ArtifactExternalID) {
+				out.code = ReasonArtifactChanged
+				break
+			}
+		}
+	}
 	return out, nil
+}
+
+// closeGate is the kill switch: the Deployment pauses with the gate code, its rings halt and the clearing of every ring
+// assignment the provider may hold is queued (the same path as cancel). Idempotent.
+func (s *Service) closeGate(ctx context.Context, tx pgx.Tx, c Caller, st execState, code string) error {
+	if _, err := s.pauseAndHalt(ctx, tx, c, st, "kill_switch", code, true); err != nil {
+		return err
+	}
+	return s.queueClear(ctx, tx, c, st.d.ID, code)
 }
 
 func (s *Service) fail(ctx context.Context, tx pgx.Tx, c Caller, cur Deployment, reason string, meta map[string]any) (Deployment, error) {
@@ -313,7 +332,7 @@ func (s *Service) StartDeployment(ctx context.Context, c Caller, p Principal, id
 		if cur.HighImpact && slices.Contains(planners(cur), c.Actor.UserID) {
 			return ErrSeparationOfPlanning
 		}
-		g, err := s.executionGate(ctx, tx, cur)
+		g, err := s.executionGate(ctx, tx, cur, nil)
 		if err != nil {
 			return err
 		}
@@ -366,7 +385,18 @@ func (s *Service) haltRun(ctx context.Context, tx pgx.Tx, c Caller, r Deployment
 	next := r
 	now := s.now()
 	next.Status, next.StatusReason, next.HaltedAt, next.AwaitingSince = RingHalted, &reason, &now, nil
-	out, err := s.commitRun(ctx, tx, c, r, next, op, reason, nil)
+	// A halt withdraws the promotion Approval: a later approval must not promote a ring that was halted in between.
+	var meta map[string]any
+	if r.PromotionApprovalID != nil {
+		if r.PromotionApprovalStatus != nil && *r.PromotionApprovalStatus == approvalPending {
+			if err := s.approvals.CancelRingBySubjectInTx(ctx, tx, c.Actor, c.CorrelationID, r.ID); err != nil {
+				return DeploymentRingRun{}, err
+			}
+		}
+		next.PromotionApprovalID, next.PromotionApprovalStatus, next.PromotionApprovalRequestedBy = nil, nil, nil
+		meta = map[string]any{"approvalWithdrawn": true}
+	}
+	out, err := s.commitRun(ctx, tx, c, r, next, op, reason, meta)
 	if err != nil {
 		return DeploymentRingRun{}, err
 	}
@@ -420,8 +450,16 @@ func (s *Service) ResumeDeployment(ctx context.Context, c Caller, p Principal, i
 	if err := s.writeGate(); err != nil {
 		return Deployment{}, err
 	}
+	pre, err := s.store.Rings(ctx, strings.ToLower(id))
+	if err != nil {
+		return Deployment{}, err
+	}
+	windows, err := s.lookupWindows(ctx, pre)
+	if err != nil {
+		return Deployment{}, err
+	}
 	var out Deployment
-	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		st, err := s.lockExec(ctx, tx, id, expected, "resume", DeploymentPaused)
 		if err != nil {
 			return err
@@ -430,13 +468,21 @@ func (s *Service) ResumeDeployment(ctx context.Context, c Caller, p Principal, i
 			if r.Status == RingHalted {
 				return &GateError{Code: CodeRingHalted}
 			}
+			if code := clearGateCode(r); code != "" {
+				return &GateError{Code: code}
+			}
 		}
-		g, err := s.executionGate(ctx, tx, st.d)
+		g, err := s.executionGate(ctx, tx, st.d, st.runs)
 		if err != nil {
 			return err
 		}
 		if g.code != "" {
 			return &GateError{Code: g.code}
+		}
+		for _, r := range st.runs {
+			if ring, ok := st.ring(r.RingID); ok && r.Status == RingActive && !windowOpen(ring, windows, s.now()) {
+				return &GateError{Code: CodeWindowClosed}
+			}
 		}
 		next := st.d
 		next.Status, next.StatusReason = DeploymentRunning, nil
@@ -444,6 +490,18 @@ func (s *Service) ResumeDeployment(ctx context.Context, c Caller, p Principal, i
 		return err
 	})
 	return out, err
+}
+
+// clearGateCode is the refusal of a resume while the assignment of a ring is queued for clearing (clear_pending) or was
+// cleared (assignment_cleared: the rollout was pulled back and is cancelled, not resumed); "" when nothing was queued.
+func clearGateCode(r DeploymentRingRun) string {
+	switch {
+	case r.AssignmentClearedAt != nil:
+		return CodeAssignmentCleared
+	case r.ClearRequestedAt != nil:
+		return CodeClearPending
+	}
+	return ""
 }
 
 func (s *Service) ringOp(c Caller, p Principal, id, ringID string, expected *int) error {
@@ -497,10 +555,16 @@ func (s *Service) HaltRing(ctx context.Context, c Caller, p Principal, id, ringI
 const ReasonRingHalted = "ring_halted"
 
 // ResumeRing resumes a halted ring: the gates are re-checked, the ring's Change window must be open (rings without
-// window exemption) and the Deployment returns to running when it was paused. Needs the write capability.
-func (s *Service) ResumeRing(ctx context.Context, c Caller, p Principal, id, ringID string, expected *int) (Deployment, error) {
+// window exemption) and the Deployment returns to running when it was paused. A ring halted with assignment_failed is
+// resumed only with reason "retry", which resets the attempt counter (at most MaxRingRetries times, audited). A rollout
+// whose assignments were queued for clearing (kill switch) cannot be resumed. The person who planned a high-impact plan
+// cannot resume it. Needs the write capability.
+func (s *Service) ResumeRing(ctx context.Context, c Caller, p Principal, id, ringID string, expected *int, reason string) (Deployment, error) {
 	if err := s.ringOp(c, p, id, ringID, expected); err != nil {
 		return Deployment{}, err
+	}
+	if reason != "" && reason != ReasonRetry {
+		return Deployment{}, invalid("reason must be empty or %s", ReasonRetry)
 	}
 	if err := s.writeGate(); err != nil {
 		return Deployment{}, err
@@ -526,8 +590,16 @@ func (s *Service) ResumeRing(ctx context.Context, c Caller, p Principal, id, rin
 		if run.Status != RingHalted {
 			return &GateError{Code: CodeRingNotHalted}
 		}
+		if st.d.HighImpact && slices.Contains(planners(st.d), c.Actor.UserID) {
+			return ErrSeparationOfPlanning
+		}
+		for _, r := range st.runs {
+			if code := clearGateCode(r); code != "" {
+				return &GateError{Code: code}
+			}
+		}
 		ring, _ := st.ring(run.RingID)
-		g, err := s.executionGate(ctx, tx, st.d)
+		g, err := s.executionGate(ctx, tx, st.d, st.runs)
 		if err != nil {
 			return err
 		}
@@ -548,7 +620,24 @@ func (s *Service) ResumeRing(ctx context.Context, c Caller, p Principal, id, rin
 		if next.ActivatedAt == nil {
 			next.ActivatedAt = &now
 		}
-		if _, err := s.commitRun(ctx, tx, c, run, next, "resumed", "", nil); err != nil {
+		op, meta := "resumed", map[string]any(nil)
+		if run.StatusReason != nil && *run.StatusReason == ReasonAssignmentFailed {
+			switch {
+			case reason != ReasonRetry:
+				return &GateError{Code: CodeRetryRequired}
+			case run.RetryCount >= MaxRingRetries:
+				return &GateError{Code: CodeRetryLimit}
+			}
+			n, _, err := s.store.AttemptStateTx(ctx, tx, run.ID, AttemptSet)
+			if err != nil {
+				return err
+			}
+			next.AttemptBase, next.RetryCount = n, run.RetryCount+1
+			op, meta = "retried", map[string]any{"retry": next.RetryCount, "attemptBase": n}
+		} else if reason == ReasonRetry {
+			return invalid("only a ring halted with %s is retried", ReasonAssignmentFailed)
+		}
+		if _, err := s.commitRun(ctx, tx, c, run, next, op, reason, meta); err != nil {
 			return err
 		}
 		out = st.d
@@ -591,6 +680,9 @@ func (s *Service) PromoteRing(ctx context.Context, c Caller, p Principal, id, ri
 		if st.d.HighImpact && !p.DeploymentsHighImpact {
 			return ErrHighImpactForbidden
 		}
+		if st.d.HighImpact && slices.Contains(planners(st.d), c.Actor.UserID) {
+			return ErrSeparationOfPlanning
+		}
 		run, idx, ok := st.run(strings.ToLower(ringID))
 		if !ok {
 			return ErrNotFound
@@ -602,7 +694,7 @@ func (s *Service) PromoteRing(ctx context.Context, c Caller, p Principal, id, ri
 			return &GateError{Code: CodeNoPreviousRing}
 		}
 		ring, _ := st.ring(run.RingID)
-		g, err := s.executionGate(ctx, tx, st.d)
+		g, err := s.executionGate(ctx, tx, st.d, st.runs)
 		if err != nil {
 			return err
 		}
@@ -675,6 +767,9 @@ func evidenceCode(run DeploymentRingRun, ring DeploymentRing, c RingCounts, now 
 		return CodeSoakNotElapsed
 	}
 	den := c.Denominator()
+	if den < c.MinEvidence() {
+		return CodeNoEvidence
+	}
 	if c.ByState[TargetSuccessful]*100 < ring.SuccessThresholdPercent*den {
 		return CodeThresholdNotMet
 	}
@@ -831,7 +926,8 @@ func (s *Service) onRingApprovalDecided(ctx context.Context, tx pgx.Tx, ev event
 }
 
 // cancelRunning cancels a Deployment in an execution status: targets without a final state are cancelled, active
-// and awaiting rings halted (deployment_cancelled); the engine clears the ring assignments (idempotent).
+// and awaiting rings halted (deployment_cancelled); the clearing of every ring assignment the provider may hold (a set
+// attempt exists, also one still in flight) is queued and done by the engine (idempotent, needs the write capability).
 func (s *Service) cancelRunning(ctx context.Context, tx pgx.Tx, c Caller, st execState, reason string) (Deployment, error) {
 	now := s.now()
 	n, err := s.store.CancelTargetsTx(ctx, tx, st.d.ID, now, c.CorrelationID)
@@ -844,6 +940,9 @@ func (s *Service) cancelRunning(ctx context.Context, tx pgx.Tx, c Caller, st exe
 				return Deployment{}, err
 			}
 		}
+	}
+	if err := s.queueClear(ctx, tx, c, st.d.ID, reason); err != nil {
+		return Deployment{}, err
 	}
 	next := st.d
 	by := c.Actor.UserID
@@ -905,6 +1004,7 @@ func (s *Service) DeploymentProgress(ctx context.Context, p Principal, id string
 		return DeploymentProgress{}, err
 	}
 	out := DeploymentProgress{Deployment: d, Rings: []RingProgress{}}
+	out.ResolvingStuck = d.Status == DeploymentResolvingTargets && d.StartedAt != nil && s.now().Sub(*d.StartedAt) > ResolvingStuckAfter
 	rings, err := s.store.Rings(ctx, d.ID)
 	if err != nil {
 		return DeploymentProgress{}, err
@@ -914,12 +1014,25 @@ func (s *Service) DeploymentProgress(ctx context.Context, p Principal, id string
 		return DeploymentProgress{}, err
 	}
 	art := ""
+	clearAttempts := map[string]int{}
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
 		pkg, ok, err := s.store.PublishedPackageTx(ctx, tx, d.SoftwareVersionID)
 		if err == nil && ok && pkg.ArtifactID != nil {
 			art = *pkg.ArtifactID
 		}
-		return err
+		if err != nil {
+			return err
+		}
+		for _, r := range runs {
+			if needsClear(r) {
+				n, _, err := s.store.AttemptStateTx(ctx, tx, r.ID, AttemptClear)
+				if err != nil {
+					return err
+				}
+				clearAttempts[r.ID] = n
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return DeploymentProgress{}, err
@@ -930,11 +1043,17 @@ func (s *Service) DeploymentProgress(ctx context.Context, p Principal, id string
 		if !ok {
 			continue
 		}
-		counts, err := s.store.RingCounts(ctx, run.ID, art, now.Add(-s.evidenceFresh))
+		runArt := art
+		if run.ManagementArtifactID != nil {
+			runArt = *run.ManagementArtifactID
+		}
+		counts, err := s.store.RingCounts(ctx, run.ID, runArt, now.Add(-s.evidenceFresh))
 		if err != nil {
 			return DeploymentProgress{}, err
 		}
-		rp := RingProgress{Run: run, Ring: ring, Counts: counts, Rate: ringRate(counts)}
+		rp := RingProgress{Run: run, Ring: ring, Counts: counts, Rate: ringRate(counts),
+			ClearPending: needsClear(run), ClearFailed: needsClear(run) && clearAttempts[run.ID] >= MaxClearAttempts}
+		out.ClearPending = out.ClearPending || rp.ClearPending
 		if run.SettledAt != nil {
 			if left := run.SettledAt.Add(time.Duration(ring.SoakMinutes) * time.Minute).Sub(now); left > 0 {
 				rp.SoakLeft = left
@@ -965,6 +1084,8 @@ func nextGate(run DeploymentRingRun, ring DeploymentRing, c RingCounts, hasNext 
 			return "threshold"
 		case CodeEvidenceNotFresh:
 			return "fresh_evidence"
+		case CodeNoEvidence:
+			return "evidence"
 		}
 		return "observations"
 	}

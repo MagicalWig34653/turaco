@@ -264,14 +264,16 @@ type Deployment struct {
 	ApprovedAt        *time.Time
 	ScheduledBy       *string
 	ScheduledAt       *time.Time
-	StartedBy         *string
-	StartedAt         *time.Time
-	FinishedAt        *time.Time
-	CancelledBy       *string
-	CancelledAt       *time.Time
-	Version           int
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// ScheduledTargets is the evaluated target total of the plan at scheduling (nil: not recorded).
+	ScheduledTargets *int
+	StartedBy        *string
+	StartedAt        *time.Time
+	FinishedAt       *time.Time
+	CancelledBy      *string
+	CancelledAt      *time.Time
+	Version          int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // DeploymentRing is one stage of a Deployment with its gate configuration.

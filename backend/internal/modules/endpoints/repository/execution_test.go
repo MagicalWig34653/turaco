@@ -49,7 +49,7 @@ func newExEnv(t *testing.T, name string, ext ...string) *exEnv {
 	ctx := context.Background()
 	x := &exEnv{depEnv: d, prov: intune.NewFake()}
 	x.wr = intune.NewFakeWriter(x.prov)
-	d.svc.WithDeployWrite(true, x.wr)
+	d.svc.WithDeployWrite(true, x.wr).WithProviderKey(d.provider)
 	x.starterID = d.newID()
 	x.starter = application.Principal{UserID: x.starterID, DeploymentsExecute: true, DeploymentsHighImpact: true, View: true}
 	x.exec = x.starter
@@ -498,7 +498,7 @@ func TestDeploymentFailureThresholdHaltsRingAndPauses(t *testing.T) {
 	if _, err := x.svc.ResumeDeployment(ctx, x.starterCaller(), x.starter, x.dep.ID, &v); !hasGate(err, application.CodeRingHalted) {
 		t.Fatalf("resume deployment with halted ring: %v", err)
 	}
-	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v); err != nil {
+	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v, ""); err != nil {
 		t.Fatalf("resume ring: %v", err)
 	}
 	x.wantRing(1, "active")
@@ -728,8 +728,19 @@ func TestDeploymentKillSwitchHaltsOnRevokeAndHashMismatch(t *testing.T) {
 	x.tick()
 	x.wantTargets(map[string]string{"d1": "awaiting_observation"})
 	v := x.cur().Version
-	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v); !hasGate(err, application.ReasonVersionRevoked) {
+	// The kill switch queued the clearing of the ring assignment (the same path as cancel): the next tick cleared it, and
+	// the rollout cannot be resumed afterwards.
+	if calls := x.wr.Calls(); len(calls) != writes+1 || !calls[writes].Clear || calls[writes].Artifact != x.artifact {
+		t.Fatalf("kill switch did not clear the ring assignment: %+v", calls)
+	}
+	if r := x.ringRun(1); r.ClearRequestedAt == nil || r.AssignmentClearedAt == nil {
+		t.Fatalf("ring run clearing %+v", r)
+	}
+	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v, ""); !hasGate(err, application.CodeAssignmentCleared) {
 		t.Fatalf("resume after revoke: %v", err)
+	}
+	if _, err := x.svc.ResumeDeployment(ctx, x.starterCaller(), x.starter, x.dep.ID, &v); !hasGate(err, application.CodeRingHalted) {
+		t.Fatalf("resume deployment after revoke: %v", err)
 	}
 
 	// A hash mismatch reported while running halts too.
@@ -779,7 +790,7 @@ func TestDeploymentManualOperationsAndCancelClearsAssignments(t *testing.T) {
 	}
 	x.wantRing(1, "halted")
 	v = x.cur().Version
-	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v); err != nil {
+	if _, err := x.svc.ResumeRing(ctx, x.starterCaller(), x.starter, x.dep.ID, x.ringID(1), &v, ""); err != nil {
 		t.Fatal(err)
 	}
 	x.wantRing(1, "active")

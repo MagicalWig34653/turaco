@@ -92,9 +92,16 @@ func (h *handler) haltRing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) resumeRing(w http.ResponseWriter, r *http.Request) {
-	h.simpleOp(w, r, func(c application.Caller, p application.Principal, id string, v *int) (application.Deployment, error) {
-		return h.svc.ResumeRing(r.Context(), c, p, id, r.PathValue("ringId"), v)
-	})
+	var b reasonBody
+	if !decode(w, r, &b) {
+		return
+	}
+	d, err := h.svc.ResumeRing(r.Context(), caller(w, r), principal(r), r.PathValue("id"), r.PathValue("ringId"), b.ExpectedVersion, b.Reason)
+	if err != nil {
+		h.deploymentFail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toDeployment(d))
 }
 
 func (h *handler) promoteRing(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +152,9 @@ type ringProgressDTO struct {
 	SuccessRatePercent      *float64       `json:"successRatePercent"`
 	SoakRemainingSeconds    int64          `json:"soakRemainingSeconds"`
 	NextGate                string         `json:"nextGate"`
+	ClearPending            bool           `json:"clearPending"`
+	ClearFailed             bool           `json:"clearFailed"`
+	RetryCount              int            `json:"retryCount"`
 }
 
 func (h *handler) deploymentProgress(w http.ResponseWriter, r *http.Request) {
@@ -165,9 +175,11 @@ func (h *handler) deploymentProgress(w http.ResponseWriter, r *http.Request) {
 			PromotionApprovalStatus: x.Run.PromotionApprovalStatus, ApprovalRequired: x.Ring.ApprovalRequired,
 			SuccessThresholdPercent: x.Ring.SuccessThresholdPercent, SoakMinutes: x.Ring.SoakMinutes, Counts: counts,
 			FreshSuccessful: x.Counts.FreshSuccessful, FreshObserved: x.Counts.FreshObserved, SuccessRatePercent: x.Rate,
-			SoakRemainingSeconds: int64(x.SoakLeft / time.Second), NextGate: x.NextGate}
+			SoakRemainingSeconds: int64(x.SoakLeft / time.Second), NextGate: x.NextGate,
+			ClearPending: x.ClearPending, ClearFailed: x.ClearFailed, RetryCount: x.Run.RetryCount}
 	})
-	httpx.JSON(w, http.StatusOK, map[string]any{"deployment": toDeployment(pr.Deployment), "rings": rings})
+	httpx.JSON(w, http.StatusOK, map[string]any{"deployment": toDeployment(pr.Deployment), "rings": rings,
+		"clearPending": pr.ClearPending, "resolvingStuck": pr.ResolvingStuck})
 }
 
 type targetDTO struct {
@@ -208,13 +220,14 @@ func (h *handler) ringTargets(w http.ResponseWriter, r *http.Request) {
 }
 
 type attemptDTO struct {
-	ID          string `json:"id"`
-	RingRunID   string `json:"ringRunId"`
-	Kind        string `json:"kind"`
-	Attempt     int    `json:"attempt"`
-	OperationID string `json:"operationId"`
-	RequestedAt string `json:"requestedAt"`
-	OutcomeCode string `json:"outcomeCode"`
+	ID          string  `json:"id"`
+	RingRunID   string  `json:"ringRunId"`
+	Kind        string  `json:"kind"`
+	Attempt     int     `json:"attempt"`
+	OperationID string  `json:"operationId"`
+	RequestedAt string  `json:"requestedAt"`
+	OutcomeCode string  `json:"outcomeCode"`
+	FinishedAt  *string `json:"finishedAt"`
 }
 
 func (h *handler) deploymentAttempts(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +241,7 @@ func (h *handler) deploymentAttempts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := mapItems(res.Items, func(a application.DeploymentAttempt) attemptDTO {
-		return attemptDTO{ID: a.ID, RingRunID: a.RingRunID, Kind: a.Kind, Attempt: a.Attempt, OperationID: a.OperationID, RequestedAt: ts(a.RequestedAt), OutcomeCode: a.OutcomeCode}
+		return attemptDTO{ID: a.ID, RingRunID: a.RingRunID, Kind: a.Kind, Attempt: a.Attempt, OperationID: a.OperationID, RequestedAt: ts(a.RequestedAt), OutcomeCode: a.OutcomeCode, FinishedAt: tsPtr(a.FinishedAt)}
 	})
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": res.NextCursor})
 }

@@ -38,7 +38,7 @@ func TestSoftwareApprovalCategoryIsRegistered(t *testing.T) {
 	}
 }
 
-func TestDeploymentTickJobIsRegisteredAndScheduledOnlyWithTheCapability(t *testing.T) {
+func TestDeploymentTickJobIsRegisteredAndScheduledEvenWithoutTheCapability(t *testing.T) {
 	pool := dbtest.Pool(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, enabled := range []bool{false, true} {

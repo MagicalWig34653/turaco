@@ -16,14 +16,15 @@ import (
 
 const ringRunColumns = `r.id::text, r.deployment_id::text, r.ring_id::text, r.position, r.status, r.status_reason, r.group_external_id,
 	r.activated_at, r.settled_at, r.awaiting_since, r.promoted_at, r.promoted_by::text, r.halted_at, r.assignment_requested_at,
-	r.assignment_cleared_at, r.promotion_approval_id::text, r.promotion_approval_status, r.promotion_approval_requested_by::text,
+	r.assignment_cleared_at, r.clear_requested_at, r.management_artifact_id::text, r.management_artifact_external_id, r.attempt_base, r.retry_count,
+	r.promotion_approval_id::text, r.promotion_approval_status, r.promotion_approval_requested_by::text,
 	r.version, r.created_at, r.updated_at`
 
 func scanRingRun(row pgx.Row) (application.DeploymentRingRun, error) {
 	var g application.DeploymentRingRun
 	err := row.Scan(&g.ID, &g.DeploymentID, &g.RingID, &g.Position, &g.Status, &g.StatusReason, &g.GroupExternalID, &g.ActivatedAt,
 		&g.SettledAt, &g.AwaitingSince, &g.PromotedAt, &g.PromotedBy, &g.HaltedAt, &g.AssignmentRequestedAt, &g.AssignmentClearedAt,
-		&g.PromotionApprovalID, &g.PromotionApprovalStatus, &g.PromotionApprovalRequestedBy, &g.Version, &g.CreatedAt, &g.UpdatedAt)
+		&g.ClearRequestedAt, &g.ManagementArtifactID, &g.ManagementArtifactExternalID, &g.AttemptBase, &g.RetryCount, &g.PromotionApprovalID, &g.PromotionApprovalStatus, &g.PromotionApprovalRequestedBy, &g.Version, &g.CreatedAt, &g.UpdatedAt)
 	return g, err
 }
 
@@ -81,9 +82,11 @@ func (r *Repository) UpdateRingRunTx(ctx context.Context, tx pgx.Tx, g applicati
 	tag, err := tx.Exec(ctx, `UPDATE endpoints.deployment_ring_runs SET status = $2, status_reason = $3, activated_at = $4, settled_at = $5,
 		awaiting_since = $6, promoted_at = $7, promoted_by = $8::uuid, halted_at = $9, assignment_requested_at = $10, assignment_cleared_at = $11,
 		promotion_approval_id = $12::uuid, promotion_approval_status = $13, promotion_approval_requested_by = $14::uuid,
+		clear_requested_at = $15, management_artifact_id = $16::uuid, management_artifact_external_id = $17, attempt_base = $18, retry_count = $19,
 		version = version + 1, updated_at = now() WHERE id = $1::uuid`,
 		g.ID, g.Status, g.StatusReason, g.ActivatedAt, g.SettledAt, g.AwaitingSince, g.PromotedAt, g.PromotedBy, g.HaltedAt,
-		g.AssignmentRequestedAt, g.AssignmentClearedAt, g.PromotionApprovalID, g.PromotionApprovalStatus, g.PromotionApprovalRequestedBy)
+		g.AssignmentRequestedAt, g.AssignmentClearedAt, g.PromotionApprovalID, g.PromotionApprovalStatus, g.PromotionApprovalRequestedBy,
+		g.ClearRequestedAt, g.ManagementArtifactID, g.ManagementArtifactExternalID, g.AttemptBase, g.RetryCount)
 	if err != nil {
 		return application.DeploymentRingRun{}, fmt.Errorf("update ring run: %w", err)
 	}
@@ -107,11 +110,12 @@ func (r *Repository) AppendRingTransitionTx(ctx context.Context, tx pgx.Tx, t ap
 	return nil
 }
 
-func (r *Repository) DeviceFactsTx(ctx context.Context, tx pgx.Tx, deviceIDs []string, productID, productVersion string) (map[string]application.DeviceFact, error) {
+func (r *Repository) DeviceFactsTx(ctx context.Context, tx pgx.Tx, deviceIDs []string, productID, productVersion string, freshSince time.Time) (map[string]application.DeviceFact, error) {
 	rows, err := tx.Query(ctx, `SELECT d.id::text, d.deleted_observed_at IS NULL, d.os_platform, d.external_id, d.provider,
 		EXISTS (SELECT 1 FROM endpoints.software_installations si WHERE si.device_id = d.id AND si.software_product_id = $2::uuid
-			AND si.raw_version = $3 AND si.deleted_observed_at IS NULL)
-		FROM endpoints.devices d WHERE d.id = ANY($1::uuid[])`, deviceIDs, productID, productVersion)
+			AND si.raw_version = $3 AND si.deleted_observed_at IS NULL),
+		COALESCE(d.last_synced_at >= $4, false)
+		FROM endpoints.devices d WHERE d.id = ANY($1::uuid[])`, deviceIDs, productID, productVersion, freshSince)
 	if err != nil {
 		return nil, fmt.Errorf("device facts: %w", err)
 	}
@@ -120,12 +124,34 @@ func (r *Repository) DeviceFactsTx(ctx context.Context, tx pgx.Tx, deviceIDs []s
 	for rows.Next() {
 		var id string
 		var f application.DeviceFact
-		if err := rows.Scan(&id, &f.Live, &f.Platform, &f.External, &f.Provider, &f.HasVersion); err != nil {
+		if err := rows.Scan(&id, &f.Live, &f.Platform, &f.External, &f.Provider, &f.HasVersion, &f.Fresh); err != nil {
 			return nil, fmt.Errorf("device facts: scan: %w", err)
 		}
 		out[id] = f
 	}
 	return out, rows.Err()
+}
+
+func (r *Repository) RecheckSatisfiedTx(ctx context.Context, tx pgx.Tx, ringRunID, productID, productVersion string, uninstall bool, freshSince, now time.Time, correlationID string) (int, error) {
+	var n int
+	err := tx.QueryRow(ctx, `WITH cand AS (
+			SELECT t.id FROM endpoints.deployment_targets t JOIN endpoints.devices d ON d.id = t.device_id
+			WHERE t.ring_run_id = $1::uuid AND t.state = 'pending' AND d.deleted_observed_at IS NULL AND d.last_synced_at >= $4
+				AND EXISTS (SELECT 1 FROM endpoints.software_installations si WHERE si.device_id = d.id AND si.software_product_id = $2::uuid
+					AND si.raw_version = $3 AND si.deleted_observed_at IS NULL) <> $6::bool
+			FOR UPDATE OF t),
+		upd AS (
+			UPDATE endpoints.deployment_targets t SET state = 'already_satisfied',
+				state_reason = CASE WHEN $6::bool THEN 'version_not_installed' ELSE 'version_present' END,
+				decided_at = $5::timestamptz, version = t.version + 1, updated_at = now()
+			FROM cand WHERE t.id = cand.id RETURNING t.id, t.deployment_id, t.state_reason),
+		ins AS (INSERT INTO endpoints.deployment_target_transitions (deployment_id, target_id, from_state, to_state, reason, correlation_id)
+			SELECT deployment_id, id, 'pending', 'already_satisfied', state_reason, $7 FROM upd RETURNING 1)
+		SELECT count(*) FROM ins`, ringRunID, productID, productVersion, freshSince, now, uninstall, correlationID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("recheck satisfied: %w", err)
+	}
+	return n, nil
 }
 
 func (r *Repository) InsertTargetsTx(ctx context.Context, tx pgx.Tx, deploymentID string, targets []application.TargetInsert, now time.Time, correlationID string) error {
@@ -171,13 +197,22 @@ func (r *Repository) PublishedPackageTx(ctx context.Context, tx pgx.Tx, versionI
 	return p, true, nil
 }
 
-func (r *Repository) RingDeviceExternalIDsTx(ctx context.Context, tx pgx.Tx, ringRunID string) ([]string, error) {
+func (r *Repository) RingDeviceExternalIDsTx(ctx context.Context, tx pgx.Tx, ringRunID, provider string) ([]string, error) {
 	rows, err := tx.Query(ctx, `SELECT d.external_id FROM endpoints.deployment_targets t JOIN endpoints.devices d ON d.id = t.device_id
-		WHERE t.ring_run_id = $1::uuid AND t.state NOT IN ('already_satisfied', 'not_applicable', 'cancelled') ORDER BY d.external_id`, ringRunID)
+		WHERE t.ring_run_id = $1::uuid AND d.provider = $2 AND t.state NOT IN ('already_satisfied', 'not_applicable', 'cancelled') ORDER BY d.external_id`, ringRunID, provider)
 	if err != nil {
 		return nil, fmt.Errorf("ring device ids: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func (r *Repository) RingFirstDeviceTx(ctx context.Context, tx pgx.Tx, ringRunID string) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT device_id::text FROM endpoints.deployment_targets WHERE ring_run_id = $1::uuid ORDER BY id LIMIT 1`, ringRunID).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("ring first device: %w", err)
+	}
+	return id, nil
 }
 
 func (r *Repository) RequestAssignmentsTx(ctx context.Context, tx pgx.Tx, ringRunID string, now time.Time, correlationID string) (int, error) {
@@ -224,6 +259,9 @@ func (r *Repository) DecideTargetsTx(ctx context.Context, tx pgx.Tx, ringRunID, 
 			JOIN endpoints.management_observations o ON o.artifact_id = $2::uuid AND o.device_id = t.device_id AND o.retired_at IS NULL
 			WHERE t.ring_run_id = $1::uuid AND t.state = 'awaiting_observation' AND o.observed_at > t.read_back_at
 				AND o.normalized_state IN ('applied', 'failed', 'not_applicable')
+				AND (o.observed_at_provider OR EXISTS (SELECT 1 FROM endpoints.management_observation_history h
+					WHERE h.artifact_id = o.artifact_id AND h.device_id = o.device_id AND h.normalized_state = o.normalized_state
+						AND h.observed_at > t.read_back_at))
 			FOR UPDATE OF t),
 		upd AS (
 			UPDATE endpoints.deployment_targets t SET
@@ -254,14 +292,20 @@ func (r *Repository) DecideTargetsTx(ctx context.Context, tx pgx.Tx, ringRunID, 
 	return out, rows.Err()
 }
 
-func (r *Repository) ExpireTargetsTx(ctx context.Context, tx pgx.Tx, ringRunID string, now time.Time, correlationID string) (int, error) {
+func (r *Repository) ExpireTargetsTx(ctx context.Context, tx pgx.Tx, ringRunID string, now time.Time, expiry time.Duration, correlationID string) (int, error) {
 	var n int
-	err := tx.QueryRow(ctx, `WITH upd AS (
-			UPDATE endpoints.deployment_targets SET state = 'expired', state_reason = 'observation_expired', decided_at = $2, version = version + 1, updated_at = now()
-			WHERE ring_run_id = $1::uuid AND state = 'awaiting_observation' AND expires_at <= $2 RETURNING id, deployment_id),
+	err := tx.QueryRow(ctx, `WITH old AS (
+			SELECT id, deployment_id, state FROM endpoints.deployment_targets
+			WHERE ring_run_id = $1::uuid AND ((state = 'awaiting_observation' AND expires_at <= $2)
+				OR (state = 'assignment_requested' AND assignment_requested_at + make_interval(secs => $4::float8) <= $2)) FOR UPDATE),
+		upd AS (
+			UPDATE endpoints.deployment_targets t SET state = 'expired',
+				state_reason = CASE old.state WHEN 'assignment_requested' THEN 'read_back_missing' ELSE 'observation_expired' END,
+				decided_at = $2, version = t.version + 1, updated_at = now()
+			FROM old WHERE t.id = old.id RETURNING t.id, t.state_reason),
 		ins AS (INSERT INTO endpoints.deployment_target_transitions (deployment_id, target_id, from_state, to_state, reason, correlation_id)
-			SELECT deployment_id, id, 'awaiting_observation', 'expired', 'observation_expired', $3 FROM upd RETURNING 1)
-		SELECT count(*) FROM ins`, ringRunID, now, correlationID).Scan(&n)
+			SELECT old.deployment_id, old.id, old.state, 'expired', upd.state_reason, $3 FROM old JOIN upd ON upd.id = old.id RETURNING 1)
+		SELECT count(*) FROM ins`, ringRunID, now, correlationID, expiry.Seconds()).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("expire targets: %w", err)
 	}
@@ -286,19 +330,21 @@ func (r *Repository) CancelTargetsTx(ctx context.Context, tx pgx.Tx, deploymentI
 }
 
 func (r *Repository) ringCounts(ctx context.Context, q querier, ringRunID, artifactID string, freshSince time.Time) (application.RingCounts, error) {
-	rows, err := q.Query(ctx, `SELECT state, count(*)::int FROM endpoints.deployment_targets WHERE ring_run_id = $1::uuid GROUP BY state`, ringRunID)
+	rows, err := q.Query(ctx, `SELECT state, count(*)::int, (count(*) FILTER (WHERE state_reason = 'provider_not_applicable'))::int
+		FROM endpoints.deployment_targets WHERE ring_run_id = $1::uuid GROUP BY state`, ringRunID)
 	if err != nil {
 		return application.RingCounts{}, fmt.Errorf("ring counts: %w", err)
 	}
 	out := application.RingCounts{ByState: map[string]int{}}
 	for rows.Next() {
 		var st string
-		var n int
-		if err := rows.Scan(&st, &n); err != nil {
+		var n, na int
+		if err := rows.Scan(&st, &n, &na); err != nil {
 			rows.Close()
 			return application.RingCounts{}, fmt.Errorf("ring counts: scan: %w", err)
 		}
 		out.ByState[st] = n
+		out.ProviderNA += na
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -381,14 +427,44 @@ func (r *Repository) AttemptStateTx(ctx context.Context, tx pgx.Tx, ringRunID, k
 	return n, accepted, nil
 }
 
-func (r *Repository) InsertAttemptTx(ctx context.Context, tx pgx.Tx, a application.DeploymentAttempt, correlationID string) error {
+func (r *Repository) BeginAttemptTx(ctx context.Context, tx pgx.Tx, a application.DeploymentAttempt, correlationID string) error {
 	_, err := tx.Exec(ctx, `INSERT INTO endpoints.deployment_attempts (deployment_id, ring_run_id, kind, attempt, operation_id, requested_at, outcome_code, correlation_id)
-		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8) ON CONFLICT (operation_id) DO NOTHING`,
-		a.DeploymentID, a.RingRunID, a.Kind, a.Attempt, a.OperationID, a.RequestedAt, a.OutcomeCode, correlationID)
+		VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, 'in_flight', $7)`,
+		a.DeploymentID, a.RingRunID, a.Kind, a.Attempt, a.OperationID, a.RequestedAt, correlationID)
 	if err != nil {
-		return fmt.Errorf("insert attempt: %w", err)
+		return fmt.Errorf("begin attempt: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) FinishAttemptTx(ctx context.Context, tx pgx.Tx, ringRunID, kind string, attempt int, outcome string, now time.Time) error {
+	tag, err := tx.Exec(ctx, `UPDATE endpoints.deployment_attempts SET outcome_code = $4, finished_at = $5
+		WHERE ring_run_id = $1::uuid AND kind = $2 AND attempt = $3 AND outcome_code = 'in_flight'`, ringRunID, kind, attempt, outcome, now)
+	if err != nil {
+		return fmt.Errorf("finish attempt: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return application.ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) InterruptAttemptsTx(ctx context.Context, tx pgx.Tx, deploymentID string, now time.Time) ([]application.DeploymentAttempt, error) {
+	rows, err := tx.Query(ctx, `UPDATE endpoints.deployment_attempts SET outcome_code = 'interrupted', finished_at = $2
+		WHERE deployment_id = $1::uuid AND outcome_code = 'in_flight' RETURNING id::text, ring_run_id::text, kind, attempt`, deploymentID, now)
+	if err != nil {
+		return nil, fmt.Errorf("interrupt attempts: %w", err)
+	}
+	defer rows.Close()
+	var out []application.DeploymentAttempt
+	for rows.Next() {
+		a := application.DeploymentAttempt{DeploymentID: deploymentID, OutcomeCode: application.OutcomeInterrupted}
+		if err := rows.Scan(&a.ID, &a.RingRunID, &a.Kind, &a.Attempt); err != nil {
+			return nil, fmt.Errorf("interrupt attempts: scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) ListAttempts(ctx context.Context, deploymentID string, page application.Page) (application.AttemptResult, error) {
@@ -403,7 +479,7 @@ func (r *Repository) ListAttempts(ctx context.Context, deploymentID string, page
 		conds += " AND id > $2::uuid"
 	}
 	args = append(args, page.Limit+1)
-	rows, err := r.q(ctx).Query(ctx, `SELECT id::text, deployment_id::text, ring_run_id::text, kind, attempt, operation_id, requested_at, outcome_code, created_at
+	rows, err := r.q(ctx).Query(ctx, `SELECT id::text, deployment_id::text, ring_run_id::text, kind, attempt, operation_id, requested_at, outcome_code, finished_at, created_at
 		FROM endpoints.deployment_attempts WHERE `+conds+fmt.Sprintf(` ORDER BY id LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return application.AttemptResult{}, fmt.Errorf("list attempts: %w", err)
@@ -412,7 +488,7 @@ func (r *Repository) ListAttempts(ctx context.Context, deploymentID string, page
 	res := application.AttemptResult{Items: []application.DeploymentAttempt{}}
 	for rows.Next() {
 		var a application.DeploymentAttempt
-		if err := rows.Scan(&a.ID, &a.DeploymentID, &a.RingRunID, &a.Kind, &a.Attempt, &a.OperationID, &a.RequestedAt, &a.OutcomeCode, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.DeploymentID, &a.RingRunID, &a.Kind, &a.Attempt, &a.OperationID, &a.RequestedAt, &a.OutcomeCode, &a.FinishedAt, &a.CreatedAt); err != nil {
 			return application.AttemptResult{}, fmt.Errorf("list attempts: scan: %w", err)
 		}
 		res.Items = append(res.Items, a)
@@ -427,15 +503,51 @@ func (r *Repository) ListAttempts(ctx context.Context, deploymentID string, page
 	return res, nil
 }
 
+// needsClearSQL selects the ring runs whose assignment is queued for clearing: queued, not cleared, a set attempt exists
+// (the provider may hold the assignment) and the clear attempts are not exhausted.
+const needsClearSQL = `r.clear_requested_at IS NOT NULL AND r.assignment_cleared_at IS NULL
+	AND EXISTS (SELECT 1 FROM endpoints.deployment_attempts a WHERE a.ring_run_id = r.id AND a.kind = 'set_assignment')
+	AND (SELECT count(*) FROM endpoints.deployment_attempts a WHERE a.ring_run_id = r.id AND a.kind = 'clear_assignment') < ` + "10"
+
 func (r *Repository) EngineWork(ctx context.Context, limit int) ([]string, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id FROM (
-			SELECT d.id::text AS id FROM endpoints.deployments d WHERE d.status IN ('resolving_targets', 'running')
-			UNION
-			SELECT d.id::text FROM endpoints.deployments d WHERE d.status = 'cancelled' AND EXISTS (
-				SELECT 1 FROM endpoints.deployment_ring_runs r WHERE r.deployment_id = d.id AND r.assignment_requested_at IS NOT NULL AND r.assignment_cleared_at IS NULL)
-		) w ORDER BY id LIMIT $1`, limit)
+	rows, err := r.pool.Query(ctx, `SELECT d.id::text FROM endpoints.deployments d
+		WHERE d.status IN ('resolving_targets', 'running')
+			OR EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs r WHERE r.deployment_id = d.id AND `+needsClearSQL+`)
+		ORDER BY d.last_ticked_at NULLS FIRST, d.id LIMIT $1`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("engine work: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func (r *Repository) TouchTicked(ctx context.Context, id string) error {
+	if _, err := r.pool.Exec(ctx, `UPDATE endpoints.deployments SET last_ticked_at = now() WHERE id = $1::uuid`, id); err != nil {
+		return fmt.Errorf("touch ticked: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) GateSweep(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT d.id::text FROM endpoints.deployments d
+		JOIN endpoints.software_versions v ON v.id = d.software_version_id
+		JOIN endpoints.software_products p ON p.id = v.software_product_id
+		LEFT JOIN LATERAL (SELECT pk.management_artifact_id, COALESCE(pk.management_artifact_external_id, '') AS ext, pk.installer_sha256 = v.installer_sha256 AS hash_ok
+			FROM endpoints.software_packages pk WHERE pk.software_version_id = d.software_version_id AND pk.status = 'published' AND pk.published_at IS NOT NULL
+			ORDER BY pk.published_at DESC LIMIT 1) pk ON true
+		WHERE d.status IN ('running', 'paused')
+			AND (d.status = 'running' OR EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs r WHERE r.deployment_id = d.id
+				AND (r.status IN ('active', 'awaiting_promotion')
+					OR (r.clear_requested_at IS NULL AND r.assignment_cleared_at IS NULL
+						AND EXISTS (SELECT 1 FROM endpoints.deployment_attempts a WHERE a.ring_run_id = r.id AND a.kind = 'set_assignment')))))
+			AND (v.approval_status <> 'approved' OR p.approval_status <> 'approved'
+				OR pk.management_artifact_id IS NULL OR pk.ext = '' OR NOT COALESCE(pk.hash_ok, false)
+				OR EXISTS (SELECT 1 FROM endpoints.software_packages k JOIN endpoints.findings f ON f.software_package_id = k.id AND f.status = 'open'
+					AND f.kind IN ('package_hash_mismatch', 'package_published_after_revoke') WHERE k.software_version_id = d.software_version_id)
+				OR EXISTS (SELECT 1 FROM endpoints.deployment_ring_runs r WHERE r.deployment_id = d.id AND r.management_artifact_id IS NOT NULL
+					AND (r.management_artifact_id <> pk.management_artifact_id OR r.management_artifact_external_id <> pk.ext)))
+		ORDER BY d.id`)
+	if err != nil {
+		return nil, fmt.Errorf("gate sweep: %w", err)
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }

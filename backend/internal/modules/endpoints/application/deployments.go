@@ -1083,6 +1083,8 @@ func (s *Service) ScheduleDeployment(ctx context.Context, c Caller, p Principal,
 			by := c.Actor.UserID
 			hash := pc.hash
 			next.Status, next.StatusReason, next.ScheduledBy, next.ScheduledAt, next.PlanSHA256 = DeploymentScheduled, nil, &by, &now, &hash
+			total := pc.validation.TotalTargets
+			next.ScheduledTargets = &total
 			v, err := s.store.ShareVersionTx(ctx, tx, cur.SoftwareVersionID)
 			if err != nil {
 				return err

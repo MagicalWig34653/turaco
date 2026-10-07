@@ -107,9 +107,19 @@ func gateText(code string) string {
 		return "a ring is halted; resume the ring instead."
 	case application.CodeRingNotHalted:
 		return "the ring is not halted."
+	case application.CodeNoEvidence:
+		return "the ring has too few counted targets to give evidence."
+	case application.CodeRetryRequired:
+		return "the ring was halted with assignment_failed; resume it with reason retry."
+	case application.CodeRetryLimit:
+		return "the ring was retried the maximum number of times."
+	case application.CodeClearPending:
+		return "the ring assignments are queued for clearing; the rollout cannot be resumed."
+	case application.CodeAssignmentCleared:
+		return "the ring assignments were pulled back; cancel the deployment and plan a new one."
 	case application.CodeNoPreviousRing:
 		return "the ring is the last one; the Deployment completes by itself."
-	case application.ReasonVersionRevoked, application.ReasonPackageGateClosed, application.ReasonPackageNotPublish, application.ReasonArtifactUnlinked:
+	case application.ReasonVersionRevoked, application.ReasonPackageGateClosed, application.ReasonPackageNotPublish, application.ReasonArtifactUnlinked, application.ReasonArtifactChanged:
 		return "the approval or package gate of the software is closed."
 	case application.IssueNoWindowHighImpact:
 		return "a ring without a maintenance window cannot target a high-impact target set."

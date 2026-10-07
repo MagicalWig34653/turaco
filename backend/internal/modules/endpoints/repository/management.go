@@ -340,8 +340,9 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 		return nil, nil
 	}
 	arts, devs, states, raws, ats := make([]string, len(in)), make([]string, len(in)), make([]string, len(in)), make([]string, len(in)), make([]time.Time, len(in))
+	provTime := make([]bool, len(in))
 	for i, o := range in {
-		arts[i], devs[i], states[i], raws[i], ats[i] = o.ArtifactID, o.DeviceID, o.State, o.RawStatus, o.ObservedAt
+		arts[i], devs[i], states[i], raws[i], ats[i], provTime[i] = o.ArtifactID, o.DeviceID, o.State, o.RawStatus, o.ObservedAt, o.ProviderTime
 	}
 	type key struct{ a, d string }
 	type prevRow struct {
@@ -374,17 +375,18 @@ func (r *Repository) UpsertObservationsTx(ctx context.Context, tx pgx.Tx, in []a
 	// State, raw status and source follow the newest observation only: an older one (a replayed or
 	// delayed report) must not roll them back; freshness still advances.
 	_, err = tx.Exec(ctx, `
-		INSERT INTO endpoints.management_observations AS o (artifact_id, device_id, normalized_state, raw_status, source, observed_at, last_synced_at)
-		SELECT t.artifact_id, t.device_id, t.state, t.raw, $5, t.observed_at, $6
-		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $7::timestamptz[]) AS t(artifact_id, device_id, state, raw, observed_at)
+		INSERT INTO endpoints.management_observations AS o (artifact_id, device_id, normalized_state, raw_status, source, observed_at, last_synced_at, observed_at_provider)
+		SELECT t.artifact_id, t.device_id, t.state, t.raw, $5, t.observed_at, $6, t.prov
+		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $7::timestamptz[], $8::bool[]) AS t(artifact_id, device_id, state, raw, observed_at, prov)
 		ON CONFLICT (artifact_id, device_id) DO UPDATE SET
 			normalized_state = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.normalized_state ELSE o.normalized_state END,
 			raw_status = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.raw_status ELSE o.raw_status END,
 			source = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.source ELSE o.source END,
+			observed_at_provider = CASE WHEN EXCLUDED.observed_at >= o.observed_at THEN EXCLUDED.observed_at_provider ELSE o.observed_at_provider END,
 			observed_at = GREATEST(o.observed_at, EXCLUDED.observed_at),
 			last_synced_at = GREATEST(o.last_synced_at, EXCLUDED.last_synced_at),
 			retired_at = NULL`,
-		arts, devs, states, raws, source, syncedAt, ats)
+		arts, devs, states, raws, source, syncedAt, ats, provTime)
 	if err != nil {
 		return nil, fmt.Errorf("upsert observations: %w", err)
 	}

@@ -616,6 +616,7 @@ func (s *Service) tombstoneArtifacts(ctx context.Context, c Caller, snap Managem
 type observationItem struct {
 	deviceExt, artifactExt, state, raw string
 	observedAt                         time.Time
+	providerTime                       bool
 }
 
 func normalizeObservation(r intune.ObservationRecord, runAt time.Time) (observationItem, bool) {
@@ -627,13 +628,13 @@ func normalizeObservation(r intune.ObservationRecord, runAt time.Time) (observat
 	if !ok {
 		return observationItem{}, false
 	}
-	at := runAt
+	at, provider := runAt, false
 	if !r.ObservedAt.IsZero() {
 		if t := r.ObservedAt.UTC().Truncate(time.Microsecond); t.Before(runAt) {
-			at = t
+			at, provider = t, true
 		}
 	}
-	return observationItem{deviceExt: dev, artifactExt: art, state: oneOf(r.State, ObservationStates, "unknown"), raw: derefOr(cleanOptional(r.RawStatus, 200), ""), observedAt: at}, true
+	return observationItem{deviceExt: dev, artifactExt: art, state: oneOf(r.State, ObservationStates, "unknown"), raw: derefOr(cleanOptional(r.RawStatus, 200), ""), observedAt: at, providerTime: provider}, true
 }
 
 func (s *Service) ingestObservations(ctx context.Context, c Caller, snap ManagementSnapshot, runAt time.Time, total *ManagementResult) error {
@@ -748,7 +749,7 @@ func (s *Service) ingestObservationBatch(ctx context.Context, tx pgx.Tx, c Calle
 			run.ObservationsSkipped++
 			continue
 		}
-		in = append(in, ObservationInput{ArtifactID: a.ID, DeviceID: d.ID, State: it.state, RawStatus: it.raw, ObservedAt: it.observedAt})
+		in = append(in, ObservationInput{ArtifactID: a.ID, DeviceID: d.ID, State: it.state, RawStatus: it.raw, ObservedAt: it.observedAt, ProviderTime: it.providerTime})
 	}
 	if len(in) == 0 {
 		return nil, nil

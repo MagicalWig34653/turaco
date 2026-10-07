@@ -398,17 +398,15 @@ func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enable
 		Interval: endpointsapp.SoftwarePackageSyncInterval, MaxAttempts: 3})
 }
 
-// registerDeploymentEngine registers the Deployment execution job; it is scheduled (every minute) only when
-// SOFTWARE_DEPLOY_WRITE is on. The writer is a placeholder until the Graph write client exists, so a ring that is
+// registerDeploymentEngine registers the Deployment execution job and schedules it every minute. With
+// SOFTWARE_DEPLOY_WRITE off the job only runs the kill-switch sweep. The writer is a placeholder until the Graph write client exists, so a ring that is
 // started with the capability on halts with assignment_failed.
 func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool) error {
 	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).WithDeployWrite(enabled, intune.NotConfiguredWriter{})
 	if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, svc.HandleDeploymentTick); err != nil {
 		return err
 	}
-	if !enabled {
-		return nil
-	}
+	// Scheduled even with the capability off: the tick then only runs the kill-switch sweep (pause, halt, queue clearing).
 	return runner.AddSchedule(jobs.Schedule{JobType: endpointsapp.DeploymentTickJobType, DedupeKey: endpointsapp.DeploymentTickJobType,
 		Interval: endpointsapp.DeploymentTickInterval, MaxAttempts: 1})
 }
