@@ -131,6 +131,28 @@ func (f *fakeApprovers) TeamMemberIDs(_ context.Context, t string) ([]string, er
 }
 func (f *fakeApprovers) TeamIDsOfUser(context.Context, string) ([]string, error) { return nil, nil }
 
+// fakeDir answers ActiveUsers: everybody is active unless listed in inactive.
+type fakeDir struct {
+	mu       sync.Mutex
+	inactive map[string]bool
+}
+
+func (f *fakeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = !f.inactive[id]
+	}
+	return out, nil
+}
+
+func (f *fakeDir) deactivate(id string) {
+	f.mu.Lock()
+	f.inactive[id] = true
+	f.mu.Unlock()
+}
+
 type clock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -153,6 +175,7 @@ type env struct {
 	holders   *fakeHolders
 	approvals *fakeApprovals
 	approvers *fakeApprovers
+	dir       *fakeDir
 	fake      *remoteaccess.Fake
 	clk       *clock
 	tech      application.Principal // a technician with start_attended
@@ -170,12 +193,13 @@ func newEnv(t *testing.T, approvalOwnership ...string) *env {
 		tickets: &fakeTickets{m: map[string]application.TicketInfo{}}, holders: &fakeHolders{m: map[string]string{}},
 		approvals: &fakeApprovals{byID: map[string]*application.ApprovalInfo{}, bySubject: map[string][]string{}},
 		approvers: &fakeApprovers{perms: map[string]map[string]struct{}{}, teams: map[string][]string{}},
-		fake:      remoteaccess.NewFake(provider), clk: &clock{t: time.Now().UTC().Truncate(time.Millisecond)}}
-	e.svc = application.NewService(e.store, e.devices, e.tickets, e.holders, e.approvals, e.approvers, remoteaccess.NewRegistryOf(e.fake)).
+		dir:       &fakeDir{inactive: map[string]bool{}}, fake: remoteaccess.NewFake(provider), clk: &clock{t: time.Now().UTC().Truncate(time.Millisecond)}}
+	e.svc = application.NewService(e.store, e.devices, e.tickets, e.holders, e.dir, e.approvals, e.approvers, remoteaccess.NewRegistryOf(e.fake)).
 		WithApprovalOwnership(approvalOwnership).WithClock(e.clk.now)
 	e.tech = principal(newID(), true, false)
 	e.admin = principal(newID(), false, true)
 	e.approvers.perms[e.admin.UserID] = map[string]struct{}{application.PermAdmin: {}}
+	e.approvers.perms[e.tech.UserID] = map[string]struct{}{"tickets.manage": {}}
 	return e
 }
 
@@ -191,7 +215,7 @@ func (e *env) fixture(ownership string) fixture {
 	f := fixture{device: newID(), ticket: newID(), holder: newID(), peer: newPeer()}
 	asset := newID()
 	e.devices.mu.Lock()
-	e.devices.m[f.device] = application.DeviceInfo{ID: f.device, Name: "pc", AssetID: &asset, Ownership: ownership, ObservedAt: e.clk.now().Add(-time.Hour)}
+	e.devices.m[f.device] = application.DeviceInfo{ID: f.device, Name: "pc", AssetID: &asset, Ownership: ownership, ObservedAt: e.clk.now().Add(-time.Hour), LastCheckinAt: ptr(e.clk.now().Add(-time.Hour))}
 	e.devices.mu.Unlock()
 	e.holders.m[asset] = f.holder
 	e.tickets.m[f.ticket] = application.TicketInfo{ID: f.ticket, Reference: "TKT-1", Open: true, AffectedUserID: f.holder, ReporterUserID: newID()}
@@ -252,3 +276,5 @@ func (r *recordingNotifier) Create(_ context.Context, _ pgx.Tx, in notifications
 }
 
 func jobWithID(id string) jobs.Job { return jobs.Job{ID: id} }
+
+func ptr[T any](v T) *T { return &v }

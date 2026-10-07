@@ -42,7 +42,7 @@ func TestRequestPolicyGates(t *testing.T) {
 	}
 	refusal(t, req(f, func(n *application.NewSession) { n.Provider = "anydesk" }), application.RefProviderDisabled)
 	refusal(t, req(f, func(n *application.NewSession) { n.DeviceID = newID() }), application.RefDeviceUnknown)
-	refusal(t, req(f, func(n *application.NewSession) { n.TicketID = newID() }), application.RefTicketUnknown)
+	refusal(t, req(f, func(n *application.NewSession) { n.TicketID = newID() }), application.RefTicketUnavailable)
 	for _, bad := range []string{"", "not-a-uuid", "'; drop table x;--"} {
 		if err := req(f, func(n *application.NewSession) { n.DeviceID = bad }); err == nil {
 			t.Fatalf("device id %q accepted", bad)
@@ -64,7 +64,7 @@ func TestRequestPolicyGates(t *testing.T) {
 	// Stale and retired Devices.
 	stale := e.fixture("corporate")
 	d := e.devices.m[stale.device]
-	d.ObservedAt = e.clk.now().Add(-application.DeviceFreshness - time.Minute)
+	d.LastCheckinAt = ptr(e.clk.now().Add(-application.DeviceFreshness - time.Minute))
 	e.devices.m[stale.device] = d
 	refusal(t, req(stale, nil), application.RefStaleDevice)
 	retired := e.fixture("corporate")
@@ -86,7 +86,7 @@ func TestRequestPolicyGates(t *testing.T) {
 	tk := e.tickets.m[closed.ticket]
 	tk.Open = false
 	e.tickets.m[closed.ticket] = tk
-	refusal(t, req(closed, nil), application.RefTicketNotOpen)
+	refusal(t, req(closed, nil), application.RefTicketUnavailable)
 
 	// Holder mismatch needs a reason; with a reason the session records it.
 	mm := e.fixture("corporate")
@@ -94,8 +94,9 @@ func TestRequestPolicyGates(t *testing.T) {
 	tk.AffectedUserID = newID()
 	e.tickets.m[mm.ticket] = tk
 	refusal(t, req(mm, nil), application.RefHolderMismatch)
-	s, err := e.svc.Request(ctx, e.caller(e.tech), e.tech, application.NewSession{DeviceID: mm.device, TicketID: mm.ticket, Provider: provider, MismatchReason: "on_behalf", Note: "  called by the manager "})
-	if err != nil || s.MismatchReason == nil || *s.MismatchReason != "on_behalf" || s.Note == nil || *s.Note != "called by the manager" {
+	s, err := e.svc.Request(ctx, e.caller(e.tech), e.tech, application.NewSession{DeviceID: mm.device, TicketID: mm.ticket, Provider: provider, MismatchReason: "on_behalf", Note: "  called by the manager ",
+		Approver: application.Approver{UserID: &e.admin.UserID}})
+	if err != nil || s.Status != application.StatusPendingApproval || s.MismatchReason == nil || *s.MismatchReason != "on_behalf" || s.Note == nil || *s.Note != "called by the manager" {
 		t.Fatalf("mismatch with reason: %v %+v", err, s)
 	}
 	// A Device without a holder is a mismatch too.
@@ -115,7 +116,7 @@ func TestRequestPolicyGates(t *testing.T) {
 	}
 }
 
-func TestOneOpenSessionPerDeviceAndProvider(t *testing.T) {
+func TestOneOpenSessionPerDevice(t *testing.T) {
 	e := newEnv(t)
 	f := e.fixture("corporate")
 	s := e.mustRequest(f)
@@ -393,7 +394,7 @@ func TestPendingApprovalRoundTripAndSeparationOfDuties(t *testing.T) {
 	if _, err := e.svc.Request(ctx, e.caller(e.tech), e.tech, in); !errors.Is(err, application.ErrNoEligibleApprover) {
 		t.Fatalf("approver without admin: %v", err)
 	}
-	e.approvers.perms[e.tech.UserID] = map[string]struct{}{application.PermAdmin: {}}
+	e.approvers.perms[e.tech.UserID] = map[string]struct{}{application.PermAdmin: {}, "tickets.manage": {}}
 	in.Approver = application.Approver{UserID: &e.tech.UserID}
 	if _, err := e.svc.Request(ctx, e.caller(e.tech), e.tech, in); !errors.Is(err, application.ErrNoEligibleApprover) {
 		t.Fatalf("initiator as approver: %v", err)
@@ -506,6 +507,7 @@ func TestRateLimit(t *testing.T) {
 	}
 	// The limit is per user.
 	other := principal(newID(), true, false)
+	e.approvers.perms[other.UserID] = map[string]struct{}{"tickets.manage": {}}
 	if _, err := e.request(e.fixture("corporate"), other); err != nil {
 		t.Fatalf("other user: %v", err)
 	}

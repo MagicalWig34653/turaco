@@ -95,9 +95,11 @@ func (noApprovals) ForSubject(context.Context, string) ([]application.ApprovalIn
 
 type approvers struct{}
 
-func (approvers) Permissions(context.Context, string) (map[string]struct{}, error) { return nil, nil }
-func (approvers) TeamMemberIDs(context.Context, string) ([]string, error)          { return nil, nil }
-func (approvers) TeamIDsOfUser(context.Context, string) ([]string, error)          { return nil, nil }
+func (approvers) Permissions(context.Context, string) (map[string]struct{}, error) {
+	return map[string]struct{}{"tickets.manage": {}}, nil
+}
+func (approvers) TeamMemberIDs(context.Context, string) ([]string, error) { return nil, nil }
+func (approvers) TeamIDsOfUser(context.Context, string) ([]string, error) { return nil, nil }
 
 type setup struct {
 	svc            *application.Service
@@ -110,11 +112,12 @@ func newSetup(t *testing.T) *setup {
 	t.Helper()
 	pool := dbtest.Pool(t)
 	device, ticket, holder, asset := newID(), newID(), newID(), newID()
+	checkin := time.Now().Add(-time.Hour)
 	fake := remoteaccess.NewFake("rustdesk")
 	svc := application.NewService(repository.New(pool),
-		devices{map[string]application.DeviceInfo{device: {ID: device, AssetID: &asset, Ownership: "corporate", ObservedAt: time.Now()}}},
+		devices{map[string]application.DeviceInfo{device: {ID: device, AssetID: &asset, Ownership: "corporate", ObservedAt: time.Now(), LastCheckinAt: &checkin}}},
 		tickets{map[string]application.TicketInfo{ticket: {ID: ticket, Open: true, AffectedUserID: holder, ReporterUserID: newID()}}},
-		holders{map[string]string{asset: holder}}, noApprovals{}, approvers{}, remoteaccess.NewRegistryOf(fake))
+		holders{map[string]string{asset: holder}}, activeDir{}, noApprovals{}, approvers{}, remoteaccess.NewRegistryOf(fake))
 	s := &setup{svc: svc, device: device, ticket: ticket, admin: newID()}
 	s.peer = "5" + strings.Repeat("1", 8)[:8]
 	return s
@@ -266,4 +269,14 @@ func TestHTTPFlowNoStoreAndStatusCodes(t *testing.T) {
 	if rec, _ = call(t, s.handler(as("")), "GET", "/api/v1/remote-access/sessions", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous: %d", rec.Code)
 	}
+}
+
+type activeDir struct{}
+
+func (activeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
 }

@@ -32,14 +32,14 @@ func RemoteAccess(pool *pgxpool.Pool, providers *remoteaccess.Registry, approval
 	approvals := remoteApprovals{a: approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), work, nil))}
 	approvers := remoteApprovers{perms: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)), teams: work}
 	return raapp.NewService(rarepository.New(pool), remoteDevices{endpointspublic.NewDevices(endpointsrepository.New(pool))},
-		remoteTickets{servicedeskpublic.NewTickets(pool)}, assetspublic.New(Assets(pool)), approvals, approvers, providers).
+		remoteTickets{servicedeskpublic.NewTickets(pool)}, assetspublic.New(Assets(pool)), work, approvals, approvers, providers).
 		WithApprovalOwnership(approvalOwnership)
 }
 
 // RemoteAccessNotifications builds the consumer that tells a Device's holder that a session was started.
 func RemoteAccessNotifications(pool *pgxpool.Pool, notifier raapp.Notifier) *raapp.Notifications {
 	return raapp.NewNotifications(rarepository.New(pool), remoteDevices{endpointspublic.NewDevices(endpointsrepository.New(pool))},
-		assetspublic.New(Assets(pool)), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+		assetspublic.New(Assets(pool)), remoteTickets{servicedeskpublic.NewTickets(pool)}, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 }
 
 type remoteDevices struct{ d *endpointspublic.Devices }
@@ -49,7 +49,7 @@ func (x remoteDevices) Device(ctx context.Context, id string) (raapp.DeviceInfo,
 	if err != nil || !ok {
 		return raapp.DeviceInfo{}, false, err
 	}
-	return raapp.DeviceInfo{ID: d.ID, Name: d.Name, AssetID: d.AssetID, Ownership: d.Ownership, ObservedAt: d.ObservedAt, RetiredAt: d.RetiredAt}, true, nil
+	return raapp.DeviceInfo{ID: d.ID, Name: d.Name, AssetID: d.AssetID, Ownership: d.Ownership, ObservedAt: d.ObservedAt, LastCheckinAt: d.LastCheckinAt, RetiredAt: d.RetiredAt}, true, nil
 }
 
 type remoteTickets struct{ t *servicedeskpublic.Tickets }
@@ -60,7 +60,7 @@ func (x remoteTickets) Ticket(ctx context.Context, id string) (raapp.TicketInfo,
 		return raapp.TicketInfo{}, false, err
 	}
 	return raapp.TicketInfo{ID: t.ID, Reference: t.Reference, Open: servicedeskpublic.IsOpen(t.Status),
-		AffectedUserID: t.AffectedUserID, ReporterUserID: t.ReporterUserID}, true, nil
+		AffectedUserID: t.AffectedUserID, ReporterUserID: t.ReporterUserID, AssigneeUserID: t.AssigneeUserID}, true, nil
 }
 
 type remoteApprovers struct {

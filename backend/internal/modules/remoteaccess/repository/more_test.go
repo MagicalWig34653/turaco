@@ -131,7 +131,7 @@ func TestCapabilitiesAndMasking(t *testing.T) {
 	}
 	// Why not available.
 	d := e.devices.m[f.device]
-	d.ObservedAt = e.clk.now().Add(-8 * 24 * time.Hour)
+	d.LastCheckinAt = ptr(e.clk.now().Add(-8 * 24 * time.Hour))
 	e.devices.m[f.device] = d
 	if c, _ = e.svc.Capabilities(ctx, e.tech, f.device); c.Providers[0].Available || c.Providers[0].Reasons[0] != application.RefStaleDevice || !c.Stale {
 		t.Fatalf("stale: %+v", c)
@@ -143,7 +143,7 @@ func TestCapabilitiesAndMasking(t *testing.T) {
 		t.Fatal("bad id")
 	}
 	// Feature off: no providers.
-	off := application.NewService(e.store, e.devices, e.tickets, e.holders, e.approvals, e.approvers, remoteaccess.NewRegistryOf()).WithClock(e.clk.now)
+	off := application.NewService(e.store, e.devices, e.tickets, e.holders, e.dir, e.approvals, e.approvers, remoteaccess.NewRegistryOf()).WithClock(e.clk.now)
 	if c, _ = off.Capabilities(ctx, e.tech, f.device); c.Enabled || len(c.Providers) != 0 {
 		t.Fatalf("off: %+v", c)
 	}
@@ -220,100 +220,6 @@ func TestReadScopesAndIDOR(t *testing.T) {
 	}
 }
 
-func TestObservationMatching(t *testing.T) {
-	e := newEnv(t)
-	ctx := context.Background()
-	f := e.fixture("corporate")
-	s := e.mustRequest(f)
-	x, _ := e.launchAndExchange(s)
-	launchedAt := *x.Session.LaunchedAt
-	other := e.mustRequest(e.fixture("corporate")) // authorized, never launched
-	var sessionsBefore int
-	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM remoteaccess.sessions`).Scan(&sessionsBefore)
-
-	end := launchedAt.Add(20 * time.Minute)
-	obsAt := e.clk.now().Add(time.Minute)
-	good := remoteaccess.ObservedSession{ProviderSessionID: "p1", PeerID: f.peer, StartedAt: launchedAt.Add(30 * time.Second), EndedAt: &end, Source: "rustdesk.audit", ObservedAt: obsAt}
-	wrongPeer := remoteaccess.ObservedSession{ProviderSessionID: "p2", PeerID: newPeer(), StartedAt: launchedAt, Source: "rustdesk.audit", ObservedAt: obsAt}
-	early := remoteaccess.ObservedSession{ProviderSessionID: "p3", PeerID: f.peer, StartedAt: launchedAt.Add(-time.Hour), Source: "rustdesk.audit", ObservedAt: obsAt}
-	stranger := remoteaccess.ObservedSession{ProviderSessionID: "p4", PeerID: newPeer(), StartedAt: launchedAt.Add(time.Minute), Source: "rustdesk.audit", ObservedAt: obsAt}
-	// Only the wrong records: nothing changes.
-	n, err := e.svc.ImportObservations(ctx, "job:o1", provider, []remoteaccess.ObservedSession{wrongPeer, early, stranger})
-	if err != nil || n != 0 {
-		t.Fatalf("no match: %d %v", n, err)
-	}
-	if c := e.get(s.ID); c.ObservedSource != nil || c.ObservedConnectedAt != nil {
-		t.Fatalf("observed facts invented: %+v", c)
-	}
-	n, err = e.svc.ImportObservations(ctx, "job:o2", provider, []remoteaccess.ObservedSession{wrongPeer, early, good, stranger})
-	if err != nil || n != 1 {
-		t.Fatalf("match: %d %v", n, err)
-	}
-	c := e.get(s.ID)
-	if c.ObservedSource == nil || *c.ObservedSource != "rustdesk.audit" || c.ObservedConnectedAt == nil || !c.ObservedConnectedAt.Equal(good.StartedAt) ||
-		c.ObservedEndedAt == nil || !c.ObservedEndedAt.Equal(end) || c.ObservedAt == nil || !c.ObservedAt.Equal(obsAt) {
-		t.Fatalf("observed: %+v", c)
-	}
-	// Turaco facts are untouched: still launched, consent unknown, never closed by the provider's record.
-	if c.Status != application.StatusLaunched || c.ClosedAt != nil || c.Consent != application.ConsentUnknown {
-		t.Fatalf("observation changed authorized facts: %+v", c)
-	}
-	if o := e.get(other.ID); o.ObservedSource != nil || o.Status != application.StatusAuthorized {
-		t.Fatalf("unlaunched session touched: %+v", o)
-	}
-	// Idempotent; and no session is ever created.
-	v := c.Version
-	if n, err = e.svc.ImportObservations(ctx, "job:o3", provider, []remoteaccess.ObservedSession{good}); err != nil || n != 0 || e.get(s.ID).Version != v {
-		t.Fatalf("repeat: %d %v", n, err)
-	}
-	var sessionsAfter int
-	_ = e.pool.QueryRow(ctx, `SELECT count(*) FROM remoteaccess.sessions`).Scan(&sessionsAfter)
-	if sessionsAfter != sessionsBefore {
-		t.Fatalf("sessions created by import: %d -> %d", sessionsBefore, sessionsAfter)
-	}
-	// An ended-before-started record and a record without a source are ignored.
-	bad := good
-	bad.EndedAt = &launchedAt
-	bad.StartedAt = launchedAt.Add(time.Minute)
-	bad.Source = "x.y"
-	if n, _ = e.svc.ImportObservations(ctx, "job:o4", provider, []remoteaccess.ObservedSession{bad}); n != 0 {
-		t.Fatal("inconsistent record imported")
-	}
-	// The job reads the provider; failures surface.
-	e.fake.Observed = []remoteaccess.ObservedSession{good}
-	if err := e.svc.HandleObserve(ctx, jobWithID("1")); err != nil || e.fake.SessionCall != 1 {
-		t.Fatalf("job: %v %d", err, e.fake.SessionCall)
-	}
-	e.fake.FailSession = errors.New("provider down")
-	if err := e.svc.HandleObserve(ctx, jobWithID("2")); err == nil {
-		t.Fatal("provider failure swallowed")
-	}
-	// A closed session still receives the provider's end time.
-	if _, err := e.svc.Close(ctx, e.caller(e.tech), e.tech, s.ID, &c.Version, "completed"); err != nil {
-		t.Fatal(err)
-	}
-	later := remoteaccess.ObservedSession{ProviderSessionID: "p1", PeerID: f.peer, StartedAt: good.StartedAt, Source: "rustdesk.audit", ObservedAt: obsAt}
-	later.EndedAt = &end
-	if n, _ = e.svc.ImportObservations(ctx, "job:o5", provider, []remoteaccess.ObservedSession{later}); n != 0 {
-		t.Fatalf("unchanged record updated: %d", n)
-	}
-}
-
-func TestObservationOutsideWindowAfterClose(t *testing.T) {
-	e := newEnv(t)
-	ctx := context.Background()
-	f := e.fixture("corporate")
-	x, _ := e.launchAndExchange(e.mustRequest(f))
-	if _, err := e.svc.Close(ctx, e.caller(e.tech), e.tech, x.SessionID, &x.Session.Version, "completed"); err != nil {
-		t.Fatal(err)
-	}
-	e.clk.advance(3 * time.Hour)
-	late := remoteaccess.ObservedSession{ProviderSessionID: "late", PeerID: f.peer, StartedAt: e.clk.now(), Source: "s.x", ObservedAt: e.clk.now()}
-	if n, _ := e.svc.ImportObservations(ctx, "job:l", provider, []remoteaccess.ObservedSession{late}); n != 0 {
-		t.Fatal("a connection long after the close must not match")
-	}
-}
-
 func TestSessionStartedNotification(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
@@ -321,8 +227,8 @@ func TestSessionStartedNotification(t *testing.T) {
 	x, _ := e.launchAndExchange(e.mustRequest(f))
 	rec := &recordingNotifier{}
 	dir := activeDir{}
-	n := application.NewNotifications(e.store, e.devices, e.holders, dir, rec)
-	payload, _ := json.Marshal(map[string]any{"sessionId": x.SessionID, "deviceId": f.device})
+	n := application.NewNotifications(e.store, e.devices, e.holders, e.tickets, dir, rec)
+	payload, _ := json.Marshal(map[string]any{"sessionId": x.SessionID, "deviceId": f.device, "ticketId": f.ticket})
 	tech := e.tech.UserID
 	ev := events.OutboxEvent{ID: newID(), EventType: application.EventLaunched, ActorID: &tech, Payload: payload}
 	run := func(ev events.OutboxEvent) error {
@@ -348,16 +254,39 @@ func TestSessionStartedNotification(t *testing.T) {
 	if err := run(ev); err != nil || len(rec.intents) != 0 {
 		t.Fatalf("self: %v", err)
 	}
-	// A Device without a holder or asset.
+	// A Device without a holder: the Ticket's affected user is still told.
 	delete(e.holders.m, *e.devices.m[f.device].AssetID)
 	ev.ActorID = &tech
-	if err := run(ev); err != nil || len(rec.intents) != 0 {
-		t.Fatalf("no holder: %v", err)
+	if err := run(ev); err != nil || len(rec.intents) != 1 || rec.intents[0].RecipientUserID != f.holder {
+		t.Fatalf("no holder: %v %+v", err, rec.intents)
+	}
+	// Holder and affected user differ: both are told, once each; an inactive one is skipped.
+	rec.intents = nil
+	other := newID()
+	e.holders.m[*e.devices.m[f.device].AssetID] = other
+	if err := run(ev); err != nil || len(rec.intents) != 2 {
+		t.Fatalf("holder and affected user: %v %+v", err, rec.intents)
+	}
+	rec.intents = nil
+	if err := pgx.BeginFunc(ctx, e.pool, func(tx pgx.Tx) error {
+		return application.NewNotifications(e.store, e.devices, e.holders, e.tickets, inactiveDir{other}, rec).OnSessionLaunched(ctx, tx, ev)
+	}); err != nil || len(rec.intents) != 1 || rec.intents[0].RecipientUserID != f.holder {
+		t.Fatalf("inactive holder: %v %+v", err, rec.intents)
 	}
 	bad := events.OutboxEvent{ID: newID(), EventType: application.EventLaunched, Payload: json.RawMessage(`{"sessionId":"x"}`)}
 	if err := run(bad); err == nil {
 		t.Fatal("invalid payload must fail permanently")
 	}
+}
+
+type inactiveDir struct{ id string }
+
+func (d inactiveDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = id != d.id
+	}
+	return out, nil
 }
 
 type activeDir struct{}

@@ -198,13 +198,45 @@ func (r *Repository) LockUserTx(ctx context.Context, tx pgx.Tx, userID string) e
 	return nil
 }
 
-func (r *Repository) CountRequestsTx(ctx context.Context, tx pgx.Tx, userID string, since time.Time) (int, error) {
+func (r *Repository) CountAttemptsTx(ctx context.Context, tx pgx.Tx, userID string, since time.Time) (int, error) {
 	var n int
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM remoteaccess.sessions WHERE initiated_by = $1::uuid AND created_at > $2`, userID, since).Scan(&n)
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM remoteaccess.request_attempts WHERE user_id = $1::uuid AND created_at > $2`, userID, since).Scan(&n)
 	if err != nil {
-		return 0, fmt.Errorf("count requests: %w", err)
+		return 0, fmt.Errorf("count request attempts: %w", err)
 	}
 	return n, nil
+}
+
+func (r *Repository) InsertAttemptTx(ctx context.Context, tx pgx.Tx, userID string, at time.Time) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO remoteaccess.request_attempts(user_id, created_at) VALUES ($1::uuid, $2)`, userID, at); err != nil {
+		return fmt.Errorf("insert request attempt: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) PruneAttempts(ctx context.Context, before time.Time) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM remoteaccess.request_attempts WHERE created_at < $1`, before); err != nil {
+		return fmt.Errorf("prune request attempts: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) OpenSessionsOfDeviceTx(ctx context.Context, tx pgx.Tx, deviceID, provider string) ([]application.Session, error) {
+	rows, err := tx.Query(ctx, `SELECT `+cols+` FROM remoteaccess.sessions WHERE device_id = $1::uuid AND provider = $2
+		AND status IN ('requested', 'pending_approval', 'authorized', 'launched') ORDER BY id FOR UPDATE`, deviceID, provider)
+	if err != nil {
+		return nil, fmt.Errorf("lock open sessions: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Session{}
+	for rows.Next() {
+		sess, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("lock open sessions: scan: %w", err)
+		}
+		out = append(out, sess)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) listWhere(ctx context.Context, where string, args ...any) ([]application.Session, error) {
@@ -228,8 +260,110 @@ func (r *Repository) DueSessions(ctx context.Context, now time.Time, limit int) 
 	return r.listWhere(ctx, `status IN ('pending_approval', 'authorized', 'launched') AND expires_at <= $1 ORDER BY expires_at, id LIMIT $2`, now, limit)
 }
 
-func (r *Repository) ObservableSessions(ctx context.Context, provider string, since time.Time) ([]application.Session, error) {
-	return r.listWhere(ctx, `provider = $1 AND status IN ('launched', 'closed') AND launched_at >= $2 ORDER BY id LIMIT 1000`, provider, since)
+func (r *Repository) CandidateSessions(ctx context.Context, provider, peerID string, started time.Time) ([]application.Session, error) {
+	return r.listWhere(ctx, `provider = $1 AND peer_id = $2 AND status IN ('launched', 'closed') AND launched_at <= $3
+		AND (closed_at IS NULL OR closed_at + make_interval(secs => $4) >= $3) ORDER BY id LIMIT 5`,
+		provider, peerID, started, application.ObservationSlack.Seconds())
+}
+
+// ---- provider records ----
+
+const recCols = `id::text, provider, provider_session_id, peer_id, started_at, ended_at, operator, source, observed_at, session_id::text, flag, first_seen_at`
+
+func scanRecord(row pgx.Row) (application.ProviderRecord, error) {
+	var x application.ProviderRecord
+	err := row.Scan(&x.ID, &x.Provider, &x.ProviderSessionID, &x.PeerID, &x.StartedAt, &x.EndedAt, &x.Operator, &x.Source, &x.ObservedAt,
+		&x.SessionID, &x.Flag, &x.FirstSeenAt)
+	return x, err
+}
+
+func (r *Repository) UpsertRecordTx(ctx context.Context, tx pgx.Tx, in application.ProviderRecord) (application.ProviderRecord, error) {
+	out, err := scanRecord(tx.QueryRow(ctx, `
+		INSERT INTO remoteaccess.provider_session_records(provider, provider_session_id, peer_id, started_at, ended_at, operator, source, observed_at, flag)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unattributed')
+		ON CONFLICT (provider, provider_session_id) DO NOTHING RETURNING `+recCols,
+		in.Provider, in.ProviderSessionID, in.PeerID, in.StartedAt, in.EndedAt, in.Operator, in.Source, in.ObservedAt))
+	if err == nil {
+		out.New = true
+		return out, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return application.ProviderRecord{}, fmt.Errorf("insert provider record: %w", err)
+	}
+	cur, err := scanRecord(tx.QueryRow(ctx, `SELECT `+recCols+` FROM remoteaccess.provider_session_records
+		WHERE provider = $1 AND provider_session_id = $2 FOR UPDATE`, in.Provider, in.ProviderSessionID))
+	if err != nil {
+		return application.ProviderRecord{}, fmt.Errorf("lock provider record: %w", err)
+	}
+	if cur.PeerID != in.PeerID || !cur.StartedAt.Equal(in.StartedAt.Truncate(time.Microsecond)) || cur.Source != in.Source {
+		return application.ProviderRecord{}, application.ErrRecordConflict
+	}
+	// A later report may add the end or the operator; it never removes them.
+	if in.EndedAt == nil {
+		in.EndedAt = cur.EndedAt
+	}
+	if in.Operator == nil {
+		in.Operator = cur.Operator
+	}
+	if equalTime(in.EndedAt, cur.EndedAt) && in.ObservedAt.Truncate(time.Microsecond).Equal(cur.ObservedAt) && equalStr(in.Operator, cur.Operator) {
+		return cur, nil
+	}
+	cur, err = scanRecord(tx.QueryRow(ctx, `UPDATE remoteaccess.provider_session_records SET ended_at = $2, operator = $3, observed_at = $4
+		WHERE id = $1::uuid RETURNING `+recCols, cur.ID, in.EndedAt, in.Operator, in.ObservedAt))
+	if err != nil {
+		return application.ProviderRecord{}, fmt.Errorf("update provider record: %w", err)
+	}
+	return cur, nil
+}
+
+func equalTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Truncate(time.Microsecond).Equal(b.Truncate(time.Microsecond))
+}
+
+func equalStr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func (r *Repository) SetRecordAttributionTx(ctx context.Context, tx pgx.Tx, id string, sessionID, flag *string) error {
+	if _, err := tx.Exec(ctx, `UPDATE remoteaccess.provider_session_records SET session_id = $2::uuid, flag = $3 WHERE id = $1::uuid`, id, sessionID, flag); err != nil {
+		return fmt.Errorf("set provider record attribution: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) HasAttributedRecordTx(ctx context.Context, tx pgx.Tx, sessionID, exceptRecordID string) (bool, error) {
+	var ok bool
+	err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM remoteaccess.provider_session_records
+		WHERE session_id = $1::uuid AND flag IS NULL AND id <> $2::uuid)`, sessionID, exceptRecordID).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("check attributed record: %w", err)
+	}
+	return ok, nil
+}
+
+func (r *Repository) RecordSummary(ctx context.Context, since time.Time) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx, `SELECT flag, count(*) FROM remoteaccess.provider_session_records
+		WHERE flag IS NOT NULL AND first_seen_at >= $1 GROUP BY flag`, since)
+	if err != nil {
+		return nil, fmt.Errorf("summarize provider records: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var flag string
+		var n int
+		if err := rows.Scan(&flag, &n); err != nil {
+			return nil, fmt.Errorf("summarize provider records: scan: %w", err)
+		}
+		out[flag] = n
+	}
+	return out, rows.Err()
 }
 
 // ---- transitions ----

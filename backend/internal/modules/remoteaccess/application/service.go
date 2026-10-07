@@ -28,6 +28,7 @@ type Service struct {
 	devices   Devices
 	tickets   Tickets
 	holders   Holders
+	dir       Directory
 	approvals Approvals
 	approvers Approvers
 	providers Providers
@@ -37,8 +38,8 @@ type Service struct {
 }
 
 // NewService wires the use cases over the other modules' public contracts.
-func NewService(store Store, devices Devices, tickets Tickets, holders Holders, approvals Approvals, approvers Approvers, providers Providers) *Service {
-	return &Service{store: store, devices: devices, tickets: tickets, holders: holders, approvals: approvals, approvers: approvers,
+func NewService(store Store, devices Devices, tickets Tickets, holders Holders, dir Directory, approvals Approvals, approvers Approvers, providers Providers) *Service {
+	return &Service{store: store, devices: devices, tickets: tickets, holders: holders, dir: dir, approvals: approvals, approvers: approvers,
 		providers: providers, now: func() time.Time { return time.Now().UTC() }}
 }
 
@@ -222,8 +223,12 @@ type NewSession struct {
 	Approver Approver
 }
 
+// permTicketsManage lets a technician work any Ticket (servicedesk permission registry).
+const permTicketsManage = "tickets.manage"
+
 // Request evaluates the policy gates and creates a session: authorized at once, or pending_approval when the
-// Device's ownership requires a second approver. Requires remote_access.start_attended.
+// Device's ownership (or a recorded holder mismatch) requires a second approver. Every attempt after input
+// validation, refused ones included, counts toward the per-user rate limit. Requires remote_access.start_attended.
 func (s *Service) Request(ctx context.Context, c Caller, p Principal, in NewSession) (Session, error) {
 	if err := c.validate(); err != nil {
 		return Session{}, err
@@ -250,82 +255,40 @@ func (s *Service) Request(ctx context.Context, c Caller, p Principal, in NewSess
 	if err != nil {
 		return Session{}, err
 	}
-	if _, ok := s.providers.Get(provider); !ok {
-		return Session{}, refused(RefProviderDisabled)
-	}
-	dev, ok, err := s.devices.Device(ctx, deviceID)
-	if err != nil {
-		return Session{}, fmt.Errorf("read device: %w", err)
-	}
-	if !ok {
-		return Session{}, refused(RefDeviceUnknown)
-	}
-	if dev.RetiredAt != nil {
-		return Session{}, refused(RefDeviceRetired)
-	}
 	now := s.now()
-	if now.Sub(dev.ObservedAt) > DeviceFreshness {
-		return Session{}, refused(RefStaleDevice)
-	}
-	mapping, ok, err := s.store.ActiveMapping(ctx, deviceID, provider)
-	if err != nil {
+	if err := s.countAttempt(ctx, p.UserID, now); err != nil {
 		return Session{}, err
 	}
-	if !ok {
-		return Session{}, refused(RefNoPeerMapping)
-	}
-	t, ok, err := s.tickets.Ticket(ctx, ticketID)
+	res, mapping, err := s.requestChecks(ctx, p.UserID, deviceID, ticketID, provider, in.MismatchReason)
 	if err != nil {
-		return Session{}, fmt.Errorf("read ticket: %w", err)
+		return Session{}, s.auditRefusal(ctx, c, deviceID, ticketID, provider, err)
 	}
-	if !ok {
-		return Session{}, refused(RefTicketUnknown)
-	}
-	if !t.Open {
-		return Session{}, refused(RefTicketNotOpen)
-	}
-	var mismatch *string
-	holder := ""
-	if dev.AssetID != nil {
-		holders, err := s.holders.UserHolders(ctx, []string{*dev.AssetID})
-		if err != nil {
-			return Session{}, fmt.Errorf("read holder: %w", err)
-		}
-		holder = holders[*dev.AssetID]
-	}
-	if holder == "" || !strings.EqualFold(holder, t.AffectedUserID) {
-		if in.MismatchReason == "" {
-			return Session{}, refused(RefHolderMismatch)
-		}
-		mismatch = strPtr(in.MismatchReason)
-	}
-	excluded := []string{p.UserID, t.ReporterUserID}
+	excluded := []string{p.UserID, res.Ticket.ReporterUserID}
 	slices.Sort(excluded)
 	excluded = slices.Compact(excluded)
-	needsApproval := slices.Contains(s.approvalOwnership, dev.Ownership)
 	var approver Approver
-	if needsApproval {
+	if res.NeedsApproval {
 		if approver, err = normalizeApprover(in.Approver); err != nil {
-			return Session{}, err
+			return Session{}, s.auditRefusal(ctx, c, deviceID, ticketID, provider, err)
 		}
 		if err := s.checkApprover(ctx, approver, excluded); err != nil {
 			return Session{}, err
 		}
 	}
 	sess := Session{DeviceID: deviceID, TicketID: ticketID, Provider: provider, PeerID: mapping.PeerID, Mode: "attended",
-		Status: StatusRequested, InitiatedBy: p.UserID, ExcludedUserIDs: excluded, Consent: ConsentUnknown, MismatchReason: mismatch,
+		Status: StatusRequested, InitiatedBy: p.UserID, ExcludedUserIDs: excluded, Consent: ConsentUnknown, MismatchReason: res.Mismatch,
 		ExpiresAt: now.Add(PendingTTL), Note: note}
+	needsApproval := res.NeedsApproval
 	var out Session
 	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
-		if err := s.store.LockUserTx(ctx, tx, p.UserID); err != nil {
-			return err
-		}
-		n, err := s.store.CountRequestsTx(ctx, tx, p.UserID, now.Add(-RateWindow))
+		// The mapping is locked while the session is inserted, so a concurrent remap cannot leave a session with
+		// a stale peer id behind (MapPeer and UnmapPeer lock the mapping first, too).
+		locked, ok, err := s.store.LockActiveMappingTx(ctx, tx, deviceID, provider)
 		if err != nil {
 			return err
 		}
-		if n >= RateLimit {
-			return ErrRateLimited
+		if !ok || locked.PeerID != mapping.PeerID {
+			return refused(RefMappingChanged)
 		}
 		cur, err := s.store.InsertSessionTx(ctx, tx, sess)
 		if err != nil {
@@ -339,8 +302,8 @@ func (s *Service) Request(ctx context.Context, c Caller, p Principal, in NewSess
 			return err
 		}
 		meta := map[string]any{"deviceId": cur.DeviceID, "ticketId": cur.TicketID, "provider": cur.Provider, "approvalRequired": needsApproval}
-		if mismatch != nil {
-			meta["reason"] = *mismatch
+		if res.Mismatch != nil {
+			meta["reason"] = *res.Mismatch
 		}
 		if err := recordAudit(ctx, tx, c, "session.requested", "remote_access_session", cur.ID, nil, sessionState(&cur), meta); err != nil {
 			return err
@@ -361,6 +324,172 @@ func (s *Service) Request(ctx context.Context, c Caller, p Principal, in NewSess
 		return err
 	})
 	return out, err
+}
+
+// countAttempt records a request attempt under the user's advisory lock and refuses with ErrRateLimited beyond
+// RateLimit attempts in RateWindow. It commits on its own, so refused attempts count, too.
+func (s *Service) countAttempt(ctx context.Context, userID string, now time.Time) error {
+	return s.store.InTx(ctx, func(tx pgx.Tx) error {
+		if err := s.store.LockUserTx(ctx, tx, userID); err != nil {
+			return err
+		}
+		n, err := s.store.CountAttemptsTx(ctx, tx, userID, now.Add(-RateWindow))
+		if err != nil {
+			return err
+		}
+		if n >= RateLimit {
+			return ErrRateLimited
+		}
+		return s.store.InsertAttemptTx(ctx, tx, userID, now)
+	})
+}
+
+// auditRefusal records a refused Request (reason code only) and returns the original error; a failing audit write
+// is returned instead, so a refusal is never silently unaudited. Errors other than refusals pass through.
+func (s *Service) auditRefusal(ctx context.Context, c Caller, deviceID, ticketID, provider string, err error) error {
+	var ref *RefusedError
+	if !errors.As(err, &ref) {
+		return err
+	}
+	aerr := s.store.InTx(ctx, func(tx pgx.Tx) error {
+		return recordAudit(ctx, tx, c, "session.request_refused", "device", deviceID, nil, nil,
+			map[string]any{"deviceId": deviceID, "ticketId": ticketID, "provider": provider, "reason": ref.Code})
+	})
+	if aerr != nil {
+		return fmt.Errorf("audit refused request: %w", aerr)
+	}
+	return err
+}
+
+// gateResult is what the policy gates found.
+type gateResult struct {
+	Device        DeviceInfo
+	Ticket        TicketInfo
+	Mismatch      *string
+	NeedsApproval bool
+}
+
+// requestChecks runs every gate of a new request: provider, Device, peer mapping, then the Ticket gates.
+func (s *Service) requestChecks(ctx context.Context, initiator, deviceID, ticketID, provider, mismatch string) (gateResult, PeerMapping, error) {
+	if _, ok := s.providers.Get(provider); !ok {
+		return gateResult{}, PeerMapping{}, refused(RefProviderDisabled)
+	}
+	dev, err := s.checkDevice(ctx, deviceID)
+	if err != nil {
+		return gateResult{}, PeerMapping{}, err
+	}
+	mapping, ok, err := s.store.ActiveMapping(ctx, deviceID, provider)
+	if err != nil {
+		return gateResult{}, PeerMapping{}, err
+	}
+	if !ok {
+		return gateResult{}, PeerMapping{}, refused(RefNoPeerMapping)
+	}
+	res, err := s.checkTicket(ctx, initiator, ticketID, mismatch, dev)
+	return res, mapping, err
+}
+
+// stale reports a Device that did not check in at its management provider within DeviceFreshness; an unknown
+// check-in is stale. Turaco's own sync time says nothing about the Device and is not used.
+func stale(dev DeviceInfo, now time.Time) bool {
+	return dev.LastCheckinAt == nil || now.Sub(*dev.LastCheckinAt) > DeviceFreshness
+}
+
+// checkDevice reads the Device again and refuses unknown, retired and stale ones.
+func (s *Service) checkDevice(ctx context.Context, deviceID string) (DeviceInfo, error) {
+	dev, ok, err := s.devices.Device(ctx, deviceID)
+	if err != nil {
+		return DeviceInfo{}, fmt.Errorf("read device: %w", err)
+	}
+	switch {
+	case !ok:
+		return DeviceInfo{}, refused(RefDeviceUnknown)
+	case dev.RetiredAt != nil:
+		return DeviceInfo{}, refused(RefDeviceRetired)
+	case stale(dev, s.now()):
+		return DeviceInfo{}, refused(RefStaleDevice)
+	}
+	return dev, nil
+}
+
+// ownershipNeedsApproval applies REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP: when the policy is set, an ownership
+// that is neither corporate nor personal (unknown) needs an Approval, too.
+func (s *Service) ownershipNeedsApproval(ownership string) bool {
+	if len(s.approvalOwnership) == 0 {
+		return false
+	}
+	return slices.Contains(s.approvalOwnership, ownership) || (ownership != "corporate" && ownership != "personal")
+}
+
+// checkTicket runs the Ticket-bound gates for the initiating user: the Ticket must be open and available to the
+// initiator (unknown, closed, own-reported and unauthorized Tickets all give ticket_unavailable), the Device's
+// holder must be the Ticket's affected user or a mismatch reason must be recorded (which always needs an
+// Approval), the approval policy is evaluated on the current ownership and somebody must be notifiable.
+func (s *Service) checkTicket(ctx context.Context, initiator, ticketID, mismatch string, dev DeviceInfo) (gateResult, error) {
+	t, ok, err := s.tickets.Ticket(ctx, ticketID)
+	if err != nil {
+		return gateResult{}, fmt.Errorf("read ticket: %w", err)
+	}
+	if !ok || !t.Open || strings.EqualFold(t.ReporterUserID, initiator) {
+		return gateResult{}, refused(RefTicketUnavailable)
+	}
+	if !strings.EqualFold(t.AssigneeUserID, initiator) {
+		perms, err := s.approvers.Permissions(ctx, initiator)
+		if err != nil {
+			return gateResult{}, fmt.Errorf("read permissions: %w", err)
+		}
+		if _, ok := perms[permTicketsManage]; !ok {
+			return gateResult{}, refused(RefTicketUnavailable)
+		}
+	}
+	holder := ""
+	if dev.AssetID != nil {
+		holders, err := s.holders.UserHolders(ctx, []string{*dev.AssetID})
+		if err != nil {
+			return gateResult{}, fmt.Errorf("read holder: %w", err)
+		}
+		holder = holders[*dev.AssetID]
+	}
+	res := gateResult{Device: dev, Ticket: t}
+	if holder == "" || !strings.EqualFold(holder, t.AffectedUserID) {
+		if mismatch == "" {
+			return gateResult{}, refused(RefHolderMismatch)
+		}
+		res.Mismatch = strPtr(mismatch)
+	}
+	res.NeedsApproval = res.Mismatch != nil || s.ownershipNeedsApproval(dev.Ownership)
+	notify, err := s.hasRecipient(ctx, initiator, holder, t.AffectedUserID)
+	if err != nil {
+		return gateResult{}, err
+	}
+	if !notify {
+		return gateResult{}, refused(RefNoRecipient)
+	}
+	return res, nil
+}
+
+// hasRecipient reports whether the Device's holder or the Ticket's affected user (other than the technician) is an
+// active user who can be told that a session started: the end user must always be able to see it.
+func (s *Service) hasRecipient(ctx context.Context, initiator string, candidates ...string) (bool, error) {
+	var ids []string
+	for _, id := range candidates {
+		if id != "" && !strings.EqualFold(id, initiator) && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return false, nil
+	}
+	active, err := s.dir.ActiveUsers(ctx, ids)
+	if err != nil {
+		return false, fmt.Errorf("check recipients: %w", err)
+	}
+	for _, id := range ids {
+		if active[id] {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func normalizeApprover(a Approver) (Approver, error) {
@@ -518,6 +647,15 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 		return err
 	}
 	if p.Decision == "approve" {
+		// The world may have moved while the approval was pending: run the gates again.
+		if code, err := s.regate(ctx, cur); err != nil {
+			return err
+		} else if code != "" {
+			meta["refusal"] = code
+			next.Status, next.StatusReason, next.ClosedAt = StatusRejected, strPtr(code), &now
+			_, err := s.commit(ctx, tx, c, cur, next, "approval_rejected", code, meta)
+			return err
+		}
 		next.Status, next.StatusReason, next.ExpiresAt = StatusAuthorized, nil, now.Add(AuthorizedTTL)
 		_, err := s.commit(ctx, tx, c, cur, next, "authorized", "", meta)
 		return err
@@ -525,6 +663,27 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 	next.Status, next.StatusReason, next.ClosedAt = StatusRejected, strPtr(ReasonApprovalRejected), &now
 	_, err = s.commit(ctx, tx, c, cur, next, "approval_rejected", ReasonApprovalRejected, meta)
 	return err
+}
+
+// regate re-runs the Device and Ticket gates for an existing session (the initiator and the recorded mismatch
+// reason are the session's own). It returns the refusal code, or "" when the gates pass.
+func (s *Service) regate(ctx context.Context, cur Session) (string, error) {
+	dev, err := s.checkDevice(ctx, cur.DeviceID)
+	if err == nil {
+		var res gateResult
+		mismatch := ""
+		if cur.MismatchReason != nil {
+			mismatch = *cur.MismatchReason
+		}
+		if res, err = s.checkTicket(ctx, cur.InitiatedBy, cur.TicketID, mismatch, dev); err == nil && res.NeedsApproval && cur.ApprovalID == nil {
+			err = refused(RefApprovalRequired)
+		}
+	}
+	var ref *RefusedError
+	if errors.As(err, &ref) {
+		return ref.Code, nil
+	}
+	return "", err
 }
 
 // move runs one status transition by the session's initiator (or an administrator) that needs expectedVersion.
@@ -621,6 +780,9 @@ func (s *Service) ExpireSessions(ctx context.Context, correlationID string) (int
 	now := s.now()
 	due, err := s.store.DueSessions(ctx, now, maxBatch)
 	if err != nil {
+		return 0, err
+	}
+	if err := s.store.PruneAttempts(ctx, now.Add(-AttemptRetention)); err != nil {
 		return 0, err
 	}
 	ended := 0

@@ -69,7 +69,9 @@ const (
 	ReasonApprovalTimeout       = "approval_timeout"
 	ReasonExpiredOpen           = "expired_open"
 	ReasonLaunchFailed          = "launch_failed"
-	reasonReplaced              = "replaced"
+	// ReasonMappingChanged ends open sessions of a Device whose peer mapping was replaced or removed.
+	ReasonMappingChanged = "mapping_changed"
+	reasonReplaced       = "replaced"
 )
 
 // Approval, event, notification and job names.
@@ -106,13 +108,22 @@ const (
 	LaunchedTTL = 8 * time.Hour
 	// DeviceFreshness is how recent the last observation of a Device must be.
 	DeviceFreshness = 7 * 24 * time.Hour
-	// RateLimit requests per user and RateWindow.
+	// RateLimit request attempts (refused ones included) per user and RateWindow.
 	RateLimit  = 20
 	RateWindow = time.Hour
+	// AttemptRetention is how long request attempts are kept for the rate limit.
+	AttemptRetention = 24 * time.Hour
 	// ObservationSlack widens the time window that matches a provider record to a launched session.
 	ObservationSlack = 2 * time.Minute
-	// ObservationLookback is how far back observed sessions are read and matched.
+	// ObservationLookback is how far back provider records are read.
 	ObservationLookback = 48 * time.Hour
+	// ObservationSummaryWindow is how far back the observation summary counts records.
+	ObservationSummaryWindow = 30 * 24 * time.Hour
+	// maxRecordAge and maxRecordDuration bound the times of a provider record; clockSkew is the tolerated future.
+	maxRecordAge      = 30 * 24 * time.Hour
+	maxRecordDuration = 7 * 24 * time.Hour
+	clockSkew         = 5 * time.Minute
+	maxOperator       = 100
 
 	DefaultLimit = 50
 	MaxLimit     = 200
@@ -190,6 +201,35 @@ type PeerMapping struct {
 	CloseReason *string
 }
 
+// Provider record flags: why a record is not (or not cleanly) attributed to one session.
+const (
+	FlagUnattributed = "unattributed"
+	FlagDuplicate    = "duplicate"
+	FlagAfterClose   = "after_close"
+)
+
+// ObservationSources is the allow-list of provider record sources.
+var ObservationSources = []string{"rustdesk.audit", "anydesk.history", "hoptodesk.history"}
+
+// ProviderRecord is a provider's record of a connection as stored: provider facts with their source, and the
+// session it was attributed to (nil when unattributed). Attribution never changes once a session is set.
+type ProviderRecord struct {
+	ID                string
+	Provider          string
+	ProviderSessionID string
+	PeerID            string
+	StartedAt         time.Time
+	EndedAt           *time.Time
+	Operator          *string
+	Source            string
+	ObservedAt        time.Time
+	SessionID         *string
+	Flag              *string
+	FirstSeenAt       time.Time
+	// New is set by UpsertRecordTx when the record was stored for the first time (not persisted).
+	New bool
+}
+
 // Handle is a stored launch handle (the hash only).
 type Handle struct {
 	ID        string
@@ -238,6 +278,7 @@ var (
 	ErrConsentRecorded    = errors.New("remoteaccess: consent already recorded")
 	ErrPeerTaken          = errors.New("remoteaccess: the peer id is mapped to another device")
 	ErrLaunchFailed       = errors.New("remoteaccess: the provider could not build the launch link")
+	ErrRecordConflict     = errors.New("remoteaccess: provider record conflicts with the stored one")
 )
 
 // RefusedError is a policy gate that refuses an operation; Code is stable and user-facing (remoteaccess.<code>).
@@ -254,11 +295,14 @@ const (
 	RefStaleDevice      = "stale_device"
 	RefDeviceRetired    = "device_retired"
 	RefDeviceUnknown    = "device_unknown"
-	RefTicketUnknown    = "ticket_unknown"
-	RefTicketNotOpen    = "ticket_not_open"
-	RefHolderMismatch   = "holder_mismatch"
-	RefSessionOpen      = "session_open"
-	RefApproverRequired = "approver_required"
+	// RefTicketUnavailable is the single answer for an unknown, closed or unauthorized Ticket (no oracle).
+	RefTicketUnavailable = "ticket_unavailable"
+	RefMappingChanged    = "mapping_changed"
+	RefNoRecipient       = "no_recipient"
+	RefApprovalRequired  = "approval_required"
+	RefHolderMismatch    = "holder_mismatch"
+	RefSessionOpen       = "session_open"
+	RefApproverRequired  = "approver_required"
 )
 
 // InvalidTransitionError reports an operation the status does not allow.
@@ -325,11 +369,28 @@ type Store interface {
 	ListSessions(ctx context.Context, f Filter) (Result[Session], error)
 	// LockUserTx serializes the rate-limit check of one User for the transaction.
 	LockUserTx(ctx context.Context, tx pgx.Tx, userID string) error
-	CountRequestsTx(ctx context.Context, tx pgx.Tx, userID string, since time.Time) (int, error)
+	// CountAttemptsTx counts request attempts (refused ones included) since the time; InsertAttemptTx records one;
+	// PruneAttempts deletes attempts older than the time.
+	CountAttemptsTx(ctx context.Context, tx pgx.Tx, userID string, since time.Time) (int, error)
+	InsertAttemptTx(ctx context.Context, tx pgx.Tx, userID string, at time.Time) error
+	PruneAttempts(ctx context.Context, before time.Time) error
+	// OpenSessionsOfDeviceTx locks the open sessions of a Device and provider (by id).
+	OpenSessionsOfDeviceTx(ctx context.Context, tx pgx.Tx, deviceID, provider string) ([]Session, error)
 	// DueSessions lists open sessions whose expiry passed.
 	DueSessions(ctx context.Context, now time.Time, limit int) ([]Session, error)
-	// ObservableSessions lists launched or closed sessions of a provider launched at or after since.
-	ObservableSessions(ctx context.Context, provider string, since time.Time) ([]Session, error)
+	// CandidateSessions lists the launched or closed sessions of a provider and peer whose launched window
+	// [launched_at, closed_at + ObservationSlack] contains the start (open sessions have no upper bound).
+	CandidateSessions(ctx context.Context, provider, peerID string, started time.Time) ([]Session, error)
+
+	// UpsertRecordTx stores a provider record keyed by (provider, provider session id); a repeat updates the end,
+	// the observation time and the operator only. ErrRecordConflict when the identity (peer, start, source) differs.
+	UpsertRecordTx(ctx context.Context, tx pgx.Tx, r ProviderRecord) (ProviderRecord, error)
+	// SetRecordAttributionTx sets the session and flag of an unattributed record.
+	SetRecordAttributionTx(ctx context.Context, tx pgx.Tx, id string, sessionID, flag *string) error
+	// HasAttributedRecordTx reports whether another record is the attributed one of the session.
+	HasAttributedRecordTx(ctx context.Context, tx pgx.Tx, sessionID, exceptRecordID string) (bool, error)
+	// RecordSummary counts the flagged records first seen since the time, by flag.
+	RecordSummary(ctx context.Context, since time.Time) (map[string]int, error)
 
 	InsertTransitionTx(ctx context.Context, tx pgx.Tx, t Transition) error
 	Transitions(ctx context.Context, sessionID string, page Page) (Result[Transition], error)
@@ -355,7 +416,9 @@ type DeviceInfo struct {
 	AssetID    *string
 	Ownership  string
 	ObservedAt time.Time
-	RetiredAt  *time.Time
+	// LastCheckinAt is the Device's last check-in at its management provider (nil: unknown, treated as stale).
+	LastCheckinAt *time.Time
+	RetiredAt     *time.Time
 }
 
 // Devices is the Endpoints contract.
@@ -370,6 +433,8 @@ type TicketInfo struct {
 	Open           bool
 	AffectedUserID string
 	ReporterUserID string
+	// AssigneeUserID is empty when the Ticket is unassigned.
+	AssigneeUserID string
 }
 
 // Tickets is the Service Desk contract.
@@ -385,6 +450,14 @@ type Holders interface {
 // Directory is what the module asks the Organization module.
 type Directory interface {
 	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
+}
+
+// ObservationSummary tells operators how many provider records could not be attributed cleanly.
+type ObservationSummary struct {
+	// UnattributedRecords counts flagged records (unattributed, duplicate or after close) first seen since Since.
+	UnattributedRecords int
+	ByReason            map[string]int
+	Since               time.Time
 }
 
 // Approver names who approves a session: exactly one of User and Team.

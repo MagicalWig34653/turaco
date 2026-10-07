@@ -179,3 +179,13 @@ func (h *handler) exchange(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"sessionId": out.SessionID, "reference": out.Reference, "provider": out.Provider,
 		"launchUri": out.URI.Reveal(), "session": toSession(out.Session)})
 }
+
+// observationSummary counts provider records that could not be attributed cleanly (view_sessions).
+func (h *handler) observationSummary(w http.ResponseWriter, r *http.Request) {
+	sum, err := h.svc.ObservationSummary(r.Context(), principal(r))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"unattributedRecords": sum.UnattributedRecords, "byReason": sum.ByReason, "since": ts(sum.Since)})
+}

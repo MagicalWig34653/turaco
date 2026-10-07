@@ -43,8 +43,10 @@ type Capabilities struct {
 	Enabled    bool
 	Known      bool
 	ObservedAt *time.Time
-	Stale      bool
-	Providers  []ProviderAvailability
+	// LastCheckinAt is the Device's last check-in at its management provider; Stale is derived from it (nil is stale).
+	LastCheckinAt *time.Time
+	Stale         bool
+	Providers     []ProviderAvailability
 }
 
 // Capabilities reports which enabled providers could start an attended session on the Device and why not. It
@@ -67,7 +69,8 @@ func (s *Service) Capabilities(ctx context.Context, p Principal, deviceID string
 	if ok {
 		at := dev.ObservedAt
 		out.ObservedAt = &at
-		out.Stale = s.now().Sub(dev.ObservedAt) > DeviceFreshness
+		out.LastCheckinAt = dev.LastCheckinAt
+		out.Stale = stale(dev, s.now())
 	}
 	for _, key := range keys {
 		prov, _ := s.providers.Get(key)
@@ -202,4 +205,23 @@ func (s *Service) GetSession(ctx context.Context, p Principal, id string) (Sessi
 		return SessionDetail{}, err
 	}
 	return SessionDetail{Session: cur, Transitions: tr.Items}, nil
+}
+
+// ObservationSummary counts the provider records of the last ObservationSummaryWindow that could not be attributed
+// cleanly to one session (unattributed, duplicate, after close). It raises no finding and no briefing item.
+// Requires remote_access.view_sessions.
+func (s *Service) ObservationSummary(ctx context.Context, p Principal) (ObservationSummary, error) {
+	if !p.ViewSessions {
+		return ObservationSummary{}, ErrForbidden
+	}
+	since := s.now().Add(-ObservationSummaryWindow)
+	by, err := s.store.RecordSummary(ctx, since)
+	if err != nil {
+		return ObservationSummary{}, err
+	}
+	out := ObservationSummary{ByReason: by, Since: since}
+	for _, n := range by {
+		out.UnattributedRecords += n
+	}
+	return out, nil
 }

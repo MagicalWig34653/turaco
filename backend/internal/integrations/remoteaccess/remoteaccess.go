@@ -81,8 +81,10 @@ type ObservedSession struct {
 	PeerID            string
 	StartedAt         time.Time
 	EndedAt           *time.Time
-	Source            string
-	ObservedAt        time.Time
+	// Operator is the operator identity as the provider reports it (bounded plain text; may be empty).
+	Operator   string
+	Source     string
+	ObservedAt time.Time
 }
 
 // SessionObserver is implemented by providers with a session history API.

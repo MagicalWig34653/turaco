@@ -35,7 +35,7 @@ func (h *handler) capabilities(w http.ResponseWriter, r *http.Request) {
 		provs = append(provs, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"deviceId": c.DeviceID, "enabled": c.Enabled, "deviceKnown": c.Known,
-		"observedAt": tsPtr(c.ObservedAt), "stale": c.Stale, "providers": provs})
+		"observedAt": tsPtr(c.ObservedAt), "lastCheckinAt": tsPtr(c.LastCheckinAt), "stale": c.Stale, "providers": provs})
 }
 
 type mappingDTO struct {
