@@ -19,6 +19,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
@@ -249,3 +250,5 @@ func (r *recordingNotifier) Create(_ context.Context, _ pgx.Tx, in notifications
 	r.intents = append(r.intents, in)
 	return true, nil
 }
+
+func jobWithID(id string) jobs.Job { return jobs.Job{ID: id} }
