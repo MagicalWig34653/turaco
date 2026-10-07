@@ -87,16 +87,6 @@ func main() {
 	opts := jobs.RunnerOptions{LockTimeout: lockTimeout}
 	runner := jobs.NewRunner(pool, opts, logger)
 
-	if ldapCfg.Enabled() {
-		if err := registerDirectorySync(runner, pool, ldapCfg, logger); err != nil {
-			logger.Error("configure directory sync", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("directory sync enabled", "provider_key", ldapCfg.ProviderKey, "interval", ldapCfg.SyncInterval.String())
-	}
-
-	// Consumers are registered here as modules add them (ADR-0024). Events
-	// without a consumer are acknowledged, so the outbox does not grow.
 	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
 	smtpCfg, err := config.LoadSMTP(cfg.Environment)
 	if err != nil {
@@ -108,51 +98,18 @@ func main() {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
 	}
-	if smtpCfg.Enabled() {
-		if err := registerEmail(runner, pool, smtpCfg, categories); err != nil {
-			logger.Error("configure email notifications", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("email notifications enabled", "host", smtpCfg.Host, "port", smtpCfg.Port, "security", smtpCfg.Security)
+	deps := jobDeps{
+		LDAP: ldapCfg, SMTP: smtpCfg, Categories: categories, Logger: logger,
+		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 	}
-	if err := registerRecurrence(runner, pool); err != nil {
-		logger.Error("configure recurring tasks", "error", err)
+	if err := registerJobs(runner, dispatcher, pool, deps); err != nil {
+		logger.Error("register worker jobs", "error", err)
 		os.Exit(1)
 	}
-	if err := registerServicesBackfill(ctx, runner, pool); err != nil {
-		logger.Error("configure service link backfill", "error", err)
+	// The backfill is idempotent, so it is enqueued at every worker start; a dedupe key keeps several workers from queueing it twice.
+	if err := servicesapp.EnqueueBackfill(ctx, pool); err != nil {
+		logger.Error("enqueue service link backfill", "error", err)
 		os.Exit(1)
-	}
-	if err := registerChangeReminders(ctx, runner, pool, categories, smtpCfg.Enabled(), logger); err != nil {
-		logger.Error("configure change reminders", "error", err)
-		os.Exit(1)
-	}
-	if err := registerSecurityMatching(runner, pool); err != nil {
-		logger.Error("configure security matching", "error", err)
-		os.Exit(1)
-	}
-	if err := registerSecurityRiskReminders(runner, pool, categories, smtpCfg.Enabled()); err != nil {
-		logger.Error("configure security risk reminders", "error", err)
-		os.Exit(1)
-	}
-	if err := registerAdvisorySync(runner, pool); err != nil {
-		logger.Error("configure advisory feed synchronization", "error", err)
-		os.Exit(1)
-	}
-	if err := registerSoftwarePackageSync(runner, pool, cfg.SoftwareProviderSync); err != nil {
-		logger.Error("configure software package synchronization", "error", err)
-		os.Exit(1)
-	}
-	if err := registerDeploymentEngine(runner, pool, cfg.SoftwareDeployWrite); err != nil {
-		logger.Error("configure deployment engine", "error", err)
-		os.Exit(1)
-	}
-	if cfg.AutotaskSync {
-		if err := registerExternalSync(runner, dispatcher, pool); err != nil {
-			logger.Error("configure Autotask synchronization", "error", err)
-			os.Exit(1)
-		}
-		logger.Warn("Autotask synchronization is on, but the REST client is not implemented: pushes fail with a visible \"not configured\" state")
 	}
 	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
 		logger.Error("register outbox consumers", "error", err)
@@ -175,6 +132,78 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("turaco-worker stopped")
+}
+
+// jobDeps is everything registerJobs needs besides the runner, dispatcher and pool.
+type jobDeps struct {
+	LDAP                 config.LDAPConfig
+	SMTP                 config.SMTPConfig
+	Categories           *notifications.Registry
+	Logger               *slog.Logger
+	SoftwareProviderSync bool
+	SoftwareDeployWrite  bool
+	AutotaskSync         bool
+}
+
+// registerJobs registers every job type of the worker and its schedules. It is separate from main so a
+// startup smoke test builds the same registrations: one invalid timeout would otherwise keep the worker
+// from starting at all.
+func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxpool.Pool, d jobDeps) error {
+	steps := []struct {
+		name string
+		fn   func() error
+	}{
+		{"directory sync", func() error {
+			if !d.LDAP.Enabled() {
+				return nil
+			}
+			if err := registerDirectorySync(runner, pool, d.LDAP, d.Logger); err != nil {
+				return err
+			}
+			d.Logger.Info("directory sync enabled", "provider_key", d.LDAP.ProviderKey, "interval", d.LDAP.SyncInterval.String())
+			return nil
+		}},
+		{"email notifications", func() error {
+			if !d.SMTP.Enabled() {
+				return nil
+			}
+			if err := registerEmail(runner, pool, d.SMTP, d.Categories); err != nil {
+				return err
+			}
+			d.Logger.Info("email notifications enabled", "host", d.SMTP.Host, "port", d.SMTP.Port, "security", d.SMTP.Security)
+			return nil
+		}},
+		{"recurring tasks", func() error { return registerRecurrence(runner, pool) }},
+		{"service link backfill", func() error { return registerServicesBackfill(runner, pool) }},
+		{"change reminders", func() error {
+			return registerChangeReminders(runner, pool, d.Categories, d.SMTP.Enabled(), d.Logger)
+		}},
+		{"security matching", func() error { return registerSecurityMatching(runner, pool) }},
+		{"security risk reminders", func() error {
+			return registerSecurityRiskReminders(runner, pool, d.Categories, d.SMTP.Enabled())
+		}},
+		{"advisory feed synchronization", func() error { return registerAdvisorySync(runner, pool) }},
+		{"software package synchronization", func() error {
+			return registerSoftwarePackageSync(runner, pool, d.SoftwareProviderSync)
+		}},
+		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite) }},
+		{"Autotask synchronization", func() error {
+			if !d.AutotaskSync {
+				return nil
+			}
+			if err := registerExternalSync(runner, dispatcher, pool); err != nil {
+				return err
+			}
+			d.Logger.Warn("Autotask synchronization is on, but the REST client is not implemented: pushes fail with a visible \"not configured\" state")
+			return nil
+		}},
+	}
+	for _, step := range steps {
+		if err := step.fn(); err != nil {
+			return fmt.Errorf("configure %s: %w", step.name, err)
+		}
+	}
+	return nil
 }
 
 func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.LDAPConfig, logger *slog.Logger) error {
@@ -366,17 +395,14 @@ func registerRecurrence(runner *jobs.Runner, pool *pgxpool.Pool) error {
 // links for Virtual Machines that predate the link consumer, and enqueues it. It
 // is idempotent, so it runs at every worker start; a dedupe key keeps several
 // workers from queueing it twice.
-func registerServicesBackfill(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool) error {
-	if err := runner.Register(servicesapp.BackfillJobType, servicesapp.BackfillJobTimeout, wiring.ServiceVMLinks(pool).HandleBackfill); err != nil {
-		return err
-	}
-	return servicesapp.EnqueueBackfill(ctx, pool)
+func registerServicesBackfill(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	return runner.Register(servicesapp.BackfillJobType, servicesapp.BackfillJobTimeout, wiring.ServiceVMLinks(pool).HandleBackfill)
 }
 
 // registerChangeReminders registers the "starts soon" reminder job of scheduled Changes and
 // schedules it. The job is idempotent per Change and maintenance window; the schedule's
 // dedupe key keeps several workers from enqueueing it twice.
-func registerChangeReminders(ctx context.Context, runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool, logger *slog.Logger) error {
+func registerChangeReminders(runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool, logger *slog.Logger) error {
 	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
