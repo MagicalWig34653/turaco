@@ -70,6 +70,10 @@ func (s *Service) DeploymentSecurityContext(ctx context.Context, p Principal, id
 	if err != nil {
 		return DeploymentSecurityContext{}, err
 	}
+	if !p.SecurityView {
+		// Counts only, whatever the port returned.
+		out.Context.Advisories, out.Context.Truncated = nil, false
+	}
 	if out.Context.Truncated {
 		out.TargetsTrunc = true
 	}

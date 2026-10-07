@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	endpointspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/public"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 )
@@ -214,5 +215,96 @@ func TestFeedKnownExploitedFirstAndFeedHealth(t *testing.T) {
 	}
 	if len(reasons) != 2 || reasons["cisa_kev"] != "stale" || reasons["other"] != "rate_limited" {
 		t.Fatalf("health entries: %v", reasons)
+	}
+}
+
+type feedDeployments struct {
+	scope   endpointspublic.DeploymentScope
+	calls   int
+	engine  endpointspublic.EngineStatus
+	summary endpointspublic.RolloutSummary
+}
+
+func (f *feedDeployments) RolloutSummary(_ context.Context, scope endpointspublic.DeploymentScope) (endpointspublic.RolloutSummary, error) {
+	f.scope = scope
+	f.calls++
+	out := f.summary
+	if !scope.IncludeNames {
+		items := make([]endpointspublic.RolloutItem, len(out.Items))
+		copy(items, out.Items)
+		for i := range items {
+			items[i].Name, items[i].ProductName = "", ""
+		}
+		out.Items = items
+	}
+	return out, nil
+}
+func (f *feedDeployments) DeploymentEngineStatus(context.Context) (endpointspublic.EngineStatus, error) {
+	return f.engine, nil
+}
+
+func TestFeedDeploymentsSourcePermissionsAndHealth(t *testing.T) {
+	now := time.Now()
+	f := &feedDeployments{
+		summary: endpointspublic.RolloutSummary{InProgress: 2, Items: []endpointspublic.RolloutItem{
+			{ID: "d1", Reference: "DEP-1", Kind: endpointspublic.RolloutRingHalted, Name: "Secret rollout", ProductName: "Secret product", Since: now},
+			{ID: "d2", Reference: "DEP-2", Kind: endpointspublic.RolloutPaused, Since: now},
+			{ID: "d3", Reference: "DEP-3", Kind: endpointspublic.RolloutAwaitingPromotion, Since: now}}},
+		engine: endpointspublic.EngineStatus{Active: 1, Stale: true, ClearPending: 2},
+	}
+	s := NewFeedService(nil, FeedSources{Deployments: f})
+	entries := func(p FeedPrincipal) map[string]FeedEntry {
+		out, err := s.Feed(context.Background(), p, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]FeedEntry{}
+		for _, e := range out.Entries {
+			m[e.TitleKey] = e
+		}
+		return m
+	}
+	// deployments.view: names, rollouts, severities by kind, but no engine health.
+	got := entries(FeedPrincipal{UserID: "u", Deployments: true})
+	if f.scope.IncludeNames != true {
+		t.Fatal("names not requested for deployments.view")
+	}
+	if e := got["briefing.feed.deployment_ring_halted"]; e.Severity != SeverityCritical || e.Params["name"] != "Secret rollout" || e.Reference == nil || e.Reference.Type != "deployment" || e.LinkPath != "/deployments/d1" {
+		t.Fatalf("halted entry %+v", e)
+	}
+	if e := got["briefing.feed.deployment_paused"]; e.Severity != SeverityWarning {
+		t.Fatalf("paused entry %+v", e)
+	}
+	if e := got["briefing.feed.deployment_awaiting_promotion"]; e.Severity != SeverityInfo {
+		t.Fatalf("awaiting entry %+v", e)
+	}
+	if e := got["briefing.feed.deployments_in_progress"]; e.Count == nil || *e.Count != 2 {
+		t.Fatalf("in progress entry %+v", e)
+	}
+	if _, ok := got["briefing.feed.deployment_engine_stale"]; ok {
+		t.Fatal("engine health without endpoints.manage")
+	}
+	// endpoints.manage only: references and counts, no names; plus the engine health.
+	s = NewFeedService(nil, FeedSources{Deployments: f})
+	got = entries(FeedPrincipal{UserID: "u", Endpoints: true})
+	if f.scope.IncludeNames {
+		t.Fatal("names requested without deployments.view")
+	}
+	e := got["briefing.feed.deployment_ring_halted"]
+	if _, leaked := e.Params["name"]; leaked || e.Params["reference"] != "DEP-1" {
+		t.Fatalf("params %+v", e.Params)
+	}
+	if _, ok := got["briefing.feed.deployment_engine_stale"]; !ok {
+		t.Fatal("stale engine not reported")
+	}
+	if c := got["briefing.feed.deployment_engine_clear_pending"]; c.Count == nil || *c.Count != 2 {
+		t.Fatalf("clear pending entry %+v", c)
+	}
+	// No relevant permission: the source is not called.
+	f.calls = 0
+	s = NewFeedService(nil, FeedSources{Deployments: f, Approvals: feedApprovals{}})
+	entries(FeedPrincipal{UserID: "u", Briefing: true})
+	if f.calls != 0 {
+		t.Fatal("deployment source read without permission")
 	}
 }

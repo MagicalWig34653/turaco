@@ -166,14 +166,16 @@ func (s *Service) RunCorrelation(ctx context.Context, corr string) error {
 	}
 	var errs []error
 	for _, id := range ids {
-		if err := s.correlateDeployment(ctx, id, corr); err != nil {
+		if err := s.CorrelateDeployment(ctx, id, corr); err != nil {
 			errs = append(errs, fmt.Errorf("deployment %s: %w", id, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (s *Service) correlateDeployment(ctx context.Context, id, corr string) error {
+// CorrelateDeployment correlates the failures of one Deployment, raises and resolves its cluster findings and creates the
+// missing follow-up. It is one transaction: a failing Task creation leaves nothing behind.
+func (s *Service) CorrelateDeployment(ctx context.Context, id, corr string) error {
 	c := Caller{Actor: audit.SystemActor(DeploymentCorrelationActor), CorrelationID: corr}
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
 		// One correlation of a Deployment at a time (two workers): the follow-up check and insert must not interleave.
