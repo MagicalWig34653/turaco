@@ -36,6 +36,7 @@ registerErrorMessages({
   'endpoints.plan_changed': 'deployments.error.planChanged',
   'endpoints.no_window_high_impact': 'deployments.error.noWindowHighImpact',
   'endpoints.evaluation_busy': 'deployments.error.evaluationBusy',
+  'endpoints.export_busy': 'deployments.error.exportBusy',
   'endpoints.editors_full': 'deployments.error.editorsFull',
   'endpoints.approver_not_authorized': 'deployments.error.approverNotAuthorized',
   'endpoints.deploy_write_disabled': 'deployments.error.deployWriteDisabled',

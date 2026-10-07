@@ -943,6 +943,11 @@ export const en = {
   'briefing.feed.endpoint_errors': 'Endpoint provider errors',
   'briefing.feed.deployment_ring_halted': 'Deployment {reference}: a ring is halted',
   'briefing.feed.deployment_paused': 'Deployment {reference} is paused',
+  'briefing.feed.deployments_ring_halted_count': '{count} deployment rings are halted',
+  'briefing.feed.deployments_paused_count': '{count} deployments are paused',
+  'briefing.feed.deployments_awaiting_promotion_count': '{count} deployments await promotion',
+  'briefing.feed.deployments_unassigned_followups':
+    '{count} deployment follow-up tasks have no assignee',
   'briefing.feed.deployment_awaiting_promotion':
     'Deployment {reference} awaits promotion of a ring',
   'briefing.feed.deployments_in_progress': 'Deployments in progress',
@@ -3101,6 +3106,7 @@ export const en = {
   'deployments.error.approvalNotRequired': 'This plan is not high impact; schedule it directly.',
   'deployments.error.planChanged': 'The plan changed after its approval.',
   'deployments.error.evaluationBusy': 'Too many evaluations are running; try again in a moment.',
+  'deployments.error.exportBusy': 'The export service is busy. Try again in a moment.',
   'deployments.error.editorsFull': 'Too many people have edited this plan.',
   'deployments.error.approverNotAuthorized': 'The approver may not approve deployment plans.',
   'deployments.error.noWindowHighImpact':

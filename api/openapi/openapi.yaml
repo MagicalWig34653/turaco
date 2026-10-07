@@ -10363,6 +10363,11 @@ paths:
           content:
             text/csv:
               schema: {type: string}
+        '429':
+          description: At most two exports run at the same time (endpoints.export_busy). Every export is audited; a late store error aborts the connection instead of returning a complete-looking file.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '404': {$ref: '#/components/responses/DeploymentsNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}

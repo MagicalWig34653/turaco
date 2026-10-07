@@ -964,6 +964,12 @@ export const de: Record<MessageKey, string> = {
   'briefing.feed.endpoint_errors': 'Endpoint-Provider-Fehler',
   'briefing.feed.deployment_ring_halted': 'Verteilung {reference}: ein Ring ist angehalten',
   'briefing.feed.deployment_paused': 'Verteilung {reference} ist pausiert',
+  'briefing.feed.deployments_ring_halted_count': '{count} Verteilungs-Ringe sind angehalten',
+  'briefing.feed.deployments_paused_count': '{count} Verteilungen sind pausiert',
+  'briefing.feed.deployments_awaiting_promotion_count':
+    '{count} Verteilungen warten auf Beförderung',
+  'briefing.feed.deployments_unassigned_followups':
+    '{count} Folgeaufgaben zu Verteilungen haben keine zuständige Person',
   'briefing.feed.deployment_awaiting_promotion':
     'Verteilung {reference} wartet auf die Freigabe des nächsten Rings',
   'briefing.feed.deployments_in_progress': 'Laufende Verteilungen',
@@ -3173,6 +3179,8 @@ export const de: Record<MessageKey, string> = {
   'deployments.error.planChanged': 'Der Plan hat sich nach seiner Freigabe geändert.',
   'deployments.error.evaluationBusy':
     'Es laufen zu viele Auswertungen; versuchen Sie es gleich noch einmal.',
+  'deployments.error.exportBusy':
+    'Der Export ist gerade ausgelastet. Bitte gleich noch einmal versuchen.',
   'deployments.error.editorsFull': 'Zu viele Personen haben diesen Plan bearbeitet.',
   'deployments.error.approverNotAuthorized':
     'Die freigebende Stelle darf keine Verteilungspläne freigeben.',
