@@ -32,6 +32,7 @@ const publicSecurity = new Set([
   "agent-boundaries.md",
   "encryption.md",
   "identity-access-design.md",
+  "remote-access-threat-models.md",
   "security-architecture.md",
   "supply-chain.md",
 ]);
