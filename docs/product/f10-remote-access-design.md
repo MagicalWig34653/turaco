@@ -2,7 +2,7 @@
 
 **Status:** Draft 2026-10-07; decisions R1–R7 adopted by default (autonomous progress; revisit with real provider accounts). **R-A (backend core) implemented** (see [R-A implementation notes](#r-a-implementation-notes)); **R-B (UI and OpenAPI) implemented** (see [R-B implementation notes](#r-b-implementation-notes)); R-C is not. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0026](../decisions/ADR-0026-remote-access-providers.md) (decision and security constraints), [state machines](../domain/state-machines.md#remote-access-session), [agent boundaries](../security/agent-boundaries.md), [F6 design](f6-endpoint-intelligence-design.md), [F5 design](f5-service-desk-design.md), [integration sandboxes](../development/integration-sandboxes.md).
 
-## What the providers offer (researched 2026-10-07, *verify before building a connector*)
+## What the providers offer (researched 2026-10-07; link verification state below)
 
 | Provider | Client launch | Server-side API for Turaco | Hosting | Notes |
 | --- | --- | --- | --- | --- |
@@ -84,3 +84,10 @@ OpenAPI covers every endpoint (`api/openapi/openapi.yaml`, `RemoteAccess*` compo
 - **Launch.** "Open remote tool" calls `/launch` and `/launch-handles/exchange` back to back and assigns `window.location.href` only when the link has a custom scheme (script, data, file and web schemes are refused). The link lives in one local variable; it is never kept in state, storage, history or the page. A hint with a copyable session reference stays visible because the browser gives no signal when a scheme is unhandled.
 - **Device detail** (`remote_access.view`): compact card; `remote_access.admin` maps and unmaps peers with reason codes. **Sessions** (`/remote-access/sessions`, detail) show the initiator's sessions, or all with `remote_access.view_sessions`; provider-observed fields are labelled "reported by provider" and shown as unknown when empty.
 - `remoteaccess.session_started` notifications carry no link (reference only), so no link target is registered.
+
+## R-C verification (2026-10-07)
+
+- **RustDesk:** the link `rustdesk://connection/new/<id>` is verified against the client source (`flutter/lib/common.dart`, `handleUriLink`; legacy form, `rustdesk://<id>` is current). A RustDesk server container pair (`hbbs`/`hbbr`, image `rustdesk/rustdesk-server`) was started successfully on its own; no real client was run against it.
+- **AnyDesk:** `anydesk:<id>` is not verified; official docs only cover the CLI (`anydesk.exe <ID/Alias>`).
+- **HopToDesk:** `hoptodesk://<id>` is not verified; no public documentation or source was reachable.
+- Per-provider threat models are in [remote-access-threat-models.md](../security/remote-access-threat-models.md).

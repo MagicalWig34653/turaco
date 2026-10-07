@@ -25,10 +25,17 @@ var (
 )
 
 // launchTable is the single place where provider launch links are defined.
-// verify: the link formats come from the providers' public documentation (RustDesk URL scheme
-// rustdesk://connection/new/<id>, AnyDesk anydesk:<id>, HopToDesk hoptodesk://<id>) and must be verified against the
-// pinned client versions in the lab before production use (docs/security/remote-access-threat-models.md). No link
-// ever contains a password or token.
+// Verification state (2026-10-07):
+//   - RustDesk: verified in the client source. flutter/lib/common.dart handleUriLink accepts
+//     rustdesk://connection/new/<id> as a legacy "for compatibility" form (current forms: rustdesk://<id>,
+//     rustdesk://connect/<id>); query parameters such as password exist and are never used here.
+//     Source: https://github.com/rustdesk/rustdesk/blob/master/flutter/lib/common.dart
+//   - AnyDesk: NOT verified. The official CLI documentation only covers "anydesk.exe <ID/Alias>"
+//     (https://support.anydesk.com/docs/command-line-interface-for-windows.md); the anydesk:<id> URL handler is not
+//     documented there. Check against a real client before enabling.
+//   - HopToDesk: NOT verified. No public documentation or reachable source for hoptodesk://<id> was found.
+//
+// No link ever contains a password or token (docs/security/remote-access-threat-models.md).
 var launchTable = map[string]launchSpec{
 	KeyRustDesk:  {valid: func(s string) bool { return numericID.MatchString(s) || rustdeskCustomID.MatchString(s) }, template: "rustdesk://connection/new/%s"},
 	KeyAnyDesk:   {valid: func(s string) bool { return numericID.MatchString(s) || anydeskAliasID.MatchString(s) }, template: "anydesk:%s"},
