@@ -31,6 +31,7 @@ const paths: Partial<Record<RouteId, string>> = {
   runbooks: 'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5',
   devices: 'M3 5h18v12H3zM9 21h6m-3-4v4',
   endpointFindings: 'M4 5h16v12H4zM9 21h6m-3-4v4M12 8v4m0 2v1',
+  remoteAccessSessions: 'M3 5h13v9H3zM8 17h3m-1.5-3v3M14 12l7 3-3 1-1 3z',
   managementArtifacts: 'M4 4h16v16H4zM8 8h8v8H8zM12 8v8',
   managementFilters: 'M3 5h18M6 12h12M9 19h6M8 3v4m8 3v4m-4 3v4',
   softwareProducts: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM14 17l2 2 4-4',

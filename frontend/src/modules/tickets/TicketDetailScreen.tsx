@@ -19,6 +19,7 @@ import { appendWorkaround, clearSubmittedDraft, primaryTicketOperation } from '.
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
+import { TicketRemoteSupport } from '../remoteaccess/RemoteSupportCard';
 import { problemsApi } from '../problems/api';
 import { ticketsApi } from './api';
 import { TicketStatusBadge } from './TicketsScreen';
@@ -466,6 +467,9 @@ function TicketWorkspace({ id }: { id: string }) {
               </div>
             ) : null}
           </Card>
+          {can('remote_access.view') ? (
+            <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
+          ) : null}
           <Card title={t('ticketWorkspace.handling')}>
             <h2>{t('ticketWorkspace.handling')}</h2>
             <dl className="incident-facts">

@@ -61,6 +61,7 @@ import { VMListScreen, VMDetailScreen } from '../modules/infrastructure/VMScreen
 import { AssetCreateScreen } from '../modules/assets/AssetCreateScreen';
 import { AssetDetailScreen } from '../modules/assets/AssetDetailScreen';
 import { AssetsScreen, MyAssetsScreen } from '../modules/assets/AssetsScreen';
+import { SessionDetailScreen, SessionsScreen } from '../modules/remoteaccess/SessionsScreens';
 import { DevicesScreen } from '../modules/endpoints/DevicesScreen';
 import { DeviceDetailScreen } from '../modules/endpoints/DeviceDetailScreen';
 import { DeviceDiffScreen, GroupDiffScreen } from '../modules/endpoints/HistoryDiffScreens';
@@ -170,6 +171,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <GroupDiffScreen id={params.id ?? ''} />;
     case 'deviceDetail':
       return <DeviceDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'remoteAccessSessions':
+      return <SessionsScreen />;
+    case 'remoteAccessSessionDetail':
+      return <SessionDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'endpointFindings':
       return <FindingsScreen />;
     case 'managementArtifacts':
