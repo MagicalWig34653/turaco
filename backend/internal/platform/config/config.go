@@ -38,6 +38,12 @@ type Config struct {
 	// Management Provider (start, resume, promote) and the engine job runs.
 	SoftwareDeployWrite bool
 
+	// RemoteAccessProviders are the enabled Remote Access Provider keys (REMOTE_ACCESS_PROVIDERS); empty switches
+	// the feature off. The composition roots build the connectors and refuse unknown keys.
+	RemoteAccessProviders []string
+	// RemoteAccessApprovalOwnership are the Device ownerships whose remote sessions need a second approver.
+	RemoteAccessApprovalOwnership []string
+
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
 	// the worker loads and validates the full LDAPConfig with LoadLDAP, so
@@ -159,6 +165,8 @@ var Registry = []Descriptor{
 	{Name: "AUTOTASK_SYNC", Type: "bool", Default: "false", Description: "Synchronize tickets with Autotask (external references, push jobs, inbound updates). The REST client is not implemented yet: with the switch on, pushes fail permanently with a visible \"not configured\" state."},
 	{Name: "INTUNE_SYNC", Type: "bool", Default: "false", Description: "Allow endpoint synchronization (POST /api/v1/endpoint-sync) from the Intune provider. The Graph client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
 	{Name: "SOFTWARE_PROVIDER_SYNC", Type: "bool", Default: "false", Description: "Allow the Software Package synchronization (POST /api/v1/software/packages/sync and the scheduled worker job) against the Software Management Provider (IntuneGet). The provider client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
+	{Name: "REMOTE_ACCESS_PROVIDERS", Type: "string", Description: "Comma-separated Remote Access Provider keys to enable (`rustdesk`, `anydesk`, `hoptodesk`; launch-link connectors, attended sessions only). Empty switches Remote Access off: no session can be requested. Unknown keys stop turaco-api and turaco-worker at startup. API and worker must use the same value."},
+	{Name: "REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP", Type: "string", Description: "Comma-separated Device ownerships (`corporate`, `personal`, `unknown`) whose Remote Access Sessions need a second approver holding remote_access.admin before they can be launched. Empty requires no approval."},
 	{Name: "SOFTWARE_DEPLOY_WRITE", Type: "bool", Default: "false", Description: "Capability: allow Deployments to write ring assignments to the Management Provider (start, resume, promote, resolving targets, clearing after a cancel or kill switch). The worker job endpoints.deployment_tick runs every minute either way; with the capability off it only runs the kill-switch sweep (pause, halt, queue clearing). API and worker must use the same value. Off by default; enabling is audited (endpoints.deploy_write.enabled). The Graph write client is not implemented yet: the writer is a placeholder whose writes fail permanently, so a ring halts with assignment_failed."},
 	{Name: "ADVISORY_SYNC", Type: "bool", Default: "false", Description: "Synchronize security advisories from the public NVD and CISA KEV feeds (scheduled worker job security.advisory_sync and `turaco-admin security sync-feeds`). No account is needed. Imported advisories start in status new; criteria come from the feed's CPE data and analysts decide applicability."},
 	{Name: "ADVISORY_SOURCES", Type: "string", Default: "nvd,cisa_kev", Description: "Comma-separated advisory feeds to synchronize: `nvd` (NVD API 2.0) and/or `cisa_kev` (CISA Known Exploited Vulnerabilities catalog). Used when ADVISORY_SYNC is on and by the admin command."},
@@ -207,6 +215,14 @@ func Load() (Config, error) {
 		IntuneSync:           getenv("INTUNE_SYNC", "false") == "true",
 		SoftwareProviderSync: getenv("SOFTWARE_PROVIDER_SYNC", "false") == "true",
 		SoftwareDeployWrite:  getenv("SOFTWARE_DEPLOY_WRITE", "false") == "true",
+
+		RemoteAccessProviders: splitList(os.Getenv("REMOTE_ACCESS_PROVIDERS")),
+	}
+	cfg.RemoteAccessApprovalOwnership = splitList(os.Getenv("REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP"))
+	for _, o := range cfg.RemoteAccessApprovalOwnership {
+		if o != "corporate" && o != "personal" && o != "unknown" {
+			return Config{}, fmt.Errorf("REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP: %q is not corporate, personal or unknown", o)
+		}
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -422,4 +438,15 @@ func getenv(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// splitList splits a comma-separated list, trims entries and drops empty ones.
+func splitList(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.ToLower(strings.TrimSpace(part)); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

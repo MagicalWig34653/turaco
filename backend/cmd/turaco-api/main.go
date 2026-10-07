@@ -14,6 +14,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
@@ -44,6 +45,8 @@ import (
 	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
 	productsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/products/repository"
 	productstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/products/transport"
+	remoteaccessapp "github.com/MagicalWig34653/turaco/backend/internal/modules/remoteaccess/application"
+	remoteaccesstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/remoteaccess/transport"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	requeststransport "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/transport"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
@@ -180,6 +183,12 @@ func main() {
 	changestransport.Register(mux, wiring.Changes(pool), sessionAuth, logger)
 	planningtransport.Register(mux, wiring.Planning(pool), sessionAuth, logger)
 	securitytransport.Register(mux, wiring.Security(pool), sessionAuth, logger)
+	providers, err := remoteaccess.NewRegistry(cfg.RemoteAccessProviders)
+	if err != nil {
+		logger.Error("configure remote access providers", "error", err)
+		os.Exit(1)
+	}
+	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
@@ -231,5 +240,6 @@ func allCategories() []notifications.Category {
 	out = append(out, changesapp.NotificationCategories()...)
 	out = append(out, planningapp.NotificationCategories()...)
 	out = append(out, securityapp.NotificationCategories()...)
+	out = append(out, remoteaccessapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
