@@ -257,13 +257,15 @@ type Deployment struct {
 	CreatedBy         string
 	Editors           []string
 	HighImpact        bool
-	ApprovalID        *string
-	SubmittedBy       *string
-	SubmittedAt       *time.Time
-	PlanSHA256        *string
-	ApprovedAt        *time.Time
-	ScheduledBy       *string
-	ScheduledAt       *time.Time
+	// CreateTasks switches the follow-up Tasks and notifications of the correlation job (default true).
+	CreateTasks bool
+	ApprovalID  *string
+	SubmittedBy *string
+	SubmittedAt *time.Time
+	PlanSHA256  *string
+	ApprovedAt  *time.Time
+	ScheduledBy *string
+	ScheduledAt *time.Time
 	// ScheduledTargets is the evaluated target total of the plan at scheduling (nil: not recorded).
 	ScheduledTargets *int
 	StartedBy        *string
@@ -317,6 +319,8 @@ type DeploymentInput struct {
 	Intent            string
 	Supersede         bool
 	OwnerUserID       string
+	// CreateTasks nil means true on create and unchanged on update.
+	CreateTasks *bool
 }
 
 // DeploymentTransition is one append-only lifecycle row.

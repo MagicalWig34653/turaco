@@ -167,6 +167,8 @@ type Principal struct {
 	// ChangesRead is changes.view, changes.manage or changes.execute: it reads every Change. Without it a Change
 	// is readable only by its requester and owner (the Changes read rule).
 	ChangesRead bool
+	// SecurityView is security.view: advisory references and titles in the security context of a Deployment.
+	SecurityView bool
 }
 
 func (p Principal) canViewDeployments() bool {
@@ -350,6 +352,7 @@ type Store interface {
 	SoftwareStore
 	DeploymentStore
 	ExecutionStore
+	CorrelationStore
 	InTx(ctx context.Context, fn func(tx pgx.Tx) error) error
 
 	// LockDeviceByExternalTx returns the device FOR UPDATE, or nil when unknown.

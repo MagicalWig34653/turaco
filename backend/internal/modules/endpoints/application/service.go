@@ -80,6 +80,11 @@ type Service struct {
 	// evidence must be.
 	obsExpiry     time.Duration
 	evidenceFresh time.Duration
+	// followTasks and followNotes create the follow-up Tasks and notifications (WithFollowUps); security answers the
+	// security context of a Deployment (WithSecurity).
+	followTasks FollowUpTasks
+	followNotes FollowUpNotifier
+	security    DeploymentSecurity
 }
 
 // NewService creates the service. provider may be nil (synchronization then reports not configured);
