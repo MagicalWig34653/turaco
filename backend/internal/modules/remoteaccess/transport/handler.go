@@ -29,6 +29,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	signedIn := authorization.RequireAuthenticated(auth)
 	start := authorization.Require(auth, application.PermStart)
 	admin := authorization.Require(auth, application.PermAdmin)
+	viewSessions := authorization.Require(auth, application.PermViewSessions)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
@@ -41,7 +42,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/remote-access/sessions/{id}/close", signedIn, h.withReason(h.svc.Close))
 	route("POST /api/v1/remote-access/sessions/{id}/cancel", signedIn, h.withReason(h.svc.Cancel))
 	route("POST /api/v1/remote-access/launch-handles/exchange", start, h.exchange)
-	route("GET /api/v1/remote-access/observations/summary", signedIn, h.observationSummary)
+	route("GET /api/v1/remote-access/observations/summary", viewSessions, h.observationSummary)
 	route("GET /api/v1/remote-access/peer-mappings", signedIn, h.mappings)
 	route("PUT /api/v1/remote-access/peer-mappings", admin, h.mapPeer)
 	route("DELETE /api/v1/remote-access/peer-mappings", admin, h.unmapPeer)

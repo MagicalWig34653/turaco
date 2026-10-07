@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -279,4 +280,27 @@ func (activeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, 
 		out[id] = true
 	}
 	return out, nil
+}
+
+func TestObservationSummaryAndTicketUnavailableOverHTTP(t *testing.T) {
+	s := newSetup(t)
+	// The summary needs remote_access.view_sessions.
+	if rec, _ := call(t, s.handler(as(newID(), application.PermStart, application.PermView)), "GET", "/api/v1/remote-access/observations/summary", nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("summary without view_sessions: %d", rec.Code)
+	}
+	rec, out := call(t, s.handler(as(newID(), application.PermViewSessions)), "GET", "/api/v1/remote-access/observations/summary", nil)
+	if _, ok := out["unattributedRecords"].(float64); rec.Code != http.StatusOK || !ok || out["byReason"] == nil || !strings.Contains(rec.Header().Get("Cache-Control"), "no-store") {
+		t.Fatalf("summary: %d %v", rec.Code, out)
+	}
+	// An unknown Ticket answers with the single ticket_unavailable code.
+	peer := fmt.Sprintf("%09d", 100000000+time.Now().UnixNano()%900000000)
+	if rec, out = call(t, s.handler(as(s.admin, application.PermAdmin)), "PUT", "/api/v1/remote-access/peer-mappings",
+		map[string]any{"deviceId": s.device, "provider": "rustdesk", "peerId": peer, "reason": "initial_mapping"}); rec.Code != http.StatusOK {
+		t.Fatalf("map: %d %v", rec.Code, out)
+	}
+	tech := as(newID(), application.PermStart, application.PermView)
+	rec, out = call(t, s.handler(tech), "POST", "/api/v1/remote-access/sessions", map[string]any{"deviceId": s.device, "ticketId": newID(), "provider": "rustdesk"})
+	if rec.Code != http.StatusConflict || code(out) != "remoteaccess.ticket_unavailable" {
+		t.Fatalf("unknown ticket: %d %v", rec.Code, out)
+	}
 }
