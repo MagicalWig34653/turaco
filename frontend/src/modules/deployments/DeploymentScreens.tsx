@@ -17,7 +17,7 @@ import { FilterBar } from '../../platform/ui/FilterBar';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { TableDate } from '../../platform/ui/TableDate';
 import { useFilterQuery } from '../../platform/ui/useFilterQuery';
-import { Skeleton, StatusBadge } from '../../platform/ui/Workspace';
+import { Skeleton, StatusBadge, Tabs } from '../../platform/ui/Workspace';
 import { softwareApi } from '../software/api';
 import { Actor } from '../software/components';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
@@ -40,6 +40,8 @@ import {
   type PlanFieldValues,
 } from './PlanParts';
 import { CancelDialog } from './CancelDialog';
+import { hasReport } from './reportHelpers';
+import { ReportView } from './ReportView';
 import { RunView } from './RunView';
 import {
   deploymentStatuses,
@@ -384,6 +386,7 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
   const [validating, setValidating] = useState(false);
   const [validateError, setValidateError] = useState<ApiError>();
   const [dialog, setDialog] = useState<'submit' | 'schedule' | 'cancel' | 'edit'>();
+  const [tab, setTab] = useState<'plan' | 'report'>('plan');
   const [lastError, setLastError] = useState<string>();
   const [notice, setNotice] = useState('');
 
@@ -452,6 +455,9 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
   const actionLabel = (action: PlanAction) => t(`deployments.action.${action.id}`);
   const reason = validation.highImpactReason;
   const isRun = isRunStatus(plan.status);
+  const reportAllowed =
+    hasReport(plan.status, plan.scheduledAt) &&
+    (can('deployments.view') || can('deployments.manage') || can('deployments.execute'));
   const openApproval = plan.approvals.find((approval) => approval.status === 'pending');
 
   return (
@@ -526,198 +532,226 @@ export function DeploymentPlanScreen({ id }: { id: string }) {
         </Alert>
       ) : null}
 
-      {isRun ? <RunView plan={plan} onChanged={detail.reload} /> : null}
+      {reportAllowed ? (
+        <Tabs
+          idPrefix="deployment-tabs"
+          items={[
+            { id: 'plan', label: t('deployments.tab.plan') },
+            { id: 'report', label: t('deployments.tab.report') },
+          ]}
+          active={tab}
+          onChange={(id) => setTab(id === 'report' ? 'report' : 'plan')}
+        />
+      ) : null}
+      {tab === 'report' && reportAllowed ? (
+        <ReportView plan={plan} />
+      ) : (
+        <>
+          {isRun ? <RunView plan={plan} onChanged={detail.reload} /> : null}
 
-      <section className="deployments-lifecycle" aria-labelledby={`${noteId}-steps`}>
-        <div className="deployments-card-heading">
-          <h2 id={`${noteId}-steps`}>{t('deployments.plan.lifecycle')}</h2>
-          <DeploymentStatusBadge status={plan.status} />
-        </div>
-        <ol>
-          {steps.map((step, index) => (
-            <li
-              key={step.id}
-              className={`deployments-step deployments-step-${step.state}`}
-              aria-current={
-                step.id === plan.status ||
-                (step.id === 'submitted' && plan.status === 'pending_approval')
-                  ? 'step'
-                  : undefined
-              }
-            >
-              <span aria-hidden="true">
-                {step.state === 'failed' ? '−' : String(index + 1).padStart(2, '0')}
-              </span>
-              {t(`deployments.step.${step.id}` as MessageKey)}
-              <span className="visually-hidden"> {t(`deployments.stepState.${step.state}`)}</span>
-            </li>
-          ))}
-        </ol>
-        {actions.length > 0 ? (
-          <div className="deployments-action-bar">
-            {actions.map((action) => (
-              <Button
-                key={action.id}
-                variant={
-                  action.id === 'cancel' ? 'danger' : action === primary ? 'primary' : 'secondary'
-                }
-                disabled={action.disabledReason !== undefined}
-                aria-describedby={action.disabledReason ? `${noteId}-${action.id}` : undefined}
-                onClick={() => setDialog(action.id)}
-              >
-                {actionLabel(action)}
-              </Button>
-            ))}
-          </div>
-        ) : isRun ? null : (
-          <p className="deployments-muted">
-            {t(codeKey('deployments.statusHint', plan.status, 'deployments.statusHint.none'))}
-          </p>
-        )}
-        {actions
-          .filter((action) => action.disabledReason)
-          .map((action) => (
-            <p key={action.id} id={`${noteId}-${action.id}`} className="deployments-disabled-note">
-              {actionLabel(action)}: {t(action.disabledReason as MessageKey)}
-            </p>
-          ))}
-      </section>
+          <section className="deployments-lifecycle" aria-labelledby={`${noteId}-steps`}>
+            <div className="deployments-card-heading">
+              <h2 id={`${noteId}-steps`}>{t('deployments.plan.lifecycle')}</h2>
+              <DeploymentStatusBadge status={plan.status} />
+            </div>
+            <ol>
+              {steps.map((step, index) => (
+                <li
+                  key={step.id}
+                  className={`deployments-step deployments-step-${step.state}`}
+                  aria-current={
+                    step.id === plan.status ||
+                    (step.id === 'submitted' && plan.status === 'pending_approval')
+                      ? 'step'
+                      : undefined
+                  }
+                >
+                  <span aria-hidden="true">
+                    {step.state === 'failed' ? '−' : String(index + 1).padStart(2, '0')}
+                  </span>
+                  {t(`deployments.step.${step.id}` as MessageKey)}
+                  <span className="visually-hidden">
+                    {' '}
+                    {t(`deployments.stepState.${step.state}`)}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {actions.length > 0 ? (
+              <div className="deployments-action-bar">
+                {actions.map((action) => (
+                  <Button
+                    key={action.id}
+                    variant={
+                      action.id === 'cancel'
+                        ? 'danger'
+                        : action === primary
+                          ? 'primary'
+                          : 'secondary'
+                    }
+                    disabled={action.disabledReason !== undefined}
+                    aria-describedby={action.disabledReason ? `${noteId}-${action.id}` : undefined}
+                    onClick={() => setDialog(action.id)}
+                  >
+                    {actionLabel(action)}
+                  </Button>
+                ))}
+              </div>
+            ) : isRun ? null : (
+              <p className="deployments-muted">
+                {t(codeKey('deployments.statusHint', plan.status, 'deployments.statusHint.none'))}
+              </p>
+            )}
+            {actions
+              .filter((action) => action.disabledReason)
+              .map((action) => (
+                <p
+                  key={action.id}
+                  id={`${noteId}-${action.id}`}
+                  className="deployments-disabled-note"
+                >
+                  {actionLabel(action)}: {t(action.disabledReason as MessageKey)}
+                </p>
+              ))}
+          </section>
 
-      <div className="deployments-detail-grid">
-        <div className="deployments-detail-main">
-          <RingTimeline
-            plan={plan}
-            validation={validation}
-            editable={editable}
-            onChanged={detail.reload}
-          />
-          <ValidationPanel
-            plan={plan}
-            validation={validation}
-            validating={validating}
-            error={validateError}
-            onValidate={can('deployments.manage') ? () => void runValidate() : undefined}
-          />
-        </div>
-        <aside className="deployments-detail-side" aria-label={t('deployments.plan.context')}>
-          <Section title={t('deployments.plan.facts')}>
-            <dl className="deployments-facts">
-              <dt>{t('deployments.list.software')}</dt>
-              <dd>
-                {plan.productName} {plan.productVersion}
-              </dd>
-              <dt>{t('deployments.field.intent')}</dt>
-              <dd>
-                <IntentLabel plan={plan} />
-              </dd>
-              <dt>{t('deployments.field.owner')}</dt>
-              <dd>
-                <Actor userId={plan.ownerUserId} />
-              </dd>
-              <dt>{t('deployments.plan.createdAt')}</dt>
-              <dd>
-                <time dateTime={plan.createdAt}>{formatDateTime(locale, plan.createdAt)}</time>
-              </dd>
-              {plan.scheduledAt ? (
-                <>
-                  <dt>{t('deployments.plan.scheduledAt')}</dt>
+          <div className="deployments-detail-grid">
+            <div className="deployments-detail-main">
+              <RingTimeline
+                plan={plan}
+                validation={validation}
+                editable={editable}
+                onChanged={detail.reload}
+              />
+              <ValidationPanel
+                plan={plan}
+                validation={validation}
+                validating={validating}
+                error={validateError}
+                onValidate={can('deployments.manage') ? () => void runValidate() : undefined}
+              />
+            </div>
+            <aside className="deployments-detail-side" aria-label={t('deployments.plan.context')}>
+              <Section title={t('deployments.plan.facts')}>
+                <dl className="deployments-facts">
+                  <dt>{t('deployments.list.software')}</dt>
                   <dd>
-                    <time dateTime={plan.scheduledAt}>
-                      {formatDateTime(locale, plan.scheduledAt)}
-                    </time>
+                    {plan.productName} {plan.productVersion}
                   </dd>
-                </>
-              ) : null}
-              {plan.planSha256 ? (
-                <>
-                  <dt>{t('deployments.plan.hash')}</dt>
+                  <dt>{t('deployments.field.intent')}</dt>
                   <dd>
-                    <code title={plan.planSha256}>{plan.planSha256.slice(0, 12)}…</code>
+                    <IntentLabel plan={plan} />
                   </dd>
-                </>
-              ) : null}
-            </dl>
-          </Section>
-          <Section title={t('deployments.approval.title')}>
-            {!highImpact && plan.approvals.length === 0 ? (
-              <p className="deployments-muted">{t('deployments.approval.notNeeded')}</p>
-            ) : plan.approvals.length === 0 ? (
-              <p className="deployments-muted">{t('deployments.approval.notRequested')}</p>
-            ) : (
-              <ul className="deployments-approvals">
-                {plan.approvals.map((approval) => (
-                  <li key={approval.id}>
-                    <ApprovalBadge status={approval.status} />{' '}
-                    {approval.approverTeamId
-                      ? t('deployments.approval.team')
-                      : t('deployments.approval.user')}
-                    {approval.decidedAt ? (
-                      <>
-                        {' · '}
-                        <time dateTime={approval.decidedAt}>
-                          {formatDateTime(locale, approval.decidedAt)}
+                  <dt>{t('deployments.field.owner')}</dt>
+                  <dd>
+                    <Actor userId={plan.ownerUserId} />
+                  </dd>
+                  <dt>{t('deployments.plan.createdAt')}</dt>
+                  <dd>
+                    <time dateTime={plan.createdAt}>{formatDateTime(locale, plan.createdAt)}</time>
+                  </dd>
+                  {plan.scheduledAt ? (
+                    <>
+                      <dt>{t('deployments.plan.scheduledAt')}</dt>
+                      <dd>
+                        <time dateTime={plan.scheduledAt}>
+                          {formatDateTime(locale, plan.scheduledAt)}
                         </time>
-                      </>
-                    ) : null}{' '}
-                    <Link to={`/approvals/${enc(approval.id)}`}>
-                      {t('deployments.approval.open')}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {plan.status === 'approved' ? (
-              <p className="deployments-muted">{t('deployments.approval.bound')}</p>
-            ) : null}
-            {openApproval ? (
-              <p className="deployments-muted">{t('deployments.approval.waiting')}</p>
-            ) : null}
-          </Section>
-          <Section title={t('deployments.plan.history')}>
-            {plan.transitions.length === 0 ? (
-              <p className="deployments-muted">—</p>
-            ) : (
-              <ol className="deployments-history">
-                {[...plan.transitions].reverse().map((transition, index) => (
-                  <li key={`${transition.createdAt}-${index}`}>
-                    <strong>
-                      {t(
-                        codeKey(
-                          'deployments.operation',
-                          transition.operation,
-                          'deployments.unknownValue',
-                        ),
-                      )}
-                    </strong>{' '}
-                    <span className="deployments-muted">
-                      <Actor userId={transition.actorUserId} system={transition.actorSystem} />
-                      {' · '}
-                      <time dateTime={transition.createdAt}>
-                        {formatDateTime(locale, transition.createdAt)}
-                      </time>
-                    </span>
-                    {transition.reason ? (
-                      <span className="deployments-muted">
-                        {' · '}
-                        {t(
-                          codeKey(
-                            'deployments.cancelReason',
-                            transition.reason,
-                            'deployments.statusReason.other',
-                          ),
-                          {
-                            code: transition.reason,
-                          },
-                        )}
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Section>
-        </aside>
-      </div>
+                      </dd>
+                    </>
+                  ) : null}
+                  {plan.planSha256 ? (
+                    <>
+                      <dt>{t('deployments.plan.hash')}</dt>
+                      <dd>
+                        <code title={plan.planSha256}>{plan.planSha256.slice(0, 12)}…</code>
+                      </dd>
+                    </>
+                  ) : null}
+                </dl>
+              </Section>
+              <Section title={t('deployments.approval.title')}>
+                {!highImpact && plan.approvals.length === 0 ? (
+                  <p className="deployments-muted">{t('deployments.approval.notNeeded')}</p>
+                ) : plan.approvals.length === 0 ? (
+                  <p className="deployments-muted">{t('deployments.approval.notRequested')}</p>
+                ) : (
+                  <ul className="deployments-approvals">
+                    {plan.approvals.map((approval) => (
+                      <li key={approval.id}>
+                        <ApprovalBadge status={approval.status} />{' '}
+                        {approval.approverTeamId
+                          ? t('deployments.approval.team')
+                          : t('deployments.approval.user')}
+                        {approval.decidedAt ? (
+                          <>
+                            {' · '}
+                            <time dateTime={approval.decidedAt}>
+                              {formatDateTime(locale, approval.decidedAt)}
+                            </time>
+                          </>
+                        ) : null}{' '}
+                        <Link to={`/approvals/${enc(approval.id)}`}>
+                          {t('deployments.approval.open')}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {plan.status === 'approved' ? (
+                  <p className="deployments-muted">{t('deployments.approval.bound')}</p>
+                ) : null}
+                {openApproval ? (
+                  <p className="deployments-muted">{t('deployments.approval.waiting')}</p>
+                ) : null}
+              </Section>
+              <Section title={t('deployments.plan.history')}>
+                {plan.transitions.length === 0 ? (
+                  <p className="deployments-muted">—</p>
+                ) : (
+                  <ol className="deployments-history">
+                    {[...plan.transitions].reverse().map((transition, index) => (
+                      <li key={`${transition.createdAt}-${index}`}>
+                        <strong>
+                          {t(
+                            codeKey(
+                              'deployments.operation',
+                              transition.operation,
+                              'deployments.unknownValue',
+                            ),
+                          )}
+                        </strong>{' '}
+                        <span className="deployments-muted">
+                          <Actor userId={transition.actorUserId} system={transition.actorSystem} />
+                          {' · '}
+                          <time dateTime={transition.createdAt}>
+                            {formatDateTime(locale, transition.createdAt)}
+                          </time>
+                        </span>
+                        {transition.reason ? (
+                          <span className="deployments-muted">
+                            {' · '}
+                            {t(
+                              codeKey(
+                                'deployments.cancelReason',
+                                transition.reason,
+                                'deployments.statusReason.other',
+                              ),
+                              {
+                                code: transition.reason,
+                              },
+                            )}
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </Section>
+            </aside>
+          </div>
+        </>
+      )}
       {dialog === 'submit' ? (
         <SubmitDialog
           plan={plan}

@@ -9,9 +9,12 @@ import type {
   DeploymentFilter,
   DeploymentInput,
   DeploymentProgress,
+  DeploymentReport,
+  DeploymentSecurityContext,
   DeploymentRing,
   DeploymentTarget,
   PlanValidation,
+  Rollout,
   RingInput,
   TargetEvaluation,
   TargetExplanation,
@@ -33,6 +36,7 @@ registerErrorMessages({
   'endpoints.plan_changed': 'deployments.error.planChanged',
   'endpoints.no_window_high_impact': 'deployments.error.noWindowHighImpact',
   'endpoints.evaluation_busy': 'deployments.error.evaluationBusy',
+  'endpoints.export_busy': 'deployments.error.exportBusy',
   'endpoints.editors_full': 'deployments.error.editorsFull',
   'endpoints.approver_not_authorized': 'deployments.error.approverNotAuthorized',
   'endpoints.deploy_write_disabled': 'deployments.error.deployWriteDisabled',
@@ -173,6 +177,22 @@ export const executionApi = {
     normalizePage(
       await api.get<Page<DeploymentAttempt>>(`/deployments/${enc(id)}/attempts`, {
         query: { cursor, limit: pageSize },
+        signal,
+      }),
+    ),
+};
+
+export const reportApi = {
+  report: (id: string, signal?: AbortSignal) =>
+    api.get<DeploymentReport>(`/deployments/${enc(id)}/report`, { signal }),
+  securityContext: (id: string, signal?: AbortSignal) =>
+    api.get<DeploymentSecurityContext>(`/deployments/${enc(id)}/security-context`, { signal }),
+  /** The CSV is an attachment; the browser downloads it with the session cookie. */
+  csvUrl: (id: string) => `/api/v1/deployments/${enc(id)}/report.csv`,
+  rollouts: async (status: string, cursor?: string, signal?: AbortSignal) =>
+    normalizePage(
+      await api.get<Page<Rollout>>('/software/rollouts', {
+        query: { status: status || undefined, cursor, limit: pageSize },
         signal,
       }),
     ),

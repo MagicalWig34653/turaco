@@ -3,9 +3,11 @@ package application
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	endpointspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/public"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 )
@@ -214,5 +216,117 @@ func TestFeedKnownExploitedFirstAndFeedHealth(t *testing.T) {
 	}
 	if len(reasons) != 2 || reasons["cisa_kev"] != "stale" || reasons["other"] != "rate_limited" {
 		t.Fatalf("health entries: %v", reasons)
+	}
+}
+
+type feedDeployments struct {
+	scope   endpointspublic.DeploymentScope
+	calls   int
+	engine  endpointspublic.EngineStatus
+	summary endpointspublic.RolloutSummary
+}
+
+func (f *feedDeployments) RolloutSummary(_ context.Context, scope endpointspublic.DeploymentScope) (endpointspublic.RolloutSummary, error) {
+	f.scope = scope
+	f.calls++
+	out := f.summary
+	if !scope.IncludeItems {
+		out.Items = nil
+	}
+	if !scope.IncludeNames {
+		items := make([]endpointspublic.RolloutItem, len(out.Items))
+		copy(items, out.Items)
+		for i := range items {
+			items[i].Name, items[i].ProductName = "", ""
+		}
+		out.Items = items
+	}
+	return out, nil
+}
+func (f *feedDeployments) DeploymentEngineStatus(context.Context) (endpointspublic.EngineStatus, error) {
+	return f.engine, nil
+}
+
+func TestFeedDeploymentsSourcePermissionsAndHealth(t *testing.T) {
+	now := time.Now()
+	f := &feedDeployments{
+		summary: endpointspublic.RolloutSummary{InProgress: 2, UnassignedFollowups: 3,
+			AttentionCounts: map[string]int{endpointspublic.RolloutRingHalted: 1, endpointspublic.RolloutPaused: 1, endpointspublic.RolloutAwaitingPromotion: 1}, Items: []endpointspublic.RolloutItem{
+				{ID: "d1", Reference: "DEP-1", Kind: endpointspublic.RolloutRingHalted, Name: "Secret rollout", ProductName: "Secret product", Since: now},
+				{ID: "d2", Reference: "DEP-2", Kind: endpointspublic.RolloutPaused, Since: now},
+				{ID: "d3", Reference: "DEP-3", Kind: endpointspublic.RolloutAwaitingPromotion, Since: now}}},
+		engine: endpointspublic.EngineStatus{Active: 1, Stale: true, ClearPending: 2},
+	}
+	s := NewFeedService(nil, FeedSources{Deployments: f})
+	entries := func(p FeedPrincipal) map[string]FeedEntry {
+		out, err := s.Feed(context.Background(), p, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]FeedEntry{}
+		for _, e := range out.Entries {
+			m[e.TitleKey] = e
+		}
+		return m
+	}
+	// deployments.view: names, rollouts, severities by kind, but no engine health.
+	got := entries(FeedPrincipal{UserID: "u", Deployments: true})
+	if f.scope.IncludeNames != true {
+		t.Fatal("names not requested for deployments.view")
+	}
+	if e := got["briefing.feed.deployment_ring_halted"]; e.Severity != SeverityCritical || e.Params["name"] != "Secret rollout" || e.Reference == nil || e.Reference.Type != "deployment" || e.LinkPath != "/deployments/d1" {
+		t.Fatalf("halted entry %+v", e)
+	}
+	if e := got["briefing.feed.deployment_paused"]; e.Severity != SeverityWarning {
+		t.Fatalf("paused entry %+v", e)
+	}
+	if e := got["briefing.feed.deployment_awaiting_promotion"]; e.Severity != SeverityInfo {
+		t.Fatalf("awaiting entry %+v", e)
+	}
+	if e := got["briefing.feed.deployments_in_progress"]; e.Count == nil || *e.Count != 2 {
+		t.Fatalf("in progress entry %+v", e)
+	}
+	if _, ok := got["briefing.feed.deployment_engine_stale"]; ok {
+		t.Fatal("engine health without endpoints.manage")
+	}
+	if e := got["briefing.feed.deployments_unassigned_followups"]; e.Count == nil || *e.Count != 3 || e.Reference != nil {
+		t.Fatalf("unassigned follow-ups entry %+v", e)
+	}
+	// endpoints.manage only: counts per kind and engine health, no ids, references, names or links to single rollouts.
+	s = NewFeedService(nil, FeedSources{Deployments: f})
+	got = entries(FeedPrincipal{UserID: "u", Endpoints: true})
+	if f.scope.IncludeNames || f.scope.IncludeItems {
+		t.Fatal("names or items requested without deployments.view")
+	}
+	out, err := s.Feed(context.Background(), FeedPrincipal{UserID: "u", Endpoints: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range out.Entries {
+		if e.Reference != nil || strings.Contains(e.LinkPath, "/deployments/") || e.Params["reference"] != nil || e.Params["name"] != nil {
+			t.Fatalf("entry with a rollout id or reference for endpoints.manage only: %+v", e)
+		}
+	}
+	if e := got["briefing.feed.deployments_ring_halted_count"]; e.Count == nil || *e.Count != 1 || e.Severity != SeverityCritical {
+		t.Fatalf("halted count entry %+v", e)
+	}
+	if e := got["briefing.feed.deployments_paused_count"]; e.Count == nil || *e.Count != 1 {
+		t.Fatalf("paused count entry %+v", e)
+	}
+	if _, ok := got["briefing.feed.deployment_ring_halted"]; ok {
+		t.Fatal("single rollout entry for endpoints.manage only")
+	}
+	if _, ok := got["briefing.feed.deployment_engine_stale"]; !ok {
+		t.Fatal("stale engine not reported")
+	}
+	if c := got["briefing.feed.deployment_engine_clear_pending"]; c.Count == nil || *c.Count != 2 {
+		t.Fatalf("clear pending entry %+v", c)
+	}
+	// No relevant permission: the source is not called.
+	f.calls = 0
+	s = NewFeedService(nil, FeedSources{Deployments: f, Approvals: feedApprovals{}})
+	entries(FeedPrincipal{UserID: "u", Briefing: true})
+	if f.calls != 0 {
+		t.Fatal("deployment source read without permission")
 	}
 }

@@ -613,3 +613,87 @@
     transition: width 0.3s ease;
   }
 }
+
+/* Reporting (F9 G4) */
+.deployments-report {
+  display: grid;
+  gap: 16px;
+}
+.deployments-report-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.deployments-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.deployments-kpi {
+  padding: 12px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-raised);
+}
+.deployments-kpi dt {
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.deployments-kpi dd {
+  display: grid;
+  margin: 4px 0 0;
+}
+.deployments-kpi strong {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.deployments-table-scroll {
+  overflow-x: auto;
+}
+.deployments-report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.deployments-report-table th,
+.deployments-report-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-token);
+  text-align: start;
+  vertical-align: top;
+}
+.deployments-fact-row {
+  display: contents;
+}
+.deployments-cluster-cards,
+.deployments-followups,
+.deployments-advisories {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-cluster-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-raised);
+}
+.deployments-rollout-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.deployments-rollout {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-raised);
+}

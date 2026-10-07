@@ -19,6 +19,6 @@ func BriefingFeed(pool *pgxpool.Pool, manual *briefingapp.Service) *briefingapp.
 	approvals := approvalspublic.New(approvalsapp.NewService(approvalsrepo.New(pool), dir, nil))
 	return briefingapp.NewFeedService(manual, briefingapp.FeedSources{
 		Security: securitypublic.NewAdvisories(Security(pool)), Planning: planningpublic.New(Planning(pool)),
-		Desk: deskpublic.NewBriefing(pool), Endpoints: endpointspublic.NewHealth(pool), Directory: orgpublic.NewSyncHealth(orgrepo.New(pool)), Approvals: approvals,
+		Desk: deskpublic.NewBriefing(pool), Endpoints: endpointspublic.NewHealth(pool), Deployments: endpointspublic.NewHealth(pool), Directory: orgpublic.NewSyncHealth(orgrepo.New(pool)), Approvals: approvals,
 	})
 }

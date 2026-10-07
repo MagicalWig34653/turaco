@@ -249,6 +249,7 @@ func TestFeedPermissionTableExactFlagsAndRedaction(t *testing.T) {
 		"tickets.view": {Desk: true, Tickets: true}, "tickets.manage": {Desk: true, Tickets: true, Autotask: true},
 		"majorincidents.manage": {Desk: true},
 		"endpoints.manage":      {Endpoints: true, Directory: true}, "integrations.intune.manage": {Endpoints: true, Directory: true},
+		"deployments.view": {Deployments: true}, "deployments.manage": {Deployments: true}, "deployments.execute": {Deployments: true},
 		"organization.directory.sync": {Directory: true},
 	}
 	if len(feedPermissions()) != len(expected) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
@@ -19,6 +19,7 @@ import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { executionApi } from './api';
 import { CancelDialog } from './CancelDialog';
 import { Section } from './components';
+import { usePolling } from './usePolling';
 import { codeKey, sortRings } from './helpers';
 import {
   attemptTone,
@@ -50,37 +51,6 @@ import {
   type DeploymentTarget,
   type RingProgress,
 } from './types';
-
-/** Calls `tick` every interval while enabled and the tab is visible; refreshes when it becomes visible again. */
-function usePolling(tick: () => void, enabled: boolean, intervalMs = pollIntervalMs) {
-  const ref = useRef(tick);
-  ref.current = tick;
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let timer: number | undefined;
-    const stop = () => {
-      if (timer !== undefined) window.clearInterval(timer);
-      timer = undefined;
-    };
-    const start = () => {
-      stop();
-      timer = window.setInterval(() => ref.current(), intervalMs);
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') stop();
-      else {
-        ref.current();
-        start();
-      }
-    };
-    if (document.visibilityState !== 'hidden') start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [enabled, intervalMs]);
-}
 
 type RunDialogState =
   { kind: 'start' | 'halt' | 'cancel' } | { kind: 'ringHalt' | 'ringApproval'; ring: RingProgress };

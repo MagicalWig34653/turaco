@@ -157,6 +157,8 @@ export type Deployment = {
   productVersion: string;
   intent: DeploymentIntent;
   supersede: boolean;
+  /** Follow-up Tasks for failure clusters and halts (F9 G4). */
+  createTasks?: boolean;
   status: DeploymentStatus;
   statusReason: string | null;
   ownerUserId: string;
@@ -299,6 +301,7 @@ export type DeploymentInput = {
   softwareVersionId: string;
   intent: DeploymentIntent;
   supersede: boolean;
+  createTasks?: boolean;
   ownerUserId?: string;
 };
 
@@ -386,4 +389,92 @@ export type DeploymentAttempt = {
   requestedAt: string;
   outcomeCode: string;
   finishedAt?: string | null;
+};
+
+// Reporting (F9 G4): mirrors GET /deployments/{id}/report, /security-context and /software/rollouts.
+
+export type ReportGate = { gate: string; passed: boolean; at: string; reason?: string | null };
+
+export type RingReport = {
+  ringId: string;
+  ringRunId: string;
+  position: number;
+  name: string;
+  status: string;
+  statusReason?: string | null;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  successThresholdPercent: number;
+  counts: Record<string, number>;
+  successRatePercent?: number | null;
+  medianSecondsToSuccess?: number | null;
+  gates: ReportGate[];
+};
+
+export type FailureCluster = {
+  findingId: string;
+  dimension: string;
+  value: string;
+  failed: number;
+  total: number;
+  raisedAt: string;
+};
+
+export type DeploymentReport = {
+  deployment: Deployment;
+  generatedAt: string;
+  totals: Record<string, number>;
+  successRatePercent?: number | null;
+  medianSecondsToSuccess?: number | null;
+  rings: RingReport[];
+  topFailureReasons: { code: string; count: number }[];
+  clusters: FailureCluster[];
+  people: {
+    ownerUserId?: string | null;
+    createdBy?: string | null;
+    submittedBy?: string | null;
+    scheduledBy?: string | null;
+    startedBy?: string | null;
+    cancelledBy?: string | null;
+    approvedAt?: string | null;
+    promotions?: { ringId: string; by?: string | null; at: string }[];
+  };
+  followUps: { reason: string; ringId?: string | null; taskId: string; createdAt: string }[];
+};
+
+export type SecurityContextAdvisory = {
+  id: string;
+  reference: string;
+  title: string;
+  severity: string;
+  status: string;
+  knownExploited: boolean;
+  openFindings: number;
+  affectedDevices: number;
+};
+
+export type DeploymentSecurityContext = {
+  deploymentId: string;
+  productName: string;
+  productVersion: string;
+  detailed: boolean;
+  advisories?: SecurityContextAdvisory[] | null;
+  advisoryCount: number;
+  openFindingCount: number;
+  targetDevices: number;
+  truncated: boolean;
+};
+
+export type Rollout = {
+  deployment: Deployment;
+  ringCount: number;
+  currentPosition?: number | null;
+  currentRingName?: string | null;
+  currentRingStatus?: string | null;
+  awaitingPromotion: boolean;
+  haltedRings: number;
+  counts: Record<string, number>;
+  targetTotal: number;
+  decided: number;
+  successRatePercent?: number | null;
 };

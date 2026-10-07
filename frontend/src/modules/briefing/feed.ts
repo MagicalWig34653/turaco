@@ -15,6 +15,14 @@ const titles: Record<string, MessageKey> = {
   'briefing.feed.endpoint_sync': 'briefing.feed.endpoint_sync',
   'briefing.feed.endpoint_errors': 'briefing.feed.endpoint_errors',
   'briefing.feed.directory_sync': 'briefing.feed.directory_sync',
+  'briefing.feed.deployment_ring_halted': 'briefing.feed.deployment_ring_halted',
+  'briefing.feed.deployment_paused': 'briefing.feed.deployment_paused',
+  'briefing.feed.deployment_awaiting_promotion': 'briefing.feed.deployment_awaiting_promotion',
+  'briefing.feed.deployments_in_progress': 'briefing.feed.deployments_in_progress',
+  'briefing.feed.deployment_engine_stale': 'briefing.feed.deployment_engine_stale',
+  'briefing.feed.deployment_engine_clear_pending': 'briefing.feed.deployment_engine_clear_pending',
+  'briefing.feed.deployment_engine_resolving_stuck':
+    'briefing.feed.deployment_engine_resolving_stuck',
   'briefing.feed.pending_approvals': 'briefing.feed.pending_approvals',
 };
 
@@ -66,6 +74,8 @@ export const feedSources: Record<string, MessageKey> = {
   autotask: 'briefing.source.autotask',
   endpoints: 'briefing.source.endpoints',
   endpoint_errors: 'briefing.source.endpoints',
+  deployments: 'briefing.source.endpoints',
+  deployment_engine: 'briefing.source.endpoints',
   organization: 'briefing.source.organization',
   directory: 'briefing.source.organization',
   approvals: 'briefing.source.approvals',
