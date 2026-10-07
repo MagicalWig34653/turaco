@@ -962,6 +962,15 @@ export const de: Record<MessageKey, string> = {
   'briefing.feed.autotask': 'Autotask-Abgleich: {failed} fehlgeschlagen, {pending} ausstehend',
   'briefing.feed.endpoint_sync': 'Endpoint-Abgleich überfällig: {provider}',
   'briefing.feed.endpoint_errors': 'Endpoint-Provider-Fehler',
+  'briefing.feed.deployment_ring_halted': 'Verteilung {reference}: ein Ring ist angehalten',
+  'briefing.feed.deployment_paused': 'Verteilung {reference} ist pausiert',
+  'briefing.feed.deployment_awaiting_promotion':
+    'Verteilung {reference} wartet auf die Freigabe des nächsten Rings',
+  'briefing.feed.deployments_in_progress': 'Laufende Verteilungen',
+  'briefing.feed.deployment_engine_stale': 'Die Verteilungs-Engine ist länger nicht gelaufen',
+  'briefing.feed.deployment_engine_clear_pending':
+    'Zuweisungen von Verteilungen warten auf ihre Entfernung',
+  'briefing.feed.deployment_engine_resolving_stuck': 'Verteilungen hängen beim Auflösen der Ziele',
   'briefing.feed.directory_sync': 'Verzeichnisabgleich für {provider} fehlgeschlagen: {reason}',
   'briefing.feed.pending_approvals': 'Ausstehende Genehmigungen',
   'briefing.kind.manual_item': 'Manueller Eintrag',
@@ -1675,6 +1684,8 @@ export const de: Record<MessageKey, string> = {
   'notifications.software.approval_requested':
     'Eine Softwareversion wartet auf Ihre Freigabe: {title}',
   'notifications.category.software.approval_requested': 'Softwarefreigabe angefordert',
+  'notifications.deployment.attention': 'Eine Verteilung braucht deine Aufmerksamkeit: {title}',
+  'notifications.category.deployment.attention': 'Verteilung braucht Aufmerksamkeit',
   'notifications.majorincident.update': 'Neuigkeiten zu einer Störung, der du folgst: {title}',
   'notifications.category.majorincident.update': 'Eine Störung, der ich folge, hat Neuigkeiten',
   'incidents.detail.title': 'Störung',

@@ -61,6 +61,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.software.approval_requested',
       labelKey: 'notifications.category.software.approval_requested',
     },
+    'deployment.attention': {
+      textKey: 'notifications.deployment.attention',
+      labelKey: 'notifications.category.deployment.attention',
+    },
     'asset.assigned': {
       textKey: 'notifications.asset.assigned',
       labelKey: 'notifications.category.asset.assigned',

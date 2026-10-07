@@ -380,7 +380,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 				bad    bool
 			}{{"stale", eh.Active, eh.Stale}, {"clear_pending", eh.ClearPending, eh.ClearPending > 0}, {"resolving_stuck", eh.ResolvingStuck, eh.ResolvingStuck > 0}} {
 				if problem.bad {
-					v = append(v, FeedEntry{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.deployment_engine", Params: map[string]any{"reason": problem.reason},
+					v = append(v, FeedEntry{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.deployment_engine_" + problem.reason, Params: map[string]any{},
 						Count: count(problem.n), OccurredAt: eh.LastTickAt, LinkPath: "/deployments", Source: "endpoints"})
 				}
 			}
