@@ -40,6 +40,10 @@ type RunnerOptions struct {
 	// considered abandoned and may be claimed again. Every handler timeout must
 	// be shorter. Default 30m.
 	LockTimeout time.Duration
+	// Gate, when set, is asked after a job was claimed whether it may run. A job it refuses is completed without
+	// running (module switches skip the jobs of a disabled module, ADR-0032); an error returns the job for a
+	// delayed retry.
+	Gate func(ctx context.Context, jobType string) (run bool, err error)
 }
 
 type registration struct {
@@ -213,6 +217,24 @@ func (r *Runner) RunOnce(ctx context.Context) (processed bool, err error) {
 		log.Warn("job abandoned with exhausted attempts")
 		r.finish(ctx, log, job, outcomeFailed, "attempts exhausted (abandoned)", 0)
 		return true, nil
+	}
+
+	if r.opts.Gate != nil {
+		run, gerr := r.opts.Gate(ctx, job.Type)
+		switch {
+		case gerr != nil && ctx.Err() != nil:
+			r.finish(ctx, log, job, outcomeInterrupted, "interrupted by worker shutdown: "+gerr.Error(), 0)
+			return true, nil
+		case gerr != nil:
+			delay := backoff(job.Attempts)
+			log.Warn("job gate failed, will retry", "error", gerr, "retry_in", delay)
+			r.finish(ctx, log, job, outcomeRetry, "job gate: "+gerr.Error(), delay)
+			return true, nil
+		case !run:
+			log.Info("job skipped: its module is switched off")
+			r.finish(ctx, log, job, outcomeCompleted, "", 0)
+			return true, nil
+		}
 	}
 
 	r.mu.RLock()

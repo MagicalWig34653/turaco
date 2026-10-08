@@ -88,7 +88,9 @@ func main() {
 		os.Exit(1)
 	}
 	lockTimeout := runnerLockTimeout(ldapCfg.Enabled(), ldapCfg.SyncTimeout)
-	opts := jobs.RunnerOptions{LockTimeout: lockTimeout}
+	// Module switches (ADR-0032): jobs of a switched-off module are skipped; retention jobs still run.
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	opts := jobs.RunnerOptions{LockTimeout: lockTimeout, Gate: moduleSvc.JobGate}
 	runner := jobs.NewRunner(pool, opts, logger)
 
 	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)

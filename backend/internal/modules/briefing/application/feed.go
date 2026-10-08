@@ -101,12 +101,20 @@ type FeedSources struct {
 type FeedService struct {
 	manual  *Service
 	sources FeedSources
+	filter  func(context.Context, FeedSources) FeedSources
 	mu      sync.Mutex
 	cache   map[FeedPrincipal]cachedFeed
 }
 
 func NewFeedService(manual *Service, sources FeedSources) *FeedService {
 	return &FeedService{manual: manual, sources: sources, cache: make(map[FeedPrincipal]cachedFeed)}
+}
+
+// WithSourceFilter sets a function that removes the sources of switched-off modules on every computation (module
+// switches, ADR-0032). A removed source contributes nothing and is not reported as unavailable.
+func (s *FeedService) WithSourceFilter(f func(context.Context, FeedSources) FeedSources) *FeedService {
+	s.filter = f
+	return s
 }
 
 type cachedFeed struct {
@@ -139,6 +147,10 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 		return cached.result, nil
 	}
 	s.mu.Unlock()
+	src := s.sources
+	if s.filter != nil {
+		src = s.filter(ctx, src)
+	}
 	until := now.AddDate(0, 0, 14)
 	add := func(source string, entries []FeedEntry, more bool) {
 		if len(entries) > feedLimit {
@@ -180,9 +192,9 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("briefing", v, r.NextCursor != "")
 		}
 	}
-	if p.Security && s.sources.Security != nil {
+	if p.Security && src.Security != nil {
 		a, e := sourceCall(ctx, func(c context.Context) ([]securitypublic.ApplicableSummary, error) {
-			return s.sources.Security.ApplicableAdvisorySummaries(c, securitypublic.ReadScope{IncludeDetails: true})
+			return src.Security.ApplicableAdvisorySummaries(c, securitypublic.ReadScope{IncludeDetails: true})
 		})
 		if e != nil {
 			fail("security_advisory", e)
@@ -204,7 +216,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("security_advisory", v, more)
 		}
 		r, e := sourceCall(ctx, func(c context.Context) (securitypublic.RiskReviewPage, error) {
-			return s.sources.Security.RiskReviewsDuePage(c, securitypublic.ReadScope{IncludeDetails: true, Limit: feedLimit + 1})
+			return src.Security.RiskReviewsDuePage(c, securitypublic.ReadScope{IncludeDetails: true, Limit: feedLimit + 1})
 		})
 		if e != nil {
 			fail("risk_review_due", e)
@@ -220,7 +232,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			}
 			add("risk_review_due", v, r.NextCursor != "")
 		}
-		fh, e := sourceCall(ctx, s.sources.Security.AdvisoryFeedHealth)
+		fh, e := sourceCall(ctx, src.Security.AdvisoryFeedHealth)
 		if e != nil {
 			fail("advisory_feed", e)
 		} else {
@@ -242,14 +254,14 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("advisory_feed", v, false)
 		}
 	}
-	if s.sources.Planning != nil {
+	if src.Planning != nil {
 		if p.Planning || p.Changes {
 			type maintenancePage struct {
 				items []planningpublic.UpcomingMaintenance
 				more  bool
 			}
 			page, e := sourceCall(ctx, func(c context.Context) (maintenancePage, error) {
-				items, more, err := s.sources.Planning.UpcomingMaintenance(c, now, until, planningpublic.MaintenanceScope{IncludeChangeDetails: p.Changes})
+				items, more, err := src.Planning.UpcomingMaintenance(c, now, until, planningpublic.MaintenanceScope{IncludeChangeDetails: p.Changes})
 				return maintenancePage{items, more}, err
 			})
 			m, more := page.items, page.more
@@ -274,7 +286,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 				scope = planningpublic.DueMilestoneScope{AllOwners: true, Limit: feedLimit + 1}
 			}
 			m, e := sourceCall(ctx, func(c context.Context) ([]planningpublic.DueMilestone, error) {
-				return s.sources.Planning.DueMilestones(c, now, until, scope)
+				return src.Planning.DueMilestones(c, now, until, scope)
 			})
 			if e != nil {
 				fail("milestone_due", e)
@@ -288,9 +300,9 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			}
 		}
 	}
-	if p.Desk && s.sources.Desk != nil {
+	if p.Desk && src.Desk != nil {
 		m, e := sourceCall(ctx, func(c context.Context) ([]deskpublic.MajorIncident, error) {
-			return s.sources.Desk.OpenMajorIncidents(c, deskpublic.ReadScope{IncludeDetails: true})
+			return src.Desk.OpenMajorIncidents(c, deskpublic.ReadScope{IncludeDetails: true})
 		})
 		if e != nil {
 			fail("major_incident", e)
@@ -303,9 +315,9 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("major_incident", v, false)
 		}
 	}
-	if p.Tickets && s.sources.Desk != nil {
+	if p.Tickets && src.Desk != nil {
 		n, e := sourceCall(ctx, func(c context.Context) (int, error) {
-			return s.sources.Desk.UnassignedOpenTickets(c, deskpublic.ReadScope{IncludeDetails: true})
+			return src.Desk.UnassignedOpenTickets(c, deskpublic.ReadScope{IncludeDetails: true})
 		})
 		if e != nil {
 			fail("ticket_backlog", e)
@@ -313,16 +325,16 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("ticket_backlog", []FeedEntry{{Kind: "ticket_backlog", Severity: SeverityInfo, TitleKey: "briefing.feed.ticket_backlog", Params: map[string]any{}, Count: count(n), LinkPath: "/service-desk?assignee=none", Source: "servicedesk"}}, false)
 		}
 	}
-	if p.Autotask && s.sources.Desk != nil {
-		h, e := sourceCall(ctx, s.sources.Desk.SyncHealth)
+	if p.Autotask && src.Desk != nil {
+		h, e := sourceCall(ctx, src.Desk.SyncHealth)
 		if e != nil {
 			fail("autotask", e)
 		} else if h.Failed > 0 || h.Pending > 0 {
 			add("autotask", []FeedEntry{{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.autotask", Params: map[string]any{"failed": h.Failed, "pending": h.Pending}, Count: count(h.Failed + h.Pending), OccurredAt: h.OldestFailureAt, LinkPath: "/settings/integrations", Source: "servicedesk"}}, false)
 		}
 	}
-	if p.Endpoints && s.sources.Endpoints != nil {
-		h, e := sourceCall(ctx, s.sources.Endpoints.SyncHealth)
+	if p.Endpoints && src.Endpoints != nil {
+		h, e := sourceCall(ctx, src.Endpoints.SyncHealth)
 		if e != nil {
 			fail("endpoints", e)
 		} else {
@@ -332,16 +344,16 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			}
 			add("endpoints", v, false)
 		}
-		n, e := sourceCall(ctx, s.sources.Endpoints.OpenProviderErrors)
+		n, e := sourceCall(ctx, src.Endpoints.OpenProviderErrors)
 		if e != nil {
 			fail("endpoint_errors", e)
 		} else if n > 0 {
 			add("endpoint_errors", []FeedEntry{{Kind: "integration_health", Severity: SeverityWarning, TitleKey: "briefing.feed.endpoint_errors", Params: map[string]any{}, Count: count(n), LinkPath: "/endpoint-findings", Source: "endpoints"}}, false)
 		}
 	}
-	if (p.Endpoints || p.Deployments) && s.sources.Deployments != nil {
+	if (p.Endpoints || p.Deployments) && src.Deployments != nil {
 		sum, e := sourceCall(ctx, func(c context.Context) (endpointspublic.RolloutSummary, error) {
-			return s.sources.Deployments.RolloutSummary(c, endpointspublic.DeploymentScope{IncludeNames: p.Deployments, IncludeItems: p.Deployments, Limit: feedLimit})
+			return src.Deployments.RolloutSummary(c, endpointspublic.DeploymentScope{IncludeNames: p.Deployments, IncludeItems: p.Deployments, Limit: feedLimit})
 		})
 		if e != nil {
 			fail("deployments", e)
@@ -390,8 +402,8 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("deployments", v, sum.More)
 		}
 	}
-	if p.Endpoints && s.sources.Deployments != nil {
-		eh, e := sourceCall(ctx, s.sources.Deployments.DeploymentEngineStatus)
+	if p.Endpoints && src.Deployments != nil {
+		eh, e := sourceCall(ctx, src.Deployments.DeploymentEngineStatus)
 		if e != nil {
 			fail("deployment_engine", e)
 		} else {
@@ -409,9 +421,9 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("deployment_engine", v, false)
 		}
 	}
-	if p.Directory && s.sources.Directory != nil {
+	if p.Directory && src.Directory != nil {
 		h, e := sourceCall(ctx, func(c context.Context) ([]orgpublic.DirectorySyncStatus, error) {
-			return s.sources.Directory.DirectorySyncStatus(c, orgpublic.SyncScope{})
+			return src.Directory.DirectorySyncStatus(c, orgpublic.SyncScope{})
 		})
 		if e != nil {
 			fail("directory", e)
@@ -426,8 +438,8 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 			add("directory", v, false)
 		}
 	}
-	if s.sources.Approvals != nil {
-		n, e := sourceCall(ctx, func(c context.Context) (int, error) { return s.sources.Approvals.PendingForUserCount(c, p.UserID) })
+	if src.Approvals != nil {
+		n, e := sourceCall(ctx, func(c context.Context) (int, error) { return src.Approvals.PendingForUserCount(c, p.UserID) })
 		if e != nil {
 			fail("pending_approvals", e)
 		} else if n > 0 {
