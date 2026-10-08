@@ -110,9 +110,9 @@ func (p *Provider) respond(req ai.ChatRequest) ai.ChatResponse {
 	id := idRE.FindString(last)
 	switch {
 	case id != "" && strings.Contains(lower, "ticket") && has("tickets.summarize"):
-		return ai.ChatResponse{ToolCalls: []ai.ToolCall{{ID: "call-1", Name: "tickets.summarize", Arguments: json.RawMessage(`{"ticketId":"` + id + `"}`)}}}
+		return ai.ChatResponse{ToolCalls: []ai.ToolCall{{ID: "call-1", Name: "tickets.summarize", Arguments: mustArgs("ticketId", id)}}}
 	case id != "" && strings.Contains(lower, "device") && has("devices.context_summary"):
-		return ai.ChatResponse{ToolCalls: []ai.ToolCall{{ID: "call-1", Name: "devices.context_summary", Arguments: json.RawMessage(`{"deviceId":"` + id + `"}`)}}}
+		return ai.ChatResponse{ToolCalls: []ai.ToolCall{{ID: "call-1", Name: "devices.context_summary", Arguments: mustArgs("deviceId", id)}}}
 	case (strings.Contains(lower, "search") || strings.Contains(lower, "knowledge")) && has("knowledge.search"):
 		q, _ := json.Marshal(strings.TrimSpace(last))
 		if len(q) > 200 {
@@ -121,4 +121,9 @@ func (p *Provider) respond(req ai.ChatRequest) ai.ChatResponse {
 		return ai.ChatResponse{ToolCalls: []ai.ToolCall{{ID: "call-1", Name: "knowledge.search", Arguments: json.RawMessage(`{"query":` + string(q) + `}`)}}}
 	}
 	return ai.ChatResponse{Content: "Fake assistant: " + last}
+}
+
+func mustArgs(key, value string) json.RawMessage {
+	raw, _ := json.Marshal(map[string]string{key: value})
+	return raw
 }
