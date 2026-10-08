@@ -1,4 +1,11 @@
 export const en = {
+  'ticketWorkspace.saveNote': 'Save internal note',
+  'ticketWorkspace.sendReply': 'Send public reply',
+  'myWork.polish.priorityCaption': 'Highest priority in loaded work',
+  'myWork.polish.scope': 'A snapshot of loaded tasks. Your full queue is below.',
+  'overview.coverage': 'Your briefing',
+  'overview.coverageHint': 'Operational signals, with their source and time.',
+  'overview.focusHint': 'Start here. The most pressing items across your work and briefing.',
   'overview.eyebrow': 'Overview · {date}',
   'overview.greeting.morning': 'Good morning, {name}.',
   'overview.greeting.afternoon': 'Good afternoon, {name}.',

@@ -1,6 +1,16 @@
 import type { MessageKey } from './messages.en';
 
 export const de: Record<MessageKey, string> = {
+  'ticketWorkspace.saveNote': 'Interne Notiz speichern',
+  'ticketWorkspace.sendReply': 'Öffentliche Antwort senden',
+  'myWork.polish.priorityCaption': 'Höchste Priorität in geladenen Aufgaben',
+  'myWork.polish.scope':
+    'Eine Momentaufnahme der geladenen Aufgaben. Ihre Warteschlange folgt unten.',
+  'overview.coverage': 'Ihr Briefing',
+  'overview.coverageHint': 'Operative Hinweise mit Quelle und Zeitpunkt.',
+  'overview.focusHint':
+    'Hier beginnen: die wichtigsten Punkte aus Ihren Aufgaben und dem Briefing.',
+
   'overview.eyebrow': 'Übersicht · {date}',
   'overview.greeting.morning': 'Guten Morgen, {name}.',
   'overview.greeting.afternoon': 'Guten Tag, {name}.',

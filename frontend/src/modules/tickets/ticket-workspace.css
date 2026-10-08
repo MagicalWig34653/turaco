@@ -440,3 +440,81 @@ html[data-motion='reduced'] .incident-workspace * {
 .incident-thread.workspace-card {
   box-shadow: none;
 }
+
+/* Conversation is the reading surface; the inspector keeps operational context close. */
+.incident-workspace {
+  max-width: 1480px;
+  margin-inline: auto;
+}
+.incident-workspace .incident-context {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  padding: 2px 6px 8px 2px;
+}
+.incident-context .incident-actions {
+  background: var(--surface-selected);
+}
+.incident-context .incident-actionbar {
+  position: static;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  flex-wrap: wrap;
+}
+.incident-actions .incident-actionbar-primary {
+  width: 100%;
+}
+.incident-actions .incident-actionbar-primary > .btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+.incident-thread .incident-section-head {
+  background: var(--surface-base);
+}
+.incident-thread .incident-event-body {
+  padding: 16px 18px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+.incident-thread .incident-event:first-child .incident-event-body {
+  background: var(--surface-muted-token);
+}
+.incident-thread .incident-event-internal .incident-event-body {
+  background: var(--state-warning-bg);
+  border-color: color-mix(in srgb, var(--state-warning) 30%, var(--border-token));
+  box-shadow: inset 3px 0 var(--state-warning);
+}
+.incident-event > .workspace-avatar {
+  margin-top: 12px;
+}
+.incident-thread .incident-composer {
+  background: var(--surface-base);
+}
+.incident-composer:focus-within {
+  box-shadow: inset 0 2px var(--accent);
+}
+.incident-thread .incident-composer-internal {
+  background: color-mix(in srgb, var(--state-warning-bg) 45%, var(--surface-base));
+}
+@media (max-width: 800px) {
+  .incident-workspace .incident-context {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+  .incident-thread .incident-event-body {
+    padding: 12px;
+  }
+  .incident-composer-footer {
+    flex-wrap: wrap;
+  }
+}
