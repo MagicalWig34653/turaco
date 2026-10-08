@@ -1,3 +1,4 @@
+import { useModules } from '../../platform/modules/ModulesProvider';
 import {
   createContext,
   useCallback,
@@ -23,6 +24,7 @@ const Context = createContext<{
 }>({ refresh: () => {}, open: () => {} });
 export function AiProvider({ children }: { children: ReactNode }) {
   const { session } = useSession();
+  const { enabled } = useModules();
   const [status, setStatus] = useState<Status>();
   const [generation, setGeneration] = useState(0);
   const [panel, setPanel] = useState<{ context?: ResourceRef | undefined; sequence: number }>();
@@ -59,7 +61,7 @@ export function AiProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider value={{ status, refresh, open }}>
       {children}
-      {status?.enabled && status.permissions.use && (
+      {enabled('ai') && status?.enabled && status.permissions.use && (
         <AssistantPanel
           key={session?.userId}
           status={status}
@@ -75,8 +77,22 @@ export function AiProvider({ children }: { children: ReactNode }) {
 export function useAi() {
   const context = useContext(Context);
   const { can } = usePresence();
-  const gated = useMemo(() => aiCan(context.status, can), [context.status, can]);
-  return { ...context, can: gated };
+  const { enabled, refresh: refreshModules } = useModules();
+  const refresh = () => {
+    context.refresh();
+    refreshModules();
+  };
+  const gated = useMemo(
+    () =>
+      aiCan(
+        context.status
+          ? { ...context.status, enabled: context.status.enabled && enabled('ai') }
+          : undefined,
+        can,
+      ),
+    [context.status, can, enabled],
+  );
+  return { ...context, refresh, can: gated };
 }
 export function AskTuraco({ context }: { context?: ResourceRef }) {
   const { can, open } = useAi();

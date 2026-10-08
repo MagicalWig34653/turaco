@@ -11108,7 +11108,7 @@ paths:
     get:
       operationId: getModulesStatus
       summary: Which modules are effectively on (any signed-in User).
-      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` stay reachable."
+      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*` stay reachable while the module is off (their own admin permissions apply)."
       security:
         - sessionAuth: []
       responses:

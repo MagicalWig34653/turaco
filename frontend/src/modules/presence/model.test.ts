@@ -102,6 +102,21 @@ describe('Presence visibility across navigation, palette and direct routes', () 
     ).toEqual(['presenceTeam']);
   });
 });
+it('keeps administration reachable with the runtime setting off', () => {
+  const can = presenceCan(
+    { ...status, enabled: false, permissions: { ...status.permissions, admin: true } },
+    () => false,
+  );
+  expect(can('presence.admin')).toBe(true);
+  expect(can('presence.manage_own')).toBe(false);
+  expect(
+    canViewRoute(
+      can,
+      appRoutes.find((route) => route.id === 'presenceAdmin')!,
+      () => false,
+    ),
+  ).toBe(true);
+});
 describe('bounded calendars and server occurrences', () => {
   const now = new Date('2026-10-08T18:00:00Z');
   it('clips the current week to today to satisfy the actual rolling 24-hour backend limit', () => {

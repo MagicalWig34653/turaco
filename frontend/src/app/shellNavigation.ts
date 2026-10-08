@@ -1,3 +1,4 @@
+import type { ModuleEnabled } from '../platform/modules/model';
 import type { MessageKey } from '../platform/i18n/i18n';
 import type { CanFn } from '../platform/session/permissions';
 import { appRoutes, canViewRoute, type AppRoute, type NavGroup } from './routes';
@@ -17,14 +18,17 @@ const labels: Record<NavGroup, MessageKey> = {
 };
 
 /** Presentation groups reuse the route registry's visibility rules unchanged. */
-export function shellNavigation(can: CanFn): { label: MessageKey; items: AppRoute[] }[] {
+export function shellNavigation(
+  can: CanFn,
+  enabled?: ModuleEnabled,
+): { label: MessageKey; items: AppRoute[] }[] {
   const groups = new Map<MessageKey, AppRoute[]>([
     ['shell.workspace', []],
     ['shell.personal', []],
     ['shell.serviceDesk', []],
   ]);
   for (const route of appRoutes) {
-    if (!route.nav || !canViewRoute(can, route)) continue;
+    if (!route.nav || !canViewRoute(can, route, enabled)) continue;
     const label = workspace.has(route.id)
       ? 'shell.workspace'
       : support.has(route.id)

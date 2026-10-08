@@ -2,9 +2,12 @@
 
 Routes: `/presence`, `/presence/teams`, `/admin/presence`. The authenticated
 provider reads `/presence/status`, polls every minute and refreshes on window
-focus. Failed, missing or disabled status hides navigation, palette entries,
-direct screens and embedded hints. Status permissions override session grants
-for Presence only. All mutation authorization remains on the backend.
+focus. Failed or missing status hides Presence surfaces. Runtime-disabled status hides
+operational screens and hints, but administration remains reachable when the status
+endpoint grants `admin`. Operational visibility additionally requires `/modules/status`.
+Status permissions override session grants for Presence only. All mutation authorization
+remains on the backend. See [module switches](../../platform/modules/README.md) for the
+current backend restriction on settings access while a module is off.
 
 My presence groups server-expanded occurrences into UTC calendar days, shows
 local entry times and restricts week/month windows to today or later. The

@@ -3,9 +3,10 @@
 The status read gates all AI surfaces, including the `/admin/ai` route. `ai.admin`
 is a frontend aggregate of the status settings/usage flags, not a new backend
 permission. Per-action status flags control settings reads, writes and usage.
-The requested enabled gate also hides administration while status is disabled;
-initial provider/runtime activation therefore requires configuration through the
-existing API. No frontend bootstrap bypass is provided.
+Administration remains reachable with the runtime setting off when the always-mounted
+status endpoint grants settings/usage permissions. Runtime use additionally requires
+`/modules/status` to report AI enabled. The current backend module gate still blocks
+settings reads/writes while the module is off; see [module switches](../../platform/modules/README.md).
 
 The authenticated provider refreshes status on focus and every minute. Conversation
 state stays in memory across panel closes and is discarded on logout or status

@@ -46,7 +46,7 @@ Outbox consumers named `<key>.*` of a disabled module do not run. The dispatcher
 - `GET /api/v1/modules/status` (signed in): `{items: [{key, enabled}]}`.
 - `GET /api/v1/admin/modules` (`modules.manage`): `{items: [Module]}` with key, nameKey, descriptionKey, category, core, enabled, switchOn, state, blockedReason, requires, requiredBy, startupGates, version, changedAt, changedByUserId, reasonCode.
 - `POST /api/v1/admin/modules/{key}/enable|disable` (`modules.manage`), body `{expectedVersion, reasonCode}`, reason codes `initial_setup|business_need|not_needed|maintenance|compliance_review|evaluation`. Returns the Module. Errors: 400 `platform.modules.invalid_request`, 404 `platform.modules.not_found`, 409 `platform.modules.version_conflict|no_change|not_switchable|blocked|requires_disabled|required_by_enabled` (the last two carry `error.blockers`).
-- Routes of a module that is off: 404 `platform.module_disabled`.
+- Routes of a module that is off: 404 `platform.module_disabled`, except status probes and the configuration routes of Presence (`/presence/settings*`) and AI (`/ai/settings*`, `/ai/providers*`, `/ai/usage*`), which stay reachable (with their own admin permissions) so first-time configuration works before the switch can be enabled.
 - i18n keys for the UI: `modules.<key>.name`, `modules.<key>.description`, `modules.category.<category>`, `modules.blocked.<code>`, plus error codes above.
 
 ## Security and audit

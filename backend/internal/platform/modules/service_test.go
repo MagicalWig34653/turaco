@@ -366,6 +366,14 @@ func TestGateAnswers404ForDisabledModuleRoutes(t *testing.T) {
 	if rec := do(http.MethodGet, "/api/v1/ai/conversations", true); rec.Code != http.StatusNotFound {
 		t.Errorf("/ai/conversations = %d, want 404 while ai is off", rec.Code)
 	}
+	for _, path := range []string{"/api/v1/ai/settings", "/api/v1/ai/providers", "/api/v1/ai/providers/x/test", "/api/v1/ai/usage", "/api/v1/presence/settings", "/api/v1/presence/settings/purge"} {
+		if rec := do(http.MethodPut, path, true); rec.Code != http.StatusNoContent {
+			t.Errorf("%s = %d, want reachable so the module can be configured before it is enabled", path, rec.Code)
+		}
+	}
+	if rec := do(http.MethodGet, "/api/v1/presence/entries", true); rec.Code != http.StatusNotFound {
+		t.Errorf("/presence/entries = %d, want 404 while presence is off", rec.Code)
+	}
 	if rec := do(http.MethodGet, "/api/v1/presence/status", true); rec.Code != http.StatusNoContent {
 		t.Errorf("/presence/status = %d, want pass-through", rec.Code)
 	}

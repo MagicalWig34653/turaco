@@ -1,3 +1,5 @@
+import { useModules } from '../platform/modules/ModulesProvider';
+import { pathEnabled } from '../platform/modules/model';
 import { BriefingCoverage } from '../modules/my-work/BriefingCoverage';
 import type { ReactNode } from 'react';
 import { appRoutes, canViewRoute, type RouteId } from './routes';
@@ -105,10 +107,20 @@ export function OverviewScreen() {
   const { t, locale } = useI18n();
   const { can } = useSession();
   const greeting = useGreeting();
+  const { enabled } = useModules();
   const list = usePagedList((cursor, signal) => tasksApi.myWork(cursor, signal), []);
-  const feed = useAsync((signal) => briefingApi.feed(signal), []);
+  const briefingEnabled = enabled('briefing');
+  const feed = useAsync(
+    (signal) =>
+      briefingEnabled
+        ? briefingApi.feed(signal)
+        : Promise.resolve({ entries: [], unavailable: [], truncated: {} }),
+    [briefingEnabled],
+  );
   const now = new Date();
-  const entries = feed.data?.entries ?? [];
+  const entries = briefingEnabled
+    ? (feed.data?.entries ?? []).filter((entry) => pathEnabled(entry.linkPath, enabled))
+    : [];
   const feedIncomplete =
     !!feed.data?.unavailable.length || Object.values(feed.data?.truncated ?? {}).some(Boolean);
   const metrics = overviewMetrics(list.items, entries, now);
@@ -120,7 +132,7 @@ export function OverviewScreen() {
   ).length;
   const actions = quickActions.filter(({ route }) => {
     const found = appRoutes.find((candidate) => candidate.id === route);
-    return found ? canViewRoute(can, found) : false;
+    return found ? canViewRoute(can, found, enabled) : false;
   });
   const loading = (list.loading && !list.items.length) || (feed.loading && !feed.data);
   const today = new Intl.DateTimeFormat(locale, {
@@ -177,15 +189,17 @@ export function OverviewScreen() {
               icon={<NavIcon id="approvals" />}
             />
           ) : null}
-          <MetricCard
-            label={t('overview.metric.alerts')}
-            value={metrics.alerts}
-            to="/briefing"
-            tone="warning"
-            caption={t('overview.metric.alertsCaption')}
-            {...(!feedIncomplete ? { zeroCaption: t('overview.metric.alertsZero') } : {})}
-            icon={<NavIcon id="briefing" />}
-          />
+          {briefingEnabled && (
+            <MetricCard
+              label={t('overview.metric.alerts')}
+              value={metrics.alerts}
+              to="/briefing"
+              tone="warning"
+              caption={t('overview.metric.alertsCaption')}
+              {...(!feedIncomplete ? { zeroCaption: t('overview.metric.alertsZero') } : {})}
+              icon={<NavIcon id="briefing" />}
+            />
+          )}
         </div>
       ) : null}
       <p className="dashboard-scope">{t('overview.scope')}</p>
@@ -264,44 +278,46 @@ export function OverviewScreen() {
             <p className="dashboard-scope">{t('dashboard.noRecent')}</p>
           ) : null}
         </Card>
-        <div className="overview-side">
-          <Card
-            className={`overview-highlight${highlight ? ` severity-${highlight.severity}` : ''}`}
-            title={t('overview.highlightEyebrow')}
-          >
-            <span className="dashboard-eyebrow">{t('overview.highlightEyebrow')}</span>
-            {highlight ? (
-              <>
-                <h2>
-                  <FeedTitle entry={highlight} />
-                </h2>
-                <p>
-                  {t(sourceKey(highlight.source))}
-                  {highlight.occurredAt || highlight.dueAt ? (
-                    <>
-                      {' · '}
-                      <TableDate value={highlight.dueAt ?? highlight.occurredAt} />
-                    </>
-                  ) : null}
-                </p>
-                <Link to={highlight.linkPath} className="overview-highlight-link">
-                  {t('dashboard.viewDetails')} <span aria-hidden="true">→</span>
+        {briefingEnabled && (
+          <div className="overview-side">
+            <Card
+              className={`overview-highlight${highlight ? ` severity-${highlight.severity}` : ''}`}
+              title={t('overview.highlightEyebrow')}
+            >
+              <span className="dashboard-eyebrow">{t('overview.highlightEyebrow')}</span>
+              {highlight ? (
+                <>
+                  <h2>
+                    <FeedTitle entry={highlight} />
+                  </h2>
+                  <p>
+                    {t(sourceKey(highlight.source))}
+                    {highlight.occurredAt || highlight.dueAt ? (
+                      <>
+                        {' · '}
+                        <TableDate value={highlight.dueAt ?? highlight.occurredAt} />
+                      </>
+                    ) : null}
+                  </p>
+                  <Link to={highlight.linkPath} className="overview-highlight-link">
+                    {t('dashboard.viewDetails')} <span aria-hidden="true">→</span>
+                  </Link>
+                </>
+              ) : !feed.loading && !feed.error && !feedIncomplete ? (
+                <p>{t('overview.noHighlight')}</p>
+              ) : (
+                <p>{t('overview.coverageHint')}</p>
+              )}
+              {otherSignals > 0 ? (
+                <Link to="/briefing" className="overview-highlight-more">
+                  {t('overview.highlightMore', { count: otherSignals })}
                 </Link>
-              </>
-            ) : !feed.loading && !feed.error && !feedIncomplete ? (
-              <p>{t('overview.noHighlight')}</p>
-            ) : (
-              <p>{t('overview.coverageHint')}</p>
-            )}
-            {otherSignals > 0 ? (
-              <Link to="/briefing" className="overview-highlight-more">
-                {t('overview.highlightMore', { count: otherSignals })}
-              </Link>
-            ) : null}
-          </Card>
-        </div>
+              ) : null}
+            </Card>
+          </div>
+        )}
       </div>
-      {feed.data ? <BriefingCoverage data={feed.data} /> : null}
+      {briefingEnabled && feed.data ? <BriefingCoverage data={{ ...feed.data, entries }} /> : null}
       {actions.length ? (
         <section className="overview-actions" aria-labelledby="overview-actions">
           <div className="dashboard-section-heading">

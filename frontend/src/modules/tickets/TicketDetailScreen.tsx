@@ -1,3 +1,4 @@
+import { ModuleFeature, useModules } from '../../platform/modules/ModulesProvider';
 import { AskTuraco } from '../ai/AiProvider';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -121,6 +122,7 @@ export function TicketDetailScreen({ id }: { id: string }) {
 }
 
 function TicketWorkspace({ id }: { id: string }) {
+  const { enabled } = useModules();
   const { t, locale } = useI18n();
   const { can, session } = useSession();
   const loaded = useAsync((signal) => ticketsApi.get(id, signal), [id]);
@@ -508,7 +510,9 @@ function TicketWorkspace({ id }: { id: string }) {
             ) : null}
           </Card>
           {can('remote_access.view') ? (
-            <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
+            <ModuleFeature module="remoteaccess">
+              <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
+            </ModuleFeature>
           ) : null}
           {staffReader ? (
             <Card title={t('tickets.section.knownErrors')}>
@@ -546,7 +550,7 @@ function TicketWorkspace({ id }: { id: string }) {
               )}
             </Card>
           ) : null}
-          {can('runbooks.execute') ? (
+          {enabled('knowledge') && can('runbooks.execute') ? (
             <Card className="incident-runbook" title={t('ticketWorkspace.runbook')}>
               <h2>{t('ticketWorkspace.runbook')}</h2>
               <p>{t('ticketWorkspace.runbookHint')}</p>

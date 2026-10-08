@@ -40,8 +40,9 @@ type Module struct {
 	Requires []string
 	// RoutePrefixes are the first path segments below /api/v1/ that the module owns.
 	RoutePrefixes []string
-	// OpenPaths are exact paths below the prefixes that stay reachable while the module is off, so the UI can ask
-	// why (status probes). They still need authentication like every other route.
+	// OpenPaths are paths that stay reachable while the module is off: status probes and the administration
+	// routes needed to configure the module before it can be enabled (a trailing * matches that path and
+	// everything below it). Authentication and the module's own admin permissions still apply.
 	OpenPaths []string
 	// AlwaysRunJobs are job types that keep running while the module is off because they are safety or data
 	// protection paths: retention clean-up, session expiry, the Deployment kill-switch sweep. The job handler itself
@@ -112,11 +113,11 @@ func Catalog() []Module {
 		opt("planning", CategoryInfrastructure, []string{"changes", "procurement", "services"}, "initiatives", "maintenance-calendar"),
 
 		{Key: "presence", Category: CategoryWorkforce, DefaultEnabled: false, RoutePrefixes: []string{"presence"},
-			OpenPaths: []string{"/api/v1/presence/status"}, AlwaysRunJobs: []string{"presence.purge"}, StartupGates: []string{"PRESENCE_ENABLED"}},
+			OpenPaths: []string{"/api/v1/presence/status", "/api/v1/presence/settings*"}, AlwaysRunJobs: []string{"presence.purge"}, StartupGates: []string{"PRESENCE_ENABLED"}},
 
 		opt("briefing", CategoryInsight, nil, "briefing", "briefing-items"),
 		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai"},
-			OpenPaths: []string{"/api/v1/ai/status"}, AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED"}},
+			OpenPaths: []string{"/api/v1/ai/status", "/api/v1/ai/settings*", "/api/v1/ai/providers*", "/api/v1/ai/usage*"}, AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED"}},
 	}
 }
 
@@ -229,7 +230,7 @@ func (ix *Index) ForPath(path string) (key string, ok bool) {
 	if !strings.HasPrefix(path, apiPrefix) {
 		return "", false
 	}
-	if _, open := ix.open[strings.TrimRight(path, "/")]; open {
+	if ix.isOpen(strings.TrimRight(path, "/")) {
 		return "", false
 	}
 	seg := strings.TrimPrefix(path, apiPrefix)
@@ -284,4 +285,16 @@ func (ix *Index) ForConsumer(name string) (key string, ok bool) {
 		return "", false
 	}
 	return m.Key, true
+}
+
+func (ix *Index) isOpen(path string) bool {
+	if _, ok := ix.open[path]; ok {
+		return true
+	}
+	for p := range ix.open {
+		if base, wild := strings.CutSuffix(p, "*"); wild && (path == base || strings.HasPrefix(path, base+"/")) {
+			return true
+		}
+	}
+	return false
 }

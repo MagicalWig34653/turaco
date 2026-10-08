@@ -1,3 +1,7 @@
+import { ModulesProvider, useModules } from '../platform/modules/ModulesProvider';
+import { ModuleDisabledView } from '../platform/modules/ModuleDisabledView';
+import { pathEnabled } from '../platform/modules/model';
+import { ModulesScreen } from '../platform/modules/ModulesScreen';
 import { AiProvider, useAi } from '../modules/ai/AiProvider';
 import { AdminScreen as AiAdminScreen } from '../modules/ai/AdminScreen';
 import { PresenceProvider } from '../modules/presence/PresenceProvider';
@@ -135,6 +139,8 @@ import { ForbiddenView, NotFoundView } from './StatusViews';
 
 function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
   switch (id) {
+    case 'modulesAdmin':
+      return <ModulesScreen />;
     case 'aiAdmin':
       return <AiAdminScreen />;
     case 'presenceMine':
@@ -365,6 +371,7 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
 function AuthenticatedApp() {
   const { t } = useI18n();
   const { can } = useAi();
+  const { enabled, loading } = useModules();
   const { pathname } = useLocation();
 
   useEffect(() => {
@@ -380,9 +387,18 @@ function AuthenticatedApp() {
     );
   }
   const allowed = canViewRoute(can, match.route);
+  const available = pathEnabled(match.route.pattern, enabled);
   return (
     <Shell title={allowed ? t(match.route.titleKey) : t('forbidden.title')}>
-      {allowed ? renderScreen(match.route.id, match.params) : <ForbiddenView />}
+      {loading ? (
+        <p role="status">{t('state.loading')}</p>
+      ) : !available ? (
+        <ModuleDisabledView />
+      ) : !allowed ? (
+        <ForbiddenView />
+      ) : (
+        renderScreen(match.route.id, match.params)
+      )}
     </Shell>
   );
 }
@@ -402,11 +418,13 @@ function Gate() {
   }
   if (state.status === 'anonymous') return <LoginScreen />;
   return (
-    <PresenceProvider>
-      <AiProvider key={state.session.userId}>
-        <AuthenticatedApp />
-      </AiProvider>
-    </PresenceProvider>
+    <ModulesProvider key={state.session.userId}>
+      <PresenceProvider>
+        <AiProvider key={state.session.userId}>
+          <AuthenticatedApp />
+        </AiProvider>
+      </PresenceProvider>
+    </ModulesProvider>
   );
 }
 

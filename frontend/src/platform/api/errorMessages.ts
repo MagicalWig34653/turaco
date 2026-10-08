@@ -8,6 +8,7 @@ const byCode: Record<string, MessageKey> = {
   [NETWORK_ERROR_CODE]: 'error.network',
   [INVALID_RESPONSE_CODE]: 'error.invalidResponse',
   'platform.unauthenticated': 'error.unauthenticated',
+  'platform.module_disabled': 'modules.disabledInfo',
   'platform.forbidden': 'error.forbidden',
   'platform.csrf_rejected': 'error.csrf',
   'platform.internal_error': 'error.internal',
