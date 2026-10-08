@@ -162,7 +162,7 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F12 — Turaco AI
 
-[ADR-0029](../decisions/ADR-0029-turaco-ai.md). Provider-independent, tool-based and user-delegated.
+[ADR-0029](../decisions/ADR-0029-turaco-ai.md). Provider-independent, tool-based and user-delegated. Feature design: [F12 design](f12-turaco-ai-design.md).
 
 1. AI runtime, first AI Provider connector, egress policy and audit,
 2. read-only AI Tools contributed by modules (summaries, explanations),
