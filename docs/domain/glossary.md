@@ -123,10 +123,13 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Operational Availability** — derived availability of a person for operational work: `available`, `limited`, `unavailable` or `unknown`, with source and freshness.
 - **Team Coverage** — derived count of operationally available Team members for a period against an optional per-Team minimum.
 
-## AI *(planned, ADR-0029)*
+## AI *(read-only slice implemented, ADR-0029)*
 - **Turaco AI** — the product's AI capability; distinct from AI assistants used to develop Turaco (ADR-0018).
 - **AI Provider** — external or local model runtime (for example Anthropic, OpenAI, Azure/Microsoft, GitHub Copilot, Ollama) integrated through a Connector and enabled per Turaco installation.
 - **AI Tool** — explicitly registered, typed Turaco application operation that AI may call, with schema, required permission, risk class (`read`, `write`, `high_impact`) and declared data egress; it runs as the requesting User.
+- **Data class** — closed egress classification (`public_reference`, `business_record`, `personal_contact`, `device_context`) of the fields an AI Tool returns; a provider receives a tool's result only if it is allowed every class of the tool's output fields. Secrets, Audit records, Workforce Presence details, raw provider payloads, file contents and Remote Access session data are not classes and are never sent.
+- **AI Conversation** — transient, server-held exchange between one User and the assistant (`ai.sessions`: transcript including tool calls and results, resource scope, 30 minutes idle); the browser holds only an opaque id. Not a business record and not retained unless the administrator enables transcript retention.
+- **Conversation resource scope** — the records the User named, opened as context or explicitly consented to in a conversation; a tool may read only these. Ids that appear only in tool output never extend it.
 - **AI Proposal** — short-lived proposal of an exact write operation that executes only after the requesting User confirms it; not an Approval and not a business record.
 - **Knowledge Article** — reusable written knowledge.
 - **Procedure** — documented sequence of work.

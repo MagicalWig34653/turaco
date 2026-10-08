@@ -20,6 +20,10 @@ import (
 type Principal struct {
 	UserID      string
 	Permissions map[string]struct{}
+	// TenantID is the data plane of the caller, resolved on the server (WithTenant), never from request fields.
+	TenantID string
+	// SessionID is the authentication session of the request (empty for other authenticators).
+	SessionID string
 }
 
 // Has reports whether the principal holds the named permission.
@@ -131,4 +135,27 @@ func registered(name string) bool {
 		}
 	}
 	return false
+}
+
+type tenantAuthenticator struct {
+	next     Authenticator
+	tenantID string
+}
+
+// WithTenant returns an Authenticator that sets the principal's TenantID. A single-tenant installation passes
+// its fixed installation data plane id; a multi-data-plane deployment resolves the tenant from the server-side
+// session or membership in its own Authenticator. The tenant never comes from a request field or model output.
+func WithTenant(next Authenticator, tenantID string) Authenticator {
+	if tenantID == "" {
+		panic("authorization: WithTenant needs a tenant id")
+	}
+	return tenantAuthenticator{next: next, tenantID: tenantID}
+}
+
+func (a tenantAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	p, ok, err := a.next.Authenticate(r)
+	if ok && err == nil {
+		p.TenantID = a.tenantID
+	}
+	return p, ok, err
 }

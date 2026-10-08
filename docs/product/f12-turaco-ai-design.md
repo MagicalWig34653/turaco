@@ -1,6 +1,6 @@
 # F12 Turaco AI — Feature Design
 
-**Status:** Draft 2026-10-08; decisions A1–A10 adopted by default (autonomous progress; revisit with the product owner and the customer's data protection review). Nothing is implemented. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0029](../decisions/ADR-0029-turaco-ai.md) (decision, non-negotiable), [ADR-0007](../decisions/ADR-0007-isolated-customer-data-planes.md) (data sent to an external AI Provider leaves the customer's data plane), [ADR-0014](../decisions/ADR-0014-application-level-secret-and-file-encryption.md) (AI Provider credentials are secrets), [glossary](../domain/glossary.md), [module boundaries](../architecture/module-boundaries.md), [F11 design](f11-workforce-presence-design.md) (format reference; Presence data is excluded from AI tools), [F10 design](f10-remote-access-design.md).
+**Status:** Draft 2026-10-08; decisions A1–A15 adopted by default (autonomous progress; revisit with the product owner and the customer's data protection review). Slice A-A (backend, read-only) is implemented, see [A-A implementation notes](#a-a-implementation-notes); A-B to A-D are not. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0029](../decisions/ADR-0029-turaco-ai.md) (decision, non-negotiable), [ADR-0007](../decisions/ADR-0007-isolated-customer-data-planes.md) (data sent to an external AI Provider leaves the customer's data plane), [ADR-0014](../decisions/ADR-0014-application-level-secret-and-file-encryption.md) (AI Provider credentials are secrets), [glossary](../domain/glossary.md), [module boundaries](../architecture/module-boundaries.md), [F11 design](f11-workforce-presence-design.md) (format reference; Presence data is excluded from AI tools), [F10 design](f10-remote-access-design.md).
 
 ## Decisions
 
@@ -89,7 +89,35 @@ Schema `ai`, owned by `platform/ai`. Forward migration only.
 | `ai.conversations` | Only when retention is on: `id`, `tenant_id`, `user_id`, `provider_id`, `created_at`, `expires_at`. |
 | `ai.messages` | Only when retention is on: `conversation_id`, `seq`, `role`, `content`, `expires_at`. Purged by job. |
 | `ai.proposals` | `id`, `tenant_id`, `user_id`, `conversation_ref`, `tool_name`, `parameters jsonb`, `parameters_hash`, `target_ref`, `target_version`, `state`, `expires_at`, `confirmed_at`, `executed_at`, `outcome_code`, `version`. |
-| `ai.usage` | `tenant_id`, `user_id`, `day`, `request_count`, `tokens_in`, `tokens_out`, `estimated_cost`. Counts only. |
+| `ai.usage` | `tenant_id`, `user_id`, `day` (UTC), `request_count`, `tokens_in`, `tokens_out`, `tokens_reserved`, `estimated_cost_micro`. Counts only. Primary key `(tenant_id, user_id, day)`. |
+| `ai.usage_hours` | `tenant_id`, `user_id`, `hour` (UTC, truncated), `request_count`. Backs the per-User requests-per-hour cap. |
+| `ai.installation_usage` | `tenant_id`, `day`, `tokens_used`, `tokens_reserved`. Backs the installation tokens-per-day cap; reservations are conditional upserts on this row. |
+| `ai.sessions` | A12 server-held conversation state, see below. |
+
+### `ai.sessions` (A12)
+
+| Column | Meaning |
+| --- | --- |
+| `id uuid` | Internal row id, used as audit target; never given to the browser. |
+| `token_hash bytea` (unique) | SHA-256 of the opaque 256-bit random conversation id returned to the browser once. The raw id is never stored. |
+| `tenant_id text`, `user_id uuid` | Owner. Every lookup filters by `(token_hash, tenant_id, user_id)`; another User or tenant gets not found. |
+| `auth_session_id uuid` | The authentication session that created it. A request from a different authentication session (after logout and login) cannot use it. |
+| `provider_id uuid` | Provider the conversation started with; a turn after the provider changed is refused (`ai.provider_changed`). |
+| `transcript jsonb` | Server-written messages (`user`, `assistant`, `tool` with the tool call id and name). Bounded in count and bytes. Tool content is stored here only, never in audit. |
+| `scope jsonb` | A11 turn resource scope: set of `{type, id}` resources the User named, opened as UI context or consented to. |
+| `turn_count int`, `version int` | Optimistic concurrency; a turn updates the transcript with `WHERE version = $n`. |
+| `busy_until timestamptz null` | Single-flight guard: a second turn while one runs returns `ai.turn_in_progress`. |
+| `created_at`, `last_active_at`, `expires_at` | TTL 30 minutes from the last activity, capped at 8 hours after creation. Rows past `expires_at` are unusable at once and deleted by the `ai.sessions.expire` job. |
+
+Indexes: `(expires_at)` for the purge job, `(user_id)`.
+
+### `ai.conversations` and `ai.messages` (retention, written only when `retain_conversations` is on)
+
+`ai.conversations(id, tenant_id, user_id, provider_id, created_at, expires_at)` and `ai.messages(conversation_id, seq, role, content, expires_at)`; only `user` and `assistant` text is retained, never tool results. Index on `(expires_at)`.
+
+### Audit table extension (A15, same migration 000058)
+
+`platform.audit_events` gets nullable `via text` (`ai` or `mcp`, check constraint), `tenant_id text` and `ai_proposal_id uuid`, plus a partial index on `via`. Existing rows and writers are unchanged (NULL). `audit.Change` and `audit.Entry` gain `Via`, `TenantID` and `ProposalID`; `via` requires a tenant. The authenticated `Principal` gains `TenantID` (resolved by a wrapper from the installation data plane id `TENANT_ID`, never from request fields) and `SessionID`.
 
 - Every tenant-owned row carries the data plane key and queries filter by it (ADR-0007). Proposals are readable only by their creating User.
 - `parameters` of a proposal are the exact content shown for confirmation; they are deleted at expiry or a fixed time after a terminal state (default 24 hours), keeping `parameters_hash` and ids for audit correlation.
@@ -133,13 +161,13 @@ Using `platform/audit` with `via=ai`:
 
 ## Events and jobs
 
-- Events (registry, versioned): `ai.proposal.confirmed`, `ai.proposal.executed`, `ai.proposal.failed`, `ai.provider.changed`. Payloads carry ids only. The assistant panel does not need events for the conversation itself.
-- Jobs (existing `platform/jobs`): `ai.proposals.expire` (every minute, expires and purges parameters), `ai.retention.purge` (daily, conversations and messages, one audit summary with counts), `ai.usage.roll` (daily housekeeping).
+- Events (registry, versioned): `AIProviderChanged` (A-A); `AIProposalConfirmed`, `AIProposalExecuted`, `AIProposalFailed` (A-C). Payloads carry ids only. The assistant panel does not need events for the conversation itself.
+- Jobs (existing `platform/jobs`): `ai.sessions.expire` (every 5 minutes, deletes expired sessions; A-A), `ai.retention.purge` (daily, expired conversations and messages and usage rows older than 35 days, one audit summary with counts; A-A), `ai.proposals.expire` (every minute, expires and purges parameters; A-C).
 - AI does not create notifications by itself. A proposal result may use the existing notification service for the creating User only if the product owner later asks for it.
 
 ## HTTP API
 
-All routes require `ai.use` unless noted; AI disabled returns `ai.disabled` with no other data.
+All routes live under `/api/v1/ai` and require `ai.use` unless noted; AI disabled returns `ai.disabled` with no other data.
 
 - `GET /api/ai/status`: enabled, active provider display name, `local`, allowed data classes, caps remaining (no secrets).
 - `POST /api/ai/conversations/messages`: send a message (with the transcript when retention is off); returns the answer, the tools used (names, record references) and any proposals.
@@ -226,3 +254,16 @@ Independent review 2026-10-08 raised eight issues; all are adopted:
 | 8 | medium | No tenant on principal; audit lacks tenant/`via` | A15 trusted tenant resolution and audit migration in A-A |
 
 A-A scope is extended accordingly: `ai.sessions` table, audit schema change, provider transport and DTO tests join migration 000058 and its companion audit migration.
+
+## A-A implementation notes
+
+Where the implementation made a concrete choice the sketch left open (the sketch above stays the target design):
+
+- **Packages.** `platform/ai` (service, registry, store, usage), `platform/ai/safehttp` (A14 transport), `platform/ai/providers/{fake,openaicompat}`, `platform/ai/transport` (HTTP). Tools live in the owning module's `public` package as `AITools(service)` and are registered in `internal/wiring/ai.go`; the registry self-check fails startup on a bad tool. Tool reference: [docs/reference/ai-tools.md](../reference/ai-tools.md) (generated).
+- **Tenant (A15).** `TENANT_ID` (default `default`) is the installation data plane id; `authorization.WithTenant` stamps it on the principal in the API composition root. The principal also carries the sign-in `SessionID`. Audit rows get `via`, `tenant_id`, `ai_proposal_id`; `audit.Record` refuses `via` without a tenant.
+- **Secrets.** `ai.providers.secret_ref` names a file in `AI_SECRET_DIR`; the API never accepts or returns key material (ADR-0014 file-secret mechanism of this codebase). The adapter reads it when the provider is built.
+- **Resource scope (A11).** Target-bearing tools declare which argument is a record id. A call is allowed only if `(type, id)` is in the conversation scope: records named in `context`, UUIDs the User typed in their own message, and explicit `POST /ai/conversations/scope` consent. Refusals come back to the model as a fixed error and to the UI as `scopeRequests`.
+- **Tool schemas.** A closed JSON-schema subset (object, string with `maxLength`, `format: uuid`, integer with bounds, boolean, `additionalProperties: false`) validated for every call; audit stores ids, integers and a hash plus length of free text (`x-audit`).
+- **Egress (A13).** The runtime serializes the handler DTO and rejects any leaf not declared in `Tool.Output`; classes are derived from the declared fields. A registry test and `wiring/ai_test.go` scan every path against `ai.ProhibitedPathFragments`.
+- **Caps.** `ai.Store.Reserve` is one transaction of conditional upserts (hour, user day, installation day) in a fixed lock order; `Settle` reconciles, a failed call settles with zero.
+- **Not in A-A.** Streaming, the Anthropic/OpenAI/Azure adapters, `ai.proposals`, write tools, MCP, role defaults for the AI permissions, audit of `GET` reads of settings.

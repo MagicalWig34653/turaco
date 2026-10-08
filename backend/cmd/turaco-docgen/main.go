@@ -12,6 +12,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/permissions"
+	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
 func main() {
@@ -23,6 +24,7 @@ func main() {
 		"permissions.md":   renderPermissions(),
 		"events.md":        renderEvents(),
 		"configuration.md": renderConfiguration(),
+		"ai-tools.md":      renderAITools(),
 	}
 	if err := apply(*outDir, generated, *check); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -92,6 +94,34 @@ func renderConfiguration() []byte {
 			def = "(redacted)"
 		}
 		fmt.Fprintf(&b, "| `%s` | %s | %t | %t | `%s` | %s |\n", c.Name, c.Type, c.Required, c.Secret, def, c.Description)
+	}
+	return []byte(b.String())
+}
+
+// renderAITools lists the AI Tools the modules contribute (F12), with the permission, risk class and the data
+// classes derived from each tool's output fields, so a new tool or a wider output is a visible review item.
+func renderAITools() []byte {
+	svc, err := wiring.AI(nil, wiring.AIConfig{Enabled: true, TenantID: "docgen"})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "register ai tools:", err)
+		os.Exit(1)
+	}
+	var b strings.Builder
+	b.WriteString("# AI Tool Reference\n\n> Generated from code. Do not edit manually.\n\nData classes are derived from each tool's output fields (F12 A13); a provider is offered a tool only if it is allowed every class listed. Output fields are the closed allowlist the egress filter enforces.\n\n| Tool | Permission | Risk | Data classes | Reads one record | Output fields |\n|---|---|---|---|---|---|\n")
+	for _, t := range svc.Registry().Tools() {
+		classes := make([]string, 0)
+		for _, c := range t.Classes() {
+			classes = append(classes, "`"+string(c)+"`")
+		}
+		fields := make([]string, 0, len(t.Output))
+		for _, f := range t.Output {
+			fields = append(fields, "`"+f.Path+"`")
+		}
+		target := "no"
+		if t.Target != nil {
+			target = "yes (`" + t.Target.Type + "`, needs the User to have named it)"
+		}
+		fmt.Fprintf(&b, "| `%s` | `%s` | %s | %s | %s | %s |\n", t.Name, t.Permission, t.Risk, strings.Join(classes, ", "), target, strings.Join(fields, ", "))
 	}
 	return []byte(b.String())
 }

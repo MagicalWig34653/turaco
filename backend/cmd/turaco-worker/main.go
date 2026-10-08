@@ -37,6 +37,7 @@ import (
 	servicesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/services/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	aiplatform "github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
@@ -207,6 +208,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
 		}},
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
+		{"ai cleanup", func() error { return registerAI(runner, pool) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
@@ -629,4 +631,23 @@ func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpo
 		}
 	}
 	return runner.Register(servicedeskapp.PushJobType, servicedeskapp.PushJobTimeout, sync.HandlePush)
+}
+
+// registerAI registers the Turaco AI cleanup jobs: expired conversation sessions every five minutes and retained
+// conversations and old usage counters daily. They run whether or not AI is enabled, so data is always removed on time.
+func registerAI(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	svc, err := wiring.AI(pool, wiring.AIConfig{})
+	if err != nil {
+		return err
+	}
+	if err := runner.Register(aiplatform.SessionsExpireJobType, aiplatform.SessionsExpireJobTimeout, svc.HandleSessionsExpire); err != nil {
+		return err
+	}
+	if err := runner.Register(aiplatform.RetentionPurgeJobType, aiplatform.RetentionPurgeJobTimeout, svc.HandleRetentionPurge); err != nil {
+		return err
+	}
+	if err := runner.AddSchedule(jobs.Schedule{JobType: aiplatform.SessionsExpireJobType, DedupeKey: aiplatform.SessionsExpireJobType, Interval: aiplatform.SessionsExpireInterval, MaxAttempts: 2}); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: aiplatform.RetentionPurgeJobType, DedupeKey: aiplatform.RetentionPurgeJobType, Interval: aiplatform.RetentionPurgeInterval, MaxAttempts: 2})
 }

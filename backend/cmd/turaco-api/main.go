@@ -59,9 +59,11 @@ import (
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
+	aitransport "github.com/MagicalWig34653/turaco/backend/internal/platform/ai/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
@@ -192,6 +194,13 @@ func main() {
 	}
 	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
 	presencetransport.Register(mux, wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}), sessionAuth, logger)
+	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Logger: logger})
+	if err != nil {
+		logger.Error("configure turaco ai", "error", err)
+		os.Exit(1)
+	}
+	// The tenant is resolved on the server (single-tenant default: the fixed installation data plane), never from the request.
+	aitransport.Register(mux, aiService, authorization.WithTenant(sessionAuth, cfg.TenantID), logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),

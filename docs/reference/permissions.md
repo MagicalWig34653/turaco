@@ -4,6 +4,10 @@
 
 | Permission | Risk | Description |
 |---|---|---|
+| `ai.settings.manage` | high | Configure AI Providers, allowed data classes, caps, conversation retention and the runtime switch of the assistant. Decides which business data may leave the installation for an external provider. |
+| `ai.settings.view` | elevated | View the AI Provider configuration (never secrets), the data classes allowed per provider, caps and retention. |
+| `ai.usage.view` | elevated | View aggregated AI usage and estimated cost (counts only, no prompts). |
+| `ai.use` | normal | Use the Turaco assistant. It never grants more than the User already has: every tool call additionally needs the permission of the module it reads and is limited to the records the User named in the conversation. |
 | `assets.manage` | elevated | Create and update assets within authorized scope. |
 | `assets.view` | normal | View assets and device context within authorized scope. |
 | `briefing.manage` | elevated | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |

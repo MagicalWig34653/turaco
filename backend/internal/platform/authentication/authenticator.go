@@ -83,7 +83,7 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	if err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
 	}
-	return s, authorization.Principal{UserID: s.UserID, Permissions: perms}, true, nil
+	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID}, true, nil
 }
 
 type sessionKey struct{}

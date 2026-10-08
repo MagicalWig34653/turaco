@@ -1,6 +1,6 @@
 # ADR-0029: Turaco AI — Provider-Independent, Tool-Based and User-Delegated
 
-- Status: Accepted (2026-10-03). Planned capability; nothing is implemented.
+- Status: Accepted (2026-10-03). The read-only backend slice (F12 A-A) is implemented; see [current status](../product/current-status.md).
 - Related: [ADR-0007](ADR-0007-isolated-customer-data-planes.md) (data sent to an external AI Provider leaves the customer's data plane), [ADR-0014](ADR-0014-application-level-secret-and-file-encryption.md) (AI Provider credentials are secrets).
 - Not to be confused with [ADR-0018](ADR-0018-ai-model-routing.md), which governs AI assistants used to *develop* Turaco. This ADR is about an AI capability *inside the product*.
 
