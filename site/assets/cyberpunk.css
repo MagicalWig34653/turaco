@@ -21,8 +21,7 @@ html[data-theme="cyberpunk"] :is(.docs-header, .landing-header) {
   box-shadow: 0 1px #ff2bd655;
 }
 html[data-theme="cyberpunk"] .brand-mark {
-  background: var(--cyber-yellow);
-  color: var(--bg);
+  background: none;
   box-shadow: 0 0 18px #fcee0a33;
 }
 html[data-theme="cyberpunk"] .landing {
