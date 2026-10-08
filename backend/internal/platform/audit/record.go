@@ -50,6 +50,10 @@ type Change struct {
 	Before        any
 	After         any
 	Metadata      map[string]any
+	// Via marks an AI-assisted action ("ai" or "mcp") and requires TenantID; ProposalID links the AI Proposal.
+	Via        string
+	TenantID   string
+	ProposalID string
 	// OccurredAt defaults to the current time (microsecond precision).
 	OccurredAt time.Time
 }
@@ -62,6 +66,15 @@ func Record(ctx context.Context, tx pgx.Tx, e Change) error {
 	}
 	if err := e.Actor.Validate(); err != nil {
 		return err
+	}
+	if e.Via != "" && e.Via != "ai" && e.Via != "mcp" {
+		return errors.New("audit: via must be ai or mcp")
+	}
+	if e.Via != "" && e.TenantID == "" {
+		return errors.New("audit: an AI-assisted action needs a tenant")
+	}
+	if e.ProposalID != "" && e.Via == "" {
+		return errors.New("audit: a proposal id needs via")
 	}
 	meta := map[string]any{}
 	for k, v := range e.Metadata {
@@ -80,6 +93,7 @@ func Record(ctx context.Context, tx pgx.Tx, e Change) error {
 	entry := Entry{
 		OccurredAt: e.OccurredAt, ActorID: actorID, Action: e.Action,
 		TargetType: e.TargetType, TargetID: e.TargetID, CorrelationID: e.CorrelationID,
+		Via: e.Via, TenantID: e.TenantID, ProposalID: e.ProposalID,
 	}
 	if entry.OccurredAt.IsZero() {
 		entry.OccurredAt = time.Now()

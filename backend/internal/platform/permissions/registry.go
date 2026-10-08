@@ -78,4 +78,9 @@ var Registry = []Permission{
 	{Name: "presence.manage_entries", Description: "Create, change and cancel Workforce Presence entries of other Users in one's Teams. Every change is audited per entry.", Risk: "elevated"},
 	{Name: "presence.manage_teams", Description: "Set the minimum Team Coverage (and the on-site minimum) of Teams.", Risk: "elevated"},
 	{Name: "presence.admin", Description: "Administer Workforce Presence: the runtime switch, the recorded data protection impact assessment and works-council dates, retention, and immediate purge of all entries.", Risk: "high"},
+	// Turaco AI (ADR-0029, F12): tools additionally require the permission of the module they read.
+	{Name: "ai.use", Description: "Use the Turaco assistant. It never grants more than the User already has: every tool call additionally needs the permission of the module it reads and is limited to the records the User named in the conversation.", Risk: "normal"},
+	{Name: "ai.settings.view", Description: "View the AI Provider configuration (never secrets), the data classes allowed per provider, caps and retention.", Risk: "elevated"},
+	{Name: "ai.settings.manage", Description: "Configure AI Providers, allowed data classes, caps, conversation retention and the runtime switch of the assistant. Decides which business data may leave the installation for an external provider.", Risk: "high"},
+	{Name: "ai.usage.view", Description: "View aggregated AI usage and estimated cost (counts only, no prompts).", Risk: "elevated"},
 }

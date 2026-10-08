@@ -86,4 +86,5 @@ var Registry = []Definition{
 	{Name: "DeploymentCompleted", Version: 1, Owner: "endpoints", Description: "A Deployment finished all rings. Payload: deploymentId, status (completed|completed_with_errors), successful, failed."},
 	{Name: "DeploymentFailureClusterDetected", Version: 1, Owner: "endpoints", Description: "The correlation found a failure cluster of a Deployment (failed or expired targets sharing an error code, device model, manufacturer, OS version or ring); the Endpoint Finding deployment_failure_cluster was raised. Payload: deploymentId, findingId, dimension, failed."},
 	{Name: "DeploymentFailed", Version: 1, Owner: "endpoints", Description: "A Deployment failed before or during execution (target resolution refused, gates closed). Payload: deploymentId, reason."},
+	{Name: "AIProviderChanged", Version: 1, Owner: "platform", Description: "An AI Provider was created or reconfigured. Payload: providerId, operation (created, updated), enabled. Carries no endpoint, secret reference or settings."},
 }

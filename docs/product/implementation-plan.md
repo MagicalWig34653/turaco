@@ -8,7 +8,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 
 ## Delivery status (2026-10-06)
 
-F0–F10 are implemented with documented gaps (F9/F10 run against fake provider adapters); [current status](current-status.md) is authoritative. Remaining gaps inside those phases: Autotask REST client and webhook (F5), live Microsoft Graph client (F6), live advisory feeds beyond NVD and CISA KEV, which are implemented (OSV and MSRC remain) (F8), real AD verification (F1). The UI design pass (themes, shell, workbench screens) runs between F8 and F9. F11–F12 are planned.
+F0–F12 are implemented with documented gaps (F9/F10 run against fake provider adapters; F11 has manual entries only, external sources are open); [current status](current-status.md) is authoritative. Remaining gaps inside those phases: Autotask REST client and webhook (F5), live Microsoft Graph client (F6), live advisory feeds beyond NVD and CISA KEV, which are implemented (OSV and MSRC remain) (F8), real AD verification (F1). The UI design pass (themes, shell, workbench screens) runs between F8 and F9. F12 is read-only so far (writes via AI Proposals and the MCP server are planned).
 
 ## F0 — Repository Foundation
 
@@ -162,7 +162,7 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F12 — Turaco AI
 
-[ADR-0029](../decisions/ADR-0029-turaco-ai.md). Provider-independent, tool-based and user-delegated.
+[ADR-0029](../decisions/ADR-0029-turaco-ai.md). Provider-independent, tool-based and user-delegated. Feature design: [F12 design](f12-turaco-ai-design.md).
 
 1. AI runtime, first AI Provider connector, egress policy and audit,
 2. read-only AI Tools contributed by modules (summaries, explanations),

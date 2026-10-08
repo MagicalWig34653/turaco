@@ -14,7 +14,7 @@ Planned boundaries (not implemented):
 
 6. Remote Access Provider client and relay on managed devices ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).
 7. Software Management Provider (IntuneGet) and Turaco's separate Intune write credential, which together can run software on every managed device ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
-8. AI Providers receiving data selected by AI Tools; data sent to an external provider leaves the customer's data plane ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)).
+8. AI Providers receiving data selected by AI Tools; data sent to an external provider leaves the customer's data plane ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)). The read-only backend (F12 A-A) is implemented; see the AI threat addendum below.
 9. Presence sources (Microsoft 365, HR) supplying personal availability data ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
 
 ## Authorization
@@ -46,6 +46,13 @@ Agents use unique cryptographic identities and explicit local/cloud capabilities
 - application encryption of attachments before object storage.
 - disk/provider encryption is defense in depth, not the only control.
 - passwords are not reversibly stored; the local emergency credential uses argon2id (64 MiB, t=3, p=2).
+
+## Turaco AI (threat addendum, F12 A-A)
+- **Prompt injection.** Record text is untrusted data. Controls are structural, not the prompt: the tool set is fixed per conversation from the User's permissions and the provider's allowed data classes; arguments are validated against a closed schema; every call re-checks the permission and runs the module's own authorization as the requesting User; a call may only target records the User named or consented to (tool output never extends the scope); results are field-allowlisted, size-capped and wrapped in an `<untrusted_data>` block whose closing tag cannot be forged out of the data; there is no write, URL-fetch, SQL or file tool. Remaining risk: a model can still be misled within the records it may read.
+- **Forged or replayed context.** The API accepts only plain user text and an opaque conversation id; roles, tool results and earlier messages cannot be supplied. The id (256-bit, stored hashed) is valid only for the same User, tenant and sign-in session and expires after 30 minutes idle or at logout.
+- **Egress.** Deny by default per provider and data class; eligibility derives from the output fields a tool declares, and the runtime refuses fields it did not declare. Secrets, Audit records, Presence details and Remote Access data are not sendable classes (prohibited-name scan at registration). Prompt, answer and tool content never enter audit or logs.
+- **SSRF through the provider URL.** Administrator-only setting, validated on save, and enforced again at dial time on every resolved IP (DNS rebinding cannot change the destination), no redirects, no proxy, host pinned to the provider, size and time caps; external providers cannot reach loopback, private, link-local or metadata addresses, local providers can reach loopback and private ranges but never link-local or metadata addresses.
+- **Cost and abuse.** Atomic worst-case token and request reservations in PostgreSQL per User and installation; one turn at a time per conversation; bounded tool iterations and malformed-call retries.
 
 ## Audit/logging
 

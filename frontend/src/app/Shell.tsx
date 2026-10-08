@@ -1,4 +1,4 @@
-import { usePresence } from '../modules/presence/PresenceProvider';
+import { AskTuraco, useAi } from '../modules/ai/AiProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { notificationsApi, onNotificationsChanged } from '../modules/notifications/api';
@@ -54,7 +54,7 @@ function UserIdentity({ name, method }: { name: string; method?: string | undefi
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
   const { session, logout } = useSession();
-  const { can } = usePresence();
+  const { can, open: openAi } = useAi();
   const userName = sessionDisplayName(session) ?? '';
   const navigation = shellNavigation(can);
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();
@@ -72,8 +72,13 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const reloadUnread = unread.reload;
   const unreadValue = unread.data?.count ? unreadLabel(unread.data.count, unread.data.max) : null;
   const commands = useMemo(
-    () => navigationCommands(appRoutes, can, (route) => t(route.titleKey)),
-    [can, t],
+    () => [
+      ...navigationCommands(appRoutes, can, (route) => t(route.titleKey)),
+      ...(can('ai.use')
+        ? [{ id: 'aiAssistant', label: t('ai.ask'), path: '', action: () => openAi() }]
+        : []),
+    ],
+    [can, t, openAi],
   );
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))
@@ -342,6 +347,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             <strong aria-current="page">{title}</strong>
           </nav>
           <div className="turaco-appbar-actions">
+            <AskTuraco />
             <button
               type="button"
               className="turaco-search-trigger"

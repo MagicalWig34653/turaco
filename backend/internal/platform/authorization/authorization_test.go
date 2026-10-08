@@ -137,3 +137,24 @@ func TestRequireAuthenticated(t *testing.T) {
 		})
 	}
 }
+
+type fixedAuth struct{ p Principal }
+
+func (f fixedAuth) Authenticate(*http.Request) (Principal, bool, error) { return f.p, true, nil }
+
+func TestWithTenantSetsTheServerResolvedTenant(t *testing.T) {
+	a := WithTenant(fixedAuth{Principal{UserID: "u", TenantID: "from-upstream"}}, "installation-1")
+	p, ok, err := a.Authenticate(httptest.NewRequest("GET", "/?tenantId=evil", nil))
+	if err != nil || !ok || p.TenantID != "installation-1" || p.UserID != "u" {
+		t.Fatalf("%+v %v %v", p, ok, err)
+	}
+	if _, ok, _ := WithTenant(DenyAll{}, "x").Authenticate(httptest.NewRequest("GET", "/", nil)); ok {
+		t.Error("tenant wrapper authenticated an anonymous request")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("empty tenant accepted")
+		}
+	}()
+	WithTenant(DenyAll{}, "")
+}

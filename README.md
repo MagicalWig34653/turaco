@@ -42,7 +42,7 @@
 | **Briefing** | A computed feed from all of the above, filtered by what you may see |
 | **Platform** | Authentication and roles, audit trail, transactional outbox, jobs, permissions registry, OpenAPI, i18n (English and German) |
 
-Implemented with fake provider adapters: software lifecycle and patching (F9) and attended remote access with HopToDesk, RustDesk and AnyDesk launch connectors (F10). Planned: workforce presence (F11) and Turaco AI (F12). Live provider clients (Microsoft Graph, Autotask REST, advisory feeds) are not built yet; their ports have fakes and imports.
+Implemented with fake provider adapters: software lifecycle and patching (F9) and attended remote access with HopToDesk, RustDesk and AnyDesk launch connectors (F10). Workforce presence (F11, opt-in, privacy-first) is implemented for manual entries; Microsoft 365 and HR sources are planned. Turaco AI (F12) is implemented as a read-only, user-delegated assistant (fake and local Ollama-compatible providers); confirmed writes and an MCP server are planned. Live provider clients (Microsoft Graph, Autotask REST, advisory feeds) are not built yet; their ports have fakes and imports.
 
 ## Principles
 

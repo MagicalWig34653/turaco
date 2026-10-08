@@ -1,4 +1,6 @@
-import { PresenceProvider, usePresence } from '../modules/presence/PresenceProvider';
+import { AiProvider, useAi } from '../modules/ai/AiProvider';
+import { AdminScreen as AiAdminScreen } from '../modules/ai/AdminScreen';
+import { PresenceProvider } from '../modules/presence/PresenceProvider';
 import {
   MyPresenceScreen,
   TeamCoverageScreen,
@@ -133,6 +135,8 @@ import { ForbiddenView, NotFoundView } from './StatusViews';
 
 function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
   switch (id) {
+    case 'aiAdmin':
+      return <AiAdminScreen />;
     case 'presenceMine':
       return <MyPresenceScreen />;
     case 'presenceTeam':
@@ -360,7 +364,7 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
 
 function AuthenticatedApp() {
   const { t } = useI18n();
-  const { can } = usePresence();
+  const { can } = useAi();
   const { pathname } = useLocation();
 
   useEffect(() => {
@@ -399,7 +403,9 @@ function Gate() {
   if (state.status === 'anonymous') return <LoginScreen />;
   return (
     <PresenceProvider>
-      <AuthenticatedApp />
+      <AiProvider key={state.session.userId}>
+        <AuthenticatedApp />
+      </AiProvider>
     </PresenceProvider>
   );
 }

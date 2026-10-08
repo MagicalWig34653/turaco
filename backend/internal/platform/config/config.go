@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+var tenantIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+
 type Config struct {
 	Environment string
 	HTTPAddr    string
@@ -50,6 +52,14 @@ type Config struct {
 	PresenceRetentionDays int
 	// PresenceSourceStaleAfter is PRESENCE_SOURCE_STALE_AFTER: older external signals count as unknown.
 	PresenceSourceStaleAfter time.Duration
+
+	// AIEnabled is AI_ENABLED, the startup gate of Turaco AI (ADR-0029, F12): without it only GET /ai/status is
+	// mounted and no provider is ever called. The runtime switch is the audited ai.settings.enabled.
+	AIEnabled bool
+	// AISecretDir is AI_SECRET_DIR: the directory of deployment secret files that AI Provider secret references name.
+	AISecretDir string
+	// TenantID is TENANT_ID, the fixed data plane id of this single-tenant installation (F12 A15).
+	TenantID string
 
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
@@ -177,6 +187,9 @@ var Registry = []Descriptor{
 	{Name: "PRESENCE_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Workforce Presence (ADR-0028): routes, the retention job and the public availability contract. Off by default; enabling needs the customer's data protection impact assessment and works-council confirmation, recorded afterwards in the audited runtime setting presence.settings.enabled. API and worker must use the same value."},
 	{Name: "PRESENCE_RETENTION_DAYS", Type: "int", Default: "30", Description: "Upper bound of the Workforce Presence retention: past entries are deleted this many days after they ended; 1 to 30, never longer. The runtime setting can only shorten it."},
 	{Name: "PRESENCE_SOURCE_STALE_AFTER", Type: "duration", Default: "24h", Description: "An externally sourced Workforce Presence signal older than this is shown as unknown instead of being trusted; at least 1m."},
+	{Name: "AI_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Turaco AI (ADR-0029, F12): the assistant API, tools and provider calls. Off by default; when off only GET /api/v1/ai/status is mounted and no provider is called. Enabling also needs the audited runtime setting ai.settings.enabled and an enabled AI Provider. API and worker may differ (the worker only runs the cleanup jobs)."},
+	{Name: "AI_SECRET_DIR", Type: "string", Description: "Directory with deployment secret files (for example mounted Docker secrets). An AI Provider's `secretRef` names a file in it (`<dir>/<secretRef>`, one line, read when the provider is built, never stored in the database, logged or sent into prompts). Empty: providers without credentials only (a local Ollama)."},
+	{Name: "TENANT_ID", Type: "string", Default: "default", Description: "Fixed data plane (tenant) id of this installation (F12 A15, ADR-0007). It is attached to every authenticated principal on the server and written to AI audit entries and AI usage counters; it is never taken from request fields. 1 to 100 characters of letters, digits, `.`, `_` and `-`."},
 	{Name: "SOFTWARE_DEPLOY_WRITE", Type: "bool", Default: "false", Description: "Capability: allow Deployments to write ring assignments to the Management Provider (start, resume, promote, resolving targets, clearing after a cancel or kill switch). The worker job endpoints.deployment_tick runs every minute either way; with the capability off it only runs the kill-switch sweep (pause, halt, queue clearing). API and worker must use the same value. Off by default; enabling is audited (endpoints.deploy_write.enabled). The Graph write client is not implemented yet: the writer is a placeholder whose writes fail permanently, so a ring halts with assignment_failed."},
 	{Name: "ADVISORY_SYNC", Type: "bool", Default: "false", Description: "Synchronize security advisories from the public NVD and CISA KEV feeds (scheduled worker job security.advisory_sync and `turaco-admin security sync-feeds`). No account is needed. Imported advisories start in status new; criteria come from the feed's CPE data and analysts decide applicability."},
 	{Name: "ADVISORY_SOURCES", Type: "string", Default: "nvd,cisa_kev", Description: "Comma-separated advisory feeds to synchronize: `nvd` (NVD API 2.0) and/or `cisa_kev` (CISA Known Exploited Vulnerabilities catalog). Used when ADVISORY_SYNC is on and by the admin command."},
@@ -249,6 +262,12 @@ func Load() (Config, error) {
 	}
 	if cfg.PresenceSourceStaleAfter < time.Minute {
 		return Config{}, fmt.Errorf("PRESENCE_SOURCE_STALE_AFTER must be at least 1m")
+	}
+	cfg.AIEnabled = getenv("AI_ENABLED", "false") == "true"
+	cfg.AISecretDir = os.Getenv("AI_SECRET_DIR")
+	cfg.TenantID = getenv("TENANT_ID", "default")
+	if !tenantIDPattern.MatchString(cfg.TenantID) {
+		return Config{}, fmt.Errorf("TENANT_ID must be 1 to 100 characters of letters, digits, '.', '_' and '-'")
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

@@ -23,7 +23,7 @@ The core is a modular monolith. Each domain owns its model, application operatio
 - targeting/dynamic groups;
 - configuration and feature flags;
 - localization and shared API/error conventions;
-- *(planned, [ADR-0029](../decisions/ADR-0029-turaco-ai.md))* Turaco AI runtime: AI Provider connectors, the AI Tool registry and AI Proposals. Modules contribute AI Tools that call their own public application contracts; the AI runtime never reads module tables.
+- Turaco AI runtime ([ADR-0029](../decisions/ADR-0029-turaco-ai.md), [F12 design](../product/f12-turaco-ai-design.md); read-only slice A-A implemented as `backend/internal/platform/ai`, schema `ai`): the provider port with its adapters (`providers/fake`, `providers/openaicompat`) and the dedicated validating provider transport (`safehttp`), the AI Tool registry, the session-bound conversation runtime, caps and usage, and the AI settings. AI Proposals follow with A-C. `platform/ai` owns no business data, imports no module and reads no module table (`make archcheck`). Modules contribute AI Tools from their own `public` package (`servicedesk/public`, `knowledge/public`, `endpoints/public`: `AITools(service)`), each calling that module's application service as the requesting User and returning a dedicated field-allowlisted DTO; the composition root (`internal/wiring/ai.go`) registers them. A tool's permission is the module's existing permission key; the generated [AI tool reference](../reference/ai-tools.md) lists tools, permissions, risk and data classes.
 
 A domain may use these capabilities but must not reimplement its own alternative.
 

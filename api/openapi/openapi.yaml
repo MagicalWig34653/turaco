@@ -11104,6 +11104,255 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /ai/status:
+    get:
+      operationId: getAiStatus
+      summary: Whether the assistant is on, the active provider and the tools offered to the caller.
+      description: "Any signed-in User; always mounted, even when AI_ENABLED is false. `enabled` is false (and provider, tools and usage are empty) unless the startup gate, the runtime switch and an enabled provider are on and the caller holds `ai.use`. `tools` lists only tools the caller may use with the active provider. `no-store`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiStatus'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/conversations/messages:
+    post:
+      operationId: sendAiMessage
+      summary: Send one plain user message and get the assistant answer.
+      description: "Needs `ai.use`. The body carries only the new user text, an optional conversation id (omit to start one) and optional UI context records; there is no field for roles, system prompts, tool calls or earlier messages, and unknown fields are rejected. Roles, tool calls and tool results live in the server-held conversation (30 minutes idle, bound to the User, tenant and sign-in session). A conversation id of another User or session returns 404 `ai.not_found`. A tool call for a record the User has not named in this conversation is refused and returned in `scopeRequests`; the UI asks the User and then calls `/ai/conversations/scope`. Errors: `ai.rate_limited` and `ai.budget_exceeded` (429), `ai.provider_unavailable` (503), `ai.provider_changed` and `ai.turn_in_progress` (409), `ai.conversation_too_large` (422), `ai.disabled` (404). Audited with metadata only (no prompt or answer text)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiMessageRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiTurn'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '429': {$ref: '#/components/responses/AILimited'}
+        '503': {$ref: '#/components/responses/AIUnavailable'}
+        '422': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/conversations/transcript:
+    post:
+      operationId: getAiTranscript
+      summary: The user-visible messages of a conversation.
+      description: "Needs `ai.use`. POST so the conversation id never appears in a URL or log. Returns user and assistant text only; tool calls and results never leave the server."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiConversationRef'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiTranscript'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/conversations/scope:
+    post:
+      operationId: consentAiResource
+      summary: Allow the assistant to read one more record in this conversation.
+      description: "Needs `ai.use`. Explicit per-record consent after a `scopeRequests` entry (design A11). The tool still checks the User's own permission for the record. Audited (`ai.scope.consented`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiConsentRequest'}
+      responses:
+        '204': {description: No content.}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/conversations/end:
+    post:
+      operationId: endAiConversation
+      summary: Delete the server-held conversation.
+      description: "Needs `ai.use`. Idempotent per id except that a second call returns 404."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiConversationRef'}
+      responses:
+        '204': {description: No content.}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/settings:
+    get:
+      operationId: getAiSettings
+      summary: "AI policy (runtime switch, retention and caps)."
+      description: "Needs `ai.settings.view` or `ai.settings.manage`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiSettings'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: updateAiSettings
+      summary: Replace the AI policy.
+      description: "Needs `ai.settings.manage`; `expectedVersion` required. Enabling needs an enabled provider. Audited with before and after (`ai.settings.updated`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiSettingsRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiSettings'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/providers:
+    get:
+      operationId: listAiProviders
+      summary: AI Providers (never secret material).
+      description: "Needs `ai.settings.view` or `ai.settings.manage`. `secretRef` is the name of a deployment secret file; the secret itself is never stored or returned."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProviderList'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createAiProvider
+      summary: Add an AI Provider.
+      description: "Needs `ai.settings.manage`. The endpoint is validated (https; http only for `local`; no userinfo, query or special-range literal IP). An external provider needs `dpaRecordedOn`, `noTrainingConfirmed` and `region`. Without `allowedDataClasses` only `public_reference` is allowed. At most one provider can be `enabled` (400 otherwise). Audited (`ai.provider.created`), event `AIProviderChanged`. Credentials are not accepted in the body."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiProviderRequest'}
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProvider'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/providers/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: updateAiProvider
+      summary: Replace an AI Provider configuration.
+      description: "Needs `ai.settings.manage`; `expectedVersion` required; the kind cannot change. Disabling the active provider switches the assistant off. Audited with before and after."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiProviderRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProvider'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/providers/{id}/test:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: testAiProvider
+      summary: Send a fixed test prompt through the provider transport.
+      description: "Needs `ai.settings.manage`. Returns a code only (`ok`, `provider_unavailable`), never provider content."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProviderTest'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/usage:
+    get:
+      operationId: getAiUsage
+      parameters:
+        - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 90, default: 30}}
+      summary: Aggregated AI usage per day (counts only).
+      description: "Needs `ai.usage.view`. Query `days` 1 to 90 (default 30). `estimatedCostMicro` is millionths of the configured currency unit."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiUsage'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -11595,6 +11844,36 @@ components:
             $ref: '#/components/schemas/Error'
     PresenceConflict:
       description: "State conflict (presence.version_conflict, presence.invalid_transition, presence.read_only)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AIInvalid:
+      description: "Invalid input (ai.invalid_request)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AINotFound:
+      description: "Not found, not yours, expired or the assistant is off (ai.not_found, ai.disabled)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AIConflict:
+      description: "Conflict or unprocessable (ai.version_conflict, ai.provider_changed, ai.turn_in_progress, ai.conversation_too_large)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AILimited:
+      description: "Cap reached (ai.rate_limited, ai.budget_exceeded)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    AIUnavailable:
+      description: "The AI provider is not available (ai.provider_unavailable)."
       content:
         application/json:
           schema:
@@ -16708,3 +16987,189 @@ components:
               onsiteAvailable: {type: [integer, 'null']}
               state: {type: string, enum: [ok, below, unknown]}
               unavailableUserIds: {type: array, items: {type: string, format: uuid}, description: Only for presence.view_entries holders.}
+    AiUsageCounters:
+      type: object
+      properties:
+        day: {type: string, format: date}
+        requestsToday: {type: integer}
+        requestsThisHour: {type: integer}
+        requestsTodayRemaining: {type: integer}
+        requestsHourRemaining: {type: integer}
+        tokensTodayRemaining: {type: integer, format: int64}
+        installationTokensRemaining: {type: integer, format: int64}
+    AiStatus:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        permissions:
+          type: object
+          properties:
+            use: {type: boolean}
+            settingsView: {type: boolean}
+            settingsManage: {type: boolean}
+            usageView: {type: boolean}
+        provider:
+          type: [object, 'null']
+          properties:
+            displayName: {type: string}
+            local: {type: boolean, description: "True when the model runtime is inside the installation's network."}
+            model: {type: string}
+            allowedDataClasses: {type: array, items: {$ref: '#/components/schemas/AiDataClass'}}
+        tools: {type: array, items: {type: string}, description: "Tool names usable by the caller with this provider."}
+        conversationTtlMinutes: {type: integer}
+        usage: {oneOf: [{$ref: '#/components/schemas/AiUsageCounters'}, {type: 'null'}]}
+    AiDataClass:
+      type: string
+      enum: [public_reference, business_record, personal_contact, device_context]
+    AiResourceRef:
+      type: object
+      required: [type, id]
+      properties:
+        type: {type: string, enum: [ticket, device]}
+        id: {type: string, format: uuid}
+    AiMessageRequest:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        conversationId: {type: string, description: "Omit to start a conversation."}
+        text: {type: string, minLength: 1, maxLength: 4000}
+        context: {type: array, maxItems: 5, items: {$ref: '#/components/schemas/AiResourceRef'}, description: "Records the UI context names (for example the open Ticket); they are the only records, besides ids the User types, the assistant may read without consent."}
+    AiConversationRef:
+      type: object
+      required: [conversationId]
+      additionalProperties: false
+      properties:
+        conversationId: {type: string}
+    AiConsentRequest:
+      type: object
+      required: [conversationId, resourceType, resourceId]
+      additionalProperties: false
+      properties:
+        conversationId: {type: string}
+        resourceType: {type: string, enum: [ticket, device]}
+        resourceId: {type: string, format: uuid}
+    AiTurn:
+      type: object
+      properties:
+        conversationId: {type: string}
+        answer: {type: string, description: "Untrusted model output: render as inert text/Markdown, never auto-load images or follow links."}
+        stopReason: {type: string, enum: [answer, empty, iteration_limit, malformed_tool_calls]}
+        toolsUsed:
+          type: array
+          items:
+            type: object
+            properties:
+              tool: {type: string}
+              target: {oneOf: [{$ref: '#/components/schemas/AiResourceRef'}, {type: 'null'}]}
+              itemCount: {type: integer}
+              outcome: {type: string, enum: [ok, not_found, forbidden, invalid_arguments, unknown_tool, permission_denied, scope_expansion, too_many_calls, tool_error, egress_violation, result_too_large]}
+        scopeRequests:
+          type: array
+          items:
+            type: object
+            properties:
+              resourceType: {type: string}
+              resourceId: {type: string, format: uuid}
+              tool: {type: string}
+        tokens:
+          type: object
+          properties:
+            in: {type: integer}
+            out: {type: integer}
+        usage: {$ref: '#/components/schemas/AiUsageCounters'}
+    AiTranscript:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string, enum: [user, assistant]}
+              content: {type: string}
+    AiSettingsFields:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        retainConversations: {type: boolean}
+        retentionDays: {type: integer, minimum: 1, maximum: 30}
+        userRequestsPerHour: {type: integer, minimum: 1, maximum: 10000}
+        userRequestsPerDay: {type: integer, minimum: 1, maximum: 100000}
+        userTokensPerDay: {type: integer, minimum: 1000}
+        installationTokensPerDay: {type: integer, minimum: 1000}
+        maxOutputTokens: {type: integer, minimum: 64, maximum: 8192}
+        maxToolIterations: {type: integer, minimum: 1, maximum: 10}
+    AiSettings:
+      allOf:
+        - $ref: '#/components/schemas/AiSettingsFields'
+        - type: object
+          properties:
+            updatedBy: {type: [string, 'null'], format: uuid}
+            updatedAt: {type: string, format: date-time}
+            version: {type: integer}
+    AiSettingsRequest:
+      allOf:
+        - $ref: '#/components/schemas/AiSettingsFields'
+        - type: object
+          required: [expectedVersion]
+          properties:
+            expectedVersion: {type: integer}
+    AiProviderFields:
+      type: object
+      properties:
+        displayName: {type: string, maxLength: 100}
+        endpointUrl: {type: string, description: "https, or http for a local provider; no userinfo or query. Empty for kind fake."}
+        model: {type: string}
+        local: {type: boolean}
+        allowedDataClasses: {type: array, items: {$ref: '#/components/schemas/AiDataClass'}}
+        dpaRecordedOn: {type: [string, 'null'], format: date}
+        noTrainingConfirmed: {type: boolean}
+        region: {type: string}
+        secretRef: {type: [string, 'null'], description: "Name of a deployment secret file; never the secret."}
+        enabled: {type: boolean}
+        priceInPerMTok: {type: number}
+        priceOutPerMTok: {type: number}
+    AiProvider:
+      allOf:
+        - $ref: '#/components/schemas/AiProviderFields'
+        - type: object
+          properties:
+            id: {type: string, format: uuid}
+            kind: {type: string, enum: [fake, openai_compatible]}
+            version: {type: integer}
+            createdAt: {type: string}
+            updatedAt: {type: string}
+    AiProviderRequest:
+      allOf:
+        - $ref: '#/components/schemas/AiProviderFields'
+        - type: object
+          required: [kind, displayName]
+          additionalProperties: false
+          properties:
+            kind: {type: string, enum: [fake, openai_compatible]}
+            expectedVersion: {type: integer, description: "Required on PUT."}
+    AiProviderList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AiProvider'}}
+    AiProviderTest:
+      type: object
+      properties:
+        ok: {type: boolean}
+        code: {type: string, enum: [ok, provider_unavailable]}
+        durationMs: {type: integer}
+    AiUsage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              day: {type: string, format: date}
+              users: {type: integer}
+              requests: {type: integer}
+              tokensIn: {type: integer}
+              tokensOut: {type: integer}
+              estimatedCostMicro: {type: integer}
