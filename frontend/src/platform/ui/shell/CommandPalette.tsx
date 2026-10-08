@@ -49,7 +49,8 @@ export function CommandPalette({
 
   function choose(command: PaletteCommand) {
     onClose();
-    navigate(command.path);
+    if (command.action) command.action();
+    else navigate(command.path);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {

@@ -1,3 +1,4 @@
+import { AskTuraco } from '../ai/AiProvider';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -138,19 +139,22 @@ export function DeviceDetailScreen({ id }: { id: string }) {
       <PageHeader
         title={d.name}
         actions={
-          can('endpoints.manage') && !d.deletedObservedAt ? (
-            <>
-              {!d.assetId ? (
-                can('assets.view') ? (
-                  <Button onClick={() => setDialog('link')}>{t('endpoints.link')}</Button>
-                ) : null
-              ) : (
-                <>
-                  <Button onClick={() => setDialog('unlink')}>{t('endpoints.unlink')}</Button>
-                </>
-              )}
-            </>
-          ) : null
+          <>
+            <AskTuraco context={{ type: 'device', id }} />
+            {can('endpoints.manage') && !d.deletedObservedAt ? (
+              <>
+                {!d.assetId ? (
+                  can('assets.view') ? (
+                    <Button onClick={() => setDialog('link')}>{t('endpoints.link')}</Button>
+                  ) : null
+                ) : (
+                  <>
+                    <Button onClick={() => setDialog('unlink')}>{t('endpoints.unlink')}</Button>
+                  </>
+                )}
+              </>
+            ) : null}
+          </>
         }
       />
       <p>

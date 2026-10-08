@@ -1,3 +1,4 @@
+import { useAi } from '../ai/AiProvider';
 import { TableDate } from '../../platform/ui/TableDate';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
@@ -38,6 +39,7 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const { t } = useI18n();
   const { can, session } = useSession();
+  const ai = useAi();
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState<TicketStatus | ''>('');
   const [openOnly, setOpenOnly] = useState(true);
@@ -89,6 +91,15 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     };
     return [
       { id: 'open', label: t('contextMenu.open'), onSelect: () => navigate(path) },
+      ...(ai.can('ai.use')
+        ? [
+            {
+              id: 'ask-ai',
+              label: t('ai.ask'),
+              onSelect: () => ai.open({ type: 'ticket', id: ticket.id }),
+            },
+          ]
+        : []),
       ...(scope === 'all' &&
       can('tickets.manage') &&
       session &&

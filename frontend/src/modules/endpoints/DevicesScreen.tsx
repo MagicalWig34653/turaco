@@ -1,3 +1,4 @@
+import { useAi } from '../ai/AiProvider';
 import { TableDate } from '../../platform/ui/TableDate';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
@@ -5,7 +6,7 @@ import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
-import { Link } from '../../platform/router/Router';
+import { Link, navigate } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
@@ -39,6 +40,7 @@ const initial: DeviceFilters = {
 export function DevicesScreen() {
   const { t } = useI18n();
   const { can } = useSession();
+  const ai = useAi();
   const [filters, setFilters] = useState<DeviceFilters>(initial);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<ApiError>();
@@ -345,6 +347,22 @@ export function DevicesScreen() {
         columns={columns}
         rows={list.items}
         rowKey={(d) => d.id}
+        rowActions={(d) => [
+          {
+            id: 'open',
+            label: t('contextMenu.open'),
+            onSelect: () => navigate(`/devices/${encodeURIComponent(d.id)}`),
+          },
+          ...(ai.can('ai.use')
+            ? [
+                {
+                  id: 'ask-ai',
+                  label: t('ai.ask'),
+                  onSelect: () => ai.open({ type: 'device', id: d.id }),
+                },
+              ]
+            : []),
+        ]}
         loading={list.loading}
         error={list.error}
         onRetry={list.reload}

@@ -1,3 +1,4 @@
+import { AskTuraco } from '../ai/AiProvider';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -244,7 +245,7 @@ function TicketWorkspace({ id }: { id: string }) {
           {t(`tickets.priority.${ticket.priority}`)}
         </StatusBadge>
       </div>
-      <PageHeader title={ticket.title} />
+      <PageHeader title={ticket.title} actions={<AskTuraco context={{ type: 'ticket', id }} />} />
       <div className="incident-identities">
         <span>
           <Avatar name={name(ticket.reporterId)} />

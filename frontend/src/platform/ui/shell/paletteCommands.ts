@@ -3,7 +3,13 @@ import { canViewRoute } from '../../../app/routes';
 import type { CanFn } from '../../session/permissions';
 
 /** Navigation is today's source; object search providers can contribute commands later. */
-export type PaletteCommand = { id: string; label: string; path: string; keywords?: string };
+export type PaletteCommand = {
+  id: string;
+  label: string;
+  path: string;
+  keywords?: string;
+  action?: () => void;
+};
 
 export function navigationCommands(
   routes: readonly AppRoute[],
