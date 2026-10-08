@@ -23,3 +23,11 @@ Every list in Turaco (Tickets, Devices, Assets, Tasks and so on) has its own han
 - Saved Views can reference fields that later disappear or become unreadable; they degrade to "invalid condition" markers, never to widened results.
 - Cost limits (conditions, depth, IN list size, statement timeout) bound the damage of a pathological filter; index guidance is part of each catalog.
 - Cross-module field joins (for example Ticket by Device property) are out of scope; a module exposes only its own columns plus explicitly declared public lookups.
+
+## Review outcomes (2026-10-08)
+
+- Catalog code is trusted and uses a closed expression set and join graph validated at startup; no pattern-based identifier allow-list.
+- Fields whose visibility varies per row are neither filterable, sortable, countable nor searchable, and alias or label lookups apply the same disclosure check.
+- Views re-check share access and scope at every execution; count caches are keyed by principal scope, permission and membership fingerprint, and definition version.
+- Only operators backed by an index or measured plan are exposed; keyset pagination uses lexicographic predicates with explicit NULL handling.
+- Group pinning has one permission (`views.pin_for_groups`); Queue numbers are permanent once committed; Views of modules disabled under ADR-0032 are not executable.
