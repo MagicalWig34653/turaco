@@ -680,7 +680,19 @@ code {
   border: 2px dashed var(--sem-warning);
 }
 .login-card .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 12px;
+}
+.login-card .brand::before {
+  content: none;
+}
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex: none;
 }
 .login-title {
   font-size: 1.6rem;

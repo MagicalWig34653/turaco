@@ -96,7 +96,10 @@ export function LoginScreen() {
         </label>
       </div>
       <main className={emergency ? 'login-card login-card-emergency' : 'login-card'}>
-        <div className="brand">{t('app.name')}</div>
+        <div className="brand">
+          <img className="brand-icon" src="/icon-192.png" alt="" width={36} height={36} />
+          {t('app.name')}
+        </div>
         <h1 className="login-title">{emergency ? t('login.emergency.title') : t('login.title')}</h1>
 
         {state.status === 'anonymous' && state.expired ? (

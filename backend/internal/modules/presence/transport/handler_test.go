@@ -159,13 +159,16 @@ func TestRoutesAndErrorCodes(t *testing.T) {
 	}
 }
 
-func TestStartupGateMountsOnlyStatus(t *testing.T) {
+func TestStartupGateMountsStatusAndConfigurationOnly(t *testing.T) {
 	user := newID()
 	mux := serve(t, false, as(user, application.PermManageOwn, application.PermAdmin), user)
-	for _, p := range []string{"/api/v1/presence/settings", "/api/v1/presence/me/entries", "/api/v1/presence/availability"} {
+	for _, p := range []string{"/api/v1/presence/me/entries", "/api/v1/presence/availability"} {
 		if rec := do(mux, "GET", p, nil); rec.Code != 404 && rec.Code != 405 {
 			t.Errorf("%s while gated off: %d", p, rec.Code)
 		}
+	}
+	if rec := do(mux, "GET", "/api/v1/presence/settings", nil); rec.Code != 200 {
+		t.Errorf("settings while gated off: %d %s", rec.Code, rec.Body)
 	}
 	rec := do(mux, "GET", "/api/v1/presence/status", nil)
 	var st struct {
