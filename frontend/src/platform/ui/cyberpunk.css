@@ -107,10 +107,9 @@ html[data-theme='cyberpunk'] .turaco-brand-mark {
   color: var(--on-cyber);
   border-radius: 0;
   clip-path: none;
-  background:
-    linear-gradient(135deg, transparent 7px, var(--cyber-yellow) 7px) left / 51% 100% no-repeat,
-    linear-gradient(-45deg, transparent 7px, var(--cyber-yellow) 7px) right / 51% 100% no-repeat;
+  background: none;
   box-shadow: none;
+  border-radius: 8px;
   filter: drop-shadow(0 0 7px rgb(252 238 10 / 55%));
 }
 html[data-theme='cyberpunk'] .turaco-brand-name {
@@ -1228,7 +1227,7 @@ html[data-theme='cyberpunk'] .ticket-message {
 @media (prefers-reduced-motion: no-preference) {
   /* Boot: one flicker-in of the frame plus a single scan sweep on first paint. */
   html[data-theme='cyberpunk']:not([data-motion='reduced']) .turaco-shell {
-    animation: cp-boot 820ms linear both;
+    animation: cp-boot 820ms linear backwards; /* no forwards fill: a finished opacity effect must not keep the shell in its own render surface */
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced']) .turaco-shell::before {
     content: '';
@@ -1255,7 +1254,8 @@ html[data-theme='cyberpunk'] .ticket-message {
     .turaco-shell
     .turaco-content-column::after {
     will-change: transform;
-    animation: cp-floor 3.6s linear infinite;
+    /* steps(): one-pixel ticks (~15 compositor frames/s) instead of a 60-160 Hz re-composite of the whole page. */
+    animation: cp-floor 3.6s steps(56, end) infinite;
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced']) .turaco-search-label::after {
     animation: cp-caret 1s steps(1, end) infinite;
@@ -1305,7 +1305,7 @@ html[data-theme='cyberpunk'] .ticket-message {
       .briefing-card,
       .overview-actions a
     ):is(:hover, :focus-visible)::before {
-    animation: cp-sweep 2.4s linear infinite;
+    animation: cp-sweep 2.4s steps(36, end) infinite;
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced'])
     :is(.badge-live, .badge-danger)
@@ -1314,7 +1314,7 @@ html[data-theme='cyberpunk'] .ticket-message {
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced'])
     .turaco-rail-bottom-dot:not(.is-unknown) {
-    animation: cp-breathe 2.4s ease-in-out infinite;
+    animation: cp-breathe 2.4s steps(8, end) infinite;
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced'])
     :is(.context-menu, .turaco-command-dialog[open]) {
@@ -1331,7 +1331,7 @@ html[data-theme='cyberpunk'] .ticket-message {
     );
     background-size: 200% 100%;
     background-repeat: no-repeat;
-    animation: cp-shimmer 1.4s linear infinite;
+    animation: cp-shimmer 1.4s steps(28, end) infinite;
   }
 }
 @keyframes cp-boot {
@@ -1559,10 +1559,21 @@ html[data-theme='cyberpunk']
 @media (prefers-reduced-motion: no-preference) {
   html[data-theme='cyberpunk']:not([data-motion='reduced'])
     .work-dashboard
-    .dashboard-action-card::before {
-    animation: cp-sweep 8s linear infinite;
+    .dashboard-action-card:is(:hover, :focus-visible)::before {
+    animation: cp-sweep 8s steps(96, end) infinite;
   }
   html[data-theme='cyberpunk']:not([data-motion='reduced']) .page-header h1 {
     animation: cp-glitch 900ms steps(1, end) 1;
   }
+}
+
+/* Overview metric tiles: the panel keeps its cut corners, the hover tile inside is soft and rounded. */
+html[data-theme='cyberpunk'] .dashboard-metrics .metric-card {
+  --tile-radius: 8px;
+}
+html[data-theme='cyberpunk'] .dashboard-metrics .metric-card:is(:hover, :focus-visible) {
+  background-color: rgb(0 240 255 / 7%);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 240 255 / 35%),
+    0 0 14px rgb(0 240 255 / 14%);
 }

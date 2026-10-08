@@ -1,6 +1,6 @@
 // Package transport exposes the Turaco AI HTTP API under /api/v1/ai. Responses are no-store. Authorization is
 // decided in the service from the principal built from the HTTP session (never from the request body); the
-// routes only require a signed-in User. With AI_ENABLED off only GET /ai/status is mounted. The API accepts no
+// routes only require a signed-in User. With AI_ENABLED off only GET /ai/status and the admin configuration routes are mounted. The API accepts no
 // roles or messages from the browser other than the new plain user text (A12).
 package transport
 
@@ -28,13 +28,8 @@ func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authentica
 	signedIn := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(signedIn(fn))) }
 	route("GET /api/v1/ai/status", h.status)
-	if !svc.ModuleEnabled() {
-		return
-	}
-	route("POST /api/v1/ai/conversations/messages", h.message)
-	route("POST /api/v1/ai/conversations/transcript", h.transcript)
-	route("POST /api/v1/ai/conversations/scope", h.consent)
-	route("POST /api/v1/ai/conversations/end", h.end)
+	// Configuration routes stay mounted with the startup gate off so an administrator can prepare settings and
+	// providers before switching the module on; each is still permission-protected in the service.
 	route("GET /api/v1/ai/settings", h.getSettings)
 	route("PUT /api/v1/ai/settings", h.putSettings)
 	route("GET /api/v1/ai/providers", h.listProviders)
@@ -42,6 +37,13 @@ func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authentica
 	route("PUT /api/v1/ai/providers/{id}", h.updateProvider)
 	route("POST /api/v1/ai/providers/{id}/test", h.testProvider)
 	route("GET /api/v1/ai/usage", h.usage)
+	if !svc.ModuleEnabled() {
+		return
+	}
+	route("POST /api/v1/ai/conversations/messages", h.message)
+	route("POST /api/v1/ai/conversations/transcript", h.transcript)
+	route("POST /api/v1/ai/conversations/scope", h.consent)
+	route("POST /api/v1/ai/conversations/end", h.end)
 }
 
 func caller(w http.ResponseWriter, r *http.Request) ai.Caller {

@@ -10751,7 +10751,7 @@ paths:
     get:
       operationId: getPresenceSettings
       summary: Presence settings.
-      description: "Needs `presence.admin`. Dates only: no free text."
+      description: "Needs `presence.admin`. Dates only: no free text. Mounted even when PRESENCE_ENABLED is false."
       security:
         - sessionAuth: []
       responses:
@@ -11296,7 +11296,7 @@ paths:
     get:
       operationId: getAiSettings
       summary: "AI policy (runtime switch, retention and caps)."
-      description: "Needs `ai.settings.view` or `ai.settings.manage`."
+      description: "Needs `ai.settings.view` or `ai.settings.manage`. Mounted even when AI_ENABLED is false."
       security:
         - sessionAuth: []
       responses:

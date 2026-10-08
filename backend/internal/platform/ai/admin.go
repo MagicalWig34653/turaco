@@ -89,10 +89,9 @@ func (s *Service) EndConversation(ctx context.Context, c Caller, conversationID 
 
 // ---- settings ----
 
+// requireAdmin authorizes configuration access. It deliberately ignores the startup gate: administrators prepare
+// settings and providers before enabling the module. Only provider calls and conversations are gated.
 func (s *Service) requireAdmin(c Caller, manage bool) error {
-	if !s.cfg.Enabled {
-		return ErrDisabled
-	}
 	if c.UserID == "" || c.TenantID == "" {
 		return ErrForbidden
 	}
@@ -397,6 +396,9 @@ func (s *Service) TestProvider(ctx context.Context, c Caller, id string) (Provid
 	if err := s.requireAdmin(c, true); err != nil {
 		return ProviderTest{}, err
 	}
+	if !s.cfg.Enabled {
+		return ProviderTest{}, ErrDisabled // no provider call while the startup gate is off
+	}
 	if !uuidRE.MatchString(id) {
 		return ProviderTest{}, ErrNotFound
 	}
@@ -427,9 +429,6 @@ func (s *Service) TestProvider(ctx context.Context, c Caller, id string) (Provid
 
 // Usage returns aggregated usage of the last days. Needs ai.usage.view.
 func (s *Service) Usage(ctx context.Context, c Caller, days int) ([]InstallationUsage, error) {
-	if !s.cfg.Enabled {
-		return nil, ErrDisabled
-	}
 	if c.UserID == "" || c.TenantID == "" || !c.Has(PermUsageView) {
 		return nil, ErrForbidden
 	}

@@ -237,7 +237,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
       >
         <div className="turaco-rail-brand">
           <span className="turaco-brand-mark" aria-hidden="true">
-            ✦
+            <img src="/icon-192.png" alt="" width={31} height={31} decoding="async" />
           </span>
           <span className="turaco-brand-name">{t('app.name')}</span>
           <button

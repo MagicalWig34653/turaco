@@ -58,8 +58,42 @@
 .dashboard-metrics .metric-warning .metric-caption {
   color: var(--state-warning);
 }
-.dashboard-metrics .metric-card:hover {
+/* Tiles in the strip hover as soft rounded pills: radius token, subtle lift, ring follows the radius. */
+.dashboard-metrics .metric-card {
+  --tile-radius: var(--radius-md);
+  margin-inline: 6px;
+  padding: 10px 18px;
+  border-radius: var(--tile-radius);
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast),
+    box-shadow var(--motion-fast);
+}
+.dashboard-metrics .metric-card + .metric-card {
+  border-left: 0;
+}
+.dashboard-metrics .metric-card + .metric-card::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -7px;
+  width: 1px;
+  background: var(--border-token);
+  pointer-events: none;
+}
+.dashboard-metrics .metric-card:hover,
+.dashboard-metrics .metric-card:focus-visible {
   background: var(--surface-hover);
+  border-color: transparent;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+.dashboard-metrics .metric-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+.dashboard-metrics .metric-card:active {
   transform: none;
 }
 .dashboard-scope {
@@ -111,10 +145,15 @@
 .dashboard-action-card:nth-child(3) {
   animation-delay: 100ms;
 }
-.dashboard-action-card:hover {
+.dashboard-action-card:hover,
+.dashboard-action-card:focus-visible {
   transform: translateY(-2px);
   border-color: var(--accent);
   box-shadow: var(--shadow-card);
+}
+.dashboard-action-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .dashboard-action-card:active {
   transform: translateY(0);
@@ -407,8 +446,8 @@
   .dashboard-metrics .metric-card {
     min-height: 96px;
   }
-  .dashboard-metrics .metric-card:nth-child(3) {
-    border-left: 0;
+  .dashboard-metrics .metric-card:nth-child(3)::before {
+    content: none;
   }
   .dashboard-metrics .metric-arrow {
     right: 12px;

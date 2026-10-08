@@ -235,16 +235,23 @@ func TestAdministrationNeedsItsPermissionsAndNeverAcceptsSecrets(t *testing.T) {
 	}
 }
 
-func TestStartupGateOffMountsOnlyStatus(t *testing.T) {
+func TestStartupGateOffMountsStatusAndConfigurationOnly(t *testing.T) {
 	h, _ := setup(t, false)
 	u := newID()
 	w, m := call(h, "GET", "/api/v1/ai/status", u, "ai.use", "")
 	if w.Code != 200 || m["enabled"] != false || m["provider"] != nil {
 		t.Errorf("status: %d %v", w.Code, m)
 	}
-	for _, p := range []string{"/api/v1/ai/conversations/messages", "/api/v1/ai/providers", "/api/v1/ai/settings"} {
-		if w, _ := call(h, "POST", p, u, "ai.use,ai.settings.manage", `{"text":"hi"}`); w.Code != 404 && w.Code != 405 {
-			t.Errorf("%s mounted with AI_ENABLED off: %d", p, w.Code)
+	if w, _ := call(h, "POST", "/api/v1/ai/conversations/messages", u, "ai.use,ai.settings.manage", `{"text":"hi"}`); w.Code != 404 && w.Code != 405 {
+		t.Errorf("conversation route mounted with AI_ENABLED off: %d", w.Code)
+	}
+	// Configuration stays reachable (permission-protected) so an administrator can prepare it before enabling.
+	for _, p := range []string{"/api/v1/ai/settings", "/api/v1/ai/providers"} {
+		if w, _ := call(h, "GET", p, u, "ai.settings.manage", ""); w.Code != 200 {
+			t.Errorf("%s with AI_ENABLED off: %d", p, w.Code)
+		}
+		if w, _ := call(h, "GET", p, u, "ai.use", ""); w.Code != 403 {
+			t.Errorf("%s without permission: %d", p, w.Code)
 		}
 	}
 }

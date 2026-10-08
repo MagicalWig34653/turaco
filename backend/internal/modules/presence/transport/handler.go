@@ -1,6 +1,6 @@
 // Package transport exposes the Presence HTTP API under /api/v1/presence. Responses are no-store. Authorization
 // is decided in the application layer from the principal's Presence permissions; the route only requires a
-// signed-in User. With the startup gate off only GET /presence/status is mounted.
+// signed-in User. With the startup gate off only GET /presence/status and the admin configuration routes are mounted.
 package transport
 
 import (
@@ -29,12 +29,13 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	signedIn := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(signedIn(fn))) }
 	route("GET /api/v1/presence/status", h.status)
-	if !svc.ModuleEnabled() {
-		return
-	}
+	// Configuration routes stay mounted with the startup gate off (still presence.admin protected in the service).
 	route("GET /api/v1/presence/settings", h.getSettings)
 	route("PUT /api/v1/presence/settings", h.putSettings)
 	route("POST /api/v1/presence/settings/purge", h.purge)
+	if !svc.ModuleEnabled() {
+		return
+	}
 	route("GET /api/v1/presence/me/entries", h.myEntries)
 	route("POST /api/v1/presence/entries", h.create)
 	route("POST /api/v1/presence/entries/{id}/reschedule", h.reschedule)
