@@ -38,6 +38,16 @@ Keep technical documentation in English. Edit the Markdown source rather than ge
 
 Use system fonts and local assets. No external fonts, CDN resources, trackers or cookies. Light, Dark, Cyberpunk and Auto themes share the same markup and persist a local browser preference. Auto follows the operating system. Keep AA text contrast, visible keyboard focus, a skip link, semantic landmarks and usable layouts down to 360 px. Motion must honor `prefers-reduced-motion`, including counters and Cyberpunk effects. Search, mobile navigation, code copying and theme controls must remain keyboard accessible. Print output should show document content without navigation clutter.
 
+## Theme implementation and verification
+
+`site/assets/theme.js` runs in the head before content paints on both landing and generated documentation pages. The native, labeled select offers Light, Dark, Cyberpunk and Auto; `turaco-site-theme` stores the preference with guarded reads/writes. Auto responds to live system color-scheme changes. Storage failures leave the current page usable.
+
+`site/assets/cyberpunk.css` is scoped to Cyberpunk and uses the app's canvas, cyan, magenta and yellow palette. The hero reuses the SVG icon in a decorative neon wordmark above a perspective grid and static scanlines. Solid reading surfaces and bright focus outlines preserve contrast. Decorations are absolute so switching themes does not change content geometry.
+
+Performance budget: two continuous decorative animations (grid transform/opacity and a small border tracer) plus one short wordmark displacement on entry. Glow and shadows stay static; no animated filters, shadows or full-viewport backdrop filters. The mesh and preview frame contain paint. Reduced motion cancels animations; hidden tabs pause them. Keep future effects within this budget.
+
+After changes, run the site tests and build/link check. With cached Playwright Chromium, review landing and documentation screenshots at 390 and 1440 px for all four choices (Auto with both system schemes). Verify keyboard selection, persistence across navigation/reload, blocked storage, system changes, reduced motion, overflow, text contrast and stable content bounds. Browser tooling is local verification only, not a new site dependency.
+
 ## Deployment
 
 The owner selects **Settings → Pages → Build and deployment → Source: GitHub Actions**. The workflow uploads only `site/dist/` and deploys to <https://magicalwig34653.github.io/turaco/>. Relevant pushes to `main` and manual dispatch on `main` can deploy. Pull requests run tests and build/link checks only; write permissions are scoped to the deployment job. Non-main manual runs verify the site without publishing it. Pages uses the `pages` concurrency group, while pull-request checks have separate groups.

@@ -25,10 +25,14 @@
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
     <link rel="mask-icon" href="assets/mask-icon.svg" color="#246747" />
     <link rel="manifest" href="assets/site.webmanifest" />
-    <meta property="og:image" content="https://magicalwig34653.github.io/turaco/assets/og-image.png" />
+    <meta
+      property="og:image"
+      content="https://magicalwig34653.github.io/turaco/assets/og-image.png"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="assets/shared.css" />
     <link rel="stylesheet" href="assets/landing.css" />
+    <link rel="stylesheet" href="assets/cyberpunk.css" />
     <script src="assets/theme.js"></script>
     <script src="assets/landing.js" defer></script>
   </head>
@@ -105,7 +109,16 @@
     </header>
     <main id="main" tabindex="-1">
       <section class="hero wrap">
-        <div class="hero-mesh" aria-hidden="true"></div>
+        <div class="hero-mesh" aria-hidden="true">
+          <div class="cyber-wordmark">
+            <img
+              src="assets/favicon.svg"
+              width="48"
+              height="48"
+              alt=""
+            />turaco<span>// CONNECTED SYSTEMS</span>
+          </div>
+        </div>
         <div class="hero-copy">
           <p class="eyebrow">
             <span class="status-dot"></span> Built in the open. Connecting the
@@ -334,9 +347,9 @@
           <span aria-hidden="true">↳</span>
           <p>
             <strong>A project, not a promise of production readiness.</strong>
-            Intune uses a fake adapter; advisories come from the NVD and
-            CISA KEV feeds or manual import. The live Graph client, the
-            Autotask REST client and webhook are not implemented.
+            Intune uses a fake adapter; advisories come from the NVD and CISA
+            KEV feeds or manual import. The live Graph client, the Autotask REST
+            client and webhook are not implemented.
             <a href="docs/product/current-status.html"
               >Read the full implementation status.</a
             >
@@ -582,8 +595,8 @@
             <span class="phase-id">F5 <b>Done</b></span>
             <h3>Service desk &amp; knowledge</h3>
             <p>
-              Tickets, knowledge, problems, runbooks and the internal side of the
-              Autotask sync. The Autotask REST client and webhook remain.
+              Tickets, knowledge, problems, runbooks and the internal side of
+              the Autotask sync. The Autotask REST client and webhook remain.
             </p>
           </li>
           <li class="done">
@@ -598,8 +611,8 @@
             <span class="phase-id">F7 <b>Done</b></span>
             <h3>Infrastructure &amp; change</h3>
             <p>
-              Topology, services with impact analysis, changes with approvals and
-              planning with a maintenance calendar.
+              Topology, services with impact analysis, changes with approvals
+              and planning with a maintenance calendar.
             </p>
           </li>
           <li class="done">
@@ -607,7 +620,8 @@
             <h3>Security &amp; IT briefing</h3>
             <p>
               Advisories, findings, remediation tracking and the computed IT
-              briefing. NVD and CISA KEV feeds are implemented; OSV and MSRC remain.
+              briefing. NVD and CISA KEV feeds are implemented; OSV and MSRC
+              remain.
             </p>
           </li>
           <li>
@@ -639,8 +653,8 @@
             <span class="phase-id">F12 <b>Implemented</b></span>
             <h3>Turaco AI</h3>
             <p>
-              Typed tools acting as the requesting user. Read-only assistant with
-              fake and local providers; writes and MCP are planned.
+              Typed tools acting as the requesting user. Read-only assistant
+              with fake and local providers; writes and MCP are planned.
             </p>
           </li>
         </ol>

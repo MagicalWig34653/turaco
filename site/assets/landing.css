@@ -1025,28 +1025,6 @@
   white-space: nowrap;
   border: 0;
 }
-html[data-theme="cyberpunk"] .mock-app,
-html[data-theme="cyberpunk"] .ticket-float {
-  box-shadow: 0 0 25px color-mix(in srgb, var(--accent) 14%, transparent);
-}
-html[data-theme="cyberpunk"] .hero-visual::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent 0px,
-    transparent 3px,
-    color-mix(in srgb, var(--accent) 6%, transparent) 4px
-  );
-  mask-image: linear-gradient(transparent, #000, transparent);
-  animation: scanline 8s linear infinite;
-}
-html[data-theme="cyberpunk"] h1 em {
-  text-shadow: 0 0 32px color-mix(in srgb, var(--accent) 35%, transparent);
-}
 @keyframes mesh-drift {
   to {
     transform: translate(10px, 15px);
@@ -1077,11 +1055,6 @@ html[data-theme="cyberpunk"] h1 em {
   100% {
     opacity: 1;
     translate: 0 0;
-  }
-}
-@keyframes scanline {
-  to {
-    background-position: 0 80px;
   }
 }
 @media (min-width: 1450px) {
