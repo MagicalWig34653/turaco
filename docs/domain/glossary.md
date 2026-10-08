@@ -118,7 +118,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Launch Handle** — one-time, 60-second, user-bound token that Turaco exchanges for the provider launch link at the moment of use; only its hash is stored and the link is never stored.
 - **Remote Access Session** — Turaco's record of one authorized remote session on a Device: initiating User, optional Ticket, mode (attended/unattended), policy decision, consent outcome and provider session reference, with provider-reported session facts kept separately with source and freshness. "Remote Access" is the canonical term; its permissions use the `remote_access.*` namespace (formerly `remote_support.start`).
 
-## Workforce presence *(planned, ADR-0028)*
+## Workforce presence *(backend implemented, UI planned, ADR-0028)*
 - **Presence Entry** — time-bound statement about one User: planned work location (a Location, remote or travelling) or unavailable, with optional recurrence, source, freshness and visibility. Never carries an absence reason. Not an HR record.
 - **Operational Availability** — derived availability of a person for operational work: `available`, `limited`, `unavailable` or `unknown`, with source and freshness.
 - **Team Coverage** — derived count of operationally available Team members for a period against an optional per-Team minimum.

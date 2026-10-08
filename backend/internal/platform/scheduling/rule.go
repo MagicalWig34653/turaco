@@ -1,4 +1,7 @@
-package application
+// Package scheduling holds the platform recurrence rule shared by Tasks
+// (Recurring Task Definitions) and Presence (recurring entries). It is pure:
+// no database, no clock, no module imports.
+package scheduling
 
 import (
 	"errors"
@@ -17,7 +20,20 @@ const (
 	FreqMonthly = "monthly"
 )
 
-// Rule says when a Recurring Task Definition runs. Occurrences are anchored
+// ErrInvalid matches every validation error returned by this package.
+var ErrInvalid = errors.New("scheduling: invalid rule")
+
+// InvalidError carries a user-safe validation message.
+type InvalidError struct{ Message string }
+
+func (e *InvalidError) Error() string { return "scheduling: invalid rule: " + e.Message }
+
+// Is makes errors.Is(err, ErrInvalid) true for every InvalidError.
+func (e *InvalidError) Is(target error) bool { return target == ErrInvalid }
+
+func invalid(msg string) error { return &InvalidError{Message: msg} }
+
+// Rule says when a recurring schedule runs. Occurrences are anchored
 // at StartsOn: every Interval days, weeks or months, at TimeOfDay in
 // Timezone's local time. Weekly rules run on Weekday (1 = Monday … 7 =
 // Sunday) of every Interval-th week; monthly rules on DayOfMonth of every
@@ -31,6 +47,9 @@ type Rule struct {
 	TimeOfDay  string
 	Timezone   string
 	StartsOn   string // local date, YYYY-MM-DD
+	// EndsOn optionally ends the schedule: no occurrence on a later local
+	// date (YYYY-MM-DD). Empty means open ended.
+	EndsOn string
 }
 
 const maxOccurrenceIndex = 1 << 20
@@ -68,8 +87,18 @@ func (r Rule) Validate() error {
 	if _, err := time.LoadLocation(r.Timezone); err != nil || r.Timezone == "" || r.Timezone == "Local" {
 		return invalid("timezone must be an IANA time zone name such as Europe/Berlin")
 	}
-	if _, err := time.Parse(time.DateOnly, r.StartsOn); err != nil {
+	start, err := time.Parse(time.DateOnly, r.StartsOn)
+	if err != nil {
 		return invalid("start date must be a date in the form YYYY-MM-DD")
+	}
+	if r.EndsOn != "" {
+		end, err := time.Parse(time.DateOnly, r.EndsOn)
+		if err != nil {
+			return invalid("end date must be a date in the form YYYY-MM-DD")
+		}
+		if end.Before(start) {
+			return invalid("end date must not be before the start date")
+		}
 	}
 	return nil
 }
@@ -121,7 +150,7 @@ func (r Rule) NextAfter(t time.Time) (time.Time, error) {
 	}
 	hi := maxOccurrenceIndex
 	if !r.occurrence(hi, loc, start, hour, minute).After(t) {
-		return time.Time{}, errors.New("tasks: no next occurrence within the supported range")
+		return time.Time{}, errors.New("scheduling: no next occurrence within the supported range")
 	}
 	lo := 0
 	for lo < hi { // smallest k with occurrence(k) > t
@@ -132,7 +161,52 @@ func (r Rule) NextAfter(t time.Time) (time.Time, error) {
 			lo = mid + 1
 		}
 	}
-	return r.occurrence(lo, loc, start, hour, minute).UTC(), nil
+	next := r.occurrence(lo, loc, start, hour, minute)
+	if r.pastEnd(next, loc) {
+		return time.Time{}, errors.New("scheduling: no next occurrence within the supported range")
+	}
+	return next.UTC(), nil
+}
+
+// pastEnd reports whether the local date of occ is after EndsOn.
+func (r Rule) pastEnd(occ time.Time, loc *time.Location) bool {
+	if r.EndsOn == "" {
+		return false
+	}
+	end, err := time.Parse(time.DateOnly, r.EndsOn)
+	if err != nil {
+		return true
+	}
+	y, m, d := occ.In(loc).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).After(end)
+}
+
+// MaxBetween bounds the number of occurrences Between returns.
+const MaxBetween = 1000
+
+// Between returns the occurrences t with from <= t < to in UTC, ascending, at
+// most MaxBetween of them. It honours StartsOn and EndsOn. The window may be
+// any size; the count bound keeps the cost fixed.
+func (r Rule) Between(from, to time.Time) ([]time.Time, error) {
+	if err := r.Validate(); err != nil {
+		return nil, err
+	}
+	var out []time.Time
+	if !from.Before(to) {
+		return out, nil
+	}
+	// NextAfter is strictly after its argument; step back one nanosecond so
+	// an occurrence exactly at from is included.
+	cur := from.Add(-time.Nanosecond)
+	for len(out) < MaxBetween {
+		n, err := r.NextAfter(cur)
+		if err != nil || !n.Before(to) {
+			break
+		}
+		out = append(out, n)
+		cur = n
+	}
+	return out, nil
 }
 
 // String describes the rule for logs and audit metadata (no user text).

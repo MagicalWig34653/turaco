@@ -35,6 +35,7 @@
 | `MajorIncidentUpdated` | 1 | service-desk | A Major Incident changed status or got a public update. Payload: majorIncidentId, status. |
 | `ManagementApplicabilityChanged` | 1 | endpoints | Turaco's expected applicability evaluation meaningfully changed for a managed target. |
 | `ManagementAssignmentChanged` | 1 | endpoints | The current assignments of a Management Artifact meaningfully changed during a provider ingestion run: assignments were opened or closed, or a changed assignment was replaced; unchanged re-reads publish nothing. One event per artifact and run. Payload: artifactId, provider, opened, closed. |
+| `PresenceEntryChanged` | 1 | presence | A Workforce Presence entry was created, rescheduled, relocated, re-recurred or cancelled. Payload: entryId, userId, operation, from, to. Carries no kind, location or reason. |
 | `PurchaseOrderApproved` | 1 | procurement | A purchase order was approved. Payload: orderId, supplierId. |
 | `PurchaseOrderReceived` | 1 | procurement | Every line of a purchase order was received. Payload: orderId, supplierId. |
 | `PurchaseOrderSent` | 1 | procurement | A purchase order was sent to the supplier. Payload: orderId, supplierId. |

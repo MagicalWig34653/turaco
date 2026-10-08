@@ -39,6 +39,12 @@
 | `platform.audit.view` | elevated | Query the audit log. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
+| `presence.admin` | high | Administer Workforce Presence: the runtime switch, the recorded data protection impact assessment and works-council dates, retention, and immediate purge of all entries. |
+| `presence.manage_entries` | elevated | Create, change and cancel Workforce Presence entries of other Users in one's Teams. Every change is audited per entry. |
+| `presence.manage_own` | normal | Create, change and cancel one's own Workforce Presence entries (work location, remote, travelling, unavailable) and read them. Entries carry no reason or note. |
+| `presence.manage_teams` | elevated | Set the minimum Team Coverage (and the on-site minimum) of Teams. |
+| `presence.view_availability` | elevated | See Operational Availability (available, limited, unavailable, unknown) and Team Coverage counts of the Users in one's own Teams. No entry details. |
+| `presence.view_entries` | elevated | See the entry details of other Users in one's Teams that their owners allowed to be seen, and the names behind Team Coverage counts. Every read is audited (viewer, scope, count; never content). |
 | `problems.manage` | elevated | Open Problems, record cause, workaround and resolution, mark Known Errors and link tickets. Reading problems needs tickets.view or tickets.manage. |
 | `procurement.manage` | elevated | Manage suppliers and procurement requests; create, submit for approval, send, cancel and close purchase orders. |
 | `procurement.view` | normal | View suppliers, procurement requests and purchase orders. |

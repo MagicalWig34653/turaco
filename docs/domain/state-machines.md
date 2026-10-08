@@ -189,6 +189,9 @@ A Finding starts `open` when an Advisory's criteria match an observed installati
 ## Briefing Item
 `draft → published → withdrawn`. Operations (F2, `modules/briefing`): `publish` (draft → published; an expired draft cannot be published; emits `BriefingItemPublished`), `withdraw` (published → withdrawn). Only drafts can be edited or deleted; published and withdrawn items are immutable history, so what readers saw stays traceable (correct a published item by withdrawing it and creating a new one). Viewers (`briefing.view`) see published, unexpired items only; managers (`briefing.manage`) see all. Plain text; titles and bodies are never audited.
 
+## Presence Entry
+Manual entry: `active → cancelled` (terminal). Operations (F11 P-A, `modules/presence`): `Create`, `Reschedule`, `ChangeLocation` (work location entries only), `ChangeRecurrence`, `Cancel`; each takes `expectedVersion` and bumps the version, none is a generic status update. An entry whose time has passed stays `active` until `presence.purge` removes it (no `completed` state). External entries (P-C) are source-owned interval history (`observed_from`, `observed_to`) and read-only in Turaco. Operational Availability (`available|limited|unavailable|unknown`) and Team Coverage are derived at read time, not states: any applicable `unavailable` wins, otherwise a work location that meets the need gives `available`, any other gives `limited`, no entry or a stale external signal gives `unknown`.
+
 ## Recurring Task Definition
 `active ↔ paused`, plus deletion. `pause` clears the next run; `resume` schedules the first run after now (runs missed while paused are not generated). Changing the rule of an active definition reschedules it from now. The generation job creates at most one Task per definition per pass, for the oldest due run, and moves the schedule to the first run after now.
 

@@ -1,6 +1,6 @@
 # F11 Workforce Presence — Feature Design
 
-**Status:** Draft 2026-10-07; decisions W1–W9 adopted by default (autonomous progress; revisit with the customer's data protection review). Nothing is implemented. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0028](../decisions/ADR-0028-workforce-presence.md) (decision and privacy constraints, non-negotiable), [glossary](../domain/glossary.md#workforce-presence-planned-adr-0028), [module boundaries](../architecture/module-boundaries.md), [state machines](../domain/state-machines.md), [F7 design](f7-infrastructure-change-design.md) (Changes, Maintenance Window), [F10 design](f10-remote-access-design.md) (format reference).
+**Status:** Draft 2026-10-07; decisions W1–W9 adopted by default (autonomous progress; revisit with the customer's data protection review). P-A (backend) is implemented, see the implementation notes at the end; P-B and P-C are not. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0028](../decisions/ADR-0028-workforce-presence.md) (decision and privacy constraints, non-negotiable), [glossary](../domain/glossary.md#workforce-presence-planned-adr-0028), [module boundaries](../architecture/module-boundaries.md), [state machines](../domain/state-machines.md), [F7 design](f7-infrastructure-change-design.md) (Changes, Maintenance Window), [F10 design](f10-remote-access-design.md) (format reference).
 
 ## Decisions
 
@@ -147,3 +147,15 @@ Presence Entry, Operational Availability, Team Coverage (glossary, planned) and 
 - Module active without the opt-in recorded, or external source enabled before the DPIA date is set.
 - Microsoft 365 permissions broader than free/busy, work location and automatic-reply state; token and secret handling per ADR-0014.
 - Cross-module reads of `presence` tables or Organization private tables; new generic status update API; missing `expectedVersion` on operations.
+
+## P-A implementation notes
+
+Implemented 2026-10-08 (backend only; see [current status](current-status.md)). Deviations and decisions beyond the design:
+
+- **Scheduling package:** `backend/internal/platform/scheduling` (`Rule`, `Validate`, `NextAfter`, plus `EndsOn` and `Between(from, to)` bounded to 1000 occurrences). Tasks keeps its names through type aliases in `modules/tasks/application/recurrence_rule.go` and maps `scheduling.InvalidError` (which also matches `scheduling.ErrInvalid`) to its own `InvalidInputError`; the moved tests are unchanged apart from the error type.
+- **Scope:** until scoped role assignments exist, a viewer's scope is the viewer plus the current members of the viewer's own Teams (`organization/public.WorkDirectory`). `presence.manage_entries` and `presence.view_entries` apply inside the same scope. Entry detail is additionally limited by the owner's `visibility = detail` (or the entry having been made by the viewer); the break-glass case stays unbuilt.
+- **Recurrence:** the end date (`endsOn`) is mandatory and at most 366 days after the first occurrence; the stored `ended_at` is the end of the last occurrence (cancellation time for cancelled entries) and drives retention. At most 200 active manual entries per User.
+- **Ticket warning hint:** for Users outside the viewer's scope `Availability` returns `unknown` with `out_of_scope` and, only through the Go contract, `MayBeUnavailable` when the User is unavailable now. The HTTP API never returns it.
+- **Retention:** `presence.purge` runs daily even when the module is off. When the module has been switched off for `retention_days`, it deletes every entry. Setting the startup gate off without the runtime switch does not start that clock; use `PUT /presence/settings` (`enabled=false`) or `POST /presence/settings/purge`.
+- **API additions:** `GET /presence/status` (always mounted; enabled flag and the caller's Presence permissions), `POST /presence/settings/purge`, `GET /presence/teams/{id}/minimum`. With `PRESENCE_ENABLED=false` every other route is absent (404). Errors: `presence.disabled`, `presence.window_too_large`, `presence.not_permitted`, `presence.invalid_recurrence`, `presence.invalid_request`, `presence.not_found`, `presence.version_conflict`, `presence.invalid_transition`, `presence.read_only`.
+- **Not in P-A:** `presence.source_configs/source_runs` tables, source endpoints and jobs (P-C), the `presence.coverage_below_minimum` event and `presence.coverage_check` job (P-B with the notification), UI.
