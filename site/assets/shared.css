@@ -32,15 +32,17 @@
 }
 :root[data-theme="cyberpunk"] {
   color-scheme: dark;
-  --bg: #100e20;
-  --surface: #1e1931;
-  --text: #f6f2ff;
-  --muted: #c2b4dd;
-  --line: #5b4778;
-  --accent: #bfff65;
-  --accent-ink: #172505;
-  --soft: #302644;
-  --shadow: 0 24px 70px #ab3fff18;
+  --bg: #07060f;
+  --surface: #100d21;
+  --text: #f2f4ff;
+  --muted: #bab4d6;
+  --line: #665683;
+  --accent: #00f0ff;
+  --accent-ink: #06121a;
+  --soft: #1a1533;
+  --shadow: 0 12px 32px #0006;
+  --cyber-pink: #ff2bd6;
+  --cyber-yellow: #fcee0a;
 }
 * {
   box-sizing: border-box;
@@ -171,7 +173,10 @@ pre:has(.copy-code) {
   padding-top: 3rem;
 }
 [data-theme="cyberpunk"] .brand {
-  text-shadow: 0 0 25px #c0ff6555;
+  text-shadow:
+    -1px 0 #ff2bd6,
+    1px 0 #00f0ff,
+    0 0 18px #00f0ff55;
 }
 @media (prefers-reduced-motion: reduce) {
   *,

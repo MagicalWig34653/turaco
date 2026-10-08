@@ -13,6 +13,13 @@
     document.documentElement.dataset.theme =
       choice === "auto" ? (media.matches ? "dark" : "light") : choice;
   }
+  function visibility() {
+    document.documentElement.dataset.visibility = document.hidden
+      ? "hidden"
+      : "visible";
+  }
+  visibility();
+  document.addEventListener("visibilitychange", visibility);
   apply();
   media.addEventListener("change", apply);
   addEventListener("DOMContentLoaded", () => {
