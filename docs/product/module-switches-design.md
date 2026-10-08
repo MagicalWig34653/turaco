@@ -28,9 +28,18 @@ Route prefixes, retention jobs and startup gates are in `backend/internal/platfo
 
 `platform.module_switches (module_key PK, enabled, version >= 1, reason_code, updated_by, updated_at)`, migration `000059`. No row = catalog default, version 0. The upgrade migration seeds `presence` and `ai` from `presence.settings.enabled` and `ai.settings.enabled` with reason `upgrade_default`.
 
-States shown in the overview: `enabled`; `disabled` (switch off); `blocked` (switch on, a precondition is unmet; behaves as off). `blockedReason` is also shown for an off module so the UI can explain why it cannot be enabled yet: `startup_gate_off` (PRESENCE_ENABLED / AI_ENABLED false), `dpia_not_recorded`, `no_enabled_provider`, `no_providers_configured`, `dependency_disabled`.
+States shown in the overview: `enabled`; `disabled` (switch off); `blocked` (switch on, a precondition is unmet; behaves as off). `blockedReason` is also shown for an off module so the UI can explain why it cannot be enabled yet: `startup_gate_off` (PRESENCE_ENABLED / AI_ENABLED false), `dpia_not_recorded`, `no_enabled_provider`, `no_providers_configured`, `runtime_setting_off` (presence.settings.enabled / ai.settings.enabled is off, so `/modules/status` never claims a module is on while it refuses use), `dependency_disabled`.
 
 Lifecycle: see [state machines](../domain/state-machines.md#module-switch).
+
+## Jobs and outbox consumers while a module is off (review outcomes)
+
+Each job type `<key>.*` has one policy in the catalog:
+- **always run** (`AlwaysRunJobs`): safety and retention paths: `presence.purge`, `ai.sessions.expire`, `ai.retention.purge`, `remoteaccess.expire_sessions`, `endpoints.deployment_tick`. The deployment tick runs only the kill-switch sweep (pause, halt, queue clearing) while Endpoints is off and starts no new rollout work.
+- **disposable** (`DisposableJobs`): recurring scheduled ticks (`endpoints.software_package_sync`, `endpoints.deployment_correlation`, `security.advisory_sync|match_all|risk_review_reminders`, `changes.reminders`, `remoteaccess.observe`): completed without running; the schedule enqueues the next one.
+- **durable** (everything else, e.g. `security.match`, `servicedesk.external.push`, `services.vm_link_backfill`): kept pending (attempt refunded, offered again every minute) and run after the module is enabled. Nothing is lost.
+
+Outbox consumers named `<key>.*` of a disabled module do not run. The dispatcher hands the event, in its own transaction, to a durable job `<key>.deferred_event` for exactly that consumer (dedupe by event and consumer), so other consumers of the same event (for example the core task notification) are not blocked and the event is delivered after the module is enabled. Core consumers always run. `AlwaysRunConsumers` can exempt a safety or cleanup consumer; none exists yet. Briefing feed results are cached per principal and per set of active sources, so a switch is visible at once.
 
 ## API (OpenAPI is authoritative)
 

@@ -43,7 +43,7 @@ func TestDeploymentTickJobIsRegisteredAndScheduledEvenWithoutTheCapability(t *te
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, enabled := range []bool{false, true} {
 		runner := jobs.NewRunner(pool, jobs.RunnerOptions{}, logger)
-		if err := registerDeploymentEngine(runner, pool, enabled); err != nil {
+		if err := registerDeploymentEngine(runner, pool, enabled, nil); err != nil {
 			t.Fatalf("register (enabled=%v): %v", enabled, err)
 		}
 		if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, func(context.Context, jobs.Job) error { return nil }); err == nil {

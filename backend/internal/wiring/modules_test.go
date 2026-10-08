@@ -56,7 +56,13 @@ func TestModulePreconditionsKeepTheirOwnGates(t *testing.T) {
 	if got := blockedReason(t, on, "presence"); got != wiring.BlockedDPIANotRecorded {
 		t.Errorf("presence without recorded DPIA: %q", got)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE presence.settings SET dpia_recorded_on=current_date`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE presence.settings SET dpia_recorded_on=current_date, enabled=false`); err != nil {
+		t.Fatal(err)
+	}
+	if got := blockedReason(t, on, "presence"); got != wiring.BlockedRuntimeSettingOff {
+		t.Errorf("presence whose own runtime setting is off must be blocked, never reported on: %q", got)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE presence.settings SET enabled=true`); err != nil {
 		t.Fatal(err)
 	}
 	if got := blockedReason(t, on, "presence"); got != "" {

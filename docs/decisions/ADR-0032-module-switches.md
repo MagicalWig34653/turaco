@@ -15,7 +15,8 @@ Turaco is a modular monolith whose modules were always compiled in and mounted. 
 5. **Preconditions are never bypassed.** A module may register a precondition in the composition root (`internal/wiring/modules.go`): Presence needs `PRESENCE_ENABLED` and the recorded DPIA date, AI needs `AI_ENABLED` and an enabled provider, Remote Access needs configured providers. Enabling a module whose precondition is unmet is refused (`platform.modules.blocked`). A switch that is on while a precondition fails (later, for example) reports the state `blocked` and behaves as off. The overview shows the reason code. Environment startup gates remain read-only information.
 6. **A disabled module is hidden, not deleted.**
    - HTTP: one gate in front of the router maps the first path segment below `/api/v1/` to the owning module and answers `404 platform.module_disabled` for signed-in callers (anonymous callers still get 401, so the state is not revealed). Core paths and unknown paths pass through; `/ai/status` and `/presence/status` stay reachable.
-   - Background jobs: the job runner asks a gate after claiming a job; jobs `<module key>.*` of a disabled module are completed without running. The retention jobs of Presence and AI are exempt, because data protection clean-up must not depend on a switch.
+   - Background jobs: the job runner asks a gate after claiming a job. Per job type the catalog says: always run (retention, session expiry and the Deployment kill-switch sweep, which does only its safe part while Endpoints is off), drop (disposable recurring ticks) or defer (durable work stays pending until the module is enabled; nothing is lost).
+   - Outbox consumers `<module key>.*` of a disabled module hand their event to a durable per-consumer job that is delivered after re-enable; other consumers of the event are not blocked.
    - Other modules: a module's hard dependencies are enforced by `requires`, so an enabled module never calls a disabled one. For the few optional reads, the Briefing feed drops the sources of disabled modules and AI tools of a disabled module answer "not found". `Service.Require` returns `ErrModuleDisabled` for further adapters.
    - Data: tables, audit and history are untouched; enabling again restores everything.
 7. State is read through a short cache (2 seconds) per process, so a change made in another API instance or in the worker takes effect within seconds without a restart; a change made through a process is visible to it immediately. A read error fails closed (the gate answers 500, the job is retried later).
@@ -25,7 +26,7 @@ Turaco is a modular monolith whose modules were always compiled in and mounted. 
 
 - One platform concept, no per-module toggle system. Presence and AI keep their own runtime settings; the module switch is an additional layer, and both must allow use.
 - The dependency graph is coarse and follows the synchronous public contracts wired in `internal/wiring`. It can be relaxed later by an ADR when a dependency becomes optional.
-- Event consumers of the outbox are not gated: they only act on records of their own module and finish pending work. Deployment planning still reads the Security advisory summary of a disabled Security module (an unavoidable cycle in the graph, read-only counts); this is a documented limitation.
+- Deployment planning still reads the Security advisory summary of a disabled Security module (an unavoidable cycle in the graph, read-only counts); this is a documented limitation.
 - Every new route family needs a catalog entry; a test scans the transport packages and fails otherwise.
 
 See the [design](../product/module-switches-design.md).

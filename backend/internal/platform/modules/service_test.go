@@ -16,10 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
@@ -376,26 +378,26 @@ func TestGateAnswers404ForDisabledModuleRoutes(t *testing.T) {
 	}
 }
 
-func TestJobGateSkipsDisabledModulesButNotRetention(t *testing.T) {
+func TestJobGateDropsDisposableDefersDurableAndKeepsSafetyPaths(t *testing.T) {
 	s, _ := setup(t, nil)
 	ctx := context.Background()
-	if _, err := s.Disable(ctx, admin(), "security", "maintenance", ver(0)); err != nil {
-		t.Fatal(err)
+	for _, key := range []string{"security", "remoteaccess", "endpoints"} {
+		if _, err := s.Disable(ctx, admin(), key, "maintenance", ver(0)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// presence and ai are off by default.
-	cases := map[string]bool{
-		"security.advisory_sync":      false,
-		"security.match":              false,
-		"endpoints.deployment_tick":   true,
-		"changes.reminders":           true,
-		"tasks.recurrence.generate":   true,
-		"notifications.email.send":    true,
-		"organization.directory_sync": true,
-		"presence.purge":              true,
-		"ai.sessions.expire":          true,
-		"ai.retention.purge":          true,
-		"remoteaccess.observe":        true,
-		"unknown":                     true,
+	cases := map[string]jobs.GateDecision{
+		"security.advisory_sync": jobs.GateDrop, "security.match_all": jobs.GateDrop, "security.risk_review_reminders": jobs.GateDrop,
+		"security.match":                  jobs.GateDefer, // durable, enqueued by a user action
+		"security.deferred_event":         jobs.GateDefer,
+		"endpoints.software_package_sync": jobs.GateDrop, "endpoints.deployment_correlation": jobs.GateDrop,
+		"endpoints.deployment_tick":    jobs.GateRun, // safety sweep: kill switch, queue clearing
+		"remoteaccess.expire_sessions": jobs.GateRun, // ends sessions
+		"remoteaccess.observe":         jobs.GateDrop,
+		"changes.reminders":            jobs.GateRun, // changes is on
+		"tasks.recurrence.generate":    jobs.GateRun, "notifications.email.send": jobs.GateRun, "organization.directory_sync": jobs.GateRun,
+		"presence.purge": jobs.GateRun, "ai.sessions.expire": jobs.GateRun, "ai.retention.purge": jobs.GateRun, "unknown": jobs.GateRun,
 	}
 	for typ, want := range cases {
 		if got, err := s.JobGate(ctx, typ); err != nil || got != want {
@@ -404,52 +406,136 @@ func TestJobGateSkipsDisabledModulesButNotRetention(t *testing.T) {
 	}
 }
 
-func TestRunnerSkipsJobsOfDisabledModule(t *testing.T) {
+func TestRunnerDropsDisposableAndDefersDurableJobs(t *testing.T) {
 	s, pool := setup(t, nil)
 	ctx := context.Background()
-	typ := "endpoints.gate_test_" + strings.ReplaceAll(newID(), "-", "")
-	runner := jobs.NewRunner(pool, jobs.RunnerOptions{WorkerID: "gate-" + newID(), PollInterval: 10 * time.Millisecond, Gate: s.JobGate}, quiet())
+	suffix := strings.ReplaceAll(newID(), "-", "")
+	durable := "security.gate_test_" + suffix
+	runner := jobs.NewRunner(pool, jobs.RunnerOptions{WorkerID: "gate-" + newID(), PollInterval: 10 * time.Millisecond, Gate: s.JobGate, DeferDelay: time.Hour}, quiet())
 	calls := 0
-	if err := runner.Register(typ, time.Minute, func(context.Context, jobs.Job) error { calls++; return nil }); err != nil {
+	if err := runner.Register(durable, time.Minute, func(context.Context, jobs.Job) error { calls++; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	status := func(id string) string {
-		var st string
-		if err := pool.QueryRow(ctx, `SELECT status FROM platform.jobs WHERE id=$1`, id).Scan(&st); err != nil {
+	type row struct {
+		status   string
+		attempts int
+		future   bool
+	}
+	get := func(id string) row {
+		var r row
+		if err := pool.QueryRow(ctx, `SELECT status, attempts, available_at > now() + interval '30 minutes' FROM platform.jobs WHERE id=$1`, id).Scan(&r.status, &r.attempts, &r.future); err != nil {
 			t.Fatal(err)
 		}
-		return st
-	}
-	if _, err := s.Disable(ctx, admin(), "remoteaccess", "maintenance", ver(0)); err != nil { // keeps endpoints' dependents consistent
-		t.Fatal(err)
+		return r
 	}
 	if _, err := s.Disable(ctx, admin(), "security", "maintenance", ver(0)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Disable(ctx, admin(), "endpoints", "maintenance", ver(0)); err != nil {
-		t.Fatal(err)
-	}
-	id, _, err := jobs.Enqueue(ctx, pool, jobs.EnqueueRequest{Type: typ})
+	id, _, err := jobs.Enqueue(ctx, pool, jobs.EnqueueRequest{Type: durable})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if processed, err := runner.RunOnce(ctx); err != nil || !processed {
 		t.Fatalf("RunOnce = %v, %v", processed, err)
 	}
-	if calls != 0 || status(id) != "completed" {
-		t.Fatalf("job of a disabled module: handler calls=%d status=%s; want skipped and completed", calls, status(id))
+	if r := get(id); calls != 0 || r.status != "pending" || r.attempts != 0 || !r.future {
+		t.Fatalf("durable job of a disabled module must stay pending, not run and keep its attempts: calls=%d %+v", calls, r)
 	}
-	if _, err := s.Enable(ctx, admin(), "endpoints", "business_need", ver(1)); err != nil {
+	// Re-enable and make it due: the job still runs. Nothing was lost.
+	if _, err := s.Enable(ctx, admin(), "security", "business_need", ver(1)); err != nil {
 		t.Fatal(err)
 	}
-	id, _, err = jobs.Enqueue(ctx, pool, jobs.EnqueueRequest{Type: typ})
-	if err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE platform.jobs SET available_at=now() WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
 	if processed, err := runner.RunOnce(ctx); err != nil || !processed {
 		t.Fatalf("RunOnce = %v, %v", processed, err)
 	}
-	if calls != 1 || status(id) != "completed" {
-		t.Fatalf("job of an enabled module: handler calls=%d status=%s", calls, status(id))
+	if r := get(id); calls != 1 || r.status != "completed" {
+		t.Fatalf("after enable: calls=%d %+v", calls, r)
+	}
+
+	// A disposable scheduled tick is dropped (completed without running) while the module is off.
+	drop := "security.match_all"
+	dropRunner := jobs.NewRunner(pool, jobs.RunnerOptions{WorkerID: "gate-" + newID(), PollInterval: 10 * time.Millisecond, Gate: s.JobGate}, quiet())
+	dropCalls := 0
+	if err := dropRunner.Register(drop, time.Minute, func(context.Context, jobs.Job) error { dropCalls++; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Disable(ctx, admin(), "security", "maintenance", ver(2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM platform.jobs WHERE job_type=$1 AND status IN ('pending','processing')`, drop); err != nil {
+		t.Fatal(err)
+	}
+	id, _, err = jobs.Enqueue(ctx, pool, jobs.EnqueueRequest{Type: drop})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if processed, err := dropRunner.RunOnce(ctx); err != nil || !processed {
+		t.Fatalf("RunOnce = %v, %v", processed, err)
+	}
+	if r := get(id); dropCalls != 0 || r.status != "completed" {
+		t.Fatalf("disposable tick: calls=%d %+v", dropCalls, r)
+	}
+}
+
+func TestConsumersOfDisabledModuleAreDeferredNotLost(t *testing.T) {
+	s, pool := setup(t, nil)
+	ctx := context.Background()
+	gate := s.ConsumerGate()
+	var got []string
+	core := gate.Wrap("tasks.notify-x", func(_ context.Context, _ pgx.Tx, ev events.OutboxEvent) error {
+		got = append(got, "core:"+ev.ID)
+		return nil
+	})
+	opt := gate.Wrap("knowledge.runbook-x", func(_ context.Context, _ pgx.Tx, ev events.OutboxEvent) error {
+		got = append(got, "knowledge:"+ev.ID)
+		return nil
+	})
+	if _, err := s.Disable(ctx, admin(), "knowledge", "maintenance", ver(0)); err != nil {
+		t.Fatal(err)
+	}
+	ev := events.OutboxEvent{ID: newID(), EventType: "TaskCompleted", EventVersion: 1, OccurredAt: time.Now().UTC(), CorrelationID: "c", Payload: []byte(`{"a":1}`)}
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		if err := core(ctx, tx, ev); err != nil {
+			return err
+		}
+		return opt(ctx, tx, ev)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "core:"+ev.ID {
+		t.Fatalf("the core consumer must run and the disabled module's must not: %v", got)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.jobs WHERE job_type='knowledge.deferred_event' AND status='pending' AND payload->'event'->>'ID'=$1`, ev.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("deferred jobs = %d, %v", n, err)
+	}
+	// While off the job stays pending (job gate); after enabling the handler delivers the event to the consumer.
+	var payload []byte
+	if err := pool.QueryRow(ctx, `SELECT payload FROM platform.jobs WHERE job_type='knowledge.deferred_event' AND payload->'event'->>'ID'=$1`, ev.ID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := s.JobGate(ctx, modules.DeferredEventJobType("knowledge")); err != nil || d != jobs.GateDefer {
+		t.Fatalf("deferred-event job gate while off = %v, %v", d, err)
+	}
+	if _, err := s.Enable(ctx, admin(), "knowledge", "business_need", ver(1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gate.Handler(ctx, jobs.Job{Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1] != "knowledge:"+ev.ID {
+		t.Fatalf("deferred event not delivered after enable: %v", got)
+	}
+	if err := gate.Handler(ctx, jobs.Job{Payload: []byte(`{"consumer":"knowledge.unknown","event":{}}`)}); !jobs.IsPermanent(err) {
+		t.Errorf("unknown consumer must be a permanent failure, got %v", err)
+	}
+	// Enabled: direct delivery, nothing deferred.
+	ev2 := ev
+	ev2.ID = newID()
+	if err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return opt(ctx, tx, ev2) }); err != nil || len(got) != 3 {
+		t.Fatalf("enabled consumer must run directly: %v %v", got, err)
 	}
 }

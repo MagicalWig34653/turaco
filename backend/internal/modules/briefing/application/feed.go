@@ -103,11 +103,11 @@ type FeedService struct {
 	sources FeedSources
 	filter  func(context.Context, FeedSources) FeedSources
 	mu      sync.Mutex
-	cache   map[FeedPrincipal]cachedFeed
+	cache   map[feedKey]cachedFeed
 }
 
 func NewFeedService(manual *Service, sources FeedSources) *FeedService {
-	return &FeedService{manual: manual, sources: sources, cache: make(map[FeedPrincipal]cachedFeed)}
+	return &FeedService{manual: manual, sources: sources, cache: make(map[feedKey]cachedFeed)}
 }
 
 // WithSourceFilter sets a function that removes the sources of switched-off modules on every computation (module
@@ -115,6 +115,25 @@ func NewFeedService(manual *Service, sources FeedSources) *FeedService {
 func (s *FeedService) WithSourceFilter(f func(context.Context, FeedSources) FeedSources) *FeedService {
 	s.filter = f
 	return s
+}
+
+// feedKey separates cached feeds by principal and by the set of sources that were active, so a module switched off
+// (or on) is reflected at once and never served from a feed computed with other sources.
+type feedKey struct {
+	p       FeedPrincipal
+	sources string
+}
+
+func sourceSignature(s FeedSources) string {
+	b := make([]byte, 0, 7)
+	for _, on := range []bool{s.Security != nil, s.Planning != nil, s.Desk != nil, s.Endpoints != nil, s.Deployments != nil, s.Directory != nil, s.Approvals != nil} {
+		if on {
+			b = append(b, '1')
+		} else {
+			b = append(b, '0')
+		}
+	}
+	return string(b)
 }
 
 type cachedFeed struct {
@@ -141,16 +160,17 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 		return out, ErrForbidden
 	}
 	now = now.UTC()
-	s.mu.Lock()
-	if cached, ok := s.cache[p]; ok && now.Before(cached.expires) {
-		s.mu.Unlock()
-		return cached.result, nil
-	}
-	s.mu.Unlock()
 	src := s.sources
 	if s.filter != nil {
 		src = s.filter(ctx, src)
 	}
+	key := feedKey{p: p, sources: sourceSignature(src)}
+	s.mu.Lock()
+	if cached, ok := s.cache[key]; ok && now.Before(cached.expires) {
+		s.mu.Unlock()
+		return cached.result, nil
+	}
+	s.mu.Unlock()
 	until := now.AddDate(0, 0, 14)
 	add := func(source string, entries []FeedEntry, more bool) {
 		if len(entries) > feedLimit {
@@ -495,7 +515,7 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 				}
 			}
 		}
-		s.cache[p] = cachedFeed{result: out, expires: now.Add(10 * time.Second)}
+		s.cache[key] = cachedFeed{result: out, expires: now.Add(10 * time.Second)}
 		s.mu.Unlock()
 	}
 	return out, nil

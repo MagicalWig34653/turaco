@@ -11123,7 +11123,7 @@ paths:
     get:
       operationId: listModules
       summary: Module overview with state, dependencies and blocked reasons.
-      description: "Requires `modules.manage`. Reads the stored switches fresh (no cache). `state` is `enabled`, `disabled` (switch off) or `blocked` (switch on but a precondition of the module is unmet; it behaves as off). `blockedReason` is set whenever a precondition or a disabled required module prevents the module from being on, also while the switch is off: startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, dependency_disabled. `startupGates` names read-only environment variables. `version` is 0 until the switch was first changed. `no-store`."
+      description: "Requires `modules.manage`. Reads the stored switches fresh (no cache). `state` is `enabled`, `disabled` (switch off) or `blocked` (switch on but a precondition of the module is unmet; it behaves as off). `blockedReason` is set whenever a precondition or a disabled required module prevents the module from being on, also while the switch is off: startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off (the module's own audited setting is off), dependency_disabled. `startupGates` names read-only environment variables. `version` is 0 until the switch was first changed. `no-store`."
       security:
         - sessionAuth: []
       responses:
@@ -17133,7 +17133,7 @@ components:
         enabled: {type: boolean, description: "Effective: state is enabled."}
         switchOn: {type: boolean, description: "Position of the switch itself."}
         state: {type: string, enum: [enabled, disabled, blocked]}
-        blockedReason: {type: string, nullable: true, enum: [startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, dependency_disabled, null]}
+        blockedReason: {type: string, nullable: true, enum: [startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off, dependency_disabled, null]}
         requires: {type: array, items: {type: string}}
         requiredBy: {type: array, items: {type: string}}
         startupGates: {type: array, items: {type: string}, description: "Read-only environment variables that gate the module at startup."}

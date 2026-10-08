@@ -70,6 +70,9 @@ type DispatcherOptions struct {
 	// ConsumerTimeout bounds the consumers of one event, which hold the claim
 	// transaction and a connection. A timeout is a failed attempt. Default 30s.
 	ConsumerTimeout time.Duration
+	// WrapConsumer, when set, wraps every consumer at registration (module switches defer the consumers of a
+	// disabled module, ADR-0032). It receives the consumer name.
+	WrapConsumer func(name string, fn Consumer) Consumer
 }
 
 // Dispatcher delivers pending outbox events to registered consumers.
@@ -117,6 +120,9 @@ func (d *Dispatcher) Register(eventType, name string, fn Consumer) error {
 	}
 	if !registered(eventType) {
 		return fmt.Errorf("register outbox consumer %q: unregistered event type %q", name, eventType)
+	}
+	if d.opts.WrapConsumer != nil {
+		fn = d.opts.WrapConsumer(name, fn)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()

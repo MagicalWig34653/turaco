@@ -17,6 +17,9 @@ const (
 	BlockedDPIANotRecorded      = "dpia_not_recorded"
 	BlockedNoEnabledProvider    = "no_enabled_provider"
 	BlockedNoProvidersConfigure = "no_providers_configured"
+	// BlockedRuntimeSettingOff means the module's own audited runtime setting (presence.settings.enabled,
+	// ai.settings.enabled) is off: the module refuses use, so the switch must not claim it is on.
+	BlockedRuntimeSettingOff = "runtime_setting_off"
 )
 
 // ModuleGates is the startup configuration that the module switches must not bypass.
@@ -44,6 +47,9 @@ func Modules(pool *pgxpool.Pool, gates ModuleGates) *modules.Service {
 			if st.DPIARecordedOn == nil {
 				return BlockedDPIANotRecorded, nil
 			}
+			if !st.Enabled {
+				return BlockedRuntimeSettingOff, nil
+			}
 			return "", nil
 		},
 		"ai": func(ctx context.Context) (string, error) {
@@ -55,6 +61,13 @@ func Modules(pool *pgxpool.Pool, gates ModuleGates) *modules.Service {
 					return BlockedNoEnabledProvider, nil
 				}
 				return "", err
+			}
+			st, err := aiStore.GetSettings(ctx)
+			if err != nil {
+				return "", err
+			}
+			if !st.Enabled {
+				return BlockedRuntimeSettingOff, nil
 			}
 			return "", nil
 		},

@@ -21,7 +21,7 @@ func TestDefaultCatalogIsValid(t *testing.T) {
 		}
 	}
 	for _, key := range []string{"presence", "ai"} {
-		if m, _ := ix.Get(key); m.DefaultEnabled || len(m.RetentionJobs) == 0 {
+		if m, _ := ix.Get(key); m.DefaultEnabled || len(m.AlwaysRunJobs) == 0 {
 			t.Errorf("%s: default off with retention jobs expected, got %+v", key, m)
 		}
 	}
@@ -64,11 +64,27 @@ func TestForPathAndForJob(t *testing.T) {
 			t.Errorf("ForPath(%s) = %q, %v; want %q", path, got, ok, want)
 		}
 	}
-	jobs := map[string]string{"security.match": "security", "servicedesk.external.push": "servicedesk", "services.vm_link_backfill": "services",
-		"presence.purge": "", "ai.retention.purge": "", "tasks.recurrence.generate": "", "organization.directory_sync": "", "nodot": "", "x.y": ""}
+	jobs := map[string]struct {
+		key    string
+		policy modules.JobPolicy
+	}{
+		"security.match": {"security", modules.JobDefer}, "servicedesk.external.push": {"servicedesk", modules.JobDefer},
+		"services.vm_link_backfill": {"services", modules.JobDefer}, "security.match_all": {"security", modules.JobDrop},
+		"endpoints.software_package_sync": {"endpoints", modules.JobDrop}, "changes.reminders": {"changes", modules.JobDrop},
+		"remoteaccess.observe": {"remoteaccess", modules.JobDrop}, "security.deferred_event": {"security", modules.JobDefer},
+		"endpoints.deployment_tick": {}, "remoteaccess.expire_sessions": {},
+		"presence.purge": {}, "ai.retention.purge": {}, "tasks.recurrence.generate": {}, "organization.directory_sync": {}, "nodot": {}, "x.y": {},
+	}
 	for typ, want := range jobs {
-		if got, ok := ix.ForJob(typ); got != want || ok != (want != "") {
-			t.Errorf("ForJob(%s) = %q, %v; want %q", typ, got, ok, want)
+		got, policy, ok := ix.ForJob(typ)
+		if got != want.key || ok != (want.key != "") || (ok && policy != want.policy) {
+			t.Errorf("ForJob(%s) = %q, %v, %v; want %+v", typ, got, policy, ok, want)
+		}
+	}
+	for name, want := range map[string]string{"changes.approval": "changes", "knowledge.runbook-task-finished": "knowledge",
+		"tasks.notify-assigned": "", "approvals.notify-requested": "", "nodot": ""} {
+		if got, ok := ix.ForConsumer(name); got != want || ok != (want != "") {
+			t.Errorf("ForConsumer(%s) = %q, %v", name, got, ok)
 		}
 	}
 }

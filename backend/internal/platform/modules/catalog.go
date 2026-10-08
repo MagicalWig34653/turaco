@@ -9,6 +9,7 @@ package modules
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -42,9 +43,17 @@ type Module struct {
 	// OpenPaths are exact paths below the prefixes that stay reachable while the module is off, so the UI can ask
 	// why (status probes). They still need authentication like every other route.
 	OpenPaths []string
-	// RetentionJobs are job types of the module that keep running while it is off: data protection clean-up must
-	// not depend on a switch. All other job types "<key>.*" are skipped while the module is off.
-	RetentionJobs []string
+	// AlwaysRunJobs are job types that keep running while the module is off because they are safety or data
+	// protection paths: retention clean-up, session expiry, the Deployment kill-switch sweep. The job handler itself
+	// must do only the safe part when the module is off.
+	AlwaysRunJobs []string
+	// AlwaysRunConsumers are outbox consumer names that keep running while the module is off (safety or cleanup
+	// reactions). All other consumers "<key>.*" are deferred. None exists yet.
+	AlwaysRunConsumers []string
+	// DisposableJobs are recurring scheduled ticks that are simply dropped while the module is off; the schedule
+	// enqueues the next one. Every other job type "<key>.*" is durable work: it stays pending until the module is
+	// enabled again.
+	DisposableJobs []string
 	// StartupGates names the environment variables that gate the module at startup. They are read-only
 	// information in the overview; the switch never overrides them.
 	StartupGates []string
@@ -90,22 +99,30 @@ func Catalog() []Module {
 
 		withGates(opt("endpoints", CategoryEndpoints, []string{"assets", "changes"},
 			"devices", "deployments", "target-sets", "software", "management-artifacts", "management-filters", "endpoint-findings", "endpoint-sync"),
-			"SOFTWARE_PROVIDER_SYNC", "SOFTWARE_DEPLOY_WRITE"),
-		opt("security", CategoryEndpoints, []string{"endpoints", "changes"}, "security"),
-		withGates(opt("remoteaccess", CategoryEndpoints, []string{"endpoints", "assets", "servicedesk"}, "remote-access"), "REMOTE_ACCESS_PROVIDERS"),
+			"SOFTWARE_PROVIDER_SYNC", "SOFTWARE_DEPLOY_WRITE").jobs(
+			[]string{"endpoints.deployment_tick"}, []string{"endpoints.software_package_sync", "endpoints.deployment_correlation"}),
+		opt("security", CategoryEndpoints, []string{"endpoints", "changes"}, "security").jobs(
+			nil, []string{"security.advisory_sync", "security.match_all", "security.risk_review_reminders"}),
+		withGates(opt("remoteaccess", CategoryEndpoints, []string{"endpoints", "assets", "servicedesk"}, "remote-access"), "REMOTE_ACCESS_PROVIDERS").jobs(
+			[]string{"remoteaccess.expire_sessions"}, []string{"remoteaccess.observe"}),
 
 		opt("infrastructure", CategoryInfrastructure, []string{"assets"}, "buildings", "rooms", "racks", "rack-placements", "virtual-machines", "infrastructure"),
 		opt("services", CategoryInfrastructure, []string{"assets", "infrastructure"}, "services", "impact"),
-		opt("changes", CategoryInfrastructure, []string{"assets", "infrastructure", "services"}, "changes"),
+		opt("changes", CategoryInfrastructure, []string{"assets", "infrastructure", "services"}, "changes").jobs(nil, []string{"changes.reminders"}),
 		opt("planning", CategoryInfrastructure, []string{"changes", "procurement", "services"}, "initiatives", "maintenance-calendar"),
 
 		{Key: "presence", Category: CategoryWorkforce, DefaultEnabled: false, RoutePrefixes: []string{"presence"},
-			OpenPaths: []string{"/api/v1/presence/status"}, RetentionJobs: []string{"presence.purge"}, StartupGates: []string{"PRESENCE_ENABLED"}},
+			OpenPaths: []string{"/api/v1/presence/status"}, AlwaysRunJobs: []string{"presence.purge"}, StartupGates: []string{"PRESENCE_ENABLED"}},
 
 		opt("briefing", CategoryInsight, nil, "briefing", "briefing-items"),
 		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai"},
-			OpenPaths: []string{"/api/v1/ai/status"}, RetentionJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED"}},
+			OpenPaths: []string{"/api/v1/ai/status"}, AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED"}},
 	}
+}
+
+func (m Module) jobs(always, disposable []string) Module {
+	m.AlwaysRunJobs, m.DisposableJobs = always, disposable
+	return m
 }
 
 func withGates(m Module, gates ...string) Module {
@@ -226,21 +243,45 @@ func (ix *Index) ForPath(path string) (key string, ok bool) {
 	return owner, true
 }
 
-// ForJob returns the optional module that owns a background job type ("<module key>.<name>"). Core jobs and the
-// retention jobs of a module return ok=false: they always run.
-func (ix *Index) ForJob(jobType string) (key string, ok bool) {
+// JobPolicy says what happens to a claimed job while its module is off.
+type JobPolicy int
+
+const (
+	// JobAlways: the job runs (core jobs, safety and retention paths).
+	JobAlways JobPolicy = iota
+	// JobDrop: a disposable scheduled tick is completed without running.
+	JobDrop
+	// JobDefer: durable work stays pending until the module is enabled again.
+	JobDefer
+)
+
+// ForJob returns the optional module that owns a background job type ("<module key>.<name>") and the policy that
+// applies while it is off. Core jobs and always-run jobs return ok=false.
+func (ix *Index) ForJob(jobType string) (key string, policy JobPolicy, ok bool) {
 	prefix, _, found := strings.Cut(jobType, ".")
+	if !found {
+		return "", JobAlways, false
+	}
+	m, known := ix.byKey[prefix]
+	if !known || m.Core || slices.Contains(m.AlwaysRunJobs, jobType) {
+		return "", JobAlways, false
+	}
+	if slices.Contains(m.DisposableJobs, jobType) {
+		return m.Key, JobDrop, true
+	}
+	return m.Key, JobDefer, true
+}
+
+// ForConsumer returns the optional module that owns an outbox consumer ("<module key>.<name>"). Core consumers and
+// always-run consumers return ok=false.
+func (ix *Index) ForConsumer(name string) (key string, ok bool) {
+	prefix, _, found := strings.Cut(name, ".")
 	if !found {
 		return "", false
 	}
 	m, known := ix.byKey[prefix]
-	if !known || m.Core {
+	if !known || m.Core || slices.Contains(m.AlwaysRunConsumers, name) {
 		return "", false
-	}
-	for _, r := range m.RetentionJobs {
-		if r == jobType {
-			return "", false
-		}
 	}
 	return m.Key, true
 }
