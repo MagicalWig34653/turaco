@@ -1,6 +1,7 @@
 package wiring
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,7 +25,9 @@ type AIConfig struct {
 	Enabled   bool
 	TenantID  string
 	SecretDir string
-	Logger    *slog.Logger
+	// Permissions reloads effective permissions before each tool call (the API passes the role evaluator).
+	Permissions func(ctx context.Context, userID string) (map[string]struct{}, error)
+	Logger      *slog.Logger
 }
 
 // AIProviderFactory builds provider adapters. Credentials are read from the deployment secret file the provider's
@@ -66,5 +69,5 @@ func AI(pool *pgxpool.Pool, cfg AIConfig) (*ai.Service, error) {
 		}
 	}
 	return ai.NewService(ai.NewStore(pool), reg, ai.Config{Enabled: cfg.Enabled, TenantID: cfg.TenantID,
-		Factory: AIProviderFactory(cfg.SecretDir), Logger: cfg.Logger}), nil
+		Factory: AIProviderFactory(cfg.SecretDir), Permissions: cfg.Permissions, Logger: cfg.Logger}), nil
 }

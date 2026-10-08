@@ -39,6 +39,7 @@ type env struct {
 	handled  atomic.Int32
 	lastUser atomic.Value
 	secret   string
+	perms    sync.Map // user id -> map[string]struct{}: the current permissions the service reloads
 }
 
 // providerBox lets a test swap the provider behind the stored provider record.
@@ -126,7 +127,12 @@ func newEnv(t *testing.T, classes ...ai.DataClass) *env {
 			return map[string]any{"items": []map[string]any{{"id": newID(), "title": "Reset your password"}}}, nil
 		}})
 	e.svc = ai.NewService(ai.NewStore(pool), reg, ai.Config{Enabled: true, TenantID: e.tenant,
-		Factory: func(ai.ProviderRecord) (ai.Provider, error) { return boxed{e.provider}, nil }})
+		Factory: func(ai.ProviderRecord) (ai.Provider, error) { return boxed{e.provider}, nil },
+		Permissions: func(_ context.Context, u string) (map[string]struct{}, error) {
+			p, _ := e.perms.Load(u)
+			m, _ := p.(map[string]struct{})
+			return m, nil
+		}})
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id LIKE $1`, e.corr+"%")
 		_, _ = pool.Exec(ctx, `DELETE FROM ai.usage WHERE tenant_id=$1`, e.tenant)
@@ -144,7 +150,9 @@ func (e *env) caller(perms ...string) ai.Caller {
 	for _, p := range perms {
 		m[p] = struct{}{}
 	}
-	return ai.Caller{UserID: newID(), TenantID: e.tenant, SessionID: newID(), CorrelationID: e.corr + "-" + newID()[:6], Permissions: m}
+	c := ai.Caller{UserID: newID(), TenantID: e.tenant, SessionID: newID(), CorrelationID: e.corr + "-" + newID()[:6], Permissions: m}
+	e.perms.Store(c.UserID, m)
+	return c
 }
 
 func (e *env) staff() ai.Caller { return e.caller("ai.use", "tickets.view", "knowledge.view") }
@@ -545,7 +553,7 @@ func TestCapReservationIsAtomicUnderConcurrency(t *testing.T) {
 	}
 	// Reconciling with the actual usage frees the difference; the freed budget can be reserved again.
 	for _, r := range held {
-		if err := store.Settle(ctx, r, 30, 10, 0); err != nil {
+		if _, err := store.Settle(ctx, r, 30, 10, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -831,4 +839,96 @@ func TestSessionsEndWithTheirAuthenticationSession(t *testing.T) {
 		t.Fatal("conversation survived logout")
 	}
 	_ = fmt.Sprint()
+}
+
+// hookProvider runs a function inside the provider call, then answers with the given response.
+type hookProvider struct {
+	hook func(call int)
+	resp []ai.ChatResponse
+	n    int
+}
+
+func (h *hookProvider) Chat(context.Context, ai.ChatRequest) (ai.ChatResponse, error) {
+	i := h.n
+	h.n++
+	if h.hook != nil {
+		h.hook(i)
+	}
+	if i >= len(h.resp) {
+		return ai.ChatResponse{}, errors.New("no response")
+	}
+	return h.resp[i], nil
+}
+func (h *hookProvider) Capabilities() ai.Capabilities { return ai.Capabilities{} }
+
+func TestPermissionRevocationDuringATurnStopsTheNextToolCall(t *testing.T) {
+	e := newEnv(t)
+	c := e.staff()
+	tid := newID()
+	call := ai.ToolCall{ID: "c1", Name: "tickets.summarize", Arguments: json.RawMessage(`{"ticketId":"` + tid + `"}`)}
+	e.provider.set(&hookProvider{
+		hook: func(int) { e.perms.Store(c.UserID, map[string]struct{}{"ai.use": {}, "knowledge.view": {}}) }, // tickets.view revoked mid-turn
+		resp: []ai.ChatResponse{{ToolCalls: []ai.ToolCall{call}}, {Content: "done"}}})
+	res, err := turn(e, c, "", "ticket "+tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.handled.Load() != 0 || res.ToolsUsed[0].Outcome != "permission_denied" {
+		t.Fatalf("revoked permission still used: handled=%d %+v", e.handled.Load(), res.ToolsUsed)
+	}
+	// Losing ai.use itself ends the turn.
+	c2 := e.staff()
+	e.provider.set(&hookProvider{hook: func(int) { e.perms.Store(c2.UserID, map[string]struct{}{}) },
+		resp: []ai.ChatResponse{{ToolCalls: []ai.ToolCall{call}}, {Content: "done"}}})
+	if _, err := turn(e, c2, "", "ticket "+tid); !errors.Is(err, ai.ErrForbidden) {
+		t.Fatalf("ai.use revoked: %v", err)
+	}
+}
+
+func TestUsageAboveReservationEndsTheTurnAndStaysCounted(t *testing.T) {
+	e := newEnv(t)
+	c := e.staff()
+	e.provider.set(&hookProvider{resp: []ai.ChatResponse{
+		{ToolCalls: []ai.ToolCall{{ID: "c", Name: "knowledge.search", Arguments: json.RawMessage(`{"query":"x"}`)}}, TokensIn: 900000, TokensOut: 10},
+		{Content: "must not be requested"}}})
+	if _, err := turn(e, c, "", "go"); !errors.Is(err, ai.ErrBudgetExceeded) {
+		t.Fatalf("overage: %v", err)
+	}
+	if e.provider.get().(*hookProvider).n != 1 {
+		t.Error("a further provider call was made after an overage")
+	}
+	if e.audits(c, "ai.turn.denied") != 1 {
+		t.Error("overage not audited")
+	}
+	// The real usage is in the counters, so the User's token cap (500000) now refuses further turns.
+	e.provider.set(fake.Scripted(fake.Text("x")))
+	if _, err := turn(e, c, "", "again"); !errors.Is(err, ai.ErrBudgetExceeded) {
+		t.Fatalf("after overage: %v", err)
+	}
+	if n := dbCount(t, e.pool, `SELECT coalesce(sum(tokens_reserved),0) FROM ai.usage WHERE tenant_id=$1`, e.tenant); n != 0 {
+		t.Errorf("reservation left: %d", n)
+	}
+}
+
+func TestLostTurnLeaseAbortsTheTurnAndCannotOverwrite(t *testing.T) {
+	e := newEnv(t)
+	c := e.staff()
+	e.provider.set(fake.Scripted(fake.Text("first")))
+	res, err := turn(e, c, "", "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// The lease expires during a slow provider call and another turn takes the conversation over.
+	e.provider.set(&hookProvider{hook: func(int) {
+		_, _ = e.pool.Exec(ctx, `UPDATE ai.sessions SET busy_until = now() - interval '1 second'`)
+		_, _ = e.pool.Exec(ctx, `UPDATE ai.sessions SET busy_until = now() + interval '2 minutes', busy_token = uuidv7()`)
+	}, resp: []ai.ChatResponse{{Content: "stale answer"}}})
+	if _, err := turn(e, c, res.ConversationID, "slow"); !errors.Is(err, ai.ErrTurnInProgress) {
+		t.Fatalf("lost lease: %v", err)
+	}
+	msgs, _ := e.svc.Transcript(ctx, c, res.ConversationID)
+	if len(msgs) != 2 {
+		t.Errorf("the superseded turn wrote to the transcript: %+v", msgs)
+	}
 }

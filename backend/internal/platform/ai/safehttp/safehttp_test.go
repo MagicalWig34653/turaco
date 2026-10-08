@@ -28,8 +28,8 @@ func TestCheckAddrPolicy(t *testing.T) {
 		ip              string
 		external, local bool // allowed?
 	}{
-		{"93.184.216.34", true, true},
-		{"2606:2800:220:1:248:1893:25c8:1946", true, true},
+		{"93.184.216.34", true, false},
+		{"2606:2800:220:1:248:1893:25c8:1946", true, false},
 		{"127.0.0.1", false, true},
 		{"::1", false, true},
 		{"::ffff:127.0.0.1", false, true},
@@ -37,7 +37,7 @@ func TestCheckAddrPolicy(t *testing.T) {
 		{"172.16.5.5", false, true},
 		{"192.168.1.1", false, true},
 		{"fd12:3456::1", false, true},
-		{"100.64.0.1", false, true},
+		{"100.64.0.1", false, false},
 		{"169.254.169.254", false, false},
 		{"::ffff:169.254.169.254", false, false},
 		{"fe80::1", false, false},
@@ -80,6 +80,8 @@ func TestValidateEndpoint(t *testing.T) {
 		{"https://provider.example:99999/v1", false},
 		{"", false},
 		{"//provider.example", false},
+		{"http://93.184.216.34/v1", true}, // a public address is not local
+		{"https://[2606:2800:220:1::1]/v1", true},
 	}
 	for _, c := range bad {
 		if _, err := ValidateEndpoint(c.url, c.local); err == nil {
@@ -234,5 +236,22 @@ func TestResponseSizeAndTimeoutAreCapped(t *testing.T) {
 	}
 	if _, _, err := get(t, c, c.URL("slow")); err == nil {
 		t.Error("slow response must time out")
+	}
+}
+
+func TestLocalProviderResolvingToAPublicAddressIsRefused(t *testing.T) {
+	c, err := New(Policy{Endpoint: "http://ollama.example:11434/v1", Local: true,
+		Resolver: func(context.Context, string) ([]netip.Addr, error) {
+			return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+		},
+		Dialer: func(context.Context, string, string) (net.Conn, error) {
+			t.Fatal("dialed a public address for a local provider")
+			return nil, nil
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := get(t, c, c.URL("x")); !errors.Is(err, ErrBlockedDestination) {
+		t.Fatalf("got %v", err)
 	}
 }

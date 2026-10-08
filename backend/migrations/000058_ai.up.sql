@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS ai.sessions (
     turn_count integer NOT NULL DEFAULT 0,
     version integer NOT NULL DEFAULT 1,
     busy_until timestamptz,
+    -- Ownership token of the running turn: only its holder may renew, release or save.
+    busy_token uuid,
     -- ai.conversations row of the retained transcript while retention is on.
     retention_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),

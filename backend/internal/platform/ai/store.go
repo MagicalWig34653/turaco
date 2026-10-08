@@ -222,24 +222,39 @@ func (s *Store) findSession(ctx context.Context, tokenHash []byte, c Caller) (se
 	return se, err
 }
 
-// acquireTurn marks the conversation busy; false means another turn is running.
-func (s *Store) acquireTurn(ctx context.Context, id string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE ai.sessions SET busy_until = now() + $2::interval
-		WHERE id=$1 AND expires_at > now() AND (busy_until IS NULL OR busy_until <= now())`, id, fmt.Sprintf("%d seconds", int(turnLease.Seconds())))
-	if err != nil {
-		return false, err
+// acquireTurn marks the conversation busy and returns the ownership token; ok=false means another turn is running.
+func (s *Store) acquireTurn(ctx context.Context, id string) (token string, ok bool, err error) {
+	err = s.pool.QueryRow(ctx, `UPDATE ai.sessions SET busy_until = now() + $2::interval, busy_token = uuidv7()
+		WHERE id=$1 AND expires_at > now() AND (busy_until IS NULL OR busy_until <= now()) RETURNING busy_token::text`,
+		id, fmt.Sprintf("%d seconds", int(turnLease.Seconds()))).Scan(&token)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
 	}
-	return tag.RowsAffected() == 1, nil
+	return token, err == nil, err
 }
 
-func (s *Store) releaseTurn(ctx context.Context, id string) {
+// renewTurn extends the lease while the caller still owns it. It fails with ErrTurnInProgress when the lease
+// expired or another turn took over, so a slow turn can never run on beside its successor.
+func (s *Store) renewTurn(ctx context.Context, id, token string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE ai.sessions SET busy_until = now() + $3::interval
+		WHERE id=$1 AND busy_token=$2::uuid AND busy_until > now() AND expires_at > now()`, id, token, fmt.Sprintf("%d seconds", int(turnLease.Seconds())))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrTurnInProgress
+	}
+	return nil
+}
+
+func (s *Store) releaseTurn(ctx context.Context, id, token string) {
 	// Best effort with its own context: the turn may have been cancelled.
 	c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	_, _ = s.pool.Exec(c, `UPDATE ai.sessions SET busy_until = NULL WHERE id=$1`, id)
+	_, _ = s.pool.Exec(c, `UPDATE ai.sessions SET busy_until = NULL, busy_token = NULL WHERE id=$1 AND busy_token=$2::uuid`, id, token)
 }
 
-func (s *Store) saveTurn(ctx context.Context, se session) error {
+func (s *Store) saveTurn(ctx context.Context, se session, token string) error {
 	tr, err := json.Marshal(se.Transcript)
 	if err != nil {
 		return err
@@ -249,10 +264,10 @@ func (s *Store) saveTurn(ctx context.Context, se session) error {
 		return err
 	}
 	tag, err := s.pool.Exec(ctx, `UPDATE ai.sessions SET transcript=$3, scope=$4, turn_count=turn_count+1, version=version+1,
-		busy_until=NULL, last_active_at=now(), retention_id=COALESCE($7::uuid, retention_id),
+		busy_until=NULL, busy_token=NULL, last_active_at=now(), retention_id=COALESCE($7::uuid, retention_id),
 		expires_at = LEAST(now() + $5::interval, created_at + $6::interval)
-		WHERE id=$1 AND version=$2`, se.ID, se.Version, tr, sc,
-		fmt.Sprintf("%d seconds", int(sessionIdle.Seconds())), fmt.Sprintf("%d seconds", int(sessionMax.Seconds())), se.RetentionID)
+		WHERE id=$1 AND version=$2 AND busy_token=$8::uuid AND busy_until > now()`, se.ID, se.Version, tr, sc,
+		fmt.Sprintf("%d seconds", int(sessionIdle.Seconds())), fmt.Sprintf("%d seconds", int(sessionMax.Seconds())), se.RetentionID, token)
 	if err != nil {
 		return err
 	}

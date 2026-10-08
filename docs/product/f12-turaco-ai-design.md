@@ -267,3 +267,14 @@ Where the implementation made a concrete choice the sketch left open (the sketch
 - **Egress (A13).** The runtime serializes the handler DTO and rejects any leaf not declared in `Tool.Output`; classes are derived from the declared fields. A registry test and `wiring/ai_test.go` scan every path against `ai.ProhibitedPathFragments`.
 - **Caps.** `ai.Store.Reserve` is one transaction of conditional upserts (hour, user day, installation day) in a fixed lock order; `Settle` reconciles, a failed call settles with zero.
 - **Not in A-A.** Streaming, the Anthropic/OpenAI/Azure adapters, `ai.proposals`, write tools, MCP, role defaults for the AI permissions, audit of `GET` reads of settings.
+
+## A-A review outcomes
+
+Review of the A-A commit raised four issues; all are fixed and tested:
+
+| # | Severity | Issue | Resolution |
+| --- | --- | --- | --- |
+| 1 | high | A `local` provider could reach any public IP over http | Local policy now allows only loopback and private ranges at every dial (link-local, metadata, CGNAT and public stay blocked); a public host must be an external provider (https, DPA). `ValidateEndpoint` rejects public literal IPs for local. |
+| 2 | medium | Settlement trusted reported usage above the reservation; the input estimate was weak | Estimate is one token per two bytes plus headroom. `Settle` records the real usage and returns the overage; the runtime audits it (`usage_above_reservation`), discards the turn with `ai.budget_exceeded` and makes no further call, and the counters make later reservations fail once a cap is reached. |
+| 3 | medium | A 2-minute turn lease was not renewed across several provider calls | The lease has an ownership token (`ai.sessions.busy_token`); it is renewed before every provider call, tool call and the final save, and release and save require the token. A lost lease aborts the turn with `ai.turn_in_progress` and cannot overwrite the successor's transcript. |
+| 4 | medium | Permissions were a snapshot from HTTP authentication | The runtime reloads the User's effective permissions (role evaluator, injected via `Config.Permissions`) before every tool execution; a revoked tool permission yields `permission_denied`, a revoked `ai.use` ends the turn with `ai.not_permitted`. |

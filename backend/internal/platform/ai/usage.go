@@ -96,12 +96,17 @@ func (s *Store) Reserve(ctx context.Context, now time.Time, tenant, user string,
 	return res, nil
 }
 
-// Settle replaces the reservation with the actual usage. A failed provider call settles with zero tokens, which
+// Settle replaces the reservation with the actual usage. Usage above the reservation is recorded as reported (the
+// counters stay true, so every later reservation sees it and is refused once a cap is reached) and returned as
+// overage; the runtime then ends the turn instead of making further calls. A failed provider call settles with zero tokens, which
 // releases the reservation fully. costMicro is the estimated cost in millionths of the currency unit.
-func (s *Store) Settle(ctx context.Context, r Reservation, tokensIn, tokensOut, costMicro int64) error {
+func (s *Store) Settle(ctx context.Context, r Reservation, tokensIn, tokensOut, costMicro int64) (overage int64, err error) {
 	c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	return s.inTx(c, func(tx pgx.Tx) error {
+	if over := tokensIn + tokensOut - r.Tokens; over > 0 {
+		overage = over
+	}
+	err = s.inTx(c, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(c, `UPDATE ai.usage SET tokens_reserved = GREATEST(tokens_reserved - $4, 0), tokens_in = tokens_in + $5,
 			tokens_out = tokens_out + $6, estimated_cost_micro = estimated_cost_micro + $7
 			WHERE tenant_id=$1 AND user_id=$2 AND day=$3`, r.Tenant, r.User, r.Day, r.Tokens, tokensIn, tokensOut, costMicro); err != nil {
@@ -113,6 +118,7 @@ func (s *Store) Settle(ctx context.Context, r Reservation, tokensIn, tokensOut, 
 		}
 		return nil
 	})
+	return overage, err
 }
 
 // UsageSnapshot is the aggregated, content-free usage of one User and the installation.

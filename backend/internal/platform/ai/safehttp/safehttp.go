@@ -98,7 +98,12 @@ func checkAddr(ip netip.Addr, local bool) error {
 		}
 	}
 	if local {
-		return nil
+		// A local provider may only be a host inside the installation's network: loopback or private ranges.
+		// A public address is not "local" whatever the flag says; such a provider must be external (https + DPA).
+		if ip.IsLoopback() || ip.IsPrivate() {
+			return nil
+		}
+		return ErrBlockedDestination
 	}
 	if ip.IsLoopback() || ip.IsPrivate() {
 		return ErrBlockedDestination

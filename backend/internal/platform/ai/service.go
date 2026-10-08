@@ -53,7 +53,11 @@ type Config struct {
 	TenantID string
 	// Factory builds provider adapters.
 	Factory ProviderFactory
-	Logger  *slog.Logger
+	// Permissions reloads a User's effective permissions. The runtime calls it before every tool execution, so a
+	// revocation during a turn takes effect at the next call instead of at the next HTTP request. Nil keeps the
+	// snapshot taken at authentication (tests only).
+	Permissions func(ctx context.Context, userID string) (map[string]struct{}, error)
+	Logger      *slog.Logger
 }
 
 // Service is the AI runtime and administration use cases.
@@ -311,14 +315,14 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 	if se.ProviderID != rec.ID {
 		return TurnResult{}, ErrProviderChanged
 	}
-	got, err := s.store.acquireTurn(ctx, se.ID)
+	turnToken, got, err := s.store.acquireTurn(ctx, se.ID)
 	if err != nil {
 		return TurnResult{}, err
 	}
 	if !got {
 		return TurnResult{}, ErrTurnInProgress
 	}
-	defer s.store.releaseTurn(ctx, se.ID)
+	defer s.store.releaseTurn(ctx, se.ID, turnToken)
 
 	// Resource scope (A11): the records the User named, by context or by id in their own text.
 	for _, r := range named {
@@ -358,6 +362,10 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 	ctxWithClasses := WithAllowedClasses(ctx, rec.AllowedDataClasses)
 	for iter := 0; iter < maxIter; iter++ {
 		req := ChatRequest{System: systemPrompt, Messages: append(slices.Clone(se.Transcript), newMsgs...), Tools: defs, MaxOutputTokens: st.MaxOutputTokens}
+		// Heartbeat: the lease is renewed before every provider call; losing it ends the turn.
+		if err := s.store.renewTurn(ctx, se.ID, turnToken); err != nil {
+			return TurnResult{}, err
+		}
 		est := estimateTokens(req)
 		resv, err := s.store.Reserve(ctx, s.now(), c.TenantID, c.UserID, int64(est+st.MaxOutputTokens), iter == 0, st.limits())
 		if err != nil {
@@ -376,7 +384,7 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 		resp, perr := provider.Chat(callCtx, req)
 		cancel()
 		if perr != nil {
-			_ = s.store.Settle(ctx, resv, 0, 0, 0)
+			_, _ = s.store.Settle(ctx, resv, 0, 0, 0)
 			s.cfg.Logger.Warn("ai provider call failed", "provider_id", rec.ID, "error", perr)
 			if aerr := s.auditTurn(ctx, c, "ai.turn.failed", se.ID, map[string]any{"reason": "provider_unavailable", "providerId": rec.ID, "model": rec.Model}); aerr != nil {
 				return TurnResult{}, aerr
@@ -387,8 +395,17 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 		if tin == 0 && tout == 0 {
 			tin, tout = est, len(resp.Content)/3+1
 		}
-		if err := s.store.Settle(ctx, resv, int64(tin), int64(tout), costMicro(rec, tin, tout)); err != nil {
+		over, err := s.store.Settle(ctx, resv, int64(tin), int64(tout), costMicro(rec, tin, tout))
+		if err != nil {
 			return TurnResult{}, err
+		}
+		if over > 0 {
+			// The provider used more than was reserved. The counters carry the real usage, so further reservations
+			// are refused once a cap is reached; this turn makes no further call and its answer is discarded.
+			if aerr := s.auditTurn(ctx, c, "ai.turn.denied", se.ID, map[string]any{"reason": "usage_above_reservation", "providerId": rec.ID, "overage": over}); aerr != nil {
+				return TurnResult{}, aerr
+			}
+			return TurnResult{}, ErrBudgetExceeded
 		}
 		res.TokensIn += tin
 		res.TokensOut += tout
@@ -422,7 +439,14 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 					return TurnResult{}, err
 				}
 			} else {
-				if out, err = s.execTool(ctxWithClasses, c, rec, offered, &se, call); err != nil {
+				if err := s.store.renewTurn(ctx, se.ID, turnToken); err != nil {
+					return TurnResult{}, err
+				}
+				fresh, ferr := s.freshCaller(ctx, c)
+				if ferr != nil {
+					return TurnResult{}, ferr
+				}
+				if out, err = s.execTool(ctxWithClasses, fresh, rec, offered, &se, call); err != nil {
 					return TurnResult{}, err
 				}
 			}
@@ -458,7 +482,10 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 		}
 		se.RetentionID = &id
 	}
-	if err := s.store.saveTurn(ctx, se); err != nil {
+	if err := s.store.renewTurn(ctx, se.ID, turnToken); err != nil {
+		return TurnResult{}, err
+	}
+	if err := s.store.saveTurn(ctx, se, turnToken); err != nil {
 		return TurnResult{}, err
 	}
 	meta := map[string]any{"providerId": rec.ID, "model": rec.Model, "toolsOffered": len(offered), "toolCalls": calls,
@@ -473,6 +500,22 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 	}
 	res.Usage = u
 	return res, nil
+}
+
+// freshCaller reloads the caller's permissions (revocation during a turn). Losing ai.use ends the turn.
+func (s *Service) freshCaller(ctx context.Context, c Caller) (Caller, error) {
+	if s.cfg.Permissions == nil {
+		return c, nil
+	}
+	perms, err := s.cfg.Permissions(ctx, c.UserID)
+	if err != nil {
+		return Caller{}, fmt.Errorf("reload permissions: %w", err)
+	}
+	c.Permissions = perms
+	if !c.Has(PermUse) {
+		return Caller{}, ErrForbidden
+	}
+	return c, nil
 }
 
 func addScope(scope []ResourceRef, r ResourceRef) []ResourceRef {
@@ -514,7 +557,10 @@ func estimateTokens(req ChatRequest) int {
 	for _, t := range req.Tools {
 		n += len(t.Name) + len(t.Description) + len(t.Parameters)
 	}
-	return n/3 + 1
+	// Deliberately conservative: one token per two bytes (the usual ratio is 3 to 4 for English and lower for
+	// other scripts), plus fixed headroom for the provider's chat template. Real usage above the reservation is
+	// handled explicitly in Settle.
+	return n/2 + 64
 }
 
 type toolOutcome struct {

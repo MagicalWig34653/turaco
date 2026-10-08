@@ -194,7 +194,7 @@ func main() {
 	}
 	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
 	presencetransport.Register(mux, wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}), sessionAuth, logger)
-	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Logger: logger})
+	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Permissions: roles.NewEvaluator(pool, subjects).Permissions, Logger: logger})
 	if err != nil {
 		logger.Error("configure turaco ai", "error", err)
 		os.Exit(1)
