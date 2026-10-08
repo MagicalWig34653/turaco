@@ -40,7 +40,23 @@ type RunnerOptions struct {
 	// considered abandoned and may be claimed again. Every handler timeout must
 	// be shorter. Default 30m.
 	LockTimeout time.Duration
+	// Gate, when set, is asked after a job was claimed whether it may run (module switches, ADR-0032). GateDrop
+	// completes a disposable job without running it; GateDefer keeps a durable job pending (attempt refunded) and
+	// retries it after DeferDelay; an error returns the job for a delayed retry.
+	Gate func(ctx context.Context, jobType string) (GateDecision, error)
+	// DeferDelay is the wait before a deferred job is offered again. Default 1m.
+	DeferDelay time.Duration
 }
+
+// GateDecision is the answer of RunnerOptions.Gate.
+type GateDecision int
+
+// Gate decisions.
+const (
+	GateRun GateDecision = iota
+	GateDrop
+	GateDefer
+)
 
 type registration struct {
 	timeout time.Duration
@@ -215,6 +231,32 @@ func (r *Runner) RunOnce(ctx context.Context) (processed bool, err error) {
 		return true, nil
 	}
 
+	if r.opts.Gate != nil {
+		decision, gerr := r.opts.Gate(ctx, job.Type)
+		switch {
+		case gerr != nil && ctx.Err() != nil:
+			r.finish(ctx, log, job, outcomeInterrupted, "interrupted by worker shutdown: "+gerr.Error(), 0)
+			return true, nil
+		case gerr != nil:
+			delay := backoff(job.Attempts)
+			log.Warn("job gate failed, will retry", "error", gerr, "retry_in", delay)
+			r.finish(ctx, log, job, outcomeRetry, "job gate: "+gerr.Error(), delay)
+			return true, nil
+		case decision == GateDrop:
+			log.Info("disposable job dropped: its module is switched off")
+			r.finish(ctx, log, job, outcomeCompleted, "", 0)
+			return true, nil
+		case decision == GateDefer:
+			delay := r.opts.DeferDelay
+			if delay <= 0 {
+				delay = time.Minute
+			}
+			log.Info("durable job deferred: its module is switched off", "retry_in", delay)
+			r.finish(ctx, log, job, outcomeDeferred, "deferred: module is switched off", delay)
+			return true, nil
+		}
+	}
+
 	r.mu.RLock()
 	reg := r.handlers[job.Type]
 	r.mu.RUnlock()
@@ -290,6 +332,7 @@ const (
 	outcomeFailed
 	outcomeRetry
 	outcomeInterrupted
+	outcomeDeferred
 )
 
 // finish records an outcome. Every update is guarded by the lock owner so a
@@ -314,6 +357,10 @@ func (r *Runner) finish(ctx context.Context, log *slog.Logger, job *Job, o outco
 		args = append(args, lastError)
 	case outcomeRetry:
 		sql = `UPDATE platform.jobs SET status = 'pending', available_at = now() + make_interval(secs => $4), locked_at = NULL, locked_by = NULL, last_error = $3, updated_at = now()
+			WHERE id = $1 AND status = 'processing' AND locked_by = $2`
+		args = append(args, lastError, delay.Seconds())
+	case outcomeDeferred:
+		sql = `UPDATE platform.jobs SET status = 'pending', available_at = now() + make_interval(secs => $4), attempts = GREATEST(attempts - 1, 0), locked_at = NULL, locked_by = NULL, last_error = $3, updated_at = now()
 			WHERE id = $1 AND status = 'processing' AND locked_by = $2`
 		args = append(args, lastError, delay.Seconds())
 	case outcomeInterrupted:

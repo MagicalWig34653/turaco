@@ -4,6 +4,7 @@ export type ApiErrorBody = {
     message: string;
     requestId?: string;
     fields?: unknown;
+    blockers?: unknown;
   };
 };
 
@@ -29,6 +30,7 @@ export class ApiError extends Error {
   readonly retryAfterSeconds: number | undefined;
   /** Per-field validation codes of a 422 response (field key to code); empty otherwise. */
   readonly fields: Readonly<Record<string, string>>;
+  readonly blockers: readonly string[];
 
   constructor(init: {
     status: number;
@@ -37,6 +39,7 @@ export class ApiError extends Error {
     requestId?: string | undefined;
     retryAfterSeconds?: number | undefined;
     fields?: Record<string, string> | undefined;
+    blockers?: string[] | undefined;
   }) {
     super(init.message);
     this.name = 'ApiError';
@@ -45,6 +48,7 @@ export class ApiError extends Error {
     this.requestId = init.requestId;
     this.retryAfterSeconds = init.retryAfterSeconds;
     this.fields = init.fields ?? {};
+    this.blockers = init.blockers ?? [];
   }
 }
 
@@ -186,6 +190,9 @@ export async function toApiError(response: Response): Promise<ApiError> {
     requestId,
     retryAfterSeconds,
     fields: parseFields(envelope?.fields),
+    blockers: Array.isArray(envelope?.blockers)
+      ? envelope.blockers.filter((key): key is string => typeof key === 'string')
+      : [],
   });
 }
 

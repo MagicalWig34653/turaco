@@ -1,3 +1,4 @@
+import { useModules } from '../../platform/modules/ModulesProvider';
 import {
   createContext,
   useCallback,
@@ -57,6 +58,27 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 export function usePresence() {
   const context = useContext(Context);
   const { can } = useSession();
-  const gatedCan = useMemo(() => presenceCan(context.status, can), [context.status, can]);
-  return { ...context, can: gatedCan };
+  const { enabled, refresh: refreshModules } = useModules();
+  const refresh = () => {
+    context.refresh();
+    refreshModules();
+  };
+  const gatedCan = useMemo(
+    () =>
+      presenceCan(
+        context.status
+          ? { ...context.status, enabled: context.status.enabled && enabled('presence') }
+          : undefined,
+        can,
+      ),
+    [context.status, can, enabled],
+  );
+  return {
+    ...context,
+    status: context.status
+      ? { ...context.status, enabled: context.status.enabled && enabled('presence') }
+      : undefined,
+    refresh,
+    can: gatedCan,
+  };
 }

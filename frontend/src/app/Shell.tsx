@@ -1,3 +1,5 @@
+import { useModules } from '../platform/modules/ModulesProvider';
+import { pathEnabled } from '../platform/modules/model';
 import { AskTuraco, useAi } from '../modules/ai/AiProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -56,7 +58,8 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const { session, logout } = useSession();
   const { can, open: openAi } = useAi();
   const userName = sessionDisplayName(session) ?? '';
-  const navigation = shellNavigation(can);
+  const { enabled } = useModules();
+  const navigation = shellNavigation(can, enabled);
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -73,12 +76,12 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const unreadValue = unread.data?.count ? unreadLabel(unread.data.count, unread.data.max) : null;
   const commands = useMemo(
     () => [
-      ...navigationCommands(appRoutes, can, (route) => t(route.titleKey)),
+      ...navigationCommands(appRoutes, can, (route) => t(route.titleKey), enabled),
       ...(can('ai.use')
         ? [{ id: 'aiAssistant', label: t('ai.ask'), path: '', action: () => openAi() }]
         : []),
     ],
-    [can, t, openAi],
+    [can, t, openAi, enabled],
   );
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))
@@ -104,6 +107,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
   const quickCreate = appRoutes.filter(
     (route) =>
       (route.id === 'ticketNew' || route.id === 'catalog') &&
+      pathEnabled(route.pattern, enabled) &&
       (!route.requires || route.requires.every(can)),
   );
 

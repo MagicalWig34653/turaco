@@ -1,7 +1,9 @@
+import { pathEnabled, type ModuleEnabled } from '../platform/modules/model';
 import type { MessageKey } from '../platform/i18n/i18n';
 import { canAll, type CanFn } from '../platform/session/permissions';
 
 export type RouteId =
+  | 'modulesAdmin'
   | 'aiAdmin'
   | 'presenceMine'
   | 'presenceTeam'
@@ -156,6 +158,13 @@ const taskViewPermissions = ['tasks.view', 'tasks.manage', 'tasks.work'] as cons
 
 // Static patterns must precede parameterised ones ("/admin/roles/new" before "/admin/roles/:id").
 export const appRoutes: readonly AppRoute[] = [
+  {
+    id: 'modulesAdmin',
+    pattern: '/admin/modules',
+    titleKey: 'modules.title',
+    requires: ['modules.manage'],
+    nav: 'admin',
+  },
   {
     id: 'aiAdmin',
     pattern: '/admin/ai',
@@ -796,7 +805,12 @@ export const appRoutes: readonly AppRoute[] = [
 ];
 
 /** UI hiding only: all of `requires` and, when set, at least one of `requiresAny`. */
-export function canViewRoute(can: CanFn, route: AppRoute): boolean {
+export function canViewRoute(
+  can: CanFn,
+  route: AppRoute,
+  enabled: ModuleEnabled = () => true,
+): boolean {
+  if (!pathEnabled(route.pattern, enabled)) return false;
   if (!canAll(can, route.requires)) return false;
   if (route.id === 'deviceManagementDiff' && !can('endpoints.view') && !can('endpoints.manage'))
     return false;

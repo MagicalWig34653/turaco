@@ -1,3 +1,4 @@
+import { ModuleFeature } from '../../platform/modules/ModulesProvider';
 import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
@@ -238,7 +239,9 @@ export function TicketCreateScreen() {
             <h2>{t('reportPolish.helpTitle')}</h2>
             <p>{t('reportPolish.helpIntro')}</p>
             <div className="report-suggestions">
-              <Suggestions text={title} />
+              <ModuleFeature module="knowledge">
+                <Suggestions text={title} />
+              </ModuleFeature>
             </div>
             <Link className="report-card-footer" to="/knowledge">
               {t('reportPolish.browse')} <span aria-hidden="true">→</span>

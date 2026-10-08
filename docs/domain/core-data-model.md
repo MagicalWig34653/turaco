@@ -130,6 +130,9 @@ The management model (F6 slice 2) adds `endpoints.management_artifacts` and `man
 
 **VulnerabilityFinding** has a `VUL-` reference and unique `(advisory, Device, SoftwareProduct)` identity. It records installed version, Turaco-derived confidence (`probable` or `potential`, never automatically `confirmed`), state/reason, first/last observed times, remediated time and version. `risk_accepted` requires accepting User, acceptance time, reason code and review date within twelve months. Advisory and Finding transition rows have immutable histories guarded against update, delete and truncate; per-status CHECK constraints guard the current rows. Device and SoftwareProduct ids are external references to the Endpoints module, accessed through `endpoints/public`, with no cross-module foreign key. A newer Endpoint observation, or a Device/installation tombstone, is required for automatic remediation.
 
+## Platform: module switches
+*Implemented (schema `platform`, migration 000059; [ADR-0032](../decisions/ADR-0032-module-switches.md)):* **ModuleSwitch** (`platform.module_switches`) has one row per optional module whose switch was ever changed: `module_key` (the code catalog is the list of modules; no row means the catalog default and version 0), `enabled`, `version`, `reason_code`, `updated_by` (User id, no foreign key like other platform audit references), `updated_at`. The upgrade migration seeds `presence` and `ai` from their runtime settings. A switch owns no business data and deletes none.
+
 ## Shared relationship model
 
 Generic `Relationship(source_type, source_id, type, target_type, target_id, validity, metadata)` supports cross-domain links such as `User USES Device`, `Service DEPENDS_ON VM`, `VM RUNS_ON Device`, `Ticket AFFECTS Service`.

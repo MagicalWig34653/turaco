@@ -330,3 +330,34 @@ func TestFeedDeploymentsSourcePermissionsAndHealth(t *testing.T) {
 		t.Fatal("deployment source read without permission")
 	}
 }
+
+func TestFeedCacheFollowsModuleSwitches(t *testing.T) {
+	sec := feedSecurity{items: []securitypublic.ApplicableSummary{{ID: "adv", Reference: "ADV-1", Title: "t", Severity: "critical", AffectedDevices: 1}}}
+	securityOn := true
+	feed := NewFeedService(nil, FeedSources{Security: sec}).WithSourceFilter(func(_ context.Context, s FeedSources) FeedSources {
+		if !securityOn {
+			s.Security = nil
+		}
+		return s
+	})
+	p := FeedPrincipal{UserID: "u", Briefing: true, Security: true}
+	now := time.Now()
+	count := func() int {
+		out, err := feed.Feed(context.Background(), p, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(out.Entries)
+	}
+	if count() == 0 {
+		t.Fatal("security entries expected while the module is on")
+	}
+	securityOn = false
+	if n := count(); n != 0 {
+		t.Fatalf("a cached feed must not show a switched-off module's entries, got %d", n)
+	}
+	securityOn = true
+	if count() == 0 {
+		t.Fatal("entries must return when the module is switched on again")
+	}
+}

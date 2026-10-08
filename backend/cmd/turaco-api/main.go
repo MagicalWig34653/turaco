@@ -69,6 +69,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
@@ -110,6 +111,9 @@ func main() {
 	mux.HandleFunc("GET /api/v1/meta", func(w http.ResponseWriter, _ *http.Request) {
 		httpx.JSON(w, http.StatusOK, map[string]string{"name": "Turaco", "version": version, "environment": cfg.Environment})
 	})
+
+	// Module switches (ADR-0032): the registry decides which optional modules are reachable (see the gate below).
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
 
 	// Browser sessions authenticate requests; their permissions come from
 	// role assignments to the User and its (transitive) Directory Groups.
@@ -194,7 +198,7 @@ func main() {
 	}
 	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
 	presencetransport.Register(mux, wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}), sessionAuth, logger)
-	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Permissions: roles.NewEvaluator(pool, subjects).Permissions, Logger: logger})
+	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Permissions: roles.NewEvaluator(pool, subjects).Permissions, Logger: logger, Modules: moduleSvc})
 	if err != nil {
 		logger.Error("configure turaco ai", "error", err)
 		os.Exit(1)
@@ -206,7 +210,7 @@ func main() {
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
 		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
 	briefingService := briefingapp.NewService(briefingrepository.New(pool), nil)
-	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService))
+	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService, moduleSvc))
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	categories, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {
@@ -216,11 +220,14 @@ func main() {
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
+	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
+	// of a switched-off module. Startup gates and module preconditions stay in force.
+	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
 		// Every unsafe request must be same-origin, whatever route it reaches.
-		Handler:           httpx.Middleware(logger, authentication.RequireSameOrigin(mux)),
+		Handler:           httpx.Middleware(logger, authentication.RequireSameOrigin(moduleSvc.Gate(sessionAuth, logger, mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

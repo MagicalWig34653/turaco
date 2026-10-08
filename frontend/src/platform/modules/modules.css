@@ -1,0 +1,17 @@
+.modules-screen > section {
+  margin-block: var(--space-6, 1.5rem);
+}
+.modules-screen td p {
+  color: var(--text-secondary);
+  max-width: 32rem;
+}
+.modules-screen code {
+  display: block;
+  color: var(--text-primary);
+}
+.module-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}

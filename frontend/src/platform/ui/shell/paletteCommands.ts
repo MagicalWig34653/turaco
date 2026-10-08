@@ -1,3 +1,4 @@
+import type { ModuleEnabled } from '../../modules/model';
 import type { AppRoute } from '../../../app/routes';
 import { canViewRoute } from '../../../app/routes';
 import type { CanFn } from '../../session/permissions';
@@ -15,9 +16,10 @@ export function navigationCommands(
   routes: readonly AppRoute[],
   can: CanFn,
   label: (route: AppRoute) => string,
+  enabled?: ModuleEnabled,
 ): PaletteCommand[] {
   return routes
-    .filter((route) => route.nav && canViewRoute(can, route))
+    .filter((route) => route.nav && canViewRoute(can, route, enabled))
     .map((route) => ({ id: route.id, label: label(route), path: route.pattern }));
 }
 

@@ -4,7 +4,7 @@ import type { ProviderFields, ResourceRef, ScopeRequest, SettingsFields, Status 
 export function aiCan(status: Status | undefined, fallback: CanFn): CanFn {
   return (permission) => {
     if (!permission.startsWith('ai.')) return fallback(permission);
-    if (!status?.enabled) return false;
+    if (!status || (permission === 'ai.use' && !status.enabled)) return false;
     const p = status.permissions;
     return (
       (

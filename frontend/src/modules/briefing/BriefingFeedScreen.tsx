@@ -1,10 +1,12 @@
+import { useModules } from '../../platform/modules/ModulesProvider';
+import { pathEnabled } from '../../platform/modules/model';
+import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { useAsync } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Alert, Badge } from '../../platform/ui/Alert';
-import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Card, EmptyState, MetricCard, Skeleton, useCountUp } from '../../platform/ui/Workspace';
 import { briefingApi } from './api';
@@ -20,7 +22,13 @@ export function BriefingFeedScreen() {
   const { t, locale } = useI18n();
   const { can } = useSession();
   const feed = useAsync((signal) => briefingApi.feed(signal), []);
-  const data = feed.data;
+  const { enabled } = useModules();
+  const data = feed.data
+    ? {
+        ...feed.data,
+        entries: feed.data.entries.filter((entry) => pathEnabled(entry.linkPath, enabled)),
+      }
+    : undefined;
   const groups = groupFeedEntries(data?.entries ?? []);
   const truncated = Object.keys(data?.truncated ?? {}).filter((source) => data?.truncated[source]);
 
@@ -38,11 +46,7 @@ export function BriefingFeedScreen() {
         }
       />
       {feed.loading && !data ? <Skeleton lines={6} /> : null}
-      {feed.error ? (
-        <Alert kind="error">
-          {t('error.generic')} <Button onClick={feed.reload}>{t('action.retry')}</Button>
-        </Alert>
-      ) : null}
+      {feed.error ? <ApiErrorAlert error={feed.error} onRetry={feed.reload} /> : null}
       {data ? (
         <div className="workspace-metrics" aria-label={t('briefing.feed.summary')}>
           {(['critical', 'warning', 'info'] as const).map((severity) => {

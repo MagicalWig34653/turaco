@@ -77,10 +77,10 @@ describe('status gates', () => {
     ).toBe(false);
   });
   it.each(['settingsView', 'settingsManage', 'usageView'] as const)(
-    'permits the admin route for %s only with an enabled status',
+    'permits the admin route for %s while runtime is disabled',
     (flag) => {
       const can = aiCan(
-        { ...status, permissions: { ...status.permissions, [flag]: true } },
+        { ...status, enabled: false, permissions: { ...status.permissions, [flag]: true } },
         () => false,
       );
       const route = appRoutes.find((r) => r.id === 'aiAdmin')!;

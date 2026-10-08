@@ -1,3 +1,4 @@
+import { ModuleFeature } from '../../platform/modules/ModulesProvider';
 import { AskTuraco } from '../ai/AiProvider';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
@@ -208,7 +209,11 @@ export function DeviceDetailScreen({ id }: { id: string }) {
         <dt>{t('endpoints.deletedObservedAt')}</dt>
         <dd>{date(d.deletedObservedAt)}</dd>
       </dl>
-      {can('remote_access.view') ? <DeviceRemoteSupport deviceId={d.id} /> : null}
+      {can('remote_access.view') ? (
+        <ModuleFeature module="remoteaccess">
+          <DeviceRemoteSupport deviceId={d.id} />
+        </ModuleFeature>
+      ) : null}
       <section>
         <h2>{t('endpoints.software')}</h2>
         <DataTable

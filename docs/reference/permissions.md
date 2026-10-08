@@ -33,6 +33,7 @@
 | `knowledge.manage` | elevated | Write, publish and retire knowledge articles and read drafts and retired articles. |
 | `knowledge.view` | normal | Read published internal knowledge articles (published employee articles are readable by every signed-in user). |
 | `majorincidents.manage` | elevated | Declare Major Incidents, post public status updates, move them through their lifecycle and link tickets. |
+| `modules.manage` | elevated | See the module overview and switch optional modules on and off at runtime (ADR-0032). A switched-off module disappears from the API and UI and its background jobs pause; no data is deleted. Module preconditions such as privacy records or providers are never bypassed. |
 | `organization.directory.sync` | elevated | Request an immediate directory synchronization run. |
 | `organization.directory.view` | normal | View observed Directory Groups and their memberships. |
 | `organization.teams.manage` | elevated | Create, rename and deactivate Teams and manage their members. Team membership determines which tasks a user with tasks.work can see and which notifications they receive, so this permission indirectly controls task access. |

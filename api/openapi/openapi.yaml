@@ -11104,6 +11104,89 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /modules/status:
+    get:
+      operationId: getModulesStatus
+      summary: Which modules are effectively on (any signed-in User).
+      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*` stay reachable while the module is off (their own admin permissions apply)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModulesStatus'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/modules:
+    get:
+      operationId: listModules
+      summary: Module overview with state, dependencies and blocked reasons.
+      description: "Requires `modules.manage`. Reads the stored switches fresh (no cache). `state` is `enabled`, `disabled` (switch off) or `blocked` (switch on but a precondition of the module is unmet; it behaves as off). `blockedReason` is set whenever a precondition or a disabled required module prevents the module from being on, also while the switch is off: startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off (the module's own audited setting is off), dependency_disabled. `startupGates` names read-only environment variables. `version` is 0 until the switch was first changed. `no-store`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModuleList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/modules/{key}/enable:
+    post:
+      operationId: enableModule
+      summary: Switch an optional module on.
+      description: "Requires `modules.manage`. Needs `expectedVersion` (the `version` read from the overview) and a `reasonCode`. Refused with 409 `platform.modules.requires_disabled` (with `error.blockers`) while a required module is off, 409 `platform.modules.blocked` while the module's own precondition is unmet (the switch never bypasses startup gates, privacy records or providers), 409 `platform.modules.version_conflict`, 409 `platform.modules.no_change`, 409 `platform.modules.not_switchable` for core modules and 404 `platform.modules.not_found`. Audited (platform.module.enabled) with the reason code. Takes effect without restart."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ModuleSwitchRequest'}
+      responses:
+        '200':
+          description: The module after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Module'}
+        '400': {$ref: '#/components/responses/ModuleInvalid'}
+        '404': {$ref: '#/components/responses/ModuleNotFound'}
+        '409': {$ref: '#/components/responses/ModuleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/modules/{key}/disable:
+    post:
+      operationId: disableModule
+      summary: Switch an optional module off. No data is deleted.
+      description: "Requires `modules.manage`. Same body and errors as enable; refused with 409 `platform.modules.required_by_enabled` (with `error.blockers`) while an enabled module requires it. A disabled module's API routes answer 404 `platform.module_disabled`, its background jobs are skipped (retention clean-up of Presence and AI still runs) and its data is kept. Audited (platform.module.disabled) with the reason code."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ModuleSwitchRequest'}
+      responses:
+        '200':
+          description: The module after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Module'}
+        '400': {$ref: '#/components/responses/ModuleInvalid'}
+        '404': {$ref: '#/components/responses/ModuleNotFound'}
+        '409': {$ref: '#/components/responses/ModuleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /ai/status:
     get:
       operationId: getAiStatus
@@ -11806,6 +11889,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ModuleInvalid:
+      description: Invalid input (platform.modules.invalid_request).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ModuleNotFound:
+      description: Unknown module (platform.modules.not_found).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ModuleConflict:
+      description: Refused (platform.modules.requires_disabled and platform.modules.required_by_enabled carry error.blockers; also platform.modules.blocked, version_conflict, no_change, not_switchable).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ModuleError'
     RemoteAccessNotFound:
       description: Not found or not visible to the caller (remoteaccess.not_found); also an unknown, foreign or already consumed launch handle.
       content:
@@ -16997,6 +17098,70 @@ components:
         requestsHourRemaining: {type: integer}
         tokensTodayRemaining: {type: integer, format: int64}
         installationTokensRemaining: {type: integer, format: int64}
+    ModulesStatus:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, enabled]
+            properties:
+              key: {type: string}
+              enabled: {type: boolean}
+    ModuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Module'}
+    Module:
+      type: object
+      additionalProperties: false
+      required: [key, nameKey, descriptionKey, category, core, enabled, switchOn, state, blockedReason, requires, requiredBy, startupGates, version, changedAt, changedByUserId, reasonCode]
+      properties:
+        key: {type: string}
+        nameKey: {type: string, description: "i18n key, modules.<key>.name."}
+        descriptionKey: {type: string, description: "i18n key, modules.<key>.description."}
+        category: {type: string, enum: [core, service_management, assets_inventory, endpoints_security, infrastructure_operations, workforce, insight]}
+        core: {type: boolean, description: "Core modules are always on and cannot be switched."}
+        enabled: {type: boolean, description: "Effective: state is enabled."}
+        switchOn: {type: boolean, description: "Position of the switch itself."}
+        state: {type: string, enum: [enabled, disabled, blocked]}
+        blockedReason: {type: string, nullable: true, enum: [startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off, dependency_disabled, null]}
+        requires: {type: array, items: {type: string}}
+        requiredBy: {type: array, items: {type: string}}
+        startupGates: {type: array, items: {type: string}, description: "Read-only environment variables that gate the module at startup."}
+        version: {type: integer, description: "0 until the switch was first changed; send as expectedVersion."}
+        changedAt: {type: string, format: date-time, nullable: true}
+        changedByUserId: {type: string, format: uuid, nullable: true}
+        reasonCode: {type: string, nullable: true, enum: [upgrade_default, initial_setup, business_need, not_needed, maintenance, compliance_review, evaluation, null]}
+    ModuleSwitchRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reasonCode]
+      properties:
+        expectedVersion: {type: integer, minimum: 0}
+        reasonCode: {type: string, enum: [initial_setup, business_need, not_needed, maintenance, compliance_review, evaluation]}
+    ModuleError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            requestId: {type: string}
+            blockers: {type: array, items: {type: string}, description: "Module keys that must be enabled (enable) or disabled (disable) first."}
     AiStatus:
       type: object
       properties:

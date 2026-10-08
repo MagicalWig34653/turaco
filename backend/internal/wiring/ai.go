@@ -2,6 +2,7 @@ package wiring
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/providers/fake"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/providers/openaicompat"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
 
 // AIConfig is the installation configuration of Turaco AI.
@@ -28,6 +30,8 @@ type AIConfig struct {
 	// Permissions reloads effective permissions before each tool call (the API passes the role evaluator).
 	Permissions func(ctx context.Context, userID string) (map[string]struct{}, error)
 	Logger      *slog.Logger
+	// Modules, when set, makes the tools of a switched-off module answer "not found" at call time (ADR-0032).
+	Modules *modules.Service
 }
 
 // AIProviderFactory builds provider adapters. Credentials are read from the deployment secret file the provider's
@@ -54,6 +58,29 @@ func AIProviderFactory(secretDir string) ai.ProviderFactory {
 	}
 }
 
+// gateTools wraps tool handlers so a call into a switched-off module is "not found", exactly as for a record the caller
+// cannot see; nothing of the module is read. A registry read error fails the call.
+func gateTools(mods *modules.Service, key string, tools []ai.Tool) []ai.Tool {
+	if mods == nil {
+		return tools
+	}
+	out := make([]ai.Tool, len(tools))
+	for i, t := range tools {
+		inner := t.Handler
+		t.Handler = func(ctx context.Context, c ai.Caller, in json.RawMessage) (any, error) {
+			if err := mods.Require(ctx, key); err != nil {
+				if errors.Is(err, modules.ErrModuleDisabled) {
+					return nil, ai.ErrToolNotFound
+				}
+				return nil, err
+			}
+			return inner(ctx, c, in)
+		}
+		out[i] = t
+	}
+	return out
+}
+
 // AI builds the AI service with the tools that modules contribute through their public contracts. A tool that
 // fails the registry self-check stops startup.
 func AI(pool *pgxpool.Pool, cfg AIConfig) (*ai.Service, error) {
@@ -61,9 +88,9 @@ func AI(pool *pgxpool.Pool, cfg AIConfig) (*ai.Service, error) {
 	if cfg.Enabled {
 		endpoints := Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false)
 		var tools []ai.Tool
-		tools = append(tools, servicedeskpublic.AITools(ServiceDesk(pool))...)
-		tools = append(tools, knowledgepublic.AITools(Knowledge(pool))...)
-		tools = append(tools, endpointspublic.AITools(endpoints)...)
+		tools = append(tools, gateTools(cfg.Modules, "servicedesk", servicedeskpublic.AITools(ServiceDesk(pool)))...)
+		tools = append(tools, gateTools(cfg.Modules, "knowledge", knowledgepublic.AITools(Knowledge(pool)))...)
+		tools = append(tools, gateTools(cfg.Modules, "endpoints", endpointspublic.AITools(endpoints))...)
 		if err := reg.RegisterAll(tools...); err != nil {
 			return nil, err
 		}

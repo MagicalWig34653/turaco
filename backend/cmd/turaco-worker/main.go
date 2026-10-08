@@ -43,6 +43,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
@@ -88,10 +89,14 @@ func main() {
 		os.Exit(1)
 	}
 	lockTimeout := runnerLockTimeout(ldapCfg.Enabled(), ldapCfg.SyncTimeout)
-	opts := jobs.RunnerOptions{LockTimeout: lockTimeout}
+	// Module switches (ADR-0032): jobs of a switched-off module are skipped; retention jobs still run.
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	opts := jobs.RunnerOptions{LockTimeout: lockTimeout, Gate: moduleSvc.JobGate}
 	runner := jobs.NewRunner(pool, opts, logger)
 
-	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{}, logger)
+	// Outbox consumers of a switched-off module hand their events to durable deferred-event jobs (ADR-0032).
+	consumerGate := moduleSvc.ConsumerGate()
+	dispatcher := events.NewDispatcher(pool, events.DispatcherOptions{WrapConsumer: consumerGate.Wrap}, logger)
 	smtpCfg, err := config.LoadSMTP(cfg.Environment)
 	if err != nil {
 		logger.Error("load email configuration", "error", err)
@@ -107,6 +112,7 @@ func main() {
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
 		Presence: presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter},
+		Modules:  moduleSvc, ConsumerGate: consumerGate,
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -156,6 +162,10 @@ type jobDeps struct {
 	// Presence is the Workforce Presence configuration (PRESENCE_*); the purge job is registered either way so
 	// retention keeps working after the module was switched off.
 	Presence presenceapp.Config
+	// Modules (optional) lets the deployment engine run only its safety sweep while Endpoints is switched off, and
+	// registers the deferred-event jobs.
+	Modules      *modules.Service
+	ConsumerGate *modules.ConsumerGate
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -203,7 +213,13 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"software package synchronization", func() error {
 			return registerSoftwarePackageSync(runner, pool, d.SoftwareProviderSync)
 		}},
-		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite) }},
+		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite, d.Modules) }},
+		{"deferred module events", func() error {
+			if d.ConsumerGate == nil {
+				return nil
+			}
+			return d.ConsumerGate.RegisterJobs(runner)
+		}},
 		{"deployment correlation", func() error {
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
 		}},
@@ -468,9 +484,24 @@ func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enable
 // registerDeploymentEngine registers the Deployment execution job and schedules it every minute. With
 // SOFTWARE_DEPLOY_WRITE off the job only runs the kill-switch sweep. The writer is a placeholder until the Graph write client exists, so a ring that is
 // started with the capability on halts with assignment_failed.
-func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool) error {
+func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool, mods *modules.Service) error {
 	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).WithDeployWrite(enabled, intune.NotConfiguredWriter{})
-	if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, svc.HandleDeploymentTick); err != nil {
+	tick := svc.HandleDeploymentTick
+	if mods != nil {
+		// The tick is a safety path and always runs. While Endpoints is switched off it does only the kill-switch sweep
+		// (pause, halt, queue clearing) and starts no new rollout work (ADR-0032).
+		tick = func(ctx context.Context, job jobs.Job) error {
+			on, err := mods.Enabled(ctx, "endpoints")
+			if err != nil {
+				return err
+			}
+			if !on {
+				return svc.GateSweep(ctx, "job:"+job.ID)
+			}
+			return svc.HandleDeploymentTick(ctx, job)
+		}
+	}
+	if err := runner.Register(endpointsapp.DeploymentTickJobType, endpointsapp.DeploymentTickJobTimeout, tick); err != nil {
 		return err
 	}
 	// Scheduled even with the capability off: the tick then only runs the kill-switch sweep (pause, halt, queue clearing).

@@ -19,7 +19,12 @@ export function presenceCan(status: PresenceStatus | undefined, fallback: CanFn)
   return (name) => {
     if (!name.startsWith('presence.')) return fallback(name);
     const key = permissions[name.slice(9)];
-    return !!(status?.enabled && key && status.permissions[key]);
+    return !!(
+      (status?.enabled || name === 'presence.admin') &&
+      key &&
+      status &&
+      status.permissions[key]
+    );
   };
 }
 export function dateInZone(
