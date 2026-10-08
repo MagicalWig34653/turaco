@@ -287,8 +287,11 @@ type CoverageResult struct {
 }
 
 // TeamCoverage counts the Team's availability per day. The viewer must hold presence.view_availability and be a
-// current member of the Team. Counts are a snapshot at 12:00 local time in the time zone (UTC when empty).
-func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, from, to time.Time, timezone string) (CoverageResult, error) {
+// current member of the Team. Counts are a snapshot at 12:00 local time in the time zone (UTC when empty), over
+// the members the Team had on that day (Organization's membership intervals), not today's members. A day with
+// fewer than MinCoverageMembers members reports unknown. Naming unavailable members (view_entries) is audited
+// like the detail list.
+func (s *Service) TeamCoverage(ctx context.Context, c Caller, p Principal, teamID string, from, to time.Time, timezone string) (CoverageResult, error) {
 	if _, err := s.active(ctx); err != nil {
 		return CoverageResult{}, err
 	}
@@ -344,7 +347,17 @@ func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, 
 		return res, nil
 	}
 	wFrom, wTo := noons[0].UTC().Add(-time.Minute), noons[len(noons)-1].UTC().Add(time.Minute)
-	entries, err := s.store.EntriesInWindow(ctx, members, members, wFrom, wTo)
+	intervals, err := s.dir.MembershipIntervals(ctx, id, wFrom, wTo)
+	if err != nil {
+		return CoverageResult{}, err
+	}
+	var everyone []string
+	for _, iv := range intervals {
+		if !slices.Contains(everyone, iv.UserID) {
+			everyone = append(everyone, iv.UserID)
+		}
+	}
+	entries, err := s.store.EntriesInWindow(ctx, everyone, everyone, wFrom, wTo)
 	if err != nil {
 		return CoverageResult{}, err
 	}
@@ -366,10 +379,16 @@ func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, 
 	}
 	now := s.now()
 	anyBelow, anyOK := false, false
+	var named []string
 	for _, noon := range noons {
 		day := CoverageDay{Date: noon.Format(time.DateOnly), State: CoverageUnknown}
 		onsiteCount := 0
-		for _, m := range members {
+		dayMembers := membersAt(intervals, noon)
+		if len(dayMembers) < MinCoverageMembers {
+			res.Days = append(res.Days, day)
+			continue
+		}
+		for _, m := range dayMembers {
 			value := valueAt(byUser[m], noon, Need{}, now, s.staleAfter)
 			switch value {
 			case Available:
@@ -380,6 +399,9 @@ func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, 
 				day.Unavailable++
 				if p.ViewEntries && valueAt(visible[m], noon, Need{}, now, s.staleAfter) == Unavailable {
 					day.UnavailableUserIDs = append(day.UnavailableUserIDs, m)
+					if !slices.Contains(named, m) {
+						named = append(named, m)
+					}
 				}
 			default:
 				day.Unknown++
@@ -392,7 +414,7 @@ func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, 
 			c := onsiteCount
 			day.OnsiteAvailable = &c
 		}
-		if hasMin && day.Unknown < len(members) {
+		if hasMin && day.Unknown < len(dayMembers) {
 			day.State = CoverageOK
 			if day.Available < min.Minimum || (onsite && onsiteCount < *min.OnsiteMinimum) {
 				day.State = CoverageBelow
@@ -409,7 +431,28 @@ func (s *Service) TeamCoverage(ctx context.Context, p Principal, teamID string, 
 	case anyOK:
 		res.State = CoverageOK
 	}
+	if len(named) > 0 {
+		err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+			return recordAudit(ctx, tx, c, "entries.detail_viewed", "presence_scope", p.UserID, nil, nil, map[string]any{
+				"scope": "team_coverage", "subjectCount": len(named), "windowDays": int(to.Sub(from).Hours() / 24)})
+		})
+		if err != nil {
+			return CoverageResult{}, err
+		}
+	}
 	return res, nil
+}
+
+// membersAt lists the Users whose membership interval contains the instant.
+func membersAt(intervals []MembershipInterval, at time.Time) []string {
+	var out []string
+	for _, iv := range intervals {
+		if !iv.From.After(at) && (iv.Until == nil || iv.Until.After(at)) && !slices.Contains(out, iv.UserID) {
+			out = append(out, iv.UserID)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // valueAt is the derived value of the entries at one instant.

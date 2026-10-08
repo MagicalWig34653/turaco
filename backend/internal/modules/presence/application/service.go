@@ -200,8 +200,8 @@ func optDate(v string) (*string, error) {
 	return &v, nil
 }
 
-// UpdateSettings replaces the settings (presence.admin). Enabling external sources needs the recorded data
-// protection impact assessment date. Switching the module off starts the retention clock for all entries.
+// UpdateSettings replaces the settings (presence.admin). Enabling the module (and external sources) needs the recorded data
+// protection impact assessment date; the works council confirmation date is recorded when given. Switching the module off starts the retention clock for all entries.
 func (s *Service) UpdateSettings(ctx context.Context, c Caller, p Principal, in SettingsInput, expectedVersion *int) (Settings, error) {
 	if !p.Admin {
 		return Settings{}, ErrForbidden
@@ -220,6 +220,9 @@ func (s *Service) UpdateSettings(ctx context.Context, c Caller, p Principal, in 
 	}
 	if in.RetentionDays < 1 || in.RetentionDays > s.maxRetention {
 		return Settings{}, invalid("retentionDays must be 1 to %d", s.maxRetention)
+	}
+	if in.Enabled && dpia == nil {
+		return Settings{}, invalid("enabling Workforce Presence needs the recorded data protection impact assessment date")
 	}
 	if in.ExternalSourcesEnabled && dpia == nil {
 		return Settings{}, invalid("external sources need the recorded data protection impact assessment date")
@@ -496,7 +499,7 @@ func (s *Service) mutate(ctx context.Context, c Caller, p Principal, id string, 
 }
 
 // Reschedule moves an entry in time (operation Reschedule). A recurring entry keeps its rule and end date,
-// re-anchored to the new first occurrence in its time zone.
+// re-anchored to the new first occurrence in the requested time zone (the stored one when none is given).
 func (s *Service) Reschedule(ctx context.Context, c Caller, p Principal, id string, expected *int, t TimeInput) (Entry, error) {
 	return s.mutate(ctx, c, p, id, expected, "rescheduled", "entry.rescheduled", func(e Entry) (Entry, error) {
 		if t.Timezone == "" && e.Recurrence != nil {
@@ -510,7 +513,7 @@ func (s *Service) Reschedule(ctx context.Context, c Caller, p Principal, id stri
 		e.EndedAt = ends
 		if e.Recurrence != nil {
 			r := RecurrenceInput{Frequency: e.Recurrence.Frequency, Interval: e.Recurrence.Interval, EndsOn: e.Recurrence.EndsOn}
-			if e.Recurrence, e.EndedAt, err = buildRecurrence(&r, e.Recurrence.Timezone, starts, ends, allDay); err != nil {
+			if e.Recurrence, e.EndedAt, err = buildRecurrence(&r, t.Timezone, starts, ends, allDay); err != nil {
 				return Entry{}, err
 			}
 		}

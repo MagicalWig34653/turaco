@@ -31,6 +31,8 @@ type fakeDir struct {
 	mu        sync.Mutex
 	teams     map[string][]string // team -> members
 	locations map[string]bool
+	// history overrides the membership intervals of a team; by default every member belongs since long ago.
+	history map[string][]application.MembershipInterval
 }
 
 func (f *fakeDir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
@@ -70,6 +72,17 @@ func (f *fakeDir) CurrentTeamIDs(_ context.Context, u string) ([]string, error) 
 }
 func (f *fakeDir) CurrentMemberIDs(_ context.Context, t string) ([]string, error) {
 	return append([]string(nil), f.teams[t]...), nil
+}
+
+func (f *fakeDir) MembershipIntervals(_ context.Context, t string, _, _ time.Time) ([]application.MembershipInterval, error) {
+	if h, ok := f.history[t]; ok {
+		return h, nil
+	}
+	var out []application.MembershipInterval
+	for _, m := range f.teams[t] {
+		out = append(out, application.MembershipInterval{UserID: m, From: time.Now().AddDate(-1, 0, 0)})
+	}
+	return out, nil
 }
 
 type env struct {
@@ -125,7 +138,7 @@ func (e *env) setEnabled(on bool) application.Settings {
 		e.t.Fatal(err)
 	}
 	v := cur.Version
-	s, err := e.svc.UpdateSettings(ctx, e.caller(), e.admin, application.SettingsInput{Enabled: on, RetentionDays: 30}, &v)
+	s, err := e.svc.UpdateSettings(ctx, e.caller(), e.admin, application.SettingsInput{Enabled: on, RetentionDays: 30, DPIARecordedOn: "2026-09-01"}, &v)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -402,7 +415,7 @@ func TestWindowLimits(t *testing.T) {
 	if _, err := e.svc.AvailabilityWindow(ctx, e.bob, e.alice.UserID, e.now, e.now.AddDate(0, 0, 40), application.Need{}); !errors.As(err, &win) {
 		t.Errorf("availability window: %v", err)
 	}
-	if _, err := e.svc.TeamCoverage(ctx, e.bob, e.team, e.now, e.now.AddDate(0, 0, 40), ""); !errors.As(err, &win) {
+	if _, err := e.svc.TeamCoverage(ctx, e.caller(), e.bob, e.team, e.now, e.now.AddDate(0, 0, 40), ""); !errors.As(err, &win) {
 		t.Errorf("coverage window: %v", err)
 	}
 }
@@ -419,7 +432,7 @@ func TestTeamCoverageCountsAndThreshold(t *testing.T) {
 	if _, err := e.svc.SetMinimum(ctx, e.caller(), e.lead, e.team, application.MinimumInput{Minimum: 3, OnsiteMinimum: &two, LocationID: e.loc}, nil); err != nil {
 		t.Fatal(err)
 	}
-	res, err := e.svc.TeamCoverage(ctx, e.bob, e.team, s, en.Add(time.Hour), "UTC")
+	res, err := e.svc.TeamCoverage(ctx, e.caller(), e.bob, e.team, s, en.Add(time.Hour), "UTC")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +448,7 @@ func TestTeamCoverageCountsAndThreshold(t *testing.T) {
 	if len(day.UnavailableUserIDs) != 0 || res.State != application.CoverageBelow {
 		t.Errorf("names must not appear without view_entries: %+v", day)
 	}
-	withNames, _ := e.svc.TeamCoverage(ctx, e.lead, e.team, s, en.Add(time.Hour), "UTC")
+	withNames, _ := e.svc.TeamCoverage(ctx, e.caller(), e.lead, e.team, s, en.Add(time.Hour), "UTC")
 	found := false
 	for _, d := range withNames.Days {
 		if len(d.UnavailableUserIDs) == 1 && d.UnavailableUserIDs[0] == e.lead.UserID {
@@ -446,12 +459,12 @@ func TestTeamCoverageCountsAndThreshold(t *testing.T) {
 		t.Error("view_entries holders see the names of detail-visible absences")
 	}
 	// Outsiders cannot read the Team; a Team of one reveals a person and reports unknown.
-	if _, err := e.svc.TeamCoverage(ctx, e.carol, e.team, s, en, ""); !errors.Is(err, application.ErrNotFound) {
+	if _, err := e.svc.TeamCoverage(ctx, e.caller(), e.carol, e.team, s, en, ""); !errors.Is(err, application.ErrNotFound) {
 		t.Errorf("outsider = %v", err)
 	}
 	solo := newID()
 	e.dir.teams[solo] = []string{e.carol.UserID}
-	r, err := e.svc.TeamCoverage(ctx, e.carol, solo, s, en, "")
+	r, err := e.svc.TeamCoverage(ctx, e.caller(), e.carol, solo, s, en, "")
 	if err != nil || r.State != application.CoverageUnknown || len(r.Days) != 0 || r.Members != nil {
 		t.Errorf("team of one: %+v %v", r, err)
 	}
@@ -509,6 +522,7 @@ func TestSettingsRules(t *testing.T) {
 	for name, in := range map[string]application.SettingsInput{
 		"retention 31":          {Enabled: true, RetentionDays: 31},
 		"retention 0":           {Enabled: true, RetentionDays: 0},
+		"enable without dpia":   {Enabled: true, RetentionDays: 30},
 		"external without dpia": {Enabled: true, RetentionDays: 30, ExternalSourcesEnabled: true},
 		"bad date":              {Enabled: true, RetentionDays: 30, DPIARecordedOn: "01.02.2026"},
 	} {
@@ -519,7 +533,7 @@ func TestSettingsRules(t *testing.T) {
 	if _, err := e.svc.UpdateSettings(ctx, e.caller(), e.admin, application.SettingsInput{Enabled: true, RetentionDays: 7, DPIARecordedOn: "2026-09-01", CouncilConfirmedOn: "2026-09-15"}, &v); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.UpdateSettings(ctx, e.caller(), e.admin, application.SettingsInput{Enabled: true, RetentionDays: 7}, &v); !errors.Is(err, application.ErrVersionConflict) {
+	if _, err := e.svc.UpdateSettings(ctx, e.caller(), e.admin, application.SettingsInput{Enabled: true, RetentionDays: 7, DPIARecordedOn: "2026-09-01"}, &v); !errors.Is(err, application.ErrVersionConflict) {
 		t.Errorf("stale settings version: %v", err)
 	}
 	// The database caps retention too.
@@ -666,5 +680,114 @@ func TestMinimumVersioning(t *testing.T) {
 	}
 	if _, err := e.svc.SetMinimum(ctx, e.caller(), e.lead, newID(), application.MinimumInput{Minimum: 1}, nil); !errors.Is(err, application.ErrNotFound) {
 		t.Errorf("unknown team: %v", err)
+	}
+}
+
+func TestCoverageUsesMembershipPerDay(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, en := e.day(2)
+	for _, p := range []application.Principal{e.lead, e.alice, e.bob} {
+		e.create(p, application.NewEntry{Kind: application.KindWorkLocation, LocationType: "remote", Time: application.TimeInput{StartsAt: &s, EndsAt: &en}})
+	}
+	// Alice leaves the team before the coverage day; carol joins the day after.
+	e.dir.history = map[string][]application.MembershipInterval{e.team: {
+		{UserID: e.lead.UserID, From: e.now.AddDate(-1, 0, 0)},
+		{UserID: e.bob.UserID, From: e.now.AddDate(-1, 0, 0)},
+		{UserID: e.alice.UserID, From: e.now.AddDate(-1, 0, 0), Until: ptr(s.Add(-time.Hour))},
+		{UserID: e.carol.UserID, From: en},
+	}}
+	res, err := e.svc.TeamCoverage(ctx, e.caller(), e.bob, e.team, s, en.Add(time.Hour), "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range res.Days {
+		if d.Date == s.Format(time.DateOnly) && (d.Limited+d.Available+d.Unavailable+d.Unknown != 2 || d.Available != 2) {
+			t.Errorf("only the two members of that day count: %+v", d)
+		}
+	}
+	// A day on which the team had one member reports no counts.
+	e.dir.history[e.team] = e.dir.history[e.team][:1]
+	res, _ = e.svc.TeamCoverage(ctx, e.caller(), e.bob, e.team, s, en, "UTC")
+	for _, d := range res.Days {
+		if d.Limited+d.Available+d.Unavailable+d.Unknown != 0 || d.State != application.CoverageUnknown {
+			t.Errorf("single-member day must not reveal a person: %+v", d)
+		}
+	}
+}
+
+func TestCoverageNamingIsAudited(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, en := e.day(1)
+	e.unavailable(e.bob, application.VisibilityDetail, 1)
+	count := func(corr string) int {
+		var n int
+		if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events WHERE action = 'presence.entries.detail_viewed' AND correlation_id = $1`, corr).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	c := e.caller()
+	if _, err := e.svc.TeamCoverage(ctx, c, e.lead, e.team, s, en, "UTC"); err != nil {
+		t.Fatal(err)
+	}
+	if count(c.CorrelationID) != 1 {
+		t.Error("naming unavailable members must write the detail_viewed audit")
+	}
+	c = e.caller()
+	if _, err := e.svc.TeamCoverage(ctx, c, e.bob, e.team, s, en, "UTC"); err != nil {
+		t.Fatal(err)
+	}
+	if count(c.CorrelationID) != 0 {
+		t.Error("counts-only coverage is not a detail read")
+	}
+}
+
+func TestScopedReadsFailInsteadOfTruncating(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, en := e.day(1)
+	e.unavailable(e.alice, "", 1)
+	e.unavailable(e.bob, "", 1)
+	restore := repository.SetEntryReadLimit(1)
+	defer restore()
+	if _, err := e.svc.AvailabilityWindow(ctx, e.lead, e.alice.UserID, s, en, application.Need{}); err != nil {
+		t.Errorf("a read within the bound works: %v", err)
+	}
+	if _, err := e.svc.Availability(ctx, e.lead, []string{e.alice.UserID, e.bob.UserID}, s.Add(time.Hour), application.Need{}); !errors.Is(err, application.ErrTooManyEntries) {
+		t.Errorf("availability must fail at the bound: %v", err)
+	}
+	if _, err := e.svc.TeamCoverage(ctx, e.caller(), e.lead, e.team, s, en, "UTC"); !errors.Is(err, application.ErrTooManyEntries) {
+		t.Errorf("coverage must fail at the bound: %v", err)
+	}
+}
+
+func TestRescheduleRecurringUsesRequestedZone(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	c := application.Caller{Actor: audit.UserActor(e.alice.UserID), CorrelationID: newID()}
+	berlin, _ := time.LoadLocation("Europe/Berlin")
+	ny, _ := time.LoadLocation("America/New_York")
+	start := e.now.AddDate(0, 0, 3).In(berlin)
+	start = time.Date(start.Year(), start.Month(), start.Day(), 9, 0, 0, 0, berlin)
+	end := start.Add(time.Hour)
+	created := e.create(e.alice, application.NewEntry{Kind: application.KindUnavailable, Time: application.TimeInput{StartsAt: &start, EndsAt: &end, Timezone: "Europe/Berlin"},
+		Recurrence: &application.RecurrenceInput{Frequency: "daily", EndsOn: start.AddDate(0, 0, 10).Format(time.DateOnly)}})
+	ns := time.Date(start.Year(), start.Month(), start.Day(), 14, 0, 0, 0, ny)
+	ne := ns.Add(time.Hour)
+	v := created.Version
+	out, err := e.svc.Reschedule(ctx, c, e.alice, created.ID, &v, application.TimeInput{StartsAt: &ns, EndsAt: &ne, Timezone: "America/New_York"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Recurrence == nil || out.Recurrence.Timezone != "America/New_York" || out.Recurrence.TimeOfDay != "14:00" {
+		t.Errorf("recurrence must follow the requested zone: %+v", out.Recurrence)
+	}
+	// Without a zone the stored one is kept.
+	v = out.Version
+	out, err = e.svc.Reschedule(ctx, c, e.alice, created.ID, &v, application.TimeInput{StartsAt: &ns, EndsAt: &ne})
+	if err != nil || out.Recurrence.Timezone != "America/New_York" {
+		t.Errorf("stored zone kept: %+v %v", out.Recurrence, err)
 	}
 }

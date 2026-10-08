@@ -79,6 +79,8 @@ const (
 	// PastWindowSlack is how far into the past a read window or a new entry may reach.
 	PastWindowSlack = 24 * time.Hour
 	DefaultStale    = 24 * time.Hour
+	// MaxEntryRows bounds one scoped entry read; a larger result fails with ErrTooManyEntries.
+	MaxEntryRows = 5000
 
 	PurgeJobType    = "presence.purge"
 	PurgeJobTimeout = 2 * time.Minute
@@ -93,6 +95,8 @@ var (
 	ErrVersionConflict = errors.New("presence: version conflict")
 	ErrDisabled        = errors.New("presence: disabled")
 	ErrReadOnly        = errors.New("presence: externally sourced entries are read-only")
+	// ErrTooManyEntries is returned instead of a silently truncated read (presence.too_many_entries).
+	ErrTooManyEntries = errors.New("presence: too many entries in the window")
 )
 
 // InvalidInputError carries a user-safe validation message.
@@ -246,4 +250,13 @@ type Directory interface {
 	ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
 	CurrentTeamIDs(ctx context.Context, userID string) ([]string, error)
 	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
+	// MembershipIntervals returns the Team's membership intervals overlapping [from, to).
+	MembershipIntervals(ctx context.Context, teamID string, from, to time.Time) ([]MembershipInterval, error)
+}
+
+// MembershipInterval is one interval a User belonged to a Team: From inclusive, Until exclusive, nil when open.
+type MembershipInterval struct {
+	UserID string
+	From   time.Time
+	Until  *time.Time
 }

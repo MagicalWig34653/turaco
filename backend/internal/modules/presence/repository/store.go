@@ -184,7 +184,8 @@ func (r *Repository) CountActiveEntriesTx(ctx context.Context, tx pgx.Tx, userID
 	return n, nil
 }
 
-// EntriesInWindow applies the viewer-scope filter in SQL: a row is returned only when its User is in both
+// EntriesInWindow returns application.ErrTooManyEntries instead of a truncated result when more than
+// application.MaxEntryRows rows match. It applies the viewer-scope filter in SQL: a row is returned only when its User is in both
 // userIDs and scope, so a missing check in the application cannot leak rows.
 func (r *Repository) EntriesInWindow(ctx context.Context, scope, userIDs []string, from, to time.Time) ([]application.Entry, error) {
 	scope, userIDs = validIDs(scope), validIDs(userIDs)
@@ -194,7 +195,7 @@ func (r *Repository) EntriesInWindow(ctx context.Context, scope, userIDs []strin
 	rows, err := r.pool.Query(ctx, `SELECT `+entryCols+` FROM presence.entries
 		WHERE user_id = ANY($1::text[]::uuid[]) AND user_id = ANY($2::text[]::uuid[])
 		  AND status = 'active' AND observed_to IS NULL AND starts_at < $4 AND ended_at > $3
-		ORDER BY user_id, starts_at LIMIT 5000`, userIDs, scope, from, to)
+		ORDER BY user_id, starts_at LIMIT $5`, userIDs, scope, from, to, entryReadLimit+1)
 	if err != nil {
 		return nil, fmt.Errorf("list presence entries: %w", err)
 	}
@@ -207,8 +208,17 @@ func (r *Repository) EntriesInWindow(ctx context.Context, scope, userIDs []strin
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list presence entries: %w", err)
+	}
+	if len(out) > entryReadLimit {
+		return nil, application.ErrTooManyEntries
+	}
+	return out, nil
 }
+
+// entryReadLimit is application.MaxEntryRows; a var so a test can lower it.
+var entryReadLimit = application.MaxEntryRows
 
 // ---- Minimums --------------------------------------------------------------------------------------------
 

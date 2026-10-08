@@ -60,6 +60,14 @@ func (dir) ActiveLocations(context.Context, []string) (map[string]bool, error) {
 func (d dir) CurrentTeamIDs(context.Context, string) ([]string, error)         { return []string{newID()}, nil }
 func (d dir) CurrentMemberIDs(context.Context, string) ([]string, error)       { return d.members, nil }
 
+func (d dir) MembershipIntervals(context.Context, string, time.Time, time.Time) ([]application.MembershipInterval, error) {
+	var out []application.MembershipInterval
+	for _, m := range d.members {
+		out = append(out, application.MembershipInterval{UserID: m, From: time.Now().AddDate(-1, 0, 0)})
+	}
+	return out, nil
+}
+
 func serve(t *testing.T, enabled bool, a fakeAuth, members ...string) *http.ServeMux {
 	pool := dbtest.Pool(t)
 	svc := application.NewService(repository.New(pool), dir{members}, application.Config{Enabled: enabled})

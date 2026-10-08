@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 )
@@ -86,5 +87,36 @@ func TestWorkDirectoryCurrentMembers(t *testing.T) {
 	}
 	if ids, err := wd.CurrentMemberIDs(ctx, "garbage"); err != nil || len(ids) != 0 {
 		t.Errorf("malformed id = %v %v", ids, err)
+	}
+}
+
+func TestWorkDirectoryMembershipIntervals(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	wd := application.NewWorkDirectory(f.repo)
+	a := f.user(f.pfx+" IA", "active")
+	team := f.createTeam(f.pfx + " Intervals")
+	c := testCaller(f)
+	if _, err := f.repo.AddTeamMember(ctx, c, team.ID, a, nil); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	got, err := wd.MembershipIntervals(ctx, team.ID, now.Add(-time.Hour), now.Add(24*time.Hour))
+	if err != nil || len(got) != 1 || got[0].UserID != a || got[0].Until != nil {
+		t.Fatalf("open interval = %+v %v", got, err)
+	}
+	if err := f.repo.RemoveTeamMember(ctx, c, team.ID, a); err != nil {
+		t.Fatal(err)
+	}
+	got, err = wd.MembershipIntervals(ctx, team.ID, now.Add(time.Hour), now.Add(48*time.Hour))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("after removal the future window has no member: %+v %v", got, err)
+	}
+	got, err = wd.MembershipIntervals(ctx, team.ID, now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil || len(got) != 1 || got[0].Until == nil {
+		t.Fatalf("closed interval = %+v %v", got, err)
+	}
+	if got, err := wd.MembershipIntervals(ctx, "garbage", now, now.Add(time.Hour)); err != nil || len(got) != 0 {
+		t.Fatalf("malformed id = %v %v", got, err)
 	}
 }

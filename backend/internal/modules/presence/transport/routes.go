@@ -353,7 +353,7 @@ func (h *handler) coverage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := principal(r)
-	res, err := h.svc.TeamCoverage(r.Context(), p, r.PathValue("id"), from, to, r.URL.Query().Get("timezone"))
+	res, err := h.svc.TeamCoverage(r.Context(), caller(w, r), p, r.PathValue("id"), from, to, r.URL.Query().Get("timezone"))
 	if err != nil {
 		h.writeErr(w, r, err)
 		return

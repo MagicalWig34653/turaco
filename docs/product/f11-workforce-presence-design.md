@@ -157,5 +157,19 @@ Implemented 2026-10-08 (backend only; see [current status](current-status.md)). 
 - **Recurrence:** the end date (`endsOn`) is mandatory and at most 366 days after the first occurrence; the stored `ended_at` is the end of the last occurrence (cancellation time for cancelled entries) and drives retention. At most 200 active manual entries per User.
 - **Ticket warning hint:** for Users outside the viewer's scope `Availability` returns `unknown` with `out_of_scope` and, only through the Go contract, `MayBeUnavailable` when the User is unavailable now. The HTTP API never returns it.
 - **Retention:** `presence.purge` runs daily even when the module is off. When the module has been switched off for `retention_days`, it deletes every entry. Setting the startup gate off without the runtime switch does not start that clock; use `PUT /presence/settings` (`enabled=false`) or `POST /presence/settings/purge`.
-- **API additions:** `GET /presence/status` (always mounted; enabled flag and the caller's Presence permissions), `POST /presence/settings/purge`, `GET /presence/teams/{id}/minimum`. With `PRESENCE_ENABLED=false` every other route is absent (404). Errors: `presence.disabled`, `presence.window_too_large`, `presence.not_permitted`, `presence.invalid_recurrence`, `presence.invalid_request`, `presence.not_found`, `presence.version_conflict`, `presence.invalid_transition`, `presence.read_only`.
+- **API additions:** `GET /presence/status` (always mounted; enabled flag and the caller's Presence permissions), `POST /presence/settings/purge`, `GET /presence/teams/{id}/minimum`. With `PRESENCE_ENABLED=false` every other route is absent (404). Errors: `presence.disabled`, `presence.window_too_large`, `presence.not_permitted`, `presence.invalid_recurrence`, `presence.invalid_request`, `presence.not_found`, `presence.version_conflict`, `presence.invalid_transition`, `presence.read_only`, `presence.too_many_entries` (422).
 - **Not in P-A:** `presence.source_configs/source_runs` tables, source endpoints and jobs (P-C), the `presence.coverage_below_minimum` event and `presence.coverage_check` job (P-B with the notification), UI.
+
+## Review outcomes
+
+Fixed after the P-A review:
+
+1. Enabling Presence at runtime always needs `dpiaRecordedOn` (not only external sources); otherwise `presence.invalid_request`. The works-council date stays optional as in W4 and is recorded when given.
+2. Team Coverage resolves membership per coverage day through `organization/public.WorkDirectory.MembershipIntervals` (new, bounded to 2000 rows, `ErrTooManyIntervals`), not through today's members. A day with fewer than two members reports no counts.
+3. Scoped entry reads are bounded at 5000 rows and fail with `presence.too_many_entries` (HTTP 422) instead of silently truncating availability.
+4. Team Coverage that names unavailable members (`presence.view_entries`) writes the same `presence.entries.detail_viewed` audit as the detail list (`scope=team_coverage`, counts only).
+5. Rescheduling a recurring entry applies the requested time zone to the recurrence (the stored zone only when none is given).
+
+Accepted:
+
+6. The database function `presence.purge_entries` is executable by the application role (the application deletes through it by design); there is no separate retention role. Authorization of purge stays in the application (`presence.admin`, the worker job).

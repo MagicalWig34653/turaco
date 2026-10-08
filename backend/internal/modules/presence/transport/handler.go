@@ -63,6 +63,8 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "presence.window_too_large", win.Message)
 	case errors.As(err, &tr):
 		httpx.WriteError(w, http.StatusConflict, "presence.invalid_transition", "The operation is not allowed in the current status.")
+	case errors.Is(err, application.ErrTooManyEntries):
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "presence.too_many_entries", "Too many entries match; narrow the window or the selection.")
 	case errors.Is(err, application.ErrDisabled):
 		httpx.WriteError(w, http.StatusNotFound, "presence.disabled", "Workforce Presence is not enabled.")
 	case errors.Is(err, application.ErrNotFound):

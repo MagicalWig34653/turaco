@@ -1,6 +1,10 @@
 package application
 
-import "context"
+import (
+	"context"
+	"errors"
+	"time"
+)
 
 // WorkDirectoryStore is the storage port behind the work-directory contract
 // (organization/public): the questions task and notification code asks about
@@ -26,7 +30,24 @@ type WorkDirectoryStore interface {
 	ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error)
 	// CurrentMemberIDs returns the Users currently in an active Team, at most MaxTeamMembers.
 	CurrentMemberIDs(ctx context.Context, teamID string) ([]string, error)
+	// MembershipIntervals returns the membership intervals of an active Team that overlap [from, to), at most
+	// MaxMembershipIntervals+1 rows (the extra row signals truncation).
+	MembershipIntervals(ctx context.Context, teamID string, from, to time.Time) ([]MembershipInterval, error)
 }
+
+// MembershipInterval is one validity interval of a Team membership: the User belonged to the Team from From
+// (inclusive) until Until (exclusive); a nil Until is open-ended.
+type MembershipInterval struct {
+	UserID string
+	From   time.Time
+	Until  *time.Time
+}
+
+// MaxMembershipIntervals bounds MembershipIntervals.
+const MaxMembershipIntervals = 2000
+
+// ErrTooManyIntervals is returned when a team's membership history in the window exceeds MaxMembershipIntervals.
+var ErrTooManyIntervals = errors.New("organization: too many membership intervals")
 
 // Contact is how a User can be reached by email, and whether they may be.
 type Contact struct {
@@ -116,6 +137,22 @@ func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]
 		return []string{}, nil
 	}
 	return w.store.CurrentMemberIDs(ctx, teamID)
+}
+
+// MembershipIntervals returns who belonged to the Team when, for intervals overlapping [from, to). An inactive or
+// unknown Team has none. ErrTooManyIntervals when the history exceeds MaxMembershipIntervals.
+func (w *WorkDirectory) MembershipIntervals(ctx context.Context, teamID string, from, to time.Time) ([]MembershipInterval, error) {
+	if !subjectUUID.MatchString(teamID) {
+		return []MembershipInterval{}, nil
+	}
+	out, err := w.store.MembershipIntervals(ctx, teamID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > MaxMembershipIntervals {
+		return nil, ErrTooManyIntervals
+	}
+	return out, nil
 }
 
 func (w *WorkDirectory) Contacts(ctx context.Context, ids []string) (map[string]Contact, error) {

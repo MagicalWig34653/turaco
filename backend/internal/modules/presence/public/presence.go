@@ -97,7 +97,7 @@ type CoverageResult struct {
 func (p *Presence) TeamCoverage(ctx context.Context, viewer Viewer, teamID string, from, to time.Time, timezone string) (CoverageResult, error) {
 	v := viewer
 	v.ViewEntries = false
-	res, err := p.svc.TeamCoverage(ctx, v.principal(), teamID, from, to, timezone)
+	res, err := p.svc.TeamCoverage(ctx, application.Caller{}, v.principal(), teamID, from, to, timezone)
 	if errors.Is(err, application.ErrDisabled) {
 		return CoverageResult{Disabled: true, CoverageResult: application.CoverageResult{TeamID: teamID, State: application.CoverageUnknown}}, nil
 	}
