@@ -43,6 +43,13 @@ type Config struct {
 	RemoteAccessProviders []string
 	// RemoteAccessApprovalOwnership are the Device ownerships whose remote sessions need a second approver.
 	RemoteAccessApprovalOwnership []string
+	// PresenceEnabled is PRESENCE_ENABLED, the startup gate of Workforce Presence (ADR-0028); the runtime switch
+	// and the recorded data protection dates are administrative settings.
+	PresenceEnabled bool
+	// PresenceRetentionDays is PRESENCE_RETENTION_DAYS (1 to 30), the upper bound of the runtime retention.
+	PresenceRetentionDays int
+	// PresenceSourceStaleAfter is PRESENCE_SOURCE_STALE_AFTER: older external signals count as unknown.
+	PresenceSourceStaleAfter time.Duration
 
 	// DirectoryProviderKey is LDAP_PROVIDER_KEY when LDAP_URL is set and empty
 	// otherwise. turaco-api only needs this to accept manual sync requests;
@@ -167,6 +174,9 @@ var Registry = []Descriptor{
 	{Name: "SOFTWARE_PROVIDER_SYNC", Type: "bool", Default: "false", Description: "Allow the Software Package synchronization (POST /api/v1/software/packages/sync and the scheduled worker job) against the Software Management Provider (IntuneGet). The provider client is not implemented yet: with the switch on, a run reports that the provider is not configured."},
 	{Name: "REMOTE_ACCESS_PROVIDERS", Type: "string", Description: "Comma-separated Remote Access Provider keys to enable (`rustdesk`, `anydesk`, `hoptodesk`; launch-link connectors, attended sessions only). Empty switches Remote Access off: no session can be requested. Unknown keys stop turaco-api and turaco-worker at startup. API and worker must use the same value."},
 	{Name: "REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP", Type: "string", Description: "Comma-separated Device ownerships (`corporate`, `personal`, `unknown`) whose Remote Access Sessions need a second approver holding remote_access.admin before they can be launched. Empty requires no approval."},
+	{Name: "PRESENCE_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Workforce Presence (ADR-0028): routes, the retention job and the public availability contract. Off by default; enabling needs the customer's data protection impact assessment and works-council confirmation, recorded afterwards in the audited runtime setting presence.settings.enabled. API and worker must use the same value."},
+	{Name: "PRESENCE_RETENTION_DAYS", Type: "int", Default: "30", Description: "Upper bound of the Workforce Presence retention: past entries are deleted this many days after they ended; 1 to 30, never longer. The runtime setting can only shorten it."},
+	{Name: "PRESENCE_SOURCE_STALE_AFTER", Type: "duration", Default: "24h", Description: "An externally sourced Workforce Presence signal older than this is shown as unknown instead of being trusted; at least 1m."},
 	{Name: "SOFTWARE_DEPLOY_WRITE", Type: "bool", Default: "false", Description: "Capability: allow Deployments to write ring assignments to the Management Provider (start, resume, promote, resolving targets, clearing after a cancel or kill switch). The worker job endpoints.deployment_tick runs every minute either way; with the capability off it only runs the kill-switch sweep (pause, halt, queue clearing). API and worker must use the same value. Off by default; enabling is audited (endpoints.deploy_write.enabled). The Graph write client is not implemented yet: the writer is a placeholder whose writes fail permanently, so a ring halts with assignment_failed."},
 	{Name: "ADVISORY_SYNC", Type: "bool", Default: "false", Description: "Synchronize security advisories from the public NVD and CISA KEV feeds (scheduled worker job security.advisory_sync and `turaco-admin security sync-feeds`). No account is needed. Imported advisories start in status new; criteria come from the feed's CPE data and analysts decide applicability."},
 	{Name: "ADVISORY_SOURCES", Type: "string", Default: "nvd,cisa_kev", Description: "Comma-separated advisory feeds to synchronize: `nvd` (NVD API 2.0) and/or `cisa_kev` (CISA Known Exploited Vulnerabilities catalog). Used when ADVISORY_SYNC is on and by the admin command."},
@@ -223,6 +233,22 @@ func Load() (Config, error) {
 		if o != "corporate" && o != "personal" && o != "unknown" {
 			return Config{}, fmt.Errorf("REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP: %q is not corporate, personal or unknown", o)
 		}
+	}
+	cfg.PresenceEnabled = getenv("PRESENCE_ENABLED", "false") == "true"
+	cfg.PresenceRetentionDays = 30
+	if v := os.Getenv("PRESENCE_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 30 {
+			return Config{}, fmt.Errorf("PRESENCE_RETENTION_DAYS must be an integer from 1 to 30")
+		}
+		cfg.PresenceRetentionDays = n
+	}
+	var perr error
+	if cfg.PresenceSourceStaleAfter, perr = getDuration("PRESENCE_SOURCE_STALE_AFTER", 24*time.Hour); perr != nil {
+		return Config{}, perr
+	}
+	if cfg.PresenceSourceStaleAfter < time.Minute {
+		return Config{}, fmt.Errorf("PRESENCE_SOURCE_STALE_AFTER must be at least 1m")
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

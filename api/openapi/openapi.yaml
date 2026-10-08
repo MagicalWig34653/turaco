@@ -10729,6 +10729,381 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /presence/status:
+    get:
+      operationId: getPresenceStatus
+      summary: Whether Workforce Presence is on and which Presence permissions the caller holds.
+      description: "Any signed-in User. Mounted even when PRESENCE_ENABLED is false so clients can hide every Presence surface. `no-store`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceStatus'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/settings:
+    get:
+      operationId: getPresenceSettings
+      summary: Presence settings.
+      description: "Needs `presence.admin`. Dates only: no free text."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceSettings'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: updatePresenceSettings
+      summary: Replace the Presence settings (runtime switch, recorded DPIA and works-council dates, retention).
+      description: "Needs `presence.admin`; `expectedVersion` required. Enabling the module (`enabled=true`) always needs `dpiaRecordedOn` (`presence.invalid_request`); `councilConfirmedOn` is recorded when given. Switching off starts the retention clock for every entry. Audited (`presence.settings.updated`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceSettingsRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceSettings'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/settings/purge:
+    post:
+      operationId: purgePresenceNow
+      summary: Delete every Presence entry at once.
+      description: "Needs `presence.admin`. Audited with the count only."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deletedEntries: {type: integer}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/me/entries:
+    get:
+      operationId: listMyPresenceEntries
+      summary: Own entries with occurrences in a window.
+      description: "Needs `presence.manage_own`. Window of at most 31 days starting no earlier than yesterday (`presence.window_too_large`). `presence.disabled` (404) when the module is off."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: from, in: query, required: true, description: "RFC 3339 time or YYYY-MM-DD. Not earlier than now minus one day.", schema: {type: string}}
+        - {name: to, in: query, required: true, description: "At most 31 days after `from`.", schema: {type: string}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntryList'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/entries:
+    get:
+      operationId: listPresenceEntries
+      summary: Entry details of other Users in the callers Teams.
+      description: "Needs `presence.view_entries`. Only entries whose owner allowed detail visibility (or that the caller entered) are returned. Every read is audited (viewer, scope, count; never content)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: userId, in: query, schema: {type: string, format: uuid}}
+        - {name: teamId, in: query, schema: {type: string, format: uuid}}
+        - {name: from, in: query, required: true, description: "RFC 3339 time or YYYY-MM-DD. Not earlier than now minus one day.", schema: {type: string}}
+        - {name: to, in: query, required: true, description: "At most 31 days after `from`.", schema: {type: string}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntryList'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createPresenceEntry
+      summary: Create an entry (operation Create).
+      description: "Needs `presence.manage_own` for oneself, `presence.manage_entries` for a Team member. There is no reason or note field. Kinds: `work_location` (locationType `location`, `remote`, `travelling`) or `unavailable`. Timed (`startsAt`/`endsAt`) or all-day (`startDate`/`endDate` + `timezone`). A recurrence needs an `endsOn` and lasts at most 366 days (`presence.invalid_recurrence`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceEntryRequest'}
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntry'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/entries/{id}/reschedule:
+    post:
+      operationId: reschedulePresenceEntry
+      summary: Move an entry in time (operation Reschedule).
+      description: "Own entry (`presence.manage_own`) or an entry of a Team member (`presence.manage_entries`); others are not found. `expectedVersion` required. Externally sourced entries are read-only (`presence.read_only`). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceRescheduleRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntry'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/entries/{id}/change-location:
+    post:
+      operationId: changePresenceEntryLocation
+      summary: Change where a work location entry is (operation ChangeLocation).
+      description: "Own entry (`presence.manage_own`) or an entry of a Team member (`presence.manage_entries`); others are not found. `expectedVersion` required. Externally sourced entries are read-only (`presence.read_only`). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceChangeLocationRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntry'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/entries/{id}/change-recurrence:
+    post:
+      operationId: changePresenceEntryRecurrence
+      summary: Set, replace or remove (null) the recurrence (operation ChangeRecurrence).
+      description: "Own entry (`presence.manage_own`) or an entry of a Team member (`presence.manage_entries`); others are not found. `expectedVersion` required. Externally sourced entries are read-only (`presence.read_only`). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceChangeRecurrenceRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntry'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/entries/{id}/cancel:
+    post:
+      operationId: cancelPresenceEntry
+      summary: Cancel an entry (operation Cancel, terminal).
+      description: "Own entry (`presence.manage_own`) or an entry of a Team member (`presence.manage_entries`); others are not found. `expectedVersion` required. Externally sourced entries are read-only (`presence.read_only`). Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceVersionRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceEntry'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/availability:
+    get:
+      operationId: getPresenceAvailability
+      summary: Operational Availability of up to 50 Users at an instant.
+      description: "Needs `presence.view_availability` for Users other than oneself; Users outside the callers Teams are `unknown` with explanation `out_of_scope`. `unknown` is never shown as available; every value lists its sources with freshness."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: userIds, in: query, required: true, description: Comma-separated user ids., schema: {type: string}}
+        - {name: at, in: query, schema: {type: string}}
+        - {name: onSite, in: query, schema: {type: boolean}}
+        - {name: locationId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceAvailabilityList'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/availability/window:
+    get:
+      operationId: getPresenceAvailabilityWindow
+      summary: Operational Availability of one User across a window as contiguous segments.
+      description: "Same scope rules as `/presence/availability`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: userId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: from, in: query, required: true, description: "RFC 3339 time or YYYY-MM-DD. Not earlier than now minus one day.", schema: {type: string}}
+        - {name: to, in: query, required: true, description: "At most 31 days after `from`.", schema: {type: string}}
+        - {name: onSite, in: query, schema: {type: boolean}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceAvailabilityWindow'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/teams/{id}/coverage:
+    get:
+      operationId: getPresenceTeamCoverage
+      summary: Team Coverage counts per day at 12:00 local time.
+      description: "Needs `presence.view_availability` and current membership of the Team. A Team below two members is `unknown` with no days. Each day counts the members the Team had on that day (membership intervals), not today's members; a day with fewer than two members has no counts. Names (`unavailableUserIds`) appear only for `presence.view_entries` holders and only for entries their owners made visible; naming is audited (`presence.entries.detail_viewed`). `presence.too_many_entries` (422) when the window holds too many entries to answer completely."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: from, in: query, required: true, description: "RFC 3339 time or YYYY-MM-DD. Not earlier than now minus one day.", schema: {type: string}}
+        - {name: to, in: query, required: true, description: "At most 31 days after `from`.", schema: {type: string}}
+        - {name: timezone, in: query, description: IANA zone of the day boundaries (default UTC)., schema: {type: string}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceTeamCoverage'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /presence/teams/{id}/minimum:
+    get:
+      operationId: getPresenceTeamMinimum
+      summary: Coverage minimum of the Team.
+      description: "Needs `presence.manage_teams`, or `presence.view_availability` for a member."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minimum:
+                    oneOf:
+                      - {$ref: '#/components/schemas/PresenceTeamMinimum'}
+                      - {type: 'null'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: setPresenceTeamMinimum
+      summary: Set the coverage minimum of the Team.
+      description: "Needs `presence.manage_teams`. `expectedVersion` is required when a minimum exists. Audited."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PresenceTeamMinimumRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PresenceTeamMinimum'}
+        '409': {$ref: '#/components/responses/PresenceConflict'}
+        '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '404': {$ref: '#/components/responses/PresenceNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -11196,6 +11571,30 @@ components:
             $ref: '#/components/schemas/Error'
     RemoteAccessConflict:
       description: "Policy refusal or state conflict. Codes: remoteaccess.version_conflict, remoteaccess.invalid_transition, remoteaccess.handle_used, remoteaccess.handle_active, remoteaccess.consent_recorded, remoteaccess.peer_taken, remoteaccess.no_eligible_approver and remoteaccess.<code> for each RemoteAccessRefusalCode."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PresenceNotFound:
+      description: Not found or not visible (presence.not_found), or the module is off (presence.disabled).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PresenceInvalid:
+      description: "Invalid input (presence.invalid_request, presence.invalid_recurrence, presence.window_too_large)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PresenceTooManyEntries:
+      description: "Too many entries in the window to answer completely (presence.too_many_entries); narrow the window or the selection. No partial result is returned."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PresenceConflict:
+      description: "State conflict (presence.version_conflict, presence.invalid_transition, presence.read_only)."
       content:
         application/json:
           schema:
@@ -16105,3 +16504,207 @@ components:
             duplicate: {type: integer}
             after_close: {type: integer}
         since: {type: string, format: date-time}
+    PresenceStatus:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        permissions:
+          type: object
+          properties:
+            manageOwn: {type: boolean}
+            viewAvailability: {type: boolean}
+            viewEntries: {type: boolean}
+            manageEntries: {type: boolean}
+            manageTeams: {type: boolean}
+            admin: {type: boolean}
+    PresenceSettings:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        dpiaRecordedOn: {type: [string, 'null'], format: date}
+        councilConfirmedOn: {type: [string, 'null'], format: date}
+        retentionDays: {type: integer, minimum: 1, maximum: 30}
+        maxRetentionDays: {type: integer, description: PRESENCE_RETENTION_DAYS.}
+        externalSourcesEnabled: {type: boolean}
+        disabledAt: {type: [string, 'null'], format: date-time}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    PresenceSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, retentionDays, expectedVersion]
+      properties:
+        enabled: {type: boolean}
+        dpiaRecordedOn: {type: string, format: date}
+        councilConfirmedOn: {type: string, format: date}
+        retentionDays: {type: integer, minimum: 1, maximum: 30}
+        externalSourcesEnabled: {type: boolean}
+        expectedVersion: {type: integer, minimum: 1}
+    PresenceRecurrence:
+      type: object
+      additionalProperties: false
+      required: [frequency, endsOn]
+      properties:
+        frequency: {type: string, enum: [daily, weekly, monthly]}
+        interval: {type: integer, minimum: 1, maximum: 365, default: 1}
+        weekday: {type: integer, minimum: 1, maximum: 7, description: Weekly; defaults to the weekday of the first occurrence.}
+        dayOfMonth: {type: integer, minimum: 1, maximum: 31, description: Monthly; defaults to the day of the first occurrence.}
+        endsOn: {type: string, format: date, description: Last local date; at most 366 days after the first occurrence.}
+    PresenceTimeFields:
+      type: object
+      properties:
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        startDate: {type: string, format: date, description: All-day entries (with endDate and timezone), inclusive local dates.}
+        endDate: {type: string, format: date}
+        timezone: {type: string, description: "IANA zone; required for all-day entries and recurrences."}
+    PresenceEntryRequest:
+      allOf:
+        - $ref: '#/components/schemas/PresenceTimeFields'
+        - type: object
+          required: [kind]
+          properties:
+            userId: {type: string, format: uuid, description: Defaults to the caller.}
+            kind: {type: string, enum: [work_location, unavailable]}
+            locationType: {type: string, enum: [location, remote, travelling]}
+            locationId: {type: string, format: uuid, description: Only with locationType location.}
+            visibility: {type: string, enum: [availability, detail], default: availability, description: "`detail` lets presence.view_entries holders see the entry."}
+            recurrence: {$ref: '#/components/schemas/PresenceRecurrence'}
+    PresenceRescheduleRequest:
+      allOf:
+        - $ref: '#/components/schemas/PresenceTimeFields'
+        - type: object
+          required: [expectedVersion]
+          properties:
+            expectedVersion: {type: integer, minimum: 1}
+    PresenceChangeLocationRequest:
+      type: object
+      additionalProperties: false
+      required: [locationType, expectedVersion]
+      properties:
+        locationType: {type: string, enum: [location, remote, travelling]}
+        locationId: {type: string, format: uuid}
+        expectedVersion: {type: integer, minimum: 1}
+    PresenceChangeRecurrenceRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        timezone: {type: string}
+        recurrence:
+          description: Null removes the recurrence.
+          oneOf: [{$ref: '#/components/schemas/PresenceRecurrence'}, {type: 'null'}]
+        expectedVersion: {type: integer, minimum: 1}
+    PresenceVersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+    PresenceEntry:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        userId: {type: string, format: uuid}
+        kind: {type: string, enum: [work_location, unavailable]}
+        locationType: {type: [string, 'null'], enum: [location, remote, travelling, null]}
+        locationId: {type: [string, 'null'], format: uuid}
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        allDay: {type: boolean}
+        timezone: {type: [string, 'null']}
+        recurrence: {oneOf: [{$ref: '#/components/schemas/PresenceRecurrence'}, {type: 'null'}]}
+        source: {type: string, description: "`manual` or an external source key (read-only)."}
+        status: {type: string, enum: [active, cancelled]}
+        visibility: {type: string, enum: [availability, detail]}
+        occurrences:
+          type: array
+          description: Occurrences inside the requested window.
+          items: {type: object, properties: {from: {type: string, format: date-time}, to: {type: string, format: date-time}}}
+        createdBy: {type: [string, 'null'], format: uuid}
+        version: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    PresenceEntryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PresenceEntry'}
+    PresenceSource:
+      type: object
+      properties:
+        source: {type: string}
+        freshness: {type: string, enum: [manual, fresh, stale]}
+        observedAt: {type: [string, 'null'], format: date-time}
+    PresenceAvailability:
+      type: object
+      properties:
+        userId: {type: string, format: uuid}
+        value: {type: string, enum: [available, limited, unavailable, unknown]}
+        explanation: {type: string, description: "unavailable_entry, work_location, remote_when_onsite_needed, travelling, other_location, no_entry, source_stale, out_of_scope."}
+        limitedBy: {type: [string, 'null'], description: "remote, travelling or other_location when limited."}
+        until: {type: [string, 'null'], format: date-time}
+        sources:
+          type: array
+          items: {$ref: '#/components/schemas/PresenceSource'}
+    PresenceAvailabilityList:
+      type: object
+      properties:
+        at: {type: string, format: date-time}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PresenceAvailability'}
+    PresenceAvailabilityWindow:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              from: {type: string, format: date-time}
+              to: {type: string, format: date-time}
+              value: {type: string, enum: [available, limited, unavailable, unknown]}
+              explanation: {type: string}
+              limitedBy: {type: [string, 'null']}
+              sources:
+                type: array
+                items: {$ref: '#/components/schemas/PresenceSource'}
+    PresenceTeamMinimum:
+      type: object
+      properties:
+        teamId: {type: string, format: uuid}
+        minimum: {type: integer}
+        onsiteMinimum: {type: [integer, 'null']}
+        locationId: {type: [string, 'null'], format: uuid}
+        version: {type: integer}
+    PresenceTeamMinimumRequest:
+      type: object
+      additionalProperties: false
+      required: [minimum]
+      properties:
+        minimum: {type: integer, minimum: 0, maximum: 1000}
+        onsiteMinimum: {type: integer, minimum: 0, maximum: 1000}
+        locationId: {type: string, format: uuid, description: Coverage Location of the on-site minimum.}
+        expectedVersion: {type: integer, minimum: 1}
+    PresenceTeamCoverage:
+      type: object
+      properties:
+        teamId: {type: string, format: uuid}
+        members: {type: [integer, 'null'], description: Null for a Team below two members.}
+        state: {type: string, enum: [ok, below, unknown]}
+        minimum: {oneOf: [{$ref: '#/components/schemas/PresenceTeamMinimum'}, {type: 'null'}]}
+        days:
+          type: array
+          items:
+            type: object
+            properties:
+              date: {type: string, format: date}
+              available: {type: integer}
+              limited: {type: integer}
+              unavailable: {type: integer}
+              unknown: {type: integer}
+              onsiteAvailable: {type: [integer, 'null']}
+              state: {type: string, enum: [ok, below, unknown]}
+              unavailableUserIds: {type: array, items: {type: string, format: uuid}, description: Only for presence.view_entries holders.}

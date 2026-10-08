@@ -28,6 +28,7 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
+	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
 	remoteaccessapp "github.com/MagicalWig34653/turaco/backend/internal/modules/remoteaccess/application"
 	requestsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
@@ -104,6 +105,7 @@ func main() {
 		LDAP: ldapCfg, SMTP: smtpCfg, Categories: categories, Logger: logger,
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
+		Presence: presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter},
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -150,6 +152,9 @@ type jobDeps struct {
 	// REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP; the jobs are registered either way and do nothing without providers.
 	RemoteAccessProviders         []string
 	RemoteAccessApprovalOwnership []string
+	// Presence is the Workforce Presence configuration (PRESENCE_*); the purge job is registered either way so
+	// retention keeps working after the module was switched off.
+	Presence presenceapp.Config
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -201,6 +206,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"deployment correlation", func() error {
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
 		}},
+		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
@@ -510,6 +516,15 @@ func registerRemoteAccess(runner *jobs.Runner, pool *pgxpool.Pool, providerKeys,
 		}
 	}
 	return nil
+}
+
+// registerPresence registers the daily Workforce Presence retention job (idempotent; counts-only audit summary).
+func registerPresence(runner *jobs.Runner, pool *pgxpool.Pool, cfg presenceapp.Config) error {
+	svc := wiring.Presence(pool, cfg)
+	if err := runner.Register(presenceapp.PurgeJobType, presenceapp.PurgeJobTimeout, svc.HandlePurge); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: presenceapp.PurgeJobType, DedupeKey: presenceapp.PurgeJobType, Interval: presenceapp.PurgeInterval, MaxAttempts: 2})
 }
 
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only

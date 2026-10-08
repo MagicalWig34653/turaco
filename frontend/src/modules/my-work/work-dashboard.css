@@ -477,3 +477,90 @@
 .work-dashboard .workspace-card {
   box-shadow: none;
 }
+
+/* Fleet-inspired rhythm: generous canvas, divided metrics and quiet reading surfaces. */
+.work-dashboard.work-bench .work-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.work-dashboard .page-header h1 {
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.work-dashboard .dashboard-focus-intro {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: -6px 0 18px;
+}
+.work-dashboard .dashboard-action-card {
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+.work-dashboard .briefing-coverage {
+  margin-top: 24px;
+  padding: 24px;
+}
+.briefing-coverage .dashboard-section-heading {
+  margin: 0 0 12px;
+}
+.briefing-coverage .dashboard-scope {
+  margin-bottom: 18px;
+}
+.briefing-coverage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 32px;
+}
+.briefing-coverage-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 18px;
+  border-top: 1px solid var(--border-token);
+  min-width: 0;
+}
+.briefing-coverage-list li > div {
+  min-width: 0;
+}
+.briefing-coverage-list a {
+  color: var(--text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.briefing-coverage-list small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.work-dashboard .work-focus {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-base));
+}
+@media (max-width: 640px) {
+  .work-dashboard.work-bench .work-metrics {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0 18px;
+  }
+  .work-metrics .metric-card + .metric-card {
+    border-left: 0;
+    border-top: 1px solid var(--border-token);
+  }
+  .work-metrics .metric-card {
+    padding: 18px 4px;
+  }
+  .briefing-coverage-list {
+    grid-template-columns: 1fr;
+  }
+  .work-dashboard .briefing-coverage {
+    padding: 18px;
+  }
+  .briefing-coverage-list li {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}

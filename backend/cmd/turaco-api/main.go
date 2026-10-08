@@ -40,6 +40,8 @@ import (
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	planningtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/transport"
+	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
+	presencetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/transport"
 	procurementtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/procurement/transport"
 	productsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
 	productspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/products/public"
@@ -189,6 +191,7 @@ func main() {
 		os.Exit(1)
 	}
 	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
+	presencetransport.Register(mux, wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}), sessionAuth, logger)
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),

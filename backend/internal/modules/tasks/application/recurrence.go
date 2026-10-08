@@ -166,7 +166,7 @@ func (s *RecurrenceService) CreateDefinition(ctx context.Context, c Caller, p Pr
 	if err := validDueAfter(in.DueAfterHours); err != nil {
 		return Definition{}, err
 	}
-	first, err := in.Rule.NextAfter(s.now())
+	first, err := nextRunAfter(in.Rule, s.now())
 	if err != nil {
 		return Definition{}, err
 	}
@@ -262,7 +262,7 @@ func (s *RecurrenceService) UpdateDefinition(ctx context.Context, c Caller, p Pr
 		return Definition{}, err
 	}
 	if in.Rule != nil {
-		if err := in.Rule.Validate(); err != nil {
+		if err := validateRule(*in.Rule); err != nil {
 			return Definition{}, err
 		}
 	}
@@ -310,7 +310,7 @@ func (s *RecurrenceService) UpdateDefinition(ctx context.Context, c Caller, p Pr
 			next.Rule = *in.Rule
 			changed = append(changed, "rule")
 			if cur.Active {
-				run, err := in.Rule.NextAfter(now)
+				run, err := nextRunAfter(*in.Rule, now)
 				if err != nil {
 					return DefinitionChange{}, err
 				}
@@ -362,7 +362,7 @@ func (s *RecurrenceService) Resume(ctx context.Context, c Caller, p Principal, i
 		if cur.Active {
 			return DefinitionChange{NoChange: true, Next: cur}, nil
 		}
-		run, err := cur.Rule.NextAfter(now)
+		run, err := nextRunAfter(cur.Rule, now)
 		if err != nil {
 			return DefinitionChange{}, err
 		}
@@ -408,7 +408,7 @@ func (s *RecurrenceService) GenerateDue(ctx context.Context) (int, error) {
 }
 
 func (s *RecurrenceService) plan(ctx context.Context, d Definition, now time.Time) (Generation, error) {
-	next, err := d.Rule.NextAfter(now)
+	next, err := nextRunAfter(d.Rule, now)
 	if err != nil {
 		return Generation{}, err
 	}

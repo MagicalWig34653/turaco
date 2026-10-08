@@ -1,3 +1,4 @@
+import { UserAvailability } from '../presence/AvailabilityChip';
 import { SegmentedFilter } from '../../platform/ui/FilterBar';
 import { useMemo } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
@@ -6,11 +7,12 @@ import { NavIcon } from '../../platform/ui/NavIcon';
 import { focusSummary } from './workModel';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate, useLocation } from '../../platform/router/Router';
+import { dayPart, greetingName } from '../../platform/session/identity';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Button } from '../../platform/ui/Button';
 import { copyContextText, useContextMenu, type MenuItem } from '../../platform/ui/ContextMenu';
 import { PageHeader } from '../../platform/ui/PageHeader';
-import { Card, EmptyState, Skeleton } from '../../platform/ui/Workspace';
+import { Card, EmptyState, MetricCard, Skeleton } from '../../platform/ui/Workspace';
 import { isOverdue } from '../tasks/actions';
 import { tasksApi } from '../tasks/api';
 import { StatusBadge } from '../tasks/TaskTable';
@@ -28,7 +30,12 @@ export function prioritizeWork(items: readonly Task[]): Task[] {
 /** The shared Task queue remains the source of work; briefing entries remain linked read models. */
 export function MyWorkScreen() {
   const { t } = useI18n();
-  const { can } = useSession();
+  const { can, session } = useSession();
+  const name = greetingName(session);
+  const part = dayPart(new Date());
+  const greeting = name
+    ? t(`overview.greeting.${part}`, { name })
+    : t(`overview.greetingPlain.${part}`);
   const list = usePagedList((cursor, signal) => tasksApi.myWork(cursor, signal), []);
   const { search } = useLocation();
   const focus = new URLSearchParams(search).get('focus');
@@ -70,7 +77,7 @@ export function MyWorkScreen() {
       <PageHeader
         eyebrow={t('dashboard.workEyebrow')}
         title={t('nav.myWork')}
-        intro={t('myWork.intro')}
+        intro={greeting}
         actions={
           can('tasks.manage') ? (
             <Link to="/tasks/new" className="btn btn-primary">
@@ -79,13 +86,50 @@ export function MyWorkScreen() {
           ) : null
         }
       />
+      {session?.userId ? <UserAvailability userId={session.userId} /> : null}
+      {list.loading && !list.items.length ? (
+        <Skeleton lines={2} />
+      ) : !list.error ? (
+        <div
+          className="workspace-metrics dashboard-metrics work-metrics"
+          aria-label={t('overview.metrics')}
+        >
+          <MetricCard
+            label={t('myWork.loaded')}
+            value={ordered.length}
+            to="/my-work"
+            caption={t('overview.metric.openCaption')}
+            icon={<NavIcon id="myWork" />}
+          />
+          <MetricCard
+            label={t('overview.metric.overdue')}
+            value={overdue.length}
+            to="/my-work?focus=overdue"
+            tone="danger"
+            caption={t('overview.metric.overdueCaption')}
+            zeroCaption={t('overview.metric.overdueZero')}
+            icon={<NavIcon id="maintenanceCalendar" />}
+          />
+          <MetricCard
+            label={t('tasks.priority.urgent')}
+            value={critical.length}
+            to="/my-work?focus=urgent"
+            tone="warning"
+            caption={t('myWork.polish.priorityCaption')}
+            icon={<NavIcon id="tasks" />}
+          />
+        </div>
+      ) : null}
+      <p className="dashboard-scope">{t('myWork.polish.scope')}</p>
       <div className="dashboard-columns">
         <div className="dashboard-primary">
           <Card title={t('myWork.queue')}>
             <div className="workspace-section-head">
               <h2>{t('myWork.queue')}</h2>
               <span className="work-bench-count">
-                {t('table.showingLoaded', { count: ordered.length })}
+                {!list.loading && !list.error
+                  ? t('table.showingLoaded', { count: ordered.length })
+                  : null}
               </span>
             </div>
             <div className="workspace-toolbar">
@@ -203,45 +247,51 @@ export function MyWorkScreen() {
           </Card>
         </div>
         <aside className="dashboard-context" aria-label={t('myWork.focus')}>
-          <Card className="work-focus" title={t('myWork.focus')}>
-            <h2>{t('myWork.focus')}</h2>
-            <p className="work-focus-total">
-              <strong>{summary.total}</strong> {t('myWork.focusOpen')}
-            </p>
-            <ul className="work-focus-bars">
-              {priorities.map((priority) => (
-                <li key={priority}>
-                  <span>{t(`tasks.priority.${priority}`)}</span>
-                  <span className="work-focus-track" aria-hidden="true">
-                    <span
-                      className={`work-focus-fill priority-fill-${priority}`}
-                      style={{
-                        width: summary.total
-                          ? `${(summary.byPriority[priority] / summary.total) * 100}%`
-                          : '0%',
-                      }}
-                    />
-                  </span>
-                  <strong>{summary.byPriority[priority]}</strong>
-                </li>
-              ))}
-            </ul>
-          </Card>
-          <Card className="work-due" title={t('myWork.dueSoon')}>
-            <h2>{t('myWork.dueSoon')}</h2>
-            {summary.dueSoon.length ? (
-              <ul>
-                {summary.dueSoon.map((task) => (
-                  <li key={task.id}>
-                    <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
-                    <TableDate value={task.dueAt} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="dashboard-scope">{t('myWork.nothingDue')}</p>
-            )}
-          </Card>
+          {list.loading && !list.items.length ? (
+            <Skeleton lines={4} />
+          ) : !list.error ? (
+            <>
+              <Card className="work-focus" title={t('myWork.focus')}>
+                <h2>{t('myWork.focus')}</h2>
+                <p className="work-focus-total">
+                  <strong>{summary.total}</strong> {t('myWork.focusOpen')}
+                </p>
+                <ul className="work-focus-bars">
+                  {priorities.map((priority) => (
+                    <li key={priority}>
+                      <span>{t(`tasks.priority.${priority}`)}</span>
+                      <span className="work-focus-track" aria-hidden="true">
+                        <span
+                          className={`work-focus-fill priority-fill-${priority}`}
+                          style={{
+                            width: summary.total
+                              ? `${(summary.byPriority[priority] / summary.total) * 100}%`
+                              : '0%',
+                          }}
+                        />
+                      </span>
+                      <strong>{summary.byPriority[priority]}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card className="work-due" title={t('myWork.dueSoon')}>
+                <h2>{t('myWork.dueSoon')}</h2>
+                {summary.dueSoon.length ? (
+                  <ul>
+                    {summary.dueSoon.map((task) => (
+                      <li key={task.id}>
+                        <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
+                        <TableDate value={task.dueAt} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="dashboard-scope">{t('myWork.nothingDue')}</p>
+                )}
+              </Card>
+            </>
+          ) : null}
         </aside>
       </div>
       {menu.menu}

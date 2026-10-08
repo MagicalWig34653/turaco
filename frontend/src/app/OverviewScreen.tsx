@@ -1,3 +1,4 @@
+import { BriefingCoverage } from '../modules/my-work/BriefingCoverage';
 import type { ReactNode } from 'react';
 import { appRoutes, canViewRoute, type RouteId } from './routes';
 import { useAsync, usePagedList } from '../platform/api/useAsync';
@@ -108,6 +109,8 @@ export function OverviewScreen() {
   const feed = useAsync((signal) => briefingApi.feed(signal), []);
   const now = new Date();
   const entries = feed.data?.entries ?? [];
+  const feedIncomplete =
+    !!feed.data?.unavailable.length || Object.values(feed.data?.truncated ?? {}).some(Boolean);
   const metrics = overviewMetrics(list.items, entries, now);
   const attention = buildAttention(list.items, entries, now);
   const summary = summarizeFeed(entries);
@@ -141,7 +144,7 @@ export function OverviewScreen() {
       />
       {loading ? (
         <Skeleton lines={3} />
-      ) : (
+      ) : !list.error && !feed.error ? (
         <div
           className="workspace-metrics dashboard-metrics"
           aria-label={t('overview.metrics')}
@@ -180,11 +183,11 @@ export function OverviewScreen() {
             to="/briefing"
             tone="warning"
             caption={t('overview.metric.alertsCaption')}
-            zeroCaption={t('overview.metric.alertsZero')}
+            {...(!feedIncomplete ? { zeroCaption: t('overview.metric.alertsZero') } : {})}
             icon={<NavIcon id="briefing" />}
           />
         </div>
-      )}
+      ) : null}
       <p className="dashboard-scope">{t('overview.scope')}</p>
       {list.error || feed.error ? (
         <p role="alert" className="workspace-source-notice">
@@ -209,6 +212,7 @@ export function OverviewScreen() {
             {t('overview.viewAllWork')} <span aria-hidden="true">→</span>
           </Link>
         </div>
+        <p className="dashboard-focus-intro">{t('overview.focusHint')}</p>
         {loading ? null : attention.length ? (
           <div className="dashboard-action-grid">
             {attention.map((item) => (
@@ -222,14 +226,14 @@ export function OverviewScreen() {
               />
             ))}
           </div>
-        ) : (
+        ) : !list.error && !feed.error && !feedIncomplete ? (
           <div className="overview-clear">
             <span className="dashboard-icon" aria-hidden="true">
               ✓
             </span>
             <p>{t('overview.nothingNeeded')}</p>
           </div>
-        )}
+        ) : null}
       </section>
       <div className="overview-columns">
         <Card className="dashboard-timeline" title={t('overview.recent')}>
@@ -284,8 +288,10 @@ export function OverviewScreen() {
                   {t('dashboard.viewDetails')} <span aria-hidden="true">→</span>
                 </Link>
               </>
-            ) : (
+            ) : !feed.loading && !feed.error && !feedIncomplete ? (
               <p>{t('overview.noHighlight')}</p>
+            ) : (
+              <p>{t('overview.coverageHint')}</p>
             )}
             {otherSignals > 0 ? (
               <Link to="/briefing" className="overview-highlight-more">
@@ -295,6 +301,7 @@ export function OverviewScreen() {
           </Card>
         </div>
       </div>
+      {feed.data ? <BriefingCoverage data={feed.data} /> : null}
       {actions.length ? (
         <section className="overview-actions" aria-labelledby="overview-actions">
           <div className="dashboard-section-heading">

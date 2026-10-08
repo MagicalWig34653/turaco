@@ -37,12 +37,12 @@ html[data-theme='cyberpunk'] .turaco-shell .turaco-content-column::before {
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 55% 40% at 100% 0%, rgb(255 43 214 / 13%), transparent 70%),
-    radial-gradient(ellipse 45% 35% at 20% 100%, rgb(0 240 255 / 9%), transparent 70%),
+    radial-gradient(ellipse 55% 40% at 100% 0%, rgb(255 43 214 / 22%), transparent 70%),
+    radial-gradient(ellipse 45% 35% at 20% 100%, rgb(0 240 255 / 16%), transparent 70%),
     radial-gradient(ellipse 120% 90% at 50% 40%, transparent 55%, rgb(0 0 0 / 45%)),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .8 0 0 0 0 .7 0 0 0 0 1 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
-    linear-gradient(rgb(0 240 255 / 4%) 1px, transparent 1px) 0 0 / 44px 44px,
-    linear-gradient(90deg, rgb(0 240 255 / 4%) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(rgb(0 240 255 / 8%) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgb(0 240 255 / 8%) 1px, transparent 1px) 0 0 / 44px 44px,
     var(--surface-canvas);
 }
 /* Synthwave floor: a perspective grid that recedes to the horizon at the bottom edge. */
@@ -61,17 +61,15 @@ html[data-theme='cyberpunk'] .turaco-shell .turaco-content-column::after {
   transform: perspective(280px) rotateX(64deg);
   transform-origin: 50% 100%;
   mask-image: linear-gradient(to top, #000, transparent 80%);
-  opacity: 0.4;
-}
-/* CRT scanlines over the whole frame: static, faint and click-through. */
-html[data-theme='cyberpunk'] .turaco-shell::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  pointer-events: none;
-  background: repeating-linear-gradient(to bottom, transparent 0 2px, rgb(0 0 0 / 16%) 2px 3px);
   opacity: 0.55;
+}
+/* CRT scanlines stay behind content so text contrast is unaffected. */
+html[data-theme='cyberpunk'] .turaco-shell .turaco-content-column {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 3px,
+    rgb(0 240 255 / 4%) 3px 4px
+  );
 }
 
 /* ======================================================================
@@ -622,7 +620,7 @@ html[data-theme='cyberpunk'] :is(.metric-card, .change-metric):hover {
   background-color: rgb(0 240 255 / 5%);
 }
 html[data-theme='cyberpunk'] .change-metric[aria-pressed='true'] {
-  background-color: rgb(0 240 255 / 9%);
+  background-color: rgb(0 240 255 / 16%);
 }
 html[data-theme='cyberpunk'] :is(.metric-card, .dashboard-metrics) svg {
   color: var(--cyber-violet);
@@ -1002,23 +1000,23 @@ html[data-theme='cyberpunk'] .turaco-shell .badge {
   text-shadow: none;
   clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
 }
-html[data-theme='cyberpunk'] .badge-danger {
+html[data-theme='cyberpunk'] .turaco-shell .badge-danger {
   color: var(--state-critical);
   background: var(--state-critical-bg);
 }
-html[data-theme='cyberpunk'] .badge-warning {
+html[data-theme='cyberpunk'] .turaco-shell .badge-warning {
   color: var(--state-warning);
   background: var(--state-warning-bg);
 }
-html[data-theme='cyberpunk'] .badge-success {
+html[data-theme='cyberpunk'] .turaco-shell .badge-success {
   color: var(--state-success);
   background: var(--state-success-bg);
 }
-html[data-theme='cyberpunk'] .badge-info {
+html[data-theme='cyberpunk'] .turaco-shell .badge-info {
   color: var(--state-info);
   background: var(--state-info-bg);
 }
-html[data-theme='cyberpunk'] .badge-unknown {
+html[data-theme='cyberpunk'] .turaco-shell .badge-unknown {
   color: var(--state-unknown);
   background: var(--state-unknown-bg);
 }
@@ -1503,5 +1501,68 @@ html[data-theme='cyberpunk'] .ticket-message {
   }
   to {
     background-position: -50% 0;
+  }
+}
+
+/* Workspace accents: electric instrument panels, with solid reading surfaces. */
+html[data-theme='cyberpunk'] .work-dashboard .dashboard-metrics {
+  background-color: var(--surface-base);
+  box-shadow:
+    inset 0 2px var(--cyber-cyan),
+    0 0 24px rgb(0 240 255 / 12%);
+}
+html[data-theme='cyberpunk'] .incident-workspace .incident-context .incident-actions {
+  background: var(--surface-base);
+  border-color: var(--cyber-pink);
+  box-shadow:
+    inset 3px 0 var(--cyber-pink),
+    0 0 20px rgb(255 43 214 / 12%);
+}
+html[data-theme='cyberpunk'] .incident-thread .incident-event-body {
+  background: var(--surface-base);
+  border-color: var(--border-token);
+  border-radius: 0;
+}
+html[data-theme='cyberpunk'] .incident-thread .incident-event-internal .incident-event-body {
+  background: var(--state-warning-bg);
+  border-color: var(--state-warning);
+}
+html[data-theme='cyberpunk'] .incident-thread .incident-composer {
+  background: var(--surface-inset);
+}
+html[data-theme='cyberpunk'] .incident-composer:focus-within {
+  box-shadow:
+    inset 0 2px var(--cyber-cyan),
+    inset 0 12px 28px rgb(0 240 255 / 5%);
+}
+html[data-theme='cyberpunk'] .work-dashboard .briefing-coverage {
+  background-color: var(--surface-base);
+}
+html[data-theme='cyberpunk'] .briefing-coverage .dashboard-section-heading h2,
+html[data-theme='cyberpunk'] .incident-context h2 {
+  color: var(--cyber-pink);
+}
+html[data-theme='cyberpunk'] .work-dashboard .dashboard-action-card {
+  border-radius: 0;
+  box-shadow:
+    inset 0 1px var(--cyber-cyan),
+    0 0 16px rgb(0 240 255 / 10%);
+}
+html[data-theme='cyberpunk'] .work-dashboard .dashboard-action-card::before {
+  opacity: 0.65;
+}
+html[data-theme='cyberpunk']
+  .work-dashboard
+  .dashboard-action-card:is(:hover, :focus-visible)::before {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme='cyberpunk']:not([data-motion='reduced'])
+    .work-dashboard
+    .dashboard-action-card::before {
+    animation: cp-sweep 8s linear infinite;
+  }
+  html[data-theme='cyberpunk']:not([data-motion='reduced']) .page-header h1 {
+    animation: cp-glitch 900ms steps(1, end) 1;
   }
 }

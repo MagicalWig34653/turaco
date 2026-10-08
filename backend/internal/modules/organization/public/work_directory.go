@@ -2,6 +2,7 @@ package public
 
 import (
 	"context"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 )
@@ -69,4 +70,16 @@ func (w *WorkDirectory) CurrentMemberIDs(ctx context.Context, teamID string) ([]
 // ManagerIDs returns user id -> manager user id for Users that have a manager.
 func (w *WorkDirectory) ManagerIDs(ctx context.Context, userIDs []string) (map[string]string, error) {
 	return w.app.ManagerIDs(ctx, userIDs)
+}
+
+// MembershipInterval is one validity interval of a Team membership (Until exclusive, nil when open-ended).
+type MembershipInterval = application.MembershipInterval
+
+// ErrTooManyIntervals is returned by MembershipIntervals when the history is larger than the bound.
+var ErrTooManyIntervals = application.ErrTooManyIntervals
+
+// MembershipIntervals returns the membership intervals of an active Team overlapping [from, to), so callers can
+// resolve who belonged to the Team at a past or future instant. An inactive or unknown Team has none.
+func (w *WorkDirectory) MembershipIntervals(ctx context.Context, teamID string, from, to time.Time) ([]MembershipInterval, error) {
+	return w.app.MembershipIntervals(ctx, teamID, from, to)
 }

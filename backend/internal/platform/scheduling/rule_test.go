@@ -1,4 +1,4 @@
-package application
+package scheduling
 
 import (
 	"errors"
@@ -178,9 +178,9 @@ func TestValidate(t *testing.T) {
 		"zone with path tricks":  rule(FreqDaily, func(r *Rule) { r.Timezone = "../etc/passwd" }),
 	}
 	for name, r := range bad {
-		var inv *InvalidInputError
+		var inv *InvalidError
 		if err := r.Validate(); !errors.As(err, &inv) {
-			t.Errorf("%s: err = %v, want InvalidInputError", name, err)
+			t.Errorf("%s: err = %v, want InvalidError", name, err)
 		}
 		if _, err := r.NextAfter(at(2026, 1, 1, 0, 0)); err == nil {
 			t.Errorf("%s: NextAfter must refuse an invalid rule", name)
@@ -190,5 +190,52 @@ func TestValidate(t *testing.T) {
 		if err := r.Validate(); err != nil {
 			t.Errorf("%s: %v", r, err)
 		}
+	}
+}
+
+func TestErrInvalidSentinel(t *testing.T) {
+	err := Rule{}.Validate()
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("errors.Is(%v, ErrInvalid) = false", err)
+	}
+}
+
+func TestEndsOn(t *testing.T) {
+	r := rule(FreqDaily, func(r *Rule) { r.EndsOn = "2026-01-03" })
+	if got := nextRun(t, r, at(2026, 1, 2, 10, 0)); !got.Equal(at(2026, 1, 3, 9, 0)) {
+		t.Errorf("last occurrence: %v", got)
+	}
+	if _, err := r.NextAfter(at(2026, 1, 3, 10, 0)); err == nil {
+		t.Error("no occurrence after EndsOn")
+	}
+	if err := rule(FreqDaily, func(r *Rule) { r.EndsOn = "2025-12-31" }).Validate(); err == nil {
+		t.Error("EndsOn before StartsOn must be invalid")
+	}
+	if err := rule(FreqDaily, func(r *Rule) { r.EndsOn = "x" }).Validate(); err == nil {
+		t.Error("bad EndsOn must be invalid")
+	}
+}
+
+func TestBetween(t *testing.T) {
+	r := rule(FreqDaily, nil)
+	got, err := r.Between(at(2026, 1, 1, 9, 0), at(2026, 1, 4, 9, 0))
+	if err != nil || len(got) != 3 || !got[0].Equal(at(2026, 1, 1, 9, 0)) || !got[2].Equal(at(2026, 1, 3, 9, 0)) {
+		t.Fatalf("Between = %v, %v (from inclusive, to exclusive)", got, err)
+	}
+	ended := rule(FreqDaily, func(r *Rule) { r.EndsOn = "2026-01-02" })
+	if got, _ := ended.Between(at(2026, 1, 1, 0, 0), at(2026, 2, 1, 0, 0)); len(got) != 2 {
+		t.Errorf("EndsOn respected: %v", got)
+	}
+	if got, _ := r.Between(at(2026, 1, 1, 0, 0), at(2030, 1, 1, 0, 0)); len(got) != MaxBetween {
+		t.Errorf("bounded count: %d", len(got))
+	}
+	// DST: local 09:00 stays across the change.
+	b := rule(FreqDaily, func(r *Rule) { r.Timezone = "Europe/Berlin"; r.StartsOn = "2026-03-01" })
+	got, _ = b.Between(at(2026, 3, 28, 0, 0), at(2026, 3, 31, 0, 0))
+	if len(got) != 3 || !got[1].Equal(at(2026, 3, 29, 7, 0)) {
+		t.Errorf("DST: %v", got)
+	}
+	if got, _ := r.Between(at(2026, 1, 2, 0, 0), at(2026, 1, 1, 0, 0)); len(got) != 0 {
+		t.Error("empty window")
 	}
 }

@@ -13,6 +13,7 @@ registerErrorResolver((error) =>
 
 /** Users and Directory Groups (used by the shell, profile and subject pickers). */
 export const organizationApi = {
+  location: (id: string, signal?: Signal) => api.get<Location>(`/locations/${enc(id)}`, { signal }),
   user: (id: string, signal?: Signal) => api.get<User>(`/users/${enc(id)}`, { signal }),
   searchUsers: (q: string, signal?: Signal) =>
     api.get<Page<User>>('/users', { signal, query: { q, limit: 10 } }),

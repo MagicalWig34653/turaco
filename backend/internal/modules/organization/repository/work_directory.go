@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -100,6 +101,28 @@ func (r *Repository) CurrentMemberIDs(ctx context.Context, teamID string) ([]str
 		return nil, fmt.Errorf("current member ids: %w", err)
 	}
 	return collectStrings(rows, "current member ids")
+}
+
+func (r *Repository) MembershipIntervals(ctx context.Context, teamID string, from, to time.Time) ([]application.MembershipInterval, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT tm.user_id::text, tm.valid_from, tm.valid_until
+		FROM organization.team_memberships tm
+		JOIN organization.teams t ON t.id = tm.team_id AND t.active
+		WHERE tm.team_id = $1::uuid AND tm.valid_from < $3 AND (tm.valid_until IS NULL OR tm.valid_until > $2)
+		ORDER BY tm.user_id, tm.valid_from LIMIT $4`, teamID, from, to, application.MaxMembershipIntervals+1)
+	if err != nil {
+		return nil, fmt.Errorf("membership intervals: %w", err)
+	}
+	defer rows.Close()
+	out := []application.MembershipInterval{}
+	for rows.Next() {
+		var m application.MembershipInterval
+		if err := rows.Scan(&m.UserID, &m.From, &m.Until); err != nil {
+			return nil, fmt.Errorf("membership intervals: scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repository) Contacts(ctx context.Context, ids []string) (map[string]application.Contact, error) {

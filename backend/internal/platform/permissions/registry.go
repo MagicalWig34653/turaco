@@ -72,4 +72,10 @@ var Registry = []Permission{
 	{Name: "remote_access.file_transfer", Description: "Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): transfer files inside an authorized remote-access session.", Risk: "high"},
 	{Name: "remote_access.view_sessions", Description: "View all Remote Access Session records and their transitions, including other technicians' sessions. Provider launch links are never stored.", Risk: "elevated"},
 	{Name: "remote_access.admin", Description: "Map and unmap Devices to provider peer ids, see unmasked peer ids, cancel or close other technicians' sessions and approve sessions that need a second approver. Provider credentials and unattended-access policy records stay planned.", Risk: "high"},
+	{Name: "presence.manage_own", Description: "Create, change and cancel one's own Workforce Presence entries (work location, remote, travelling, unavailable) and read them. Entries carry no reason or note.", Risk: "normal"},
+	{Name: "presence.view_availability", Description: "See Operational Availability (available, limited, unavailable, unknown) and Team Coverage counts of the Users in one's own Teams. No entry details.", Risk: "elevated"},
+	{Name: "presence.view_entries", Description: "See the entry details of other Users in one's Teams that their owners allowed to be seen, and the names behind Team Coverage counts. Every read is audited (viewer, scope, count; never content).", Risk: "elevated"},
+	{Name: "presence.manage_entries", Description: "Create, change and cancel Workforce Presence entries of other Users in one's Teams. Every change is audited per entry.", Risk: "elevated"},
+	{Name: "presence.manage_teams", Description: "Set the minimum Team Coverage (and the on-site minimum) of Teams.", Risk: "elevated"},
+	{Name: "presence.admin", Description: "Administer Workforce Presence: the runtime switch, the recorded data protection impact assessment and works-council dates, retention, and immediate purge of all entries.", Risk: "high"},
 }

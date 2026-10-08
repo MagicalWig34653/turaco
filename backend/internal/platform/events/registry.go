@@ -57,6 +57,7 @@ var Registry = []Definition{
 	{Name: "ChangeStarted", Version: 1, Owner: "changes", Description: "A scheduled Change started execution. Payload: changeId."},
 	{Name: "ChangeCompleted", Version: 1, Owner: "changes", Description: "A Change in progress was completed. Payload: changeId."},
 	{Name: "ChangeFailed", Version: 1, Owner: "changes", Description: "A Change in progress failed. Payload: changeId, reason, rollbackDone."},
+	{Name: "PresenceEntryChanged", Version: 1, Owner: "presence", Description: "A Workforce Presence entry was created, rescheduled, relocated, re-recurred or cancelled. Payload: entryId, userId, operation, from, to. Carries no kind, location or reason."},
 	{Name: "RemoteAccessSessionRequested", Version: 1, Owner: "remoteaccess", Description: "A Remote Access Session was requested. Payload: sessionId, deviceId, ticketId, provider, approvalRequired."},
 	{Name: "RemoteAccessSessionAuthorized", Version: 1, Owner: "remoteaccess", Description: "A Remote Access Session was authorized, at once or by its approver. Payload: sessionId, deviceId, ticketId, provider, status, previousStatus, operation."},
 	{Name: "RemoteAccessSessionLaunched", Version: 1, Owner: "remoteaccess", Description: "The technician exchanged the one-time launch handle and the provider client was launched. Payload: sessionId, deviceId, ticketId, provider, status, previousStatus, operation. Never carries the launch link."},

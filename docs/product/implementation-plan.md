@@ -151,7 +151,7 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F11 — Workforce Presence
 
-[ADR-0028](../decisions/ADR-0028-workforce-presence.md). Operational availability, not HR. Requires a data protection review before external sources.
+[ADR-0028](../decisions/ADR-0028-workforce-presence.md). Operational availability, not HR. Feature design: [F11 design](f11-workforce-presence-design.md). Requires a data protection review before external sources.
 
 1. recurrence rule moved from Tasks into a platform scheduling package,
 2. Presence Entries entered in Turaco with privacy-scoped visibility and retention,

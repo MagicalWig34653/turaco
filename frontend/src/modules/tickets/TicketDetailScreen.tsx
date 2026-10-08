@@ -57,7 +57,7 @@ function AssignDialog({
     <Dialog title={t('tickets.action.assign')} onClose={onClose}>
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
-        <AssigneePicker type="user" value={assignee} onChange={setAssignee} />
+        <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button type="submit" variant="primary" busy={busy} disabled={!assignee}>
@@ -267,50 +267,6 @@ function TicketWorkspace({ id }: { id: string }) {
           </span>
         </span>
       </div>
-      <div className="incident-actionbar" aria-label={t('ticketWorkspace.actions')}>
-        <div className="incident-actionbar-primary">
-          {primaryOp ? (
-            <Button
-              variant="primary"
-              busy={busyOp === primaryOp}
-              disabled={busyOp !== null}
-              onClick={() => start(primaryOp)}
-            >
-              {t(textKey(primaryOp))}
-            </Button>
-          ) : null}
-          {manage ? (
-            <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'assign' })}>
-              {t('tickets.action.assign')}
-            </Button>
-          ) : null}
-          {canComment ? (
-            <Button onClick={focusComposer}>{t('ticketWorkspace.reply')}</Button>
-          ) : null}
-        </div>
-        {ops.some((op) => op !== primaryOp) ? (
-          <Button
-            disabled={busyOp !== null}
-            aria-haspopup="menu"
-            onClick={(event) =>
-              menu.openAtElement(
-                ops
-                  .filter((op) => op !== primaryOp)
-                  .map((op) => ({
-                    id: op,
-                    label: t(textKey(op)),
-                    danger: op === 'cancel',
-                    onSelect: () => start(op),
-                  })),
-                event.currentTarget,
-                t('ticketWorkspace.actions'),
-              )
-            }
-          >
-            {t('ticketWorkspace.more')} <span aria-hidden="true">⋯</span>
-          </Button>
-        ) : null}
-      </div>
       {menu.menu}
       {actionError ? <ApiErrorAlert error={actionError} onRetry={loaded.reload} /> : null}
       <div className="incident-mobile-tabs">
@@ -433,7 +389,7 @@ function TicketWorkspace({ id }: { id: string }) {
                     busy={commenting}
                     disabled={!comment.trim()}
                   >
-                    {t('tickets.comment.send')}
+                    {t(internal ? 'ticketWorkspace.saveNote' : 'ticketWorkspace.sendReply')}
                   </Button>
                 </div>
               </form>
@@ -447,29 +403,53 @@ function TicketWorkspace({ id }: { id: string }) {
           id={`${paneId}-panel-context`}
           aria-label={t('tickets.context')}
         >
-          <Card title={t('ticketWorkspace.requester')}>
-            <h2>{t('ticketWorkspace.requester')}</h2>
-            <div className="incident-person">
-              <Avatar name={name(ticket.affectedUserId)} />
-              <div>
-                <strong>{name(ticket.affectedUserId)}</strong>
-                <small>{t('tickets.fact.affected')}</small>
-              </div>
-            </div>
-            {ticket.deviceSnapshot ? (
-              <div className="incident-device">
-                <span className="incident-event-label">{t('tickets.field.device')}</span>
-                <strong>{String(ticket.deviceSnapshot.product ?? '')}</strong>
-                <span>{String(ticket.deviceSnapshot.reference ?? '')}</span>
-                {ticket.deviceSnapshot.serialNumber ? (
-                  <span>{String(ticket.deviceSnapshot.serialNumber)}</span>
+          <Card className="incident-actions" title={t('ticketWorkspace.actions')}>
+            <h2>{t('ticketWorkspace.actions')}</h2>
+            <div className="incident-actionbar" aria-label={t('ticketWorkspace.actions')}>
+              <div className="incident-actionbar-primary">
+                {primaryOp ? (
+                  <Button
+                    variant="primary"
+                    busy={busyOp === primaryOp}
+                    disabled={busyOp !== null}
+                    onClick={() => start(primaryOp)}
+                  >
+                    {t(textKey(primaryOp))}
+                  </Button>
+                ) : null}
+                {manage ? (
+                  <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'assign' })}>
+                    {t('tickets.action.assign')}
+                  </Button>
+                ) : null}
+                {canComment ? (
+                  <Button onClick={focusComposer}>{t('ticketWorkspace.reply')}</Button>
                 ) : null}
               </div>
-            ) : null}
+              {ops.some((op) => op !== primaryOp) ? (
+                <Button
+                  disabled={busyOp !== null}
+                  aria-haspopup="menu"
+                  onClick={(event) =>
+                    menu.openAtElement(
+                      ops
+                        .filter((op) => op !== primaryOp)
+                        .map((op) => ({
+                          id: op,
+                          label: t(textKey(op)),
+                          danger: op === 'cancel',
+                          onSelect: () => start(op),
+                        })),
+                      event.currentTarget,
+                      t('ticketWorkspace.actions'),
+                    )
+                  }
+                >
+                  {t('ticketWorkspace.more')} <span aria-hidden="true">⋯</span>
+                </Button>
+              ) : null}
+            </div>
           </Card>
-          {can('remote_access.view') ? (
-            <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
-          ) : null}
           <Card title={t('ticketWorkspace.handling')}>
             <h2>{t('ticketWorkspace.handling')}</h2>
             <dl className="incident-facts">
@@ -506,6 +486,29 @@ function TicketWorkspace({ id }: { id: string }) {
               />
             ) : null}
           </Card>
+          <Card title={t('ticketWorkspace.requester')}>
+            <h2>{t('ticketWorkspace.requester')}</h2>
+            <div className="incident-person">
+              <Avatar name={name(ticket.affectedUserId)} />
+              <div>
+                <strong>{name(ticket.affectedUserId)}</strong>
+                <small>{t('tickets.fact.affected')}</small>
+              </div>
+            </div>
+            {ticket.deviceSnapshot ? (
+              <div className="incident-device">
+                <span className="incident-event-label">{t('tickets.field.device')}</span>
+                <strong>{String(ticket.deviceSnapshot.product ?? '')}</strong>
+                <span>{String(ticket.deviceSnapshot.reference ?? '')}</span>
+                {ticket.deviceSnapshot.serialNumber ? (
+                  <span>{String(ticket.deviceSnapshot.serialNumber)}</span>
+                ) : null}
+              </div>
+            ) : null}
+          </Card>
+          {can('remote_access.view') ? (
+            <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
+          ) : null}
           {staffReader ? (
             <Card title={t('tickets.section.knownErrors')}>
               <h2>{t('tickets.section.knownErrors')}</h2>
