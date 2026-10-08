@@ -1,3 +1,4 @@
+import { usePresence } from '../modules/presence/PresenceProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { notificationsApi, onNotificationsChanged } from '../modules/notifications/api';
@@ -52,7 +53,8 @@ function UserIdentity({ name, method }: { name: string; method?: string | undefi
 /** Authenticated layout; routes and API authorization remain unchanged. */
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   const { t, locale, setLocale } = useI18n();
-  const { session, can, logout } = useSession();
+  const { session, logout } = useSession();
+  const { can } = usePresence();
   const userName = sessionDisplayName(session) ?? '';
   const navigation = shellNavigation(can);
   const { theme, setTheme, density, setDensity, motion, setMotion } = useTheme();

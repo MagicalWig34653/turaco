@@ -57,7 +57,7 @@ function AssignDialog({
     <Dialog title={t('tickets.action.assign')} onClose={onClose}>
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
-        <AssigneePicker type="user" value={assignee} onChange={setAssignee} />
+        <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button type="submit" variant="primary" busy={busy} disabled={!assignee}>

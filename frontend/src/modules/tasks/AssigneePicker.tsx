@@ -1,3 +1,4 @@
+import { AvailabilityChip, useAvailability } from '../presence/AvailabilityChip';
 import { useId, useState } from 'react';
 import { useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -18,10 +19,18 @@ type Props = {
   /** Overrides the search field label, e.g. "Owner". */
   label?: string;
   hint?: string;
+  presenceHints?: boolean;
 };
 
 /** Search picker for active Users and Teams (/users?q=, /teams?q=); needs organization.view. */
-export function AssigneePicker({ type, value, onChange, label, hint }: Props) {
+export function AssigneePicker({
+  type,
+  value,
+  onChange,
+  label,
+  hint,
+  presenceHints = false,
+}: Props) {
   const { t } = useI18n();
   const { can } = useSession();
   const name = useId();
@@ -50,6 +59,11 @@ export function AssigneePicker({ type, value, onChange, label, hint }: Props) {
     [type, debounced, allowed],
   );
 
+  const availability = useAvailability(
+    [...(results.data ?? []).map((item) => item.id), ...(value ? [value.id] : [])],
+    presenceHints && type === 'user' && allowed && !results.loading,
+  );
+
   if (!allowed) return <p className="field-hint">{t('tasks.assign.noPermission')}</p>;
 
   return (
@@ -67,7 +81,15 @@ export function AssigneePicker({ type, value, onChange, label, hint }: Props) {
         autoComplete="off"
       />
       {value ? (
-        <p className="picker-selected">{t('tasks.assign.selected', { name: value.label })}</p>
+        <p className="picker-selected">
+          {t('tasks.assign.selected', { name: value.label })}
+          {availability.visibleUserIds.includes(value.id) ? (
+            <AvailabilityChip
+              availability={availability.items.find((item) => item.userId === value.id)}
+              loading={availability.loading}
+            />
+          ) : null}
+        </p>
       ) : null}
       {results.error ? <ApiErrorAlert error={results.error} onRetry={results.reload} /> : null}
       <fieldset className="picker-results" aria-busy={results.loading}>
@@ -87,6 +109,12 @@ export function AssigneePicker({ type, value, onChange, label, hint }: Props) {
             <Avatar name={candidate.label} />
             <span className="picker-text">
               <span>{candidate.label}</span>
+              {availability.visibleUserIds.includes(candidate.id) ? (
+                <AvailabilityChip
+                  availability={availability.items.find((item) => item.userId === candidate.id)}
+                  loading={availability.loading}
+                />
+              ) : null}
               {candidate.detail ? (
                 <small className="picker-detail">{candidate.detail}</small>
               ) : null}

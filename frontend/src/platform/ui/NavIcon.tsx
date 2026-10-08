@@ -2,6 +2,9 @@ import type { RouteId } from '../../app/routes';
 
 // Each destination has a recognizable outline. The rail never relies on color alone.
 const paths: Partial<Record<RouteId, string>> = {
+  presenceMine: 'M4 6h16v15H4zM4 10h16M8 3v5m8-5v5M8 15l3 3 5-5',
+  presenceTeam: 'M3 21v-3a5 5 0 0 1 10 0v3M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M16 5h5m-5 5h5m-5 5h5',
+  presenceAdmin: 'M4 6h16v15H4zM4 10h16M8 3v5m8-5v5M12 13v5m-2-2h4',
   home: 'M3 11 12 3l9 8M5 10v11h14V10M10 21v-6h4v6',
   me: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21v-2a8 8 0 0 1 16 0v2',
   myWork: 'M4 7h16v14H4zM9 7V4h6v3M8 14l2 2 5-5',

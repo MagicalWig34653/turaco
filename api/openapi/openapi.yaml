@@ -10768,7 +10768,7 @@ paths:
     put:
       operationId: updatePresenceSettings
       summary: Replace the Presence settings (runtime switch, recorded DPIA and works-council dates, retention).
-      description: "Needs `presence.admin`; `expectedVersion` required. Enabling external sources needs `dpiaRecordedOn`. Switching off starts the retention clock for every entry. Audited (`presence.settings.updated`)."
+      description: "Needs `presence.admin`; `expectedVersion` required. Enabling the module (`enabled=true`) always needs `dpiaRecordedOn` (`presence.invalid_request`); `councilConfirmedOn` is recorded when given. Switching off starts the retention clock for every entry. Audited (`presence.settings.updated`)."
       security:
         - sessionAuth: []
       requestBody:
@@ -10826,6 +10826,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PresenceEntryList'}
         '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
         '404': {$ref: '#/components/responses/PresenceNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -10849,6 +10850,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PresenceEntryList'}
         '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
         '404': {$ref: '#/components/responses/PresenceNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -10998,6 +11000,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PresenceAvailabilityList'}
         '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
         '404': {$ref: '#/components/responses/PresenceNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -11021,6 +11024,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PresenceAvailabilityWindow'}
         '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
         '404': {$ref: '#/components/responses/PresenceNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -11029,7 +11033,7 @@ paths:
     get:
       operationId: getPresenceTeamCoverage
       summary: Team Coverage counts per day at 12:00 local time.
-      description: "Needs `presence.view_availability` and current membership of the Team. A Team below two members is `unknown` with no days. Names (`unavailableUserIds`) appear only for `presence.view_entries` holders and only for entries their owners made visible."
+      description: "Needs `presence.view_availability` and current membership of the Team. A Team below two members is `unknown` with no days. Each day counts the members the Team had on that day (membership intervals), not today's members; a day with fewer than two members has no counts. Names (`unavailableUserIds`) appear only for `presence.view_entries` holders and only for entries their owners made visible; naming is audited (`presence.entries.detail_viewed`). `presence.too_many_entries` (422) when the window holds too many entries to answer completely."
       security:
         - sessionAuth: []
       parameters:
@@ -11044,6 +11048,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/PresenceTeamCoverage'}
         '400': {$ref: '#/components/responses/PresenceInvalid'}
+        '422': {$ref: '#/components/responses/PresenceTooManyEntries'}
         '404': {$ref: '#/components/responses/PresenceNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -11578,6 +11583,12 @@ components:
             $ref: '#/components/schemas/Error'
     PresenceInvalid:
       description: "Invalid input (presence.invalid_request, presence.invalid_recurrence, presence.window_too_large)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PresenceTooManyEntries:
+      description: "Too many entries in the window to answer completely (presence.too_many_entries); narrow the window or the selection. No partial result is returned."
       content:
         application/json:
           schema:

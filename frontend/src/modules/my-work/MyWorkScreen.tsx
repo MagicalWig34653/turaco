@@ -1,3 +1,4 @@
+import { UserAvailability } from '../presence/AvailabilityChip';
 import { SegmentedFilter } from '../../platform/ui/FilterBar';
 import { useMemo } from 'react';
 import { usePagedList } from '../../platform/api/useAsync';
@@ -85,6 +86,7 @@ export function MyWorkScreen() {
           ) : null
         }
       />
+      {session?.userId ? <UserAvailability userId={session.userId} /> : null}
       {list.loading && !list.items.length ? (
         <Skeleton lines={2} />
       ) : !list.error ? (

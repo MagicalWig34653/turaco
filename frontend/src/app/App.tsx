@@ -1,3 +1,9 @@
+import { PresenceProvider, usePresence } from '../modules/presence/PresenceProvider';
+import {
+  MyPresenceScreen,
+  TeamCoverageScreen,
+  PresenceAdminScreen,
+} from '../modules/presence/PresenceScreens';
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { AuditScreen } from '../modules/audit/AuditScreen';
@@ -127,6 +133,12 @@ import { ForbiddenView, NotFoundView } from './StatusViews';
 
 function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
   switch (id) {
+    case 'presenceMine':
+      return <MyPresenceScreen />;
+    case 'presenceTeam':
+      return <TeamCoverageScreen />;
+    case 'presenceAdmin':
+      return <PresenceAdminScreen />;
     case 'home':
       return <Home />;
     case 'me':
@@ -348,7 +360,7 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
 
 function AuthenticatedApp() {
   const { t } = useI18n();
-  const { can } = useSession();
+  const { can } = usePresence();
   const { pathname } = useLocation();
 
   useEffect(() => {
@@ -385,7 +397,11 @@ function Gate() {
     );
   }
   if (state.status === 'anonymous') return <LoginScreen />;
-  return <AuthenticatedApp />;
+  return (
+    <PresenceProvider>
+      <AuthenticatedApp />
+    </PresenceProvider>
+  );
 }
 
 export function App() {

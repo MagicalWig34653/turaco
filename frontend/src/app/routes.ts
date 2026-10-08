@@ -2,6 +2,9 @@ import type { MessageKey } from '../platform/i18n/i18n';
 import { canAll, type CanFn } from '../platform/session/permissions';
 
 export type RouteId =
+  | 'presenceMine'
+  | 'presenceTeam'
+  | 'presenceAdmin'
   | 'home'
   | 'me'
   | 'myWork'
@@ -152,6 +155,27 @@ const taskViewPermissions = ['tasks.view', 'tasks.manage', 'tasks.work'] as cons
 
 // Static patterns must precede parameterised ones ("/admin/roles/new" before "/admin/roles/:id").
 export const appRoutes: readonly AppRoute[] = [
+  {
+    id: 'presenceMine',
+    pattern: '/presence',
+    titleKey: 'presence.mine',
+    requires: ['presence.manage_own'],
+    nav: 'main',
+  },
+  {
+    id: 'presenceTeam',
+    pattern: '/presence/teams',
+    titleKey: 'presence.team',
+    requiresAny: ['presence.view_availability', 'presence.manage_teams'],
+    nav: 'main',
+  },
+  {
+    id: 'presenceAdmin',
+    pattern: '/admin/presence',
+    titleKey: 'presence.admin',
+    requires: ['presence.admin'],
+    nav: 'admin',
+  },
   { id: 'home', pattern: '/', titleKey: 'nav.home', nav: 'main' },
   { id: 'me', pattern: '/me', titleKey: 'nav.me', nav: 'main' },
   {
