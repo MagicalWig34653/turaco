@@ -17,7 +17,13 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { Avatar, Card, Skeleton, StatusBadge, Tabs } from '../../platform/ui/Workspace';
 import { useContextMenu } from '../../platform/ui/ContextMenu';
 import { TableDate } from '../../platform/ui/TableDate';
-import { appendWorkaround, clearSubmittedDraft, primaryTicketOperation } from './workspaceModel';
+import {
+  appendWorkaround,
+  clearSubmittedDraft,
+  effectiveCommentKind,
+  primaryTicketOperation,
+  resolveAbilities,
+} from './workspaceModel';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
@@ -232,9 +238,7 @@ function TicketWorkspace({ id }: { id: string }) {
   const composer = useRef<HTMLFormElement>(null);
   const commentPending = useRef(false);
   const menu = useContextMenu();
-  const [internal, setInternal] = useState(false);
-  const mode = internal ? 'internal' : 'reply';
-  const comment = drafts[mode];
+  const [internalChoice, setInternalChoice] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [commentError, setCommentError] = useState<ApiError | undefined>(undefined);
 
@@ -268,10 +272,22 @@ function TicketWorkspace({ id }: { id: string }) {
   const queueName = ticketQueueName(ticket);
   const aliases = aliasList(ticket);
   const queueLevel = queues.data?.find((queue) => queue.id === ticket.queueId)?.level;
-  const canMove =
-    staffReader &&
-    canOfferMove(ticket) &&
-    (manage || queueLevel === 'work' || queueLevel === 'manage');
+  const isOwner =
+    session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
+  const abilities = resolveAbilities(ticket.abilities, {
+    manage,
+    isOwner,
+    open: ticket.status !== 'closed' && ticket.status !== 'cancelled',
+    canMove:
+      staffReader &&
+      canOfferMove(ticket) &&
+      (manage || queueLevel === 'work' || queueLevel === 'manage'),
+  });
+  // A server that returns abilities already accounts for the Ticket state and Queue level.
+  const canMove = abilities.move && canOfferMove(ticket);
+  const mode = effectiveCommentKind(abilities, internalChoice);
+  const internal = mode === 'internal';
+  const comment = drafts[mode];
   const run = async (op: TicketOperation) => {
     setBusyOp(op);
     setActionError(undefined);
@@ -308,11 +324,8 @@ function TicketWorkspace({ id }: { id: string }) {
       setCommenting(false);
     }
   };
-  const isOwner =
-    session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
-  const canComment =
-    ticket.status !== 'closed' && ticket.status !== 'cancelled' && (manage || isOwner);
-  const ops = ticket.allowedOperations as TicketOperation[];
+  const canComment = abilities.composer;
+  const ops = abilities.transition ? (ticket.allowedOperations as TicketOperation[]) : [];
   const textKey = (op: TicketOperation) => `tickets.action.${op}` as MessageKey;
   const primaryOp = primaryTicketOperation(ops);
   const focusComposer = () => {
@@ -500,7 +513,7 @@ function TicketWorkspace({ id }: { id: string }) {
                 className={`form incident-composer ${internal ? 'incident-composer-internal' : ''}`}
                 onSubmit={(event) => void submitComment(event)}
               >
-                {manage ? (
+                {abilities.canChooseKind ? (
                   <div
                     className="incident-composer-mode"
                     role="group"
@@ -509,14 +522,14 @@ function TicketWorkspace({ id }: { id: string }) {
                     <Button
                       disabled={commenting}
                       aria-pressed={!internal}
-                      onClick={() => setInternal(false)}
+                      onClick={() => setInternalChoice(false)}
                     >
                       {t('ticketWorkspace.reply')}
                     </Button>
                     <Button
                       disabled={commenting}
                       aria-pressed={internal}
-                      onClick={() => setInternal(true)}
+                      onClick={() => setInternalChoice(true)}
                     >
                       {t('ticketWorkspace.internalNote')}
                     </Button>
@@ -569,7 +582,7 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t(textKey(primaryOp))}
                   </Button>
                 ) : null}
-                {manage ? (
+                {abilities.assign ? (
                   <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'assign' })}>
                     {t('tickets.action.assign')}
                   </Button>
@@ -653,7 +666,7 @@ function TicketWorkspace({ id }: { id: string }) {
                 </>
               ) : null}
             </dl>
-            {manage ? (
+            {abilities.setPriority ? (
               <Select
                 label={t('tickets.col.priority')}
                 value={ticket.priority}
@@ -690,7 +703,7 @@ function TicketWorkspace({ id }: { id: string }) {
             ) : null}
           </Card>
           {ticket.majorIncidentId ? <LinkedIncident id={ticket.majorIncidentId} /> : null}
-          {manage || can('problems.manage') || can('majorincidents.manage') ? (
+          {abilities.markDuplicate || can('problems.manage') || can('majorincidents.manage') ? (
             <Card title={t('ticketLink.title')}>
               <h2>{t('ticketLink.title')}</h2>
               <div className="link-panel-actions">
@@ -704,7 +717,7 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t('ticketLink.toIncident')}
                   </Button>
                 ) : null}
-                {manage ? (
+                {abilities.markDuplicate ? (
                   <Button onClick={() => setDialog({ kind: 'duplicate' })}>
                     {t('ticketLink.duplicate')}
                   </Button>

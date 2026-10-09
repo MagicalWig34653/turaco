@@ -11,6 +11,7 @@ import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Select, TextField } from '../../platform/ui/Field';
+import { docsLinks } from '../../platform/ui/docsLinks';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Table } from '../../platform/ui/Table';
 import { assetsApi } from '../assets/api';
@@ -215,6 +216,9 @@ export function ServicesListScreen() {
       : []),
   ];
 
+  // Nothing found and no filter applied: the catalogue is simply still empty.
+  const firstUse =
+    activeFilters.length === 0 && !list.loading && !list.error && list.items.length === 0;
   return (
     <>
       <PageHeader
@@ -299,7 +303,28 @@ export function ServicesListScreen() {
         loading={list.loading}
         error={list.error}
         onRetry={list.reload}
-        emptyText={t('services.empty')}
+        emptyText={t(firstUse ? 'services.empty.firstUse.title' : 'services.empty')}
+        emptyDescription={
+          firstUse ? (
+            <>
+              {t(
+                can('services.manage')
+                  ? 'services.empty.firstUse.manage'
+                  : 'services.empty.firstUse.ask',
+              )}{' '}
+              <a href={docsLinks.infrastructureChange} target="_blank" rel="noopener noreferrer">
+                {t('services.empty.firstUse.docs')}
+              </a>
+            </>
+          ) : undefined
+        }
+        emptyAction={
+          firstUse && can('services.manage') ? (
+            <Button variant="primary" onClick={() => setCreate(true)}>
+              {t('services.create')}
+            </Button>
+          ) : undefined
+        }
         hasMore={list.hasMore}
         loadingMore={list.loadingMore}
         loadMoreError={list.loadMoreError}

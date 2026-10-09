@@ -2086,7 +2086,7 @@ export const de: Record<MessageKey, string> = {
   'incidents.postUpdate': 'Update veröffentlichen',
   'incidents.timeline': 'Verlauf',
   'incidents.noMessage': 'Status geändert.',
-  'incidents.linked': '{count} verknüpfte Tickets',
+  'incidents.linked': '{count} verknüpfte Tickets, die Sie sehen können',
   'incidents.field.title': 'Titel',
   'incidents.field.message': 'Öffentliche Mitteilung',
   'incidents.field.message.hint':
@@ -4829,4 +4829,67 @@ export const de: Record<MessageKey, string> = {
   'remoteaccess.disabled.admin': 'Unter „Module“ einschalten.',
   'remoteaccess.disabled.ask':
     'Bitten Sie eine Administratorin oder einen Administrator, das Modul einzuschalten.',
+  'changes.polish.resources': '04 · Betroffene Ressourcen',
+  'changes.polish.resourcesHint':
+    'Nennen Sie die Dienste, virtuellen Maschinen und Assets, die dieser Change berührt. Normale und Notfall-Changes brauchen mindestens eine Ressource, bevor Sie sie einreichen können.',
+  'changes.polish.resourcesHintStandard':
+    'Bei Standard-Changes optional. Fügen Sie die betroffenen Ressourcen hinzu, damit andere die Auswirkung erkennen.',
+  'changes.polish.partlyCreated':
+    'Der Change wurde angelegt, aber nicht alle betroffenen Ressourcen konnten hinzugefügt werden. Öffnen Sie ihn, um den Rest zu ergänzen.',
+  'changes.polish.openCreated': 'Change öffnen',
+  'changes.ready.title': 'Das fehlt noch zum Einreichen',
+  'changes.ready.windowStart': 'Wartungsfenster festlegen (Beginn und Ende).',
+  'changes.ready.rollbackPlan':
+    'Rücksetzplan beschreiben (bei mittlerem und hohem Risiko Pflicht).',
+  'changes.ready.affectedResources': 'Mindestens eine betroffene Ressource hinzufügen.',
+  'changes.ready.stateMissing': 'fehlt noch',
+  'changes.ready.stateDone': 'erledigt',
+  'changes.ready.fix.windowStart': 'Fenster festlegen',
+  'changes.ready.fix.rollbackPlan': 'Plan ergänzen',
+  'changes.ready.fix.affectedResources': 'Ressourcen hinzufügen',
+  'changes.ready.blocked':
+    'Das Einreichen ist gesperrt, bis die {count} Punkt(e) oben erledigt sind.',
+  'changes.pick.search': 'Nach Name oder Referenz suchen',
+  'changes.pick.hint.service': 'Dienste: Name oder Referenz (SVC-…).',
+  'changes.pick.hint.vm': 'Virtuelle Maschinen: Name.',
+  'changes.pick.hint.asset':
+    'Assets: Referenz, Tag, Seriennummer, Produkt, Hersteller oder Teilenummer.',
+  'changes.pick.results': 'Passende Ressourcen',
+  'changes.pick.idle': 'Geben Sie einen Namen oder eine Referenz ein, um zu suchen.',
+  'changes.pick.empty':
+    'Nichts gefunden für „{q}“. Prüfen Sie die Art oben oder versuchen Sie ein anderes Wort.',
+  'changes.pick.linked': 'Bereits mit diesem Change verknüpft',
+  'changes.pick.limit': 'Ein Change kann höchstens {max} Ressourcen betreffen.',
+  'changes.pick.selected': 'Ausgewählt: {count}',
+  'changes.pick.none':
+    'Noch nichts ausgewählt. Ihre Auswahl bleibt erhalten, wenn Sie erneut suchen oder die Art wechseln.',
+  'changes.pick.remove': '{name} aus der Auswahl entfernen',
+  'changes.pick.add': '{count} Ressource(n) hinzufügen',
+  'planning.calendar.proposed': 'vorgeschlagen',
+  'planning.calendar.legend': 'Legende',
+  'planning.calendar.legend.firm': 'Genehmigtes, geplantes oder laufendes Fenster',
+  'planning.calendar.legend.proposed':
+    'Vorgeschlagenes Fenster: eingereicht, noch nicht genehmigt, kann sich ändern',
+  'tasks.complete.title': 'Aufgabe abschließen',
+  'tasks.complete.confirmTitle': 'Aufgabe als erledigt melden?',
+  'tasks.complete.confirmBody':
+    'Sie melden „{title}“ als erledigt. Das Team sieht sie als abgeschlossen.',
+  'tasks.complete.noteLabel': 'Ergebnis (optional)',
+  'tasks.complete.noteHint': 'Was wurde getan oder festgestellt? Wird an der Aufgabe angezeigt.',
+  'tasks.complete.noteHintExternal':
+    'Was wurde getan oder festgestellt? Der Text ist für alle sichtbar, die diese Aufgabe sehen. Keine internen Ticketnummern oder personenbezogenen Daten angeben.',
+  'tasks.complete.noteCount': '{count} von {max} Zeichen',
+  'tasks.complete.confirmAction': 'Als erledigt melden',
+  'tasks.fact.resultNote': 'Ergebnis',
+  'assignee.externalNotice':
+    'Der Text ist für externe Beteiligte sichtbar. Keine internen Ticketnummern oder personenbezogenen Daten angeben.',
+  'services.empty.firstUse.title': 'Noch keine Dienste angelegt',
+  'services.empty.firstUse.manage':
+    'Ein Dienst ist etwas, das Ihre Organisation anbietet oder braucht, zum Beispiel E-Mail oder die Patientenakte. Legen Sie den ersten an, ergänzen Sie danach seine Abhängigkeiten und verknüpfen Sie ihn mit Changes.',
+  'services.empty.firstUse.ask':
+    'Dienste legen Personen an, die sie verwalten dürfen. Bitten Sie Ihre IT-Administration, den ersten Dienst anzulegen.',
+  'services.empty.firstUse.docs': 'So arbeiten Dienste und Changes zusammen',
+  'assets.filter.searchPlaceholder': 'Referenz, Tag, Seriennummer, Produkt …',
+  'assets.filter.searchHelp':
+    'Durchsucht Referenz, Tag, Seriennummer, Produkt, Hersteller, Teilenummer und Gerätename. Mehrere Wörter müssen alle passen.',
 };

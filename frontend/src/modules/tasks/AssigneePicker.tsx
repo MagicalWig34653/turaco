@@ -3,6 +3,7 @@ import { useId, useState } from 'react';
 import { useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { useSession } from '../../platform/session/SessionProvider';
+import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { TextField } from '../../platform/ui/Field';
 import { Avatar } from '../../platform/ui/Workspace';
@@ -10,7 +11,12 @@ import { useDebouncedValue } from '../../platform/ui/hooks';
 import { organizationApi } from '../organization/api';
 
 export type AssigneeType = 'user' | 'team';
-export type Assignee = { id: string; label: string };
+export type Assignee = {
+  id: string;
+  label: string;
+  /** True for an external account: text written for this assignee is visible to an outside party. */
+  external?: boolean;
+};
 
 type Props = {
   type: AssigneeType;
@@ -49,12 +55,13 @@ export function AssigneePicker({
             id: user.id,
             label: user.displayName,
             detail: user.primaryEmail ?? undefined,
+            external: user.accountKind === 'external',
           }));
       }
       const page = await organizationApi.searchTeams(debounced, signal);
       return page.items
         .filter((team) => team.active)
-        .map((team) => ({ id: team.id, label: team.name, detail: undefined }));
+        .map((team) => ({ id: team.id, label: team.name, detail: undefined, external: false }));
     },
     [type, debounced, allowed],
   );
@@ -91,6 +98,7 @@ export function AssigneePicker({
           ) : null}
         </p>
       ) : null}
+      {value?.external ? <Alert kind="warning">{t('assignee.externalNotice')}</Alert> : null}
       {results.error ? <ApiErrorAlert error={results.error} onRetry={results.reload} /> : null}
       <fieldset className="picker-results" aria-busy={results.loading}>
         <legend className="visually-hidden">{t('tasks.assign.results')}</legend>
@@ -104,7 +112,13 @@ export function AssigneePicker({
               type="radio"
               name={name}
               checked={value?.id === candidate.id}
-              onChange={() => onChange({ id: candidate.id, label: candidate.label })}
+              onChange={() =>
+                onChange({
+                  id: candidate.id,
+                  label: candidate.label,
+                  ...(candidate.external ? { external: true } : {}),
+                })
+              }
             />
             <Avatar name={candidate.label} />
             <span className="picker-text">

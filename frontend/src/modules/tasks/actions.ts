@@ -75,3 +75,19 @@ export function isOverdue(task: Pick<Task, 'status' | 'dueAt'>, now: Date): bool
   const due = new Date(task.dueAt);
   return !Number.isNaN(due.getTime()) && due.getTime() < now.getTime();
 }
+
+export const resultNoteMaxLength = 1000;
+
+/**
+ * A caller whose only task permission is tasks.work reports a task as done explicitly: their
+ * completion is a statement to the team, not a tidy-up. Backend authorization is unchanged.
+ */
+export function needsCompleteConfirmation(can: CanFn): boolean {
+  return can('tasks.work') && !can('tasks.manage');
+}
+
+/** The note to send: trimmed, or undefined when blank so the optional field stays omitted. */
+export function normalizeResultNote(note: string): string | undefined {
+  const trimmed = note.trim();
+  return trimmed === '' ? undefined : trimmed.slice(0, resultNoteMaxLength);
+}

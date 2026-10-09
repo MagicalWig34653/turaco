@@ -96,7 +96,20 @@ export type TicketHistoryEntry = {
   toPriority?: string | null;
 };
 
+/** What the caller may do with this Ticket; decided by the server per Ticket. */
+export type TicketAbilities = {
+  comment: boolean;
+  internalComment: boolean;
+  assign: boolean;
+  setPriority: boolean;
+  transition: boolean;
+  move: boolean;
+  markDuplicate: boolean;
+};
+
 export type TicketDetail = Ticket & {
+  /** Absent on servers that do not return abilities yet. */
+  abilities?: TicketAbilities;
   comments: TicketComment[];
   /** Absent for requesters and on servers that do not return history yet. */
   history?: TicketHistoryEntry[];

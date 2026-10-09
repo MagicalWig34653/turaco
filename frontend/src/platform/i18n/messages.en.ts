@@ -2027,7 +2027,7 @@ export const en = {
   'incidents.postUpdate': 'Post update',
   'incidents.timeline': 'Updates',
   'incidents.noMessage': 'Status changed.',
-  'incidents.linked': '{count} linked tickets',
+  'incidents.linked': '{count} linked tickets you can see',
   'incidents.field.title': 'Title',
   'incidents.field.message': 'Public message',
   'incidents.field.message.hint':
@@ -4678,6 +4678,66 @@ export const en = {
   'remoteaccess.disabled.reason': 'Remote support is switched off on this system.',
   'remoteaccess.disabled.admin': 'Switch it on under Modules.',
   'remoteaccess.disabled.ask': 'Ask an administrator to switch the module on.',
+  'changes.polish.resources': '04 · Affected resources',
+  'changes.polish.resourcesHint':
+    'Name the services, virtual machines and assets this change touches. Normal and emergency changes need at least one before they can be submitted.',
+  'changes.polish.resourcesHintStandard':
+    'Optional for standard changes. Add the resources this change touches so others can see the impact.',
+  'changes.polish.partlyCreated':
+    'The change was created, but not all affected resources could be added. Open it to add the rest.',
+  'changes.polish.openCreated': 'Open the change',
+  'changes.ready.title': 'Before you can submit',
+  'changes.ready.windowStart': 'Set a maintenance window (start and end).',
+  'changes.ready.rollbackPlan': 'Describe a rollback plan (required for medium and high risk).',
+  'changes.ready.affectedResources': 'Add at least one affected resource.',
+  'changes.ready.stateMissing': 'missing',
+  'changes.ready.stateDone': 'done',
+  'changes.ready.fix.windowStart': 'Set the window',
+  'changes.ready.fix.rollbackPlan': 'Add the plan',
+  'changes.ready.fix.affectedResources': 'Add resources',
+  'changes.ready.blocked': 'Submitting is blocked until {count} item(s) above are done.',
+  'changes.pick.search': 'Search by name or reference',
+  'changes.pick.hint.service': 'Services: name or reference (SVC-…).',
+  'changes.pick.hint.vm': 'Virtual machines: name.',
+  'changes.pick.hint.asset':
+    'Assets: reference, tag, serial number, product, manufacturer or part number.',
+  'changes.pick.results': 'Matching resources',
+  'changes.pick.idle': 'Type a name or reference to search.',
+  'changes.pick.empty': 'Nothing found for “{q}”. Check the type above or try another word.',
+  'changes.pick.linked': 'Already linked to this change',
+  'changes.pick.limit': 'A change can affect at most {max} resources.',
+  'changes.pick.selected': 'Selected: {count}',
+  'changes.pick.none':
+    'Nothing selected yet. Your selection stays when you search again or switch the type.',
+  'changes.pick.remove': 'Remove {name} from the selection',
+  'changes.pick.add': 'Add {count} resource(s)',
+  'planning.calendar.proposed': 'proposed',
+  'planning.calendar.legend': 'Legend',
+  'planning.calendar.legend.firm': 'Approved, scheduled or running window',
+  'planning.calendar.legend.proposed':
+    'Proposed window: submitted, not yet approved, may still change',
+  'tasks.complete.title': 'Complete task',
+  'tasks.complete.confirmTitle': 'Report task as done?',
+  'tasks.complete.confirmBody':
+    'You are reporting “{title}” as done. The team sees it as completed.',
+  'tasks.complete.noteLabel': 'Result note (optional)',
+  'tasks.complete.noteHint': 'What was done or found? Shown on the task.',
+  'tasks.complete.noteHintExternal':
+    'What was done or found? The text is visible to everyone who can see this task. Do not enter internal ticket numbers or personal data.',
+  'tasks.complete.noteCount': '{count} of {max} characters',
+  'tasks.complete.confirmAction': 'Report as done',
+  'tasks.fact.resultNote': 'Result',
+  'assignee.externalNotice':
+    'The text is visible to external parties. Do not enter internal ticket numbers or personal data.',
+  'services.empty.firstUse.title': 'No services yet',
+  'services.empty.firstUse.manage':
+    'A service is something your organisation provides or depends on, such as email or the patient record. Create the first one, then add its dependencies and link it to changes.',
+  'services.empty.firstUse.ask':
+    'Services are created by people who may manage them. Ask your IT administrator to add the first service.',
+  'services.empty.firstUse.docs': 'How services and changes work together',
+  'assets.filter.searchPlaceholder': 'Reference, tag, serial number, product …',
+  'assets.filter.searchHelp':
+    'Searches reference, tag, serial number, product, manufacturer, part number and device name. Several words must all match.',
 } as const;
 
 export type MessageKey = keyof typeof en;

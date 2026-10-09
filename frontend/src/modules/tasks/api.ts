@@ -35,6 +35,12 @@ export const tasksApi = {
   assign: (id: string, body: TaskAssignBody) => api.post<Task>(`/tasks/${enc(id)}/assign`, body),
   unassign: (id: string, expectedVersion: number) =>
     api.post<Task>(`/tasks/${enc(id)}/unassign`, { expectedVersion }),
+  /** Completes a task; the optional result note (at most 1000 characters) is stored as the closing comment. */
+  complete: (id: string, expectedVersion: number, resultNote?: string) =>
+    api.post<Task>(
+      `/tasks/${enc(id)}/complete`,
+      resultNote === undefined ? { expectedVersion } : { expectedVersion, resultNote },
+    ),
   /** reason is sent only for the actions that require one (block, cancel, reopen). */
   transition: (id: string, action: TaskAction, expectedVersion: number, reason?: string) =>
     api.post<Task>(

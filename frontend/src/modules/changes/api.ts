@@ -9,6 +9,7 @@ import type {
   TransitionList,
   ResourceType,
   Affected,
+  AffectedCandidate,
 } from './types';
 const enc = encodeURIComponent;
 registerErrorMessages({
@@ -57,6 +58,12 @@ export const changesApi = {
     api.get<ChangeList>('/changes', { query: { ...filter, cursor, limit: 50 }, signal }),
   get: (id: string, signal?: AbortSignal) =>
     api.get<ChangeDetail>(`/changes/${enc(id)}`, { signal }),
+  /** Picker for the wizard; needs changes.manage. A type the caller cannot see answers with no items. */
+  affectedLookup: (type: AffectedCandidate['type'], q: string, signal?: AbortSignal, limit = 20) =>
+    api.get<{ items: AffectedCandidate[] }>('/changes/affected-lookup', {
+      query: { type, q, limit },
+      signal,
+    }),
   create: (body: ChangeFields) => api.post<Change>('/changes', body),
   update: (id: string, body: Partial<ChangeFields> & { expectedVersion: number }) =>
     api.patch<Change>(`/changes/${enc(id)}`, body),

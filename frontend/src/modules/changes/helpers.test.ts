@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   allowedActions,
+  issuesByStep,
+  maxAffected,
+  mergeMissing,
+  missingForSubmit,
+  readinessFromIssues,
+  requiredForSubmit,
+  toggleCandidate,
   resourceLabel,
   changeMetrics,
   matchesChangeMetric,
   windowMinutes,
 } from './helpers';
-import type { Change } from './types';
+import type { AffectedCandidate, Change } from './types';
 describe('change helpers', () => {
   it('uses only operations supplied by the detail response', () => {
     const change = { status: 'assessment', requesterId: 'requester' } as Change;
@@ -84,5 +91,59 @@ describe('loaded change overview', () => {
     expect(windowMinutes('invalid', '2026-10-07')).toBeNull();
     expect(windowMinutes('2026-10-07T12:00Z', '2026-10-07T11:00Z')).toBeNull();
     expect(windowMinutes('2026-10-07T12:00Z', '2026-10-07T13:30Z')).toBe(90);
+  });
+});
+
+describe('change submit readiness', () => {
+  const ready = { kind: 'normal', risk: 'low', windowStart: null, rollbackPlan: null } as const;
+  it('lists what a normal change lacks, in the server order', () => {
+    expect(missingForSubmit({ ...ready, risk: 'high' }, 0)).toEqual([
+      'windowStart',
+      'rollbackPlan',
+      'affectedResources',
+    ]);
+    expect(missingForSubmit({ ...ready, windowStart: '2026-10-10T10:00:00Z' }, 1)).toEqual([]);
+  });
+  it('needs no affected resource for standard changes and no plan for low risk', () => {
+    expect(requiredForSubmit({ kind: 'standard', risk: 'low' })).toEqual(['windowStart']);
+    expect(missingForSubmit({ ...ready, kind: 'standard', rollbackPlan: ' ' }, 0)).toEqual([
+      'windowStart',
+    ]);
+    expect(
+      missingForSubmit({ ...ready, risk: 'medium', windowStart: 'x', rollbackPlan: '  ' }, 2),
+    ).toEqual(['rollbackPlan']);
+  });
+  it('reads field-level 400 details and ignores unknown fields', () => {
+    const issues = [
+      { field: 'affectedResources', code: 'required' },
+      { field: 'windowStart', code: 'required' },
+      { field: 'somethingNew', code: 'required' },
+      { field: 'rollbackPlan', code: 'too_long' },
+    ];
+    expect(readinessFromIssues(issues)).toEqual(['windowStart', 'affectedResources']);
+    expect(issuesByStep(issues)).toEqual({
+      basics: [],
+      planning: ['windowStart'],
+      resources: ['affectedResources'],
+    });
+    expect(mergeMissing(['affectedResources'], ['windowStart'])).toEqual([
+      'windowStart',
+      'affectedResources',
+    ]);
+  });
+});
+
+describe('affected resource selection', () => {
+  const svc: AffectedCandidate = { type: 'service', id: 'a', name: 'Mail', reference: 'SVC-1' };
+  const vm: AffectedCandidate = { type: 'vm', id: 'a', name: 'mail-01' };
+  it('keeps items of different types with the same id apart and toggles off', () => {
+    const both = toggleCandidate(toggleCandidate([], svc), vm);
+    expect(both).toHaveLength(2);
+    expect(toggleCandidate(both, svc)).toEqual([vm]);
+  });
+  it('stops adding at the resource limit, counting already linked ones', () => {
+    expect(toggleCandidate([], svc, maxAffected)).toEqual([]);
+    expect(toggleCandidate([svc], vm, maxAffected - 1)).toEqual([svc]);
+    expect(toggleCandidate([svc], vm, maxAffected - 2)).toEqual([svc, vm]);
   });
 });

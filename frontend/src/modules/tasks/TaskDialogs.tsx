@@ -7,6 +7,7 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
 import { Select, TextArea } from '../../platform/ui/Field';
+import { normalizeResultNote, resultNoteMaxLength } from './actions';
 import { tasksApi } from './api';
 import { AssigneePicker, type Assignee, type AssigneeType } from './AssigneePicker';
 import { TaskForm, type TaskFormValues } from './TaskForm';
@@ -72,6 +73,59 @@ export function ReasonDialog({
             disabled={reason.trim() === ''}
           >
             {t(`tasks.action.${action}`)}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * Completes a task with an optional result note. A caller who only holds tasks.work (a restricted
+ * or external worker) gets an explicit confirmation question and the visibility notice.
+ */
+export function CompleteDialog({
+  task,
+  confirm,
+  onClose,
+  onDone,
+}: {
+  task: Task;
+  confirm: boolean;
+  onClose: () => void;
+  onDone: Done;
+}) {
+  const { t } = useI18n();
+  const [note, setNote] = useState('');
+  const { busy, error, run } = useSubmit(onDone);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void run(() => tasksApi.complete(task.id, task.version, normalizeResultNote(note)));
+  };
+  return (
+    <Dialog
+      title={t(confirm ? 'tasks.complete.confirmTitle' : 'tasks.complete.title')}
+      onClose={onClose}
+    >
+      <form className="form" onSubmit={submit}>
+        {error ? <ApiErrorAlert error={error} /> : null}
+        {confirm ? <p>{t('tasks.complete.confirmBody', { title: task.title })}</p> : null}
+        <TextArea
+          label={t('tasks.complete.noteLabel')}
+          hint={t(confirm ? 'tasks.complete.noteHintExternal' : 'tasks.complete.noteHint')}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          maxLength={resultNoteMaxLength}
+          rows={4}
+          autoFocus
+        />
+        <p className="field-hint" aria-live="polite">
+          {t('tasks.complete.noteCount', { count: note.length, max: resultNoteMaxLength })}
+        </p>
+        <div className="dialog-actions">
+          <Button onClick={onClose}>{t('action.cancel')}</Button>
+          <Button type="submit" variant="primary" busy={busy}>
+            {t(confirm ? 'tasks.complete.confirmAction' : 'tasks.action.complete')}
           </Button>
         </div>
       </form>

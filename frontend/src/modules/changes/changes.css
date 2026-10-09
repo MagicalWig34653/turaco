@@ -328,6 +328,7 @@
   grid-template-areas:
     'basics planning'
     'basics owner'
+    'resources resources'
     'alert alert'
     'footer footer';
   gap: 20px 24px;
@@ -459,6 +460,7 @@ html[data-motion='reduced'] .change-metrics {
     grid-template-areas:
       'basics'
       'planning'
+      'resources'
       'owner'
       'alert'
       'footer';
@@ -569,5 +571,84 @@ html[data-density='compact'] .change-facts dd {
   }
   .change-metric:nth-child(2) {
     border-right: 0;
+  }
+}
+.change-form > .change-form-resources {
+  grid-area: resources;
+}
+.change-issues {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: var(--radius-sm);
+  background: var(--state-warning-bg);
+  color: var(--state-warning);
+}
+.affected-picker {
+  display: grid;
+  gap: 12px;
+}
+.affected-picker-search {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.affected-picker .picker-results {
+  max-height: 240px;
+  overflow: auto;
+}
+.affected-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.affected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.affected-chip small {
+  color: var(--text-secondary);
+}
+.change-checklist {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--state-warning);
+  border-radius: var(--radius-md, 8px);
+  background: var(--state-warning-bg);
+  color: var(--state-warning);
+}
+.change-checklist h3 {
+  margin: 0;
+}
+.change-checklist ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.change-checklist li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.change-checklist li.is-done > span:first-child {
+  color: var(--state-success);
+}
+@media (max-width: 760px) {
+  .affected-picker-search {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

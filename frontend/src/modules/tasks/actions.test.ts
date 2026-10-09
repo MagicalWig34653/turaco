@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createCan } from '../../platform/session/permissions';
-import { availableActions, canEditTask, isOverdue, isTerminal } from './actions';
+import {
+  availableActions,
+  canEditTask,
+  isOverdue,
+  isTerminal,
+  needsCompleteConfirmation,
+  normalizeResultNote,
+  resultNoteMaxLength,
+} from './actions';
 import { taskStatuses, type TaskStatus } from './types';
 
 const can = (...permissions: string[]) => createCan({ permissions });
@@ -60,5 +68,20 @@ describe('isOverdue / isTerminal', () => {
     expect(isTerminal('completed')).toBe(true);
     expect(isTerminal('cancelled')).toBe(true);
     expect(isTerminal('blocked')).toBe(false);
+  });
+});
+
+describe('task completion', () => {
+  it('asks for confirmation only from callers who hold just tasks.work', () => {
+    expect(needsCompleteConfirmation(can('tasks.work'))).toBe(true);
+    expect(needsCompleteConfirmation(can('tasks.work', 'tasks.manage'))).toBe(false);
+    expect(needsCompleteConfirmation(can('tasks.manage'))).toBe(false);
+  });
+  it('omits a blank result note and trims and limits the rest', () => {
+    expect(normalizeResultNote('   \n ')).toBeUndefined();
+    expect(normalizeResultNote('  Done  ')).toBe('Done');
+    expect(normalizeResultNote('x'.repeat(resultNoteMaxLength + 50))).toHaveLength(
+      resultNoteMaxLength,
+    );
   });
 });

@@ -7,6 +7,7 @@ import './app/app.css';
 import './platform/ui/workspace.css';
 import './platform/ui/collections.css';
 import './modules/changes/changes.css';
+import './modules/planning/calendar.css';
 import './modules/software/software.css';
 import './modules/deployments/deployments.css';
 import './modules/tickets/report-problem.css';

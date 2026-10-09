@@ -42,6 +42,9 @@ type DataTableProps<T> = {
   error?: ApiError | undefined;
   onRetry?: () => void;
   emptyText: string;
+  /** Optional explanation and next step under the empty title (for a first-use state). */
+  emptyDescription?: ReactNode;
+  emptyAction?: ReactNode;
   /** Pagination ("load more" via nextCursor). */
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -66,6 +69,8 @@ export function DataTable<T>({
   error,
   onRetry,
   emptyText,
+  emptyDescription,
+  emptyAction,
   hasMore,
   loadingMore,
   loadMoreError,
@@ -360,7 +365,9 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
-      {!loading && rows.length === 0 ? <EmptyState title={emptyText} /> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState title={emptyText} description={emptyDescription} action={emptyAction} />
+      ) : null}
       {loadMoreError ? <ApiErrorAlert error={loadMoreError} /> : null}
       {hasMore && onLoadMore ? (
         <div className="load-more">

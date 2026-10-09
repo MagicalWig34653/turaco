@@ -5,8 +5,26 @@ export type ApiErrorBody = {
     requestId?: string;
     fields?: unknown;
     blockers?: unknown;
+    details?: unknown;
   };
 };
+
+/** One field-level validation issue of a 400 response (`error.details.fields`). */
+export type FieldIssue = { field: string; code: string };
+
+/** Keeps only well-formed `{field, code}` entries of `error.details.fields`. */
+export function parseIssues(details: unknown): FieldIssue[] {
+  if (typeof details !== 'object' || details === null) return [];
+  const list = (details as { fields?: unknown }).fields;
+  if (!Array.isArray(list)) return [];
+  const out: FieldIssue[] = [];
+  for (const entry of list) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { field, code } = entry as { field?: unknown; code?: unknown };
+    if (typeof field === 'string' && typeof code === 'string') out.push({ field, code });
+  }
+  return out;
+}
 
 /** Keeps only string-to-string entries of a validation `fields` object. */
 export function parseFields(value: unknown): Record<string, string> | undefined {
@@ -31,6 +49,8 @@ export class ApiError extends Error {
   /** Per-field validation codes of a 422 response (field key to code); empty otherwise. */
   readonly fields: Readonly<Record<string, string>>;
   readonly blockers: readonly string[];
+  /** Field-level issues of a 400 response with `error.details.fields`; empty otherwise. */
+  readonly issues: readonly FieldIssue[];
 
   constructor(init: {
     status: number;
@@ -40,6 +60,7 @@ export class ApiError extends Error {
     retryAfterSeconds?: number | undefined;
     fields?: Record<string, string> | undefined;
     blockers?: string[] | undefined;
+    issues?: FieldIssue[] | undefined;
   }) {
     super(init.message);
     this.name = 'ApiError';
@@ -49,6 +70,7 @@ export class ApiError extends Error {
     this.retryAfterSeconds = init.retryAfterSeconds;
     this.fields = init.fields ?? {};
     this.blockers = init.blockers ?? [];
+    this.issues = init.issues ?? [];
   }
 }
 
@@ -193,6 +215,7 @@ export async function toApiError(response: Response): Promise<ApiError> {
     blockers: Array.isArray(envelope?.blockers)
       ? envelope.blockers.filter((key): key is string => typeof key === 'string')
       : [],
+    issues: parseIssues(envelope?.details),
   });
 }
 

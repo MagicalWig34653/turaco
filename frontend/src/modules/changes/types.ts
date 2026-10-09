@@ -128,3 +128,12 @@ export type ImpactStart = {
   nodeLimited: boolean;
 };
 export type ChangeImpact = { starts: ImpactStart[]; skipped: number; truncated: boolean };
+
+/** A resource the affected-lookup offers for a Change (never a Location). */
+export type AffectedCandidate = {
+  type: 'service' | 'vm' | 'asset';
+  id: string;
+  name: string;
+  reference?: string;
+  detail?: string;
+};

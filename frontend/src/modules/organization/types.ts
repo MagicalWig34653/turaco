@@ -9,6 +9,8 @@ export type User = {
   familyName?: string | null;
   primaryEmail?: string | null;
   status: UserStatus;
+  /** External accounts are outside parties; absent on older servers. */
+  accountKind?: 'employee' | 'external';
   /** Where the person normally works; shared devices of that Location can be named in a ticket. */
   primaryLocationId?: string | null;
   updatedAt: string;
