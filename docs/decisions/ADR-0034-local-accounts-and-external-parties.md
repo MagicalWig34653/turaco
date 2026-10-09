@@ -1,6 +1,6 @@
 # ADR-0034: Local accounts with invitation tokens and restricted external accounts
 
-- Status: Proposed (2026-10-09). Not implemented. Design: [F14 Administration](../product/f14-administration-design.md).
+- Status: Accepted (2026-10-09). Not implemented; accepted after the Opus security review, whose blockers are resolved below. Design: [F14 Administration](../product/f14-administration-design.md).
 
 ## Context
 
@@ -8,12 +8,14 @@ Turaco authenticates against a directory (LDAP/AD password bind, Kerberos) and h
 
 ## Decision
 
-1. **Local accounts** are a second credential kind in `platform.local_credentials` (`kind` `emergency` or `local`). They are meant for Users outside the directory. The emergency account keeps its CLI-only lifecycle and endpoint; nothing in the UI edits it.
-2. **Local sign-in is disabled by default** (`AUTH_LOCAL_LOGIN_ENABLED=false`) and has its own endpoint, throttling keys and audit actions, separate from the emergency login. A directory-linked User can never have a local credential.
-3. **Credentials are set only through single-use tokens** (invitation, reset): 256 bits random, only a SHA-256 hash stored, expiry 7 days (invitation) or 24 hours (reset). An administrator never sees or chooses a password. Delivery is email through the existing SMTP channel, or a link shown once to the administrator. Setting a password revokes the User's sessions. Passwords are argon2id with the emergency account's parameters, minimum 12 characters, rejected when on a bundled list of common passwords.
-4. **External accounts** (`account_kind = external`) are restricted principals: an External Party record, a required internal sponsor, a required expiry date (maximum 365 days, extended only by an explicit audited operation), a closed permission ceiling that the evaluator enforces by intersection, and an HTTP allow-list declared per route family in the module registry. They see Tasks assigned to them or their Team and Tickets explicitly shared with them (public comments only).
+1. **Local accounts** are a second credential kind in `platform.local_credentials` (`kind` `emergency` or `local`). They are meant for Users outside the directory. The emergency account keeps its CLI-only lifecycle and endpoint; nothing in the UI edits it. `FindLocalCredential` filters by kind per endpoint, and local logins use an argon2 slot pool separate from break-glass.
+2. **Local sign-in is disabled by default** (`AUTH_LOCAL_LOGIN_ENABLED=false`, a global switch that turns local accounts off completely) and has its own endpoint, throttling keys, account lockout and audit actions, separate from the emergency login. A directory-linked User can never have a local credential; linking a directory identity to a local User is administrator-only and atomically deletes the local credential, open tokens and sessions, and is refused while the User holds roles.
+3. **Credentials are set only through single-use tokens** (invitation, reset): 256 bits random, only a SHA-256 hash stored, expiry 7 days (invitation) or 24 hours (reset), a new token invalidates earlier ones. An administrator never sees or chooses a password. Delivery is email to the stored address through the existing SMTP channel; a link is shown once to the administrator only for the invitation of a never-activated account. Links are built only from the configured `EMAIL_BASE_URL`, carry the token in the URL fragment and are served with `Referrer-Policy: no-referrer`; redeem needs an active, unexpired, non-directory User, a same-origin guard and throttling, and never logs in. Setting a password revokes the User's sessions. Passwords are argon2id under a separate local-account policy function (minimum 12 characters, larger common-password list, checks against name, email and login).
+   Destructive or takeover-capable operations on a local account (reset, invitation, email change, deactivation, departure) need a platform administrator or an actor holding all effective permissions of the target (dominance rule); an email change revokes open tokens and notifies the old address.
+4. **External accounts** (`account_kind = external`, immutable and loaded with `IsActive` on every request) are restricted principals: an External Party record, a required internal sponsor, a required expiry date (maximum 365 days, extended only by an explicit audited operation), a closed permission ceiling that the evaluator enforces by intersection, and an HTTP allow-list declared per route family in the module registry. They see Tasks assigned to them or their Team and Tickets explicitly shared with them through `ticket_participants` (public comments only); grants through Team subjects (queue grants, Views shares, pin rules) exclude external accounts, and search, Views, query endpoints and AI answer 404 for them.
 5. **Expiry is enforced at authentication time** (a User past `access_expires_at` is inactive for every request) and cleaned up by a job that sets the status and writes the audit trail.
-6. **No new framework or dependency**: the same Go standard library, `x/crypto/argon2` and SMTP channel already in use. No OIDC/SAML or MFA is introduced here; they are the follow-up for external parties (hook: `kind` and the allow-list stay unchanged).
+6. **Step-up gap:** until a TOTP/step-up ADR exists, local accounts cannot hold high-risk permissions (assignment refused, evaluator excludes them), so a local account is never a platform administrator.
+7. **No new framework or dependency**: the same Go standard library, `x/crypto/argon2` and SMTP channel already in use. No OIDC/SAML or MFA is introduced here; they are the follow-up for external parties (hook: `kind` and the allow-list stay unchanged).
 
 ## Alternatives considered
 
@@ -29,3 +31,7 @@ Turaco authenticates against a directory (LDAP/AD password bind, Kerberos) and h
 - Operators who enable local login accept password risk; the Health page flags enabled local login and the emergency login as attention items.
 - Service Desk gains `ticket_participants` (owned by Service Desk).
 - Revisit when MFA/SSO for external parties is designed.
+
+## Review outcomes
+
+The Opus security review of 2026-10-09 produced ten binding rules, all recorded in the [F14 design, Review outcomes](../product/f14-administration-design.md#review-outcomes-opus-security-review-2026-10-09): dominance rule for account-takeover operations (R1), Team-subject grants outside the ceiling and the role-holding rule (R2), credential kind separation, separate policies and lockout (R3), immutable `account_kind` (R4), atomic directory linking (R5), last-administrator and removal ceiling (R6), token handling (R7), opt-in remote-support template (R8), audit purge floor inside the function because a worker-only grant is not enforceable with one `DATABASE_URL` (R9), and the MFA/step-up gap closed by refusing high-risk permissions for local accounts (R10). All blockers are resolved in the text; the status is therefore Accepted. Implementation still needs a security review before merge of slices A-A2 and A-G.
