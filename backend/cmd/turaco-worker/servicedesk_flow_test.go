@@ -15,7 +15,13 @@ func TestTicketNotificationsFollowWhoActed(t *testing.T) {
 	svc := wiring.ServiceDesk(w.pool)
 	t.Cleanup(func() {
 		_, _ = w.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = $1::uuid`, w.creator)
+		_, _ = w.pool.Exec(ctx, `DELETE FROM servicedesk.queue_grants WHERE subject_id = $1::uuid`, w.assignee)
 	})
+	// The assignee must be able to work the intake Queue (a Queue grant stands in for a ticket role here).
+	if _, err := w.pool.Exec(ctx, `INSERT INTO servicedesk.queue_grants (queue_id, subject_type, subject_id, level)
+		SELECT id, 'user', $1::uuid, 'work' FROM servicedesk.queues WHERE default_for_intake`, w.assignee); err != nil {
+		t.Fatal(err)
+	}
 	c := func(u string) servicedeskapp.Caller {
 		return servicedeskapp.Caller{Actor: audit.UserActor(u), CorrelationID: w.corr}
 	}

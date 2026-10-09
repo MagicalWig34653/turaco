@@ -283,6 +283,26 @@ func (s *Service) MyWork(ctx context.Context, p Principal, page Page) (Result[Ta
 	})
 }
 
+// CountStore is the optional persistence port that counts the Tasks of a "mine" restriction.
+type CountStore interface {
+	// CountMine counts the tasks with one of the statuses that are assigned to the User or one of the Teams, reading
+	// at most limit+1 rows.
+	CountMine(ctx context.Context, statuses []string, m Mine, limit int) (int, error)
+}
+
+// MyWorkCount counts the caller's unfinished tasks (the MyWork list) up to limit; a larger set returns limit+1.
+func (s *Service) MyWorkCount(ctx context.Context, p Principal, limit int) (int, error) {
+	cs, ok := s.store.(CountStore)
+	if !ok {
+		return 0, fmt.Errorf("tasks: store does not support counts")
+	}
+	a, err := s.access(ctx, p)
+	if err != nil {
+		return 0, err
+	}
+	return cs.CountMine(ctx, []string{StatusOpen, StatusInProgress, StatusBlocked}, a.mine(), limit)
+}
+
 func (a access) mine() Mine {
 	m := Mine{UserID: a.p.UserID, TeamIDs: make([]string, 0, len(a.teams))}
 	for id := range a.teams {

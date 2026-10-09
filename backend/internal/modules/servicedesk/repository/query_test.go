@@ -91,7 +91,7 @@ func TestTicketRoutingFieldsAreAbsentForEmployees(t *testing.T) {
 		t.Fatal(err)
 	}
 	fields := func(p application.Principal) map[string]bool {
-		info, err := e.svc.QueryFields(p)
+		info, err := e.svc.QueryFields(ctx, p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestTicketRoutingFieldsAreAbsentForEmployees(t *testing.T) {
 		return out
 	}
 	emp, staff := fields(e.user()), fields(e.staff())
-	for _, k := range []string{"queue", "assignee"} {
+	for _, k := range []string{"queue", "routing_team", "assignee"} {
 		if emp[k] || !staff[k] {
 			t.Errorf("field %s: employee=%v staff=%v", k, emp[k], staff[k])
 		}
@@ -113,22 +113,24 @@ func TestTicketRoutingFieldsAreAbsentForEmployees(t *testing.T) {
 		raw, _ := json.Marshal(err.Error())
 		return string(raw)
 	}
-	if probe("assignee") != probe("nonexistent") || probe("queue") != probe("nonexistent") {
+	if probe("assignee") != probe("nonexistent") || probe("queue") != probe("nonexistent") || probe("routing_team") != probe("nonexistent") {
 		t.Errorf("routing fields answer differently from unknown fields: %s %s", probe("assignee"), probe("nonexistent"))
 	}
 	if _, err := e.svc.Query(ctx, e.user(), query.Request{Sort: []query.SortSpec{{Field: "assignee", Dir: "asc"}}}, false, nil); err == nil {
 		t.Error("employee sorted by assignee")
 	}
 	// The plain parameters keep their old meaning: an employee's routing filters are ignored, staff's apply.
-	compat := application.CompatNodes(e.user(), application.Filter{AssigneeID: e.agent, QueueID: e.team})
+	compat, _ := e.svc.CompatNodes(ctx, e.user(), application.Filter{AssigneeID: e.agent, QueueID: e.team})
 	if len(compat) != 0 {
 		t.Errorf("employee compat nodes %v", compat)
 	}
-	page, err := e.svc.Query(ctx, e.staff(), query.Request{Limit: 100}, true, application.CompatNodes(e.staff(), application.Filter{AssigneeID: e.agent}))
+	byAgent, _ := e.svc.CompatNodes(ctx, e.staff(), application.Filter{AssigneeID: e.agent})
+	page, err := e.svc.Query(ctx, e.staff(), query.Request{Limit: 100}, true, byAgent)
 	if err != nil || !qIDs(page)[tk.ID] {
 		t.Errorf("staff filter by assignee: %v %v", qIDs(page), err)
 	}
-	page, err = e.svc.Query(ctx, e.staff(), query.Request{Limit: 100}, true, application.CompatNodes(e.staff(), application.Filter{Status: "closed"}))
+	closed, _ := e.svc.CompatNodes(ctx, e.staff(), application.Filter{Status: "closed"})
+	page, err = e.svc.Query(ctx, e.staff(), query.Request{Limit: 100}, true, closed)
 	if err != nil || qIDs(page)[tk.ID] {
 		t.Errorf("status compat: %v %v", qIDs(page), err)
 	}

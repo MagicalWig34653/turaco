@@ -87,7 +87,7 @@ func Catalog() []Module {
 		core("approvals", "approvals"),
 		core("notifications", "notifications"),
 
-		opt("servicedesk", CategoryServiceMgmt, []string{"assets"}, "tickets", "major-incidents", "problems"),
+		opt("servicedesk", CategoryServiceMgmt, []string{"assets"}, "tickets", "major-incidents", "problems", "service-desk"),
 		opt("knowledge", CategoryServiceMgmt, []string{"servicedesk"}, "knowledge-articles", "runbooks", "runbook-executions"),
 		opt("catalog", CategoryServiceMgmt, []string{"products"}, "catalog-items"),
 		opt("requests", CategoryServiceMgmt, []string{"catalog"}, "service-requests"),

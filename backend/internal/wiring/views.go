@@ -10,6 +10,7 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	servicedeskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/views"
 )
@@ -50,6 +51,11 @@ func (d viewDirectory) GroupIDsOfUser(ctx context.Context, userID string) ([]str
 func Views(pool *pgxpool.Pool, api http.Handler, gate views.ModuleGate) (*views.Service, error) {
 	org := orgrepository.New(pool)
 	resources, routes := ViewResources()
-	return views.NewService(pool, viewDirectory{WorkDirectory: orgpublic.NewWorkDirectory(org), groups: orgpublic.NewAuthorizationSubjects(org)},
+	svc, err := views.NewService(pool, viewDirectory{WorkDirectory: orgpublic.NewWorkDirectory(org), groups: orgpublic.NewAuthorizationSubjects(org)},
 		views.NewHTTPRunner(api, routes), gate, resources)
+	if err != nil {
+		return nil, err
+	}
+	// Built-in System Views of the sidebar (My open tickets, Unassigned, one per Queue the caller views).
+	return svc.WithSystemProviders(servicedeskpublic.NewSystemViews(ServiceDesk(pool))), nil
 }

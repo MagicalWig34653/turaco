@@ -38,10 +38,13 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/tickets/fields", h.fields)
 	route("POST /api/v1/tickets/query", h.query)
 	route("POST /api/v1/tickets", h.create)
+	route("GET /api/v1/tickets/by-reference", h.byReference)
 	route("GET /api/v1/tickets/{id}", h.get)
+	route("POST /api/v1/tickets/{id}/move-queue", h.moveQueue)
 	route("POST /api/v1/tickets/{id}/comments", h.comment)
 	route("POST /api/v1/tickets/{id}/assign", h.assign)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
+	registerQueues(route, h)
 	for _, op := range []string{application.OpStart, application.OpWait, application.OpResume, application.OpResolve, application.OpClose, application.OpReopen, application.OpCancel} {
 		route("POST /api/v1/tickets/{id}/"+op, h.transition(op))
 	}
@@ -72,6 +75,24 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.team_invalid", "The team does not exist or is not active.")
 	case errors.Is(err, application.ErrDeviceInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.device_invalid", "The device does not exist or is not assigned to the affected user.")
+	case errors.Is(err, application.ErrQueueNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "servicedesk.queue_not_found", "The queue was not found.")
+	case errors.Is(err, application.ErrQueueNotPermitted):
+		httpx.WriteError(w, http.StatusForbidden, "servicedesk.queue_not_permitted", "You cannot use this queue.")
+	case errors.Is(err, application.ErrQueueArchived):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_archived", "The queue is archived.")
+	case errors.Is(err, application.ErrQueueKeyTaken):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_key_taken", "A queue with this key already exists.")
+	case errors.Is(err, application.ErrQueuePrefixTaken):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_prefix_taken", "This prefix is already used by a current or former queue.")
+	case errors.Is(err, application.ErrQueueHasOpenTickets):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_has_open_tickets", "Move the open tickets to another queue first.")
+	case errors.Is(err, application.ErrQueueIsDefault):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_is_default", "The intake queue cannot be archived; choose another intake queue first.")
+	case errors.Is(err, application.ErrQueueSame):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_same", "The ticket is already in this queue.")
+	case errors.Is(err, application.ErrAssigneeNoAccess):
+		httpx.WriteError(w, http.StatusBadRequest, "servicedesk.assignee_no_queue_access", "The assignee cannot view tickets of this queue.")
 	case errors.Is(err, application.ErrInvalidCursor):
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.invalid_cursor", "The cursor is invalid.")
 	default:
@@ -82,7 +103,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -121,6 +142,10 @@ type ticketDTO struct {
 	ReporterID      string         `json:"reporterId"`
 	AffectedUserID  string         `json:"affectedUserId"`
 	QueueTeamID     *string        `json:"queueTeamId"`
+	QueueID         string         `json:"queueId,omitempty"`
+	Queue           *queueRefDTO   `json:"queue"`
+	QueueLabel      string         `json:"queueLabel,omitempty"`
+	Aliases         []string       `json:"aliases,omitempty"`
 	AssigneeID      *string        `json:"assigneeId"`
 	AssetID         *string        `json:"assetId"`
 	MajorIncidentID *string        `json:"majorIncidentId"`
@@ -132,8 +157,19 @@ type ticketDTO struct {
 	UpdatedAt       string         `json:"updatedAt"`
 }
 
+type queueRefDTO struct {
+	ID     string `json:"id"`
+	Key    string `json:"key"`
+	Prefix string `json:"prefix"`
+	Name   string `json:"name"`
+}
+
 func toTicket(t application.Ticket) ticketDTO {
-	return ticketDTO{ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason,
+	var q *queueRefDTO
+	if t.Queue != nil {
+		q = &queueRefDTO{ID: t.Queue.ID, Key: t.Queue.Key, Prefix: t.Queue.Prefix, Name: t.Queue.Name}
+	}
+	return ticketDTO{QueueID: queueIDOf(t), Queue: q, QueueLabel: t.QueueLabel, Aliases: t.Aliases, ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason,
 		StatusReason: t.StatusReason, Resolution: t.Resolution, Priority: t.Priority, ReporterID: t.ReporterID, AffectedUserID: t.AffectedUserID,
 		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, MajorIncidentID: t.MajorIncidentID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
 		ClosedAt: tsPtr(t.ClosedAt), Version: t.Version, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
@@ -161,7 +197,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.URL.Query()
-	if query.HasParams(v) {
+	if query.HasParams(v) || v.Get("queue") != "" {
 		h.queryList(w, r, v, limit)
 		return
 	}
@@ -183,6 +219,14 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
+// queueIDOf is the Queue id only when the caller may know the Queue.
+func queueIDOf(t application.Ticket) string {
+	if t.Queue == nil {
+		return ""
+	}
+	return t.Queue.ID
+}
+
 // queryList serves the additive filter/sort/search/count parameters of the list endpoint; the plain
 // parameters (status, assigneeId, queueId, open, scope) keep their meaning and are ANDed to the filter.
 func (h *handler) queryList(w http.ResponseWriter, r *http.Request, v url.Values, limit int) {
@@ -192,9 +236,17 @@ func (h *handler) queryList(w http.ResponseWriter, r *http.Request, v url.Values
 		return
 	}
 	p := principal(r)
-	compat := application.CompatNodes(p, application.Filter{Status: v.Get("status"), AssigneeID: v.Get("assigneeId"),
+	compat, err := h.svc.CompatNodes(r.Context(), p, application.Filter{Status: v.Get("status"), AssigneeID: v.Get("assigneeId"),
 		QueueID: v.Get("queueId"), OpenOnly: v.Get("open") == "true"})
-	page, err := h.svc.Query(r.Context(), p, req, v.Get("scope") == "all", compat)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	scope := application.ScopeMine
+	if v.Get("scope") == "all" {
+		scope = application.ScopeAll
+	}
+	page, err := h.svc.QueryScoped(r.Context(), p, req, scope, compat, v.Get("queue"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -204,7 +256,7 @@ func (h *handler) queryList(w http.ResponseWriter, r *http.Request, v url.Values
 
 // fields returns the ticket Field Catalog as the caller may use it.
 func (h *handler) fields(w http.ResponseWriter, r *http.Request) {
-	info, err := h.svc.QueryFields(principal(r))
+	info, err := h.svc.QueryFields(r.Context(), principal(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -219,8 +271,7 @@ func (h *handler) query(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	p := principal(r)
-	page, err := h.svc.Query(r.Context(), p, req, p.View || p.Manage, nil)
+	page, err := h.svc.QueryScoped(r.Context(), principal(r), req, application.ScopeAuto, nil, "")
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -249,12 +300,15 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		AssetID        *string `json:"assetId"`
 		Priority       string  `json:"priority"`
 		QueueTeamID    *string `json:"queueTeamId"`
+		QueueID        *string `json:"queueId"`
+		QueueKey       string  `json:"queueKey"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
 	t, err := h.svc.Create(r.Context(), caller(w, r), principal(r), application.CreateInput{
 		Title: b.Title, Description: b.Description, AffectedUserID: b.AffectedUserID, AssetID: b.AssetID, Priority: b.Priority, QueueTeamID: b.QueueTeamID,
+		QueueID: b.QueueID, QueueKey: b.QueueKey,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -328,4 +382,36 @@ func (h *handler) transition(op string) http.HandlerFunc {
 		}
 		httpx.JSON(w, http.StatusOK, toTicket(t))
 	}
+}
+
+func (h *handler) moveQueue(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int   `json:"expectedVersion"`
+		TargetQueueID   string `json:"targetQueueId"`
+		ReasonCode      string `json:"reasonCode"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	t, err := h.svc.MoveToQueue(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.TargetQueueID, b.ReasonCode)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+// byReference resolves a current or earlier reference of a Ticket. Unknown, malformed and invisible references all
+// answer 404 tickets.not_found.
+func (h *handler) byReference(w http.ResponseWriter, r *http.Request) {
+	m, err := h.svc.FindByReference(r.Context(), principal(r), r.URL.Query().Get("reference"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		TicketID  string `json:"ticketId"`
+		Reference string `json:"reference"`
+		Alias     bool   `json:"alias"`
+	}{m.TicketID, m.Reference, m.Alias})
 }

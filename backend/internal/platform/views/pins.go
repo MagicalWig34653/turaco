@@ -139,29 +139,77 @@ type SidebarGroup struct {
 	Items []PinEntry
 }
 
-// Sidebar is the caller's pinned Views grouped for the shell, plus the collapsed groups. Counts are not part of
-// it (they arrive with the Queue slice).
+// Sidebar is the caller's System Views and pinned Views grouped for the shell, plus the collapsed groups. Entries
+// carry capped counts.
 type Sidebar struct {
 	Groups    []SidebarGroup
 	Collapsed []string
 }
 
-// Sidebar returns the visible (not hidden) pins grouped by group key.
+// SidebarCountLimit bounds how many entries of one sidebar request are counted (each count is a query of the
+// owning module, which has its own rate limit). Entries beyond it show no count.
+const SidebarCountLimit = 20
+
+// Sidebar returns the System Views of the caller's modules (first within their group) and the visible (not
+// hidden) pins grouped by group key, with the capped count of the first SidebarCountLimit entries. A count that
+// cannot be computed is reported as unavailable, never as zero.
 func (s *Service) Sidebar(ctx context.Context, c Caller) (Sidebar, error) {
 	entries, err := s.pinState(ctx, c)
 	if err != nil {
 		return Sidebar{}, err
 	}
-	out := Sidebar{Groups: []SidebarGroup{}, Collapsed: []string{}}
+	system, err := s.SystemViews(ctx, c)
+	if err != nil {
+		return Sidebar{}, err
+	}
+	byGroup := map[string][]PinEntry{}
+	var order []string
+	add := func(e PinEntry) {
+		if _, ok := byGroup[e.GroupKey]; !ok {
+			order = append(order, e.GroupKey)
+		}
+		byGroup[e.GroupKey] = append(byGroup[e.GroupKey], e)
+	}
+	for _, sv := range system {
+		add(PinEntry{ViewID: sv.Key, Name: sv.Name, NameKey: sv.NameKey, Resource: sv.Resource, GroupKey: sv.Group, Position: sv.Position,
+			Source: "system", Ref: sv.Ref})
+	}
 	for _, e := range entries {
-		if e.Hidden {
-			continue
+		if !e.Hidden {
+			add(e)
 		}
-		if n := len(out.Groups); n == 0 || out.Groups[n-1].Key != e.GroupKey {
-			out.Groups = append(out.Groups, SidebarGroup{Key: e.GroupKey})
+	}
+	slices.Sort(order)
+	out := Sidebar{Groups: []SidebarGroup{}, Collapsed: []string{}}
+	counted := 0
+	systemByKey := map[string]SystemView{}
+	for _, sv := range system {
+		systemByKey[sv.Key] = sv
+	}
+	for _, g := range order {
+		group := SidebarGroup{Key: g, Items: byGroup[g]}
+		for i := range group.Items {
+			if counted >= SidebarCountLimit {
+				break
+			}
+			e := &group.Items[i]
+			var cnt Count
+			if e.Source == "system" {
+				cnt = s.countSystem(ctx, c, systemByKey[e.ViewID])
+			} else {
+				var ok bool
+				if cnt, ok = s.countSaved(ctx, c, e.ViewID); !ok {
+					continue
+				}
+			}
+			counted++
+			e.CountStatus = cnt.Status
+			if cnt.Status == CountOK {
+				n := cnt.Count
+				e.Count, e.CountCapped = &n, cnt.Capped
+			}
 		}
-		g := &out.Groups[len(out.Groups)-1]
-		g.Items = append(g.Items, e)
+		out.Groups = append(out.Groups, group)
 	}
 	var collapsed []string
 	err = s.pool.QueryRow(ctx, `SELECT collapsed_groups FROM views.sidebar_state WHERE user_id = $1::uuid`, c.UserID).Scan(&collapsed)

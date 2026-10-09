@@ -38,7 +38,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Products | product, optional variant, manufacturer, categories |
 | Catalog | requestable services/forms/eligibility |
 | Requests | service request lifecycle and fulfillment coordination |
-| Service Desk | incidents, major incidents, problems/known error state |
+| Service Desk | incidents, major incidents, problems/known error state, Ticket Queues (key, prefix, counter, grants), the reference registry and Ticket moves between Queues; contributes System Views (`servicedesk/public.SystemViews`) and My Work sources (`servicedesk/public`) through platform contracts |
 | Knowledge | articles, procedures, runbook definitions/executions |
 | Assets | asset/device identity, lifecycle, assignment |
 | Inventory | warehouse, storage location, stock, transactions, reservations, goods receipt |

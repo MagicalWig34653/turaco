@@ -162,8 +162,16 @@ type PinEntry struct {
 	GroupKey string
 	Position int
 	Hidden   bool
-	// Source is "user" (the user's own pin or override) or "rule" (shown by a Pin Rule).
+	// Source is "user" (the user's own pin or override), "rule" (shown by a Pin Rule) or "system" (a built-in
+	// System View; ViewID is then its key).
 	Source string
+	// NameKey is the i18n key of a System View's name (Name is empty then); Ref is the Queue id of a Queue entry.
+	NameKey string
+	Ref     string
+	// Count is set for the entries whose count was requested; CountStatus is "ok" or "unavailable".
+	Count       *int
+	CountCapped bool
+	CountStatus string
 }
 
 // PinInput is one row of PUT /me/pins.

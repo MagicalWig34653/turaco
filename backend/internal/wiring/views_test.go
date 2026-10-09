@@ -160,11 +160,11 @@ func TestSharedViewRunsWithTheViewersOwnScopeAndFields(t *testing.T) {
 		t.Errorf("bob must see only his own matching ticket, got %v", titles(got))
 	}
 
-	// The agent adds a condition on a staff-only field (queue). The employees' catalog does not offer it, so the
+	// The agent adds a condition on a staff-only field (routing_team). The employees' catalog does not offer it, so the
 	// condition cannot be used by them: it evaluates to no rows (never dropped) and is reported.
 	queueDef := views.Definition{Filter: &query.Filter{V: 1, Root: &query.Node{Type: "group", Logic: "and", Children: []query.Node{
 		{Type: "condition", Field: "title", Op: "contains", Value: json.RawMessage(`"wiringprinter"`)},
-		{Type: "condition", Field: "queue", Op: "is_empty"}}}}}
+		{Type: "condition", Field: "routing_team", Op: "is_empty"}}}}}
 	qv, err := svc.Update(ctx, agentC, v.ID, views.UpdateInput{ExpectedVersion: v.Version, Definition: &queueDef})
 	if err != nil {
 		t.Fatalf("update with queue condition: %v", err)

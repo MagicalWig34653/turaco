@@ -10,7 +10,7 @@
 
 ## Scope (after the decisions)
 
-1. **Tickets (incidents):** employee creation with almost no fields (what is wrong, optional device, optional free text), staff creation on behalf of someone, queues = Teams, priority derived from simple routing rules, assignment, public and internal comments, waiting reasons, resolve/close/reopen with reasons, notifications through the existing service, My Work integration.
+1. **Tickets (incidents):** employee creation with almost no fields (what is wrong, optional device, optional free text), staff creation on behalf of someone, queues = Teams (replaced by Ticket Queues in F13 Q-C, see the [F13 design](f13-workbench-views-design.md)), priority derived from simple routing rules, assignment, public and internal comments, waiting reasons, resolve/close/reopen with reasons, notifications through the existing service, My Work integration.
 2. **Known issues:** Major Incidents (lifecycle `identified → … → closed`), employee-facing banner and duplicate suppression with subscription instead of a new ticket.
 3. **Knowledge:** Articles (`draft → published → retired`), visibility internal/employee, search, contextual suggestions while writing a ticket, draft suggestion from a resolved ticket.
 4. **Problems and Known Errors:** Problem lifecycle with Known Error data (cause, workaround), linking tickets.

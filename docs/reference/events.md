@@ -73,7 +73,8 @@
 | `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |
 | `TicketAssigned` | 1 | service-desk | A ticket was assigned to a user. Payload: ticketId, assigneeId. |
 | `TicketCommentAdded` | 1 | service-desk | A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId. |
-| `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId. |
+| `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId, queueId. |
+| `TicketQueueChanged` | 1 | service-desk | A ticket was moved to another queue and got a new reference; the old one stays as an alias. Payload: ticketId, fromQueueId, toQueueId, oldReference, newReference. |
 | `TicketResolved` | 1 | service-desk | A ticket was resolved. Payload: ticketId, reporterId, affectedUserId. |
 | `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |

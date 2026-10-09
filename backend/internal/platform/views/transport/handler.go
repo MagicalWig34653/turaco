@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
@@ -31,6 +32,7 @@ func Register(mux *http.ServeMux, svc *views.Service, auth authorization.Authent
 	authed := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(authed(fn))) }
 	route("GET /api/v1/views", h.list)
+	route("GET /api/v1/views/counts", h.counts)
 	route("POST /api/v1/views", h.create)
 	route("GET /api/v1/views/{id}", h.get)
 	route("PATCH /api/v1/views/{id}", h.update)
@@ -137,6 +139,10 @@ func toView(v views.ViewInfo) viewDTO {
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if q.Get("scope") == "system" {
+		h.listSystem(w, r, q.Get("resource"))
+		return
+	}
 	in := views.ListInput{Resource: q.Get("resource"), Scope: q.Get("scope"), Cursor: q.Get("cursor"), Archived: q.Get("archived") == "true"}
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
@@ -159,6 +165,71 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		Items      []viewDTO `json:"items"`
 		NextCursor string    `json:"nextCursor,omitempty"`
 	}{items, out.NextCursor})
+}
+
+type systemViewDTO struct {
+	ID       string `json:"id"`
+	Handle   string `json:"handle,omitempty"`
+	Name     string `json:"name"`
+	NameKey  string `json:"nameKey,omitempty"`
+	Ref      string `json:"ref,omitempty"`
+	Resource string `json:"resource"`
+	Group    string `json:"groupKey"`
+	Position int    `json:"position"`
+	System   bool   `json:"system"`
+}
+
+// listSystem returns the built-in Views the caller has (GET /views?scope=system). Run one with
+// GET /views/{id}/results using its id.
+func (h *handler) listSystem(w http.ResponseWriter, r *http.Request, resource string) {
+	list, err := h.svc.SystemViews(r.Context(), caller(w, r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	items := make([]systemViewDTO, 0, len(list))
+	for _, sv := range list {
+		if resource == "" || sv.Resource == resource {
+			items = append(items, systemViewDTO{ID: sv.Key, Handle: sv.Handle, Name: sv.Name, NameKey: sv.NameKey, Ref: sv.Ref, Resource: sv.Resource,
+				Group: sv.Group, Position: sv.Position, System: true})
+		}
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []systemViewDTO `json:"items"`
+	}{items})
+}
+
+type countDTO struct {
+	ID     string `json:"id"`
+	Count  *int   `json:"count,omitempty"`
+	Capped bool   `json:"capped,omitempty"`
+	Status string `json:"status"`
+}
+
+// counts returns the capped counts of up to 30 Views and System Views (ids or queue:<id> handles).
+func (h *handler) counts(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("ids")
+	var ids []string
+	if raw != "" {
+		ids = strings.Split(raw, ",")
+	}
+	list, err := h.svc.Counts(r.Context(), caller(w, r), ids)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	items := make([]countDTO, 0, len(list))
+	for _, c := range list {
+		d := countDTO{ID: c.ID, Status: c.Status}
+		if c.Status == views.CountOK {
+			n := c.Count
+			d.Count, d.Capped = &n, c.Capped
+		}
+		items = append(items, d)
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []countDTO `json:"items"`
+	}{items})
 }
 
 type createBody struct {
@@ -271,6 +342,7 @@ type resultsDTO struct {
 	View struct {
 		ID       string `json:"id"`
 		Name     string `json:"name"`
+		NameKey  string `json:"nameKey,omitempty"`
 		Resource string `json:"resource"`
 		Version  int    `json:"version"`
 	} `json:"view"`
@@ -306,7 +378,7 @@ func (h *handler) results(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var dto resultsDTO
-	dto.View.ID, dto.View.Name, dto.View.Resource, dto.View.Version = out.View.ID, out.View.Name, out.View.Resource, out.View.Version
+	dto.View.ID, dto.View.Name, dto.View.NameKey, dto.View.Resource, dto.View.Version = out.View.ID, out.View.Name, out.View.NameKey, out.View.Resource, out.View.Version
 	dto.Items, dto.NextCursor, dto.Count, dto.CountCapped = out.Items, out.NextCursor, out.Count, out.CountCapped
 	dto.Warnings = out.Warnings
 	if dto.Warnings == nil {
@@ -383,17 +455,23 @@ func (h *handler) deleteRule(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------- the user's pins and sidebar
 
 type pinDTO struct {
-	ViewID   string `json:"viewId"`
-	Name     string `json:"name"`
-	Resource string `json:"resource"`
-	GroupKey string `json:"groupKey"`
-	Position int    `json:"position"`
-	Hidden   bool   `json:"hidden"`
-	Source   string `json:"source"`
+	ViewID      string `json:"viewId"`
+	Name        string `json:"name"`
+	NameKey     string `json:"nameKey,omitempty"`
+	Ref         string `json:"ref,omitempty"`
+	Resource    string `json:"resource"`
+	GroupKey    string `json:"groupKey"`
+	Position    int    `json:"position"`
+	Hidden      bool   `json:"hidden"`
+	Source      string `json:"source"`
+	Count       *int   `json:"count,omitempty"`
+	CountCapped bool   `json:"countCapped,omitempty"`
+	CountStatus string `json:"countStatus,omitempty"`
 }
 
 func toPin(p views.PinEntry) pinDTO {
-	return pinDTO{ViewID: p.ViewID, Name: p.Name, Resource: p.Resource, GroupKey: p.GroupKey, Position: p.Position, Hidden: p.Hidden, Source: p.Source}
+	return pinDTO{ViewID: p.ViewID, Name: p.Name, NameKey: p.NameKey, Ref: p.Ref, Resource: p.Resource, GroupKey: p.GroupKey, Position: p.Position,
+		Hidden: p.Hidden, Source: p.Source, Count: p.Count, CountCapped: p.CountCapped, CountStatus: p.CountStatus}
 }
 
 func (h *handler) pins(w http.ResponseWriter, r *http.Request) {

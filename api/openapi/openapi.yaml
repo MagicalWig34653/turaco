@@ -3357,7 +3357,7 @@ paths:
     get:
       operationId: listTickets
       summary: List tickets.
-      description: "Any signed-in user. `scope` defaults to the caller's own tickets (reported or affected); `scope=all` needs `tickets.view`. Newest first."
+      description: "Any signed-in user. `scope` defaults to the caller's own tickets (reported or affected); `scope=all` needs `tickets.view`, `tickets.manage` or a view grant in at least one Queue (then the caller's own tickets plus those of the Queues they view). Newest first."
       security:
         - sessionAuth: []
       parameters:
@@ -3381,6 +3381,11 @@ paths:
           schema: {type: string, format: uuid}
         - name: queueId
           in: query
+          description: The routing Team (the former queue Team hint), not the Ticket Queue. Staff only; ignored for people who view no Queue.
+          schema: {type: string, format: uuid}
+        - name: queue
+          in: query
+          description: Restrict to one Ticket Queue the caller views (query-engine response shape). A Queue the caller does not view answers like an empty one.
           schema: {type: string, format: uuid}
       responses:
         '200':
@@ -3403,7 +3408,7 @@ paths:
     post:
       operationId: createTicket
       summary: Raise a ticket.
-      description: "Any signed-in user, with only a title required. A device must be one the affected user holds. `affectedUserId`, `priority` and `queueTeamId` need `tickets.manage` (403 otherwise). Audited; emits TicketCreated."
+      description: "Any signed-in user, with only a title required. A device must be one the affected user holds. `affectedUserId`, `priority` and `queueTeamId` need work access in the chosen Queue (`tickets.manage` or a work grant; 403 otherwise). The number comes from the Queue counter. Audited; emits TicketCreated."
       security:
         - sessionAuth: []
       requestBody:
@@ -3512,11 +3517,367 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /views/counts:
+    get:
+      operationId: getViewCounts
+      summary: Capped counts of Views and System Views.
+      description: >-
+        Up to 30 comma separated ids: Saved View ids, System View keys (`system:tickets:unassigned`) or `queue:<queue id>` handles. Counts run through the same compiler and scope as the results
+        (the caller's own), are capped at 1000 and System View counts are cached for 15 seconds per principal, permissions and Queue scope. An id the caller does not have is left out of the answer,
+        so existence is not revealed. A count that cannot be computed (rate limit, timeout) is returned with status unavailable and no number, never as zero.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: ids, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, status]
+                      properties:
+                        id: {type: string}
+                        count: {type: integer, minimum: 0}
+                        capped: {type: boolean}
+                        status: {type: string, enum: [ok, unavailable]}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /my-work/items:
+    get:
+      operationId: listMyWorkItems
+      summary: The merged My Work feed (tasks and tickets).
+      description: >-
+        Items of the sources that contribute work for the caller, in the shared order (due date with none last, priority rank with waiting tickets after active ones, id), merged with a composite keyset
+        cursor. Sources: `tickets` (open tickets assigned to the caller), `tasks` (unfinished tasks assigned to the caller or their Teams; needs a tasks permission) and `team_tickets` (unassigned open
+        tickets routed to one of the caller's Teams). Every source authorizes every item for the caller and is skipped while its module is switched off. A failing source is listed in `unavailable`; its
+        position stays in the cursor so the next page retries it.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: sources, in: query, schema: {type: string}, description: "Comma separated source keys; default all."}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, unavailable]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/WorkItem'}}
+                  nextCursor: {type: string}
+                  unavailable: {type: array, items: {type: string}}
+        '400': {description: "Invalid input (mywork.invalid_request, mywork.invalid_cursor).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /my-work/counts:
+    get:
+      operationId: getMyWorkCounts
+      summary: Capped counts per My Work source.
+      description: "Same sources and authorization as the items. Counts are capped at 1000; a source that fails is returned with status unavailable and no number, never as zero. Sources of disabled modules are left out."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: sources, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [source, status]
+                      properties:
+                        source: {type: string}
+                        count: {type: integer, minimum: 0}
+                        capped: {type: boolean}
+                        status: {type: string, enum: [ok, unavailable]}
+        '400': {description: "Invalid input (mywork.invalid_request).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /service-desk/queues:
+    get:
+      operationId: listTicketQueues
+      summary: List the Ticket Queues the caller may know.
+      description: >-
+        Without `for`: the active Queues the caller can view (global tickets.view and tickets.manage view every Queue); with `servicedesk.queues.manage` also archived ones. With `for=create`: the Queues a
+        Ticket can be raised into by the caller: public Queues and Queues with a grant, offered to employees only when the routing mode is employee_choice or both; people who view a Queue also see
+        automatically routed ones. Routing internals are returned only to people who work the Queue. The number counter is never returned.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: for, in: query, schema: {type: string, enum: [create]}}
+      responses:
+        '200':
+          description: The Queues, the intake Queue first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/TicketQueue'}}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      operationId: createTicketQueue
+      summary: Create a Ticket Queue.
+      description: "Needs `servicedesk.queues.manage`. Key and prefix are permanent and unique among current and former Queues (the legacy prefix TKT stays reserved). The counter starts at 1. Audited as servicedesk.queue.created."
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key, prefix, name]
+              properties:
+                key: {type: string, pattern: "^[a-z][a-z0-9-]{1,30}$"}
+                prefix: {type: string, pattern: "^[A-Z][A-Z0-9]{1,7}$"}
+                name: {type: string, maxLength: 80}
+                description: {type: string, maxLength: 500}
+                publicLabel: {type: string, maxLength: 80}
+                visibility: {type: string, enum: [internal, public], default: internal}
+                routingMode: {type: string, enum: [employee_choice, automatic, both], default: employee_choice}
+                defaultPriority: {type: string, enum: [low, normal, high, urgent], default: normal}
+                defaultTeamId: {type: string, format: uuid}
+                numberPadding: {type: integer, minimum: 1, maximum: 9, default: 4}
+      responses:
+        '201':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {description: "servicedesk.queue_key_taken or servicedesk.queue_prefix_taken.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /service-desk/queues/{id}:
+    get:
+      operationId: getTicketQueue
+      summary: Get a Ticket Queue.
+      description: "A Queue the caller may not know is 404 servicedesk.queue_not_found, the same answer as for an unknown id. Grants are included for `servicedesk.queues.manage`."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      responses:
+        '200':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    patch:
+      operationId: updateTicketQueue
+      summary: Change a Ticket Queue.
+      description: "Needs `servicedesk.queues.manage`. `expectedVersion` is required (409 tickets.version_conflict). Key, prefix and padding cannot change. The intake Queue must stay public. Audited as servicedesk.queue.updated (changed property names only)."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                name: {type: string, maxLength: 80}
+                description: {type: string, maxLength: 500}
+                publicLabel: {type: string, maxLength: 80}
+                visibility: {type: string, enum: [internal, public]}
+                routingMode: {type: string, enum: [employee_choice, automatic, both]}
+                defaultPriority: {type: string, enum: [low, normal, high, urgent]}
+                defaultTeamId: {type: string, description: "A Team id; an empty string clears it."}
+      responses:
+        '200':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+  /service-desk/queues/{id}/archive:
+    post:
+      operationId: archiveTicketQueue
+      summary: Archive a Ticket Queue.
+      description: "Needs `servicedesk.queues.manage` and `expectedVersion`. Refused while open tickets exist (409 servicedesk.queue_has_open_tickets; move them first) and for the intake Queue (409 servicedesk.queue_is_default). The prefix stays reserved. Audited as servicedesk.queue.archived."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody: {$ref: '#/components/requestBodies/TicketQueueVersion'}
+      responses:
+        '200':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+  /service-desk/queues/{id}/restore:
+    post:
+      operationId: restoreTicketQueue
+      summary: Restore an archived Ticket Queue.
+      description: "Needs `servicedesk.queues.manage` and `expectedVersion`. The counter continues; no number is reused. Audited as servicedesk.queue.restored."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody: {$ref: '#/components/requestBodies/TicketQueueVersion'}
+      responses:
+        '200':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+  /service-desk/queues/{id}/make-default:
+    post:
+      operationId: makeTicketQueueDefault
+      summary: Make a Ticket Queue the intake Queue.
+      description: "Needs `servicedesk.queues.manage` and `expectedVersion`. The Queue must be active and public; the previous intake Queue is demoted. Audited as servicedesk.queue.made_default."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody: {$ref: '#/components/requestBodies/TicketQueueVersion'}
+      responses:
+        '200':
+          description: The Queue.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+  /service-desk/queues/{id}/grants:
+    put:
+      operationId: replaceTicketQueueGrants
+      summary: Replace the grants of a Ticket Queue.
+      description: "Needs `servicedesk.queues.manage` and `expectedVersion`. Full replace of at most 200 grants of Users, Teams and roles at create, view, work or manage (view, work and manage are cumulative; create is independent). Users and Teams must be active. Access follows at once. Audited as servicedesk.queue.grants_replaced (counts only)."
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, grants]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                grants:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [subjectType, subjectId, level]
+                    properties:
+                      subjectType: {type: string, enum: [user, team, role]}
+                      subjectId: {type: string, format: uuid}
+                      level: {type: string, enum: [create, view, work, manage]}
+      responses:
+        '200':
+          description: The Queue with its grants.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketQueue'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {description: "servicedesk.queue_not_found.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+  /tickets/by-reference:
+    get:
+      operationId: findTicketByReference
+      summary: Resolve a ticket reference or an earlier number.
+      description: >-
+        The current reference or any alias of a Ticket (case-insensitive) resolves to the Ticket id and the current reference as the caller may know it. The lookup applies the Ticket's current visibility:
+        an unknown reference, a malformed one and a Ticket the caller may not see all answer the same 404 tickets.not_found.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: reference, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The Ticket.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ticketId, reference, alias]
+                properties:
+                  ticketId: {type: string, format: uuid}
+                  reference: {type: string}
+                  alias: {type: boolean, description: "True when the looked-up reference was an earlier number."}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+  /tickets/{id}/move-queue:
+    post:
+      operationId: moveTicketToQueue
+      summary: Move a ticket to another Queue.
+      description: >-
+        Explicit operation, not a status update. Needs work access in the source Queue (`tickets.manage` or a work grant) and create access in the target (or `servicedesk.queues.manage`); the Ticket and
+        both Queues are authorized in one transaction with the Queue rows locked in id order. `expectedVersion` is required. The Ticket gets the next number of the target Queue and keeps the old one as an
+        alias; status, comments and external references stay. An assignee who cannot view the target is cleared (in progress becomes open); the routing Team becomes the target's default Team. Resolved,
+        closed and cancelled tickets cannot be moved. Audited as servicedesk.ticket.queue_moved; emits TicketQueueChanged.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion, targetQueueId, reasonCode]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                targetQueueId: {type: string, format: uuid}
+                reasonCode: {type: string, enum: [misrouted, different_skill, reorganization, other]}
+      responses:
+        '200':
+          description: The ticket with its new reference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ticket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {description: "platform.forbidden, or servicedesk.queue_not_permitted (the same answer for an unknown and a forbidden target).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {description: "tickets.version_conflict, tickets.invalid_transition, servicedesk.queue_same or servicedesk.queue_archived.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
   /tickets/{id}/assign:
     post:
       operationId: assignTicket
       summary: Assign a ticket.
-      description: "Needs `tickets.manage`. Sets assignee and/or queue team (empty string clears). A new ticket with an assignee becomes `open`. Emits TicketAssigned."
+      description: "Needs work access in the ticket's Queue (`tickets.manage` or a work grant). Sets assignee and/or routing Team (empty string clears). The assignee must be able to view the Queue (400 servicedesk.assignee_no_queue_access). A new ticket with an assignee becomes `open`. Emits TicketAssigned."
       security:
         - sessionAuth: []
       parameters:
@@ -5898,11 +6259,12 @@ paths:
       description: >-
         Scope all (default) is the caller's own Views plus those shared with them (user, Team, role or everyone, resolved now); mine, shared; admin (requires `views.admin`)
         lists every View including those of deactivated owners. Archived Views appear only with scope mine or admin and archived=true. Views of resources the caller may not read are never listed.
-        Keyset pagination, newest first.
+        Keyset pagination, newest first. Scope system returns the built-in System Views the caller has (id, nameKey or name, resource, group; for Tickets: My open tickets, Unassigned and one per Queue
+        the caller views) instead of the paged list; run one with GET /views/{id}/results using its id.
       security: [{sessionAuth: []}]
       parameters:
         - {name: resource, in: query, schema: {type: string, enum: [tickets, devices, tasks]}}
-        - {name: scope, in: query, schema: {type: string, enum: [all, mine, shared, admin], default: all}}
+        - {name: scope, in: query, schema: {type: string, enum: [all, mine, shared, admin, system], default: all}}
         - {name: archived, in: query, schema: {type: boolean}}
         - {$ref: '#/components/parameters/Cursor'}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
@@ -6072,6 +6434,7 @@ paths:
       operationId: runView
       summary: Run a Saved View as the caller.
       description: >-
+        The id may also be a System View key (`system:tickets:unassigned`, see GET /views?scope=system); it runs the same way and is never anyone else's data.
         Every execution re-checks, in order: the caller may see the View (as for GET), the caller may read the resource, the owning module is on (else 404 views.module_disabled), then runs the stored
         definition through the module's own query endpoint, which applies the caller's own permission, row scope and field redaction. A condition on a field, operator or enum value the caller may not use
         evaluates to no rows (inside AND the whole group; inside OR only that branch) and is reported in warnings as query.field_unavailable; it is never dropped. After the query the share and the definition
@@ -6229,7 +6592,7 @@ paths:
       summary: The caller's pinned Views grouped for the sidebar.
       description: >-
         Visible (not hidden) pins and applicable Pin Rules, grouped by group key, plus the collapsed groups. Views the caller no longer may use (revoked share, archived, deactivated owner, unreadable resource)
-        and Views of a module that is switched off (ADR-0032) are omitted. Counts arrive with the Queue slice and are not part of this response.
+        and Views of a module that is switched off (ADR-0032) are omitted. System Views (source system) come first within their group. The first 20 entries carry a capped `count`, or `countStatus: unavailable` when it could not be computed.
       security: [{sessionAuth: []}]
       responses:
         '200':
@@ -12046,6 +12409,16 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   requestBodies:
+    TicketQueueVersion:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expectedVersion]
+            properties:
+              expectedVersion: {type: integer, minimum: 1}
     ViewVersion:
       required: true
       content:
@@ -12771,7 +13144,28 @@ components:
         groupKey: {type: string}
         position: {type: integer}
         hidden: {type: boolean}
-        source: {type: string, enum: [user, rule]}
+        source: {type: string, enum: [user, rule, system], description: "system: a built-in System View; viewId is then its key (`system:tickets:queue:<id>`) and is run with GET /views/{id}/results."}
+        nameKey: {type: string, description: "i18n key of a System View's name (name is empty then)."}
+        ref: {type: string, format: uuid, description: "The Queue id of a Queue entry."}
+        count: {type: integer, minimum: 0, description: "Capped at 1000 (see countCapped). Absent when not requested or unavailable."}
+        countCapped: {type: boolean}
+        countStatus: {type: string, enum: [ok, unavailable], description: "unavailable is never zero: the count could not be computed."}
+    WorkItem:
+      type: object
+      additionalProperties: false
+      required: [id, source, kind, title, status, priority, dueAt, updatedAt, href]
+      properties:
+        id: {type: string}
+        source: {type: string, enum: [tickets, tasks, team_tickets]}
+        kind: {type: string, enum: [task, ticket]}
+        title: {type: string}
+        reference: {type: string}
+        status: {type: string}
+        waitingReason: {type: string}
+        priority: {type: string}
+        dueAt: {type: [string, "null"], format: date-time}
+        updatedAt: {type: string, format: date-time}
+        href: {type: string, description: "In-app path that opens the item."}
     Initiative:
       type: object
       required: [id, reference, title, ownerId, status, version, createdAt, updatedAt]
@@ -14929,7 +15323,11 @@ components:
         priority: {type: string, enum: [low, normal, high, urgent]}
         reporterId: {type: string, format: uuid}
         affectedUserId: {type: string, format: uuid}
-        queueTeamId: {type: [string, "null"], format: uuid, description: "Only returned to people with tickets.view."}
+        queueTeamId: {type: [string, "null"], format: uuid, description: "The routing Team (a hint inside the desk). Only returned to people who can view the Ticket's Queue."}
+        queueId: {type: string, format: uuid, description: "The Ticket's Queue. Present only when the caller may know the Queue (views it, holds a grant in it, or it is public)."}
+        queue: {oneOf: [{$ref: '#/components/schemas/TicketQueueRef'}, {type: "null"}], description: "Same disclosure rule as queueId."}
+        queueLabel: {type: string, description: "Neutral desk label, present instead of queue when the caller may not know the Queue. `reference` is then the newest number issued from a Queue the caller may know."}
+        aliases: {type: array, items: {type: string}, description: "Earlier references of the Ticket (it moved Queues), newest first; only on the detail response and only numbers from Queues the caller may know."}
         assigneeId: {type: [string, "null"], format: uuid}
         assetId: {type: [string, "null"], format: uuid}
         majorIncidentId: {type: [string, "null"], format: uuid}
@@ -14939,6 +15337,48 @@ components:
         version: {type: integer, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    TicketQueueRef:
+      type: object
+      additionalProperties: false
+      required: [id, key, prefix, name]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        prefix: {type: string}
+        name: {type: string}
+    TicketQueue:
+      type: object
+      additionalProperties: false
+      required: [id, key, prefix, name, description, status, visibility, isDefault, version, level, canCreate]
+      description: A Ticket Queue (desk). The number counter is never part of it.
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string, description: "Stable, frozen. Other modules route Tickets with it."}
+        prefix: {type: string, description: "Part of every issued number, frozen, never reused."}
+        name: {type: string}
+        description: {type: string}
+        publicLabel: {type: string}
+        status: {type: string, enum: [active, archived]}
+        visibility: {type: string, enum: [internal, public]}
+        routingMode: {type: string, enum: [employee_choice, automatic, both], description: "Only for people who work the Queue or hold servicedesk.queues.manage."}
+        defaultPriority: {type: string, enum: [low, normal, high, urgent], description: "Same visibility as routingMode."}
+        defaultTeamId: {type: string, format: uuid, description: "Routing hint, not access. Same visibility as routingMode."}
+        isDefault: {type: boolean, description: "The intake Queue Tickets go into when none is chosen."}
+        version: {type: integer, minimum: 1}
+        level: {type: string, enum: ["", create, view, work, manage], description: "The caller's effective level, including the global tickets.view (view) and tickets.manage (work)."}
+        canCreate: {type: boolean}
+        grants: {type: array, items: {$ref: '#/components/schemas/TicketQueueGrant'}, description: "Only for servicedesk.queues.manage."}
+        archivedAt: {type: string, format: date-time}
+    TicketQueueGrant:
+      type: object
+      additionalProperties: false
+      required: [subjectType, subjectId, level]
+      properties:
+        subjectType: {type: string, enum: [user, team, role]}
+        subjectId: {type: string, format: uuid}
+        level: {type: string, enum: [create, view, work, manage]}
+        grantedBy: {type: string, format: uuid}
+        grantedAt: {type: string, format: date-time}
     TicketList:
       type: object
       additionalProperties: false
@@ -14984,6 +15424,8 @@ components:
         affectedUserId: {type: string, format: uuid}
         priority: {type: string, enum: [low, normal, high, urgent]}
         queueTeamId: {type: string, format: uuid}
+        queueId: {type: string, format: uuid, description: "The Ticket Queue; the caller needs the create level in it (403 servicedesk.queue_not_permitted for an unknown and a forbidden Queue alike). Default: the intake Queue."}
+        queueKey: {type: string, description: "Alternative to queueId: the stable key of the Queue."}
     TicketCommentCreate:
       type: object
       additionalProperties: false

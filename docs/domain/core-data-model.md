@@ -66,6 +66,8 @@ Dedicated Products module is recommended because Catalog, Inventory, Procurement
 
 **Ticket** holds reference/title/description/reporter/affected user/state/priority/team/assignee/service/timestamps. **Incident** adds disruption semantics and optional affected Device. **MajorIncident** groups widespread impact. **Problem** tracks root/recurring causes and known-error state/data.
 
+*Implemented in F13 Q-C (migration 000061, schema `servicedesk`):* **Queue** (`queues`: `key` and `prefix` frozen by trigger, unique and never reused; `name`, `public_label`, `visibility internal|public`, `routing_mode`, `default_priority`, `default_team_id` as a routing hint, `default_for_intake` with a partial unique index, `next_number` and `number_padding` as the committed counter, `version`, `status active|archived`). **QueueGrant** (`queue_grants`: User, Team or role at `create|view|work|manage`). Every Ticket has `queue_id` (not null) and `number`, unique per Queue; `reference` stays the display number. **ReferenceRegistry** (`reference_registry`: primary key `reference`, `ticket_id`, issuing `queue_id`, `kind current|alias`) holds every number ever issued to a Ticket. `servicedesk.issue_reference(queue)` takes the Queue row lock and increments the counter; triggers issue the number on insert, register it, keep Queue, number and reference changing together only through a move, and turn the previous reference into an alias. The legacy default Queue `it` has prefix `TKT` and six digits so no existing reference changed; the old sequence `ticket_number_seq` is no longer used.
+
 A **DeviceContextSnapshot** may capture technical context at ticket creation so history remains meaningful after the endpoint changes.
 
 ## Tasks/services/knowledge/change/planning

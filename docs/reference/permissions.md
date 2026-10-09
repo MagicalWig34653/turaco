@@ -68,6 +68,7 @@
 | `security.accept_risk` | elevated | Accept vulnerability finding risk with a reason code and review date. |
 | `security.manage` | elevated | Create, import, analyze and manage security advisories and vulnerability findings, excluding risk acceptance. |
 | `security.view` | normal | View security advisories and vulnerability findings. Device names additionally require endpoints.view. |
+| `servicedesk.queues.manage` | elevated | Create, rename, archive and restore Ticket Queues, set their visibility, routing and defaults, and replace their grants. Also allows moving a Ticket into a Queue the actor holds no grant in. Queue-level access (create, view, work, manage) is data held in Queue grants, not a permission; tickets.view and tickets.manage keep acting as global view and work grants in every Queue. |
 | `services.manage` | elevated | Create and change Services, change their status, retire them, and add or remove their dependencies on Services, Virtual Machines, Assets and Locations. |
 | `services.view` | normal | View IT Services (owner, support team, criticality, status), their dependencies and dependents, and the impact view; Virtual Machine and Location names in them also need infrastructure.view, Asset references assets.view. |
 | `software.approve` | elevated | Approve, reject and revoke Software Version approvals (never for a version the same person registered or requested) and change a Software Product's approval status (approve, deprecate, retire, block, unblock). Includes software.view. |

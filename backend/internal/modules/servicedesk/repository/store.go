@@ -24,12 +24,12 @@ func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const columns = `id::text, reference, kind, title, description, status, waiting_reason, status_reason, resolution, priority,
 	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, major_incident_id::text, device_snapshot,
-	resolved_at, closed_at, version, created_at, updated_at`
+	resolved_at, closed_at, version, created_at, updated_at, queue_id::text, number`
 
 // queryColumns is columns qualified with the query alias.
 const queryColumns = `t.id::text, t.reference, t.kind, t.title, t.description, t.status, t.waiting_reason, t.status_reason, t.resolution, t.priority,
 	t.reporter_user_id::text, t.affected_user_id::text, t.queue_team_id::text, t.assignee_user_id::text, t.asset_id::text, t.major_incident_id::text, t.device_snapshot,
-	t.resolved_at, t.closed_at, t.version, t.created_at, t.updated_at`
+	t.resolved_at, t.closed_at, t.version, t.created_at, t.updated_at, t.queue_id::text, t.number`
 
 func scan(row pgx.Row) (application.Ticket, error) { return scanWith(row) }
 
@@ -38,7 +38,7 @@ func scanWith(row pgx.Row, extra ...any) (application.Ticket, error) {
 	var t application.Ticket
 	var snap []byte
 	dest := append([]any{&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
-		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
+		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt, &t.QueueID, &t.Number}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
 		return t, err
@@ -65,10 +65,13 @@ func (r *Repository) InsertTx(ctx context.Context, tx pgx.Tx, t application.Tick
 		snap = b
 	}
 	out, err := scan(tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.tickets (kind, title, description, status, priority, reporter_user_id, affected_user_id, queue_team_id, asset_id, device_snapshot)
-		VALUES ($1, $2, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9::uuid, $10::jsonb) RETURNING `+columns,
-		t.Kind, t.Title, t.Description, t.Status, t.Priority, t.ReporterID, t.AffectedUserID, t.QueueTeamID, t.AssetID, snap))
+		INSERT INTO servicedesk.tickets (kind, title, description, status, priority, reporter_user_id, affected_user_id, queue_team_id, asset_id, device_snapshot, queue_id)
+		VALUES ($1, $2, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9::uuid, $10::jsonb, $11::uuid) RETURNING `+columns,
+		t.Kind, t.Title, t.Description, t.Status, t.Priority, t.ReporterID, t.AffectedUserID, t.QueueTeamID, t.AssetID, snap, nilIfEmpty(t.QueueID)))
 	if err != nil {
+		if mapped := mapQueueError(err); mapped != nil {
+			return application.Ticket{}, mapped
+		}
 		return application.Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
 	return out, nil
@@ -127,7 +130,20 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		if !validUUID(f.UserID) {
 			return empty, nil
 		}
-		add("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid)", f.UserID)
+		if len(f.QueueIDs) > 0 {
+			// Own Tickets plus the Tickets of the Queues the caller views.
+			args = append(args, f.UserID, f.QueueIDs)
+			conds = append(conds, fmt.Sprintf("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid OR queue_id = ANY($%[2]d::text[]::uuid[]))", len(args)-1, len(args)))
+		} else {
+			add("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid)", f.UserID)
+		}
+	}
+	if f.Narrow {
+		ids := f.NarrowQueueIDs
+		if ids == nil {
+			ids = []string{}
+		}
+		add("queue_id = ANY($%d::text[]::uuid[])", ids)
 	}
 	if f.Status != "" {
 		add("status = $%d", f.Status)
@@ -222,6 +238,13 @@ func (r *Repository) Comments(ctx context.Context, ticketID string, includeInter
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func validUUID(s string) bool {

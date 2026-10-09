@@ -63,11 +63,20 @@ type Ticket struct {
 	AssetID         *string
 	MajorIncidentID *string
 	DeviceSnapshot  map[string]any
-	ResolvedAt      *time.Time
-	ClosedAt        *time.Time
-	Version         int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// QueueID and Number identify the Ticket's Queue and its number in it. They are set by the store; the API
+	// returns them only after the per-row disclosure check (see shape).
+	QueueID string
+	Number  int64
+	// Queue is set when the caller may know which Queue the Ticket is in; QueueLabel is the neutral desk label
+	// otherwise. Aliases are the earlier references of the Ticket the caller may know (detail only).
+	Queue      *QueueRef
+	QueueLabel string
+	Aliases    []string
+	ResolvedAt *time.Time
+	ClosedAt   *time.Time
+	Version    int
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // Comment is a note on a ticket.
@@ -87,6 +96,8 @@ type Principal struct {
 	UserID string
 	View   bool
 	Manage bool
+	// QueuesManage (servicedesk.queues.manage) administers Queues and may move Tickets into any Queue.
+	QueuesManage bool
 }
 
 func (p Principal) staff() bool { return p.View || p.Manage }
@@ -118,6 +129,18 @@ var (
 	ErrAlreadyLinked = errors.New("servicedesk: ticket already linked")
 	ErrCommentLimit  = errors.New("servicedesk: this ticket has reached the comment limit")
 	ErrDeviceInvalid = errors.New("servicedesk: the device does not exist or is not assigned to the affected user")
+
+	// Queue errors. ErrQueueNotPermitted answers both an unknown and a forbidden Queue, so a caller cannot probe
+	// which Queues exist.
+	ErrQueueNotFound       = errors.New("servicedesk: queue not found")
+	ErrQueueNotPermitted   = errors.New("servicedesk: queue not permitted")
+	ErrQueueArchived       = errors.New("servicedesk: queue is archived")
+	ErrQueueKeyTaken       = errors.New("servicedesk: queue key is taken")
+	ErrQueuePrefixTaken    = errors.New("servicedesk: queue prefix is taken")
+	ErrQueueHasOpenTickets = errors.New("servicedesk: queue still has open tickets")
+	ErrQueueIsDefault      = errors.New("servicedesk: the intake queue cannot be archived")
+	ErrQueueSame           = errors.New("servicedesk: the ticket is already in this queue")
+	ErrAssigneeNoAccess    = errors.New("servicedesk: the assignee cannot view tickets of the queue")
 )
 
 // InvalidTransitionError reports an operation the ticket's status does not allow.
@@ -170,7 +193,12 @@ type Filter struct {
 	QueueID    string
 	// OpenOnly hides resolved, closed and cancelled tickets.
 	OpenOnly bool
-	Page     Page
+	// QueueIDs, together with UserID, widens "mine" to the Tickets of these Queues (a caller who views some Queues).
+	QueueIDs []string
+	// Narrow restricts the result to the Queues in NarrowQueueIDs (ANDed; an empty list matches nothing).
+	Narrow         bool
+	NarrowQueueIDs []string
+	Page           Page
 }
 
 // Store is the persistence port. Mutating methods run in the caller's

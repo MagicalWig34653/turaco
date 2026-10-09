@@ -78,3 +78,38 @@ func (e *Evaluator) Permissions(ctx context.Context, userID string) (map[string]
 	}
 	return out, nil
 }
+
+// RoleIDs returns the ids of the active roles that apply to the User (assigned to the User or to one of the User's
+// Directory Groups). Modules use them to resolve grants that name a role.
+func (e *Evaluator) RoleIDs(ctx context.Context, userID string) ([]string, error) {
+	if !uuidPattern.MatchString(userID) {
+		return []string{}, nil
+	}
+	groupIDs, err := e.groups.GroupIDsOfUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve groups: %w", err)
+	}
+	if groupIDs == nil {
+		groupIDs = []string{}
+	}
+	rows, err := e.pool.Query(ctx, `
+		SELECT DISTINCT a.role_id::text
+		FROM platform.role_assignments a
+		JOIN platform.roles r ON r.id = a.role_id AND r.deleted_at IS NULL
+		WHERE a.revoked_at IS NULL AND a.scope = 'global' AND (
+			(a.subject_type = 'user' AND a.subject_id = $1::uuid)
+			OR (a.subject_type = 'directory_group' AND a.subject_id = ANY($2::text[]::uuid[])))`, userID, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load role ids: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("load role ids: scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

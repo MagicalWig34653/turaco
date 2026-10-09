@@ -28,6 +28,9 @@ type Service struct {
 	gate   ModuleGate
 	res    resourceSet
 	now    func() time.Time
+
+	providers []SystemProvider
+	counts    *countCache
 }
 
 // NewService builds the service over the registered resources.
@@ -36,7 +39,7 @@ func NewService(pool *pgxpool.Pool, dir Directory, runner Runner, gate ModuleGat
 	if err != nil {
 		return nil, err
 	}
-	return &Service{pool: pool, dir: dir, runner: runner, gate: gate, res: rs, now: time.Now}, nil
+	return &Service{pool: pool, dir: dir, runner: runner, gate: gate, res: rs, now: time.Now, counts: newCountCache()}, nil
 }
 
 func (c Caller) corr() string {
@@ -957,6 +960,7 @@ type ResultsOutput struct {
 type Reference struct {
 	ID       string
 	Name     string
+	NameKey  string
 	Resource string
 	Version  int
 }
@@ -968,6 +972,9 @@ type Reference struct {
 // reported as warnings. After the query the access and definition version are read again: a share that was revoked
 // or a definition that changed while the query ran discards the result instead of returning it.
 func (s *Service) Results(ctx context.Context, c Caller, id string, in ResultsInput) (ResultsOutput, error) {
+	if IsSystemKey(id) {
+		return s.resultsSystem(ctx, c, id, in)
+	}
 	v, acc, vw, err := s.loadAccessible(ctx, c, id)
 	if err != nil {
 		return ResultsOutput{}, err

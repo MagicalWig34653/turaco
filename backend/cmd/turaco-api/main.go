@@ -73,6 +73,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
 	viewstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/views/transport"
+	workitemstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/workitems/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
@@ -236,6 +237,13 @@ func main() {
 		os.Exit(1)
 	}
 	viewstransport.Register(mux, viewsSvc, sessionAuth, logger)
+	// My Work: the merged feed and counts of the modules' work item sources (Tasks and Tickets first).
+	workSvc, err := wiring.WorkItems(tasksSvc, wiring.ServiceDesk(pool), moduleSvc)
+	if err != nil {
+		logger.Error("configure my work", "error", err)
+		os.Exit(1)
+	}
+	workitemstransport.Register(mux, workSvc, sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,

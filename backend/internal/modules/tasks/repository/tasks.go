@@ -367,32 +367,30 @@ const (
 	rankKey = `(CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END)`
 )
 
-type cursor struct {
-	Due  string `json:"d"`
-	Rank int    `json:"p"`
-	ID   string `json:"i"`
+type cursor = application.ListCursor
+
+var _ application.CountStore = (*Repository)(nil)
+
+// CountMine implements application.CountStore.
+func (r *Repository) CountMine(ctx context.Context, statuses []string, m application.Mine, limit int) (int, error) {
+	if !validUUID(m.UserID) {
+		return 0, nil
+	}
+	teams := m.TeamIDs
+	if teams == nil {
+		teams = []string{}
+	}
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM (SELECT 1 FROM platform.tasks
+		WHERE status = ANY($1::text[]) AND (assigned_user_id = $2::uuid OR assigned_team_id = ANY($3::text[]::uuid[])) LIMIT $4) c`,
+		statuses, m.UserID, teams, limit+1).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count tasks: %w", err)
+	}
+	return n, nil
 }
 
-func encodeCursor(t application.Task) string {
-	c := cursor{Due: "infinity", ID: t.ID, Rank: rank(t.Priority)}
-	if t.DueAt != nil {
-		c.Due = t.DueAt.UTC().Format(time.RFC3339Nano)
-	}
-	raw, _ := json.Marshal(c)
-	return base64.RawURLEncoding.EncodeToString(raw)
-}
-
-func rank(priority string) int {
-	switch priority {
-	case application.PriorityUrgent:
-		return 0
-	case application.PriorityHigh:
-		return 1
-	case application.PriorityNormal:
-		return 2
-	}
-	return 3
-}
+func encodeCursor(t application.Task) string { return application.EncodeCursor(t) }
 
 func decodeCursor(s string) (cursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
