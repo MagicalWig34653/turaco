@@ -383,6 +383,263 @@ paths:
         '422': {$ref: '#/components/responses/QueryInvalid'}
         '429': {$ref: '#/components/responses/QueryInvalid'}
         '503': {$ref: '#/components/responses/QueryInvalid'}
+  /tasks/boards:
+    get:
+      operationId: listTaskBoards
+      summary: List the Task Boards the caller may use.
+      description: >-
+        Boards the caller owns or that are shared with them through the Board's Saved View (user, Team, role or everyone; Team Boards reach the Team's members through an implicit Team share).
+        Newest first, keyset by Board id. Requires `tasks.view`, `tasks.work` or `tasks.manage`. Boards the caller may not use are never listed.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        '200':
+          description: One page of Boards.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/TaskBoard'}}
+                  nextCursor: {type: string}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createTaskBoard
+      summary: Create a Task Board.
+      description: >-
+        Creates a private Saved View over tasks (name, description and filter are validated by the Views platform exactly like any View: the caller must be able to run the filter) and the Board record
+        with 2 to 8 columns (default Open, In progress, Blocked, Done). Sharing is the View's: use `PUT /views/{viewId}/shares` (levels `use` = see the Board, `edit` = also columns, filter and ranks).
+        With `teamId` the Board is Team-owned and shared with the Team's members (needs `tasks.boards.manage_team` or `tasks.manage`). At most 20 active Boards per creator and per Team. Audited as tasks.board.created; event TaskBoardCreated.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskBoardCreate'}
+      responses:
+        '201':
+          description: The created Board.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getTaskBoard
+      summary: Get a Task Board.
+      description: Owner or anyone an active Share of the Board's View applies to. Everything else (unknown, unshared, archived for non-owners, deactivated owner) answers an identical 404 tasks.board_not_found.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The Board with the caller's access.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+    patch:
+      operationId: updateTaskBoard
+      summary: Change name, description, filter or swimlane mode of a Board.
+      description: >-
+        Needs Board edit access (owner, or an `edit` share of the View). `expectedVersion` (the Board's `version`) is required; 409 tasks.board_conflict when stale. Name, description and filter are applied to the
+        Board's Saved View under its current version (a Team editor without View edit access gets 403 for these; columns and ranks need only Board edit access). `filter: null` selects every visible task.
+        Audited as tasks.board.changed (field names only).
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskBoardUpdate'}
+      responses:
+        '200':
+          description: The updated Board.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}/columns:
+    post:
+      operationId: changeTaskBoardColumns
+      summary: Apply one explicit column operation.
+      description: >-
+        Operations `add` (title, mapsTo, optional position), `rename` (columnId, title), `remap` (columnId, mapsTo), `reorder` (columnId, position), `remove` (columnId; at least 2 columns remain), `set_wip`
+        (columnId, wipLimit 1 to 999 or null) and `collapse` (columnId, collapsed). A column maps to exactly one Task status; several columns may map to the same status (display grouping). Cards and tasks are never
+        changed by column operations. Needs Board edit access; `expectedVersion` required. Audited as tasks.board.column_changed (ids and operation only).
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskBoardColumnOp'}
+      responses:
+        '200':
+          description: The updated Board.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}/cards:
+    get:
+      operationId: listTaskBoardCards
+      summary: Cards of the Board's columns.
+      description: >-
+        Without `column`: the first page of every column, each with its visible count. With `column` (and optionally `cursor`): one page of that column. A card is a task that matches the Board's filter (degraded
+        to the viewer's own field catalog; conditions the viewer cannot use evaluate to no rows with a warning), has the column's status and that the viewer may see: a task the viewer cannot see is neither card nor
+        count. Cancelled tasks appear only in a column that maps to `cancelled`. Order: ranked cards by rank, then the rest in the Task order (due date, priority). `count` is capped at 1000; `overWipLimit` reports
+        a soft WIP limit exceeded. Pages hold at most 100 cards.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: column, in: query, schema: {type: string, format: uuid}}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: Cards per column.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [columns]
+                properties:
+                  columns: {type: array, items: {$ref: '#/components/schemas/TaskBoardColumnCards'}}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '422': {$ref: '#/components/responses/QueryInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+  /tasks/boards/{id}/moves:
+    post:
+      operationId: moveTaskBoardCard
+      summary: Move a card to a column through the Task lifecycle operations.
+      description: >-
+        There is no status write: a different status runs the existing Task operation (open to in_progress or blocked to in_progress `start`, to blocked `block`, blocked to open `unblock`, to completed `complete`,
+        to cancelled `cancel`, completed or cancelled to open `reopen`) with the Task's own authorization (`tasks.manage`, or `tasks.work` on a task assigned to the caller or its Teams; cancel and reopen need
+        `tasks.manage`) and audit (tasks.task.started and so on). `expectedVersion` (the task's version) is mandatory: 400 without, 409 tasks.version_conflict when stale. `block`, `cancel` and `reopen` need `reason`.
+        A transition the state machine forbids (for example completed to in_progress) answers 409 tasks.invalid_transition. The same status only places the card. With `afterTaskId` or `top`, or when the target is not the
+        first column of its status, the card is also placed (rank), which needs Board edit access. The card must be visible to the caller and match the Board, else 404 tasks.not_found.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskBoardMove'}
+      responses:
+        '200':
+          description: The task after the move.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoardMoveResult'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}/ranks:
+    put:
+      operationId: placeTaskBoardCard
+      summary: Place a card inside a column (presentation only).
+      description: >-
+        Orders one card in a column of its own status, after `afterTaskId` or on `top`. Only Board data changes (fractional rank and column placement); the task is untouched. Needs Board edit access, re-checked under the
+        Board's rank lock, and the card and the anchor must be visible to the caller (an unseen card is 404 tasks.not_found, an anchor that is not a card of the column 409 tasks.board_anchor_invalid). Writes of one
+        Board are serialized; ranks are rebalanced automatically.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskBoardPlace'}
+      responses:
+        '200':
+          description: The rank of the card.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [taskId, columnId, rank]
+                properties:
+                  taskId: {type: string, format: uuid}
+                  columnId: {type: string, format: uuid}
+                  rank: {type: string}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}/archive:
+    post:
+      operationId: archiveTaskBoard
+      summary: Archive a Board (owner only).
+      description: Archives the Board and its Saved View (its shares stop working). `expectedVersion` required. Audited as tasks.board.archived; event TaskBoardArchived.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The archived Board.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
+  /tasks/boards/{id}/restore:
+    post:
+      operationId: restoreTaskBoard
+      summary: Restore an archived Board (owner only).
+      description: Restores the Board and its Saved View. `expectedVersion` required. Audited as tasks.board.restored.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskVersion'}
+      responses:
+        '200':
+          description: The restored Board.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskBoard'}
+        '400': {$ref: '#/components/responses/TaskBoardsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TaskBoardsNotFound'}
+        '409': {$ref: '#/components/responses/TaskBoardsConflict'}
   /tasks/{id}:
     get:
       operationId: getTask
@@ -12840,6 +13097,23 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    TaskBoardsInvalid:
+      description: Invalid input (tasks.invalid_request, tasks.invalid_limit) or a query error of the task catalog passed through unchanged (query.invalid_filter, query.too_complex, ...).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TaskBoardsNotFound:
+      description: Unknown Board, a Board without a share for the caller, archived (non-owner), owner deactivated, or a card the caller may not see (tasks.board_not_found, tasks.not_found). Unknown and invisible answer identically.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TaskBoardsConflict:
+      description: >-
+        Stale Board version (tasks.board_conflict), stale task version (tasks.version_conflict), a transition the Task state machine forbids (tasks.invalid_transition), an archived Board (tasks.board_archived),
+        a limit (tasks.board_limit_reached), an anchor that is not a card of the column (tasks.board_anchor_invalid) or a name already used (views.name_taken).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     TasksConflict:
       description: Conflict (tasks.invalid_transition, tasks.version_conflict).
       content:
@@ -13146,7 +13420,8 @@ components:
         hidden: {type: boolean}
         source: {type: string, enum: [user, rule, system], description: "system: a built-in System View; viewId is then its key (`system:tickets:queue:<id>`) and is run with GET /views/{id}/results."}
         nameKey: {type: string, description: "i18n key of a System View's name (name is empty then)."}
-        ref: {type: string, format: uuid, description: "The Queue id of a Queue entry."}
+        ref: {type: string, format: uuid, description: "The Queue id of a Queue entry, or the Board id when kind is board."}
+        kind: {type: string, enum: [board], description: "Set when the pinned View is a Task Board (ref is the Board id): the sidebar links it to the Board screen instead of the list."}
         count: {type: integer, minimum: 0, description: "Capped at 1000 (see countCapped). Absent when not requested or unavailable."}
         countCapped: {type: boolean}
         countStatus: {type: string, enum: [ok, unavailable], description: "unavailable is never zero: the count could not be computed."}
@@ -17081,6 +17356,144 @@ components:
       additionalProperties: false
       properties:
         expectedVersion: {type: integer, minimum: 1}
+    TaskBoardColumn:
+      type: object
+      additionalProperties: false
+      required: [id, position, title, mapsTo, collapsed, wipLimit]
+      properties:
+        id: {type: string, format: uuid}
+        position: {type: integer, minimum: 0, maximum: 7}
+        title: {type: string, minLength: 1, maxLength: 40}
+        mapsTo: {type: string, enum: [open, in_progress, blocked, completed, cancelled], description: The Task status the column stands for. Several columns may map to one status; the first of them lists the cards that were not placed elsewhere.}
+        collapsed: {type: boolean}
+        wipLimit: {type: [integer, "null"], minimum: 1, maximum: 999, description: Soft limit; exceeding it is reported (overWipLimit), never enforced.}
+    TaskBoard:
+      type: object
+      additionalProperties: false
+      required: [id, viewId, viewVersion, name, description, ownerId, ownerTeamId, ownerTeamName, swimlane, version, access, canEdit, archived, filter, columns, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        viewId: {type: string, format: uuid, description: The Saved View (resource tasks) that carries name, filter and sharing; share it with PUT /views/{viewId}/shares and pin it with PUT /me/pins.}
+        viewVersion: {type: integer, description: Version of the Saved View (send it to the Views API for shares).}
+        name: {type: string}
+        description: {type: string}
+        ownerId: {type: string, format: uuid}
+        ownerName: {type: string}
+        ownerTeamId: {type: [string, "null"], format: uuid}
+        ownerTeamName: {type: [string, "null"]}
+        swimlane: {type: string, enum: [none, assignee], description: Presentation mode; the cards are the same, a client groups them by assignee for assignee.}
+        version: {type: integer, minimum: 1, description: Board version (columns, swimlane, archive); send it as expectedVersion.}
+        access: {type: string, enum: [owner, edit, use]}
+        canEdit: {type: boolean, description: True for owner and editors (and Team members with tasks.boards.manage_team on a Team Board).}
+        archived: {type: boolean}
+        filter: {oneOf: [{$ref: '#/components/schemas/QueryFilter'}, {type: "null"}]}
+        columns: {type: array, minItems: 2, maxItems: 8, items: {$ref: '#/components/schemas/TaskBoardColumn'}}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TaskBoardCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        filter: {$ref: '#/components/schemas/QueryFilter'}
+        teamId: {type: string, format: uuid, description: Makes the Board Team-owned and shares it with the Team's members at `use`.}
+        swimlane: {type: string, enum: [none, assignee]}
+        columns:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, mapsTo]
+            properties:
+              title: {type: string, minLength: 1, maxLength: 40}
+              mapsTo: {type: string, enum: [open, in_progress, blocked, completed, cancelled]}
+              collapsed: {type: boolean}
+              wipLimit: {type: [integer, "null"], minimum: 1, maximum: 999}
+    TaskBoardUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        swimlane: {type: string, enum: [none, assignee]}
+        filter: {oneOf: [{$ref: '#/components/schemas/QueryFilter'}, {type: "null"}]}
+    TaskBoardColumnOp:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, operation]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        operation: {type: string, enum: [add, rename, remap, reorder, remove, set_wip, collapse]}
+        columnId: {type: string, format: uuid}
+        title: {type: string, minLength: 1, maxLength: 40}
+        mapsTo: {type: string, enum: [open, in_progress, blocked, completed, cancelled]}
+        position: {type: integer, minimum: 0, maximum: 7}
+        wipLimit: {type: [integer, "null"], minimum: 1, maximum: 999}
+        collapsed: {type: boolean}
+    TaskBoardColumnCards:
+      type: object
+      additionalProperties: false
+      required: [columnId, items, count, countCapped, wipLimit, overWipLimit]
+      properties:
+        columnId: {type: string, format: uuid}
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Task'
+              - type: object
+                required: [rank]
+                properties:
+                  rank: {type: [string, "null"], description: Fractional rank; null for cards never placed.}
+        nextCursor: {type: string, description: Pass with `column` to load the next page of this column.}
+        count: {type: integer, minimum: 0, maximum: 1000, description: Cards the caller sees in the column.}
+        countCapped: {type: boolean}
+        wipLimit: {type: [integer, "null"]}
+        overWipLimit: {type: boolean}
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [code, path]
+            properties:
+              code: {type: string}
+              path: {type: string}
+    TaskBoardMove:
+      type: object
+      additionalProperties: false
+      required: [taskId, columnId, expectedVersion]
+      properties:
+        taskId: {type: string, format: uuid}
+        columnId: {type: string, format: uuid}
+        expectedVersion: {type: integer, minimum: 1, description: The task's version; mandatory.}
+        reason: {type: string, minLength: 1, maxLength: 500, description: Required when the move blocks, cancels or reopens the task.}
+        afterTaskId: {type: string, format: uuid, description: Place the card below this card of the target column (needs Board edit access).}
+        top: {type: boolean, description: Place the card first in the target column (needs Board edit access).}
+    TaskBoardMoveResult:
+      type: object
+      additionalProperties: false
+      required: [task, placed, rank]
+      properties:
+        task: {$ref: '#/components/schemas/Task'}
+        operation: {type: string, enum: [start, block, unblock, complete, cancel, reopen], description: The Task operation that ran; absent for a placement within the same status.}
+        placed: {type: boolean}
+        rank: {type: [string, "null"]}
+    TaskBoardPlace:
+      type: object
+      additionalProperties: false
+      required: [taskId, columnId]
+      description: Exactly one of afterTaskId and top.
+      properties:
+        taskId: {type: string, format: uuid}
+        columnId: {type: string, format: uuid}
+        afterTaskId: {type: string, format: uuid}
+        top: {type: boolean}
     TaskTransition:
       type: object
       additionalProperties: false

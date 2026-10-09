@@ -168,6 +168,9 @@ type PinEntry struct {
 	// NameKey is the i18n key of a System View's name (Name is empty then); Ref is the Queue id of a Queue entry.
 	NameKey string
 	Ref     string
+	// Kind says what a pinned saved View stands for when it is more than a list: "board" (a Task Board; Ref is the
+	// Board id). Empty for plain Views.
+	Kind string
 	// Count is set for the entries whose count was requested; CountStatus is "ok" or "unavailable".
 	Count       *int
 	CountCapped bool

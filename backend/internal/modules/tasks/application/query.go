@@ -83,6 +83,16 @@ func (s *Service) WithQueryEngine(e *query.Engine) *Service {
 	return s
 }
 
+// visibility is the row-scope predicate of a caller: every task for tasks.view or tasks.manage (unless mine is set),
+// otherwise the tasks assigned to the caller or one of the caller's Teams. scope names the variant for cursors.
+func (a access) visibility(mine bool) (query.Fragment, string) {
+	if mine || !(a.p.ViewAll || a.p.Manage) {
+		m := a.mine()
+		return query.Fragment{SQL: "t.assigned_user_id = ?::uuid OR t.assigned_team_id = ANY(?::text[]::uuid[])", Args: []any{m.UserID, m.TeamIDs}}, "mine"
+	}
+	return query.Fragment{}, "all"
+}
+
 func (a access) subject() query.Subject {
 	teams := a.mine().TeamIDs
 	return query.Subject{UserID: a.p.UserID, TeamIDs: teams, Permissions: map[string]bool{
@@ -143,13 +153,7 @@ func (s *Service) Query(ctx context.Context, p Principal, req query.Request, min
 	if !ok {
 		return query.Page[TaskView]{}, errNoQueryStore
 	}
-	vis := query.Fragment{}
-	scope := "all"
-	if mine || !(p.ViewAll || p.Manage) {
-		scope = "mine"
-		m := a.mine()
-		vis = query.Fragment{SQL: "t.assigned_user_id = ?::uuid OR t.assigned_team_id = ANY(?::text[]::uuid[])", Args: []any{m.UserID, m.TeamIDs}}
-	}
+	vis, scope := a.visibility(mine)
 	req.Filter = query.And(req.Filter, compat...)
 	plan, err := s.engine.Prepare(taskCatalog, a.subject(), req, scope, query.Options{})
 	if err != nil {

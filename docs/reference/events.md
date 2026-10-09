@@ -69,6 +69,8 @@
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
 | `TargetSetChanged` | 1 | endpoints | A Target Set was created, changed or archived. Payload: targetSetId, operation (created|updated|archived), version, allDevices. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
+| `TaskBoardArchived` | 1 | tasks | A Task Board was archived by its owner; its shares stop working. Payload: boardId, viewId. |
+| `TaskBoardCreated` | 1 | tasks | A Task Board was created. Payload: boardId, viewId. Carries no name and no filter. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |
 | `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |
 | `TicketAssigned` | 1 | service-desk | A ticket was assigned to a user. Payload: ticketId, assigneeId. |

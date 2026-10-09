@@ -20,6 +20,7 @@ var Registry = []Permission{
 	{Name: "tasks.work", Description: "See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams.", Risk: "normal"},
 	{Name: "tasks.recurrence.manage", Description: "Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule.", Risk: "normal"},
 	{Name: "tasks.manage", Description: "Create, edit, assign, cancel and reopen any task and work on any task.", Risk: "normal"},
+	{Name: "tasks.boards.manage_team", Description: "Create Team-owned Task Boards (shared with the Team's members) and, as a member of the owning Team, edit their columns, filter and card order. Team Boards otherwise need tasks.manage. A Board never grants access to tasks: every viewer sees only the cards their own task permissions allow, and moving a card needs the permission of the task operation.", Risk: "normal"},
 	{Name: "briefing.view", Description: "View published IT Briefing items.", Risk: "normal"},
 	{Name: "briefing.manage", Description: "Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items.", Risk: "elevated"},
 	{Name: "products.view", Description: "View the product catalog: products, manufacturers and product categories.", Risk: "normal"},

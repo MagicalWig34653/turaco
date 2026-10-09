@@ -26,6 +26,17 @@ type Options struct {
 	// rows" and reports a warning, as Saved Views need (never dropped, so a
 	// permission loss cannot widen the result). Requests are strict.
 	Lenient bool
+	// Lead is an optional module-defined leading sort key (see LeadKey).
+	Lead *LeadKey
+}
+
+// LeadKey is a trusted, module-written leading ORDER BY key for orderings the
+// catalog cannot express, such as a per-board card rank joined in through
+// Select.Join. It sorts ascending with NULLs last and is part of the keyset
+// cursor. Expr must yield text (use a "C" collated column for bytewise order)
+// and must not contain a question mark; it is never built from user input.
+type LeadKey struct {
+	Expr string
 }
 
 // Fragment is trusted SQL written by a module (its visibility predicate or
@@ -43,6 +54,9 @@ type Select struct {
 	// Visibility is the module's mandatory row-scope predicate, ANDed outside
 	// the user filter. An empty SQL means TRUE (everything is visible).
 	Visibility Fragment
+	// Join is optional trusted SQL appended to the FROM clause (for example a
+	// LEFT JOIN that supplies a LeadKey); its placeholders come first.
+	Join Fragment
 }
 
 // Engine holds the process-wide pieces: cursor signing, rate limit, timeout.
@@ -165,6 +179,14 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 		p.limit = DefaultPageSize
 	}
 	p.limit = min(p.limit, MaxPageSize)
+	if opts.Lead != nil {
+		if opts.Lead.Expr == "" || strings.Contains(opts.Lead.Expr, "?") {
+			return nil, invalid("", "The leading sort key is invalid.")
+		}
+		p.keys = append([]sortKey{{expr: opts.Lead.Expr, cast: "text", nullable: true}}, p.keys...)
+		keys = p.keys
+		p.hash = requestHash(cat.res.Key+"|"+opts.Lead.Expr, scope, subj.UserID, &f, norm)
+	}
 	if req.Cursor != "" {
 		vals, err := e.codec.decode(req.Cursor, p.hash, keys)
 		if err != nil {
@@ -212,7 +234,12 @@ func (p *Plan) Statement(sel Select) (string, []any) {
 		sb.WriteString(", (" + k.expr + ")::text")
 	}
 	where, args := p.where(sel.Visibility, true)
-	sb.WriteString(" FROM " + p.from() + " WHERE " + where + " ORDER BY ")
+	sb.WriteString(" FROM " + p.from())
+	if sel.Join.SQL != "" {
+		sb.WriteString(" " + sel.Join.SQL)
+		args = append(append([]any{}, sel.Join.Args...), args...)
+	}
+	sb.WriteString(" WHERE " + where + " ORDER BY ")
 	for i, k := range p.keys {
 		if i > 0 {
 			sb.WriteString(", ")
@@ -228,8 +255,13 @@ func (p *Plan) Statement(sel Select) (string, []any) {
 // cursor): at most CountCap+1 rows are read.
 func (p *Plan) CountStatement(sel Select) (string, []any) {
 	where, args := p.where(sel.Visibility, false)
+	from := p.from()
+	if sel.Join.SQL != "" {
+		from += " " + sel.Join.SQL
+		args = append(append([]any{}, sel.Join.Args...), args...)
+	}
 	args = append(args, CountCap+1)
-	return numberPlaceholders("SELECT count(*) FROM (SELECT 1 FROM " + p.from() + " WHERE " + where + " LIMIT ?) c"), args
+	return numberPlaceholders("SELECT count(*) FROM (SELECT 1 FROM " + from + " WHERE " + where + " LIMIT ?) c"), args
 }
 
 func numberPlaceholders(sql string) string {

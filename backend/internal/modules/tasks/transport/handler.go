@@ -24,6 +24,7 @@ const (
 	permManage     = "tasks.manage"
 	permWork       = "tasks.work"
 	permRecurrence = "tasks.recurrence.manage"
+	permBoardsTeam = "tasks.boards.manage_team"
 
 	maxBody     = 32 << 10
 	maxQueryLen = 100
@@ -90,7 +91,7 @@ func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{
 		UserID: p.UserID, ViewAll: p.Has(permView), Manage: p.Has(permManage), Work: p.Has(permWork),
-		RecurrenceManage: p.Has(permRecurrence),
+		RecurrenceManage: p.Has(permRecurrence), BoardsManageTeam: p.Has(permBoardsTeam),
 	}
 }
 

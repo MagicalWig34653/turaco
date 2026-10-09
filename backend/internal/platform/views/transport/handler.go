@@ -459,6 +459,7 @@ type pinDTO struct {
 	Name        string `json:"name"`
 	NameKey     string `json:"nameKey,omitempty"`
 	Ref         string `json:"ref,omitempty"`
+	Kind        string `json:"kind,omitempty"`
 	Resource    string `json:"resource"`
 	GroupKey    string `json:"groupKey"`
 	Position    int    `json:"position"`
@@ -470,7 +471,7 @@ type pinDTO struct {
 }
 
 func toPin(p views.PinEntry) pinDTO {
-	return pinDTO{ViewID: p.ViewID, Name: p.Name, NameKey: p.NameKey, Ref: p.Ref, Resource: p.Resource, GroupKey: p.GroupKey, Position: p.Position,
+	return pinDTO{ViewID: p.ViewID, Name: p.Name, NameKey: p.NameKey, Ref: p.Ref, Kind: p.Kind, Resource: p.Resource, GroupKey: p.GroupKey, Position: p.Position,
 		Hidden: p.Hidden, Source: p.Source, Count: p.Count, CountCapped: p.CountCapped, CountStatus: p.CountStatus}
 }
 

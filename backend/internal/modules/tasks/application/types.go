@@ -98,6 +98,8 @@ type Principal struct {
 	Work bool
 	// RecurrenceManage (tasks.recurrence.manage) manages Recurring Task Definitions.
 	RecurrenceManage bool
+	// BoardsManageTeam (tasks.boards.manage_team) creates and edits Team-owned Task Boards.
+	BoardsManageTeam bool
 }
 
 // Caller identifies who performs a mutation and the request it belongs to.

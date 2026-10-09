@@ -45,7 +45,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Filter AST** — versioned tree of conditions and AND/OR groups evaluated under the caller's resource scope.
 - **Saved View** — stored query intent (Filter AST, sort, columns) of one resource with an owner and a version; never results and never a grant of row access: it always runs as the viewer, through the owning module's query endpoint (`platform/views`, F13 Q-B).
 - **View Share** — explicit, revocable access to a Saved View for a User, Team, role or everyone at level `use` or `edit`; resolved at read time; grants no data access.
-- **Board** — planned Task presentation over a Saved View with columns; card moves use Task lifecycle operations.
+- **Board** — Task Board (Kanban): a Saved View over Tasks plus ordered columns that each map to one Task status (optional soft WIP limit) and per-board card ranks; sharing is the View's; a card move runs the existing Task lifecycle operation with a mandatory `expectedVersion`, never a status write (`tasks` module, F13 Q-D).
 - **Pin** — personal sidebar placement of a Saved View (group, position, hidden).
 - **Pin Rule** — Team- or role-wide Pin created with `views.pin_for_groups`; shows the View only to members who may use it and grants no access; a member can hide it for themselves.
 - **Ticket Queue** — a Service Desk desk (IT, HR, Facility) with a frozen key and prefix, its own committed number counter, explicit grants (`create`, `view`, `work`, `manage`) and a visibility (`internal`, `public`); every Ticket belongs to exactly one. Distinct from a Saved View and from the routing Team (`routing_team`), which only hints who handles a Ticket inside its desk.

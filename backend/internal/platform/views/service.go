@@ -31,6 +31,7 @@ type Service struct {
 
 	providers []SystemProvider
 	counts    *countCache
+	annotator PinAnnotator
 }
 
 // NewService builds the service over the registered resources.

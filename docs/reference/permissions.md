@@ -74,6 +74,7 @@
 | `software.approve` | elevated | Approve, reject and revoke Software Version approvals (never for a version the same person registered or requested) and change a Software Product's approval status (approve, deprecate, retire, block, unblock). Includes software.view. |
 | `software.package` | elevated | Register Software Versions, request their approval, package approved versions through the Software Management Provider, publish packages whose reported installer hash equals the approved hash and run the package synchronization. Includes software.view. |
 | `software.view` | normal | View Software Products with their Software Approval Status, Software Versions with their approval history, Software Packages and the provider catalog search. |
+| `tasks.boards.manage_team` | normal | Create Team-owned Task Boards (shared with the Team's members) and, as a member of the owning Team, edit their columns, filter and card order. Team Boards otherwise need tasks.manage. A Board never grants access to tasks: every viewer sees only the cards their own task permissions allow, and moving a card needs the permission of the task operation. |
 | `tasks.manage` | normal | Create, edit, assign, cancel and reopen any task and work on any task. |
 | `tasks.recurrence.manage` | normal | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |

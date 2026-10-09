@@ -16,6 +16,8 @@ var Registry = []Definition{
 	{Name: "TaskAssigned", Version: 1, Owner: "tasks", Description: "A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId."},
 	{Name: "TaskCompleted", Version: 1, Owner: "tasks", Description: "A task was completed. Payload: taskId, completedByUserId."},
 	{Name: "TaskCancelled", Version: 1, Owner: "tasks", Description: "A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId."},
+	{Name: "TaskBoardCreated", Version: 1, Owner: "tasks", Description: "A Task Board was created. Payload: boardId, viewId. Carries no name and no filter."},
+	{Name: "TaskBoardArchived", Version: 1, Owner: "tasks", Description: "A Task Board was archived by its owner; its shares stop working. Payload: boardId, viewId."},
 	{Name: "ApprovalRequested", Version: 1, Owner: "approvals", Description: "An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex."},
 	{Name: "ApprovalDecided", Version: 1, Owner: "approvals", Description: "An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision."},
 	{Name: "ServiceRequestApproved", Version: 1, Owner: "requests", Description: "A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId."},

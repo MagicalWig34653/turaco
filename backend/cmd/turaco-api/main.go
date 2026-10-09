@@ -237,6 +237,8 @@ func main() {
 		os.Exit(1)
 	}
 	viewstransport.Register(mux, viewsSvc, sessionAuth, logger)
+	// Task Boards: a Saved View over tasks plus columns and card ranks. Core (always on, like tasks).
+	taskstransport.RegisterBoards(mux, wiring.TaskBoards(tasksSvc, pool, viewsSvc), tasksSvc, sessionAuth, logger)
 	// My Work: the merged feed and counts of the modules' work item sources (Tasks and Tickets first).
 	workSvc, err := wiring.WorkItems(tasksSvc, wiring.ServiceDesk(pool), moduleSvc)
 	if err != nil {

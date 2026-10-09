@@ -113,6 +113,21 @@ func (s *Service) pinState(ctx context.Context, c Caller) ([]PinEntry, error) {
 		out = append(out, PinEntry{ViewID: id, Name: a.view.Name, Resource: a.view.Resource, GroupKey: p.group, Position: p.position,
 			Hidden: p.hidden, Source: p.source})
 	}
+	if s.annotator != nil && len(out) > 0 {
+		viewIDs := make([]string, len(out))
+		for i, e := range out {
+			viewIDs[i] = e.ViewID
+		}
+		notes, err := s.annotator.AnnotatePins(ctx, viewIDs)
+		if err != nil {
+			return nil, fmt.Errorf("annotate pins: %w", err)
+		}
+		for i := range out {
+			if n, ok := notes[out[i].ViewID]; ok {
+				out[i].Kind, out[i].Ref = n.Kind, n.Ref
+			}
+		}
+	}
 	slices.SortFunc(out, func(a, b PinEntry) int {
 		if d := strings.Compare(a.GroupKey, b.GroupKey); d != 0 {
 			return d
