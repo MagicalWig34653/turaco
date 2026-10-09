@@ -14,6 +14,9 @@ const (
 	CodeUnindexedSort    = "query.unindexed_sort"
 	CodeTimeout          = "query.timeout"
 	CodeRateLimited      = "query.rate_limited"
+	// CodeQueryTooShort: the search text is shorter than MinSearchLength; the error carries MinLength so a client
+	// can show a hint instead of a service error.
+	CodeQueryTooShort = "query.query_too_short"
 )
 
 // Error is a client-facing query error. Messages are fixed texts that never
@@ -23,7 +26,9 @@ type Error struct {
 	Code    string
 	Message string
 	Path    string
-	status  int
+	// MinLength is set with CodeQueryTooShort.
+	MinLength int
+	status    int
 }
 
 func (e *Error) Error() string {
@@ -38,6 +43,10 @@ func (e *Error) Status() int { return e.status }
 
 func invalid(path, msg string) *Error {
 	return &Error{Code: CodeInvalidFilter, Message: msg, Path: path, status: http.StatusBadRequest}
+}
+
+func tooShort(path string) *Error {
+	return &Error{Code: CodeQueryTooShort, Message: "The search text is too short.", Path: path, MinLength: MinSearchLength, status: http.StatusBadRequest}
 }
 
 func tooComplex(path, msg string) *Error {

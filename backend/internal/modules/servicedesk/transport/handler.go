@@ -5,6 +5,7 @@
 package transport
 
 import (
+	"cmp"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -43,6 +44,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/move-queue", h.moveQueue)
 	route("POST /api/v1/tickets/{id}/comments", h.comment)
 	route("POST /api/v1/tickets/{id}/assign", h.assign)
+	route("GET /api/v1/tickets/{id}/history", h.history)
+	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
 	registerQueues(route, h)
 	for _, op := range []string{application.OpStart, application.OpWait, application.OpResume, application.OpResolve, application.OpClose, application.OpReopen, application.OpCancel} {
@@ -91,6 +94,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_is_default", "The intake queue cannot be archived; choose another intake queue first.")
 	case errors.Is(err, application.ErrQueueSame):
 		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_same", "The ticket is already in this queue.")
+	case errors.Is(err, application.ErrDuplicateTarget):
+		httpx.WriteError(w, http.StatusConflict, "servicedesk.invalid_duplicate_target", "This ticket cannot be the target: it must be another ticket that is not cancelled, not itself a duplicate, and the ticket being marked must not have duplicates of its own.")
 	case errors.Is(err, application.ErrAssigneeNoAccess):
 		httpx.WriteError(w, http.StatusBadRequest, "servicedesk.assignee_no_queue_access", "The assignee cannot view tickets of this queue.")
 	case errors.Is(err, application.ErrInvalidCursor):
@@ -149,6 +154,10 @@ type ticketDTO struct {
 	AssigneeID      *string        `json:"assigneeId"`
 	AssetID         *string        `json:"assetId"`
 	MajorIncidentID *string        `json:"majorIncidentId"`
+	DuplicateOfID   *string        `json:"duplicateOfId"`
+	PatientImpact   bool           `json:"patientImpact"`
+	Impact          *string        `json:"impact"`
+	LocationID      *string        `json:"affectedLocationId"`
 	DeviceSnapshot  map[string]any `json:"deviceSnapshot"`
 	ResolvedAt      *string        `json:"resolvedAt"`
 	ClosedAt        *string        `json:"closedAt"`
@@ -171,7 +180,7 @@ func toTicket(t application.Ticket) ticketDTO {
 	}
 	return ticketDTO{QueueID: queueIDOf(t), Queue: q, QueueLabel: t.QueueLabel, Aliases: t.Aliases, ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason,
 		StatusReason: t.StatusReason, Resolution: t.Resolution, Priority: t.Priority, ReporterID: t.ReporterID, AffectedUserID: t.AffectedUserID,
-		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, MajorIncidentID: t.MajorIncidentID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
+		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, MajorIncidentID: t.MajorIncidentID, DuplicateOfID: t.DuplicateOfID, PatientImpact: t.PatientImpact, Impact: nilStr(t.ReportedImpact), LocationID: t.AffectedLocationID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
 		ClosedAt: tsPtr(t.ClosedAt), Version: t.Version, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
 }
 
@@ -302,13 +311,15 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		QueueTeamID    *string `json:"queueTeamId"`
 		QueueID        *string `json:"queueId"`
 		QueueKey       string  `json:"queueKey"`
+		PatientImpact  bool    `json:"patientImpact"`
+		Impact         string  `json:"impact"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
 	t, err := h.svc.Create(r.Context(), caller(w, r), principal(r), application.CreateInput{
 		Title: b.Title, Description: b.Description, AffectedUserID: b.AffectedUserID, AssetID: b.AssetID, Priority: b.Priority, QueueTeamID: b.QueueTeamID,
-		QueueID: b.QueueID, QueueKey: b.QueueKey,
+		QueueID: b.QueueID, QueueKey: b.QueueKey, PatientImpact: b.PatientImpact, Impact: b.Impact,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -338,16 +349,85 @@ func (h *handler) assign(w http.ResponseWriter, r *http.Request) {
 		ExpectedVersion *int    `json:"expectedVersion"`
 		AssigneeID      *string `json:"assigneeId"`
 		QueueTeamID     *string `json:"queueTeamId"`
+		Reason          string  `json:"reason"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
-	t, err := h.svc.Assign(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.AssigneeID, b.QueueTeamID)
+	t, err := h.svc.AssignWithReason(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.AssigneeID, b.QueueTeamID, b.Reason)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+// markDuplicate cancels the ticket as a duplicate of another one (explicit lifecycle operation, expectedVersion).
+func (h *handler) markDuplicate(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion     *int   `json:"expectedVersion"`
+		DuplicateOfTicketID string `json:"duplicateOfTicketId"`
+		DuplicateOfID       string `json:"duplicateOfId"` // alias of duplicateOfTicketId
+		DuplicateOfRef      string `json:"duplicateOfReference"`
+		ReasonCode          string `json:"reasonCode"`
+		Reason              string `json:"reason"`
+		Note                string `json:"note"` // alias of reason
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	target := cmp.Or(b.DuplicateOfTicketID, b.DuplicateOfID)
+	if target == "" && b.DuplicateOfRef != "" {
+		m, err := h.svc.FindByReference(r.Context(), principal(r), b.DuplicateOfRef)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		target = m.TicketID
+	}
+	t, err := h.svc.MarkDuplicate(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, target, cmp.Or(b.Reason, b.Note, b.ReasonCode))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+type historyDTO struct {
+	ID            string `json:"id"`
+	At            string `json:"at"`
+	Kind          string `json:"kind"`
+	ActorID       string `json:"actorId,omitempty"`
+	Via           string `json:"via"`
+	Reason        string `json:"reason,omitempty"`
+	FromUserID    string `json:"fromUserId,omitempty"`
+	ToUserID      string `json:"toUserId,omitempty"`
+	FromTeamID    string `json:"fromTeamId,omitempty"`
+	ToTeamID      string `json:"toTeamId,omitempty"`
+	FromStatus    string `json:"fromStatus,omitempty"`
+	ToStatus      string `json:"toStatus,omitempty"`
+	FromPrio      string `json:"fromPriority,omitempty"`
+	ToPrio        string `json:"toPriority,omitempty"`
+	DuplicateOfID string `json:"duplicateOfId,omitempty"`
+}
+
+// history lists the change history of a Ticket (assignments, routing, status, priority, Queue moves) for people
+// who work it.
+func (h *handler) history(w http.ResponseWriter, r *http.Request) {
+	entries, names, err := h.svc.History(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := make([]historyDTO, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
+			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID})
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []historyDTO      `json:"items"`
+		Names map[string]string `json:"names"`
+	}{out, names})
 }
 
 func (h *handler) priority(w http.ResponseWriter, r *http.Request) {
@@ -414,4 +494,11 @@ func (h *handler) byReference(w http.ResponseWriter, r *http.Request) {
 		Reference string `json:"reference"`
 		Alias     bool   `json:"alias"`
 	}{m.TicketID, m.Reference, m.Alias})
+}
+
+func nilStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

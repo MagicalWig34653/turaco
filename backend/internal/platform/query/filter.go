@@ -96,6 +96,7 @@ type compiler struct {
 	cat      *Catalog
 	subj     Subject
 	lenient  bool
+	extra    *SearchExtra
 	now      time.Time
 	loc      *time.Location
 	args     []any
@@ -635,6 +636,12 @@ func (c *compiler) instant(f *Field, raw json.RawMessage, path string) (t time.T
 		if ts, perr := time.Parse(time.RFC3339Nano, s); perr == nil {
 			return ts, false, nil
 		}
+		// A date-time without an offset (the value of a datetime-local input) is local time in the request zone.
+		for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04", "2006-01-02 15:04:05", "2006-01-02 15:04"} {
+			if ts, perr := time.ParseInLocation(layout, s, c.loc); perr == nil {
+				return ts, false, nil
+			}
+		}
 	}
 	return time.Time{}, false, invalid(path, "The value must be a date.")
 }
@@ -764,7 +771,7 @@ func (c *compiler) search(s string) (string, error) {
 		return "", invalid("search", "The search text is invalid.")
 	}
 	if utf8.RuneCountInString(s) < MinSearchLength {
-		return "", invalid("search", "The search text is too short.")
+		return "", tooShort("search")
 	}
 	var parts []string
 	pat := "%" + likeEscape(s) + "%"
@@ -777,6 +784,17 @@ func (c *compiler) search(s string) (string, error) {
 		parts = append(parts, f.Column.sql+" ILIKE "+c.arg(pat)+escapeClause)
 		c.cost += opCost(f, OpContains)
 		c.used[f.Key] = true
+	}
+	if x := c.extra; x != nil && x.SQL != "" {
+		sql := x.SQL
+		for _, a := range x.Args {
+			sql = strings.Replace(sql, "?", c.arg(a), 1)
+		}
+		parts = append(parts, "("+sql+")")
+		c.cost += x.Cost
+		for _, u := range x.Uses {
+			c.used[u] = true
+		}
 	}
 	if len(parts) == 0 {
 		return "FALSE", nil

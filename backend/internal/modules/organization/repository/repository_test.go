@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,12 +95,16 @@ func TestListUsersPaginationAndFilters(t *testing.T) {
 		want = append(want, f.user(f.pfx+"-user-"+string(rune('a'+i)), status))
 	}
 	f.user("other-"+f.pfx, "active")
+	// The text matches any part of the name, not only its start.
+	if res, err := f.repo.ListUsers(ctx, application.UserFilter{Query: strings.ToUpper(f.pfx), Page: application.Page{Limit: 50}}); err != nil || len(res.Items) != 6 {
+		t.Fatalf("substring search: %v items=%d", err, len(res.Items))
+	}
 
 	var got []string
 	cursor := ""
 	pages := 0
 	for {
-		res, err := f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx, Page: application.Page{Limit: 2, Cursor: cursor}})
+		res, err := f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx + "-user-", Page: application.Page{Limit: 2, Cursor: cursor}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -125,15 +130,15 @@ func TestListUsersPaginationAndFilters(t *testing.T) {
 	}
 
 	// Limit boundaries: exactly N items => no cursor; N-1 => cursor.
-	res, err := f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx, Page: application.Page{Limit: 5}})
+	res, err := f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx + "-user-", Page: application.Page{Limit: 5}})
 	if err != nil || len(res.Items) != 5 || res.NextCursor != "" {
 		t.Fatalf("limit=5: %v items=%d cursor=%q", err, len(res.Items), res.NextCursor)
 	}
-	res, err = f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx, Page: application.Page{Limit: 4}})
+	res, err = f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx + "-user-", Page: application.Page{Limit: 4}})
 	if err != nil || len(res.Items) != 4 || res.NextCursor == "" {
 		t.Fatalf("limit=4: %v items=%d cursor=%q", err, len(res.Items), res.NextCursor)
 	}
-	res, err = f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx, Page: application.Page{Limit: 1}})
+	res, err = f.repo.ListUsers(ctx, application.UserFilter{Query: f.pfx + "-user-", Page: application.Page{Limit: 1}})
 	if err != nil || len(res.Items) != 1 || res.NextCursor == "" {
 		t.Fatalf("limit=1: %v", err)
 	}

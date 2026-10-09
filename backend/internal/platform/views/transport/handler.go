@@ -355,7 +355,7 @@ type resultsDTO struct {
 
 func (h *handler) results(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	in := views.ResultsInput{Cursor: q.Get("cursor")}
+	in := views.ResultsInput{Cursor: q.Get("cursor"), TimeZone: q.Get("tz")}
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {

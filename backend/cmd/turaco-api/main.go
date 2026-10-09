@@ -188,6 +188,7 @@ func main() {
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	orgtransport.RegisterPeople(mux, orgapp.NewPeople(orgReader), orgapp.NewQueries(orgReader, wiring.QueryEngine(pool)), orgReader, sessionAuth, logger)
+	orgtransport.RegisterLookup(mux, orgapp.NewPeopleLookup(orgReader), cfg.PeopleLookupEnabled, sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil).WithQueryEngine(wiring.QueryEngine(pool))
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)

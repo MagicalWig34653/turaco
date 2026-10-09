@@ -38,14 +38,16 @@ const hospitalCorrelation = "demo-seed-hospital"
 type hospitalSeeder struct {
 	*demoSeeder
 
-	users     map[string]string // login -> user id
-	teams     map[string]string // team key -> team id
-	locations map[string]string // site or area key -> location id
-	depts     map[string]string // department key -> id
-	roleIDs   map[string]string // role key -> id
-	assets    map[string]string // serial -> asset id
-	tickets   map[string]string // title -> ticket id
-	products  map[string]string // internal part number -> product id
+	users       map[string]string // login -> user id
+	teams       map[string]string // team key -> team id
+	locations   map[string]string // site or area key -> location id
+	depts       map[string]string // department key -> id
+	roleIDs     map[string]string // role key -> id
+	assets      map[string]string // serial -> asset id
+	tickets     map[string]string // title -> ticket id
+	queueIDs    map[string]string // team key -> Queue id of its desk
+	intakeQueue string            // id of the platform's default Queue
+	products    map[string]string // internal part number -> product id
 
 	counts map[string]int
 }
@@ -71,6 +73,7 @@ func seedHospital(ctx context.Context, e env) error {
 		{"products", h.productCatalog},
 		{"assets", h.assetRegister},
 		{"knowledge", h.knowledge},
+		{"queues", h.queues},
 		{"tickets", h.ticketsAndComments},
 		{"problems", h.problems},
 		{"major incident", h.majorIncident},
@@ -396,7 +399,7 @@ func (h *hospitalSeeder) productCatalog(ctx context.Context) error {
 	vendors := map[string]string{}
 	for _, p := range simProducts {
 		if _, ok := cats[p.Category]; !ok {
-			id, err := h.category(ctx, p.Category)
+			id, err := h.category(ctx, p.Category, simLegacyNames[p.Category])
 			if err != nil {
 				return err
 			}
@@ -409,7 +412,7 @@ func (h *hospitalSeeder) productCatalog(ctx context.Context) error {
 			}
 			vendors[p.Manufacturer] = id
 		}
-		id, err := h.product(ctx, vendors[p.Manufacturer], cats[p.Category], p.Name, p.MPN, p.IPN, true, true)
+		id, err := h.product(ctx, vendors[p.Manufacturer], cats[p.Category], p.Name, simLegacyNames[p.Name], p.MPN, p.IPN, true, true)
 		if err != nil {
 			return fmt.Errorf("product %s: %w", p.Name, err)
 		}
@@ -503,12 +506,67 @@ func (h *hospitalSeeder) knowledge(ctx context.Context) error {
 	return nil
 }
 
+// ---- queues ----
+
+// queues creates the specialist desks with their prefixes and grants: the owning Team works its Queue, First Level
+// Support and the site leads may raise and view tickets in every desk (so they can triage by moving), and the intake
+// Queue gets its seed name. Idempotent: existing desks (by key) are kept, grants are replaced with the same set.
+func (h *hospitalSeeder) queues(ctx context.Context) error {
+	svc := wiring.ServiceDesk(h.e.pool)
+	c := servicedeskapp.Caller{Actor: h.e.auditActor(), CorrelationID: hospitalCorrelation}
+	admin := servicedeskapp.Principal{UserID: "00000000-0000-7000-8000-000000000000", View: true, Manage: true, QueuesManage: true} // the CLI acts without a User; listing needs a uuid
+	existing, err := svc.ListQueues(ctx, admin, false)
+	if err != nil {
+		return fmt.Errorf("list queues: %w", err)
+	}
+	byKey := map[string]servicedeskapp.QueueView{}
+	for _, q := range existing {
+		byKey[q.Queue.Key] = q
+	}
+	if intake, ok := byKey["it"]; ok && intake.Queue.Name != simIntakeQueueName {
+		name := simIntakeQueueName
+		if _, err := svc.UpdateQueue(ctx, c, admin, intake.Queue.ID, &intake.Queue.Version, servicedeskapp.QueueUpdate{Name: &name}); err != nil {
+			return fmt.Errorf("rename intake queue: %w", err)
+		}
+	}
+	h.queueIDs = map[string]string{}
+	if intake, ok := byKey["it"]; ok {
+		h.intakeQueue = intake.Queue.ID
+	}
+	for _, sq := range simQueues {
+		q, ok := byKey[sq.Key]
+		if !ok {
+			created, err := svc.CreateQueue(ctx, c, admin, servicedeskapp.QueueInput{Key: sq.Key, Prefix: sq.Prefix, Name: sq.Name, PublicLabel: sq.Label,
+				Visibility: servicedeskapp.QueueInternal, RoutingMode: servicedeskapp.RoutingBoth, DefaultTeamID: ptr(h.teams[sq.Team]), NumberPadding: 6})
+			if err != nil {
+				return fmt.Errorf("queue %s: %w", sq.Key, err)
+			}
+			q = servicedeskapp.QueueView{Queue: created}
+			h.count("queues")
+		}
+		h.queueIDs[sq.Team] = q.Queue.ID
+		grants := []servicedeskapp.GrantInput{
+			{SubjectType: "team", SubjectID: h.teams[sq.Team], Level: servicedeskapp.LevelWork},
+			{SubjectType: "team", SubjectID: h.teams[teamFLS], Level: servicedeskapp.LevelCreate},
+			{SubjectType: "team", SubjectID: h.teams[teamLeads], Level: servicedeskapp.LevelWork},
+		}
+		cur, err := svc.GetQueue(ctx, admin, q.Queue.ID)
+		if err != nil {
+			return fmt.Errorf("queue %s: %w", sq.Key, err)
+		}
+		if _, err := svc.ReplaceGrants(ctx, c, admin, q.Queue.ID, &cur.Queue.Version, grants); err != nil {
+			return fmt.Errorf("queue %s grants: %w", sq.Key, err)
+		}
+	}
+	return nil
+}
+
 // ---- tickets ----
 
 func (h *hospitalSeeder) ticketsAndComments(ctx context.Context) error {
 	svc := wiring.ServiceDesk(h.e.pool)
 	c := servicedeskapp.Caller{Actor: h.e.auditActor(), CorrelationID: hospitalCorrelation}
-	staff := servicedeskapp.Principal{UserID: "cli", View: true, Manage: true} // the CLI acts without a User; listing needs a non-empty id
+	staff := servicedeskapp.Principal{UserID: "00000000-0000-7000-8000-000000000000", View: true, Manage: true} // the CLI acts without a User; listing needs a uuid
 	existing, err := h.allTickets(ctx, svc, staff)
 	if err != nil {
 		return err
@@ -516,6 +574,9 @@ func (h *hospitalSeeder) ticketsAndComments(ctx context.Context) error {
 	for _, t := range simTickets {
 		if id, ok := existing[t.Title]; ok {
 			h.tickets[t.Title] = id
+			if err := h.routeIntoDesk(ctx, svc, c, staff, id, t); err != nil {
+				return fmt.Errorf("ticket %q: %w", t.Title, err)
+			}
 			continue
 		}
 		if err := h.ticket(ctx, svc, c, t); err != nil {
@@ -524,6 +585,24 @@ func (h *hospitalSeeder) ticketsAndComments(ctx context.Context) error {
 		h.count("tickets")
 	}
 	return nil
+}
+
+// routeIntoDesk moves a ticket that an earlier seed run left in the intake desk into the desk of its routing Team.
+func (h *hospitalSeeder) routeIntoDesk(ctx context.Context, svc *servicedeskapp.Service, c servicedeskapp.Caller, staff servicedeskapp.Principal, id string, t simTicket) error {
+	target, ok := h.queueIDs[t.Queue]
+	if t.Queue == "" || !ok {
+		return nil
+	}
+	d, err := svc.Get(ctx, staff, id)
+	if err != nil {
+		return err
+	}
+	// Only active tickets move; finished ones stay where they were closed.
+	if d.Ticket.QueueID == target || d.Ticket.QueueID != h.intakeQueue || slices.Contains([]string{servicedeskapp.StatusResolved, servicedeskapp.StatusClosed, servicedeskapp.StatusCancelled}, d.Ticket.Status) {
+		return nil
+	}
+	_, err = svc.MoveToQueue(ctx, c, staff, id, &d.Ticket.Version, target, "different_skill")
+	return err
 }
 
 func (h *hospitalSeeder) allTickets(ctx context.Context, svc *servicedeskapp.Service, staff servicedeskapp.Principal) (map[string]string, error) {
@@ -549,6 +628,9 @@ func (h *hospitalSeeder) ticket(ctx context.Context, svc *servicedeskapp.Service
 	in := servicedeskapp.CreateInput{Title: t.Title, Description: t.Description, Priority: t.Priority}
 	if t.Queue != "" {
 		in.QueueTeamID = ptr(h.teams[t.Queue])
+		if id, ok := h.queueIDs[t.Queue]; ok {
+			in.QueueID = ptr(id)
+		}
 	}
 	if t.Device {
 		serial := h.deviceOf(t.Reporter)
@@ -600,9 +682,15 @@ func (h *hospitalSeeder) deviceOf(login string) string {
 
 // ---- problems (known issues) ----
 
+// leadCaller acts as the Standort-IT-Leiter: linking a Ticket needs view access to its Queue, which the CLI actor
+// (no User) does not have.
+func (h *hospitalSeeder) leadCaller() servicedeskapp.Caller {
+	return servicedeskapp.Caller{Actor: audit.UserActor(h.users["christian.hoffmann"]), CorrelationID: hospitalCorrelation}
+}
+
 func (h *hospitalSeeder) problems(ctx context.Context) error {
 	svc := wiring.Problems(h.e.pool)
-	c := servicedeskapp.Caller{Actor: h.e.auditActor(), CorrelationID: hospitalCorrelation}
+	c := h.leadCaller()
 	p := servicedeskapp.ProblemPrincipal{Staff: true, Manage: true}
 	have := map[string]bool{}
 	page := servicedeskapp.Page{Limit: servicedeskapp.MaxLimit}
@@ -649,7 +737,7 @@ func (h *hospitalSeeder) problems(ctx context.Context) error {
 
 func (h *hospitalSeeder) majorIncident(ctx context.Context) error {
 	svc := wiring.MajorIncidents(h.e.pool)
-	c := servicedeskapp.Caller{Actor: h.e.auditActor(), CorrelationID: hospitalCorrelation}
+	c := h.leadCaller()
 	list, err := svc.List(ctx, h.users["christian.hoffmann"], false, servicedeskapp.Page{Limit: servicedeskapp.MaxLimit})
 	if err != nil {
 		return err
@@ -733,6 +821,8 @@ func (h *hospitalSeeder) briefing(ctx context.Context) error {
 // ---- catalog ----
 
 func (h *hospitalSeeder) catalog(ctx context.Context) error {
+	// The base catalog items approve by the requested-for person's manager; without a manager the Standort-IT-Leitung
+	// decides (the Team is still bound by the exclusions of the requester and the requested-for person).
 	for _, it := range hospitalCatalogItems(h.teams) {
 		created, err := h.item(ctx, it)
 		if err != nil {
@@ -742,7 +832,7 @@ func (h *hospitalSeeder) catalog(ctx context.Context) error {
 			h.count("catalog items")
 		}
 	}
-	return nil
+	return h.setManagerFallback(ctx, []string{"hardware-notebook", "software-request", "access-request", "new-workplace", "orbis-access", "dect-phone"}, h.teams[teamLeads])
 }
 
 // hospitalCatalogItems are the catalog items of the simulation. teams maps team keys to ids.

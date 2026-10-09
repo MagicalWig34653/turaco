@@ -71,6 +71,10 @@ type MajorStore interface {
 	MajorTitle(ctx context.Context, tx pgx.Tx, id string) (string, error)
 	// LinkTicketTx attaches a ticket (once); it reports the ticket's reporter and affected users.
 	LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (reporter, affected string, err error)
+	// UnlinkTicketTx detaches a ticket from the incident; it reports whether the ticket was linked to it.
+	UnlinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (bool, error)
+	// MajorTickets lists the tickets linked to an incident (newest first, at most 200).
+	MajorTickets(ctx context.Context, majorID string) ([]Ticket, error)
 }
 
 // MajorResult is one page of incidents.
@@ -358,6 +362,47 @@ func (s *MajorService) LinkTicket(ctx context.Context, c Caller, manage bool, id
 	})
 }
 
+// UnlinkTicket detaches a ticket from an incident that is not closed. Requires majorincidents.manage and view access
+// to the Ticket's Queue (the same answer for a Ticket that does not exist and one the caller may not see). The
+// people subscribed through the link stay subscribed: following an incident is their own choice from then on.
+func (s *MajorService) UnlinkTicket(ctx context.Context, c Caller, manage bool, id, ticketID string) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if !manage {
+		return ErrForbidden
+	}
+	if s.access == nil {
+		return ErrNotFound
+	}
+	ok, err := s.access.CanViewTicket(ctx, c.Actor.UserID, ticketID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.store.LockMajorTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if cur.Status == MIClosed {
+			return &InvalidTransitionError{Operation: "unlink_ticket", From: cur.Status}
+		}
+		was, err := s.store.UnlinkTicketTx(ctx, tx, id, ticketID)
+		if err != nil || !was {
+			return err
+		}
+		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.major_incident_unlinked", TargetType: "ticket", TargetID: strings.ToLower(ticketID),
+			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"majorIncidentId": cur.ID}}); err != nil {
+			return err
+		}
+		return audit.Record(ctx, tx, audit.Change{Action: "servicedesk.major_incident.ticket_unlinked", TargetType: "major_incident", TargetID: cur.ID,
+			Actor: c.Actor, CorrelationID: c.CorrelationID, Metadata: map[string]any{"ticketId": strings.ToLower(ticketID)}})
+	})
+}
+
 // Subscribe lets any signed-in User follow an active incident instead of reporting it again.
 func (s *MajorService) Subscribe(ctx context.Context, c Caller, user string, id string, on bool) error {
 	if err := c.validate(); err != nil {
@@ -385,8 +430,11 @@ func (s *MajorService) Subscribe(ctx context.Context, c Caller, user string, id 
 
 // MajorDetail is an incident with its public timeline.
 type MajorDetail struct {
-	Incident   MajorIncident
-	Updates    []MajorUpdate
+	Incident MajorIncident
+	Updates  []MajorUpdate
+	// Tickets are the linked Tickets the reader may view (their Queue grants, or being reporter or affected); the
+	// others are not listed, so Incident.Tickets (the total) can be larger than len(Tickets).
+	Tickets    []Ticket
 	Operations []string
 }
 
@@ -403,7 +451,16 @@ func (s *MajorService) Get(ctx context.Context, user string, manage bool, id str
 	if err != nil {
 		return MajorDetail{}, err
 	}
-	d := MajorDetail{Incident: m, Updates: updates, Operations: []string{}}
+	d := MajorDetail{Incident: m, Updates: updates, Tickets: []Ticket{}, Operations: []string{}}
+	if s.access != nil && m.Tickets > 0 {
+		linked, err := s.store.MajorTickets(ctx, id)
+		if err != nil {
+			return MajorDetail{}, err
+		}
+		if d.Tickets, err = s.access.VisibleTickets(ctx, user, linked); err != nil {
+			return MajorDetail{}, err
+		}
+	}
 	if manage {
 		d.Operations = MajorOperations(m.Status)
 	}

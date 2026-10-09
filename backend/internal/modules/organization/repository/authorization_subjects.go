@@ -157,3 +157,51 @@ func (r *Repository) UserByEmail(ctx context.Context, email string) (string, boo
 	}
 	return id, true, nil
 }
+
+// ActiveEmployees returns id -> true for each id that is an active internal employee account (not external, not the
+// emergency account). Used where a person may name another person without directory permissions (on-behalf tickets).
+func (r *Repository) ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND status = 'active' AND account_kind = 'employee' AND origin <> 'emergency'`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("active employees: %w", err)
+	}
+	active, err := collectStrings(rows, "active employees")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(active))
+	for _, id := range active {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// PrimaryLocationIDs returns user id -> primary Location id for Users that have one.
+func (r *Repository) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, primary_location_id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND primary_location_id IS NOT NULL`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("primary locations: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, loc string
+		if err := rows.Scan(&id, &loc); err != nil {
+			return nil, fmt.Errorf("primary locations: scan: %w", err)
+		}
+		out[id] = loc
+	}
+	return out, rows.Err()
+}
+
+// SearchUserIDs returns the ids of up to limit Users (any status) whose display name or e-mail contains text, by
+// name. The text is escaped; the trigram indexes serve texts of 3 or more characters.
+func (r *Repository) SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM organization.users
+		WHERE display_name ILIKE '%' || $1 || '%' OR primary_email ILIKE '%' || $1 || '%' ORDER BY display_name, id LIMIT $2`, prefixPattern(text), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search users: %w", err)
+	}
+	return collectStrings(rows, "search users")
+}

@@ -57,6 +57,39 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	if d, _ := svc.Get(ctx, e.alice, false, m.ID); !d.Incident.Subscribed || d.Incident.Tickets != 1 {
 		t.Errorf("reporter after linking: %+v", d.Incident)
 	}
+	// The detail lists the linked tickets the reader may view: the reporter sees theirs, an unrelated employee none
+	// (the total still counts it).
+	if d, err := svc.Get(ctx, e.alice, false, m.ID); err != nil || len(d.Tickets) != 1 || d.Tickets[0].ID != tk.ID {
+		t.Errorf("reporter's linked tickets = %+v %v", d.Tickets, err)
+	}
+	if d, err := svc.Get(ctx, e.bob, false, m.ID); err != nil || len(d.Tickets) != 0 || d.Incident.Tickets != 1 {
+		t.Errorf("unrelated employee: tickets %+v total %d %v", d.Tickets, d.Incident.Tickets, err)
+	}
+	if d, err := svc.Get(ctx, e.agent, true, m.ID); err != nil || len(d.Tickets) != 1 {
+		t.Errorf("agent's linked tickets = %+v %v", d.Tickets, err)
+	}
+	// Unlinking: permission, unknown ticket, then the ticket leaves the incident (idempotent).
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), false, m.ID, tk.ID); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("unlink without permission: %v", err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, "00000000-0000-7000-8000-000000000001"); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("unlink an unknown ticket: %v", err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Errorf("second unlink must be a no-op: %v", err)
+	}
+	if d, _ := svc.Get(ctx, e.agent, true, m.ID); len(d.Tickets) != 0 || d.Incident.Tickets != 0 {
+		t.Errorf("after unlink: %+v", d)
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.major_incident.ticket_unlinked'`, e.corr) != 1 {
+		t.Error("exactly one unlink audit event")
+	}
+	if err := svc.LinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Fatal(err)
+	}
 	linked, err := e.svc.Get(ctx, e.user(), tk.ID)
 	if err != nil || linked.Ticket.MajorIncidentID == nil || *linked.Ticket.MajorIncidentID != m.ID {
 		t.Errorf("ticket link = %+v %v", linked.Ticket, err)

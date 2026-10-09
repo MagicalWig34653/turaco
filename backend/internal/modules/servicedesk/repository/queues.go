@@ -260,7 +260,7 @@ func (r *Repository) MoveTx(ctx context.Context, tx pgx.Tx, t application.Ticket
 		FROM n WHERE tk.id = $1::uuid
 		RETURNING tk.id::text, tk.reference, tk.kind, tk.title, tk.description, tk.status, tk.waiting_reason, tk.status_reason, tk.resolution, tk.priority,
 			tk.reporter_user_id::text, tk.affected_user_id::text, tk.queue_team_id::text, tk.assignee_user_id::text, tk.asset_id::text, tk.major_incident_id::text, tk.device_snapshot,
-			tk.resolved_at, tk.closed_at, tk.version, tk.created_at, tk.updated_at, tk.queue_id::text, tk.number`,
+			tk.resolved_at, tk.closed_at, tk.version, tk.created_at, tk.updated_at, tk.queue_id::text, tk.number, tk.patient_impact, tk.affected_location_id::text, tk.duplicate_of_ticket_id::text, tk.reported_impact`,
 		t.ID, t.QueueID, t.QueueTeamID, t.AssigneeID, t.Status))
 	if err != nil {
 		if mapped := mapQueueError(err); mapped != nil {

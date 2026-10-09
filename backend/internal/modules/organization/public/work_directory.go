@@ -22,6 +22,21 @@ func (w *WorkDirectory) ActiveUsers(ctx context.Context, ids []string) (map[stri
 	return w.app.ActiveUsers(ctx, ids)
 }
 
+// ActiveEmployees returns id -> true for each id that is an active internal employee account.
+func (w *WorkDirectory) ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error) {
+	return w.app.ActiveEmployees(ctx, ids)
+}
+
+// PrimaryLocationIDs returns user id -> primary Location id for Users that have one.
+func (w *WorkDirectory) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	return w.app.PrimaryLocationIDs(ctx, ids)
+}
+
+// SearchUserIDs returns the ids of at most limit Users whose name or e-mail contains text.
+func (w *WorkDirectory) SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error) {
+	return w.app.SearchUserIDs(ctx, text, limit)
+}
+
 // UserNames returns id -> display name; unknown ids are absent.
 func (w *WorkDirectory) UserNames(ctx context.Context, ids []string) (map[string]string, error) {
 	return w.app.UserNames(ctx, ids)

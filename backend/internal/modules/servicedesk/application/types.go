@@ -77,6 +77,14 @@ type Ticket struct {
 	Version    int
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// PatientImpact is the reporter's signal that patient care is affected (it raised the priority at creation).
+	PatientImpact bool
+	// ReportedImpact is the impact the reporter chose (patient_care, blocked, impaired, request); empty when none.
+	ReportedImpact string
+	// AffectedLocationID is the affected person's primary Location when the ticket was raised (a snapshot).
+	AffectedLocationID *string
+	// DuplicateOfID is the ticket that carries the work when this one was marked as its duplicate.
+	DuplicateOfID *string
 }
 
 // Comment is a note on a ticket.
@@ -220,6 +228,11 @@ type Directory interface {
 	ActiveTeams(ctx context.Context, ids []string) (map[string]bool, error)
 	UserNames(ctx context.Context, ids []string) (map[string]string, error)
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
+}
+
+// EmployeeDirectory is the optional directory capability that tells internal employees from external accounts.
+type EmployeeDirectory interface {
+	ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error)
 }
 
 // Device is the Assets contract the service desk uses to remember a device.

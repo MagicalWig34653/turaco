@@ -103,6 +103,8 @@ type SubmitInput struct {
 type resolvedStep struct {
 	user *string
 	team *string
+	// fallback is set when the step's configured fallback Team replaced the manager.
+	fallback bool
 }
 
 // resolveStep reduces one approval step of the snapshot to a concrete
@@ -126,6 +128,9 @@ func (s *Service) resolveStep(ctx context.Context, d catalogpublic.Definition, i
 		}
 		manager, ok := m[requestedFor]
 		if !ok || slices.Contains(excluded, manager) {
+			if st.FallbackTeamID != nil {
+				return resolvedStep{team: st.FallbackTeamID, fallback: true}, nil
+			}
 			return resolvedStep{}, fmt.Errorf("%w: step %d needs a manager who may decide this request", ErrNoEligibleApprover, i+1)
 		}
 		return resolvedStep{user: &manager}, nil
@@ -182,6 +187,21 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 	}
 	if !active[requester] || !active[requestedFor] {
 		return Request{}, ErrRequestedForInvalid
+	}
+	if requestedFor != requester {
+		// Requests for another person are made between internal employees only.
+		ed, ok := s.dir.(interface {
+			ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error)
+		})
+		if ok {
+			emp, err := ed.ActiveEmployees(ctx, []string{requester, requestedFor})
+			if err != nil {
+				return Request{}, fmt.Errorf("check employees: %w", err)
+			}
+			if !emp[requester] || !emp[requestedFor] {
+				return Request{}, ErrRequestedForInvalid
+			}
+		}
 	}
 	answers, refs, err := catalogpublic.ValidateAnswers(ctx, sub.Definition, in.Answers, s.users, s.products)
 	if err != nil {
@@ -724,4 +744,105 @@ func truncateRunes(text string, n int) string {
 		return string(runes[:n])
 	}
 	return text
+}
+
+// ---- approval preview ----
+
+// PreviewStep is one approval step as the requester will meet it.
+type PreviewStep struct {
+	Index int
+	// Kind is "user", "team" or "manager". Resolved is false when nobody eligible could decide the step now.
+	Kind     string
+	Resolved bool
+	// Fallback is true when the configured fallback Team replaces a manager who cannot decide.
+	Fallback bool
+	// ApproverName is the User or Team name; for a manager it is only filled when the request is for the requester.
+	ApproverName string
+}
+
+// ApprovalPreview shows, before submitting, who would approve. It reads only; the answers are not known yet, so
+// Users named in answers are excluded at submission time and not here. Steps that are not resolved mean the
+// submission would fail with ErrNoEligibleApprover. Every signed-in User may ask for an active item.
+func (s *Service) ApprovalPreview(ctx context.Context, c Caller, catalogItemID string, requestedForID *string) ([]PreviewStep, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	requester := c.Actor.UserID
+	if requester == "" {
+		return nil, ErrForbidden
+	}
+	sub, err := s.catalog.ForSubmission(ctx, catalogItemID)
+	if err != nil {
+		if errors.Is(err, catalogpublic.ErrNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if !sub.Active {
+		return nil, ErrItemInactive
+	}
+	requestedFor := requester
+	if requestedForID != nil && !strings.EqualFold(*requestedForID, requester) {
+		if !sub.Definition.AllowRequestedFor {
+			return nil, ErrRequestedForInvalid
+		}
+		requestedFor = strings.ToLower(*requestedForID)
+		active, err := s.dir.ActiveUsers(ctx, []string{requestedFor})
+		if err != nil {
+			return nil, fmt.Errorf("check users: %w", err)
+		}
+		if !active[requestedFor] {
+			return nil, ErrRequestedForInvalid
+		}
+	}
+	excluded := excludedUsers(requester, requestedFor, nil, nil)
+	out := make([]PreviewStep, 0, len(sub.Definition.Approvals))
+	var users, teams []string
+	type pending struct{ user, team *string }
+	named := make([]pending, 0, len(sub.Definition.Approvals))
+	for i, st := range sub.Definition.Approvals {
+		ps := PreviewStep{Index: i, Kind: "user"}
+		switch {
+		case st.ApproverTeamID != nil:
+			ps.Kind = "team"
+		case st.Approver == "manager":
+			ps.Kind = "manager"
+		}
+		rs, err := s.resolveStep(ctx, sub.Definition, i, requestedFor, excluded)
+		var p pending
+		switch {
+		case errors.Is(err, ErrNoEligibleApprover):
+		case err != nil:
+			return nil, err
+		default:
+			ps.Resolved, ps.Fallback = true, rs.fallback
+			if rs.team != nil {
+				p.team = rs.team
+				teams = append(teams, *rs.team)
+			}
+			if rs.user != nil && (ps.Kind != "manager" || requestedFor == requester) {
+				p.user = rs.user
+				users = append(users, *rs.user)
+			}
+		}
+		out = append(out, ps)
+		named = append(named, p)
+	}
+	un, err := s.dir.UserNames(ctx, users)
+	if err != nil {
+		return nil, fmt.Errorf("load names: %w", err)
+	}
+	tn, err := s.dir.TeamNames(ctx, teams)
+	if err != nil {
+		return nil, fmt.Errorf("load names: %w", err)
+	}
+	for i, p := range named {
+		switch {
+		case p.team != nil:
+			out[i].ApproverName = tn[*p.team]
+		case p.user != nil:
+			out[i].ApproverName = un[*p.user]
+		}
+	}
+	return out, nil
 }

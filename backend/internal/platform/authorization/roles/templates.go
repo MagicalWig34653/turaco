@@ -35,7 +35,7 @@ type Template struct {
 	AdministratorAssignOnly bool
 }
 
-var firstLevel = []string{"tickets.manage", "knowledge.view", "assets.view", "endpoints.view", "requests.view", "tasks.work", "remote_access.view"}
+var firstLevel = []string{"tickets.manage", "knowledge.view", "assets.view", "endpoints.view", "requests.view", "tasks.work", "remote_access.view", "views.share"}
 
 var specialist = concat(firstLevel, "assets.manage", "knowledge.manage", "problems.manage", "tasks.manage", "changes.view", "infrastructure.view", "security.view")
 

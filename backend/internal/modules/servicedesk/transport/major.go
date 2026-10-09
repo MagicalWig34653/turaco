@@ -29,6 +29,7 @@ func RegisterMajor(mux *http.ServeMux, svc *application.MajorService, auth autho
 	route("GET /api/v1/major-incidents/{id}", h.get)
 	route("POST /api/v1/major-incidents/{id}/updates", h.update)
 	route("POST /api/v1/major-incidents/{id}/tickets", h.link)
+	route("DELETE /api/v1/major-incidents/{id}/tickets/{ticketId}", h.unlink)
 	route("POST /api/v1/major-incidents/{id}/subscribe", h.subscribe(true))
 	route("POST /api/v1/major-incidents/{id}/unsubscribe", h.subscribe(false))
 	for _, op := range []string{application.MOInvestigate, application.MOMitigate, application.MOMonitor, application.MOResolve, application.MOClose} {
@@ -131,32 +132,68 @@ func (h *majorHandler) get(w http.ResponseWriter, r *http.Request) {
 		Body      string `json:"body"`
 		CreatedAt string `json:"createdAt"`
 	}
+	type tk struct {
+		ID        string `json:"id"`
+		Reference string `json:"reference"`
+		Title     string `json:"title"`
+		Status    string `json:"status"`
+		Priority  string `json:"priority"`
+	}
 	out := struct {
 		majorDTO
 		Updates           []upd    `json:"updates"`
+		Tickets_          []tk     `json:"tickets"`
 		AllowedOperations []string `json:"allowedOperations"`
-	}{majorDTO: toMajor(d.Incident), Updates: make([]upd, 0, len(d.Updates)), AllowedOperations: d.Operations}
+	}{majorDTO: toMajor(d.Incident), Updates: make([]upd, 0, len(d.Updates)), Tickets_: make([]tk, 0, len(d.Tickets)), AllowedOperations: d.Operations}
+	for _, t := range d.Tickets {
+		out.Tickets_ = append(out.Tickets_, tk{ID: t.ID, Reference: t.Reference, Title: t.Title, Status: t.Status, Priority: t.Priority})
+	}
 	for _, u := range d.Updates {
 		out.Updates = append(out.Updates, upd{ID: u.ID, Status: u.Status, Body: u.Body, CreatedAt: ts(u.CreatedAt)})
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
 
+const maxDeclareTickets = 50
+
+// declare opens the incident and then links the named tickets one by one (each link is its own audited operation
+// with its own Queue access check). Tickets that could not be linked are returned in notLinkedTicketIds; the
+// incident exists either way.
 func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Title   string `json:"title"`
-		Message string `json:"message"`
+		Title     string   `json:"title"`
+		Message   string   `json:"message"`
+		TicketIDs []string `json:"ticketIds"`
 	}
 	if !mdecode(w, r, &b) {
 		return
 	}
+	if len(b.TicketIDs) > maxDeclareTickets {
+		httpx.WriteError(w, http.StatusBadRequest, "tickets.invalid_request", "At most 50 tickets can be linked when declaring an incident.")
+		return
+	}
 	_, manage := me(r)
-	m, err := h.svc.Declare(r.Context(), mcaller(w, r), manage, b.Title, b.Message)
+	c := mcaller(w, r)
+	m, err := h.svc.Declare(r.Context(), c, manage, b.Title, b.Message)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, toMajor(m))
+	notLinked := []string{}
+	for _, id := range b.TicketIDs {
+		if err := h.svc.LinkTicket(r.Context(), c, manage, m.ID, id); err != nil {
+			notLinked = append(notLinked, id)
+		}
+	}
+	if len(b.TicketIDs) > 0 {
+		if cur, err := h.svc.Get(r.Context(), c.Actor.UserID, manage, m.ID); err == nil {
+			m = cur.Incident
+		}
+	}
+	httpx.JSON(w, http.StatusCreated, struct {
+		majorDTO
+		NotLinked []string `json:"notLinkedTicketIds"`
+	}{toMajor(m), notLinked})
 }
 
 func (h *majorHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +221,15 @@ func (h *majorHandler) link(w http.ResponseWriter, r *http.Request) {
 	}
 	_, manage := me(r)
 	if err := h.svc.LinkTicket(r.Context(), mcaller(w, r), manage, r.PathValue("id"), b.TicketID); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *majorHandler) unlink(w http.ResponseWriter, r *http.Request) {
+	_, manage := me(r)
+	if err := h.svc.UnlinkTicket(r.Context(), mcaller(w, r), manage, r.PathValue("id"), r.PathValue("ticketId")); err != nil {
 		h.fail(w, r, err)
 		return
 	}

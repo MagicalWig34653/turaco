@@ -115,15 +115,26 @@ func (h *handler) counts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]countDTO, 0, len(res))
+	total, capped, complete := 0, false, true
 	for _, c := range res {
 		d := countDTO{Source: c.Source, Status: c.Status}
 		if c.Status == workitems.CountOK {
 			n := c.N
 			d.Count, d.Capped = &n, c.Capped
+			total += n
+			capped = capped || c.Capped
+		} else {
+			complete = false
+			h.logger.ErrorContext(r.Context(), "my work source count failed", "request_id", httpx.RequestID(w), "source", c.Source, "error", c.Err)
 		}
 		out = append(out, d)
 	}
+	// total sums only the sources that answered; complete is false when any source is unavailable, so a client never
+	// shows a partial sum as the whole (a failed source is never counted as zero).
 	httpx.JSON(w, http.StatusOK, struct {
-		Items []countDTO `json:"items"`
-	}{out})
+		Items    []countDTO `json:"items"`
+		Total    int        `json:"total"`
+		Capped   bool       `json:"totalCapped"`
+		Complete bool       `json:"complete"`
+	}{out, total, capped, complete})
 }

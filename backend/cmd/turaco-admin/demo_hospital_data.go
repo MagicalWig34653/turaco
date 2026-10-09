@@ -88,19 +88,19 @@ type simRole struct {
 var simRoles = []simRole{
 	{roleFirstLevel, "First-level support", "Simulation: triage and work tickets, read knowledge, assets and devices; no changes to assets or knowledge.",
 		[]string{"tickets.manage", "knowledge.view", "assets.view", "organization.view", "tasks.work", "briefing.view", "endpoints.view",
-			"remote_access.view", "remote_access.start_attended", "runbooks.execute", "requests.view", "services.view", "presence.manage_own"}},
+			"remote_access.view", "remote_access.start_attended", "runbooks.execute", "requests.view", "services.view", "presence.manage_own", "views.share"}},
 	{roleSpecialist, "IT specialist", "Simulation: second-level technician (WLAN, ORBIS/KIS): first level plus assets, knowledge, problems and tasks.",
 		[]string{"tickets.manage", "knowledge.view", "knowledge.manage", "assets.view", "assets.manage", "organization.view", "tasks.work", "tasks.manage",
 			"briefing.view", "endpoints.view", "endpoint.management.view", "remote_access.view", "remote_access.start_attended", "runbooks.execute",
 			"requests.view", "services.view", "problems.manage", "changes.view", "infrastructure.view", "security.view", "products.view",
-			"inventory.view", "software.view", "deployments.view", "presence.manage_own"}},
+			"inventory.view", "software.view", "deployments.view", "presence.manage_own", "views.share"}},
 	{roleSiteLead, "IT site lead", "Simulation: Standort-IT-Leiter: specialist plus briefing, major incidents, changes, teams and presence of the team.",
 		[]string{"tickets.manage", "knowledge.view", "knowledge.manage", "assets.view", "assets.manage", "organization.view", "organization.teams.manage",
 			"tasks.work", "tasks.manage", "briefing.view", "briefing.manage", "endpoints.view", "endpoint.management.view", "remote_access.view",
 			"remote_access.start_attended", "runbooks.execute", "requests.view", "requests.manage", "services.view", "problems.manage",
 			"majorincidents.manage", "changes.view", "changes.manage", "changes.approve", "planning.view", "infrastructure.view", "security.view",
 			"products.view", "inventory.view", "procurement.view", "software.view", "deployments.view", "presence.manage_own",
-			"presence.view_availability", "presence.manage_entries"}},
+			"presence.view_availability", "presence.manage_entries", "views.share"}},
 	{roleSecurity, "Security analyst", "Simulation: security advisories, findings and risk acceptance; reads tickets, devices and the audit log without working tickets.",
 		[]string{"security.manage", "security.view", "security.accept_risk", "tickets.view", "knowledge.view", "knowledge.manage", "assets.view",
 			"endpoints.view", "endpoint.management.view", "organization.view", "organization.directory.view", "tasks.work", "briefing.view",
@@ -113,6 +113,33 @@ var simRoles = []simRole{
 			"presence.manage_own"}},
 	{roleVendor, "Vendor (restricted)", "Simulation: external KIS vendor. Only tasks assigned to the vendor team or to the person; every signed-in user can additionally raise and read own tickets.",
 		[]string{"tasks.work"}},
+}
+
+// simQueue is a ticket desk of the simulation: one per specialist Team, with that Team working it. The default
+// Queue created by the platform ("it", prefix TKT) stays the intake desk of First Level Support and is renamed in
+// the seed; tickets of the First Level, site lead and vendor Teams stay in it.
+type simQueue struct {
+	Key, Prefix, Name, Label, Team string
+}
+
+var simQueues = []simQueue{
+	{"telefonie-wlan", "TEL", "Telefonie & WLAN", "Telefonie & WLAN", teamWLAN},
+	{"orbis-kis", "KIS", "ORBIS/KIS", "ORBIS/KIS", teamKIS},
+	{"infrastruktur", "INF", "Infrastruktur", "Infrastruktur", teamInfra},
+	{"security", "SEC", "Security", "Security", teamSec},
+}
+
+// simIntakeQueueName is the name the seed gives the platform's default Queue.
+const simIntakeQueueName = "Allgemein (First Level)"
+
+// queueOfTeam returns the simQueue a routing Team works, if any.
+func queueOfTeam(team string) (simQueue, bool) {
+	for _, q := range simQueues {
+		if q.Team == team {
+			return q, true
+		}
+	}
+	return simQueue{}, false
 }
 
 type simMembership struct{ Team, Role string }
@@ -231,14 +258,24 @@ type simProduct struct{ Name, MPN, IPN, Manufacturer, Category string }
 var simProducts = []simProduct{
 	{"Workstation WS-100", "NT-WS100", "WS-100", "Nordtech Systems", "Workstations"},
 	{"Notebook Clinic 14", "NT-CL14", "NB-CL14", "Nordtech Systems", "Notebooks"},
-	{"Thin client TC-20", "NT-TC20", "TC-20", "Nordtech Systems", "Thin clients"},
-	{"Laser printer LP-400", "NT-LP400", "LP-400", "Nordtech Systems", "Printers"},
-	{"Label and wristband printer WB-10", "NT-WB10", "WB-10", "Nordtech Systems", "Printers"},
-	{"Bedside terminal MT-15", "MD-MT15", "MT-15", "Meditron IT", "Medical IT"},
-	{"Mobile visit cart VC-2", "MD-VC2", "VC-2", "Meditron IT", "Medical IT"},
-	{"Diagnostic monitor DM-21", "MD-DM21", "DM-21", "Meditron IT", "Medical IT"},
-	{"Access point AP-310", "AL-AP310", "AP-310", "AirLink Networks", "Network"},
-	{"Access switch SW-48", "AL-SW48", "SW-48", "AirLink Networks", "Network"},
+	{"Thin Client TC-20", "NT-TC20", "TC-20", "Nordtech Systems", "Thin Clients"},
+	{"Laserdrucker LP-400", "NT-LP400", "LP-400", "Nordtech Systems", "Drucker"},
+	{"Etiketten- und Armbanddrucker WB-10", "NT-WB10", "WB-10", "Nordtech Systems", "Drucker"},
+	{"Bettplatz-Terminal MT-15", "MD-MT15", "MT-15", "Meditron IT", "Medizin-IT"},
+	{"Mobiler Visitenwagen VC-2", "MD-VC2", "VC-2", "Meditron IT", "Medizin-IT"},
+	{"Befundmonitor DM-21", "MD-DM21", "DM-21", "Meditron IT", "Medizin-IT"},
+	{"Access Point AP-310", "AL-AP310", "AP-310", "AirLink Networks", "Netzwerk"},
+	{"Access-Switch SW-48", "AL-SW48", "SW-48", "AirLink Networks", "Netzwerk"},
+}
+
+// simLegacyNames are the English names of earlier seed runs; the seed renames those products and categories in place
+// (the product by its new name, the category by its new name).
+var simLegacyNames = map[string]string{
+	"Thin Client TC-20": "Thin client TC-20", "Laserdrucker LP-400": "Laser printer LP-400",
+	"Etiketten- und Armbanddrucker WB-10": "Label and wristband printer WB-10", "Bettplatz-Terminal MT-15": "Bedside terminal MT-15",
+	"Mobiler Visitenwagen VC-2": "Mobile visit cart VC-2", "Befundmonitor DM-21": "Diagnostic monitor DM-21",
+	"Access Point AP-310": "Access point AP-310", "Access-Switch SW-48": "Access switch SW-48",
+	"Thin Clients": "Thin clients", "Drucker": "Printers", "Medizin-IT": "Medical IT", "Netzwerk": "Network",
 }
 
 // simAsset is one asset to register. Holder is "user:<login>", "team:<key>", "location:<area>" or "" (spare).

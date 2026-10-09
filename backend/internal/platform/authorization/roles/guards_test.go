@@ -604,3 +604,22 @@ func TestDominanceAndLastAdministratorGuards(t *testing.T) {
 		t.Fatalf("the operator (CLI): %v", err)
 	}
 }
+
+// Team leads work with saved views: every working template may share a view with named people, Teams and roles
+// (views.share, low risk, never grants data access); publishing to everyone (views.publish) stays out of templates.
+func TestTemplatesViewSharing(t *testing.T) {
+	for _, key := range []string{"first-level-support", "it-specialist", "team-lead"} {
+		tpl, ok := TemplateByKey(key)
+		if !ok {
+			t.Fatalf("template %s missing", key)
+		}
+		if !slices.Contains(tpl.Permissions, "views.share") {
+			t.Errorf("%s lacks views.share", key)
+		}
+	}
+	for _, tpl := range Templates() {
+		if slices.Contains(tpl.Permissions, "views.publish") {
+			t.Errorf("%s contains views.publish", tpl.Key)
+		}
+	}
+}

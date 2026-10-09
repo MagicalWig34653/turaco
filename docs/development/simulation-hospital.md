@@ -2,7 +2,7 @@
 
 A reproducible dataset and persona guide for usability tests: the IT department of a hospital group with three sites, five technical teams, an external software vendor and clinical and administrative staff. It is **development data only**: every login uses the same public password, and `turaco-admin demo seed-hospital` refuses to run unless `APP_ENV=development`.
 
-Technical identifiers are English; the simulated organization, tickets and articles are German test data. Interface strings still come from the i18n resources.
+Technical identifiers are English; the simulated organization, tickets and articles are German test data. The base demo seed (`demo seed`: catalog items and their form labels, product categories, products, help articles) is German too; a re-run renames the English records of earlier runs in place (catalog items by key, products and categories by their old name) and retires the English help articles. The manager-approval catalog items get the Team Standort-IT-Leitung as fallback approver (`fallbackTeamId`), so a request of a person without a manager no longer dead-ends. Interface strings still come from the i18n resources.
 
 ## Load the scenario
 
@@ -63,7 +63,8 @@ Meetings or a calendar do not exist in Turaco (see the gap list); testers run th
 | Users | 31 | 15 IT (incl. 3 leads), 2 vendor, 14 clinical and administrative staff; each with name, email (`*.example`), department, primary location, manager |
 | Roles | 6 custom | see [Roles](#roles); employees need no role |
 | Assets | 60 | workstations, notebooks, thin clients, bedside terminals, visit carts, diagnostic monitors, laser and wristband printers, WLAN access points (team-held), switches (team-held); person-, location- or team-assigned; one spare workstation, two devices in repair |
-| Tickets | 27 | all states, four priorities, queues of all five teams; comments (public and internal), some with the reporter's device attached |
+| Queues | 5 | the platform's default desk `it` (prefix `TKT`, renamed "Allgemein (First Level)", intake desk of First Level Support, site leads and vendor tickets) plus `telefonie-wlan` (`TEL`), `orbis-kis` (`KIS`), `infrastruktur` (`INF`) and `security` (`SEC`); each specialist desk is internal, routes to its Team, grants the owning Team and the site-lead Team the work level and First Level Support the create level (people with the global `tickets.manage` or `tickets.view` see every desk anyway). A re-run moves tickets of earlier runs that still sit in the intake desk into the desk of their routing Team (new number, old number kept as an alias); finished tickets stay where they are |
+| Tickets | 27 | all states, four priorities, routing Teams of all five teams, each in the desk of its Team; comments (public and internal), some with the reporter's device attached |
 | Problems | 3 | two Known Errors with workaround (ORBIS medication timeout, WLAN roaming), one under investigation |
 | Major incident | 1 | "ORBIS: Anmeldung am Standort Nord gestört" with two linked tickets |
 | Knowledge | 13 articles | ORBIS, WLAN, printing, phishing, triage guide, vendor rules (employee and internal audiences) |
@@ -145,10 +146,7 @@ Testers must write these down as **gaps**, not as defects, when they look for th
 
 | Expectation | State |
 |---|---|
-| Ticket **queues** as owned objects with counts, prefixes and routing | Not implemented. A ticket has a queue **Team**; the queue screen only filters by team ([F13 design](../product/f13-workbench-views-design.md)) |
-| **Saved views**, pins, sharing | Not implemented (F13; only the backend query engine exists) |
-| **Kanban / task boards** | Not implemented |
-| Tickets in **My Work** | Not implemented; My Work shows tasks and briefing entries |
+| Ticket **routing rules** (automatic assignment by category or keyword) | Not implemented; desks (queues) exist, tickets are routed by the person who raises or moves them ([F13 design](../product/f13-workbench-views-design.md)) |
 | **User and team administration UI** (create users, edit teams and members, set manager or location) | Not implemented. Teams are managed through the API; users come from directory sync (the simulation writes them with the CLI) |
 | Location **hierarchy** and a location admin | Not implemented; Locations are flat and have no write API |
 | **Meetings and calendar** for recurring team meetings, agendas, minutes | Not implemented. The maintenance calendar shows change windows only |

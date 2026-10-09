@@ -78,6 +78,17 @@ var ticketCatalog = query.MustCatalog(query.Resource{
 		{Key: "asset", Type: query.TypeReference, Reference: "assets", Column: query.Col("t", "asset_id"), Nullable: true,
 			Operators:  []query.Op{query.OpEquals, query.OpNotEquals, query.OpIn, query.OpNotIn, query.OpIsEmpty, query.OpIsNotEmpty},
 			Filterable: true, Index: query.IndexBtree},
+		// location is the affected person's primary Location when the ticket was raised (snapshot).
+		{Key: "location", Type: query.TypeReference, Reference: "locations", Column: query.Col("t", "affected_location_id"), Nullable: true,
+			Operators:  []query.Op{query.OpEquals, query.OpNotEquals, query.OpIn, query.OpNotIn, query.OpIsEmpty, query.OpIsNotEmpty},
+			Filterable: true, Index: query.IndexBtree, Gate: isStaff, Redaction: query.RedactHidden},
+		{Key: "patient_impact", Type: query.TypeBoolean, Column: query.Col("t", "patient_impact"),
+			Operators: []query.Op{query.OpIsTrue, query.OpIsFalse}, Filterable: true, Gate: isStaff, Redaction: query.RedactHidden},
+		// device is the device the ticket names (snapshot of reference, product, serial number and asset tag), lowercase
+		// text served by a trigram index (migration 000068); it is part of the search.
+		{Key: "device", Type: query.TypeText, Column: query.Col("t", "device_search"),
+			Operators: []query.Op{query.OpContains, query.OpNotContains}, Filterable: true, Searchable: true,
+			Index: query.IndexTrigram},
 		{Key: "created_at", Type: query.TypeDateTime, Column: query.Col("t", "created_at"), Operators: timeOps,
 			Filterable: true, Sortable: true, SortIndexed: true, Index: query.IndexBtree},
 		{Key: "updated_at", Type: query.TypeDateTime, Column: query.Col("t", "updated_at"), Operators: timeOps,
@@ -216,7 +227,14 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 		name += ":" + strings.ToLower(inQueue)
 	}
 	req.Filter = query.And(req.Filter, compat...)
-	plan, err := s.engine.Prepare(ticketCatalog, a.subject(p), req, name, query.Options{})
+	opts := query.Options{}
+	if a.anyView() {
+		opts.SearchExtra, err = s.personSearch(ctx, req)
+		if err != nil {
+			return query.Page[Ticket]{}, err
+		}
+	}
+	plan, err := s.engine.Prepare(ticketCatalog, a.subject(p), req, name, opts)
 	if err != nil {
 		return query.Page[Ticket]{}, err
 	}
@@ -264,6 +282,39 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 		return query.Page[Ticket]{}, err
 	}
 	return page, nil
+}
+
+// maxSearchPeople bounds the people a search text may expand to; a broader text still finds the Tickets whose title,
+// number or device matches, and the people listed first by name.
+const maxSearchPeople = 100
+
+// personSearch lets the ticket search also match the reporter and the affected person by name or e-mail, for callers
+// who see Tickets of Queues (staff). The text is resolved through the Organization public contract (no join into
+// its tables): at most maxSearchPeople matching Users, then an indexed lookup of the Tickets they reported or are
+// affected by (btree on both columns). The visibility predicate still applies to the result, so a name never
+// reveals a Ticket of a Queue the caller may not view.
+func (s *Service) personSearch(ctx context.Context, req query.Request) (*query.SearchExtra, error) {
+	ps, ok := s.dir.(interface {
+		SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error)
+	})
+	text := strings.TrimSpace(req.Search)
+	if text == "" && req.Filter != nil {
+		text = strings.TrimSpace(req.Filter.Search)
+	}
+	if !ok || text == "" {
+		return nil, nil
+	}
+	ids, err := ps.SearchUserIDs(ctx, text, maxSearchPeople)
+	if err != nil {
+		return nil, fmt.Errorf("search people: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return &query.SearchExtra{
+		SQL:  "t.reporter_user_id = ANY(?::text[]::uuid[]) OR t.affected_user_id = ANY(?::text[]::uuid[])",
+		Args: []any{ids, ids}, Cost: 2, Uses: []string{"reporter", "affected_user"},
+	}, nil
 }
 
 func nonNil(s []string) []string {

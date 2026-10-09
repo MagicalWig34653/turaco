@@ -15,7 +15,20 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
-type dir struct{ active map[string]bool }
+type dir struct {
+	active map[string]bool
+	// external lists active accounts that are not internal employees.
+	external map[string]bool
+}
+
+// ActiveEmployees implements application.EmployeeDirectory: every active account that is not listed as external.
+func (d dir) ActiveEmployees(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = d.active[id] && !d.external[id]
+	}
+	return out, nil
+}
 
 func (d dir) pick(ids []string) map[string]bool {
 	out := map[string]bool{}
@@ -69,7 +82,7 @@ func newEnv(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	d := dir{active: map[string]bool{e.alice: true, e.bob: true, e.agent: true, e.viewer: true, e.team: true}}
+	d := dir{active: map[string]bool{e.alice: true, e.bob: true, e.agent: true, e.viewer: true, e.team: true}, external: map[string]bool{e.viewer: true}}
 	e.svc = application.NewService(repository.New(pool), d, device{e.myBook: e.alice, e.otherBook: e.bob})
 	e.user = func() application.Principal { return application.Principal{UserID: e.alice} }
 	e.staff = func() application.Principal { return application.Principal{UserID: e.agent, Manage: true, View: true} }
@@ -123,11 +136,20 @@ func TestEmployeeRaisesAndFollowsATicket(t *testing.T) {
 	for name, in := range map[string]application.CreateInput{
 		"priority": {Title: "x", Priority: "urgent"},
 		"queue":    {Title: "x", QueueTeamID: &e.team},
-		"affected": {Title: "x", AffectedUserID: &e.bob},
 	} {
 		if _, err := e.svc.Create(ctx, e.c(e.alice), e.user(), in); !errors.Is(err, application.ErrForbidden) {
 			t.Errorf("%s by an employee: %v", name, err)
 		}
+	}
+	// ... except that any internal employee may raise a ticket for a colleague, and never for or as an external account.
+	if on, err := e.svc.Create(ctx, e.c(e.alice), e.user(), application.CreateInput{Title: "Password reset for a colleague", AffectedUserID: &e.bob}); err != nil || on.ReporterID != e.alice || on.AffectedUserID != e.bob || on.Priority != "normal" {
+		t.Errorf("employee on behalf of an employee = %+v %v", on, err)
+	}
+	if _, err := e.svc.Create(ctx, e.c(e.alice), e.user(), application.CreateInput{Title: "x", AffectedUserID: &e.viewer}); !errors.Is(err, application.ErrUserInvalid) {
+		t.Errorf("on behalf of an external account: %v", err)
+	}
+	if _, err := e.svc.Create(ctx, e.c(e.viewer), application.Principal{UserID: e.viewer}, application.CreateInput{Title: "x", AffectedUserID: &e.bob}); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("an external account on behalf of someone: %v", err)
 	}
 	var inv *application.InvalidInputError
 	if _, err := e.svc.Create(ctx, e.c(e.alice), e.user(), application.CreateInput{Title: "  "}); !errors.As(err, &inv) {

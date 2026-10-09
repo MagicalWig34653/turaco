@@ -126,7 +126,7 @@ func (s *Service) runSystem(ctx context.Context, c Caller, sv SystemView, in Res
 	if err := s.moduleOn(ctx, res); err != nil {
 		return ResultsOutput{}, err
 	}
-	req := query.Request{Cursor: in.Cursor, Limit: in.Limit, Count: in.Count, Filter: sv.Definition.Filter}
+	req := query.Request{Cursor: in.Cursor, Limit: in.Limit, Count: in.Count, Filter: sv.Definition.Filter, TimeZone: in.TimeZone}
 	out, err := s.runner.Query(ctx, c, res.Key, req)
 	if err != nil {
 		return ResultsOutput{}, err

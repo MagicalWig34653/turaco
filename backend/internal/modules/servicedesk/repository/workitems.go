@@ -16,7 +16,8 @@ const workRank = `((CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN '
 // view. Everything is a bind parameter.
 func workWhere(q application.WorkQuery) (string, []any) {
 	args := []any{q.UserID}
-	where := []string{"status IN ('new', 'open', 'in_progress', 'waiting')"}
+	// $1 is referenced in every variant (the Global team list would otherwise leave it untyped, which PostgreSQL rejects).
+	where := []string{"$1::uuid IS NOT NULL", "status IN ('new', 'open', 'in_progress', 'waiting')"}
 	switch q.Source {
 	case application.WorkAssigned:
 		where = append(where, "assignee_user_id = $1::uuid")

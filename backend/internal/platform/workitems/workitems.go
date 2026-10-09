@@ -292,6 +292,8 @@ type CountResult struct {
 	Source string
 	Count
 	Status string
+	// Err is the reason of an unavailable source; it is logged by the transport and never sent to the client.
+	Err error
 }
 
 // Counts returns the capped count of each requested source (all when none are named); disabled modules are left
@@ -311,7 +313,7 @@ func (s *Service) Counts(ctx context.Context, p authorization.Principal, keys []
 	for _, src := range srcs {
 		c, err := src.Count(ctx, p)
 		if err != nil {
-			out = append(out, CountResult{Source: src.Key(), Status: CountUnavailable})
+			out = append(out, CountResult{Source: src.Key(), Status: CountUnavailable, Err: err})
 			continue
 		}
 		if c.N > CountCap {

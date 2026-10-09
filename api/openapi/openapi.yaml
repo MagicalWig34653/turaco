@@ -17,6 +17,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Meta'
+  /people/lookup:
+    get:
+      operationId: lookupPeople
+      summary: Find a colleague by name (minimal directory read for every employee).
+      description: "Any signed-in internal employee, to raise a ticket or request for another person without `organization.view`. `q` needs at least 3 characters (400 `query.query_too_short` with `details.minLength`), matches any part of the name or e-mail address, and returns at most 10 active internal employees with id, display name and department only (never e-mail, manager, location, external or emergency accounts). Rate limited per caller to 1 request per second (burst 10; 429 organization.lookup_rate_limited). Audited as organization.people.lookup with the text length and result count, never the text. Answers 404 while PEOPLE_LOOKUP_ENABLED is off."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 3, maxLength: 100}}
+      responses:
+        '200':
+          description: The matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 10
+                    items:
+                      type: object
+                      required: [id, displayName]
+                      properties:
+                        id: {type: string, format: uuid}
+                        displayName: {type: string}
+                        department: {type: string}
+        '400': {description: "Too short (query.query_too_short) or invalid (organization.invalid_query).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '404': {description: "The lookup is switched off.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '429': {description: "Rate limited.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
   /users:
     get:
       operationId: listUsers
@@ -646,6 +678,7 @@ paths:
         - $ref: '#/components/parameters/FilterJSON'
         - $ref: '#/components/parameters/QuerySort'
         - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryTimeZone'
         - $ref: '#/components/parameters/QueryCount'
         - name: status
           in: query
@@ -2145,7 +2178,42 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
-  /service-requests:
+  /service-requests/approval-preview:
+    get:
+      operationId: previewServiceRequestApproval
+      summary: Show who would approve a request before it is submitted.
+      description: "Any signed-in User; reads only. Resolves each approval step of the item for the requester (and `requestedForId` when given and allowed) with the same rules as the submission: the requester and the requested-for person never approve. A manager step shows `fallback: true` when the configured fallback Team replaces a missing manager; a step with `resolved: false` means the submission would fail with 409 requests.no_eligible_approver, so `canSubmit` is false. The manager's name is shown only for the requester's own request. Users named in answers are excluded at submission and not here."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: catalogItemId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: requestedForId, in: query, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: The approval route.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [approvalRequired, canSubmit, steps]
+                properties:
+                  approvalRequired: {type: boolean}
+                  canSubmit: {type: boolean}
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      required: [index, kind, resolved, fallback]
+                      properties:
+                        index: {type: integer}
+                        kind: {type: string, enum: [user, team, manager]}
+                        resolved: {type: boolean}
+                        fallback: {type: boolean}
+                        approverName: {type: string}
+        '400': {description: "Invalid input (requests.requested_for_invalid).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '404': {description: "Unknown catalog item (requests.not_found).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '409': {description: "The item is not available (requests.item_inactive).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
     post:
       operationId: submitServiceRequest
       summary: Submit a service request.
@@ -3993,6 +4061,7 @@ paths:
         - $ref: '#/components/parameters/FilterJSON'
         - $ref: '#/components/parameters/QuerySort'
         - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryTimeZone'
         - $ref: '#/components/parameters/QueryCount'
         - name: scope
           in: query
@@ -4219,7 +4288,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, total, totalCapped, complete]
                 properties:
                   items:
                     type: array
@@ -4231,6 +4300,9 @@ paths:
                         count: {type: integer, minimum: 0}
                         capped: {type: boolean}
                         status: {type: string, enum: [ok, unavailable]}
+                  total: {type: integer, minimum: 0, description: "Sum of the sources that answered; an unavailable source is not part of it."}
+                  totalCapped: {type: boolean, description: "True when any answering source was capped."}
+                  complete: {type: boolean, description: "False when any source is unavailable: total is then a lower bound and must not be shown as the whole."}
         '400': {description: "Invalid input (mywork.invalid_request).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
   /service-desk/queues:
@@ -4518,6 +4590,88 @@ paths:
       responses:
         '200':
           description: The ticket.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ticket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/history:
+    get:
+      operationId: getTicketHistory
+      summary: The change history of a ticket (assignments, routing, status, priority, Queue moves, duplicates).
+      description: "Needs view access in the ticket's Queue (404 otherwise, also for reporters who cannot work the ticket). Derived from the ticket's audit events, oldest first, at most the newest 200 events. Every entry has the actor (`actorId`), the time, the causing operation (`via`: assigned, start, queue_moved, marked_duplicate, ...) and a reason where one was given. `kind`: created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate. An assignment made by a person shows that person as actor; an assignment caused by starting work shows `via` start."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, names]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, at, kind, via]
+                      properties:
+                        id: {type: string, format: uuid}
+                        at: {type: string, format: date-time}
+                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate]}
+                        actorId: {type: string, format: uuid}
+                        via: {type: string}
+                        reason: {type: string}
+                        fromUserId: {type: string}
+                        toUserId: {type: string}
+                        fromTeamId: {type: string}
+                        toTeamId: {type: string}
+                        fromStatus: {type: string}
+                        toStatus: {type: string}
+                        fromPriority: {type: string}
+                        toPriority: {type: string}
+                        duplicateOfId: {type: string}
+                  names:
+                    type: object
+                    additionalProperties: {type: string}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/duplicate:
+    post:
+      operationId: markTicketDuplicate
+      summary: Cancel a ticket as the duplicate of another ticket.
+      description: "Explicit lifecycle operation. Needs work access in the duplicate's Queue and view access to the target (an unknown and an invisible target are the same 404). The duplicate must be new, open, in progress or waiting; it is cancelled with statusReason `duplicate` and `duplicateOfId`. The target must be another ticket that is not cancelled and not itself a duplicate, and the marked ticket must not have duplicates of its own (409 servicedesk.invalid_duplicate_target; no chains). `expectedVersion` is the duplicate's version. Audited (servicedesk.ticket.marked_duplicate); emits TicketStatusChanged. Give the target as `duplicateOfTicketId` (alias `duplicateOfId`) or `duplicateOfReference` (a current or earlier number); the optional note is `reason` (aliases `note`, `reasonCode`)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                duplicateOfTicketId: {type: string, format: uuid}
+                duplicateOfId: {type: string, format: uuid}
+                duplicateOfReference: {type: string}
+                reason: {type: string, maxLength: 500}
+                note: {type: string, maxLength: 500}
+                reasonCode: {type: string, maxLength: 500}
+      responses:
+        '200':
+          description: The cancelled duplicate.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Ticket'}
@@ -4916,7 +5070,7 @@ paths:
     post:
       operationId: declareMajorIncident
       summary: Declare a Major Incident.
-      description: "Needs `majorincidents.manage`. The message becomes the first public update. Emits MajorIncidentDeclared."
+      description: "Needs `majorincidents.manage`. The message becomes the first public update. `ticketIds` link tickets right away (see MajorIncidentDeclare); `notLinkedTicketIds` lists those that could not be linked. Emits MajorIncidentDeclared."
       security:
         - sessionAuth: []
       requestBody:
@@ -4930,7 +5084,13 @@ paths:
           description: The incident.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/MajorIncident'}
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/MajorIncident'
+                  - type: object
+                    required: [notLinkedTicketIds]
+                    properties:
+                      notLinkedTicketIds: {type: array, items: {type: string}}
         '400': {$ref: '#/components/responses/TicketsInvalid'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -5000,6 +5160,24 @@ paths:
         '204':
           description: Linked.
         '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/tickets/{ticketId}:
+    delete:
+      operationId: unlinkTicketFromMajorIncident
+      summary: Unlink a ticket from an incident that is not closed.
+      description: "Needs `majorincidents.manage` and view access to the ticket's Queue (an unknown and an invisible ticket are the same 404). Unlinking a ticket that is not linked is a no-op. People subscribed through the link stay subscribed. Audited (servicedesk.ticket.major_incident_unlinked, servicedesk.major_incident.ticket_unlinked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: ticketId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204':
+          description: Unlinked.
         '404': {$ref: '#/components/responses/TicketsNotFound'}
         '409': {$ref: '#/components/responses/TicketsConflict'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -5781,6 +5959,7 @@ paths:
         - $ref: '#/components/parameters/FilterJSON'
         - $ref: '#/components/parameters/QuerySort'
         - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryTimeZone'
         - $ref: '#/components/parameters/QueryCount'
         - name: platform
           in: query
@@ -13523,8 +13702,13 @@ components:
     QuerySearch:
       name: search
       in: query
-      description: Case-insensitive search over caller-visible searchable fields; at most 100 characters.
+      description: "Case-insensitive search over caller-visible searchable fields; 3 to 100 characters (a shorter text is 400 query.query_too_short with details.minLength). For tickets and callers who see Queues the search also matches the reporter and affected person by name or e-mail (the first 100 matching people) and the device named on the ticket (reference, product, serial number, asset tag)."
       schema: {type: string, maxLength: 100}
+    QueryTimeZone:
+      name: tz
+      in: query
+      description: "IANA time zone of the person asking (for example Europe/Berlin; default UTC). Plain days (2026-10-09, the whole day), today / this week / last N days and date-times without an offset (2026-10-09T08:30, as a datetime-local input sends it) are read in it; a date-time with an offset (Z or +02:00) is an exact instant. It is a per-request setting and is not stored in saved views; cursors are bound to it."
+      schema: {type: string, maxLength: 64}
     QueryCount:
       name: count
       in: query
@@ -13568,7 +13752,7 @@ components:
               expectedVersion: {type: integer, minimum: 1}
   responses:
     QueryInvalid:
-      description: Query error; codes include query.invalid_filter, query.too_complex, query.field_unavailable, query.invalid_cursor, query.unindexed_sort, query.rate_limited and query.timeout.
+      description: Query error; codes include query.invalid_filter, query.too_complex, query.field_unavailable, query.invalid_cursor, query.unindexed_sort, query.rate_limited, query.timeout and query.query_too_short (a search text under 3 characters; error.details.minLength says how many are needed, so a client can show a hint instead of a service error).
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -14170,6 +14354,7 @@ components:
         cursor: {type: string}
         limit: {type: integer, minimum: 1, maximum: 100, default: 50}
         count: {type: boolean}
+        timeZone: {type: string, maxLength: 64, description: "IANA time zone for plain days, relative dates and date-times without an offset (default UTC). See the tz parameter."}
     QueryCatalog:
       type: object
       required: [resource, fields, defaultSort, limits]
@@ -16074,7 +16259,7 @@ components:
         description: {type: string, maxLength: 2000}
         definition:
           type: object
-          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager), fulfillment (at most 20 task templates)."
+          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager; a manager step may add `fallbackTeamId`, the Team that approves when the requested-for person has no manager or the manager is excluded by separation of duties), fulfillment (at most 20 task templates)."
     CatalogItemUpdate:
       type: object
       additionalProperties: false
@@ -16823,6 +17008,10 @@ components:
       additionalProperties: false
       required: [id, reference, title, description, status, waitingReason, statusReason, resolution, priority, reporterId, affectedUserId, queueTeamId, assigneeId, assetId, majorIncidentId, deviceSnapshot, resolvedAt, closedAt, version, createdAt, updatedAt]
       properties:
+        impact: {type: [string, "null"], enum: [patient_care, blocked, impaired, request, null], description: "The impact the reporter chose in the report form."}
+        patientImpact: {type: boolean, description: "The reporter said that patient care is affected (it raised an employee's priority to high at creation)."}
+        affectedLocationId: {type: [string, "null"], format: uuid, description: "The affected person's primary Location when the ticket was raised (a snapshot; not updated when the person moves)."}
+        duplicateOfId: {type: [string, "null"], format: uuid, description: "Set when the ticket was cancelled as a duplicate (statusReason `duplicate`); only for callers who may view the ticket's Queue."}
         id: {type: string, format: uuid}
         reference: {type: string, description: "Human reference such as TKT-000001."}
         title: {type: string}
@@ -16932,11 +17121,13 @@ components:
         title: {type: string, maxLength: 200}
         description: {type: string, maxLength: 5000}
         assetId: {type: string, format: uuid}
-        affectedUserId: {type: string, format: uuid}
+        affectedUserId: {type: string, format: uuid, description: "Raise the ticket for another person. Staff with work access in the Queue may name any active user; any other signed-in internal employee may name another active internal employee (found with GET /people/lookup). External accounts neither raise tickets for others nor can be named (403 / 400)."}
         priority: {type: string, enum: [low, normal, high, urgent]}
         queueTeamId: {type: string, format: uuid}
         queueId: {type: string, format: uuid, description: "The Ticket Queue; the caller needs the create level in it (403 servicedesk.queue_not_permitted for an unknown and a forbidden Queue alike). Default: the intake Queue."}
         queueKey: {type: string, description: "Alternative to queueId: the stable key of the Queue."}
+        impact: {type: string, enum: [patient_care, blocked, impaired, request], description: "The impact chosen in the report form, stored for triage and returned as `impact`. Only `patient_care` has the effect of patientImpact; the others never change the priority."}
+        patientImpact: {type: boolean, description: "Patient care is affected. Rule: an employee's ticket gets priority `high` instead of `normal` (never `urgent`, which stays a staff decision); a staff member who sets `priority` explicitly keeps it. The flag is stored and filterable (`patient_impact`)."}
     TicketCommentCreate:
       type: object
       additionalProperties: false
@@ -16951,6 +17142,7 @@ components:
         expectedVersion: {type: integer, minimum: 1}
         assigneeId: {type: string}
         queueTeamId: {type: string}
+        reason: {type: string, maxLength: 500, description: "Optional short reason; shown in the ticket history and copied into the audit event."}
     TicketPriority:
       type: object
       additionalProperties: false
@@ -17033,8 +17225,21 @@ components:
       allOf:
         - $ref: '#/components/schemas/MajorIncident'
         - type: object
-          required: [updates, allowedOperations]
+          required: [updates, tickets, allowedOperations]
           properties:
+            tickets:
+              description: "Linked tickets the reader may view (Queue grants, or reporter/affected); `linkedTickets` counts all of them."
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, reference, title, status, priority]
+                properties:
+                  id: {type: string, format: uuid}
+                  reference: {type: string}
+                  title: {type: string}
+                  status: {type: string}
+                  priority: {type: string}
             updates:
               type: array
               items:
@@ -17056,6 +17261,11 @@ components:
       properties:
         title: {type: string, maxLength: 200}
         message: {type: string, maxLength: 2000}
+        ticketIds:
+          type: array
+          maxItems: 50
+          items: {type: string, format: uuid}
+          description: "Tickets to link right away. Each link is its own audited operation with the caller's Queue access check; tickets that could not be linked are returned in `notLinkedTicketIds` (the incident exists either way)."
     MajorIncidentMessage:
       type: object
       additionalProperties: false
@@ -18609,7 +18819,7 @@ components:
       required: [id, viewId, viewVersion, name, description, ownerId, ownerTeamId, ownerTeamName, swimlane, version, access, canEdit, archived, filter, columns, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
-        viewId: {type: string, format: uuid, description: The Saved View (resource tasks) that carries name, filter and sharing; share it with PUT /views/{viewId}/shares and pin it with PUT /me/pins.}
+        viewId: {type: string, format: uuid, description: "The Saved View (resource tasks) that carries name, filter and sharing; share it with PUT /views/{viewId}/shares and pin it with PUT /me/pins."}
         viewVersion: {type: integer, description: Version of the Saved View (send it to the Views API for shares).}
         name: {type: string}
         description: {type: string}

@@ -36,6 +36,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(authed(fn))) }
 	route("POST /api/v1/service-requests", h.submit)
 	route("GET /api/v1/service-requests", h.list)
+	route("GET /api/v1/service-requests/approval-preview", h.approvalPreview)
 	route("GET /api/v1/service-requests/{id}", h.get)
 	route("POST /api/v1/service-requests/{id}/cancel", h.cancel)
 	route("POST /api/v1/service-requests/{id}/hold", h.hold)
@@ -152,6 +153,37 @@ func (h *handler) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, toRequest(req))
+}
+
+// approvalPreview shows who would approve a request for a catalog item before it is submitted.
+func (h *handler) approvalPreview(w http.ResponseWriter, r *http.Request) {
+	var requestedFor *string
+	if v := r.URL.Query().Get("requestedForId"); v != "" {
+		requestedFor = &v
+	}
+	steps, err := h.svc.ApprovalPreview(r.Context(), caller(w, r), r.URL.Query().Get("catalogItemId"), requestedFor)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	type stepDTO struct {
+		Index        int    `json:"index"`
+		Kind         string `json:"kind"`
+		Resolved     bool   `json:"resolved"`
+		Fallback     bool   `json:"fallback"`
+		ApproverName string `json:"approverName,omitempty"`
+	}
+	out := make([]stepDTO, 0, len(steps))
+	ok := true
+	for _, s := range steps {
+		out = append(out, stepDTO{s.Index, s.Kind, s.Resolved, s.Fallback, s.ApproverName})
+		ok = ok && s.Resolved
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		ApprovalRequired bool      `json:"approvalRequired"`
+		CanSubmit        bool      `json:"canSubmit"`
+		Steps            []stepDTO `json:"steps"`
+	}{len(out) > 0, ok, out})
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {

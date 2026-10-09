@@ -1078,3 +1078,238 @@ func TestMyWorkTicketSources(t *testing.T) {
 		t.Errorf("foreign work list: %+v", rows)
 	}
 }
+
+// Regression (simulation round 3): a team lead with the global ticket view (no Queue grants needed) got the
+// "team_tickets" source unavailable because the work predicate did not reference the caller bind parameter.
+func TestMyWorkTeamTicketsForGlobalViewer(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q1 := e.queue(application.QueueInternal)
+	e.mem.teams[e.u1] = []string{e.team}
+	c := e.raise(e.global, q1)
+	if _, err := e.svc.Assign(ctx, e.c(e.admin.UserID), e.admin, c.ID, nil, nil, &e.team); err != nil {
+		t.Fatal(err)
+	}
+	lead := application.Principal{UserID: e.u1, View: true}
+	rows, err := e.svc.MyWorkTickets(ctx, lead, application.WorkTeam, "", 50)
+	if err != nil || len(rows) != 1 || rows[0].Ticket.ID != c.ID {
+		t.Fatalf("team list for a global viewer = %+v %v", rows, err)
+	}
+	if n, err := e.svc.MyWorkTicketCount(ctx, lead, application.WorkTeam, 1000); err != nil || n != 1 {
+		t.Fatalf("team count for a global viewer = %d %v", n, err)
+	}
+	if rows, err = e.svc.MyWorkTickets(ctx, lead, application.WorkAssigned, "", 50); err != nil || len(rows) != 0 {
+		t.Fatalf("assigned list = %+v %v", rows, err)
+	}
+}
+
+func TestTicketHistoryShowsAssignmentsWithActorAndReason(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q1 := e.queue(application.QueueInternal)
+	e.grant(q1, user(e.u1, "work"))
+	e.mem.teams[e.u1] = []string{e.team}
+	tk := e.raise(e.global, q1)
+	// Assigned by another person with a reason, routed to a Team, then started by the assignee, then unassigned.
+	if _, err := e.svc.AssignWithReason(ctx, e.c(e.admin.UserID), e.admin, tk.ID, nil, &e.u1, &e.team, "Specialist for ORBIS"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Transition(ctx, e.c(e.u1), e.employee(e.u1), tk.ID, nil, application.OpStart, application.Params{}); err != nil {
+		t.Fatal(err)
+	}
+	empty := ""
+	if _, err := e.svc.Assign(ctx, e.c(e.admin.UserID), e.admin, tk.ID, nil, &empty, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, names, err := e.svc.History(ctx, e.admin, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assigned, routed, unassigned, status *application.HistoryEntry
+	for i := range entries {
+		switch entries[i].Kind {
+		case application.HistoryAssigned:
+			assigned = &entries[i]
+		case application.HistoryTeamRouted:
+			routed = &entries[i]
+		case application.HistoryUnassigned:
+			unassigned = &entries[i]
+		case application.HistoryStatusChanged:
+			status = &entries[i]
+		}
+	}
+	if entries[0].Kind != application.HistoryCreated {
+		t.Errorf("first entry = %+v", entries[0])
+	}
+	if assigned == nil || assigned.ToUserID != e.u1 || assigned.ActorID != e.admin.UserID || assigned.Reason != "Specialist for ORBIS" || assigned.Via != "assigned" {
+		t.Errorf("assigned entry = %+v", assigned)
+	}
+	if routed == nil || routed.ToTeamID != e.team {
+		t.Errorf("routed entry = %+v", routed)
+	}
+	if unassigned == nil || unassigned.FromUserID != e.u1 {
+		t.Errorf("unassigned entry = %+v", unassigned)
+	}
+	if status == nil || status.ToStatus == "" {
+		t.Errorf("status entry = %+v", status)
+	}
+	_ = names
+	// Reporters and people without view access in the Queue do not get the staff history.
+	if _, _, err := e.svc.History(ctx, e.employee(e.bob), tk.ID); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("outsider history: %v", err)
+	}
+}
+
+func TestMarkDuplicateIsAnExplicitGuardedOperation(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q1, q2 := e.queue(application.QueueInternal), e.queue(application.QueueInternal)
+	e.grant(q1, user(e.u1, "work"))
+	a, b, c := e.raise(e.global, q1), e.raise(e.global, q1), e.raise(e.global, q1)
+	other := e.raise(e.global, q2)
+	lead := e.employee(e.u1)
+	v := a.Version
+	// Guards: version, self, a target in a Queue the caller cannot view (same answer as an unknown one), employees.
+	stale := v + 5
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, &stale, b.ID, ""); !errors.Is(err, application.ErrVersionConflict) {
+		t.Errorf("stale version: %v", err)
+	}
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, &v, a.ID, ""); !errors.Is(err, application.ErrDuplicateTarget) {
+		t.Errorf("self: %v", err)
+	}
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, &v, other.ID, ""); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("target in an unknown queue: %v", err)
+	}
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, &v, "00000000-0000-7000-8000-000000000001", ""); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("unknown target: %v", err)
+	}
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.bob), e.employee(e.bob), a.ID, &v, b.ID, ""); err == nil {
+		t.Error("an employee must not mark duplicates")
+	}
+	// The operation cancels the duplicate with the reason code and links it.
+	out, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, &v, b.ID, "Same printer, same error")
+	if err != nil || out.Status != application.StatusCancelled || out.DuplicateOfID == nil || *out.DuplicateOfID != b.ID ||
+		out.StatusReason == nil || *out.StatusReason != application.StatusReasonDuplicate || out.Version != v+1 {
+		t.Fatalf("mark duplicate = %+v %v", out, err)
+	}
+	// No chains: the target must not be a duplicate, and a ticket that has duplicates cannot become one.
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, c.ID, nil, a.ID, ""); !errors.Is(err, application.ErrDuplicateTarget) {
+		t.Errorf("duplicate of a duplicate: %v", err)
+	}
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, b.ID, nil, c.ID, ""); !errors.Is(err, application.ErrDuplicateTarget) {
+		t.Errorf("master becoming a duplicate: %v", err)
+	}
+	// A finished ticket cannot be marked.
+	if _, err := e.svc.MarkDuplicate(ctx, e.c(e.u1), lead, a.ID, nil, c.ID, ""); !errors.As(err, new(*application.InvalidTransitionError)) {
+		t.Errorf("already cancelled: %v", err)
+	}
+	// History and audit show who did it, why and for which ticket.
+	entries, _, err := e.svc.History(ctx, lead, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := entries[len(entries)-1]
+	if last.Kind != application.HistoryMarkedDuplicate || last.DuplicateOfID != b.ID || last.ActorID != e.u1 || last.Reason != "Same printer, same error" {
+		t.Errorf("history = %+v", last)
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.ticket.marked_duplicate' AND target_id = $2`, e.corr, a.ID) != 1 {
+		t.Error("exactly one marked_duplicate audit event")
+	}
+}
+
+func TestPatientImpactRaisesAnEmployeesPriorityToHighAtMost(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q := e.queue(application.QueueInternal)
+	e.grant(q, user(e.alice, "create"))
+	tk, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "Printer in ER", QueueID: &q.ID, PatientImpact: true})
+	if err != nil || tk.Priority != "high" || !tk.PatientImpact {
+		t.Fatalf("patient impact = %+v %v", tk, err)
+	}
+	plain, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "Printer", QueueID: &q.ID})
+	if err != nil || plain.Priority != "normal" || plain.PatientImpact {
+		t.Fatalf("without the signal = %+v %v", plain, err)
+	}
+	// The impact choices of the form: patient_care is the same signal; the others are stored and change nothing else.
+	viaEnum, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "ER printer", QueueID: &q.ID, Impact: "patient_care"})
+	if err != nil || viaEnum.Priority != "high" || !viaEnum.PatientImpact || viaEnum.ReportedImpact != "patient_care" {
+		t.Errorf("impact patient_care = %+v %v", viaEnum, err)
+	}
+	blocked, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "Cannot work", QueueID: &q.ID, Impact: "blocked"})
+	if err != nil || blocked.Priority != "normal" || blocked.PatientImpact || blocked.ReportedImpact != "blocked" {
+		t.Errorf("impact blocked = %+v %v", blocked, err)
+	}
+	if _, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "x", QueueID: &q.ID, Impact: "catastrophic"}); err == nil {
+		t.Error("an unknown impact must be refused")
+	}
+	// Urgent stays out of reach of an employee, with or without the signal.
+	if _, err := e.svc.Create(ctx, e.c(e.alice), e.employee(e.alice), application.CreateInput{Title: "x", QueueID: &q.ID, PatientImpact: true, Priority: "urgent"}); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("urgent by an employee: %v", err)
+	}
+	// Staff keep their explicit priority; the flag is stored either way.
+	st, err := e.svc.Create(ctx, e.c(e.global.UserID), e.global, application.CreateInput{Title: "x", QueueID: &q.ID, PatientImpact: true, Priority: "low"})
+	if err != nil || st.Priority != "low" || !st.PatientImpact {
+		t.Errorf("staff explicit priority = %+v %v", st, err)
+	}
+	// Staff can filter on it.
+	page, err := e.svc.QueryScoped(ctx, e.global, query.Request{Limit: 100, Filter: &query.Filter{V: 1, Root: &query.Node{Type: "group", Logic: "and", Children: []query.Node{query.Cond("patient_impact", query.OpIsTrue, nil)}}}}, application.ScopeAll, nil, q.ID)
+	if err != nil || len(page.Items) != 3 {
+		t.Errorf("patient_impact filter = %d %v", len(page.Items), err)
+	}
+}
+
+type searchDir struct {
+	dir
+	ids []string
+}
+
+func (d searchDir) SearchUserIDs(_ context.Context, text string, _ int) ([]string, error) {
+	if text == "brandt" {
+		return d.ids, nil
+	}
+	return nil, nil
+}
+
+func TestTicketSearchMatchesPeopleAndDeviceRespectingVisibility(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q1, q2 := e.queue(application.QueueInternal), e.queue(application.QueueInternal)
+	e.grant(q1, user(e.u1, "view"))
+	// alice reports in both Queues; the search text matches her by name only through the directory.
+	for _, q := range []application.Queue{q1, q2} {
+		if _, err := e.svc.Create(ctx, e.c(e.global.UserID), e.global, application.CreateInput{Title: "Monitor flickers", QueueID: &q.ID, AffectedUserID: &e.alice}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devTicket := e.raise(e.global, q1)
+	active := map[string]bool{e.alice: true, e.global.UserID: true, e.u1: true}
+	svc := application.NewService(repository.New(e.pool), searchDir{dir: dir{active: active}, ids: []string{e.alice}}, device{}).WithMemberships(e.mem)
+	byName := func(p application.Principal) []application.Ticket {
+		page, err := svc.QueryScoped(ctx, p, query.Request{Limit: 100, Search: "brandt"}, application.ScopeAuto, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page.Items
+	}
+	if got := byName(e.global); len(got) != 2 {
+		t.Errorf("staff search by the affected person's name = %d tickets", len(got))
+	}
+	// A caller who views only Queue 1 finds only that Queue's ticket: the name never reaches into Queue 2.
+	if got := byName(e.employee(e.u1)); len(got) != 1 || got[0].QueueID != q1.ID {
+		t.Errorf("queue-scoped search = %+v", got)
+	}
+	// Employees (no queue view) get no name expansion at all.
+	if got := byName(e.employee(e.alice)); len(got) != 0 {
+		t.Errorf("employee search by name = %d", len(got))
+	}
+	// Device text: serial number, asset tag and reference of the device named on the ticket.
+	if _, err := e.pool.Exec(ctx, `UPDATE servicedesk.tickets SET device_snapshot = '{"reference":"AST-9","product":"Zebra ZT411","serialNumber":"SN-ZX81-77","assetTag":"TAG-4711"}'::jsonb WHERE id = $1::uuid`, devTicket.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"sn-zx81", "tag-4711", "zebra", "AST-9"} {
+		page, err := svc.QueryScoped(ctx, e.global, query.Request{Limit: 100, Search: s}, application.ScopeAll, nil, "")
+		if err != nil || len(page.Items) != 1 || page.Items[0].ID != devTicket.ID {
+			t.Errorf("device search %q = %d tickets %v", s, len(page.Items), err)
+		}
+	}
+}

@@ -73,3 +73,10 @@ Accepted, documented limitations:
 ## 12. Slices
 
 0. Notification category registry. 1. Products. 2. Tasks creation contract and task context. 3. Approvals. 4. Catalog. 5. Requests. 6. UI (catalog admin, employee catalog and request form, my requests, approval inbox, request management). 7. Demo seed and example definitions. Then reviews.
+
+## Simulation round 3: approval fallback and preview (2026-10-09)
+
+- **Problem.** A catalog item whose approval step is `approver: manager` failed with 409 `requests.no_eligible_approver` when the requested-for person has no manager (or the manager is the requester or named in an answer), and nothing told the employee before submitting.
+- **Fallback.** An approval step of the definition may carry `fallbackTeamId` (valid only together with `approver: manager`, checked like other Team references on save). When the manager is missing or excluded, the step is approved by any member of that Team. Separation of duties is unchanged: the requester, the requested-for person, Users named in answers and earlier deciders are excluded from the Team's members by the same approval rules. Without a fallback the request still fails with 409; the message names the IT service desk. There is no global setting: an item decides, so a clinical item can fall back to the department head's Team and an IT item to Security.
+- **Preview.** `GET /service-requests/approval-preview?catalogItemId=&requestedForId=` resolves each step for the requester with the submission's own rules and returns `approvalRequired`, `canSubmit` and the steps (`kind` user/team/manager, `resolved`, `fallback`, `approverName`; a manager's name only for the requester's own request). The catalog item itself stays free of approver ids (the employee read model is unchanged).
+- **On behalf.** Requests for another person (`requestedForId`, items with `allowRequestedFor`) are made between active internal employees only; the person is found with `GET /people/lookup` ([F14](f14-administration-design.md)).

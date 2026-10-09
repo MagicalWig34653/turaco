@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"slices"
@@ -160,8 +161,13 @@ func TestSearchCoversOnlyPermittedSearchableFields(t *testing.T) {
 	sameSet(t, "percent", run(e.subject(), "ta%"), ids(3))
 	sameSet(t, "underscore", run(e.subject(), "e_t"), ids(4))
 	// A text shorter than a trigram would scan the whole index and is refused.
-	if _, _, err := e.idsOf(t, e.subject(), query.Request{Search: "ab", Limit: 10}, query.Fragment{}); err == nil {
-		t.Error("a two-character search must be refused")
+	_, _, err := e.idsOf(t, e.subject(), query.Request{Search: "ab", Limit: 10}, query.Fragment{})
+	if qe, ok := query.AsError(err); !ok || qe.Code != query.CodeQueryTooShort || qe.MinLength != query.MinSearchLength {
+		t.Errorf("a two-character search must be refused with the structured too-short error, got %v", err)
+	}
+	rec := httptest.NewRecorder()
+	if !query.WriteError(rec, err) || rec.Code != 400 || !strings.Contains(rec.Body.String(), `"minLength":3`) || !strings.Contains(rec.Body.String(), "query.query_too_short") {
+		t.Errorf("too-short response = %d %s", rec.Code, rec.Body.String())
 	}
 	if got := run(e.subject(), "   "); len(got) != 6 {
 		t.Errorf("blank search must not filter, got %d rows", len(got))
@@ -211,7 +217,7 @@ func TestInjectionCorpus(t *testing.T) {
 		for _, op := range textOpsToTry {
 			plan, err := e.engine.Prepare(e.cat, e.subject(), query.Request{Filter: filterOf(cond("title", op, p))}, "all", query.Options{})
 			if err != nil {
-				if qe, ok := query.AsError(err); !ok || qe.Code != query.CodeInvalidFilter {
+				if qe, ok := query.AsError(err); !ok || (qe.Code != query.CodeInvalidFilter && qe.Code != query.CodeQueryTooShort) {
 					t.Errorf("payload %q op %s: unexpected error %v", p, op, err)
 				}
 				continue
@@ -229,7 +235,7 @@ func TestInjectionCorpus(t *testing.T) {
 		}
 		// Search carries the payload as a bind value too.
 		if _, _, err := e.idsOf(t, e.subject(), query.Request{Search: p, Limit: 100}, query.Fragment{}); err != nil {
-			if qe, ok := query.AsError(err); !ok || qe.Code != query.CodeInvalidFilter {
+			if qe, ok := query.AsError(err); !ok || (qe.Code != query.CodeInvalidFilter && qe.Code != query.CodeQueryTooShort) {
 				t.Errorf("search payload %q: %v", p, err)
 			}
 		}
@@ -951,5 +957,34 @@ func TestUsesCoversSearchAndSort(t *testing.T) {
 	}
 	if p := prep(query.Request{Sort: []query.SortSpec{{Field: "qty", Dir: "asc"}}}); !p.Uses("qty") || p.Uses("note") {
 		t.Error("sort must report the sorted fields")
+	}
+}
+
+// A date-time without an offset (a datetime-local input) is local time in the request's time zone, and the request
+// zone also decides plain days and "today"; an unknown zone is refused.
+func TestRequestTimeZoneAndZoneLessDateTimes(t *testing.T) {
+	e := newEnv(t)
+	e.seed(t)
+	if _, err := time.LoadLocation("Europe/Berlin"); err != nil {
+		t.Skip("no tzdata")
+	}
+	run := func(tz string, n query.Node) []string {
+		t.Helper()
+		got, _, err := e.idsOf(t, e.subject(), query.Request{Filter: filterOf(n), Limit: 100, TimeZone: tz}, query.Fragment{})
+		if err != nil {
+			t.Fatalf("%s: %v", tz, err)
+		}
+		return got
+	}
+	after := cond("born", query.OpAfter, "2026-10-01T11:00")
+	// 11:00 in Berlin is 09:00Z: the ticket born at 10:00Z is after it; read as UTC it is not.
+	sameSet(t, "zone-less in Berlin", run("Europe/Berlin", after), ids(1, 2, 5, 6))
+	sameSet(t, "zone-less in UTC", run("", after), ids(2, 5, 6))
+	sameSet(t, "explicit offset ignores the zone", run("Europe/Berlin", cond("born", query.OpAfter, "2026-10-01T11:00:00Z")), ids(2, 5, 6))
+	sameSet(t, "today in Berlin by request zone", run("Europe/Berlin", cond("born", query.OpToday, nil)), ids(5, 6))
+	for _, bad := range []string{"Mars/Base", "Local", strings.Repeat("a", 80)} {
+		if _, _, err := e.idsOf(t, e.subject(), query.Request{TimeZone: bad, Limit: 10}, query.Fragment{}); err == nil {
+			t.Errorf("time zone %q must be refused", bad)
+		}
 	}
 }

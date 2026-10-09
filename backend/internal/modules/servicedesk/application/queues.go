@@ -339,6 +339,7 @@ func (s *Service) shape(ctx context.Context, a access, ts ...*Ticket) error {
 		}
 		if !a.canView(t.QueueID) {
 			t.QueueTeamID = nil
+			t.DuplicateOfID = nil // the other ticket may be in a Queue this caller does not know
 		}
 		r, known := a.queues[t.QueueID]
 		if a.disclosed(t.QueueID) {

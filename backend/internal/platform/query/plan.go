@@ -18,6 +18,10 @@ type Request struct {
 	Limit  int        `json:"limit"`
 	// Count asks for the capped total (at most CountCap, then "capped").
 	Count bool `json:"count"`
+	// TimeZone is the IANA zone of the person asking (for example "Europe/Berlin"), sent with the request and never
+	// stored in a saved filter: plain days, "today", "this week", "last N days" and date-times without an offset are
+	// read in it. Empty means UTC.
+	TimeZone string `json:"timeZone"`
 }
 
 // Options tune Prepare.
@@ -32,6 +36,19 @@ type Options struct {
 	// runs several statements for one screen (a Board loads one page per column) takes a single token instead of
 	// one per statement.
 	RateLimited bool
+	// SearchExtra is a trusted, module-written predicate ORed into the search text's matches when a search text is
+	// present (for example "the reporter is one of these Users", resolved from the text through another module's
+	// public contract). SQL uses ? placeholders bound to Args.
+	SearchExtra *SearchExtra
+}
+
+// SearchExtra is one extra disjunct of the search.
+type SearchExtra struct {
+	SQL  string
+	Args []any
+	// Cost is added to the filter cost; Uses lists catalog fields the predicate reads (for row-disclosure narrowing).
+	Cost int
+	Uses []string
 }
 
 // LeadKey is a trusted, module-written leading ORDER BY key for orderings the
@@ -147,6 +164,15 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 			return nil, err
 		}
 	}
+	if req.TimeZone != "" {
+		loc, err := time.LoadLocation(req.TimeZone)
+		if err != nil || req.TimeZone == "Local" || len(req.TimeZone) > 64 {
+			return nil, invalid("timeZone", "The time zone must be an IANA name such as Europe/Berlin.")
+		}
+		subj.Location = loc
+		// Results depend on the zone, so a cursor is valid only for the zone it was issued for.
+		scope += "|tz=" + loc.String()
+	}
 	f := Filter{V: 1}
 	if req.Filter != nil {
 		f = *req.Filter
@@ -166,7 +192,7 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 		}
 		f.Sort = req.Sort
 	}
-	c := &compiler{cat: cat, subj: subj, lenient: opts.Lenient, now: subj.now(), loc: subj.loc(), used: map[string]bool{}}
+	c := &compiler{cat: cat, subj: subj, extra: opts.SearchExtra, lenient: opts.Lenient, now: subj.now(), loc: subj.loc(), used: map[string]bool{}}
 	var where []string
 	if f.Root != nil {
 		r, err := c.node(*f.Root, 1, "root")

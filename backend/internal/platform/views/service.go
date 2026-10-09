@@ -949,6 +949,8 @@ type ResultsInput struct {
 	Cursor string
 	Limit  int
 	Count  bool
+	// TimeZone is the viewer's IANA zone (the tz parameter); relative dates and plain days are read in it.
+	TimeZone string
 }
 
 // ResultsOutput is a page of results plus what the viewer needs to interpret it.
@@ -994,7 +996,7 @@ func (s *Service) Results(ctx context.Context, c Caller, id string, in ResultsIn
 		return ResultsOutput{}, err
 	}
 	ref := Reference{ID: v.ID, Name: v.Name, Resource: v.Resource, Version: v.Version}
-	req := query.Request{Cursor: in.Cursor, Limit: in.Limit, Count: in.Count}
+	req := query.Request{Cursor: in.Cursor, Limit: in.Limit, Count: in.Count, TimeZone: in.TimeZone}
 	var warnings []query.Warning
 	if v.Definition.Filter != nil {
 		info, err := s.runner.Fields(ctx, c, res.Key)

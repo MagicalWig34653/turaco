@@ -113,7 +113,20 @@ type CreateInput struct {
 	QueueTeamID    *string
 	QueueID        *string
 	QueueKey       string
+	// PatientImpact is the reporter's signal that patient care is affected. For an employee it raises the priority to
+	// high (PatientImpactPriority) when nothing higher applies; urgent stays a staff decision. Staff who set a
+	// priority explicitly keep their choice; the flag is stored either way.
+	PatientImpact bool
+	// Impact is the impact the reporter chose in the report form: one of ReportImpacts. Only patient_care (the same as
+	// PatientImpact) changes the priority; the others are stored as a signal for triage.
+	Impact string
 }
+
+// ReportImpacts are the impact choices of the report form.
+var ReportImpacts = []string{"patient_care", "blocked", "impaired", "request"}
+
+// PatientImpactPriority is the priority a patient-impact report gets: the highest an employee can cause.
+const PatientImpactPriority = "high"
 
 // intakeQueue resolves the Queue a new Ticket goes into and checks the same create grant the UI list applies.
 // An unknown and a forbidden Queue are the same answer, so a Queue id cannot be probed.
@@ -167,6 +180,19 @@ func (s *Service) intakeQueue(a access, in CreateInput) (Queue, error) {
 	return q, nil
 }
 
+// priorityRank orders priorities: higher is more urgent.
+func priorityRank(p string) int {
+	switch p {
+	case "urgent":
+		return 3
+	case "high":
+		return 2
+	case "normal":
+		return 1
+	}
+	return 0
+}
+
 func isUniqueViolation(err error) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == "23505"
@@ -203,10 +229,39 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 		t.Priority = queue.DefaultPriority
 	}
 	if in.AffectedUserID != nil && !strings.EqualFold(*in.AffectedUserID, p.UserID) {
+		target := strings.ToLower(*in.AffectedUserID)
 		if !eff.Manage {
-			return Ticket{}, ErrForbidden
+			// Any employee may raise a ticket for a colleague (the people lookup finds them). Both must be active
+			// internal employees: external accounts neither raise tickets for others nor can be named.
+			ed, ok := s.dir.(EmployeeDirectory)
+			if !ok {
+				return Ticket{}, ErrForbidden
+			}
+			emp, err := ed.ActiveEmployees(ctx, []string{p.UserID, target})
+			if err != nil {
+				return Ticket{}, fmt.Errorf("check employees: %w", err)
+			}
+			if !emp[p.UserID] {
+				return Ticket{}, ErrForbidden
+			}
+			if !emp[target] {
+				return Ticket{}, ErrUserInvalid
+			}
 		}
-		t.AffectedUserID = strings.ToLower(*in.AffectedUserID)
+		t.AffectedUserID = target
+	}
+	if in.Impact != "" {
+		if !slices.Contains(ReportImpacts, in.Impact) {
+			return Ticket{}, invalid("impact must be one of %s", strings.Join(ReportImpacts, ", "))
+		}
+		t.ReportedImpact = in.Impact
+		in.PatientImpact = in.PatientImpact || in.Impact == "patient_care"
+	}
+	if in.PatientImpact {
+		t.PatientImpact = true
+		if in.Priority == "" && priorityRank(t.Priority) < priorityRank(PatientImpactPriority) {
+			t.Priority = PatientImpactPriority
+		}
 	}
 	if in.Priority != "" && in.Priority != "normal" {
 		if !eff.Manage {
@@ -251,6 +306,17 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 		}
 		t.AssetID, t.DeviceSnapshot = in.AssetID, snap
 	}
+	if ld, ok := s.dir.(interface {
+		PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error)
+	}); ok {
+		locs, err := ld.PrimaryLocationIDs(ctx, []string{t.AffectedUserID})
+		if err != nil {
+			return Ticket{}, fmt.Errorf("load location: %w", err)
+		}
+		if loc, ok := locs[t.AffectedUserID]; ok {
+			t.AffectedLocationID = &loc
+		}
+	}
 	var out Ticket
 	// The number comes from the Queue counter inside the insert; a unique violation (a safety net that the counter
 	// lock should make unreachable) is retried once.
@@ -260,7 +326,7 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 			if err != nil {
 				return err
 			}
-			meta := map[string]any{"affectedUserId": out.AffectedUserID, "queueId": out.QueueID}
+			meta := map[string]any{"affectedUserId": out.AffectedUserID, "queueId": out.QueueID, "onBehalf": out.AffectedUserID != out.ReporterID, "patientImpact": out.PatientImpact}
 			if out.AssetID != nil {
 				meta["assetId"] = *out.AssetID
 			}
@@ -442,7 +508,17 @@ func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID
 // the assignee must be able to view the Queue. The routing Team is a hint of who handles the Ticket, not a Queue:
 // moving a Ticket between desks is MoveToQueue.
 func (s *Service) Assign(ctx context.Context, c Caller, p Principal, id string, expected *int, assigneeID, queueTeamID *string) (Ticket, error) {
+	return s.AssignWithReason(ctx, c, p, id, expected, assigneeID, queueTeamID, "")
+}
+
+// AssignWithReason is Assign with an optional short reason (shown in the Ticket history, copied into the audit
+// event like the reasons of the lifecycle operations).
+func (s *Service) AssignWithReason(ctx context.Context, c Caller, p Principal, id string, expected *int, assigneeID, queueTeamID *string, reason string) (Ticket, error) {
 	if err := c.validate(); err != nil {
+		return Ticket{}, err
+	}
+	reason, err := cleanText(reason, maxReason, false, "reason")
+	if err != nil {
 		return Ticket{}, err
 	}
 	a0, err := s.resolve(ctx, p)
@@ -518,7 +594,11 @@ func (s *Service) Assign(ctx context.Context, c Caller, p Principal, id string, 
 		if err != nil {
 			return err
 		}
-		if err := record(ctx, tx, c, "servicedesk.ticket.assigned", &cur, &out, nil); err != nil {
+		var meta map[string]any
+		if reason != "" {
+			meta = map[string]any{"reason": reason}
+		}
+		if err := record(ctx, tx, c, "servicedesk.ticket.assigned", &cur, &out, meta); err != nil {
 			return err
 		}
 		if out.AssigneeID != nil && !samePtr(cur.AssigneeID, out.AssigneeID) {

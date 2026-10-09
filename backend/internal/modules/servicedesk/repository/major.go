@@ -227,3 +227,35 @@ func (r *Repository) MajorTitle(ctx context.Context, tx pgx.Tx, id string) (stri
 	}
 	return title, nil
 }
+
+func (r *Repository) UnlinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (bool, error) {
+	if !validUUID(ticketID) {
+		return false, application.ErrNotFound
+	}
+	tag, err := tx.Exec(ctx, `UPDATE servicedesk.tickets SET major_incident_id = NULL, version = version + 1, updated_at = now()
+		WHERE id = $2::uuid AND major_incident_id = $1::uuid`, majorID, ticketID)
+	if err != nil {
+		return false, fmt.Errorf("unlink ticket: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *Repository) MajorTickets(ctx context.Context, majorID string) ([]application.Ticket, error) {
+	if !validUUID(majorID) {
+		return []application.Ticket{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM servicedesk.tickets WHERE major_incident_id = $1::uuid ORDER BY id DESC LIMIT 200`, majorID)
+	if err != nil {
+		return nil, fmt.Errorf("list major incident tickets: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Ticket{}
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list major incident tickets: scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

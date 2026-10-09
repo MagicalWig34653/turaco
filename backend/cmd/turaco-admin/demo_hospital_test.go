@@ -271,3 +271,27 @@ func TestHospitalDocumentationListsEveryLogin(t *testing.T) {
 		}
 	}
 }
+
+func TestHospitalQueues(t *testing.T) {
+	teams := keysOf(simTeams, func(x simTeam) string { return x.Key })
+	keys, prefixes := map[string]bool{"it": true}, map[string]bool{"TKT": true}
+	for _, q := range simQueues {
+		if !teams[q.Team] || keys[q.Key] || prefixes[q.Prefix] {
+			t.Errorf("queue %s: unknown team or duplicate key/prefix", q.Key)
+		}
+		keys[q.Key], prefixes[q.Prefix] = true, true
+	}
+	// Tickets of the specialist Teams are routed into their desk; the others stay in the intake desk.
+	routed := 0
+	for _, tk := range simTickets {
+		if _, ok := queueOfTeam(tk.Queue); ok {
+			routed++
+		}
+	}
+	if routed < 10 {
+		t.Errorf("only %d tickets are routed into a specialist desk", routed)
+	}
+	if _, ok := queueOfTeam(teamFLS); ok {
+		t.Error("First Level Support works the intake desk, not a specialist desk")
+	}
+}

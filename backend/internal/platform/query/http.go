@@ -35,7 +35,7 @@ func HasParams(v url.Values) bool {
 // filter=<Filter AST JSON>, search=<text>, sort=<field:dir[:nulls],...>,
 // count=true plus the endpoint's own cursor and limit.
 func ParseParams(v url.Values, cursor string, limit int) (Request, error) {
-	req := Request{Cursor: cursor, Limit: limit, Search: v.Get("search")}
+	req := Request{Cursor: cursor, Limit: limit, Search: v.Get("search"), TimeZone: v.Get("tz")}
 	if raw := v.Get("filter"); raw != "" {
 		f, err := DecodeFilter([]byte(raw))
 		if err != nil {
@@ -80,6 +80,10 @@ func WriteError(w http.ResponseWriter, err error) bool {
 	msg := qe.Message
 	if qe.Path != "" {
 		msg += " (at " + qe.Path + ")"
+	}
+	if qe.MinLength > 0 {
+		httpx.WriteErrorDetails(w, qe.status, qe.Code, msg, map[string]any{"minLength": qe.MinLength})
+		return true
 	}
 	httpx.WriteError(w, qe.status, qe.Code, msg)
 	return true

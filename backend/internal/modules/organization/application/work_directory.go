@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -83,6 +84,45 @@ func (w *WorkDirectory) ActiveUsers(ctx context.Context, ids []string) (map[stri
 		return map[string]bool{}, nil
 	}
 	return w.store.ActiveUsers(ctx, valid)
+}
+
+// employeeStore is the optional capability of a store that can tell internal employees from external accounts.
+type employeeStore interface {
+	ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error)
+}
+
+// ActiveEmployees returns id -> true for each id that is an active internal employee account. A store without the
+// capability answers nobody, so a caller that needs employees never trusts an unchecked account.
+func (w *WorkDirectory) ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error) {
+	valid := validIDs(ids)
+	es, ok := w.store.(employeeStore)
+	if len(valid) == 0 || !ok {
+		return map[string]bool{}, nil
+	}
+	return es.ActiveEmployees(ctx, valid)
+}
+
+// PrimaryLocationIDs returns user id -> primary Location id for Users that have one (empty when the store cannot say).
+func (w *WorkDirectory) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	valid := validIDs(ids)
+	ls, ok := w.store.(interface {
+		PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error)
+	})
+	if len(valid) == 0 || !ok {
+		return map[string]string{}, nil
+	}
+	return ls.PrimaryLocationIDs(ctx, valid)
+}
+
+// SearchUserIDs returns the ids of at most limit Users whose name or e-mail contains text (3 or more characters).
+func (w *WorkDirectory) SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error) {
+	ss, ok := w.store.(interface {
+		SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error)
+	})
+	if !ok || len([]rune(strings.TrimSpace(text))) < 3 {
+		return []string{}, nil
+	}
+	return ss.SearchUserIDs(ctx, strings.TrimSpace(text), min(max(limit, 1), 200))
 }
 
 func (w *WorkDirectory) UserNames(ctx context.Context, ids []string) (map[string]string, error) {

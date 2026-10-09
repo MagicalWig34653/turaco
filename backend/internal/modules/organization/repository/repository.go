@@ -192,7 +192,9 @@ func (r *Repository) ListUsers(ctx context.Context, f application.UserFilter) (a
 	}
 	var q listQuery
 	if f.Query != "" {
-		q.add(`lower(display_name) LIKE lower(?) || '%'`, prefixPattern(f.Query))
+		// Any part of the name or the e-mail address matches (surname, second given name, "Dr. Brandt"), not only the
+		// start of the display name. Served by the trigram indexes users_display_name_trgm_idx and users_primary_email_trgm_idx.
+		q.add(`(display_name ILIKE '%' || ? || '%' OR primary_email ILIKE '%' || ? || '%')`, prefixPattern(f.Query))
 	}
 	if f.Status != "" {
 		q.add(`status = ?`, f.Status)
