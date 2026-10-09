@@ -41,7 +41,7 @@ func Problems(pool *pgxpool.Pool) *servicedeskapp.ProblemService {
 // ServiceDesk builds the ticket service over the other modules' public contracts.
 func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
-	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))})
+	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).WithQueryEngine(QueryEngine(pool))
 }
 
 // gatewayAdapter adapts the Autotask adapter to the Service Desk port.

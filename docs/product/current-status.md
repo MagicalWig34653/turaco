@@ -1,6 +1,6 @@
 # Current Implementation Status
 
-**Status date:** 2026-10-05
+**Status date:** 2026-10-08
 
 **F8c backend:** `GET /api/v1/briefing/feed` computes permission-filtered entries from published manual Items, applicable Security Advisories, risk reviews, upcoming maintenance, due Milestones, open Major Incidents, Endpoint/Autotask/Directory health, unassigned open Tickets and the caller's pending Approval count. Each source contributes at most 20 entries, with `truncated` and `unavailable` metadata. Titles require the owning module's read permission. Each source has a two-second deadline and failures report `source_timeout` or `source_error`; successful feeds use a bounded ten-second per-User/effective-permission cache. Major Incident counts are open linked Tickets. Migration `000049_briefing_health_indexes.up.sql` indexes health and the unassigned Ticket backlog. OpenAPI and frontend are delegated.
 
@@ -12,6 +12,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 ## Implemented in the bootstrap repository
 
+- F13 Q-A backend query engine ([ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md)): Tickets, Devices and Tasks declare caller-filtered field catalogs at `GET /api/v1/{tickets|devices|tasks}/fields` and accept versioned Filter AST queries at `POST /api/v1/{tickets|devices|tasks}/query`. Their existing GET lists also accept additive `filter` JSON, `sort`, `search` and `count` parameters while retaining simple filters. Module scopes are mandatory; row-dependent routing fields are hidden from employee Ticket queries. The engine uses bind-only values, startup schema validation, bounded cost and rate, signed mixed-direction/NULL-safe keyset cursors, capped counts and a five-second statement timeout. Migration `000063` adds sort indexes. The ADR's Saved Views, Boards, Queues, Work Item source contract and UI are not part of this backend slice.
 - Go module and Turaco binaries (`turaco-api`, `turaco-worker`, `turaco-migrate`, `turaco-docgen`, `turaco-admin`) plus Connector Agent and Endpoint Agent stubs.
 - React/TypeScript/Vite application shell with English/German i18n foundation.
 - PostgreSQL migration runner.
@@ -108,7 +109,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 - Lists are ordered by UUIDv7 id (roughly creation order), not by name.
 - The migrator runs each file in one transaction, so indexes on large existing tables cannot be built `CONCURRENTLY`; revisit before tables grow large.
 - Directory sync applies a whole snapshot in one transaction; it is designed for directories of about 50k users but tested only up to 3,000, so larger directories need measurement.
-- No per-query timeout beyond the HTTP server write timeout.
+- Legacy Organization reads have no per-query timeout beyond the HTTP server write timeout; F13 query-engine reads have a five-second PostgreSQL statement timeout.
 
 ## Planned capabilities (not implemented)
 

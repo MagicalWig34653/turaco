@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores devices, software and findings.
@@ -40,12 +41,27 @@ const deviceColumns = `id::text, provider, external_id, name, serial_number, ass
 	os_platform, os_version, manufacturer, model, ownership, compliance_state, last_checkin_at, source, observed_at,
 	last_synced_at, deleted_observed_at, version, created_at, updated_at`
 
-func scanDevice(row pgx.Row) (application.Device, error) {
+func scanDevice(row pgx.Row) (application.Device, error) { return scanDeviceWith(row) }
+
+// scanDeviceWith scans a device row followed by extra targets (the query engine's sort keys).
+func scanDeviceWith(row pgx.Row, extra ...any) (application.Device, error) {
 	var d application.Device
-	err := row.Scan(&d.ID, &d.Provider, &d.ExternalID, &d.Name, &d.SerialNumber, &d.AssetID, &d.AssetLinkSource, &d.AutoLinkBlocked,
+	dest := append([]any{&d.ID, &d.Provider, &d.ExternalID, &d.Name, &d.SerialNumber, &d.AssetID, &d.AssetLinkSource, &d.AutoLinkBlocked,
 		&d.OSPlatform, &d.OSVersion, &d.Manufacturer, &d.Model, &d.Ownership, &d.ComplianceState, &d.LastCheckinAt, &d.Source, &d.ObservedAt,
-		&d.LastSyncedAt, &d.DeletedObservedAt, &d.Version, &d.CreatedAt, &d.UpdatedAt)
+		&d.LastSyncedAt, &d.DeletedObservedAt, &d.Version, &d.CreatedAt, &d.UpdatedAt}, extra...)
+	err := row.Scan(dest...)
 	return d, err
+}
+
+// deviceQueryColumns is deviceColumns qualified with the query alias.
+const deviceQueryColumns = `d.id::text, d.provider, d.external_id, d.name, d.serial_number, d.asset_id::text, d.asset_link_source, d.auto_link_blocked,
+	d.os_platform, d.os_version, d.manufacturer, d.model, d.ownership, d.compliance_state, d.last_checkin_at, d.source, d.observed_at,
+	d.last_synced_at, d.deleted_observed_at, d.version, d.created_at, d.updated_at`
+
+// QueryDevices runs a compiled query plan (ADR-0033) in a read-only transaction.
+func (r *Repository) QueryDevices(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Device], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: deviceQueryColumns, Visibility: visibility},
+		func(rows pgx.Rows, extra []any) (application.Device, error) { return scanDeviceWith(rows, extra...) })
 }
 
 func (r *Repository) LockDeviceByExternalTx(ctx context.Context, tx pgx.Tx, provider, externalID string) (*application.Device, error) {

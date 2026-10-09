@@ -17,6 +17,7 @@ import (
 	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores tasks in platform.tasks.
@@ -36,13 +37,29 @@ const columns = `id::text, title, description, status, status_reason, priority,
 	due_at, completed_at, created_by_user_id::text, completed_by_user_id::text,
 	recurrence_definition_id::text, scheduled_for, version, created_at, updated_at`
 
-func scan(row pgx.Row) (application.Task, error) {
+func scan(row pgx.Row) (application.Task, error) { return scanWith(row) }
+
+// scanWith scans a task row followed by extra targets (the query engine's sort keys).
+func scanWith(row pgx.Row, extra ...any) (application.Task, error) {
 	var t application.Task
-	err := row.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
+	dest := append([]any{&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
 		&t.AssignedUserID, &t.AssignedTeamID, &t.ContextType, &t.ContextID,
 		&t.DueAt, &t.CompletedAt, &t.CreatedByUserID, &t.CompletedByUserID,
-		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
+	err := row.Scan(dest...)
 	return t, err
+}
+
+// queryColumns is columns qualified with the query alias.
+const queryColumns = `t.id::text, t.title, t.description, t.status, t.status_reason, t.priority,
+	t.assigned_user_id::text, t.assigned_team_id::text, t.context_type, t.context_id::text,
+	t.due_at, t.completed_at, t.created_by_user_id::text, t.completed_by_user_id::text,
+	t.recurrence_definition_id::text, t.scheduled_for, t.version, t.created_at, t.updated_at`
+
+// QueryTasks runs a compiled query plan (ADR-0033) in a read-only transaction.
+func (r *Repository) QueryTasks(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Task], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: queryColumns, Visibility: visibility},
+		func(rows pgx.Rows, extra []any) (application.Task, error) { return scanWith(rows, extra...) })
 }
 
 // auditState is the audited view of a task: no title or description.

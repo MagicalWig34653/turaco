@@ -273,6 +273,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/FilterJSON'
+        - $ref: '#/components/parameters/QuerySort'
+        - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryCount'
         - name: status
           in: query
           description: One or more of open, in_progress, blocked, completed, cancelled (repeatable or comma-separated).
@@ -300,7 +304,15 @@ paths:
           description: One page of tasks.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/TaskList'}
+              schema:
+                description: Legacy shape without query parameters; QueryPage shape when filter, sort, search or count is present.
+                oneOf:
+                  - $ref: '#/components/schemas/TaskList'
+                  - allOf:
+                      - $ref: '#/components/schemas/QueryPage'
+                      - type: object
+                        properties:
+                          items: {type: array, items: {$ref: '#/components/schemas/Task'}}
         '400': {$ref: '#/components/responses/TasksInvalid'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -327,6 +339,50 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/fields:
+    get:
+      operationId: getTaskQueryFields
+      summary: Caller-visible tasks field catalog.
+      description: Unreadable fields and enum values are omitted. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: Field catalog and query limits.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /tasks/query:
+    post:
+      operationId: queryTask
+      summary: Query caller-visible tasks with a versioned filter AST.
+      description: The resource scope is applied outside the filter. A count is capped at 1000; signed cursors bind the caller, filter and sort. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: One query page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/QueryPage'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Task'}}
+        '400': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/QueryInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '503': {$ref: '#/components/responses/QueryInvalid'}
   /tasks/{id}:
     get:
       operationId: getTask
@@ -3307,6 +3363,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/FilterJSON'
+        - $ref: '#/components/parameters/QuerySort'
+        - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryCount'
         - name: scope
           in: query
           schema: {type: string, enum: [mine, all]}
@@ -3327,7 +3387,15 @@ paths:
           description: One page.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/TicketList'}
+              schema:
+                description: Legacy shape without query parameters; QueryPage shape when filter, sort, search or count is present.
+                oneOf:
+                  - $ref: '#/components/schemas/TicketList'
+                  - allOf:
+                      - $ref: '#/components/schemas/QueryPage'
+                      - type: object
+                        properties:
+                          items: {type: array, items: {$ref: '#/components/schemas/Ticket'}}
         '400': {$ref: '#/components/responses/TicketsInvalid'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -3354,6 +3422,50 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/fields:
+    get:
+      operationId: getTicketQueryFields
+      summary: Caller-visible tickets field catalog.
+      description: Unreadable fields and enum values are omitted. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: Field catalog and query limits.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /tickets/query:
+    post:
+      operationId: queryTicket
+      summary: Query caller-visible tickets with a versioned filter AST.
+      description: The resource scope is applied outside the filter. A count is capped at 1000; signed cursors bind the caller, filter and sort. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: One query page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/QueryPage'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Ticket'}}
+        '400': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/QueryInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '503': {$ref: '#/components/responses/QueryInvalid'}
   /tickets/{id}:
     get:
       operationId: getTicket
@@ -4678,6 +4790,10 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/FilterJSON'
+        - $ref: '#/components/parameters/QuerySort'
+        - $ref: '#/components/parameters/QuerySearch'
+        - $ref: '#/components/parameters/QueryCount'
         - name: platform
           in: query
           schema: {type: string}
@@ -4716,11 +4832,63 @@ paths:
           description: One page.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/DeviceList'}
+              schema:
+                description: Legacy shape without query parameters; QueryPage shape when filter, sort, search or count is present.
+                oneOf:
+                  - $ref: '#/components/schemas/DeviceList'
+                  - allOf:
+                      - $ref: '#/components/schemas/QueryPage'
+                      - type: object
+                        properties:
+                          items: {type: array, items: {$ref: '#/components/schemas/Device'}}
         '400': {$ref: '#/components/responses/EndpointsInvalid'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /devices/fields:
+    get:
+      operationId: getDeviceQueryFields
+      summary: Caller-visible devices field catalog.
+      description: Unreadable fields and enum values are omitted. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: Field catalog and query limits.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /devices/query:
+    post:
+      operationId: queryDevice
+      summary: Query caller-visible devices with a versioned filter AST.
+      description: The resource scope is applied outside the filter. A count is capped at 1000; signed cursors bind the caller, filter and sort. Disabled optional modules answer 404 platform.module_disabled.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: One query page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/QueryPage'}
+                  - type: object
+                    properties:
+                      items: {type: array, items: {$ref: '#/components/schemas/Device'}}
+        '400': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/QueryInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '503': {$ref: '#/components/responses/QueryInvalid'}
   /devices/{id}:
     get:
       operationId: getDevice
@@ -11464,6 +11632,26 @@ components:
       in: query
       description: Opaque cursor from a previous response's nextCursor; pass it back unchanged. Invalid values yield 400 `<module>.invalid_cursor`.
       schema: {type: string}
+    FilterJSON:
+      name: filter
+      in: query
+      description: URL-encoded QueryFilter JSON, ANDed with existing simple filters. Activates query response shape.
+      schema: {type: string, maxLength: 16384}
+    QuerySort:
+      name: sort
+      in: query
+      description: Comma-separated field:asc|desc[:first|last] keys from the caller's field catalog (at most 3).
+      schema: {type: string}
+    QuerySearch:
+      name: search
+      in: query
+      description: Case-insensitive search over caller-visible searchable fields; at most 100 characters.
+      schema: {type: string, maxLength: 100}
+    QueryCount:
+      name: count
+      in: query
+      description: true requests the capped total (1000 plus countCapped flag).
+      schema: {type: boolean}
     Query:
       name: q
       in: query
@@ -11480,6 +11668,11 @@ components:
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
   responses:
+    QueryInvalid:
+      description: Query error; codes include query.invalid_filter, query.too_complex, query.field_unavailable, query.invalid_cursor, query.unindexed_sort, query.rate_limited and query.timeout.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     SecurityNotFound:
       description: Advisory or finding not found (security.not_found).
       content:
@@ -11980,6 +12173,92 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    QueryCondition:
+      type: object
+      required: [type, field, op]
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [condition]}
+        field: {type: string, description: Key from the caller-visible field catalog.}
+        op: {type: string, description: Operator listed for that field in the catalog.}
+        value: {description: Typed value; omit for unary operators.}
+    QueryNode:
+      oneOf:
+        - $ref: '#/components/schemas/QueryCondition'
+        - type: object
+          required: [type, logic, children]
+          additionalProperties: false
+          properties:
+            type: {type: string, enum: [group]}
+            logic: {type: string, enum: [and, or]}
+            children: {type: array, minItems: 1, items: {$ref: '#/components/schemas/QueryNode'}}
+    QuerySortSpec:
+      type: object
+      required: [field, dir]
+      additionalProperties: false
+      properties:
+        field: {type: string}
+        dir: {type: string, enum: [asc, desc]}
+        nulls: {type: string, enum: [first, last]}
+    QueryFilter:
+      type: object
+      required: [v]
+      additionalProperties: false
+      properties:
+        v: {type: integer, enum: [1]}
+        root: {$ref: '#/components/schemas/QueryNode'}
+        search: {type: string, maxLength: 100}
+        sort: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/QuerySortSpec'}}
+    QueryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        filter: {$ref: '#/components/schemas/QueryFilter'}
+        search: {type: string, maxLength: 100}
+        sort: {type: array, maxItems: 3, items: {$ref: '#/components/schemas/QuerySortSpec'}}
+        cursor: {type: string}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 50}
+        count: {type: boolean}
+    QueryCatalog:
+      type: object
+      required: [resource, fields, defaultSort, limits]
+      properties:
+        resource: {type: string}
+        fields:
+          type: array
+          items:
+            type: object
+            required: [key, labelKey, type, operators, filterable, sortable, searchable, nullable, slow]
+            properties:
+              key: {type: string}
+              labelKey: {type: string}
+              type: {type: string, enum: [text, number, boolean, date, datetime, enum, reference, tags]}
+              operators: {type: array, items: {type: string}}
+              filterable: {type: boolean}
+              sortable: {type: boolean}
+              searchable: {type: boolean}
+              nullable: {type: boolean}
+              slow: {type: boolean}
+              enumValues: {type: array, items: {type: string}}
+              reference: {type: string}
+        defaultSort: {type: array, items: {$ref: '#/components/schemas/QuerySortSpec'}}
+        limits: {type: object, additionalProperties: {type: integer}}
+    QueryPage:
+      type: object
+      required: [items, warnings]
+      properties:
+        items: {type: array, items: {type: object}}
+        nextCursor: {type: string}
+        count: {type: integer, maximum: 1000}
+        countCapped: {type: boolean}
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [code, path]
+            properties:
+              code: {type: string}
+              path: {type: string}
     Initiative:
       type: object
       required: [id, reference, title, ownerId, status, version, createdAt, updatedAt]

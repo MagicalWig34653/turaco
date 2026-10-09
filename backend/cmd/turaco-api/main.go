@@ -94,6 +94,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	if err := wiring.ValidateQueryCatalogs(ctx, pool); err != nil {
+		logger.Error("validate query catalogs", "error", err)
+		os.Exit(1)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
@@ -172,7 +176,7 @@ func main() {
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
-	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
+	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil).WithQueryEngine(wiring.QueryEngine(pool))
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	productsRepo := productsrepository.New(pool)

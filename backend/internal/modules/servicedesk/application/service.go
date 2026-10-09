@@ -12,6 +12,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -23,10 +24,11 @@ type Service struct {
 	store  Store
 	dir    Directory
 	device Device
+	engine *query.Engine
 }
 
 func NewService(store Store, dir Directory, device Device) *Service {
-	return &Service{store: store, dir: dir, device: device}
+	return &Service{store: store, dir: dir, device: device, engine: query.NewEphemeralEngine()}
 }
 
 func publish(ctx context.Context, tx pgx.Tx, c Caller, typ string, payload map[string]any) error {

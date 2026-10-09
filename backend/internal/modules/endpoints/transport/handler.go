@@ -18,6 +18,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 const (
@@ -43,6 +44,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/devices", read, h.list)
+	route("GET /api/v1/devices/fields", read, h.fields)
+	route("POST /api/v1/devices/query", read, h.query)
 	route("GET /api/v1/devices/{id}", read, h.get)
 	route("POST /api/v1/devices/{id}/link", write, h.link)
 	route("POST /api/v1/devices/{id}/unlink", write, h.unlink)
@@ -70,6 +73,9 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if query.WriteError(w, err) {
+		return
+	}
 	var inv *application.InvalidInputError
 	switch {
 	case errors.As(err, &inv):
@@ -233,6 +239,21 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "endpoints.invalid_request", "linked must be true or false.")
 		return
 	}
+	if query.HasParams(v) {
+		// Additive filter/sort/search/count parameters; the plain parameters are ANDed to the filter.
+		req, err := query.ParseParams(v, page.Cursor, page.Limit)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		res, err := h.svc.QueryDevices(r.Context(), principal(r), req, f)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, toDevice))
+		return
+	}
 	res, err := h.svc.ListDevices(r.Context(), principal(r), f)
 	if err != nil {
 		h.fail(w, r, err)
@@ -246,6 +267,31 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		out.Items = append(out.Items, toDevice(d))
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// fields returns the device Field Catalog as the caller may use it.
+func (h *handler) fields(w http.ResponseWriter, r *http.Request) {
+	info, err := h.svc.QueryFields(principal(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, info)
+}
+
+// query runs a Filter AST over the live Devices.
+func (h *handler) query(w http.ResponseWriter, r *http.Request) {
+	req, err := query.DecodeBody(w, r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	res, err := h.svc.QueryDevices(r.Context(), principal(r), req, application.DeviceFilter{})
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, toDevice))
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {

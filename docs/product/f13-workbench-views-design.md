@@ -1,6 +1,6 @@
 # F13 Workbench Views — Feature Design
 
-**Status:** Draft 2026-10-08; decisions V1–V10 proposed (not yet adopted); nothing is implemented. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md), [ADR-0032](../decisions/ADR-0032-module-switches.md) (module registry), [UI design system](../development/ui-design-system.md), [F2 design](f2-work-foundation-design.md) (Tasks, My Work), [F5 design](f5-service-desk-design.md) (Tickets), [module boundaries](../architecture/module-boundaries.md), [F11 design](f11-workforce-presence-design.md) (format reference).
+**Status:** Q-A backend query engine and Tickets, Devices and Tasks catalogs implemented 2026-10-08; the UI, Work Item sources, Saved Views, Boards and Queues remain planned. [Current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md), [ADR-0032](../decisions/ADR-0032-module-switches.md) (module registry), [UI design system](../development/ui-design-system.md), [F2 design](f2-work-foundation-design.md) (Tasks, My Work), [F5 design](f5-service-desk-design.md) (Tickets), [module boundaries](../architecture/module-boundaries.md), [F11 design](f11-workforce-presence-design.md) (format reference).
 
 ## Starting point (verified in the repository)
 

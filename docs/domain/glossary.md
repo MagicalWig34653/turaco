@@ -41,6 +41,12 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Supplier** — organization goods/services are purchased from.
 
 ## Service management
+- **Field Catalog** — module-declared list fields and their caller-visible filter, sort and search operators; SQL expressions stay server-owned.
+- **Filter AST** — versioned tree of conditions and AND/OR groups evaluated under the caller's resource scope.
+- **Saved View** — planned stored query intent and columns; never a grant of row access.
+- **Board** — planned Task presentation over a Saved View with columns; card moves use Task lifecycle operations.
+- **Pin** — planned personal or group sidebar placement of a View or Queue.
+- **Ticket Queue** — planned Service Desk ownership and numbering boundary; distinct from a Saved View and from the existing queue Team hint.
 - **Ticket** — generic tracked support record; employee UI should use friendlier language.
 - **Incident** — unplanned interruption/degradation/malfunction.
 - **Service Request** — structured request to provide/change/grant something.

@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -21,9 +22,10 @@ const (
 // Principal; the permission check of the route only decides who may reach
 // the service at all.
 type Service struct {
-	store Store
-	dir   Directory
-	now   func() time.Time
+	store  Store
+	dir    Directory
+	now    func() time.Time
+	engine *query.Engine
 }
 
 // NewService creates a Service. now may be nil.
@@ -31,7 +33,7 @@ func NewService(store Store, dir Directory, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{store: store, dir: dir, now: now}
+	return &Service{store: store, dir: dir, now: now, engine: query.NewEphemeralEngine()}
 }
 
 // ---- access ----

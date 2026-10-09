@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores tickets and comments.
@@ -25,11 +26,20 @@ const columns = `id::text, reference, kind, title, description, status, waiting_
 	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, major_incident_id::text, device_snapshot,
 	resolved_at, closed_at, version, created_at, updated_at`
 
-func scan(row pgx.Row) (application.Ticket, error) {
+// queryColumns is columns qualified with the query alias.
+const queryColumns = `t.id::text, t.reference, t.kind, t.title, t.description, t.status, t.waiting_reason, t.status_reason, t.resolution, t.priority,
+	t.reporter_user_id::text, t.affected_user_id::text, t.queue_team_id::text, t.assignee_user_id::text, t.asset_id::text, t.major_incident_id::text, t.device_snapshot,
+	t.resolved_at, t.closed_at, t.version, t.created_at, t.updated_at`
+
+func scan(row pgx.Row) (application.Ticket, error) { return scanWith(row) }
+
+// scanWith scans a ticket row followed by extra targets (the query engine's sort keys).
+func scanWith(row pgx.Row, extra ...any) (application.Ticket, error) {
 	var t application.Ticket
 	var snap []byte
-	err := row.Scan(&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
-		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+	dest := append([]any{&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
+		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
+	err := row.Scan(dest...)
 	if err != nil {
 		return t, err
 	}
@@ -167,6 +177,12 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		res.NextCursor = res.Items[page.Limit-1].ID
 	}
 	return res, nil
+}
+
+// QueryTickets runs a compiled query plan (ADR-0033) in a read-only transaction.
+func (r *Repository) QueryTickets(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Ticket], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: queryColumns, Visibility: visibility},
+		func(rows pgx.Rows, extra []any) (application.Ticket, error) { return scanWith(rows, extra...) })
 }
 
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {

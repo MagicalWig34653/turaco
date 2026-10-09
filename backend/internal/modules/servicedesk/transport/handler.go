@@ -8,12 +8,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 const (
@@ -33,6 +35,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	authed := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(authed(fn))) }
 	route("GET /api/v1/tickets", h.list)
+	route("GET /api/v1/tickets/fields", h.fields)
+	route("POST /api/v1/tickets/query", h.query)
 	route("POST /api/v1/tickets", h.create)
 	route("GET /api/v1/tickets/{id}", h.get)
 	route("POST /api/v1/tickets/{id}/comments", h.comment)
@@ -44,6 +48,9 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if query.WriteError(w, err) {
+		return
+	}
 	var inv *application.InvalidInputError
 	var tr *application.InvalidTransitionError
 	switch {
@@ -154,6 +161,10 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.URL.Query()
+	if query.HasParams(v) {
+		h.queryList(w, r, v, limit)
+		return
+	}
 	res, err := h.svc.List(r.Context(), principal(r), v.Get("scope") == "all", application.Filter{
 		Status: v.Get("status"), AssigneeID: v.Get("assigneeId"), QueueID: v.Get("queueId"), OpenOnly: v.Get("open") == "true",
 		Page: application.Page{Limit: limit, Cursor: v.Get("cursor")},
@@ -170,6 +181,51 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		out.Items = append(out.Items, toTicket(t))
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// queryList serves the additive filter/sort/search/count parameters of the list endpoint; the plain
+// parameters (status, assigneeId, queueId, open, scope) keep their meaning and are ANDed to the filter.
+func (h *handler) queryList(w http.ResponseWriter, r *http.Request, v url.Values, limit int) {
+	req, err := query.ParseParams(v, v.Get("cursor"), limit)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	p := principal(r)
+	compat := application.CompatNodes(p, application.Filter{Status: v.Get("status"), AssigneeID: v.Get("assigneeId"),
+		QueueID: v.Get("queueId"), OpenOnly: v.Get("open") == "true"})
+	page, err := h.svc.Query(r.Context(), p, req, v.Get("scope") == "all", compat)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, query.NewEnvelope(page, toTicket))
+}
+
+// fields returns the ticket Field Catalog as the caller may use it.
+func (h *handler) fields(w http.ResponseWriter, r *http.Request) {
+	info, err := h.svc.QueryFields(principal(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, info)
+}
+
+// query runs a Filter AST over the tickets the caller may see (staff: all, others: their own).
+func (h *handler) query(w http.ResponseWriter, r *http.Request) {
+	req, err := query.DecodeBody(w, r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	p := principal(r)
+	page, err := h.svc.Query(r.Context(), p, req, p.View || p.Manage, nil)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, query.NewEnvelope(page, toTicket))
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
