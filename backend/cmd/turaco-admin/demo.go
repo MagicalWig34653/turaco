@@ -20,12 +20,17 @@ import (
 // master data and example catalog items through the same audited application
 // operations as the API. It is for local test instances only and refuses to
 // run unless APP_ENV=development. It is idempotent.
+//
+// "demo seed-hospital" additionally creates the hospital IT simulation (docs/development/simulation-hospital.md).
 func runDemo(ctx context.Context, e env, command string, args []string) error {
-	if command != "seed" || len(args) != 0 {
+	if (command != "seed" && command != "seed-hospital") || len(args) != 0 {
 		return errUsage
 	}
 	if e.cfg.Environment != "development" {
-		return fmt.Errorf("demo seed runs only with APP_ENV=development (APP_ENV is %q)", e.cfg.Environment)
+		return fmt.Errorf("demo %s runs only with APP_ENV=development (APP_ENV is %q)", command, e.cfg.Environment)
+	}
+	if command == "seed-hospital" {
+		return seedHospital(ctx, e)
 	}
 	return seedDemo(ctx, e)
 }
@@ -38,16 +43,21 @@ type demoSeeder struct {
 	cc       catalogapp.Caller
 }
 
-func seedDemo(ctx context.Context, e env) error {
+// newDemoSeeder wires the services of the seeders; correlationID tags every audit entry of the run.
+func newDemoSeeder(e env, correlationID string) *demoSeeder {
 	productsRepo := productsrepository.New(e.pool)
-	d := &demoSeeder{
+	return &demoSeeder{
 		e:        e,
 		products: productsapp.NewService(productsRepo),
 		catalog: catalogapp.NewService(catalogrepository.New(e.pool), orgpublic.NewWorkDirectory(orgrepo.New(e.pool)),
 			catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))),
-		pc: productsapp.Caller{Actor: e.auditActor(), CorrelationID: "demo-seed"},
-		cc: catalogapp.Caller{Actor: e.auditActor(), CorrelationID: "demo-seed"},
+		pc: productsapp.Caller{Actor: e.auditActor(), CorrelationID: correlationID},
+		cc: catalogapp.Caller{Actor: e.auditActor(), CorrelationID: correlationID},
 	}
+}
+
+func seedDemo(ctx context.Context, e env) error {
+	d := newDemoSeeder(e, "demo-seed")
 	laptops, err := d.category(ctx, "Notebooks")
 	if err != nil {
 		return err
