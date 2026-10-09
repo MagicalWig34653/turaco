@@ -234,8 +234,15 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	for _, f := range routingFields {
 		narrow = narrow || (!a.global() && plan.Uses(f))
 	}
-	if narrow {
-		ids := viewable
+	// The reference of a Ticket whose Queue the caller may not know is shown as an older, known number (see shape).
+	// A filter, sort or search on reference matches the stored current number, so for such a caller it covers only
+	// the Tickets of Queues they may know; otherwise it would confirm or order numbers they must not see.
+	narrowRef := !a.global() && plan.Uses("reference")
+	if narrow || narrowRef {
+		ids := a.disclosedIDs()
+		if narrow {
+			ids = viewable
+		}
 		if inQueue != "" {
 			ids = nil
 			if a.canView(strings.ToLower(inQueue)) {

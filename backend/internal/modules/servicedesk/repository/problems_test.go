@@ -12,7 +12,7 @@ import (
 func TestProblemLifecycleKnownErrorAndTickets(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	svc := application.NewProblemService(repository.New(e.pool), dir{active: map[string]bool{e.agent: true, e.bob: true}})
+	svc := application.NewProblemService(repository.New(e.pool), dir{active: map[string]bool{e.agent: true, e.bob: true}}).WithTicketAccess(e.ticketAccess())
 	t.Cleanup(func() {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.problems WHERE created_by = $1::uuid`, e.agent)

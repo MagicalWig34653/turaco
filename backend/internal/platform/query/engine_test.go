@@ -935,3 +935,21 @@ func TestAndHelper(t *testing.T) {
 		t.Error("And must not mutate its input")
 	}
 }
+
+func TestUsesCoversSearchAndSort(t *testing.T) {
+	e := newEnv(t)
+	prep := func(req query.Request) *query.Plan {
+		t.Helper()
+		plan, err := e.engine.Prepare(e.cat, e.subject(), req, "all", query.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plan
+	}
+	if p := prep(query.Request{Search: "alpha"}); !p.Uses("title") || !p.Uses("note") || p.Uses("qty") {
+		t.Error("search must report the searched fields")
+	}
+	if p := prep(query.Request{Sort: []query.SortSpec{{Field: "qty", Dir: "asc"}}}); !p.Uses("qty") || p.Uses("note") {
+		t.Error("sort must report the sorted fields")
+	}
+}

@@ -59,7 +59,7 @@ func (x remoteTickets) Ticket(ctx context.Context, id string) (raapp.TicketInfo,
 	if err != nil || !ok {
 		return raapp.TicketInfo{}, false, err
 	}
-	return raapp.TicketInfo{ID: t.ID, Reference: t.Reference, Open: servicedeskpublic.IsOpen(t.Status),
+	return raapp.TicketInfo{ID: t.ID, Open: servicedeskpublic.IsOpen(t.Status),
 		AffectedUserID: t.AffectedUserID, ReporterUserID: t.ReporterUserID, AssigneeUserID: t.AssigneeUserID}, true, nil
 }
 

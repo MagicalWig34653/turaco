@@ -98,8 +98,8 @@ func (p *Plan) Limit() int { return p.limit }
 // WantCount reports whether the request asked for a capped count.
 func (p *Plan) WantCount() bool { return p.wantCount }
 
-// Uses reports whether a filter condition names the field (a module may
-// lift an implicit default scope when the request addresses it explicitly).
+// Uses reports whether a filter condition, the search text or the sort names the field (a module may lift an
+// implicit default scope or narrow the rows when the request addresses it explicitly).
 func (p *Plan) Uses(field string) bool { return p.used[field] }
 
 // Prepare validates req against the catalog the subject may use and compiles
@@ -154,6 +154,9 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 	keys, norm, err := cat.resolveSort(subj, f.Sort)
 	if err != nil {
 		return nil, err
+	}
+	for _, sp := range norm {
+		c.used[sp.Field] = true
 	}
 	p := &Plan{cat: cat, engine: e, keys: keys, used: c.used, wantCount: req.Count, Warnings: c.warnings,
 		filterSQL: strings.Join(where, " AND "), filterArgs: c.args, limit: req.Limit,

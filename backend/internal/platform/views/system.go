@@ -105,6 +105,11 @@ func (s *Service) systemView(ctx context.Context, c Caller, id string) (SystemVi
 	if err != nil {
 		return SystemView{}, err
 	}
+	return findSystem(list, id)
+}
+
+// findSystem picks the System View with the key or handle from a list the caller already has.
+func findSystem(list []SystemView, id string) (SystemView, error) {
 	for _, sv := range list {
 		if sv.Key == id || (sv.Handle != "" && sv.Handle == id) {
 			return sv, nil
@@ -255,6 +260,10 @@ func (s *Service) Counts(ctx context.Context, c Caller, ids []string) ([]Count, 
 	}
 	seen := map[string]bool{}
 	var out []Count
+	// The System Views of the caller (providers resolve the caller's Queue scope) are loaded once per request,
+	// not once per id.
+	var system []SystemView
+	systemLoaded := false
 	for _, id := range ids {
 		if seen[id] {
 			continue
@@ -262,7 +271,14 @@ func (s *Service) Counts(ctx context.Context, c Caller, ids []string) ([]Count, 
 		seen[id] = true
 		switch {
 		case IsSystemKey(id):
-			sv, err := s.systemView(ctx, c, id)
+			if !systemLoaded {
+				var err error
+				if system, err = s.SystemViews(ctx, c); err != nil {
+					return nil, err
+				}
+				systemLoaded = true
+			}
+			sv, err := findSystem(system, id)
 			if err != nil {
 				if errors.Is(err, ErrNotFound) {
 					continue

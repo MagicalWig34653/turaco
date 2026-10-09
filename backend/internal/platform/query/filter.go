@@ -776,6 +776,7 @@ func (c *compiler) search(s string) (string, error) {
 		}
 		parts = append(parts, f.Column.sql+" ILIKE "+c.arg(pat)+escapeClause)
 		c.cost += opCost(f, OpContains)
+		c.used[f.Key] = true
 	}
 	if len(parts) == 0 {
 		return "FALSE", nil

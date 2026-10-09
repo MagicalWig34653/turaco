@@ -31,12 +31,12 @@ func (d deviceAdapter) Snapshot(ctx context.Context, assetID, holder string) (ma
 
 // MajorIncidents builds the Major Incident service.
 func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
-	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool))
+	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool))
 }
 
 // Problems builds the Problem service.
 func Problems(pool *pgxpool.Pool) *servicedeskapp.ProblemService {
-	return servicedeskapp.NewProblemService(servicedeskrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)))
+	return servicedeskapp.NewProblemService(servicedeskrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool))).WithTicketAccess(ServiceDesk(pool))
 }
 
 // queueMemberships answers the Queue grant questions with Organization (Teams) and the permission evaluator

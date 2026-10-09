@@ -868,6 +868,24 @@ func (s *Service) FindByReference(ctx context.Context, p Principal, reference st
 	if !a.eff(p, t.QueueID).staff() && !s.isOwner(t, p) {
 		return RefMatch{}, ErrNotFound
 	}
+	// The number must be one the caller may know: a hit on a number issued from a Queue they cannot know would
+	// confirm that number (and the Queue behind it) to the owner of the Ticket. Same answer as an unknown number.
+	if !a.global() {
+		entries, err := s.queues.References(ctx, []string{id})
+		if err != nil {
+			return RefMatch{}, fmt.Errorf("load references: %w", err)
+		}
+		known := false
+		for _, e := range entries[id] {
+			if e.Reference == ref {
+				known = a.disclosed(e.QueueID)
+				break
+			}
+		}
+		if !known {
+			return RefMatch{}, ErrNotFound
+		}
+	}
 	if err := s.shape(ctx, a, &t); err != nil {
 		return RefMatch{}, err
 	}

@@ -218,7 +218,7 @@ func (e *env) fixture(ownership string) fixture {
 	e.devices.m[f.device] = application.DeviceInfo{ID: f.device, Name: "pc", AssetID: &asset, Ownership: ownership, ObservedAt: e.clk.now().Add(-time.Hour), LastCheckinAt: ptr(e.clk.now().Add(-time.Hour))}
 	e.devices.mu.Unlock()
 	e.holders.m[asset] = f.holder
-	e.tickets.m[f.ticket] = application.TicketInfo{ID: f.ticket, Reference: "TKT-1", Open: true, AffectedUserID: f.holder, ReporterUserID: newID()}
+	e.tickets.m[f.ticket] = application.TicketInfo{ID: f.ticket, Open: true, AffectedUserID: f.holder, ReporterUserID: newID()}
 	if _, err := e.svc.MapPeer(context.Background(), e.caller(e.admin), e.admin, f.device, provider, f.peer, "initial_mapping"); err != nil {
 		e.t.Fatalf("map peer: %v", err)
 	}

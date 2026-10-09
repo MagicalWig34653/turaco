@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -225,6 +226,18 @@ func (a access) disclosed(qid string) bool {
 	return ok && (r.Level >= levelCreate || r.Queue.Visibility == QueuePublic)
 }
 
+// disclosedIDs lists the Queues whose numbers the caller may know (sorted).
+func (a access) disclosedIDs() []string {
+	out := []string{}
+	for id := range a.queues {
+		if a.disclosed(id) {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (a access) global() bool { return a.allView || a.allWork }
 
 // viewIDs lists the Queues the caller can view through grants (sorted), or every Queue for a global holder.
@@ -373,6 +386,97 @@ func (s *Service) shape(ctx context.Context, a access, ts ...*Ticket) error {
 		t.QueueID, t.Number = "", 0
 	}
 	return nil
+}
+
+// principalOf builds the Principal of a User from their global permissions (none without a membership source).
+func (s *Service) principalOf(ctx context.Context, userID string) (Principal, error) {
+	p := Principal{UserID: userID}
+	if s.members == nil {
+		return p, nil
+	}
+	perms, err := s.members.Permissions(ctx, userID)
+	if err != nil {
+		return Principal{}, fmt.Errorf("load permissions: %w", err)
+	}
+	_, p.View = perms[permTicketsView]
+	_, p.Manage = perms[permTicketsManage]
+	return p, nil
+}
+
+// TicketAccess is what Problems and Major Incidents ask of the Ticket authorization (the Service implements it):
+// they list and link Tickets of every Queue, so each Ticket is checked against the User's Queue access.
+type TicketAccess interface {
+	// CanViewTicket reports whether the User may view the Ticket through tickets.view, tickets.manage or a view
+	// grant in its Queue. An unknown Ticket is false, so callers cannot tell it from one they may not see.
+	CanViewTicket(ctx context.Context, userID, ticketID string) (bool, error)
+	// VisibleTickets keeps the Tickets the User may view (or reported or is affected by) and applies the
+	// per-row disclosure of Queue and number.
+	VisibleTickets(ctx context.Context, userID string, ts []Ticket) ([]Ticket, error)
+}
+
+// CanViewTicket implements TicketAccess.
+func (s *Service) CanViewTicket(ctx context.Context, userID, ticketID string) (bool, error) {
+	if userID == "" {
+		return false, nil
+	}
+	t, err := s.store.Get(ctx, ticketID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	p, err := s.principalOf(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	a, err := s.resolve(ctx, p)
+	if err != nil {
+		return false, err
+	}
+	return a.canView(t.QueueID), nil
+}
+
+// VisibleTickets implements TicketAccess.
+func (s *Service) VisibleTickets(ctx context.Context, userID string, ts []Ticket) ([]Ticket, error) {
+	p, err := s.principalOf(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.resolve(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Ticket, 0, len(ts))
+	for _, t := range ts {
+		if userID != "" && (a.canView(t.QueueID) || s.isOwner(t, p)) {
+			out = append(out, t)
+		}
+	}
+	return out, s.shape(ctx, a, ptrs(out)...)
+}
+
+// ReferenceFor returns the display number of the Ticket that the User may know, as shape would show it to them
+// (the newest number from a Queue they may know, the oldest otherwise). It is for text that leaves the API for a
+// person other than the caller (notifications). Without a membership source (tests) the current number is kept.
+func (s *Service) ReferenceFor(ctx context.Context, userID string, t Ticket) (string, error) {
+	if s.queues == nil || s.members == nil {
+		return t.Reference, nil
+	}
+	perms, err := s.members.Permissions(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("load permissions of recipient: %w", err)
+	}
+	_, view := perms[permTicketsView]
+	_, manage := perms[permTicketsManage]
+	a, err := s.resolve(ctx, Principal{UserID: userID, View: view, Manage: manage})
+	if err != nil {
+		return "", err
+	}
+	if err := s.shape(ctx, a, &t); err != nil {
+		return "", err
+	}
+	return t.Reference, nil
 }
 
 // aliasesFor lists the earlier references of a Ticket from Queues the caller may know, newest first.
@@ -936,7 +1040,9 @@ func (s *Service) ReplaceGrants(ctx context.Context, c Caller, p Principal, id s
 		if err != nil {
 			return err
 		}
-		return auditQueue(ctx, tx, c, "servicedesk.queue.grants_replaced", &cur, &out, map[string]any{"grantsBefore": len(before), "grantsAfter": len(grants)})
+		added, removed := grantDiff(before, grants)
+		return auditQueue(ctx, tx, c, "servicedesk.queue.grants_replaced", &cur, &out, map[string]any{
+			"grantsBefore": len(before), "grantsAfter": len(grants), "added": added, "removed": removed})
 	})
 	if err != nil {
 		return QueueView{}, err
@@ -980,4 +1086,30 @@ func (s *Service) SidebarScope(ctx context.Context, p Principal) (SidebarScope, 
 	})
 	out.Key = hex.EncodeToString(h.Sum(nil))[:32]
 	return out, nil
+}
+
+// grantDiff lists the grants that a replace adds and removes as (subjectType, subjectId, level) tuples, so the
+// audit trail shows who gained or lost access to a Queue, not only how many grants exist (ids only, no names).
+func grantDiff(before, after []QueueGrant) (added, removed []map[string]string) {
+	type key struct{ t, id, level string }
+	keyOf := func(g QueueGrant) key { return key{g.SubjectType, strings.ToLower(g.SubjectID), g.Level} }
+	was, is := map[key]bool{}, map[key]bool{}
+	for _, g := range before {
+		was[keyOf(g)] = true
+	}
+	for _, g := range after {
+		is[keyOf(g)] = true
+	}
+	added, removed = []map[string]string{}, []map[string]string{}
+	emit := func(dst *[]map[string]string, src []QueueGrant, in, notIn map[key]bool) {
+		for _, g := range src {
+			if k := keyOf(g); in[k] && !notIn[k] {
+				*dst = append(*dst, map[string]string{"subjectType": k.t, "subjectId": k.id, "level": k.level})
+				in[k] = false
+			}
+		}
+	}
+	emit(&added, after, is, was)
+	emit(&removed, before, was, is)
+	return added, removed
 }

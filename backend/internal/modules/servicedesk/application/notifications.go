@@ -43,6 +43,15 @@ type Consumers struct {
 	store    Store
 	dir      Directory
 	notifier Notifier
+	// references resolves the number a recipient may know (Service.ReferenceFor); nil keeps the current number.
+	references func(ctx context.Context, userID string, t Ticket) (string, error)
+}
+
+// WithReferences sets the per-recipient display number resolver. A notification must not name a Queue number the
+// recipient may not know (a requester whose Ticket moved to an internal Queue).
+func (c *Consumers) WithReferences(fn func(ctx context.Context, userID string, t Ticket) (string, error)) *Consumers {
+	c.references = fn
+	return c
 }
 
 func NewConsumers(store Store, dir Directory, notifier Notifier) *Consumers {
@@ -76,8 +85,16 @@ func (c *Consumers) notify(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent
 		if !active[id] {
 			continue
 		}
+		ref := t.Reference
+		if c.references != nil {
+			r, err := c.references(ctx, id, t)
+			if err != nil {
+				return fmt.Errorf("resolve reference of recipient: %w", err)
+			}
+			ref = r
+		}
 		if _, err := c.notifier.Create(ctx, tx, notifications.Intent{
-			RecipientUserID: id, Category: category, Params: map[string]any{"title": t.Reference + " · " + t.Title},
+			RecipientUserID: id, Category: category, Params: map[string]any{"title": ref + " · " + t.Title},
 			LinkType: "ticket", LinkID: t.ID, DedupeKey: ev.ID + ":" + id,
 		}); err != nil {
 			return fmt.Errorf("create notification: %w", err)

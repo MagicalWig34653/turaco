@@ -12,7 +12,7 @@ import (
 func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	svc := application.NewMajorService(repository.New(e.pool))
+	svc := application.NewMajorService(repository.New(e.pool)).WithTicketAccess(e.ticketAccess())
 	t.Cleanup(func() {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)
@@ -119,7 +119,7 @@ func (e *env) carol() string { return e.viewer }
 func TestLinkingIsOnceAndNeverMovesATicket(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	svc := application.NewMajorService(repository.New(e.pool))
+	svc := application.NewMajorService(repository.New(e.pool)).WithTicketAccess(e.ticketAccess())
 	t.Cleanup(func() {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)

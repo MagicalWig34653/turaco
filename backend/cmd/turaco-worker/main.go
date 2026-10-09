@@ -298,7 +298,7 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		return err
 	}
 	sdStore := servicedeskrepository.New(pool)
-	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier).WithReferences(wiring.ServiceDesk(pool).ReferenceFor)
 	majorConsumers := servicedeskapp.NewMajorConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	for _, r := range []struct {
 		event, name string

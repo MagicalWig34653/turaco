@@ -24,6 +24,17 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/views"
 )
 
+// countingSystemViews counts how often the sidebar scope of a caller is resolved.
+type countingSystemViews struct {
+	inner views.SystemProvider
+	calls int
+}
+
+func (c *countingSystemViews) SystemViews(ctx context.Context, caller views.Caller) ([]views.SystemView, error) {
+	c.calls++
+	return c.inner.SystemViews(ctx, caller)
+}
+
 type moduleOff struct{ off string }
 
 func (g moduleOff) Enabled(_ context.Context, key string) (bool, error) { return key != g.off, nil }
@@ -33,6 +44,7 @@ type queueFixture struct {
 	pool   *pgxpool.Pool
 	desk   *servicedeskapp.Service
 	views  *views.Service
+	sys    *countingSystemViews
 	admin  servicedeskapp.Principal
 	global servicedeskapp.Principal
 	corr   string
@@ -64,7 +76,8 @@ func newQueueFixture(t *testing.T, gate views.ModuleGate, engine *query.Engine) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.views = svc.WithSystemProviders(servicedeskpublic.NewSystemViews(f.desk))
+	f.sys = &countingSystemViews{inner: servicedeskpublic.NewSystemViews(f.desk)}
+	f.views = svc.WithSystemProviders(f.sys)
 	f.admin = servicedeskapp.Principal{UserID: f.agent, View: true, Manage: true, QueuesManage: true}
 	f.global = servicedeskapp.Principal{UserID: f.agent, View: true, Manage: true}
 	t.Cleanup(func() {
@@ -308,5 +321,21 @@ func TestSystemViewsFollowTheModuleSwitchAndNeverReportZeroForFailures(t *testin
 				t.Errorf("unavailable sidebar entry has a count: %+v", it)
 			}
 		}
+	}
+}
+
+func TestCountsResolveTheSystemViewsOncePerRequest(t *testing.T) {
+	ctx := context.Background()
+	f := newQueueFixture(t, allOn{}, nil)
+	q1 := f.queue("internal")
+	f.grant(q1, f.qa, "view")
+	f.raise(q1, "once-1")
+	f.sys.calls = 0
+	counts, err := f.views.Counts(ctx, f.caller(f.qa), []string{"queue:" + q1.ID, "system:tickets:unassigned", "system:tickets:my-open", "system:tickets:queue:" + q1.ID})
+	if err != nil || len(counts) != 4 {
+		t.Fatalf("counts = %+v %v", counts, err)
+	}
+	if f.sys.calls != 1 {
+		t.Errorf("system views resolved %d times for one request, want 1", f.sys.calls)
 	}
 }

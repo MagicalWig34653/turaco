@@ -83,9 +83,18 @@ type MajorResult struct {
 // servicedesk.major_incident.declared, .investigating, .mitigating, .monitoring,
 // .resolved, .closed, .update_posted and .ticket_linked. Messages are public and
 // are not copied into audit.
-type MajorService struct{ store MajorStore }
+type MajorService struct {
+	store  MajorStore
+	access TicketAccess
+}
 
 func NewMajorService(store MajorStore) *MajorService { return &MajorService{store: store} }
+
+// WithTicketAccess sets the Ticket authorization. Without it no Ticket can be linked.
+func (s *MajorService) WithTicketAccess(a TicketAccess) *MajorService {
+	s.access = a
+	return s
+}
 
 // Major Incident operations.
 const (
@@ -307,6 +316,18 @@ func (s *MajorService) LinkTicket(ctx context.Context, c Caller, manage bool, id
 	}
 	if !manage {
 		return ErrForbidden
+	}
+	// Linking needs view access to the Ticket's Queue, with one answer for a Ticket that does not exist and one the
+	// caller may not see; it also subscribes the Ticket's people, so it must not reach into Queues the caller cannot see.
+	if s.access == nil {
+		return ErrNotFound
+	}
+	ok, err := s.access.CanViewTicket(ctx, c.Actor.UserID, ticketID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
 	}
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockMajorTx(ctx, tx, id)
