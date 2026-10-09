@@ -102,11 +102,16 @@ export function TasksScreen() {
         title={t('nav.tasks')}
         intro={t('tasks.intro')}
         actions={
-          can('tasks.manage') ? (
-            <Link to="/tasks/new" className="btn btn-primary">
-              {t('tasks.create.action')}
+          <>
+            <Link to="/tasks/boards" className="btn btn-secondary">
+              {t('tasks.board.open')}
             </Link>
-          ) : null
+            {can('tasks.manage') ? (
+              <Link to="/tasks/new" className="btn btn-primary">
+                {t('tasks.create.action')}
+              </Link>
+            ) : null}
+          </>
         }
       />
       <FilterBar

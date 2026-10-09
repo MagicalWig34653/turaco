@@ -58,6 +58,12 @@ export type PinnedItem = {
   countStatus: 'ok' | 'unavailable' | undefined;
 };
 
+/** A pinned Task Board opens the Board screen (ref = Board id); every other View opens its list. */
+export const boardPath = (id: string): string => `/tasks/boards/${encodeURIComponent(id)}`;
+function pinHref(pin: Pick<ViewPin, 'kind' | 'ref' | 'resource' | 'viewId'>): string {
+  return pin.kind === 'board' && pin.ref ? boardPath(pin.ref) : viewLink(pin.resource, pin.viewId);
+}
+
 /** Visible pins of all groups in display order (group order, then position, then name). */
 export function pinnedItems(sidebar: Pick<SidebarResponse, 'groups'> | undefined): PinnedItem[] {
   const rank = (key: string) => {
@@ -80,7 +86,7 @@ export function pinnedItems(sidebar: Pick<SidebarResponse, 'groups'> | undefined
       name: pin.name,
       resource: pin.resource,
       groupKey: pin.groupKey,
-      href: viewLink(pin.resource, pin.viewId),
+      href: pinHref(pin),
       source: pin.source,
       nameKey: pin.nameKey,
       count:
@@ -156,7 +162,9 @@ export function isPinnedActive(
   pathname: string,
   search: string,
 ): boolean {
-  const [path = ''] = item.href.split('?');
+  const [path = '', query] = item.href.split('?');
+  // A Board link carries no `?view=`: the path alone names it.
+  if (query === undefined) return pathname === path;
   return pathname === path && new URLSearchParams(search).get('view') === item.viewId;
 }
 

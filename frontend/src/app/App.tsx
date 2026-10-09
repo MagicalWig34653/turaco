@@ -123,6 +123,8 @@ import { RunbookDetailScreen } from '../modules/runbooks/RunbookDetailScreen';
 import { RunbookEditScreen } from '../modules/runbooks/RunbookEditScreen';
 import { RunbooksScreen } from '../modules/runbooks/RunbooksScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
+import { BoardScreen } from '../modules/tasks/boards/BoardScreen';
+import { BoardsScreen } from '../modules/tasks/boards/BoardsScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
 import { TasksScreen } from '../modules/tasks/TasksScreen';
@@ -344,6 +346,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <RunbookDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'tasks':
       return <TasksScreen />;
+    case 'taskBoards':
+      return <BoardsScreen />;
+    case 'taskBoard':
+      return <BoardScreen key={params.id} id={params.id ?? ''} />;
     case 'taskNew':
       return <TaskCreateScreen />;
     case 'taskDetail':

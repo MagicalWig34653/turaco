@@ -534,3 +534,30 @@ html[data-motion='reduced'] .workspace-card {
   background: var(--surface-hover);
   border-color: var(--border-token);
 }
+
+/* Side panel variant of the shared dialog (Board card details). */
+.dialog.dialog-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(480px, 100vw);
+  max-width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  overflow-y: auto;
+}
+.dialog.dialog-drawer[open] {
+  animation: drawer-in var(--motion-normal) var(--motion-ease);
+}
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@media (max-width: 600px) {
+  .dialog.dialog-drawer {
+    border-radius: 0;
+  }
+}

@@ -11,6 +11,28 @@ const allowedFrom: Record<TaskAction, readonly TaskStatus[]> = {
   reopen: ['completed', 'cancelled'],
 };
 
+/** The Task status each lifecycle action leads to; `unblock` and `reopen` both end in open. */
+export const actionTarget: Record<TaskAction, TaskStatus> = {
+  start: 'in_progress',
+  complete: 'completed',
+  block: 'blocked',
+  unblock: 'open',
+  cancel: 'cancelled',
+  reopen: 'open',
+};
+
+/**
+ * The lifecycle action that takes a task from one status to another, or null when the state
+ * machine has none (for example completed to in_progress). Same status needs no action.
+ */
+export function transitionAction(from: TaskStatus, to: TaskStatus): TaskAction | null {
+  if (from === to) return null;
+  const candidates = (Object.keys(actionTarget) as TaskAction[]).filter(
+    (action) => actionTarget[action] === to && allowedFrom[action].includes(from),
+  );
+  return candidates[0] ?? null;
+}
+
 const actionOrder: readonly TaskAction[] = [
   'start',
   'complete',

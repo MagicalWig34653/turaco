@@ -204,6 +204,9 @@ describe('view lists', () => {
     expect(filterViews(list, 'alp').map((v) => v.id)).toEqual(['b']);
     expect(filterViews(list, 'LENA').map((v) => v.id)).toEqual(['b']);
     expect(filterViews(list, '  ').length).toBe(3);
+    expect(
+      filterViews([...list, view({ id: 'board', kind: 'board' })], '').map((v) => v.id),
+    ).not.toContain('board');
   });
 });
 

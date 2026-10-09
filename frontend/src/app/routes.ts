@@ -99,6 +99,8 @@ export type RouteId =
   | 'runbookEdit'
   | 'runbookDetail'
   | 'tasks'
+  | 'taskBoards'
+  | 'taskBoard'
   | 'taskNew'
   | 'taskDetail'
   | 'recurrence'
@@ -711,6 +713,18 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'nav.tasks',
     requiresAny: taskViewPermissions,
     nav: 'main',
+  },
+  {
+    id: 'taskBoards',
+    pattern: '/tasks/boards',
+    titleKey: 'tasks.board.listTitle',
+    requiresAny: taskViewPermissions,
+  },
+  {
+    id: 'taskBoard',
+    pattern: '/tasks/boards/:id',
+    titleKey: 'tasks.board.title',
+    requiresAny: taskViewPermissions,
   },
   {
     id: 'taskNew',

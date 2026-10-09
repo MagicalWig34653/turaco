@@ -154,10 +154,14 @@ export function sectionOf(view: SavedView): ViewSection {
   return view.access === 'owner' ? 'mine' : 'shared';
 }
 
+/** Task Board Views belong to the Board screen and are not offered in the ordinary Views list. */
+export const isBoardView = (view: Pick<SavedView, 'kind'>): boolean => view.kind === 'board';
+
 export function filterViews(views: readonly SavedView[], search: string): SavedView[] {
   const needle = search.trim().toLocaleLowerCase();
-  if (!needle) return [...views];
-  return views.filter((view) =>
+  const listed = views.filter((view) => !isBoardView(view));
+  if (!needle) return listed;
+  return listed.filter((view) =>
     [view.name, view.description, view.ownerName ?? ''].some((text) =>
       text.toLocaleLowerCase().includes(needle),
     ),

@@ -9,13 +9,15 @@ type DialogProps = {
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** A side panel anchored to the end edge (still modal, same focus handling). */
+  drawer?: boolean;
 };
 
 /**
  * Modal built on the native <dialog>: focus moves into it on open, is trapped while open and returns
  * to the previously focused element on close; Escape closes. Mount it only while it is open.
  */
-export function Dialog({ title, onClose, children, wide }: DialogProps) {
+export function Dialog({ title, onClose, children, wide, drawer }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const onCloseRef = useRef(onClose);
@@ -35,7 +37,7 @@ export function Dialog({ title, onClose, children, wide }: DialogProps) {
   return (
     <dialog
       ref={ref}
-      className={wide ? 'dialog dialog-wide' : 'dialog'}
+      className={drawer ? 'dialog dialog-drawer' : wide ? 'dialog dialog-wide' : 'dialog'}
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();

@@ -33,6 +33,8 @@ export type SavedView = {
   access: ViewAccess;
   moduleEnabled: boolean;
   pinned: boolean;
+  /** `board` for the Saved View of a Task Board; those stay out of the ordinary Views lists. */
+  kind?: 'board';
   lastEditedBy?: string;
   archivedAt?: string;
   createdAt: string;
@@ -54,8 +56,10 @@ export type ViewPin = {
   source: 'user' | 'rule' | 'system';
   /** i18n key of a System View's name (then `name` is empty). */
   nameKey?: string;
-  /** The Queue id of a Queue entry. */
+  /** The Queue id of a Queue entry, or the Board id when `kind` is `board`. */
   ref?: string;
+  /** `board`: the pinned View is a Task Board; the sidebar links the Board screen. */
+  kind?: 'board';
   /** Capped count; absent when not requested or unavailable. */
   count?: number;
   countCapped?: boolean;

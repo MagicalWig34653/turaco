@@ -168,3 +168,28 @@ describe('pinned items', () => {
     expect(pinnedActiveOn([item], '/tasks', '')).toBeUndefined();
   });
 });
+
+describe('pinned Task Boards', () => {
+  const sidebar = {
+    groups: [
+      {
+        key: 'tasks',
+        items: [
+          pin('view-1', 'tasks', 0, { kind: 'board' as const, ref: 'board 1', name: 'Sprint' }),
+          pin('view-2', 'tasks', 1),
+        ],
+      },
+    ],
+  };
+  it('links the Board screen for a board pin and the list for any other View', () => {
+    const items = pinnedItems(sidebar);
+    expect(items[0]?.href).toBe('/tasks/boards/board%201');
+    expect(items[1]?.href).toBe('/tasks?view=view-2');
+  });
+  it('is active on the Board path without a view parameter', () => {
+    const [board] = pinnedItems(sidebar);
+    expect(board && isPinnedActive(board, '/tasks/boards/board%201', '')).toBe(true);
+    expect(board && isPinnedActive(board, '/tasks/boards/other', '')).toBe(false);
+    expect(board && isPinnedActive(board, '/tasks', '?view=view-1')).toBe(false);
+  });
+});
