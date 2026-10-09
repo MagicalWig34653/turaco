@@ -13,6 +13,8 @@ import { useSession } from '../platform/session/SessionProvider';
 import { sessionDisplayName } from '../platform/session/identity';
 import { useTheme } from '../platform/theme/ThemeProvider';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
+import type { PaletteSearch } from '../platform/ui/shell/paletteCommands';
+import { searchTickets } from '../modules/tickets/paletteSearch';
 import { navigationCommands } from '../platform/ui/shell/paletteCommands';
 import { appRoutes, isNavActive } from './routes';
 import { Sidebar } from './Sidebar';
@@ -82,6 +84,18 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
         : []),
     ],
     [can, t, openAi, enabled],
+  );
+  const serviceDeskOn = enabled('servicedesk');
+  // Tickets can be found by reference, earlier number or title (the server scopes the results).
+  const ticketSearch = useMemo<PaletteSearch | undefined>(
+    () =>
+      serviceDeskOn
+        ? (query, signal) =>
+            searchTickets(query, signal, {
+              alias: (old, current) => t('shell.ticketAlias', { old, current }),
+            })
+        : undefined,
+    [serviceDeskOn, t],
   );
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))
@@ -465,6 +479,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
         onClose={() => setPaletteOpen(false)}
         commands={commands}
         recentPaths={recentPaths}
+        searchObjects={ticketSearch}
       />
     </div>
   );

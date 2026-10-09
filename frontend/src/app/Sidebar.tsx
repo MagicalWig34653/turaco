@@ -16,7 +16,11 @@ import type { RouteId } from './routes';
 import type { NavSection } from './shellNavigation';
 import {
   PINNED_KEY,
+  QUEUES_KEY,
+  applyCounts,
+  countIds,
   countLabel,
+  isEditablePin,
   pinnedActiveOn,
   pinnedItems,
   readCollapsedSections,
@@ -25,6 +29,8 @@ import {
   writeCollapsedSections,
   type PinnedItem,
 } from './sidebarModel';
+
+const COUNT_REFRESH_MS = 60_000;
 
 const resourceIcon: Record<string, RouteId> = {
   tickets: 'ticketQueue',
@@ -57,8 +63,12 @@ export function Sidebar({ sections, rail, activePath, unreadLabel, unreadAria }:
   const [collapsed, setCollapsed] = useState(readCollapsedSections);
   const [sidebar, setSidebar] = useState<SidebarResponse>();
   const [pinError, setPinError] = useState(false);
-  const pinned = pinnedItems(sidebar);
-  const activePin = pinnedActiveOn(pinned, pathname, search);
+  const allPinned = pinnedItems(sidebar);
+  // Built-in System Views (my open tickets, unassigned, one per Queue) form their own section.
+  const systemEntries = allPinned.filter((item) => !isEditablePin(item));
+  const pinned = allPinned.filter(isEditablePin);
+  const activePin = pinnedActiveOn(allPinned, pathname, search);
+  const itemName = (item: PinnedItem) => (item.nameKey ? t(item.nameKey as MessageKey) : item.name);
 
   const load = useCallback((signal?: AbortSignal) => {
     viewsApi.sidebar(signal).then(
@@ -91,6 +101,38 @@ export function Sidebar({ sections, rail, activePath, unreadLabel, unreadAria }:
     };
   }, [load]);
 
+  // Counts age while the page stays open: refresh them quietly through GET /views/counts.
+  const countedIds = countIds(allPinned).join(',');
+  useEffect(() => {
+    if (!countedIds) return undefined;
+    const ids = countedIds.split(',');
+    let controller: AbortController | undefined;
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      viewsApi.counts(ids, signal).then(
+        (response) => {
+          if (signal.aborted) return;
+          setSidebar((current) =>
+            current ? applyCounts(current, response.items, new Set(ids)) : current,
+          );
+        },
+        () => {
+          // Keep the last known counts; the next tick retries.
+        },
+      );
+    };
+    const timer = window.setInterval(refresh, COUNT_REFRESH_MS);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      controller?.abort();
+    };
+  }, [countedIds]);
+
   const toggle = (key: string) => {
     const next = toggleSection(collapsed, key);
     setCollapsed(next);
@@ -112,6 +154,8 @@ export function Sidebar({ sections, rail, activePath, unreadLabel, unreadAria }:
   };
 
   const pinActions = (item: PinnedItem): MenuItem[] => {
+    if (!isEditablePin(item))
+      return [{ id: 'open', label: t('sidebar.pin.open'), onSelect: () => navigate(item.href) }];
     const group = pinned.filter((candidate) => candidate.groupKey === item.groupKey);
     const index = group.findIndex((candidate) => candidate.viewId === item.viewId);
     const first = index <= 0;
@@ -198,80 +242,98 @@ export function Sidebar({ sections, rail, activePath, unreadLabel, unreadAria }:
     );
   };
 
-  return (
-    <nav ref={navRef} aria-label={t('nav.primary')} onKeyDown={onKeyDown}>
-      {pinned.length > 0 || pinError ? (
-        <div className="nav-section turaco-rail-section sidebar-section sidebar-pinned">
-          {header(PINNED_KEY, 'sidebar.section.pinned', activePin !== undefined)}
-          <div
-            id={`${baseId}-${PINNED_KEY}`}
-            className="sidebar-items"
-            role="group"
-            aria-label={t('sidebar.section.pinned')}
-            hidden={isCollapsed(PINNED_KEY)}
-          >
-            {pinned.map((item) => {
-              const label = countLabel(item.count, item.countCapped);
-              return (
-                <div className="sidebar-pin" key={item.viewId}>
-                  <Link
-                    to={item.href}
-                    title={rail ? item.name : undefined}
-                    aria-label={rail ? item.name : undefined}
-                    aria-current={item === activePin ? 'page' : undefined}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      menu.openAtPoint(
-                        pinActions(item),
-                        { x: event.clientX, y: event.clientY },
-                        event.currentTarget,
-                        item.name,
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
-                        event.preventDefault();
-                        menu.openAtElement(pinActions(item), event.currentTarget, item.name);
-                      }
-                    }}
-                  >
-                    <span className="turaco-rail-icon">
-                      <NavIcon id={resourceIcon[item.resource] ?? 'ticketQueue'} />
-                    </span>
-                    <span className="turaco-rail-label">{item.name}</span>
-                    {/* Q-C slot: queue counts (GET /me/sidebar will return `count` and `countCapped`). */}
-                    {label !== undefined && !rail ? (
-                      <span
-                        className="badge badge-info nav-count sidebar-count"
-                        data-slot="queue-count"
-                        aria-label={t('sidebar.count', { count: label })}
-                      >
-                        {label}
-                      </span>
-                    ) : null}
-                  </Link>
-                  <button
-                    type="button"
-                    className="sidebar-pin-more"
-                    aria-haspopup="menu"
-                    aria-label={t('sidebar.pin.actions', { name: item.name })}
-                    onClick={(event) =>
-                      menu.openAtElement(pinActions(item), event.currentTarget, item.name)
+  const pinSection = (items: PinnedItem[], key: string, label: MessageKey, showError: boolean) => (
+    <div
+      className={`nav-section turaco-rail-section sidebar-section sidebar-pinned sidebar-${key}`}
+      key={key}
+    >
+      {header(
+        key,
+        label,
+        items.some((item) => item === activePin),
+      )}
+      <div
+        id={`${baseId}-${key}`}
+        className="sidebar-items"
+        role="group"
+        aria-label={t(label)}
+        hidden={isCollapsed(key)}
+      >
+        {items.map((item) => {
+          const text = countLabel(item.count, item.countCapped, item.countStatus);
+          const name = itemName(item);
+          return (
+            <div className="sidebar-pin" key={item.viewId}>
+              <Link
+                to={item.href}
+                title={rail ? name : undefined}
+                aria-label={rail ? name : undefined}
+                aria-current={item === activePin ? 'page' : undefined}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  menu.openAtPoint(
+                    pinActions(item),
+                    { x: event.clientX, y: event.clientY },
+                    event.currentTarget,
+                    name,
+                  );
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                    event.preventDefault();
+                    menu.openAtElement(pinActions(item), event.currentTarget, name);
+                  }
+                }}
+              >
+                <span className="turaco-rail-icon">
+                  <NavIcon id={resourceIcon[item.resource] ?? 'ticketQueue'} />
+                </span>
+                <span className="turaco-rail-label">{name}</span>
+                {text !== undefined && !rail ? (
+                  <span
+                    className={`badge badge-info nav-count sidebar-count${
+                      item.countStatus === 'unavailable' ? ' sidebar-count-unavailable' : ''
+                    }`}
+                    data-slot="queue-count"
+                    aria-label={
+                      item.countStatus === 'unavailable'
+                        ? t('sidebar.countUnavailable')
+                        : t('sidebar.count', { count: text })
                     }
                   >
-                    <span aria-hidden="true">⋯</span>
-                  </button>
-                </div>
-              );
-            })}
-            {pinError ? (
-              <p role="alert" className="sidebar-error">
-                {t('sidebar.pin.error')}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+                    {text}
+                  </span>
+                ) : null}
+              </Link>
+              <button
+                type="button"
+                className="sidebar-pin-more"
+                aria-haspopup="menu"
+                aria-label={t('sidebar.pin.actions', { name })}
+                onClick={(event) => menu.openAtElement(pinActions(item), event.currentTarget, name)}
+              >
+                <span aria-hidden="true">⋯</span>
+              </button>
+            </div>
+          );
+        })}
+        {showError && pinError ? (
+          <p role="alert" className="sidebar-error">
+            {t('sidebar.pin.error')}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  return (
+    <nav ref={navRef} aria-label={t('nav.primary')} onKeyDown={onKeyDown}>
+      {systemEntries.length > 0
+        ? pinSection(systemEntries, QUEUES_KEY, 'sidebar.section.queues', false)
+        : null}
+      {pinned.length > 0 || pinError
+        ? pinSection(pinned, PINNED_KEY, 'sidebar.section.pinned', true)
+        : null}
       {sections.map(({ key, label, items }) => {
         const hasActive = items.some((item) => item.pattern === activePath) && !activePin;
         return (

@@ -20,6 +20,9 @@ import {
   unavailableConditions,
   upsertShare,
   warningConditionPaths,
+  isSystemKey,
+  systemDefinition,
+  systemSavedView,
 } from './model';
 
 const state = (extra: Partial<QueryState> = {}): QueryState => ({
@@ -293,5 +296,64 @@ describe('pins', () => {
       ['t', 'tasks', 0, false],
     ]);
     expect(pinPayload(items, new Set(['r1'])).map((p) => p.viewId)).toEqual(['a', 'r1', 'r2', 't']);
+  });
+});
+
+describe('System Views', () => {
+  it('knows the key prefix', () => {
+    expect(isSystemKey('system:tickets:my-open')).toBe(true);
+    expect(isSystemKey('0a1b')).toBe(false);
+    expect(isSystemKey(null)).toBe(false);
+  });
+  it('turns the built-in ticket keys into the same filters the server runs', () => {
+    const open = {
+      type: 'condition',
+      field: 'status',
+      op: 'in',
+      value: ['new', 'open', 'in_progress', 'waiting'],
+    };
+    expect(systemDefinition('system:tickets:my-open')?.filter?.root).toEqual({
+      type: 'group',
+      logic: 'and',
+      children: [open, { type: 'condition', field: 'assignee', op: 'is_me' }],
+    });
+    expect(systemDefinition('system:tickets:unassigned')?.filter?.root).toMatchObject({
+      children: [open, { field: 'assignee', op: 'is_empty' }],
+    });
+    expect(systemDefinition('system:tickets:queue:abc')?.filter?.root).toMatchObject({
+      children: [open, { field: 'queue', op: 'equals', value: 'abc' }],
+    });
+    expect(systemDefinition('system:tickets:queue:')).toBeUndefined();
+    expect(systemDefinition('system:tickets:other')).toBeUndefined();
+  });
+  it('builds a read-only stand-in View without abilities beyond running', () => {
+    const view = systemSavedView({
+      id: 'system:tickets:queue:q1',
+      name: 'HR',
+      resource: 'tickets',
+      groupKey: 'tickets',
+      position: 2,
+      system: true,
+    });
+    expect(view).toMatchObject({ system: true, name: 'HR', access: 'use' });
+    expect(view && abilities(view, () => true)).toEqual({
+      canRun: true,
+      canEdit: false,
+      canManage: false,
+      canShare: false,
+      canPin: false,
+      canTakeOver: false,
+      readOnly: true,
+    });
+    expect(
+      systemSavedView({
+        id: 'system:tickets:nope',
+        name: '',
+        resource: 'tickets',
+        groupKey: 'tickets',
+        position: 0,
+        system: true,
+      }),
+    ).toBeUndefined();
   });
 });

@@ -25,7 +25,10 @@ import { TicketRemoteSupport } from '../remoteaccess/RemoteSupportCard';
 import { problemsApi } from '../problems/api';
 import { incidentsApi } from '../incidents/api';
 import { IncidentBadge } from '../incidents/IncidentsScreen';
-import { ticketsApi } from './api';
+import { notifySidebarChanged } from '../../platform/ui/views/api';
+import { ticketQueuesApi, ticketsApi } from './api';
+import { aliasList, canOfferMove, ticketQueueName } from './queueModel';
+import { TicketMoveDialog } from './TicketMoveDialog';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
 
@@ -204,9 +207,14 @@ function TicketWorkspace({ id }: { id: string }) {
     async (signal) => (staffReader ? await ticketsApi.externalSync(id, signal) : null),
     [id, staffReader],
   );
+  // The caller's level in the Ticket's Queue decides whether "Move to queue" is offered (the server still authorizes).
+  const queues = useAsync(
+    async (signal) => (staffReader ? (await ticketQueuesApi.list(false, signal)).items : []),
+    [staffReader],
+  );
   const [retrying, setRetrying] = useState(false);
   const [dialog, setDialog] = useState<{
-    kind: 'text' | 'wait' | 'assign';
+    kind: 'text' | 'wait' | 'assign' | 'move';
     op?: TicketOperation;
   } | null>(null);
   const [busyOp, setBusyOp] = useState<string | null>(null);
@@ -249,6 +257,13 @@ function TicketWorkspace({ id }: { id: string }) {
     setActionError(undefined);
     loaded.reload();
   };
+  const queueName = ticketQueueName(ticket);
+  const aliases = aliasList(ticket);
+  const queueLevel = queues.data?.find((queue) => queue.id === ticket.queueId)?.level;
+  const canMove =
+    staffReader &&
+    canOfferMove(ticket) &&
+    (manage || queueLevel === 'work' || queueLevel === 'manage');
   const run = async (op: TicketOperation) => {
     setBusyOp(op);
     setActionError(undefined);
@@ -303,6 +318,17 @@ function TicketWorkspace({ id }: { id: string }) {
       </Link>
       <div className="incident-heading-meta">
         <span className="incident-reference">{ticket.reference}</span>
+        {aliases.length > 0 ? (
+          <span className="ticket-aliases" title={t('tickets.aliases.hint')}>
+            {t('tickets.aliases.previously')}{' '}
+            {aliases.map((alias, index) => (
+              <span key={alias}>
+                {index > 0 ? ', ' : ''}
+                <span className="incident-reference">{alias}</span>
+              </span>
+            ))}
+          </span>
+        ) : null}
         <TicketStatusBadge status={ticket.status} />
         <StatusBadge
           tone={
@@ -494,6 +520,11 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t('tickets.action.assign')}
                   </Button>
                 ) : null}
+                {canMove ? (
+                  <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'move' })}>
+                    {t('tickets.action.moveQueue')}
+                  </Button>
+                ) : null}
                 {canComment ? (
                   <Button onClick={focusComposer}>{t('ticketWorkspace.reply')}</Button>
                 ) : null}
@@ -535,10 +566,36 @@ function TicketWorkspace({ id }: { id: string }) {
               </dd>
               <dt>{t('tickets.fact.assignee')}</dt>
               <dd>{name(ticket.assigneeId)}</dd>
-              {staff && ticket.queueTeamId ? (
+              {queueName ? (
                 <>
                   <dt>{t('tickets.fact.queue')}</dt>
+                  <dd>
+                    {queueName}
+                    {ticket.queue ? (
+                      <small className="ticket-queue-prefix"> ({ticket.queue.prefix})</small>
+                    ) : null}
+                  </dd>
+                </>
+              ) : null}
+              {staff && ticket.queueTeamId ? (
+                <>
+                  <dt>{t('tickets.fact.routingTeam')}</dt>
                   <dd>{name(ticket.queueTeamId)}</dd>
+                </>
+              ) : null}
+              {aliases.length > 0 ? (
+                <>
+                  <dt>{t('tickets.aliases.title')}</dt>
+                  <dd>
+                    <ul className="ticket-alias-list">
+                      {aliases.map((alias) => (
+                        <li key={alias} className="incident-reference">
+                          {alias}
+                        </li>
+                      ))}
+                    </ul>
+                    <small>{t('tickets.aliases.hint')}</small>
+                  </dd>
                 </>
               ) : null}
             </dl>
@@ -699,6 +756,16 @@ function TicketWorkspace({ id }: { id: string }) {
       </div>
       {dialog?.kind === 'assign' ? (
         <AssignDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
+      ) : null}
+      {dialog?.kind === 'move' ? (
+        <TicketMoveDialog
+          ticket={ticket}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            notifySidebarChanged();
+            done();
+          }}
+        />
       ) : null}
       {dialog?.kind === 'wait' ? (
         <WaitDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />

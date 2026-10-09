@@ -117,3 +117,8 @@
   padding-top: 8px;
   border-top: 1px solid var(--rail-active);
 }
+
+/* Count badge of a System View entry; a dash means "could not be counted", never zero. */
+.sidebar-count-unavailable {
+  opacity: 0.75;
+}

@@ -17,7 +17,9 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Toast } from '../../platform/ui/Workspace';
 import { IncidentBanner } from '../incidents/IncidentBanner';
-import { ticketsApi } from './api';
+import { useAsync } from '../../platform/api/useAsync';
+import { ticketQueuesApi, ticketsApi } from './api';
+import { ticketQueueName } from './queueModel';
 import { ticketStatuses, type Ticket, type TicketStatus } from './types';
 
 const tone: Record<TicketStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -59,13 +61,23 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const [openOnly, setOpenOnly] = useState(
     () => new URLSearchParams(window.location.search).get('open') !== 'false',
   );
-  useFilterQuery({ status, open: openOnly ? 'true' : 'false', assignment });
+  // The Queue filter appears when the caller can view more than one Queue (GET /tickets?queue=).
+  const queues = useAsync(
+    async (signal) => (scope === 'all' ? (await ticketQueuesApi.list(false, signal)).items : []),
+    [scope],
+  );
+  const queueOptions = (queues.data ?? []).filter((queue) => queue.status === 'active');
+  const [queueFilter, setQueueFilter] = useState(
+    () => new URLSearchParams(window.location.search).get('queue') ?? '',
+  );
+  useFilterQuery({ status, open: openOnly ? 'true' : 'false', assignment, queue: queueFilter });
   const query = useQueryList<Ticket>(
     'tickets',
     {
       scope,
       status,
       open: openOnly,
+      queue: scope === 'all' ? queueFilter : undefined,
       assigneeId: scope === 'all' && assignment === 'mine' ? session?.userId : undefined,
     },
     scope === 'all' && assignment === 'unassigned'
@@ -121,6 +133,18 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     },
     ...(scope === 'all'
       ? [
+          {
+            key: 'queue',
+            header: t('tickets.fact.queue'),
+            render: (x: Ticket) => {
+              const name = ticketQueueName(x);
+              return name ? (
+                <span title={x.queue ? `${x.queue.name} (${x.queue.prefix})` : name}>{name}</span>
+              ) : (
+                '–'
+              );
+            },
+          },
           {
             key: 'priority',
             sortField: 'priority',
@@ -222,6 +246,18 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           },
         ]
       : []),
+    ...(queueFilter
+      ? [
+          {
+            key: 'queue',
+            label: `${t('tickets.fact.queue')}: ${
+              queueOptions.find((queue) => queue.id === queueFilter)?.name ??
+              t('query.referenceUnknown')
+            }`,
+            onRemove: () => setQueueFilter(''),
+          },
+        ]
+      : []),
     ...(status
       ? [
           {
@@ -277,6 +313,20 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
               </Button>
             ))}
           </div>
+        ) : null}
+        {scope === 'all' && queueOptions.length > 1 ? (
+          <Select
+            label={t('tickets.fact.queue')}
+            value={queueFilter}
+            onChange={(event) => setQueueFilter(event.target.value)}
+            options={[
+              { value: '', label: t('tickets.filter.anyQueue') },
+              ...queueOptions.map((queue) => ({
+                value: queue.id,
+                label: `${queue.name} (${queue.prefix})`,
+              })),
+            ]}
+          />
         ) : null}
         <Select
           label={t('tickets.col.status')}

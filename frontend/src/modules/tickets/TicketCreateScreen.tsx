@@ -7,14 +7,15 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
-import { TextArea, TextField } from '../../platform/ui/Field';
+import { Select, TextArea, TextField } from '../../platform/ui/Field';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
 import { useSession } from '../../platform/session/SessionProvider';
 import { assetsApi } from '../assets/api';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { IncidentBanner } from '../incidents/IncidentBanner';
 import { Suggestions } from '../knowledge/Suggestions';
-import { ticketsApi } from './api';
+import { ticketQueuesApi, ticketsApi } from './api';
+import { intakeChoice, queueChoiceLabel } from './queueModel';
 import type { Ticket } from './types';
 
 function ReportIcon({ kind }: { kind: 'device' | 'message' | 'book' | 'check' }) {
@@ -53,6 +54,19 @@ export function TicketCreateScreen() {
   const staff = can('tickets.manage');
   const [onBehalf, setOnBehalf] = useState<Assignee | null>(null);
   const devices = useAsync(async (signal) => assetsApi.mine(undefined, signal), []);
+  // A Queue is asked for only when more than one is on offer; otherwise the server (or the single
+  // offered Queue) decides silently. A failed read falls back to the intake Queue.
+  const queues = useAsync(async (signal) => (await ticketQueuesApi.list(true, signal)).items, []);
+  const choice = intakeChoice(queues.data);
+  const [pickedQueue, setPickedQueue] = useState('');
+  const chosenQueueId =
+    choice.mode === 'single'
+      ? choice.queue.id
+      : choice.mode === 'choose'
+        ? choice.queues.some((queue) => queue.id === pickedQueue)
+          ? pickedQueue
+          : choice.initial.id
+        : undefined;
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [assetId, setAssetId] = useState('');
@@ -74,6 +88,7 @@ export function TicketCreateScreen() {
           description: description.trim(),
           ...(assetId && !onBehalf ? { assetId } : {}),
           ...(onBehalf ? { affectedUserId: onBehalf.id } : {}),
+          ...(chosenQueueId ? { queueId: chosenQueueId } : {}),
         }),
       );
     } catch (cause) {
@@ -187,10 +202,60 @@ export function TicketCreateScreen() {
               </details>
             </Card>
           ) : null}
+          {choice.mode === 'choose' ? (
+            <Card className="report-section">
+              <div className="report-section-heading">
+                <span className="report-step" aria-hidden="true">
+                  02
+                </span>
+                <div>
+                  <h2>{t(staff ? 'tickets.queue.pick' : 'reportPolish.queuePick')}</h2>
+                  <p>{t(staff ? 'tickets.queue.pickHint' : 'reportPolish.queuePickHint')}</p>
+                </div>
+              </div>
+              {staff ? (
+                <Select
+                  label={t('tickets.fact.queue')}
+                  value={chosenQueueId ?? ''}
+                  disabled={busy}
+                  onChange={(event) => setPickedQueue(event.target.value)}
+                  options={choice.queues.map((queue) => ({
+                    value: queue.id,
+                    label: queueChoiceLabel(queue, true),
+                  }))}
+                />
+              ) : (
+                <fieldset className="report-devices report-queues" disabled={busy}>
+                  <legend className="report-sr-only">{t('reportPolish.queuePick')}</legend>
+                  {choice.queues.map((queue) => (
+                    <label
+                      key={queue.id}
+                      className={`report-device ${chosenQueueId === queue.id ? 'is-selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="report-queue"
+                        value={queue.id}
+                        checked={chosenQueueId === queue.id}
+                        onChange={() => setPickedQueue(queue.id)}
+                      />
+                      <span className="report-device-icon">
+                        <ReportIcon kind="message" />
+                      </span>
+                      <span>
+                        <strong>{queueChoiceLabel(queue, false)}</strong>
+                        {queue.description ? <small>{queue.description}</small> : null}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+            </Card>
+          ) : null}
           <Card className="report-section">
             <div className="report-section-heading">
               <span className="report-step" aria-hidden="true">
-                02
+                {choice.mode === 'choose' ? '03' : '02'}
               </span>
               <div>
                 <h2>{t('reportPolish.equipment')}</h2>
@@ -256,7 +321,12 @@ export function TicketCreateScreen() {
           </Card>
           <div className="report-submit">
             <p>{t('reportPolish.submitHint')}</p>
-            <Button type="submit" variant="primary" busy={busy} disabled={!title.trim()}>
+            <Button
+              type="submit"
+              variant="primary"
+              busy={busy}
+              disabled={!title.trim() || queues.loading}
+            >
               {t(busy ? 'reportPolish.sending' : 'reportPolish.submit')}{' '}
               <span aria-hidden="true">→</span>
             </Button>

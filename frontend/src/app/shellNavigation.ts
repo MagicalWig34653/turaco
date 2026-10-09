@@ -37,6 +37,7 @@ const placement: Partial<Record<RouteId, SectionKey>> = {
   briefing: 'work',
   myTickets: 'service_desk',
   ticketQueue: 'service_desk',
+  ticketQueues: 'service_desk',
   catalog: 'service_desk',
   requests: 'service_desk',
   incidents: 'service_desk',

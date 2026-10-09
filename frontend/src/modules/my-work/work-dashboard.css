@@ -603,3 +603,18 @@
     gap: 8px;
   }
 }
+
+/* Merged My Work rows: a reference chip before the title and the work source after it. */
+.work-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.work-source-chip {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  font-size: 12px;
+}

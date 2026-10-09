@@ -38,6 +38,10 @@ export type SavedView = {
   createdAt: string;
   updatedAt: string;
   shares?: ViewShare[];
+  /** Built-in System View (client-side marker): read-only, cannot be shared, pinned or edited. */
+  system?: boolean;
+  /** i18n key of a System View's name. */
+  nameKey?: string;
 };
 export type ViewPin = {
   viewId: string;
@@ -46,10 +50,34 @@ export type ViewPin = {
   groupKey: string;
   position: number;
   hidden: boolean;
-  source: 'user' | 'rule';
-  /** Q-C slot: GET /me/sidebar will later return queue counts; absent until then. */
+  /** `system` entries are built-in System Views; their `viewId` is the key (`system:tickets:...`). */
+  source: 'user' | 'rule' | 'system';
+  /** i18n key of a System View's name (then `name` is empty). */
+  nameKey?: string;
+  /** The Queue id of a Queue entry. */
+  ref?: string;
+  /** Capped count; absent when not requested or unavailable. */
   count?: number;
   countCapped?: boolean;
+  /** `unavailable` is never zero: the count could not be computed. */
+  countStatus?: 'ok' | 'unavailable';
+};
+export type ViewCount = {
+  id: string;
+  count?: number;
+  capped?: boolean;
+  status: 'ok' | 'unavailable';
+};
+export type SystemViewInfo = {
+  id: string;
+  handle?: string;
+  name: string;
+  nameKey?: string;
+  ref?: string;
+  resource: string;
+  groupKey: string;
+  position: number;
+  system: true;
 };
 export type SidebarResponse = {
   groups: { key: string; items: ViewPin[] }[];
@@ -139,6 +167,18 @@ export const viewsApi = {
   ) => api.get<ViewRunPage<T>>(`/views/${enc(id)}/results`, { signal, query }),
   pins: (signal?: Signal) => api.get<{ items: ViewPin[] }>('/me/pins', { signal }),
   replacePins: (pins: PinPayload[]) => api.put<{ items: ViewPin[] }>('/me/pins', { pins }),
+  /** The built-in System Views the caller has (definitions are not returned). */
+  system: (resource: ViewResource, signal?: Signal) =>
+    api.get<{ items: SystemViewInfo[] }>('/views', {
+      signal,
+      query: { scope: 'system', resource },
+    }),
+  /** Capped counts of up to 30 View ids, System View keys or `queue:<id>` handles. */
+  counts: (ids: readonly string[], signal?: Signal) =>
+    api.get<{ items: ViewCount[] }>('/views/counts', {
+      signal,
+      query: { ids: ids.slice(0, 30).join(',') },
+    }),
   sidebar: (signal?: Signal) => api.get<SidebarResponse>('/me/sidebar', { signal }),
   setSidebarState: (collapsedGroups: string[]) =>
     api.put<void>('/me/sidebar-state', { collapsedGroups }),

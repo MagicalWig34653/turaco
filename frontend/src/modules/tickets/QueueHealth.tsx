@@ -5,13 +5,13 @@ import { Link } from '../../platform/router/Router';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { emptyState, serialize, type Node } from '../../platform/ui/query/filterModel';
 import { Card, MetricCard, Skeleton } from '../../platform/ui/Workspace';
-import { organizationApi } from '../organization/api';
-import type { Team } from '../organization/types';
+import { ticketQueuesApi } from './api';
+import type { TicketQueue } from './types';
 
 const openStatuses = ['new', 'open', 'in_progress', 'waiting'];
 /** Tickets have no due date; a ticket nobody touched for this many days counts as stale. */
 const STALE_DAYS = 3;
-const MAX_TEAMS = 8;
+const MAX_QUEUES = 8;
 
 const condition = (field: string, op: string, value?: unknown): Node => ({
   type: 'condition',
@@ -39,34 +39,34 @@ type Health = {
   unassigned: number;
   stale: number;
   urgent: number;
-  teams: Array<{ team: Team; open: number }>;
+  queues: Array<{ queue: TicketQueue; open: number }>;
 };
 
-async function load(signal: AbortSignal, withTeams: boolean): Promise<Health> {
-  const [unassigned, stale, urgent] = await Promise.all([
+async function load(signal: AbortSignal): Promise<Health> {
+  const [unassigned, stale, urgent, known] = await Promise.all([
     count(and(openOnly, condition('assignee', 'is_empty')), signal),
     count(and(openOnly, condition('updated_at', 'older_than_n_days', STALE_DAYS)), signal),
     count(and(openOnly, condition('priority', 'equals', 'urgent')), signal),
+    ticketQueuesApi.list(false, signal),
   ]);
-  let teams: Health['teams'] = [];
-  if (withTeams) {
-    const found = (await organizationApi.searchTeams('', signal)).items
-      .filter((team) => team.active)
-      .slice(0, MAX_TEAMS);
-    teams = await Promise.all(
-      found.map(async (team) => ({
-        team,
-        open: await count(and(openOnly, condition('queue', 'equals', team.id)), signal),
-      })),
-    );
-  }
-  return { unassigned, stale, urgent, teams };
+  // Only when there is more than one queue does a split help; each number uses the caller's own scope.
+  const active = known.items.filter((queue) => queue.status === 'active').slice(0, MAX_QUEUES);
+  const queues =
+    active.length > 1
+      ? await Promise.all(
+          active.map(async (queue) => ({
+            queue,
+            open: await count(and(openOnly, condition('queue', 'equals', queue.id)), signal),
+          })),
+        )
+      : [];
+  return { unassigned, stale, urgent, queues };
 }
 
 /** Compact queue health for IT leads: where tickets wait. Every number links to its filtered list. */
-export function QueueHealth({ canListTeams }: { canListTeams: boolean }) {
+export function QueueHealth() {
   const { t } = useI18n();
-  const health = useAsync((signal) => load(signal, canListTeams), [canListTeams]);
+  const health = useAsync((signal) => load(signal), []);
   return (
     <section aria-labelledby="overview-queue">
       <div className="dashboard-section-heading">
@@ -112,14 +112,14 @@ export function QueueHealth({ canListTeams }: { canListTeams: boolean }) {
               zeroCaption={t('overview.queue.urgentZero')}
             />
           </div>
-          {health.data.teams.length > 0 ? (
+          {health.data.queues.length > 0 ? (
             <Card title={t('overview.queue.perTeam')}>
               <h3>{t('overview.queue.perTeam')}</h3>
               <ul className="queue-teams">
-                {health.data.teams.map(({ team, open }) => (
-                  <li key={team.id}>
-                    <Link to={queueLink(and(openOnly, condition('queue', 'equals', team.id)))}>
-                      {team.name}
+                {health.data.queues.map(({ queue, open }) => (
+                  <li key={queue.id}>
+                    <Link to={queueLink(and(openOnly, condition('queue', 'equals', queue.id)))}>
+                      {queue.name} ({queue.prefix})
                     </Link>
                     <strong>{open}</strong>
                   </li>

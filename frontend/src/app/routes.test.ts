@@ -235,6 +235,13 @@ describe('support', () => {
     expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue', 'problems']);
   });
 
+  it('keeps queue administration behind servicedesk.queues.manage', () => {
+    expect(ids(['tickets.manage'], 'admin')).not.toContain('ticketQueues');
+    expect(ids(['servicedesk.queues.manage'], 'admin')).toContain('ticketQueues');
+    expect(matchRoute(appRoutes, '/service-desk/queues')?.route.id).toBe('ticketQueues');
+    expect(matchRoute(appRoutes, '/service-desk')?.route.id).toBe('ticketQueue');
+  });
+
   it('matches the static ticket route before the parameterised one', () => {
     expect(matchRoute(appRoutes, '/support/new')?.route.id).toBe('ticketNew');
     expect(matchRoute(appRoutes, '/support/7')?.route.id).toBe('ticketDetail');

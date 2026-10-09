@@ -1,5 +1,4 @@
 import type { FeedEntry } from '../briefing/types';
-import type { Task } from '../tasks/types';
 
 /** Missing aggregate entries remain unknown, never a fabricated zero. */
 export function summarizeFeed(entries: readonly FeedEntry[]) {
@@ -15,13 +14,18 @@ export function summarizeFeed(entries: readonly FeedEntry[]) {
   return { approvals, highlight, recent };
 }
 
-type FocusTask = Pick<Task, 'id' | 'priority' | 'status' | 'dueAt'>;
+type FocusTask = { id: string; priority: string; status: string; dueAt: string | null };
 
-/** My Work side panel: loaded open work by priority and the next due items. */
+/** My Work side panel: loaded open work (tasks and tickets) by priority and the next due items. */
 export function focusSummary<T extends FocusTask>(tasks: readonly T[], now: Date, limit = 3) {
-  const open = tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled');
+  const open = tasks.filter(
+    (task) => !['completed', 'cancelled', 'resolved', 'closed'].includes(task.status),
+  );
   const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
-  for (const task of open) byPriority[task.priority] += 1;
+  for (const task of open) {
+    const key = task.priority in byPriority ? (task.priority as keyof typeof byPriority) : 'normal';
+    byPriority[key] += 1;
+  }
   const dueSoon = open
     .filter((task) => task.dueAt && Date.parse(task.dueAt) >= now.getTime())
     .sort((a, b) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!))

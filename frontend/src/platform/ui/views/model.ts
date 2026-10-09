@@ -11,6 +11,7 @@ import type {
   PinPayload,
   SavedView,
   ShareLevel,
+  SystemViewInfo,
   ShareSubjectType,
   ViewDefinition,
   ViewPin,
@@ -120,7 +121,18 @@ export type Abilities = {
 type Can = (permission: string) => boolean;
 
 /** Presentation hints only; the backend re-checks every operation. */
-export function abilities(view: Pick<SavedView, 'access'>, can: Can): Abilities {
+export function abilities(view: Pick<SavedView, 'access' | 'system'>, can: Can): Abilities {
+  if (view.system)
+    // Built-in System Views are code: they can be opened and filtered, nothing else.
+    return {
+      canRun: true,
+      canEdit: false,
+      canManage: false,
+      canShare: false,
+      canPin: false,
+      canTakeOver: false,
+      readOnly: true,
+    };
   const owner = view.access === 'owner';
   const admin = view.access === 'admin';
   return {
@@ -317,5 +329,61 @@ export function movePin(
       )
       .sort(byOrder),
     touched: new Set(group.map((pin) => pin.viewId)),
+  };
+}
+
+// ---- System Views -------------------------------------------------------------------------
+
+export const SYSTEM_KEY_PREFIX = 'system:';
+export const isSystemKey = (id: string | null | undefined): id is string =>
+  typeof id === 'string' && id.startsWith(SYSTEM_KEY_PREFIX);
+
+const openTicketStatuses = ['new', 'open', 'in_progress', 'waiting'];
+const cond = (field: string, op: string, value?: unknown): Node => ({
+  type: 'condition',
+  field,
+  op,
+  ...(value === undefined ? {} : { value }),
+});
+const allOf = (...children: Node[]): Node => ({ type: 'group', logic: 'and', children });
+const systemSort = [
+  { field: 'priority', dir: 'asc' as const },
+  { field: 'created_at', dir: 'desc' as const },
+];
+
+/**
+ * The filter a built-in ticket System View stands for, so it opens as an editable working filter
+ * on the list (the server runs the same definition for counts and `GET /views/{key}/results`).
+ */
+export function systemDefinition(key: string): ViewDefinition | undefined {
+  const open = cond('status', 'in', openTicketStatuses);
+  let root: Node | undefined;
+  if (key === 'system:tickets:my-open') root = allOf(open, cond('assignee', 'is_me'));
+  else if (key === 'system:tickets:unassigned') root = allOf(open, cond('assignee', 'is_empty'));
+  else if (key.startsWith('system:tickets:queue:') && key.length > 'system:tickets:queue:'.length)
+    root = allOf(open, cond('queue', 'equals', key.slice('system:tickets:queue:'.length)));
+  return root ? { filter: { v: 1, root, sort: systemSort } } : undefined;
+}
+
+/** A read-only stand-in SavedView for a System View, so the list screens treat it like any View. */
+export function systemSavedView(info: SystemViewInfo): SavedView | undefined {
+  const definition = systemDefinition(info.id);
+  if (!definition) return undefined;
+  return {
+    id: info.id,
+    resource: info.resource as ViewResource,
+    name: info.name,
+    ...(info.nameKey ? { nameKey: info.nameKey } : {}),
+    description: '',
+    ownerId: '',
+    definition,
+    visibility: 'private',
+    version: 0,
+    access: 'use',
+    moduleEnabled: true,
+    pinned: false,
+    system: true,
+    createdAt: '',
+    updatedAt: '',
   };
 }

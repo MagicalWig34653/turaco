@@ -533,3 +533,20 @@ html[data-motion='reduced'] .incident-workspace * {
   border-bottom: 1px solid var(--border-token);
   padding-block: 6px;
 }
+
+/* Earlier numbers of a ticket that moved between queues. */
+.ticket-aliases {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.ticket-alias-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+.ticket-queue-prefix {
+  color: var(--text-secondary);
+}

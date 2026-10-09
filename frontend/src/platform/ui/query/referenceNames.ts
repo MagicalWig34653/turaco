@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 
-export type ReferenceKind = 'users' | 'teams' | 'assets';
+export type ReferenceKind = 'users' | 'teams' | 'assets' | 'queues';
 
-type NameBody = { displayName?: string; name?: string; reference?: string };
+/** API collection path of a reference kind. Ticket Queues live under the Service Desk. */
+export const referencePath = (kind: ReferenceKind): string =>
+  kind === 'queues' ? '/service-desk/queues' : `/${kind}`;
+
+type NameBody = { displayName?: string; name?: string; reference?: string; prefix?: string };
 
 /** Names of picked references, so chips show people and teams instead of identifiers. */
 const names = new Map<string, string>();
@@ -19,7 +23,10 @@ export function rememberReference(kind: ReferenceKind, id: string, label: string
 }
 
 export function referenceKind(resource: string | undefined): ReferenceKind | undefined {
-  return resource === 'users' || resource === 'teams' || resource === 'assets'
+  return resource === 'users' ||
+    resource === 'teams' ||
+    resource === 'assets' ||
+    resource === 'queues'
     ? resource
     : undefined;
 }
@@ -29,7 +36,7 @@ function fetchName(kind: ReferenceKind, id: string): Promise<void> {
   const existing = pending.get(key);
   if (existing) return existing;
   const request = api
-    .get<NameBody>(`/${kind}/${encodeURIComponent(id)}`)
+    .get<NameBody>(`${referencePath(kind)}/${encodeURIComponent(id)}`)
     .then((body) => {
       const label = body.displayName ?? body.name ?? body.reference;
       if (label) names.set(key, label);

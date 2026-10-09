@@ -80,10 +80,16 @@ export function MetricCard({
   zeroCaption,
   denominator,
   icon,
+  capped = false,
+  unavailable,
 }: {
   label: string;
   value: number;
   to: string;
+  /** The value is a lower bound (a capped count): shown as "1000+". */
+  capped?: boolean;
+  /** The count could not be computed: shown as a dash with this accessible text, never as zero. */
+  unavailable?: string;
   tone?: MetricTone;
   caption?: string;
   /** Calm wording shown instead of `caption` when a warning/danger count is zero. */
@@ -91,17 +97,23 @@ export function MetricCard({
   denominator?: number;
   icon?: ReactNode;
 }) {
-  const { tone, caption } = metricState(value, requestedTone, requestedCaption, zeroCaption);
-  const display = useCountUp(value);
+  const unknown = unavailable !== undefined;
+  // An unavailable count never keeps an alarming tone and never reads as zero.
+  const { tone, caption } = unknown
+    ? { tone: 'neutral' as const, caption: requestedCaption }
+    : metricState(value, requestedTone, requestedCaption, zeroCaption);
+  const display = useCountUp(value, !unknown);
+  const shown = unknown ? '–' : capped ? `${display}+` : String(display);
+  const spoken = unknown ? unavailable : `${value}${capped ? '+' : ''}`;
   return (
     <Link
       className={`metric-card metric-${tone}`}
       to={to}
-      aria-label={`${label}: ${value}${denominator !== undefined ? ` / ${denominator}` : ''}${caption ? ` · ${caption}` : ''}`}
+      aria-label={`${label}: ${spoken}${denominator !== undefined ? ` / ${denominator}` : ''}${caption ? ` · ${caption}` : ''}`}
     >
       <span className="metric-label">{label}</span>
       <strong aria-hidden="true">
-        {display}
+        {shown}
         {denominator !== undefined ? (
           <small className="metric-denominator"> / {denominator}</small>
         ) : null}

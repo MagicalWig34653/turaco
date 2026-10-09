@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ApiError } from '../../api/client';
 import { asApiError } from '../../api/useAsync';
 import { useI18n } from '../../i18n/I18nProvider';
+import type { MessageKey } from '../../i18n/i18n';
 import { useSession } from '../../session/SessionProvider';
 import { Alert, Badge } from '../Alert';
 import { ApiErrorAlert } from '../ApiErrorAlert';
@@ -64,6 +65,7 @@ export function ViewBar<T>({
   const [notice, setNotice] = useState('');
 
   const rights = view ? abilities(view, can) : undefined;
+  const viewName = view ? (view.nameKey ? t(view.nameKey as MessageKey) : view.name) : '';
   const dirty = view ? isDirty(view, state, visibleColumns, offeredColumns) : false;
 
   const unavailable = (() => {
@@ -201,6 +203,8 @@ export function ViewBar<T>({
 
   const moreItems = (): MenuItem[] => {
     if (!view || !rights) return [];
+    if (view.system)
+      return [{ id: 'close', label: t('views.action.close'), onSelect: query.closeView }];
     const items: MenuItem[] = [];
     if (rights.canEdit)
       items.push({
@@ -267,8 +271,12 @@ export function ViewBar<T>({
 
         {view && rights ? (
           <span className="view-current">
-            <strong title={view.description || undefined}>{view.name}</strong>
-            {rights.readOnly ? <Badge tone="neutral">{t('views.readOnly')}</Badge> : null}
+            <strong title={view.description || undefined}>{viewName}</strong>
+            {view.system ? (
+              <Badge tone="info">{t('views.systemBadge')}</Badge>
+            ) : rights.readOnly ? (
+              <Badge tone="neutral">{t('views.readOnly')}</Badge>
+            ) : null}
             {view.visibility === 'shared' ? (
               <Badge tone="info">{t('views.sharedBadge')}</Badge>
             ) : null}
@@ -313,7 +321,7 @@ export function ViewBar<T>({
           <Button
             aria-haspopup="menu"
             aria-label={t('views.more')}
-            onClick={(event) => menu.openAtElement(moreItems(), event.currentTarget, view.name)}
+            onClick={(event) => menu.openAtElement(moreItems(), event.currentTarget, viewName)}
           >
             <span aria-hidden="true">⋯</span>
           </Button>
@@ -360,7 +368,7 @@ export function ViewBar<T>({
       {dialog?.type === 'create' ? (
         <SaveViewDialog
           mode="create"
-          initialName={view ? t('views.copyName', { name: view.name }).slice(0, 80) : ''}
+          initialName={view ? t('views.copyName', { name: viewName }).slice(0, 80) : ''}
           onClose={() => setDialog(null)}
           onSubmit={async (name, description) => {
             const created = await viewsApi.create({

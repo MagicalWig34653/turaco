@@ -7,6 +7,7 @@ import { ApiErrorAlert } from '../ApiErrorAlert';
 import { useDebouncedValue } from '../hooks';
 import {
   referenceKind,
+  referencePath,
   rememberReference,
   useReferenceNames,
   type ReferenceKind,
@@ -28,7 +29,8 @@ function useCanSearch(kind: ReferenceKind | undefined): boolean {
   const { can } = useSession();
   if (kind === 'users' || kind === 'teams') return can('organization.view');
   if (kind === 'assets') return can('assets.view') || can('assets.manage');
-  return false;
+  // The Queue list is limited by the server to the Queues the caller may know.
+  return kind === 'queues';
 }
 
 /** Search-and-pick list for user, team and asset references; supports one or many selections. */
@@ -52,11 +54,19 @@ export function ReferencePicker({
   const results = useAsync(
     async (signal) => {
       if (!kind || !allowed) return [];
-      const page = await api.get<{ items: Item[] }>(`/${kind}`, {
+      const page = await api.get<{ items: Item[] }>(referencePath(kind), {
         signal,
-        query: { q: debounced, limit: 25 },
+        query: kind === 'queues' ? {} : { q: debounced, limit: 25 },
       });
-      return page.items.filter((item) => item.active !== false && item.status !== 'inactive');
+      const needle = debounced.toLocaleLowerCase();
+      return page.items.filter(
+        (item) =>
+          item.active !== false &&
+          item.status !== 'inactive' &&
+          item.status !== 'archived' &&
+          // The Queue list has no server-side search.
+          (kind !== 'queues' || !needle || label(item).toLocaleLowerCase().includes(needle)),
+      );
     },
     [kind, allowed, debounced],
   );

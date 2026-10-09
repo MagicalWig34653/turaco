@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Query } from '../../api/client';
 import { asApiError, useAsync, usePagedList, type PagedState } from '../../api/useAsync';
-import { navigate } from '../../router/Router';
+import { navigate, useLocation } from '../../router/Router';
 import { viewsApi, type SavedView, type ViewWarning } from '../views/api';
-import { definitionToState, sameQuery } from '../views/model';
+import { definitionToState, isSystemKey, sameQuery, systemSavedView } from '../views/model';
 import {
   deserialize,
   emptyState,
@@ -86,7 +86,20 @@ export function useQueryList<T>(
     else url.searchParams.set('view', viewId);
     navigate(`${url.pathname}${url.search}${url.hash}`, { replace: true });
   };
+  // System Views are code, not rows: they resolve from the caller's system list, not GET /views/{id}.
+  const fetchView = (id: string, signal: AbortSignal): Promise<SavedView> =>
+    isSystemKey(id)
+      ? viewsApi.system(resource, signal).then((page) => {
+          const found = page.items.find((entry) => entry.id === id);
+          const loaded = found ? systemSavedView(found) : undefined;
+          if (!loaded) throw new ApiError({ status: 404, code: 'views.not_found', message: '' });
+          return loaded;
+        })
+      : viewsApi.get(id, signal);
+  // The View the hook has handled; a later `?view=` change (a sidebar link on the same list) is applied below.
+  const handledView = useRef<string | null>(initialView.id);
   const openView = (opened: SavedView) => {
+    handledView.current = opened.id;
     const next = definitionToState(opened.definition);
     setView(opened);
     setViewError(undefined);
@@ -96,6 +109,7 @@ export function useQueryList<T>(
     writeUrl(next, opened.id);
   };
   const closeView = () => {
+    handledView.current = null;
     setView(undefined);
     setWarnings([]);
     writeUrl(undefined, null);
@@ -104,7 +118,8 @@ export function useQueryList<T>(
     const id = initialView.id;
     if (!id) return;
     const controller = new AbortController();
-    viewsApi.get(id, controller.signal).then(
+    const loadView = fetchView(id, controller.signal);
+    loadView.then(
       (loaded) => {
         if (controller.signal.aborted) return;
         if (loaded.resource !== resource) {
@@ -131,6 +146,45 @@ export function useQueryList<T>(
     return () => controller.abort();
     // The URL is read once at mount.
   }, []);
+  const { search } = useLocation();
+  const urlViewId = new URLSearchParams(search).get('view');
+  useEffect(() => {
+    if (urlViewId === handledView.current) return;
+    handledView.current = urlViewId;
+    if (!urlViewId) {
+      setView(undefined);
+      setWarnings([]);
+      return;
+    }
+    const controller = new AbortController();
+    setViewPending(true);
+    setViewError(undefined);
+    fetchView(urlViewId, controller.signal).then(
+      (loaded) => {
+        if (controller.signal.aborted) return;
+        if (loaded.resource !== resource) {
+          setViewError(new ApiError({ status: 404, code: 'views.not_found', message: '' }));
+          writeUrl(undefined, null);
+        } else {
+          const next = definitionToState(loaded.definition);
+          setView(loaded);
+          update(next);
+          setUrlError(false);
+          setViewApplied((value) => value + 1);
+          writeUrl(next, urlViewId);
+        }
+        setViewPending(false);
+      },
+      (cause: unknown) => {
+        if (controller.signal.aborted) return;
+        setViewError(asApiError(cause));
+        writeUrl(undefined, null);
+        setViewPending(false);
+      },
+    );
+    return () => controller.abort();
+    // Only a changed `view` parameter triggers it.
+  }, [urlViewId]);
   const viewRunnable = view !== undefined && view.access !== 'admin' && view.moduleEnabled;
   const viewKey = view ? `${view.id}:${view.version}` : '';
   useEffect(() => {

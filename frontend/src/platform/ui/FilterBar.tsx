@@ -141,7 +141,7 @@ export function SegmentedFilter({
 }: {
   label: string;
   value: string;
-  options: readonly { value: string; label: string; count?: number }[];
+  options: readonly { value: string; label: string; count?: number | string }[];
   onChange: (value: string) => void;
 }) {
   return (

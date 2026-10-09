@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { SidebarResponse } from '../platform/ui/views/api';
 import {
+  applyCounts,
+  countIds,
   countLabel,
+  isEditablePin,
   isPinnedActive,
   pinnedActiveOn,
   pinnedItems,
@@ -64,9 +68,95 @@ describe('pinned items', () => {
         { key: 'tickets', items: [pin('a', 'tickets', 0, { count: 7, countCapped: true })] },
       ],
     });
-    expect(countLabel(counted?.count, counted?.countCapped ?? false)).toBe('7+');
+    expect(countLabel(counted?.count, counted?.countCapped ?? false)).toBe('99+');
     expect(countLabel(3, false)).toBe('3');
+    expect(countLabel(99, false)).toBe('99');
+    expect(countLabel(100, false)).toBe('99+');
+    expect(countLabel(0, false)).toBe('0');
     expect(countLabel(undefined, false)).toBeUndefined();
+  });
+  it('shows a dash for an unavailable count and never zero', () => {
+    expect(countLabel(undefined, false, 'unavailable')).toBe('–');
+    expect(countLabel(0, false, 'unavailable')).toBe('–');
+    const [entry] = pinnedItems({
+      groups: [
+        {
+          key: 'tickets',
+          items: [
+            pin('s', 'tickets', 0, { source: 'system', countStatus: 'unavailable', count: 0 }),
+          ],
+        },
+      ],
+    });
+    expect(entry?.count).toBeUndefined();
+    expect(countLabel(entry?.count, entry?.countCapped ?? false, entry?.countStatus)).toBe('–');
+  });
+  it('puts System Views before the user pins of their group and keeps them fixed', () => {
+    const items = pinnedItems({
+      groups: [
+        {
+          key: 'tickets',
+          items: [
+            pin('mine', 'tickets', 0),
+            pin('system:tickets:my-open', 'tickets', 5, {
+              source: 'system',
+              name: '',
+              nameKey: 'views.system.my_open_tickets',
+            }),
+          ],
+        },
+      ],
+    });
+    expect(items.map((item) => item.viewId)).toEqual(['system:tickets:my-open', 'mine']);
+    expect(items[0]?.nameKey).toBe('views.system.my_open_tickets');
+    expect(items[0] && isEditablePin(items[0])).toBe(false);
+    expect(items[1] && isEditablePin(items[1])).toBe(true);
+  });
+  it('links a System View with its key in the view parameter', () => {
+    const [item] = pinnedItems({
+      groups: [
+        {
+          key: 'tickets',
+          items: [pin('system:tickets:queue:q1', 'tickets', 0, { source: 'system' })],
+        },
+      ],
+    });
+    expect(item?.href).toBe('/service-desk?view=system%3Atickets%3Aqueue%3Aq1');
+  });
+  it('refreshes counts by id and drops those the server no longer returns', () => {
+    const sidebar: SidebarResponse = {
+      collapsedGroups: [],
+      groups: [
+        {
+          key: 'tickets',
+          items: [
+            pin('a', 'tickets', 0, { count: 1 }),
+            pin('b', 'tickets', 1, { count: 2 }),
+            pin('c', 'tickets', 2, { count: 3 }),
+            pin('d', 'tickets', 3),
+          ],
+        },
+      ],
+    };
+    const ids = countIds(pinnedItems(sidebar));
+    expect(ids).toEqual(['a', 'b', 'c']);
+    const next = applyCounts(
+      sidebar,
+      [
+        { id: 'a', count: 5, capped: false, status: 'ok' },
+        { id: 'b', status: 'unavailable' },
+      ],
+      new Set(ids),
+    );
+    const byId = Object.fromEntries(
+      next.groups[0]?.items.map((entry) => [entry.viewId, entry]) ?? [],
+    );
+    expect(byId.a).toMatchObject({ count: 5, countStatus: 'ok' });
+    expect(byId.b?.count).toBeUndefined();
+    expect(byId.b?.countStatus).toBe('unavailable');
+    expect(byId.c?.count).toBeUndefined();
+    expect(byId.d?.count).toBeUndefined();
+    expect(sidebar.groups[0]?.items[0]?.count).toBe(1);
   });
   it('highlights a pin only for its own view on its route', () => {
     const [item] = pinnedItems({ groups: [{ key: 'tasks', items: [pin('t1', 'tasks', 0)] }] });

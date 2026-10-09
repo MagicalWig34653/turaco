@@ -1,14 +1,14 @@
 import type { FeedEntry } from '../briefing/types';
-import { isOverdue } from '../tasks/actions';
-import type { Task } from '../tasks/types';
+import type { WorkItem } from './api';
+import { isItemOverdue, priorityOf } from './feedModel';
 
 export type AttentionItem =
   | { kind: 'feed'; tone: 'critical' | 'warning'; entry: FeedEntry }
   | { kind: 'approvals'; tone: 'info'; count: number; entry: FeedEntry }
-  | { kind: 'task'; tone: 'critical' | 'warning' | 'info'; task: Task; overdue: boolean };
+  | { kind: 'work'; tone: 'critical' | 'warning' | 'info'; item: WorkItem; overdue: boolean };
 
-function isOpen(task: Task): boolean {
-  return task.status !== 'completed' && task.status !== 'cancelled';
+function isOpen(item: WorkItem): boolean {
+  return !['completed', 'cancelled', 'resolved', 'closed'].includes(item.status);
 }
 
 /**
@@ -17,7 +17,7 @@ function isOpen(task: Task): boolean {
  * work, then high-priority work and warnings. Nothing is invented or counted twice.
  */
 export function buildAttention(
-  tasks: readonly Task[],
+  work: readonly WorkItem[],
   entries: readonly FeedEntry[],
   now: Date,
   limit = 3,
@@ -29,32 +29,36 @@ export function buildAttention(
   const approvals = entries.find((entry) => entry.kind === 'pending_approvals');
   if (approvals?.count)
     result.push({ kind: 'approvals', tone: 'info', count: approvals.count, entry: approvals });
-  const open = tasks.filter(isOpen);
-  const pressing = open.filter((task) => task.priority === 'urgent' || isOverdue(task, now));
-  for (const task of pressing)
+  const open = work.filter(isOpen);
+  const pressing = open.filter((item) => priorityOf(item) === 'urgent' || isItemOverdue(item, now));
+  for (const item of pressing)
     result.push({
-      kind: 'task',
-      tone: task.priority === 'urgent' ? 'critical' : 'warning',
-      task,
-      overdue: isOverdue(task, now),
+      kind: 'work',
+      tone: priorityOf(item) === 'urgent' ? 'critical' : 'warning',
+      item,
+      overdue: isItemOverdue(item, now),
     });
-  for (const task of open)
-    if (task.priority === 'high' && !pressing.includes(task))
-      result.push({ kind: 'task', tone: 'warning', task, overdue: false });
+  for (const item of open)
+    if (priorityOf(item) === 'high' && !pressing.includes(item))
+      result.push({ kind: 'work', tone: 'warning', item, overdue: false });
   for (const entry of signals)
     if (entry.severity === 'warning') result.push({ kind: 'feed', tone: 'warning', entry });
-  for (const task of open)
-    if (!pressing.includes(task) && task.priority !== 'high')
-      result.push({ kind: 'task', tone: 'info', task, overdue: false });
+  for (const item of open)
+    if (!pressing.includes(item) && priorityOf(item) !== 'high')
+      result.push({ kind: 'work', tone: 'info', item, overdue: false });
   return result.slice(0, limit);
 }
 
-/** Overview KPI values derived only from loaded records and the briefing feed. */
-export function overviewMetrics(tasks: readonly Task[], entries: readonly FeedEntry[], now: Date) {
-  const open = tasks.filter(isOpen);
+/** Overview KPI values derived only from loaded work items and the briefing feed. */
+export function overviewMetrics(
+  work: readonly WorkItem[],
+  entries: readonly FeedEntry[],
+  now: Date,
+) {
+  const open = work.filter(isOpen);
   return {
     open: open.length,
-    overdue: open.filter((task) => isOverdue(task, now)).length,
+    overdue: open.filter((item) => isItemOverdue(item, now)).length,
     approvals: entries.find((entry) => entry.kind === 'pending_approvals')?.count,
     alerts: entries.filter(
       (entry) =>

@@ -10,7 +10,29 @@ export type PaletteCommand = {
   path: string;
   keywords?: string;
   action?: () => void;
+  /** Object results (for example `tickets`) are listed under their own heading. */
+  group?: string;
+  /** An exact hit (a ticket reference) that should lead the list. */
+  top?: boolean;
 };
+
+/** An object search provider: results for a query, aborted when the query changes. */
+export type PaletteSearch = (
+  query: string,
+  signal: AbortSignal,
+) => Promise<{ items: PaletteCommand[]; unavailable: boolean }>;
+
+/** Navigation results first, object results after them; exact object hits lead everything. */
+export function arrangeResults(
+  navigation: readonly PaletteCommand[],
+  objects: readonly PaletteCommand[],
+): PaletteCommand[] {
+  return [
+    ...objects.filter((item) => item.top),
+    ...navigation,
+    ...objects.filter((item) => !item.top),
+  ];
+}
 
 export function navigationCommands(
   routes: readonly AppRoute[],

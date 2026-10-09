@@ -2,19 +2,25 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import { navigate } from '../../router/Router';
-import type { PaletteCommand } from './paletteCommands';
-import { filterCommands, moveCommandSelection } from './paletteCommands';
+import { useDebouncedValue } from '../hooks';
+import type { PaletteCommand, PaletteSearch } from './paletteCommands';
+import { arrangeResults, filterCommands, moveCommandSelection } from './paletteCommands';
+
+const SEARCH_DELAY_MS = 250;
 
 export function CommandPalette({
   open,
   onClose,
   commands,
   recentPaths,
+  searchObjects,
 }: {
   open: boolean;
   onClose: () => void;
   commands: readonly PaletteCommand[];
   recentPaths: readonly string[];
+  /** Object search (tickets by reference, earlier number or title); absent when not available. */
+  searchObjects?: PaletteSearch | undefined;
 }) {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -29,8 +35,37 @@ export function CommandPalette({
         .filter((item): item is PaletteCommand => Boolean(item)),
     [commands, recentPaths],
   );
+  const debounced = useDebouncedValue(query.trim(), SEARCH_DELAY_MS);
+  const [objects, setObjects] = useState<{
+    query: string;
+    items: PaletteCommand[];
+    unavailable: boolean;
+  }>({ query: '', items: [], unavailable: false });
+  const searchRef = useRef(searchObjects);
+  searchRef.current = searchObjects;
+  const searchEnabled = searchObjects !== undefined;
+  useEffect(() => {
+    if (!open || !searchEnabled || !debounced) {
+      setObjects({ query: '', items: [], unavailable: false });
+      return undefined;
+    }
+    const controller = new AbortController();
+    searchRef.current?.(debounced, controller.signal).then(
+      (found) => {
+        if (!controller.signal.aborted) setObjects({ query: debounced, ...found });
+      },
+      () => {
+        if (!controller.signal.aborted)
+          setObjects({ query: debounced, items: [], unavailable: true });
+      },
+    );
+    return () => controller.abort();
+  }, [open, searchEnabled, debounced]);
+  // Results of an older query are not shown for the current text.
+  const searching = searchEnabled && query.trim() !== '' && objects.query !== query.trim();
+  const objectItems = searchEnabled && objects.query === query.trim() ? objects.items : [];
   const displayed = query.trim()
-    ? results
+    ? arrangeResults(results, objectItems)
     : [
         ...recent,
         ...results.filter((item) => !recent.some((recentItem) => recentItem.id === item.id)),
@@ -117,25 +152,40 @@ export function CommandPalette({
       >
         {displayed.length ? (
           displayed.map((command, index) => (
-            <div
-              id={`turaco-command-${command.id}`}
-              key={command.id}
-              role="option"
-              aria-selected={index === active}
-              className="turaco-command-option"
-              onMouseEnter={() => setActive(index)}
-              onClick={() => choose(command)}
-            >
-              <span className="turaco-command-option-symbol" aria-hidden="true">
-                ↗
-              </span>
-              <span>{command.label}</span>
-              <small>{command.path}</small>
+            <div key={command.id} role="presentation">
+              {command.group && displayed[index - 1]?.group !== command.group ? (
+                <div className="turaco-command-group" role="presentation">
+                  {t('shell.group.tickets')}
+                </div>
+              ) : null}
+              <div
+                id={`turaco-command-${command.id}`}
+                role="option"
+                aria-selected={index === active}
+                className="turaco-command-option"
+                onMouseEnter={() => setActive(index)}
+                onClick={() => choose(command)}
+              >
+                <span className="turaco-command-option-symbol" aria-hidden="true">
+                  ↗
+                </span>
+                <span>{command.label}</span>
+                <small>{command.group ? '' : command.path}</small>
+              </div>
             </div>
           ))
-        ) : (
+        ) : searching ? null : (
           <p className="turaco-command-empty">{t('shell.noCommands')}</p>
         )}
+        {searching ? (
+          <p className="turaco-command-status" role="status">
+            {t('shell.searching')}
+          </p>
+        ) : objects.unavailable && objects.query === query.trim() ? (
+          <p className="turaco-command-status" role="status">
+            {t('shell.searchUnavailable')}
+          </p>
+        ) : null}
       </div>
       <div className="turaco-command-footer">{t('shell.commandHint')}</div>
     </dialog>
