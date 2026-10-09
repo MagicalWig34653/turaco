@@ -67,6 +67,16 @@ func (f *fakeReader) ListTeamMembers(_ context.Context, id string, p application
 	f.id, f.page = id, p
 	return application.Result[application.TeamMember]{}, f.err
 }
+func (f *fakeReader) ListTeamLeads(context.Context, string) ([]application.TeamMember, error) {
+	return nil, f.err
+}
+func (f *fakeReader) ListDepartments(_ context.Context, x application.NameFilter) (application.Result[application.Department], error) {
+	f.nameF = x
+	return application.Result[application.Department]{}, f.err
+}
+func (f *fakeReader) GetDepartment(_ context.Context, id string) (application.Department, error) {
+	return application.Department{ID: id}, f.err
+}
 func (f *fakeReader) ListLocations(_ context.Context, x application.NameFilter) (application.Result[application.Location], error) {
 	f.nameF = x
 	return application.Result[application.Location]{}, f.err

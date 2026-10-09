@@ -49,6 +49,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	// Reads and execution are scoped by the service (ownership or permission), not by the route.
 	route("GET /api/v1/changes", signedIn, h.list)
 	route("POST /api/v1/changes", manage, h.create)
+	route("GET /api/v1/changes/affected-lookup", manage, h.affectedLookup)
 	route("GET /api/v1/changes/{id}", signedIn, h.get)
 	route("PATCH /api/v1/changes/{id}", manage, h.update)
 	route("POST /api/v1/changes/{id}/affected", manage, h.addAffected)
@@ -72,6 +73,14 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 	var tr *application.InvalidTransitionError
 	switch {
 	case errors.As(err, &inv):
+		if len(inv.Issues) > 0 {
+			fields := make([]map[string]string, 0, len(inv.Issues))
+			for _, is := range inv.Issues {
+				fields = append(fields, map[string]string{"field": is.Field, "code": is.Code})
+			}
+			httpx.WriteErrorDetails(w, http.StatusBadRequest, "changes.invalid_request", inv.Message, map[string]any{"fields": fields})
+			return
+		}
 		httpx.WriteError(w, http.StatusBadRequest, "changes.invalid_request", inv.Message)
 	case errors.As(err, &tr):
 		httpx.WriteError(w, http.StatusConflict, "changes.invalid_transition", "The operation is not allowed in the current status.")

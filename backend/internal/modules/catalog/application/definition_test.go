@@ -284,3 +284,16 @@ func TestAnswersAgainstAStoredDefinitionWithoutMaxLength(t *testing.T) {
 		t.Errorf("default limit not applied: %v", got)
 	}
 }
+
+func TestFallbackTeamIsOnlyValidForManagerSteps(t *testing.T) {
+	team := `"00000000-0000-7000-8000-0000000000e1"`
+	if _, err := ParseDefinition([]byte(`{"fields":[],"approvals":[{"approverTeamId":` + team + `,"fallbackTeamId":` + team + `}],"fulfillment":[]}`)); err == nil {
+		t.Error("fallbackTeamId on a team step must be refused")
+	}
+	if _, err := ParseDefinition([]byte(`{"fields":[],"approvals":[{"approver":"manager","fallbackTeamId":"x"}],"fulfillment":[]}`)); err == nil {
+		t.Error("a malformed fallbackTeamId must be refused")
+	}
+	if _, err := ParseDefinition([]byte(`{"fields":[],"approvals":[{"approver":"manager","fallbackTeamId":` + team + `}],"fulfillment":[]}`)); err != nil {
+		t.Errorf("manager with fallback: %v", err)
+	}
+}

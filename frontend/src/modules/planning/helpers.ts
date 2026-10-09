@@ -38,3 +38,17 @@ export function calendarRange(
   const to = new Date(date.getFullYear(), date.getMonth() + 1, 1);
   return { from: from.toISOString(), to: to.toISOString() };
 }
+
+/** A window is only proposed until the Change is approved; older servers send no flag. */
+export function isProposedWindow(entry: Pick<CalendarEntry, 'proposed' | 'status'>): boolean {
+  return entry.proposed ?? (entry.status === 'assessment' || entry.status === 'pending_approval');
+}
+
+/** Whether the shown entries include proposed and/or firm windows, so the legend lists only what appears. */
+export function calendarLegend(items: readonly Pick<CalendarEntry, 'proposed' | 'status'>[]): {
+  proposed: boolean;
+  firm: boolean;
+} {
+  const proposed = items.some(isProposedWindow);
+  return { proposed, firm: items.some((item) => !isProposedWindow(item)) };
+}

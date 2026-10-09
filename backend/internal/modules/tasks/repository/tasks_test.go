@@ -336,3 +336,35 @@ func TestListFilters(t *testing.T) {
 		t.Errorf("invalid cursor: %v", err)
 	}
 }
+
+func TestResultNoteIsStoredWithCompletionAndBoundedByTheDatabase(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	tk := f.insert("t", "normal", nil)
+	for name, sql := range map[string]string{
+		"note on an open task": `UPDATE platform.tasks SET result_note = 'x' WHERE id = $1`,
+		"empty note":           `UPDATE platform.tasks SET status = 'completed', completed_at = now(), result_note = '' WHERE id = $1`,
+		"overlong note":        `UPDATE platform.tasks SET status = 'completed', completed_at = now(), result_note = repeat('x', 1001) WHERE id = $1`,
+	} {
+		if _, err := f.pool.Exec(ctx, sql, tk.ID); err == nil {
+			t.Errorf("%s: database accepted it", name)
+		}
+	}
+	note := "Erledigt, siehe Hersteller-Hinweis."
+	done, err := f.repo.Change(ctx, f.caller(), tk.ID, func(cur application.Task) (application.Change, error) {
+		n, now := cur, time.Now().UTC().Truncate(time.Microsecond)
+		n.Status, n.CompletedAt, n.ResultNote = application.StatusCompleted, &now, &note
+		return application.Change{Next: n, Action: "tasks.task.completed"}, nil
+	})
+	if err != nil || done.ResultNote == nil || *done.ResultNote != note {
+		t.Fatalf("complete with note = %+v %v", done, err)
+	}
+	reopened, err := f.repo.Change(ctx, f.caller(), tk.ID, func(cur application.Task) (application.Change, error) {
+		n := cur
+		n.Status, n.CompletedAt, n.ResultNote = application.StatusOpen, nil, nil
+		return application.Change{Next: n, Action: "tasks.task.reopened"}, nil
+	})
+	if err != nil || reopened.ResultNote != nil {
+		t.Errorf("reopen keeps the note: %+v %v", reopened, err)
+	}
+}

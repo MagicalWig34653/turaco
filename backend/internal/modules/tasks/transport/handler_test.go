@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -276,5 +277,102 @@ func TestPatchRequiresTheExpectedVersion(t *testing.T) {
 	}
 	if rec := serve(t, store, with("tasks.manage"), "PATCH", taskPath, `{"expectedVersion":1,"title":"x"}`); rec.Code != 200 {
 		t.Errorf("with the version = %d: %s", rec.Code, rec.Body)
+	}
+}
+
+const (
+	vendorUser = "00000000-0000-7000-8000-0000000000a1"
+	ctxID      = "00000000-0000-7000-8000-0000000000c9"
+)
+
+func contextTask() *stubStore {
+	st := newStore()
+	user, creator, ctxType := vendorUser, "00000000-0000-7000-8000-0000000000d1", "problem"
+	rec := "00000000-0000-7000-8000-0000000000e1"
+	st.task.AssignedUserID, st.task.CreatedByUserID, st.task.ContextType, st.task.ContextID = &user, &creator, &ctxType, ptrStr(ctxID)
+	st.task.RecurrenceDefinitionID = &rec
+	return st
+}
+
+func ptrStr(s string) *string { return &s }
+
+func decodeMap(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
+		t.Fatalf("decode %q: %v", rec.Body.String(), err)
+	}
+	return m
+}
+
+// A caller whose only permission is tasks.work (the external vendor ceiling) gets no reference to the record the
+// task belongs to, to its creator or to its recurrence; staff keep them.
+func TestRestrictedViewerGetsNoInternalReferences(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		auth       fakeAuth
+		wantHidden bool
+	}{
+		{"vendor", with("tasks.work"), true},
+		{"first level", with("tasks.work", "tickets.manage"), false},
+		{"manager", with("tasks.manage"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, path := range []string{taskPath, "/api/v1/tasks", "/api/v1/my-work"} {
+				rec := serve(t, contextTask(), tc.auth, "GET", path, "")
+				if rec.Code != 200 {
+					t.Fatalf("GET %s = %d %s", path, rec.Code, rec.Body.String())
+				}
+				body := rec.Body.String()
+				for _, secret := range []string{ctxID, "d1", "problem"} {
+					if strings.Contains(body, secret) == tc.wantHidden {
+						t.Errorf("GET %s: %q present=%v, want hidden=%v", path, secret, strings.Contains(body, secret), tc.wantHidden)
+					}
+				}
+			}
+		})
+	}
+	// Starting the task answers with the same shaped DTO.
+	rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/start", `{}`)
+	if rec.Code != 200 || strings.Contains(rec.Body.String(), ctxID) {
+		t.Errorf("start by vendor = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCompleteTakesABoundedResultNote(t *testing.T) {
+	store := contextTask()
+	rec := serve(t, store, with("tasks.work"), "POST", taskPath+"/complete", `{"resultNote":"  Hotfix eingespielt.\nAlles geprüft.  "}`)
+	if rec.Code != 200 {
+		t.Fatalf("complete = %d %s", rec.Code, rec.Body.String())
+	}
+	m := decodeMap(t, rec)
+	if m["status"] != "completed" || m["resultNote"] != "Hotfix eingespielt.\nAlles geprüft." {
+		t.Errorf("response = %v", m)
+	}
+	// The note is optional.
+	if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", `{}`); rec.Code != 200 || decodeMap(t, rec)["resultNote"] != nil {
+		t.Errorf("complete without note = %d %s", rec.Code, rec.Body.String())
+	}
+	for name, body := range map[string]string{
+		"too long":          `{"resultNote":"` + strings.Repeat("x", 1001) + `"}`,
+		"control character": `{"resultNote":"a\u0007b"}`,
+		"bidi override":     `{"resultNote":"a‮b"}`,
+		"only blanks":       `{"resultNote":"   "}`,
+	} {
+		if name == "only blanks" { // blank means no note
+			if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", body); rec.Code != 200 || decodeMap(t, rec)["resultNote"] != nil {
+				t.Errorf("blank note = %d %s", rec.Code, rec.Body.String())
+			}
+			continue
+		}
+		if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", body); rec.Code != 400 {
+			t.Errorf("%s = %d, want 400", name, rec.Code)
+		}
+	}
+	// Only complete takes a note.
+	for _, op := range []string{"start", "block", "unblock"} {
+		if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/"+op, `{"reason":"r","resultNote":"x"}`); rec.Code != 400 {
+			t.Errorf("%s with a note = %d, want 400", op, rec.Code)
+		}
 	}
 }

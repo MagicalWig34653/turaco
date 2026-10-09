@@ -1,0 +1,98 @@
+/* Service Desk queue administration. Colors come from semantic tokens so every theme applies. */
+.queue-name {
+  display: grid;
+  gap: 2px;
+}
+.queue-name small {
+  color: var(--text-secondary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+.link-button:hover,
+.link-button:focus-visible {
+  text-decoration: underline;
+}
+.queue-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.queue-form {
+  display: grid;
+  gap: 12px;
+}
+.queue-form-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.queue-fixed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-secondary);
+}
+.queue-clear-team {
+  margin-block-start: -4px;
+}
+.queue-grants {
+  display: grid;
+  gap: 12px;
+}
+.queue-matrix th[scope='row'] {
+  display: table-cell;
+  text-align: start;
+}
+.queue-matrix th[scope='row'] small {
+  display: block;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.queue-matrix input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+}
+.queue-matrix-empty {
+  opacity: 0.75;
+}
+.queue-abilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.queue-abilities li {
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.queue-add-subject {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md, 8px);
+}
+.queue-add-subject legend {
+  padding-inline: 4px;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .queue-form-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

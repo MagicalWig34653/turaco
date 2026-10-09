@@ -23,13 +23,27 @@ export function interpolate(template: string, params?: MessageParams): string {
 }
 
 export function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
-  return interpolate(messages[locale][key] ?? messages.en[key], params);
+  // A missing key must never crash the UI; show the key so the gap is visible and reportable.
+  const template: string | undefined = messages[locale][key] ?? messages.en[key];
+  return template === undefined ? String(key) : interpolate(template, params);
 }
 
-/** Stored choice wins; otherwise the browser language; English is the fallback locale. */
-export function resolveInitialLocale(stored: string | null, browserLanguage: string): Locale {
-  if (isLocale(stored)) return stored;
-  return browserLanguage.toLowerCase().startsWith('de') ? 'de' : 'en';
+/** The first supported language in the browser's preference order; English when none matches. */
+export function browserLocale(languages: string | readonly string[]): Locale {
+  for (const language of typeof languages === 'string' ? [languages] : languages) {
+    const base = language.toLowerCase();
+    if (base.startsWith('de')) return 'de';
+    if (base.startsWith('en')) return 'en';
+  }
+  return 'en';
+}
+
+/** Stored choice wins; otherwise the browser language(s); English is the fallback locale. */
+export function resolveInitialLocale(
+  stored: string | null,
+  browserLanguages: string | readonly string[],
+): Locale {
+  return isLocale(stored) ? stored : browserLocale(browserLanguages);
 }
 
 export function readStoredLocale(): string | null {

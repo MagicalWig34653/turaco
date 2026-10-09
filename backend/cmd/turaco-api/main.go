@@ -36,7 +36,6 @@ import (
 	knowledgetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/knowledge/transport"
 	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
-	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	orgtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/transport"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	planningtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/transport"
@@ -72,6 +71,8 @@ import (
 	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
+	viewstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/views/transport"
+	workitemstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/workitems/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
@@ -94,6 +95,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	if err := wiring.ValidateQueryCatalogs(ctx, pool); err != nil {
+		logger.Error("validate query catalogs", "error", err)
+		os.Exit(1)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
@@ -117,10 +122,19 @@ func main() {
 
 	// Browser sessions authenticate requests; their permissions come from
 	// role assignments to the User and its (transitive) Directory Groups.
-	orgReader := orgrepository.New(pool)
+	smtpCfg, err := config.LoadSMTP(cfg.Environment)
+	if err != nil {
+		logger.Error("load email configuration", "error", err)
+		os.Exit(1)
+	}
+	orgReader, err := wiring.Organization(pool, wiring.OrganizationConfig{BaseURL: cfg.EmailBaseURL, SMTP: smtpCfg})
+	if err != nil {
+		logger.Error("configure organization", "error", err)
+		os.Exit(1)
+	}
 	subjects := orgpublic.NewAuthorizationSubjects(orgReader)
 	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
-	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure)
+	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure).WithLocalLogin(cfg.AuthLocalLoginEnabled)
 	authentication.Register(mux, sessions, sessionAuth, orgpublic.NewUserAccess(orgReader), cfg.SessionCookieSecure, logger)
 
 	// Login. Password login binds as the synced account, so the API needs the
@@ -129,10 +143,11 @@ func main() {
 	loginDeps := authentication.LoginDeps{
 		Pool: pool, Sessions: sessions,
 		Throttle: authentication.NewThrottle(pool, authentication.ThrottleConfig{}, nil),
-		Users:    loginAccounts, Logger: logger,
+		Users:    loginAccounts, LocalAccounts: loginAccounts, Logger: logger,
 	}
 	loginCfg := authentication.LoginConfig{
 		EmergencyEnabled: cfg.AuthEmergencyLoginEnabled,
+		LocalEnabled:     cfg.AuthLocalLoginEnabled,
 		SecureCookie:     cfg.SessionCookieSecure,
 		TrustedProxies:   cfg.TrustedProxies,
 	}
@@ -172,7 +187,9 @@ func main() {
 	// performs the sync itself, the API only enqueues it.
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
-	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
+	orgtransport.RegisterPeople(mux, orgapp.NewPeople(orgReader), orgapp.NewQueries(orgReader, wiring.QueryEngine(pool)), orgReader, sessionAuth, logger)
+	orgtransport.RegisterLookup(mux, orgapp.NewPeopleLookup(orgReader), cfg.PeopleLookupEnabled, sessionAuth, logger)
+	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil).WithQueryEngine(wiring.QueryEngine(pool))
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
 	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	productsRepo := productsrepository.New(pool)
@@ -223,6 +240,23 @@ func main() {
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)
+	// Saved Views, shares and pins (ADR-0033). A View runs through the owning module's own query endpoints (the mux
+	// below the gate), so viewer scope and field redaction are the module's; the module switch is checked by Views.
+	viewsSvc, err := wiring.Views(pool, mux, moduleSvc)
+	if err != nil {
+		logger.Error("configure saved views", "error", err)
+		os.Exit(1)
+	}
+	viewstransport.Register(mux, viewsSvc, sessionAuth, logger)
+	// Task Boards: a Saved View over tasks plus columns and card ranks. Core (always on, like tasks).
+	taskstransport.RegisterBoards(mux, wiring.TaskBoards(tasksSvc, pool, viewsSvc), tasksSvc, sessionAuth, logger)
+	// My Work: the merged feed and counts of the modules' work item sources (Tasks and Tickets first).
+	workSvc, err := wiring.WorkItems(tasksSvc, wiring.ServiceDesk(pool), moduleSvc)
+	if err != nil {
+		logger.Error("configure my work", "error", err)
+		os.Exit(1)
+	}
+	workitemstransport.Register(mux, workSvc, sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,

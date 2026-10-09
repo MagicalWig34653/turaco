@@ -378,3 +378,40 @@ func (r *Repository) CategoriesByIDs(ctx context.Context, ids []string) (map[str
 	}
 	return out, rows.Err()
 }
+
+// SearchProductIDs returns the ids of products whose name, manufacturer name or part number matches the text:
+// anywhere for three or more characters (trigram indexes), at the start of the field or of a word below that.
+func (r *Repository) SearchProductIDs(ctx context.Context, text string, limit int) ([]string, error) {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return []string{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
+	var cond string
+	var arg string
+	if len([]rune(text)) >= 3 {
+		arg = "%" + esc + "%"
+		cond = `p.name ILIKE $1 ESCAPE '\' OR m.name ILIKE $1 ESCAPE '\' OR p.manufacturer_part_number ILIKE $1 ESCAPE '\' OR p.internal_part_number ILIKE $1 ESCAPE '\'`
+	} else {
+		arg = esc + "%"
+		cond = `lower(p.name) LIKE $1 OR lower(p.name) LIKE '% ' || $1 OR lower(m.name) LIKE $1 OR lower(p.manufacturer_part_number) LIKE $1 OR lower(p.internal_part_number) LIKE $1`
+	}
+	rows, err := r.pool.Query(ctx, `SELECT p.id::text FROM products.products p LEFT JOIN products.manufacturers m ON m.id = p.manufacturer_id
+		WHERE `+cond+` ORDER BY p.id LIMIT $2`, arg, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search products: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("search products: scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

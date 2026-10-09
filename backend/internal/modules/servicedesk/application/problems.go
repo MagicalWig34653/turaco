@@ -58,6 +58,8 @@ type ProblemStore interface {
 	UnlinkProblemTicketTx(ctx context.Context, tx pgx.Tx, problemID, ticketID string) error
 	// ProblemTickets lists the tickets of a problem (newest first).
 	ProblemTickets(ctx context.Context, problemID string) ([]Ticket, error)
+	// VisibleProblemCounts counts, per problem, the linked tickets inside the scope (the rule of VisibleTickets).
+	VisibleProblemCounts(ctx context.Context, problemIDs []string, scope TicketScope) (map[string]int, error)
 	// KnownErrorsOfTicket lists the known errors (with workaround) a ticket is linked to.
 	KnownErrorsOfTicket(ctx context.Context, ticketID string) ([]Problem, error)
 }
@@ -72,8 +74,15 @@ type ProblemResult struct {
 // .updated and one per lifecycle operation, .ticket_linked and .ticket_unlinked. Text is not
 // copied into audit.
 type ProblemService struct {
-	store ProblemStore
-	dir   Directory
+	store  ProblemStore
+	dir    Directory
+	access TicketAccess
+}
+
+// WithTicketAccess sets the Ticket authorization. Without it no Ticket can be linked and none is listed.
+func (s *ProblemService) WithTicketAccess(a TicketAccess) *ProblemService {
+	s.access = a
+	return s
 }
 
 func NewProblemService(store ProblemStore, dir Directory) *ProblemService {
@@ -290,6 +299,20 @@ func (s *ProblemService) LinkTicket(ctx context.Context, c Caller, p ProblemPrin
 	if !p.Manage {
 		return ErrForbidden
 	}
+	if link {
+		// Linking needs view access to the Ticket's Queue. The answer is the same for a Ticket that does not exist
+		// and one the caller may not see, so linking cannot be used to probe for Tickets.
+		if s.access == nil {
+			return ErrNotFound
+		}
+		ok, err := s.access.CanViewTicket(ctx, c.Actor.UserID, ticketID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrNotFound
+		}
+	}
 	return s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockProblemTx(ctx, tx, id)
 		if err != nil {
@@ -332,6 +355,20 @@ func (s *ProblemService) Get(ctx context.Context, p ProblemPrincipal, id string)
 	if err != nil {
 		return ProblemDetail{}, err
 	}
+	// Linked Tickets of Queues the reader may not view are not listed (and the rest is shaped for them).
+	if s.access == nil {
+		tickets = nil
+	} else if tickets, err = s.access.VisibleTickets(ctx, p.UserID, tickets); err != nil {
+		return ProblemDetail{}, err
+	}
+	pr.Tickets = 0
+	if s.access != nil {
+		counts, err := s.visibleCounts(ctx, p.UserID, []string{pr.ID})
+		if err != nil {
+			return ProblemDetail{}, err
+		}
+		pr.Tickets = counts[pr.ID]
+	}
 	d := ProblemDetail{Problem: pr, Tickets: tickets, Operations: []string{}}
 	if p.Manage {
 		d.Operations = ProblemOperations(pr.Status)
@@ -347,7 +384,34 @@ func (s *ProblemService) List(ctx context.Context, p ProblemPrincipal, status st
 	if status != "" && !slices.Contains(ProblemStatuses, status) {
 		return ProblemResult{}, invalid("unknown status")
 	}
-	return s.store.ListProblems(ctx, status, page.Normalize())
+	res, err := s.store.ListProblems(ctx, status, page.Normalize())
+	if err != nil {
+		return ProblemResult{}, err
+	}
+	counts := map[string]int{}
+	if s.access != nil && len(res.Items) > 0 {
+		ids := make([]string, 0, len(res.Items))
+		for _, pr := range res.Items {
+			ids = append(ids, pr.ID)
+		}
+		if counts, err = s.visibleCounts(ctx, p.UserID, ids); err != nil {
+			return ProblemResult{}, err
+		}
+	}
+	// Counts follow the Ticket view rights of the reader, like the Ticket list of the detail (no hidden counts).
+	for i := range res.Items {
+		res.Items[i].Tickets = counts[res.Items[i].ID]
+	}
+	return res, nil
+}
+
+// visibleCounts counts the linked Tickets the User may view per problem.
+func (s *ProblemService) visibleCounts(ctx context.Context, user string, ids []string) (map[string]int, error) {
+	scope, err := s.access.ViewScope(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.VisibleProblemCounts(ctx, ids, scope)
 }
 
 // KnownErrorsOfTicket returns the known errors a ticket is linked to, so staff see the

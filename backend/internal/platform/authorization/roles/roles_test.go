@@ -57,6 +57,23 @@ func (f *fakeDirectory) ActiveUsers(_ context.Context, ids []string) (map[string
 	}
 	return out, nil
 }
+func (f *fakeDirectory) GroupMemberUserIDs(_ context.Context, groupIDs []string, limit int) ([]string, error) {
+	var out []string
+	for u, groups := range f.groupsOf {
+		for _, g := range groups {
+			for _, want := range groupIDs {
+				if g == want {
+					out = append(out, u)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
 func (f *fakeDirectory) GroupIDsOfUser(_ context.Context, userID string) ([]string, error) {
 	return f.groupsOf[userID], nil
 }
@@ -99,6 +116,7 @@ func (f *fixture) cleanup() {
 	// Assignments of generated subjects to the built-in role.
 	for id := range f.dir.users {
 		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.role_assignments WHERE subject_id = $1`, id)
+		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.local_credentials WHERE user_id = $1`, id)
 	}
 	for id := range f.dir.groups {
 		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.role_assignments WHERE subject_id = $1`, id)
@@ -127,9 +145,22 @@ func (f *fixture) group(name string) string {
 
 func (f *fixture) actor(userID string) audit.Actor { return audit.UserActor(userID) }
 
+// makeAdmin gives the user the built-in administrator role (through the CLI actor, which bypasses the guards).
+func (f *fixture) makeAdmin(userID string) {
+	f.t.Helper()
+	admin, err := f.svc.GetRoleByKey(context.Background(), AdministratorRoleKey)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := f.svc.AssignRole(context.Background(), f.cli, f.corr, AssignInput{RoleID: admin.ID, SubjectType: SubjectUser, SubjectID: userID}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
 func (f *fixture) role(suffix string, perms ...string) Role {
 	f.t.Helper()
-	r, err := f.svc.CreateRole(context.Background(), f.cli, f.corr, CreateRoleInput{Key: f.pfx + "-" + suffix, Name: "Role " + suffix, Permissions: perms})
+	r, err := f.svc.CreateRole(context.Background(), f.cli, f.corr, CreateRoleInput{Key: f.pfx + "-" + suffix, Name: "Role " + suffix, Permissions: perms,
+		Acknowledgement: Acknowledgement{Rules: allSoDKeys(), Reason: "test fixture"}})
 	if err != nil {
 		f.t.Fatalf("create role: %v", err)
 	}
@@ -195,6 +226,7 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	admin := f.user("Admin")
+	f.makeAdmin(admin)
 	actor := f.actor(admin)
 
 	created, err := f.svc.CreateRole(ctx, actor, f.corr, CreateRoleInput{Key: f.pfx + "-helpdesk", Name: " Helpdesk ", Description: "d", Permissions: []string{"tasks.view", "organization.view", "tasks.view"}})
@@ -225,22 +257,22 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 	}
 
 	name := "Service desk"
-	updated, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{Name: &name})
+	updated, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{Name: &name, ExpectedVersion: created.Version})
 	if err != nil || updated.Name != name || updated.Description != "d" {
 		t.Fatalf("update = %+v, %v", updated, err)
 	}
-	if _, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{}); !errors.As(err, &inv) {
+	if _, err := f.svc.UpdateRole(ctx, actor, f.corr, created.ID, UpdateRoleInput{ExpectedVersion: updated.Version}); !errors.As(err, &inv) {
 		t.Fatalf("empty update err = %v", err)
 	}
 
-	set, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, []string{"tickets.view"})
+	set, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, SetRolePermissionsInput{Permissions: []string{"tickets.view"}, ExpectedVersion: updated.Version})
 	if err != nil || len(set.Permissions) != 1 || set.Permissions[0] != "tickets.view" {
 		t.Fatalf("set = %+v, %v", set, err)
 	}
-	if _, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, []string{"nope"}); !errors.Is(err, ErrUnknownPermission) {
+	if _, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, SetRolePermissionsInput{Permissions: []string{"nope"}, ExpectedVersion: set.Version}); !errors.Is(err, ErrUnknownPermission) {
 		t.Fatalf("set unknown err = %v", err)
 	}
-	cleared, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, nil)
+	cleared, err := f.svc.SetRolePermissions(ctx, actor, f.corr, created.ID, SetRolePermissionsInput{ExpectedVersion: set.Version})
 	if err != nil || len(cleared.Permissions) != 0 {
 		t.Fatalf("clear = %+v, %v", cleared, err)
 	}
@@ -251,19 +283,19 @@ func TestCreateUpdateSetPermissionsDeleteRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); !errors.Is(err, ErrRoleInUse) {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID, cleared.Version); !errors.Is(err, ErrRoleInUse) {
 		t.Fatalf("delete in use err = %v", err)
 	}
 	if _, _, err := f.svc.RevokeAssignment(ctx, actor, f.corr, as.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); err != nil {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID, cleared.Version); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if _, err := f.svc.GetRole(ctx, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("get deleted err = %v", err)
 	}
-	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID); !errors.Is(err, ErrNotFound) {
+	if err := f.svc.DeleteRole(ctx, actor, f.corr, created.ID, cleared.Version); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("delete twice err = %v", err)
 	}
 	// Soft delete keeps the role row and its assignment history.
@@ -323,13 +355,13 @@ func TestBuiltInRoleIsImmutable(t *testing.T) {
 		t.Fatalf("admin role = %+v", admin)
 	}
 	name := "x"
-	if _, err := f.svc.UpdateRole(ctx, f.cli, f.corr, admin.ID, UpdateRoleInput{Name: &name}); !errors.Is(err, ErrBuiltInRole) {
+	if _, err := f.svc.UpdateRole(ctx, f.cli, f.corr, admin.ID, UpdateRoleInput{Name: &name, ExpectedVersion: 1}); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("update err = %v", err)
 	}
-	if _, err := f.svc.SetRolePermissions(ctx, f.cli, f.corr, admin.ID, []string{"tasks.view"}); !errors.Is(err, ErrBuiltInRole) {
+	if _, err := f.svc.SetRolePermissions(ctx, f.cli, f.corr, admin.ID, SetRolePermissionsInput{Permissions: []string{"tasks.view"}, ExpectedVersion: 1}); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("set permissions err = %v", err)
 	}
-	if err := f.svc.DeleteRole(ctx, f.cli, f.corr, admin.ID); !errors.Is(err, ErrBuiltInRole) {
+	if err := f.svc.DeleteRole(ctx, f.cli, f.corr, admin.ID, 1); !errors.Is(err, ErrBuiltInRole) {
 		t.Fatalf("delete err = %v", err)
 	}
 	if got := f.auditRows(admin.ID); len(got) != 0 {
@@ -344,6 +376,7 @@ func TestAssignAndRevokeAssignment(t *testing.T) {
 	u := f.user("Alice")
 	g := f.group("Helpdesk group")
 	admin := f.user("Admin")
+	f.makeAdmin(admin)
 	session := f.actor(admin)
 
 	a1, err := f.svc.AssignRole(ctx, session, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u})
@@ -479,7 +512,7 @@ func TestLastAdministratorGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := f.actor(u1)
+	session := f.cli
 	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, a1.ID, false); !errors.Is(err, ErrLastAdministrator) {
 		t.Fatalf("last admin err = %v", err)
 	}
@@ -631,7 +664,7 @@ func TestLastAdministratorGuardIgnoresInactiveUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session := f.actor(active)
+	session := f.cli
 	// The inactive administrator does not count as "another administrator".
 	if _, _, err := f.svc.RevokeAssignment(ctx, session, f.corr, aActive.ID, false); !errors.Is(err, ErrLastAdministrator) {
 		t.Fatalf("revoke last active admin err = %v", err)
@@ -677,7 +710,7 @@ func TestDeleteRoleSeesAssignmentCommittedWhileWaiting(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { done <- f.svc.DeleteRole(ctx, f.cli, f.corr, role.ID) }()
+	go func() { done <- f.svc.DeleteRole(ctx, f.cli, f.corr, role.ID, role.Version) }()
 
 	// Wait until DeleteRole is blocked on the role lock held by A.
 	deadline := time.Now().Add(10 * time.Second)
@@ -716,4 +749,12 @@ func TestDeleteRoleSeesAssignmentCommittedWhileWaiting(t *testing.T) {
 	if _, err := f.svc.GetRole(ctx, role.ID); err != nil {
 		t.Fatalf("role must still exist: %v", err)
 	}
+}
+
+func allSoDKeys() []string {
+	var keys []string
+	for _, r := range SoDRules() {
+		keys = append(keys, r.Key)
+	}
+	return keys
 }

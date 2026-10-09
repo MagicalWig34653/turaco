@@ -89,8 +89,8 @@ func (r *Repository) InsertLocalUser(ctx context.Context, tx pgx.Tx, in applicat
 	at := in.At.UTC().Truncate(time.Microsecond)
 	var id string
 	err := tx.QueryRow(ctx, `
-		INSERT INTO organization.users (display_name, status, status_source, created_at, updated_at)
-		VALUES ($1, 'active', 'platform', $2, $2) RETURNING id::text`, in.DisplayName, at).Scan(&id)
+		INSERT INTO organization.users (display_name, status, status_source, origin, created_at, updated_at)
+		VALUES ($1, 'active', 'platform', 'emergency', $2, $2) RETURNING id::text`, in.DisplayName, at).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("insert local user: %w", err)
 	}
@@ -102,4 +102,37 @@ func (r *Repository) InsertLocalUser(ctx context.Context, tx pgx.Tx, in applicat
 		return "", err
 	}
 	return id, nil
+}
+
+// FindLocalAccountByEmail implements application.LoginAccountStore. Only Users created in Turaco have a local
+// account; the login lookup is served by the unique index on lower(primary_email).
+func (r *Repository) FindLocalAccountByEmail(ctx context.Context, email string) (string, bool, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `SELECT id::text FROM organization.users WHERE lower(primary_email) = lower($1) AND origin = 'local'`, email).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("find local account: %w", err)
+	}
+	return id, true, nil
+}
+
+// LocalAccountState implements application.LoginAccountStore.
+func (r *Repository) LocalAccountState(ctx context.Context, tx pgx.Tx, userID string) (application.LocalAccountState, error) {
+	var origin, status string
+	var name string
+	var email *string
+	err := tx.QueryRow(ctx, `SELECT origin, status, display_name, primary_email FROM organization.users WHERE id = $1::uuid FOR SHARE`, userID).Scan(&origin, &status, &name, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.LocalAccountState{}, nil
+	}
+	if err != nil {
+		return application.LocalAccountState{}, fmt.Errorf("local account state: %w", err)
+	}
+	st := application.LocalAccountState{Exists: true, Local: origin == application.OriginLocal, Active: status == application.StatusActive, DisplayName: name}
+	if email != nil {
+		st.Email = *email
+	}
+	return st, nil
 }

@@ -1577,3 +1577,17 @@ html[data-theme='cyberpunk'] .dashboard-metrics .metric-card:is(:hover, :focus-v
     inset 0 0 0 1px rgb(0 240 255 / 35%),
     0 0 14px rgb(0 240 255 / 14%);
 }
+
+/* Task Board cards: square, neon edge on hover and keyboard focus. */
+html[data-theme='cyberpunk'] .board-card {
+  border-radius: 0;
+  border-color: color-mix(in srgb, var(--cyber-cyan) 45%, var(--border-token));
+}
+html[data-theme='cyberpunk'] .board-card:hover,
+html[data-theme='cyberpunk'] .board-card:focus-within {
+  border-color: var(--cyber-cyan);
+}
+html[data-theme='cyberpunk'] .board-cell,
+html[data-theme='cyberpunk'] .board-col-head {
+  border-radius: 0;
+}

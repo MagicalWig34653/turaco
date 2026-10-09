@@ -34,6 +34,7 @@ Documentation is part of the product contract. Do not duplicate authoritative fa
 - [Local Development](development/local-development.md)
 - [Integration sandboxes and demo access](development/integration-sandboxes.md)
 - [Lab services: Mailpit, Samba AD, Keycloak](development/lab-services.md)
+- [Hospital IT simulation and usability test personas](development/simulation-hospital.md)
 - [Public Website Development](development/website.md)
 - [Claude Code Cloud Development](development/cloud-development.md)
 - [Repository Bootstrap](development/repository-bootstrap.md)

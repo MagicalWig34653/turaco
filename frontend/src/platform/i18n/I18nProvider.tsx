@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  isLocale,
   readStoredLocale,
   resolveInitialLocale,
   storeLocale,
@@ -12,17 +13,29 @@ import {
 
 export type Translate = (key: MessageKey, params?: MessageParams) => string;
 
-type I18nValue = { locale: Locale; setLocale: (locale: Locale) => void; t: Translate };
+type I18nValue = {
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+  /** Applies the user's profile locale unless the person already chose a language here. */
+  applyProfileLocale: (locale: string | undefined) => void;
+  t: Translate;
+};
 
 const I18nContext = createContext<I18nValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() =>
-    resolveInitialLocale(readStoredLocale(), window.navigator.language),
+    resolveInitialLocale(
+      readStoredLocale(),
+      window.navigator.languages?.length ? window.navigator.languages : window.navigator.language,
+    ),
   );
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     storeLocale(next);
+  }, []);
+  const applyProfileLocale = useCallback((profile: string | undefined) => {
+    if (isLocale(profile) && !isLocale(readStoredLocale())) setLocaleState(profile);
   }, []);
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -31,9 +44,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     () => ({
       locale,
       setLocale,
+      applyProfileLocale,
       t: (key, params) => translate(locale, key, params),
     }),
-    [locale, setLocale],
+    [locale, setLocale, applyProfileLocale],
   );
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

@@ -426,10 +426,10 @@ type Devices interface {
 	Device(ctx context.Context, id string) (DeviceInfo, bool, error)
 }
 
-// TicketInfo is what the module needs of a Ticket (servicedesk/public).
+// TicketInfo is what the module needs of a Ticket (servicedesk/public). It carries no display number: the number
+// a person may know depends on the Queues they may know, and no text of this module needs it.
 type TicketInfo struct {
 	ID             string
-	Reference      string
 	Open           bool
 	AffectedUserID string
 	ReporterUserID string

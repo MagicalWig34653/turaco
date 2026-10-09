@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { QueryWorkbench } from '../../platform/ui/query/QueryWorkbench';
+import type { QueryList } from '../../platform/ui/query/useQueryList';
 import { TableDate } from '../../platform/ui/TableDate';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
@@ -39,13 +42,16 @@ export function TaskTable({
   filterSummary = '',
   emptyText,
   list,
+  query,
 }: {
   caption: string;
   filterSummary?: string;
   emptyText: string;
   list: PagedState<Task>;
+  query?: QueryList<Task>;
 }) {
   const { t } = useI18n();
+  const [visibleKeys, setVisibleKeys] = useState<string[]>();
   const now = new Date();
   const columns: Column<Task>[] = [
     {
@@ -62,6 +68,7 @@ export function TaskTable({
     },
     {
       key: 'priority',
+      sortField: 'priority',
       sortValue: (task) => ({ low: 0, normal: 1, high: 2, urgent: 3 })[task.priority],
       header: t('tasks.col.priority'),
       render: (task) => t(`tasks.priority.${task.priority}`),
@@ -73,6 +80,7 @@ export function TaskTable({
     },
     {
       key: 'due',
+      sortField: 'due_at',
       sortValue: (task) => task.dueAt,
       header: t('tasks.col.due'),
       render: (task) => (
@@ -84,20 +92,37 @@ export function TaskTable({
     },
   ];
   return (
-    <DataTable
-      filterSummary={filterSummary}
-      caption={caption}
-      columns={columns}
-      rows={list.items}
-      rowKey={(task) => task.id}
-      loading={list.loading}
-      error={list.error}
-      onRetry={list.reload}
-      emptyText={emptyText}
-      hasMore={list.hasMore}
-      loadingMore={list.loadingMore}
-      loadMoreError={list.loadMoreError}
-      onLoadMore={list.loadMore}
-    />
+    <>
+      {query ? (
+        <QueryWorkbench
+          query={query}
+          columns={columns}
+          listKey="tasks"
+          onColumnsChange={setVisibleKeys}
+        />
+      ) : null}
+      <DataTable
+        filterSummary={filterSummary}
+        caption={caption}
+        columns={
+          visibleKeys
+            ? visibleKeys.flatMap((key) => columns.filter((column) => column.key === key))
+            : columns
+        }
+        serverSort={query?.state.sort}
+        onSortChange={query ? (sort) => query.setState({ ...query.state, sort }) : undefined}
+        totalCount={query?.countCapped ? undefined : query?.count}
+        rows={list.items}
+        rowKey={(task) => task.id}
+        loading={list.loading}
+        error={list.error}
+        onRetry={list.reload}
+        emptyText={emptyText}
+        hasMore={list.hasMore}
+        loadingMore={list.loadingMore}
+        loadMoreError={list.loadMoreError}
+        onLoadMore={list.loadMore}
+      />
+    </>
   );
 }

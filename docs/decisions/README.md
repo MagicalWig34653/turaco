@@ -35,3 +35,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 - [ADR-0031 Public Website as a Separate Static Site](ADR-0031-public-website-static-site.md)
 - [ADR-0032 Optional Modules Are Switched at Runtime Through a Platform Module Registry](ADR-0032-module-switches.md)
 - [ADR-0033 Lists Are Queried Through a Platform Query Engine With Module-Declared Field Catalogs; Saved Views Are a Platform Concept](ADR-0033-workbench-views-query-engine.md)
+- [ADR-0034 Local Accounts With Invitation Tokens and Restricted External Accounts](ADR-0034-local-accounts-and-external-parties.md)

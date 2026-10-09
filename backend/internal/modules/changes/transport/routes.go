@@ -2,6 +2,7 @@ package transport
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
@@ -508,4 +509,38 @@ func (h *handler) impact(w http.ResponseWriter, r *http.Request) {
 		starts = append(starts, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"starts": starts, "skipped": res.Skipped, "truncated": res.Truncated})
+}
+
+type lookupHitDTO struct {
+	Type      string `json:"type"`
+	ID        string `json:"id"`
+	Reference string `json:"reference,omitempty"`
+	Name      string `json:"name"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// affectedLookup finds Services, Virtual Machines and Assets for the affected-resource picker of the change wizard.
+func (h *handler) affectedLookup(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := 0
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			httpx.WriteError(w, http.StatusBadRequest, "changes.invalid_limit", "The limit must be a positive integer.")
+			return
+		}
+		limit = n
+	}
+	hits, err := h.svc.LookupAffected(r.Context(), principal(r), q.Get("type"), q.Get("q"), limit)
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	out := struct {
+		Items []lookupHitDTO `json:"items"`
+	}{Items: make([]lookupHitDTO, 0, len(hits))}
+	for _, x := range hits {
+		out.Items = append(out.Items, lookupHitDTO{Type: x.Type, ID: x.ID, Reference: x.Reference, Name: x.Name, Detail: x.Detail})
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }

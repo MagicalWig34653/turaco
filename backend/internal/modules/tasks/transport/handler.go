@@ -16,6 +16,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 	permManage     = "tasks.manage"
 	permWork       = "tasks.work"
 	permRecurrence = "tasks.recurrence.manage"
+	permBoardsTeam = "tasks.boards.manage_team"
 
 	maxBody     = 32 << 10
 	maxQueryLen = 100
@@ -43,6 +45,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/tasks", anyTask, h.list)
+	route("GET /api/v1/tasks/fields", anyTask, h.fields)
+	route("POST /api/v1/tasks/query", anyTask, h.query)
 	route("POST /api/v1/tasks", manage, h.create)
 	route("GET /api/v1/tasks/{id}", anyTask, h.get)
 	route("PATCH /api/v1/tasks/{id}", manage, h.update)
@@ -57,6 +61,9 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if query.WriteError(w, err) {
+		return
+	}
 	var inv *application.InvalidInputError
 	var tr *application.InvalidTransitionError
 	switch {
@@ -84,7 +91,7 @@ func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{
 		UserID: p.UserID, ViewAll: p.Has(permView), Manage: p.Has(permManage), Work: p.Has(permWork),
-		RecurrenceManage: p.Has(permRecurrence),
+		RecurrenceManage: p.Has(permRecurrence), BoardsManageTeam: p.Has(permBoardsTeam),
 	}
 }
 
@@ -144,12 +151,52 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	if f.Mine, ok = parseBool(w, r, "mine"); !ok {
 		return
 	}
+	if query.HasParams(q) {
+		// Additive filter/sort/search/count parameters; the plain parameters are ANDed to the filter.
+		req, err := query.ParseParams(q, page.Cursor, page.Limit)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		res, err := h.svc.Query(r.Context(), principal(r), req, f.Mine, h.svc.CompatNodes(f))
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, shaperFor(r)))
+		return
+	}
 	res, err := h.svc.List(r.Context(), principal(r), f)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	httpx.JSON(w, http.StatusOK, toList(res, shaperFor(r)))
+}
+
+// fields returns the task Field Catalog as the caller may use it.
+func (h *handler) fields(w http.ResponseWriter, r *http.Request) {
+	info, err := h.svc.QueryFields(r.Context(), principal(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, info)
+}
+
+// query runs a Filter AST over the tasks the caller may see.
+func (h *handler) query(w http.ResponseWriter, r *http.Request) {
+	req, err := query.DecodeBody(w, r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	res, err := h.svc.Query(r.Context(), principal(r), req, false, nil)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, shaperFor(r)))
 }
 
 func (h *handler) myWork(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +209,7 @@ func (h *handler) myWork(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	httpx.JSON(w, http.StatusOK, toList(res, shaperFor(r)))
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +218,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toTask(v))
+	httpx.JSON(w, http.StatusOK, shaperFor(r)(v))
 }
 
 type createBody struct {
@@ -287,6 +334,8 @@ func (h *handler) unassign(w http.ResponseWriter, r *http.Request) {
 type transitionBody struct {
 	ExpectedVersion *int   `json:"expectedVersion"`
 	Reason          string `json:"reason"`
+	// ResultNote is the optional closing comment of complete (at most 1000 characters).
+	ResultNote string `json:"resultNote"`
 }
 
 func (h *handler) transition(op application.Operation) http.HandlerFunc {
@@ -295,12 +344,21 @@ func (h *handler) transition(op application.Operation) http.HandlerFunc {
 		if !decode(w, r, &b) {
 			return
 		}
-		v, err := h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, b.Reason)
+		var v application.TaskView
+		var err error
+		if op == application.OpComplete {
+			v, err = h.svc.Complete(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.ResultNote)
+		} else if b.ResultNote != "" {
+			httpx.WriteError(w, http.StatusBadRequest, "tasks.invalid_request", "A result note is only valid when completing a task.")
+			return
+		} else {
+			v, err = h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, b.Reason)
+		}
 		if err != nil {
 			h.fail(w, r, err)
 			return
 		}
-		httpx.JSON(w, http.StatusOK, toTask(v))
+		httpx.JSON(w, http.StatusOK, shaperFor(r)(v))
 	}
 }
 

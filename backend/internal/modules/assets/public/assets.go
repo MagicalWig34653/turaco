@@ -160,6 +160,11 @@ func (p *Products) Products(ctx context.Context, ids []string) (map[string]appli
 	return out, nil
 }
 
+// SearchProducts finds products by name, manufacturer or part number (application.ProductSearcher).
+func (p *Products) SearchProducts(ctx context.Context, text string, limit int) ([]string, error) {
+	return p.dir.Search(ctx, text, limit)
+}
+
 // DeviceSnapshot is what another module (service desk) remembers about an asset.
 type DeviceSnapshot = application.DeviceSnapshot
 
@@ -193,4 +198,24 @@ func (a *Assets) AssetsHeldByUsers(ctx context.Context, userIDs []string, limit 
 // caller decides who may see it.
 func (a *Assets) Locations(ctx context.Context, assetIDs []string) (map[string]string, error) {
 	return a.svc.Locations(ctx, assetIDs)
+}
+
+// SearchHit is an asset found by Search with the name of its product.
+type SearchHit struct {
+	Asset       Asset
+	ProductName string
+}
+
+// Search finds assets by reference, tag, serial number, product name, manufacturer or part number (at most limit,
+// 50 at most). It authorizes nothing: the caller decides who may see assets.
+func (a *Assets) Search(ctx context.Context, text string, limit int) ([]SearchHit, error) {
+	found, err := a.svc.Search(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchHit, 0, len(found))
+	for _, h := range found {
+		out = append(out, SearchHit{Asset: view(h.Asset), ProductName: h.ProductName})
+	}
+	return out, nil
 }

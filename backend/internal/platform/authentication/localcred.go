@@ -46,13 +46,14 @@ type LocalCredential struct {
 	Enabled      bool
 }
 
-// FindLocalCredential returns the credential with the given (lower-case) login
-// name.
+// FindLocalCredential returns the emergency credential with the given (lower-case) login name. Local-account
+// credentials (kind "local") are never found here: there is no path where one kind authenticates at the other
+// endpoint (review rule R3).
 func FindLocalCredential(ctx context.Context, pool *pgxpool.Pool, loginName string) (LocalCredential, bool, error) {
 	var c LocalCredential
 	err := pool.QueryRow(ctx, `
 		SELECT user_id::text, login_name, password_hash, enabled
-		FROM platform.local_credentials WHERE login_name = $1`, loginName).
+		FROM platform.local_credentials WHERE login_name = $1 AND kind = 'emergency'`, loginName).
 		Scan(&c.UserID, &c.LoginName, &c.PasswordHash, &c.Enabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LocalCredential{}, false, nil
@@ -102,7 +103,7 @@ func setLocalPassword(ctx context.Context, tx pgx.Tx, loginName, hash string, a 
 	err := tx.QueryRow(ctx, `
 		UPDATE platform.local_credentials
 		SET password_hash = $2, password_changed_at = $3, updated_at = $3
-		WHERE login_name = $1 RETURNING user_id::text`, loginName, hash, at).Scan(&userID)
+		WHERE login_name = $1 AND kind = 'emergency' RETURNING user_id::text`, loginName, hash, at).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrLocalCredentialNone
 	}
@@ -122,7 +123,7 @@ func setLocalEnabled(ctx context.Context, tx pgx.Tx, loginName string, enabled b
 	var userID string
 	var before bool
 	err := tx.QueryRow(ctx, `
-		WITH old AS (SELECT user_id, enabled FROM platform.local_credentials WHERE login_name = $1 FOR UPDATE)
+		WITH old AS (SELECT user_id, enabled FROM platform.local_credentials WHERE login_name = $1 AND kind = 'emergency' FOR UPDATE)
 		UPDATE platform.local_credentials c SET enabled = $2, updated_at = $3
 		FROM old WHERE c.user_id = old.user_id
 		RETURNING c.user_id::text, old.enabled`, loginName, enabled, at).Scan(&userID, &before)

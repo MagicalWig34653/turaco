@@ -468,6 +468,7 @@ type calendarItemDTO struct {
 	Kind        *string               `json:"kind"`
 	Risk        *string               `json:"risk"`
 	Status      string                `json:"status"`
+	Proposed    bool                  `json:"proposed"`
 	WindowStart string                `json:"windowStart"`
 	WindowEnd   string                `json:"windowEnd"`
 	Affected    []calendarAffectedDTO `json:"affected"`
@@ -491,7 +492,7 @@ func (h *handler) calendar(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]calendarItemDTO, 0, len(cal.Items))
 	for _, it := range cal.Items {
-		d := calendarItemDTO{ChangeID: it.ChangeID, Reference: it.Reference, Title: it.Title, Kind: it.Kind, Risk: it.Risk, Status: it.Status,
+		d := calendarItemDTO{ChangeID: it.ChangeID, Reference: it.Reference, Title: it.Title, Kind: it.Kind, Risk: it.Risk, Status: it.Status, Proposed: it.Proposed,
 			WindowStart: ts(it.WindowStart), WindowEnd: ts(it.WindowEnd), Affected: make([]calendarAffectedDTO, 0, len(it.Affected)),
 			Initiatives: make([]initiativeRefDTO, 0, len(it.Initiatives))}
 		for _, a := range it.Affected {

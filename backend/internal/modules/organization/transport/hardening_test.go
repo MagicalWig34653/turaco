@@ -31,7 +31,10 @@ func TestUserDTOFieldSet(t *testing.T) {
 		got = append(got, k)
 	}
 	sort.Strings(got)
-	want := []string{"departmentId", "displayName", "familyName", "givenName", "id", "managerUserId", "primaryEmail", "primaryLocationId", "status", "updatedAt"}
+	// accountKind, source, statusSource and version are not HR data; employee number, expiry and credentials are
+	// only in the view_details responses.
+	want := []string{"accountKind", "departmentId", "displayName", "familyName", "givenName", "id", "managerUserId", "primaryEmail", "primaryLocationId",
+		"source", "status", "statusSource", "updatedAt", "version"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("user DTO fields = %v, want %v", got, want)
 	}

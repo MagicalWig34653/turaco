@@ -12,7 +12,7 @@ import (
 func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	svc := application.NewMajorService(repository.New(e.pool))
+	svc := application.NewMajorService(repository.New(e.pool)).WithTicketAccess(e.ticketAccess())
 	t.Cleanup(func() {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)
@@ -56,6 +56,51 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	}
 	if d, _ := svc.Get(ctx, e.alice, false, m.ID); !d.Incident.Subscribed || d.Incident.Tickets != 1 {
 		t.Errorf("reporter after linking: %+v", d.Incident)
+	}
+	// The detail lists the linked tickets the reader may view: the reporter sees theirs, an unrelated employee none
+	// (and the count follows the list: no hidden counts).
+	if d, err := svc.Get(ctx, e.alice, false, m.ID); err != nil || len(d.Tickets) != 1 || d.Tickets[0].ID != tk.ID {
+		t.Errorf("reporter's linked tickets = %+v %v", d.Tickets, err)
+	}
+	if d, err := svc.Get(ctx, e.bob, false, m.ID); err != nil || len(d.Tickets) != 0 || d.Incident.Tickets != 0 {
+		t.Errorf("unrelated employee: tickets %+v total %d %v", d.Tickets, d.Incident.Tickets, err)
+	}
+	if d, err := svc.Get(ctx, e.agent, true, m.ID); err != nil || len(d.Tickets) != 1 || d.Incident.Tickets != 1 {
+		t.Errorf("agent's linked tickets = %+v %v", d.Tickets, err)
+	}
+	// The list shapes the count by the same rule.
+	for who, want := range map[string]int{e.alice: 1, e.bob: 0, e.agent: 1} {
+		res, err := svc.List(ctx, who, true, application.Page{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range res.Items {
+			if it.ID == m.ID && it.Tickets != want {
+				t.Errorf("list count for %s = %d, want %d", who, it.Tickets, want)
+			}
+		}
+	}
+	// Unlinking: permission, unknown ticket, then the ticket leaves the incident (idempotent).
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), false, m.ID, tk.ID); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("unlink without permission: %v", err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, "00000000-0000-7000-8000-000000000001"); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("unlink an unknown ticket: %v", err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UnlinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Errorf("second unlink must be a no-op: %v", err)
+	}
+	if d, _ := svc.Get(ctx, e.agent, true, m.ID); len(d.Tickets) != 0 || d.Incident.Tickets != 0 {
+		t.Errorf("after unlink: %+v", d)
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.major_incident.ticket_unlinked'`, e.corr) != 1 {
+		t.Error("exactly one unlink audit event")
+	}
+	if err := svc.LinkTicket(ctx, e.c(e.agent), true, m.ID, tk.ID); err != nil {
+		t.Fatal(err)
 	}
 	linked, err := e.svc.Get(ctx, e.user(), tk.ID)
 	if err != nil || linked.Ticket.MajorIncidentID == nil || *linked.Ticket.MajorIncidentID != m.ID {
@@ -119,7 +164,7 @@ func (e *env) carol() string { return e.viewer }
 func TestLinkingIsOnceAndNeverMovesATicket(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	svc := application.NewMajorService(repository.New(e.pool))
+	svc := application.NewMajorService(repository.New(e.pool)).WithTicketAccess(e.ticketAccess())
 	t.Cleanup(func() {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)

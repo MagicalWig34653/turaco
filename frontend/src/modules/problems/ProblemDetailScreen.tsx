@@ -8,11 +8,12 @@ import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
-import { TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { problemsApi } from './api';
 import { ProblemBadge } from './ProblemsScreen';
+import { TicketPicker } from '../tickets/TicketPicker';
+import type { TicketHit } from '../tickets/ticketLookup';
 
 const needsText: Record<string, MessageKey> = {
   identify_cause: 'problems.field.cause',
@@ -25,7 +26,7 @@ export function ProblemDetailScreen({ id }: { id: string }) {
   const { can } = useSession();
   const loaded = useAsync((signal) => problemsApi.get(id, signal), [id]);
   const [op, setOp] = useState<string | null>(null);
-  const [ticketRef, setTicketRef] = useState('');
+  const [picked, setPicked] = useState<TicketHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   if (loaded.error) return <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />;
@@ -53,8 +54,8 @@ export function ProblemDetailScreen({ id }: { id: string }) {
   const link = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await problemsApi.linkTicket(problem.id, ticketRef.trim());
-      setTicketRef('');
+      for (const hit of picked) await problemsApi.linkTicket(problem.id, hit.id);
+      setPicked([]);
     });
   };
   return (
@@ -128,14 +129,17 @@ export function ProblemDetailScreen({ id }: { id: string }) {
           ))}
         </ul>
         {manage && problem.status !== 'closed' ? (
-          <form className="filters" onSubmit={link}>
-            <TextField
+          <form className="link-panel" onSubmit={link}>
+            <TicketPicker
               label={t('problems.linkTicket')}
               hint={t('problems.linkTicket.hint')}
-              value={ticketRef}
-              onChange={(event) => setTicketRef(event.target.value)}
+              multiple
+              selected={picked}
+              excludeIds={problem.tickets.map((tk) => tk.id)}
+              disabled={busy}
+              onChange={setPicked}
             />
-            <Button type="submit" busy={busy} disabled={ticketRef.trim() === ''}>
+            <Button type="submit" busy={busy} disabled={picked.length === 0}>
               {t('problems.link')}
             </Button>
           </form>

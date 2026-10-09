@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -15,15 +16,17 @@ const (
 	maxTitleLength       = 200
 	maxDescriptionLength = 10000
 	maxReasonLength      = 500
+	maxResultNoteLength  = 1000
 )
 
 // Service performs Task operations. Authorization decisions use the
 // Principal; the permission check of the route only decides who may reach
 // the service at all.
 type Service struct {
-	store Store
-	dir   Directory
-	now   func() time.Time
+	store  Store
+	dir    Directory
+	now    func() time.Time
+	engine *query.Engine
 }
 
 // NewService creates a Service. now may be nil.
@@ -31,7 +34,7 @@ func NewService(store Store, dir Directory, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{store: store, dir: dir, now: now}
+	return &Service{store: store, dir: dir, now: now, engine: query.NewEphemeralEngine()}
 }
 
 // ---- access ----
@@ -109,6 +112,19 @@ func cleanReason(s string) (string, error) {
 	}
 	if safetext.ContainsUnsafe(s, false) {
 		return "", invalid("reason must not contain control or invisible formatting characters")
+	}
+	return s, nil
+}
+
+// cleanResultNote validates the closing comment of a completed task: trimmed, 1 to 1000 characters, line breaks
+// allowed, no other control or invisible formatting characters.
+func cleanResultNote(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || utf8.RuneCountInString(s) > maxResultNoteLength || !utf8.ValidString(s) {
+		return "", invalid("result note must be 1-%d characters", maxResultNoteLength)
+	}
+	if safetext.ContainsUnsafe(s, true) {
+		return "", invalid("result note must not contain control or invisible formatting characters")
 	}
 	return s, nil
 }
@@ -279,6 +295,26 @@ func (s *Service) MyWork(ctx context.Context, p Principal, page Page) (Result[Ta
 	return s.list(ctx, ListQuery{
 		Statuses: []string{StatusOpen, StatusInProgress, StatusBlocked}, Mine: &m, Page: page.Normalize(),
 	})
+}
+
+// CountStore is the optional persistence port that counts the Tasks of a "mine" restriction.
+type CountStore interface {
+	// CountMine counts the tasks with one of the statuses that are assigned to the User or one of the Teams, reading
+	// at most limit+1 rows.
+	CountMine(ctx context.Context, statuses []string, m Mine, limit int) (int, error)
+}
+
+// MyWorkCount counts the caller's unfinished tasks (the MyWork list) up to limit; a larger set returns limit+1.
+func (s *Service) MyWorkCount(ctx context.Context, p Principal, limit int) (int, error) {
+	cs, ok := s.store.(CountStore)
+	if !ok {
+		return 0, fmt.Errorf("tasks: store does not support counts")
+	}
+	a, err := s.access(ctx, p)
+	if err != nil {
+		return 0, err
+	}
+	return cs.CountMine(ctx, []string{StatusOpen, StatusInProgress, StatusBlocked}, a.mine(), limit)
 }
 
 func (a access) mine() Mine {

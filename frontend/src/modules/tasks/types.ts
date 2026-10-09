@@ -29,6 +29,8 @@ export type Task = {
   completedAt: string | null;
   createdByUserId: string | null;
   completedByUserId: string | null;
+  /** The closing comment given when the task was completed; null otherwise. Absent on older servers. */
+  resultNote?: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;

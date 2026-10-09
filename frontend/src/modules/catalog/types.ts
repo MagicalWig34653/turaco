@@ -46,3 +46,21 @@ export type CatalogItemUpdate = {
   description?: string;
   definition?: unknown;
 };
+
+export type ApprovalStep = {
+  index: number;
+  /** Who approves: a named user, a team or the requester's manager. */
+  kind: 'user' | 'team' | 'manager' | string;
+  /** The approver could be determined. */
+  resolved: boolean;
+  /** A fallback approver stands in for the usual one. */
+  fallback: boolean;
+  approverName?: string;
+};
+
+export type ApprovalPreview = {
+  approvalRequired: boolean;
+  /** False when a step has no approver: sending the request would fail. */
+  canSubmit: boolean;
+  steps: ApprovalStep[];
+};

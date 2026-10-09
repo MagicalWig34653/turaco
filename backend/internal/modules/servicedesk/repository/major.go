@@ -227,3 +227,86 @@ func (r *Repository) MajorTitle(ctx context.Context, tx pgx.Tx, id string) (stri
 	}
 	return title, nil
 }
+
+func (r *Repository) UnlinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (bool, error) {
+	if !validUUID(ticketID) {
+		return false, application.ErrNotFound
+	}
+	tag, err := tx.Exec(ctx, `UPDATE servicedesk.tickets SET major_incident_id = NULL, version = version + 1, updated_at = now()
+		WHERE id = $2::uuid AND major_incident_id = $1::uuid`, majorID, ticketID)
+	if err != nil {
+		return false, fmt.Errorf("unlink ticket: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func (r *Repository) MajorTickets(ctx context.Context, majorID string) ([]application.Ticket, error) {
+	if !validUUID(majorID) {
+		return []application.Ticket{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM servicedesk.tickets WHERE major_incident_id = $1::uuid ORDER BY id DESC LIMIT 200`, majorID)
+	if err != nil {
+		return nil, fmt.Errorf("list major incident tickets: %w", err)
+	}
+	defer rows.Close()
+	out := []application.Ticket{}
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list major incident tickets: scan: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// visibleTicketCond is the shared rule of VisibleTickets in SQL: all Tickets for a global holder, else Tickets of
+// viewable Queues and Tickets the User reported or is affected by.
+const visibleTicketCond = `($2::boolean OR t.queue_id = ANY($3::text[]::uuid[]) OR t.reporter_user_id = $4::uuid OR t.affected_user_id = $4::uuid)`
+
+func scopeArgs(scope application.TicketScope) (bool, []string, any) {
+	ids := scope.QueueIDs
+	if ids == nil {
+		ids = []string{}
+	}
+	var user any
+	if validUUID(scope.UserID) {
+		user = scope.UserID
+	}
+	return scope.All, ids, user
+}
+
+// VisibleMajorCounts implements application.MajorStore.
+func (r *Repository) VisibleMajorCounts(ctx context.Context, majorIDs []string, scope application.TicketScope) (map[string]int, error) {
+	out := map[string]int{}
+	ids := validUUIDs(majorIDs)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	all, queues, user := scopeArgs(scope)
+	rows, err := r.pool.Query(ctx, `SELECT t.major_incident_id::text, count(*) FROM servicedesk.tickets t
+		WHERE t.major_incident_id = ANY($1::text[]::uuid[]) AND `+visibleTicketCond+` GROUP BY 1`, ids, all, queues, user)
+	if err != nil {
+		return nil, fmt.Errorf("count visible linked tickets: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("count visible linked tickets: scan: %w", err)
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+func validUUIDs(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if validUUID(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}

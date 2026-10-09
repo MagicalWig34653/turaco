@@ -32,6 +32,7 @@
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `InitiativeStatusChanged` | 1 | planning | An Initiative changed status (planning started, proposed, approved, approval rejected, activated, held, resumed, completed, cancelled). Payload: initiativeId, operation, status, previousStatus; hold, cancel and rejection also reason. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |
+| `LocationChanged` | 1 | organization | A Location was changed, moved, activated or deactivated; consumers that show its name or path re-read it. Payload: locationId, operation. |
 | `MajorIncidentDeclared` | 1 | service-desk | A Major Incident was declared. Payload: majorIncidentId, status. |
 | `MajorIncidentUpdated` | 1 | service-desk | A Major Incident changed status or got a public update. Payload: majorIncidentId, status. |
 | `ManagementApplicabilityChanged` | 1 | endpoints | Turaco's expected applicability evaluation meaningfully changed for a managed target. |
@@ -69,13 +70,20 @@
 | `StockReserved` | 1 | inventory | Stock or a serialized asset was reserved. Payload: reservationId, kind, productId, status, quantity or assetId, contextType, contextId. |
 | `TargetSetChanged` | 1 | endpoints | A Target Set was created, changed or archived. Payload: targetSetId, operation (created|updated|archived), version, allDevices. |
 | `TaskAssigned` | 1 | tasks | A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId. |
+| `TaskBoardArchived` | 1 | tasks | A Task Board was archived by its owner; its shares stop working. Payload: boardId, viewId. |
+| `TaskBoardCreated` | 1 | tasks | A Task Board was created. Payload: boardId, viewId. Carries no name and no filter. |
 | `TaskCancelled` | 1 | tasks | A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId. |
 | `TaskCompleted` | 1 | tasks | A task was completed. Payload: taskId, completedByUserId. |
 | `TicketAssigned` | 1 | service-desk | A ticket was assigned to a user. Payload: ticketId, assigneeId. |
 | `TicketCommentAdded` | 1 | service-desk | A comment was added to a ticket. Payload: ticketId, commentId, internal, authorId. |
-| `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId. |
+| `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId, queueId. |
+| `TicketQueueChanged` | 1 | service-desk | A ticket was moved to another queue and got a new reference; the old one stays as an alias. Payload: ticketId, fromQueueId, toQueueId, oldReference, newReference. |
 | `TicketResolved` | 1 | service-desk | A ticket was resolved. Payload: ticketId, reporterId, affectedUserId. |
 | `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
+| `UserDeactivated` | 1 | organization | An administrator deactivated a User (sessions and open credential tokens were revoked; open Task assignments need review). Payload: userId, reasonCode. |
+| `UserDeparted` | 1 | organization | An administrator marked a User as departed. Payload: userId, reasonCode. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |
+| `ViewArchived` | 1 | views | A Saved View was archived by its owner or an administrator; its shares stop working. Payload: viewId, resource. |
+| `ViewShared` | 1 | views | A Saved View was shared with a User, Team, role or everyone (or the level of a share changed). Payload: viewId, resource, subjectType, subjectId (empty for everyone), level. Carries no name and no filter. |
 | `VirtualMachineChanged` | 1 | infrastructure | A Virtual Machine was created, changed, moved to another state or hypervisor, or decommissioned. Payload: virtualMachineId, operation, state, hypervisorAssetId; decommissioning also reason. |
 | `VulnerabilityFindingChanged` | 1 | security | A vulnerability finding was created or changed status. Payload: findingId, advisoryId, deviceId, status, confidence, operation, previousStatus and reason when applicable. |

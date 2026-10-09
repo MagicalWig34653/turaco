@@ -17,9 +17,7 @@ import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { DateTimeField } from '../../platform/ui/DateTimeField';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
-import { servicesApi } from '../services/api';
-import { infrastructureApi } from '../infrastructure/api';
-import { assetsApi } from '../assets/api';
+import { AffectedPicker } from './AffectedPicker';
 import { changesApi, type ChangeFields } from './api';
 import {
   allowedActions,
@@ -28,15 +26,22 @@ import {
   lifecycle,
   windowMinutes,
   matchesChangeMetric,
+  candidateKey,
+  issuesByStep,
+  mergeMissing,
+  missingForSubmit,
+  readinessFromIssues,
+  requiredForSubmit,
   type ChangeMetricKey,
+  type ReadinessField,
 } from './helpers';
 import {
   cancelReasons,
   failReasons,
   kinds,
-  resourceTypes,
   risks,
   statuses,
+  type AffectedCandidate,
   type Change,
   type ChangeDetail,
   type ChangeStatus,
@@ -131,6 +136,57 @@ function dateValue(value: string | null): string {
 function iso(value: string): string | null {
   return value ? new Date(value).toISOString() : null;
 }
+/** Field-level 400 details of one step: names exactly what the server found missing. */
+function StepIssues({ fields }: { fields: ReadinessField[] }) {
+  const { t } = useI18n();
+  if (!fields.length) return null;
+  return (
+    <ul className="change-validation change-issues" role="alert">
+      {fields.map((field) => (
+        <li key={field}>{t(`changes.ready.${field}`)}</li>
+      ))}
+    </ul>
+  );
+}
+/** What a draft still lacks before "Submit", each item with a way to fix it. */
+function ReadinessChecklist({
+  change,
+  missing,
+  onFix,
+}: {
+  change: Pick<Change, 'kind' | 'risk'>;
+  missing: ReadinessField[];
+  onFix?: ((field: ReadinessField) => void) | undefined;
+}) {
+  const { t } = useI18n();
+  return (
+    <section className="change-checklist" aria-label={t('changes.ready.title')}>
+      <h3>{t('changes.ready.title')}</h3>
+      <ul>
+        {mergeMissing(requiredForSubmit(change), missing).map((field) => {
+          const open = missing.includes(field);
+          return (
+            <li key={field} className={open ? 'is-missing' : 'is-done'}>
+              <span aria-hidden="true">{open ? '✗' : '✓'}</span>
+              <span>
+                {t(`changes.ready.${field}`)}
+                <span className="visually-hidden">
+                  {' '}
+                  {t(open ? 'changes.ready.stateMissing' : 'changes.ready.stateDone')}
+                </span>
+              </span>
+              {open && onFix ? (
+                <Button type="button" onClick={() => onFix(field)}>
+                  {t(`changes.ready.fix.${field}`)}
+                </Button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 function ChangeForm({
   existing,
   onDone,
@@ -159,14 +215,20 @@ function ChangeForm({
         }
       : null,
   );
+  const [affected, setAffected] = useState<AffectedCandidate[]>([]);
+  // Set once the Change exists but some affected resources could not be linked.
+  const [createdId, setCreatedId] = useState<string>();
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
   const invalidWindow = !!(start || end) && windowMinutes(start, end) === null;
+  const stepIssues = issuesByStep(error?.issues ?? []);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (invalidWindow) return;
+    if (createdId) return onDone(createdId);
     setBusy(true);
     setError(undefined);
+    let created: string | undefined;
     try {
       const fields: ChangeFields = {
         title,
@@ -183,8 +245,17 @@ function ChangeForm({
       // The create/update DTO has no emergency justification field. Keep it for the assessment dialog.
       if (emergencyJustification)
         sessionStorage.setItem(`change-emergency-${result.id}`, emergencyJustification);
+      if (!existing && affected.length) {
+        created = result.id;
+        let version = result.version;
+        for (const item of affected) {
+          await changesApi.addAffected(result.id, item.type, item.id, version);
+          version = (await changesApi.get(result.id)).version;
+        }
+      }
       onDone(result.id);
     } catch (cause) {
+      if (created) setCreatedId(created);
       setError(asApiError(cause));
     } finally {
       setBusy(false);
@@ -243,6 +314,7 @@ function ChangeForm({
           <textarea value={rollbackPlan} onChange={(e) => setRollbackPlan(e.target.value)} />
           <span className="field-hint">{t('changes.polish.rollbackHint')}</span>
         </label>
+        <StepIssues fields={stepIssues.planning} />
         {kind === 'emergency' && (
           <label>
             {t('changes.emergencyJustification')}
@@ -253,6 +325,20 @@ function ChangeForm({
           </label>
         )}
       </section>
+      {!existing && (
+        <section className="change-form-section change-form-resources">
+          <h3>{t('changes.polish.resources')}</h3>
+          <p>
+            {t(
+              kind === 'standard'
+                ? 'changes.polish.resourcesHintStandard'
+                : 'changes.polish.resourcesHint',
+            )}
+          </p>
+          <AffectedPicker selected={affected} onChange={setAffected} />
+          <StepIssues fields={stepIssues.resources} />
+        </section>
+      )}
       <section className="change-form-section change-form-owner">
         <h3>{t('changes.polish.ownership')}</h3>
         <p>{t('changes.polish.ownershipHint')}</p>
@@ -273,12 +359,21 @@ function ChangeForm({
         )}
       </section>
       <Error error={error} />
+      {createdId ? (
+        <p className="change-validation" role="alert">
+          {t('changes.polish.partlyCreated')}
+        </p>
+      ) : null}
       <div className="actions change-form-footer">
         <Button type="button" onClick={onClose ?? (() => window.history.back())}>
           {t('action.cancel')}
         </Button>
         <Button variant="primary" type="submit" disabled={busy || invalidWindow}>
-          {existing ? t('action.save') : t('changes.create')}
+          {createdId
+            ? t('changes.polish.openCreated')
+            : existing
+              ? t('action.save')
+              : t('changes.create')}
         </Button>
       </div>
     </form>
@@ -683,73 +778,46 @@ export function ChangeCreateScreen() {
 function AffectedDialog({
   id,
   version,
+  linked,
   onClose,
   onDone,
 }: {
   id: string;
   version: number;
+  linked: readonly string[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const { t } = useI18n();
-  const { can } = useSession();
-  const [type, setType] = useState<ResourceType>('service');
-  const [query, setQuery] = useState('');
-  const [targetId, setTargetId] = useState('');
+  const [selected, setSelected] = useState<AffectedCandidate[]>([]);
   const [error, setError] = useState<ApiError>();
-  const results = useAsync(
-    async (signal) => {
-      if (type === 'service' && (can('services.view') || can('services.manage')))
-        return (await servicesApi.list({ q: query }, undefined, signal)).items.map((x) => ({
-          id: x.id,
-          label: `${x.reference} · ${x.name}`,
-        }));
-      if (type === 'vm' && (can('infrastructure.view') || can('infrastructure.manage')))
-        return (await infrastructureApi.vms({ q: query }, undefined, signal)).items.map((x) => ({
-          id: x.id,
-          label: x.name,
-        }));
-      if (type === 'asset' && (can('assets.view') || can('assets.manage')))
-        return (await assetsApi.list({ q: query }, undefined, signal)).items.map((x) => ({
-          id: x.id,
-          label: x.reference,
-        }));
-      return [];
-    },
-    [type, query],
-  );
+  const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!selected.length) return;
+    setBusy(true);
     setError(undefined);
     try {
-      await changesApi.addAffected(id, type, targetId, version);
+      let current = version;
+      for (const item of selected) {
+        await changesApi.addAffected(id, item.type, item.id, current);
+        current = (await changesApi.get(id)).version;
+      }
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
+    } finally {
+      setBusy(false);
     }
   };
   return (
     <Dialog title={t('changes.addAffected')} onClose={onClose}>
       <form onSubmit={(e) => void submit(e)} className="form-stack">
-        <Choice
-          label={t('changes.type')}
-          value={type}
-          values={resourceTypes}
-          prefix="changes.type"
-          onChange={(v) => {
-            setType(v as ResourceType);
-            setTargetId('');
-          }}
-        />
-        <Field label={t('changes.search')} value={query} onChange={setQuery} type="search" />
-        {results.data?.map((x) => (
-          <Button type="button" key={x.id} onClick={() => setTargetId(x.id)}>
-            {x.label}
-          </Button>
-        ))}
-        <Field label={t('changes.targetId')} value={targetId} onChange={setTargetId} required />
-        <Error error={results.error ?? error} />
-        <Button type="submit">{t('changes.addAffected')}</Button>
+        <AffectedPicker selected={selected} onChange={setSelected} linked={linked} />
+        <Error error={error} />
+        <Button type="submit" variant="primary" busy={busy} disabled={!selected.length}>
+          {t('changes.pick.add', { count: selected.length })}
+        </Button>
       </form>
     </Dialog>
   );
@@ -757,13 +825,17 @@ function AffectedDialog({
 function ActionDialog({
   change,
   action,
+  affectedCount,
   onClose,
   onDone,
+  onFix,
 }: {
   change: Change;
   action: string;
+  affectedCount: number;
   onClose: () => void;
   onDone: () => void;
+  onFix: (field: ReadinessField) => void;
 }) {
   const { t } = useI18n();
   const [risk, setRisk] = useState(change.risk);
@@ -781,8 +853,17 @@ function ActionDialog({
   const [outcomeNote, setOutcomeNote] = useState('');
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
+  const checksReadiness = action === 'submit' || action === 'assess';
+  // Local check first; fields named by the server's 400 are added so nothing it found is hidden.
+  const missing = checksReadiness
+    ? mergeMissing(
+        missingForSubmit(change, affectedCount),
+        readinessFromIssues(error?.issues ?? []),
+      )
+    : [];
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (missing.length) return;
     setBusy(true);
     setError(undefined);
     const body: Record<string, unknown> = { expectedVersion: change.version };
@@ -912,10 +993,21 @@ function ActionDialog({
             />
           </label>
         )}
-        <Error error={error} />
-        <Button type="submit" disabled={busy || (action === 'review' && !outcomeNote.trim())}>
+        {checksReadiness ? (
+          <ReadinessChecklist change={change} missing={missing} onFix={onFix} />
+        ) : null}
+        {error && !error.issues.length ? <Error error={error} /> : null}
+        <Button
+          type="submit"
+          disabled={busy || missing.length > 0 || (action === 'review' && !outcomeNote.trim())}
+        >
           {t(`changes.action.${action}` as MessageKey)}
         </Button>
+        {missing.length > 0 ? (
+          <p className="field-hint" role="status">
+            {t('changes.ready.blocked', { count: missing.length })}
+          </p>
+        ) : null}
       </form>
     </Dialog>
   );
@@ -1025,6 +1117,12 @@ export function ChangeDetailScreen({ id }: { id: string }) {
       danger: x === 'cancel' || x === 'fail',
       onSelect: () => runAction(x),
     }));
+  // Closes the confirmation and opens the place where the missing item is entered.
+  const fixReadiness = (field: ReadinessField) => {
+    setAction('');
+    if (field === 'affectedResources') setShowAffected(true);
+    else setShowEdit(true);
+  };
   const reload = () => {
     detail.reload();
     transitions.reload();
@@ -1241,6 +1339,15 @@ export function ChangeDetailScreen({ id }: { id: string }) {
               )}
             </div>
             <div className="change-detail-side">
+              {c.status === 'draft' &&
+              actions.includes('submit') &&
+              missingForSubmit(c, c.affected.length).length > 0 ? (
+                <ReadinessChecklist
+                  change={c}
+                  missing={missingForSubmit(c, c.affected.length)}
+                  onFix={fixReadiness}
+                />
+              ) : null}
               <section className="change-card">
                 <h2>{t('changes.affected')}</h2>
                 {!c.affected.length && (
@@ -1350,6 +1457,7 @@ export function ChangeDetailScreen({ id }: { id: string }) {
             <AffectedDialog
               id={id}
               version={c.version}
+              linked={c.affected.filter((x) => !x.hidden).map((x) => candidateKey(x))}
               onClose={() => setShowAffected(false)}
               onDone={reload}
             />
@@ -1366,8 +1474,10 @@ export function ChangeDetailScreen({ id }: { id: string }) {
             <ActionDialog
               change={c}
               action={action}
+              affectedCount={c.affected.length}
               onClose={() => setAction('')}
               onDone={reload}
+              onFix={fixReadiness}
             />
           )}
         </>

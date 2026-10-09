@@ -17,6 +17,7 @@ import (
 	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores tasks in platform.tasks.
@@ -34,15 +35,31 @@ const taskTarget = "task"
 const columns = `id::text, title, description, status, status_reason, priority,
 	assigned_user_id::text, assigned_team_id::text, context_type, context_id::text,
 	due_at, completed_at, created_by_user_id::text, completed_by_user_id::text,
-	recurrence_definition_id::text, scheduled_for, version, created_at, updated_at`
+	recurrence_definition_id::text, scheduled_for, result_note, version, created_at, updated_at`
 
-func scan(row pgx.Row) (application.Task, error) {
+func scan(row pgx.Row) (application.Task, error) { return scanWith(row) }
+
+// scanWith scans a task row followed by extra targets (the query engine's sort keys).
+func scanWith(row pgx.Row, extra ...any) (application.Task, error) {
 	var t application.Task
-	err := row.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
+	dest := append([]any{&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
 		&t.AssignedUserID, &t.AssignedTeamID, &t.ContextType, &t.ContextID,
 		&t.DueAt, &t.CompletedAt, &t.CreatedByUserID, &t.CompletedByUserID,
-		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.ResultNote, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
+	err := row.Scan(dest...)
 	return t, err
+}
+
+// queryColumns is columns qualified with the query alias.
+const queryColumns = `t.id::text, t.title, t.description, t.status, t.status_reason, t.priority,
+	t.assigned_user_id::text, t.assigned_team_id::text, t.context_type, t.context_id::text,
+	t.due_at, t.completed_at, t.created_by_user_id::text, t.completed_by_user_id::text,
+	t.recurrence_definition_id::text, t.scheduled_for, t.result_note, t.version, t.created_at, t.updated_at`
+
+// QueryTasks runs a compiled query plan (ADR-0033) in a read-only transaction.
+func (r *Repository) QueryTasks(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Task], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: queryColumns, Visibility: visibility},
+		func(rows pgx.Rows, extra []any) (application.Task, error) { return scanWith(rows, extra...) })
 }
 
 // auditState is the audited view of a task: no title or description.
@@ -300,12 +317,12 @@ func (r *Repository) Change(ctx context.Context, c application.Caller, id string
 			UPDATE platform.tasks SET
 				title = $2, description = $3, status = $4, status_reason = $5, priority = $6,
 				assigned_user_id = $7::uuid, assigned_team_id = $8::uuid, due_at = $9,
-				completed_at = $10, completed_by_user_id = $11::uuid,
+				completed_at = $10, completed_by_user_id = $11::uuid, result_note = $12,
 				version = version + 1, updated_at = now()
 			WHERE id = $1::uuid
 			RETURNING `+columns,
 			id, n.Title, n.Description, n.Status, n.StatusReason, n.Priority,
-			n.AssignedUserID, n.AssignedTeamID, n.DueAt, n.CompletedAt, n.CompletedByUserID))
+			n.AssignedUserID, n.AssignedTeamID, n.DueAt, n.CompletedAt, n.CompletedByUserID, n.ResultNote))
 		if err != nil {
 			return fmt.Errorf("update task: %w", err)
 		}
@@ -350,32 +367,30 @@ const (
 	rankKey = `(CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END)`
 )
 
-type cursor struct {
-	Due  string `json:"d"`
-	Rank int    `json:"p"`
-	ID   string `json:"i"`
+type cursor = application.ListCursor
+
+var _ application.CountStore = (*Repository)(nil)
+
+// CountMine implements application.CountStore.
+func (r *Repository) CountMine(ctx context.Context, statuses []string, m application.Mine, limit int) (int, error) {
+	if !validUUID(m.UserID) {
+		return 0, nil
+	}
+	teams := m.TeamIDs
+	if teams == nil {
+		teams = []string{}
+	}
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM (SELECT 1 FROM platform.tasks
+		WHERE status = ANY($1::text[]) AND (assigned_user_id = $2::uuid OR assigned_team_id = ANY($3::text[]::uuid[])) LIMIT $4) c`,
+		statuses, m.UserID, teams, limit+1).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count tasks: %w", err)
+	}
+	return n, nil
 }
 
-func encodeCursor(t application.Task) string {
-	c := cursor{Due: "infinity", ID: t.ID, Rank: rank(t.Priority)}
-	if t.DueAt != nil {
-		c.Due = t.DueAt.UTC().Format(time.RFC3339Nano)
-	}
-	raw, _ := json.Marshal(c)
-	return base64.RawURLEncoding.EncodeToString(raw)
-}
-
-func rank(priority string) int {
-	switch priority {
-	case application.PriorityUrgent:
-		return 0
-	case application.PriorityHigh:
-		return 1
-	case application.PriorityNormal:
-		return 2
-	}
-	return 3
-}
+func encodeCursor(t application.Task) string { return application.EncodeCursor(t) }
 
 func decodeCursor(s string) (cursor, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)

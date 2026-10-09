@@ -4,6 +4,7 @@ import {
   ApiError,
   buildQuery,
   parseFields,
+  parseIssues,
   parseRetryAfter,
   toApiError,
 } from './client';
@@ -149,5 +150,30 @@ describe('validation fields', () => {
     expect(parseFields(['x'])).toBeUndefined();
     expect(parseFields(null)).toBeUndefined();
     expect(parseFields('x')).toBeUndefined();
+  });
+});
+
+describe('parseIssues', () => {
+  it('keeps only well-formed field issues of error.details.fields', () => {
+    expect(
+      parseIssues({
+        fields: [{ field: 'windowStart', code: 'required' }, { field: 1 }, null, 'x'],
+      }),
+    ).toEqual([{ field: 'windowStart', code: 'required' }]);
+    expect(parseIssues(undefined)).toEqual([]);
+    expect(parseIssues({ fields: 'nope' })).toEqual([]);
+  });
+  it('exposes them on the ApiError of a 400 response', async () => {
+    const error = await toApiError(
+      json(400, {
+        error: {
+          code: 'changes.invalid_request',
+          message: 'x',
+          details: { fields: [{ field: 'affectedResources', code: 'required' }] },
+        },
+      }),
+    );
+    expect(error.issues).toEqual([{ field: 'affectedResources', code: 'required' }]);
+    expect((await toApiError(json(500, {}))).issues).toEqual([]);
   });
 });

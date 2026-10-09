@@ -96,7 +96,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), Hostnames: p.Has("endpoints.view")}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

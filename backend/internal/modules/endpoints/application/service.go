@@ -17,6 +17,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -27,6 +28,7 @@ import (
 // Audit entries carry ids, enumerated codes and counts only; provider-reported text such as device
 // names and software names is never copied into audit.
 type Service struct {
+	engine   *query.Engine
 	store    Store
 	assets   Assets
 	provider intune.Provider
@@ -101,7 +103,7 @@ func NewService(store Store, assets Assets, provider intune.Provider, syncEnable
 	if provider == nil {
 		provider = intune.NotConfigured{}
 	}
-	return &Service{store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
+	return &Service{engine: query.NewEphemeralEngine(), store: store, assets: assets, provider: provider, syncOn: syncEnabled, now: now, syncCooldown: DefaultSyncCooldown, dir: emptyDirectory{}, holders: noHolders{}, viewProvider: intune.ProviderKey, reconcileBudget: DefaultReconcileBudget, reconcileMax: MaxReconcileDevices,
 		software: softwaremgmt.NotConfigured{}, softwareKey: softwaremgmt.ProviderKey, softwareSyncCooldown: DefaultSyncCooldown,
 		catalog:   catalogLimiter{limit: DefaultCatalogSearchLimit, window: DefaultCatalogSearchWindow},
 		approvals: noApprovals{}, changes: noChanges{}, locations: noLocations{}, approvers: noApprovers{}, targetCap: MaxTargetDevices,

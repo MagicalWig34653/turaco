@@ -110,6 +110,8 @@ type Principal struct {
 	UserID string
 	View   bool
 	Manage bool
+	// Hostnames: the caller holds endpoints.view, so a search may match device hostnames.
+	Hostnames bool
 }
 
 // Caller identifies who performs a mutation and the request it belongs to.
@@ -186,11 +188,34 @@ type Filter struct {
 	ProductID  string
 	AssigneeID string // active assignment to this User or Team
 	LocationID string
-	// Query matches the reference, serial number or asset tag by prefix.
+	// Query is the search text. Every word must match (AND): a word of three or more characters matches anywhere in
+	// the reference, serial number, asset tag, product name, manufacturer, part numbers and (with Principal.Hostnames)
+	// the hostname of the linked device (trigram indexes); a shorter word matches the start of the reference,
+	// serial number and product name and the start of a part of the asset tag (WS finds KIS-WS-014).
 	Query string
+	// Terms are the words of Query with the Products and Assets other modules resolved for them. The service fills
+	// it; a Store used directly derives the terms from Query alone.
+	Terms []SearchTerm
 	// AssignedToUser restricts to assets actively assigned to this User (my assets).
 	AssignedToUser string
 	Page           Page
+}
+
+// SearchTerm is one word of a search text with the ids other modules matched for it.
+type SearchTerm struct {
+	Text       string
+	ProductIDs []string
+	AssetIDs   []string
+}
+
+// ProductSearcher is the optional Products capability that finds products by name, manufacturer or part number.
+type ProductSearcher interface {
+	SearchProducts(ctx context.Context, text string, limit int) ([]string, error)
+}
+
+// DeviceSearcher is the optional capability that finds assets by the hostname of their linked endpoint device.
+type DeviceSearcher interface {
+	AssetIDsByHostname(ctx context.Context, text string, limit int) ([]string, error)
 }
 
 // Store is the persistence port. Mutating methods run in the caller's

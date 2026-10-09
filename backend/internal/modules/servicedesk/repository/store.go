@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores tickets and comments.
@@ -23,15 +26,28 @@ func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const columns = `id::text, reference, kind, title, description, status, waiting_reason, status_reason, resolution, priority,
 	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, major_incident_id::text, device_snapshot,
-	resolved_at, closed_at, version, created_at, updated_at`
+	resolved_at, closed_at, version, created_at, updated_at, queue_id::text, number, patient_impact, affected_location_id::text, duplicate_of_ticket_id::text, reported_impact`
 
-func scan(row pgx.Row) (application.Ticket, error) {
+// queryColumns is columns qualified with the query alias.
+const queryColumns = `t.id::text, t.reference, t.kind, t.title, t.description, t.status, t.waiting_reason, t.status_reason, t.resolution, t.priority,
+	t.reporter_user_id::text, t.affected_user_id::text, t.queue_team_id::text, t.assignee_user_id::text, t.asset_id::text, t.major_incident_id::text, t.device_snapshot,
+	t.resolved_at, t.closed_at, t.version, t.created_at, t.updated_at, t.queue_id::text, t.number, t.patient_impact, t.affected_location_id::text, t.duplicate_of_ticket_id::text, t.reported_impact`
+
+func scan(row pgx.Row) (application.Ticket, error) { return scanWith(row) }
+
+// scanWith scans a ticket row followed by extra targets (the query engine's sort keys).
+func scanWith(row pgx.Row, extra ...any) (application.Ticket, error) {
 	var t application.Ticket
 	var snap []byte
-	err := row.Scan(&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
-		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt)
+	var impact *string
+	dest := append([]any{&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
+		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt, &t.QueueID, &t.Number, &t.PatientImpact, &t.AffectedLocationID, &t.DuplicateOfID, &impact}, extra...)
+	err := row.Scan(dest...)
 	if err != nil {
 		return t, err
+	}
+	if impact != nil {
+		t.ReportedImpact = *impact
 	}
 	if len(snap) > 0 {
 		if err := json.Unmarshal(snap, &t.DeviceSnapshot); err != nil {
@@ -55,10 +71,15 @@ func (r *Repository) InsertTx(ctx context.Context, tx pgx.Tx, t application.Tick
 		snap = b
 	}
 	out, err := scan(tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.tickets (kind, title, description, status, priority, reporter_user_id, affected_user_id, queue_team_id, asset_id, device_snapshot)
-		VALUES ($1, $2, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9::uuid, $10::jsonb) RETURNING `+columns,
-		t.Kind, t.Title, t.Description, t.Status, t.Priority, t.ReporterID, t.AffectedUserID, t.QueueTeamID, t.AssetID, snap))
+		INSERT INTO servicedesk.tickets (kind, title, description, status, priority, reporter_user_id, affected_user_id, queue_team_id, asset_id, device_snapshot, queue_id,
+			patient_impact, affected_location_id, reported_impact)
+		VALUES ($1, $2, $3, $4, $5, $6::uuid, $7::uuid, $8::uuid, $9::uuid, $10::jsonb, $11::uuid, $12, $13::uuid, $14) RETURNING `+columns,
+		t.Kind, t.Title, t.Description, t.Status, t.Priority, t.ReporterID, t.AffectedUserID, t.QueueTeamID, t.AssetID, snap, nilIfEmpty(t.QueueID),
+		t.PatientImpact, t.AffectedLocationID, nilIfEmpty(t.ReportedImpact)))
 	if err != nil {
+		if mapped := mapQueueError(err); mapped != nil {
+			return application.Ticket{}, mapped
+		}
 		return application.Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
 	return out, nil
@@ -117,7 +138,20 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		if !validUUID(f.UserID) {
 			return empty, nil
 		}
-		add("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid)", f.UserID)
+		if len(f.QueueIDs) > 0 {
+			// Own Tickets plus the Tickets of the Queues the caller views.
+			args = append(args, f.UserID, f.QueueIDs)
+			conds = append(conds, fmt.Sprintf("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid OR queue_id = ANY($%[2]d::text[]::uuid[]))", len(args)-1, len(args)))
+		} else {
+			add("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid)", f.UserID)
+		}
+	}
+	if f.Narrow {
+		ids := f.NarrowQueueIDs
+		if ids == nil {
+			ids = []string{}
+		}
+		add("queue_id = ANY($%d::text[]::uuid[])", ids)
 	}
 	if f.Status != "" {
 		add("status = $%d", f.Status)
@@ -169,6 +203,12 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 	return res, nil
 }
 
+// QueryTickets runs a compiled query plan (ADR-0033) in a read-only transaction.
+func (r *Repository) QueryTickets(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Ticket], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: queryColumns, Visibility: visibility},
+		func(rows pgx.Rows, extra []any) (application.Ticket, error) { return scanWith(rows, extra...) })
+}
+
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {
 	err := tx.QueryRow(ctx, `
 		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal)
@@ -208,6 +248,13 @@ func (r *Repository) Comments(ctx context.Context, ticketID string, includeInter
 	return out, rows.Err()
 }
 
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func validUUID(s string) bool {
 	if len(s) != 36 {
 		return false
@@ -224,3 +271,44 @@ func validUUID(s string) bool {
 	}
 	return true
 }
+
+// TicketEvents implements application.HistoryStore: the newest 200 audit events of the Ticket, oldest first.
+func (r *Repository) TicketEvents(ctx context.Context, ticketID string, limit int) ([]audit.Event, error) {
+	if !validUUID(ticketID) {
+		return []audit.Event{}, nil
+	}
+	res, err := audit.NewReader(r.pool).List(ctx, audit.Filter{TargetType: "ticket", TargetID: strings.ToLower(ticketID)}, audit.Page{Limit: min(limit, audit.MaxLimit)})
+	if err != nil {
+		return nil, fmt.Errorf("ticket events: %w", err)
+	}
+	slices.Reverse(res.Items)
+	return res.Items, nil
+}
+
+var _ application.HistoryStore = (*Repository)(nil)
+
+// MarkDuplicateTx implements application.DuplicateStore.
+func (r *Repository) MarkDuplicateTx(ctx context.Context, tx pgx.Tx, id, targetID string) (application.Ticket, error) {
+	out, err := scan(tx.QueryRow(ctx, `
+		UPDATE servicedesk.tickets SET status = 'cancelled', status_reason = $3, waiting_reason = NULL, duplicate_of_ticket_id = $2::uuid,
+			version = version + 1, updated_at = now()
+		WHERE id = $1::uuid RETURNING `+columns, id, targetID, application.StatusReasonDuplicate))
+	if err != nil {
+		return application.Ticket{}, fmt.Errorf("mark duplicate: %w", err)
+	}
+	return out, nil
+}
+
+// DuplicateStateTx implements application.DuplicateStore.
+func (r *Repository) DuplicateStateTx(ctx context.Context, tx pgx.Tx, id string) (bool, int, error) {
+	var isDup bool
+	var n int
+	err := tx.QueryRow(ctx, `SELECT (SELECT duplicate_of_ticket_id IS NOT NULL FROM servicedesk.tickets WHERE id = $1::uuid),
+		(SELECT count(*) FROM servicedesk.tickets WHERE duplicate_of_ticket_id = $1::uuid)`, id).Scan(&isDup, &n)
+	if err != nil {
+		return false, 0, fmt.Errorf("duplicate state: %w", err)
+	}
+	return isDup, n, nil
+}
+
+var _ application.DuplicateStore = (*Repository)(nil)

@@ -107,6 +107,17 @@ func (x *Changes) Lookup(ctx context.Context, ids []string, scope ReadScope) (ma
 // requesting them; the zero scope returns only reference and state metadata.
 func (x *Changes) Calendar(ctx context.Context, from, to time.Time, limit int, scope ReadScope) (CalendarPage, error) {
 	res, err := x.svc.Calendar(ctx, from, to, limit)
+	return x.page(res, err, scope)
+}
+
+// CalendarWithProposed is Calendar plus the submitted Changes (in assessment or pending approval) with their
+// proposed window; the status of an entry tells them apart.
+func (x *Changes) CalendarWithProposed(ctx context.Context, from, to time.Time, limit int, scope ReadScope) (CalendarPage, error) {
+	res, err := x.svc.CalendarWithProposed(ctx, from, to, limit)
+	return x.page(res, err, scope)
+}
+
+func (x *Changes) page(res application.CalendarPage, err error, scope ReadScope) (CalendarPage, error) {
 	var inv *application.InvalidInputError
 	if errors.As(err, &inv) {
 		return CalendarPage{}, ErrInvalidRange

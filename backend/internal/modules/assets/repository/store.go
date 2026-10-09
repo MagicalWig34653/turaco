@@ -195,6 +195,48 @@ func (r *Repository) BySerial(ctx context.Context, serial string) ([]application
 	return out, rows.Err()
 }
 
+// termCondition matches one search word. Three characters or more match anywhere (served by the trigram indexes of
+// reference, asset tag and serial number); a shorter word matches only the start, and for the asset tag also the
+// start of a part after a separator, so WS finds KIS-WS-014. Products and assets other modules matched are ORed in.
+func termCondition(t application.SearchTerm, args *[]any) string {
+	text := strings.ToLower(t.Text)
+	add := func(v any) int {
+		*args = append(*args, v)
+		return len(*args)
+	}
+	var parts []string
+	if len([]rune(text)) >= 3 {
+		n := add("%" + likeEscape(text) + "%")
+		parts = append(parts, fmt.Sprintf(`a.reference ILIKE $%[1]d ESCAPE '\' OR a.asset_tag ILIKE $%[1]d ESCAPE '\' OR a.serial_number ILIKE $%[1]d ESCAPE '\'`, n))
+	} else {
+		n := add(prefixPattern(text))
+		m := add(`(^|[^[:alnum:]])` + regexEscape(text))
+		parts = append(parts, fmt.Sprintf(`lower(a.reference) LIKE $%[1]d OR lower(a.serial_number) LIKE $%[1]d OR lower(a.asset_tag) LIKE $%[1]d OR lower(a.asset_tag) ~ $%[2]d`, n, m))
+	}
+	if ids := validUUIDs(t.ProductIDs); len(ids) > 0 {
+		parts = append(parts, fmt.Sprintf(`a.product_id = ANY($%d::uuid[])`, add(ids)))
+	}
+	if ids := validUUIDs(t.AssetIDs); len(ids) > 0 {
+		parts = append(parts, fmt.Sprintf(`a.id = ANY($%d::uuid[])`, add(ids)))
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func likeEscape(q string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
+}
+
+func regexEscape(q string) string {
+	var b strings.Builder
+	for _, r := range q {
+		if strings.ContainsRune(`\.+*?()|[]{}^$`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 func prefixPattern(q string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
 }
@@ -252,10 +294,14 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		}
 		add("EXISTS (SELECT 1 FROM assets.asset_assignments s WHERE s.asset_id = a.id AND s.returned_at IS NULL AND s.assignee_type = 'user' AND s.assignee_id = $%d::uuid)", f.AssignedToUser)
 	}
-	if f.Query != "" {
-		args = append(args, prefixPattern(strings.ToLower(f.Query)))
-		n := len(args)
-		conds = append(conds, fmt.Sprintf(`(lower(a.reference) LIKE $%[1]d OR lower(a.serial_number) LIKE $%[1]d OR lower(a.asset_tag) LIKE $%[1]d)`, n))
+	terms := f.Terms
+	if len(terms) == 0 && f.Query != "" {
+		for _, w := range strings.Fields(f.Query) {
+			terms = append(terms, application.SearchTerm{Text: w})
+		}
+	}
+	for _, t := range terms {
+		conds = append(conds, termCondition(t, &args))
 	}
 	if page.Cursor != "" {
 		if !validUUID(page.Cursor) {

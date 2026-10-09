@@ -1,6 +1,8 @@
 import { usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
+import { Skeleton } from '../../platform/ui/Workspace';
+import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { catalogApi } from './api';
@@ -31,20 +33,51 @@ export function CatalogScreen() {
   return (
     <>
       <PageHeader title={t('nav.catalog')} intro={t('catalog.intro')} />
-      <DataTable
-        caption={t('nav.catalog')}
-        columns={columns}
-        rows={list.items}
-        rowKey={(item) => item.id}
-        loading={list.loading}
-        error={list.error}
-        onRetry={list.reload}
-        emptyText={t('catalog.empty')}
-        hasMore={list.hasMore}
-        loadingMore={list.loadingMore}
-        loadMoreError={list.loadMoreError}
-        onLoadMore={list.loadMore}
-      />
+      {/* On phones each item is a card, so the request action stays reachable without sideways scrolling. */}
+      <ul className="catalog-cards" aria-label={t('nav.catalog')}>
+        {list.loading && list.items.length === 0 ? <Skeleton lines={3} /> : null}
+        {list.items.map((item) => (
+          <li key={item.id} className="catalog-card">
+            <h2>{item.title}</h2>
+            {item.description ? <p>{item.description}</p> : null}
+            <Link to={`/catalog/${encodeURIComponent(item.id)}`} className="btn btn-primary">
+              {t('catalog.request')}
+              <span className="visually-hidden">: {item.title}</span>
+            </Link>
+          </li>
+        ))}
+        {!list.loading && !list.error && list.items.length === 0 ? (
+          <li className="empty">{t('catalog.empty')}</li>
+        ) : null}
+        {list.error ? (
+          <li>
+            <Button onClick={list.reload}>{t('action.retry')}</Button>
+          </li>
+        ) : null}
+        {list.hasMore ? (
+          <li>
+            <Button busy={list.loadingMore} onClick={list.loadMore}>
+              {t('action.loadMore')}
+            </Button>
+          </li>
+        ) : null}
+      </ul>
+      <div className="catalog-table">
+        <DataTable
+          caption={t('nav.catalog')}
+          columns={columns}
+          rows={list.items}
+          rowKey={(item) => item.id}
+          loading={list.loading}
+          error={list.error}
+          onRetry={list.reload}
+          emptyText={t('catalog.empty')}
+          hasMore={list.hasMore}
+          loadingMore={list.loadingMore}
+          loadMoreError={list.loadMoreError}
+          onLoadMore={list.loadMore}
+        />
+      </div>
     </>
   );
 }

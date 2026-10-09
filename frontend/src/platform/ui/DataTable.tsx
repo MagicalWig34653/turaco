@@ -15,11 +15,17 @@ export type Column<T> = {
   render: (row: T) => ReactNode;
   className?: string;
   sortValue?: (row: T) => SortValue;
+  /** Catalog field used for server-side sorting. */
+  sortField?: string;
 };
 
+export type ServerSort = { field: string; dir: 'asc' | 'desc'; nulls?: 'first' | 'last' };
+
 type DataTableProps<T> = {
+  serverSort?: readonly ServerSort[] | undefined;
+  onSortChange?: ((sort: ServerSort[]) => void) | undefined;
   caption: string;
-  totalCount?: number;
+  totalCount?: number | undefined;
   filterSummary?: string;
   zebra?: boolean;
   selection?: {
@@ -36,6 +42,9 @@ type DataTableProps<T> = {
   error?: ApiError | undefined;
   onRetry?: () => void;
   emptyText: string;
+  /** Optional explanation and next step under the empty title (for a first-use state). */
+  emptyDescription?: ReactNode;
+  emptyAction?: ReactNode;
   /** Pagination ("load more" via nextCursor). */
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -47,6 +56,8 @@ type DataTableProps<T> = {
 
 export function DataTable<T>({
   caption,
+  serverSort,
+  onSortChange,
   totalCount,
   filterSummary,
   zebra = false,
@@ -58,6 +69,8 @@ export function DataTable<T>({
   error,
   onRetry,
   emptyText,
+  emptyDescription,
+  emptyAction,
   hasMore,
   loadingMore,
   loadMoreError,
@@ -68,7 +81,7 @@ export function DataTable<T>({
   const [sort, setSort] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
   const sortColumn = columns.find((column) => column.key === sort?.key);
   const visibleRows =
-    sort && sortColumn?.sortValue
+    !onSortChange && sort && sortColumn?.sortValue
       ? sortRows(rows, sortColumn.sortValue, sort.direction, locale)
       : rows;
   const selectedCount = rows.filter((row) => selection?.keys.has(rowKey(row))).length;
@@ -128,9 +141,9 @@ export function DataTable<T>({
               : t('table.showingLoaded', { count: rows.length })}
           {filterSummary ? ` · ${t('table.filteredBy', { filters: filterSummary })}` : ''}
         </span>
-        {sort || overflowing ? (
+        {(!onSortChange && sort) || overflowing ? (
           <span className="table-meta-hint">
-            {sort ? t('table.sortedLoaded') : t('table.scrollHint')}
+            {!onSortChange && sort ? t('table.sortedLoaded') : t('table.scrollHint')}
           </span>
         ) : null}
       </div>
@@ -172,43 +185,64 @@ export function DataTable<T>({
                   />
                 </th>
               ) : null}
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  className={column.className}
-                  aria-sort={
-                    column.sortValue
-                      ? sort?.key === column.key
-                        ? sort.direction === 'asc'
+              {columns.map((column) => {
+                const sortable = onSortChange
+                  ? Boolean(column.sortField)
+                  : Boolean(column.sortValue);
+                const direction = onSortChange
+                  ? serverSort?.find((item) => item.field === column.sortField)?.dir
+                  : sort?.key === column.key
+                    ? sort.direction
+                    : undefined;
+                return (
+                  <th
+                    key={column.key}
+                    scope="col"
+                    className={column.className}
+                    aria-sort={
+                      sortable
+                        ? direction === 'asc'
                           ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                      : undefined
-                  }
-                >
-                  {column.sortValue ? (
-                    <button
-                      type="button"
-                      className="table-sort"
-                      onClick={() =>
-                        setSort({
-                          key: column.key,
-                          direction:
-                            sort?.key === column.key && sort.direction === 'asc' ? 'desc' : 'asc',
-                        })
-                      }
-                    >
-                      {column.header}
-                      <span aria-hidden="true">
-                        {sort?.key === column.key ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-                      </span>
-                    </button>
-                  ) : (
-                    column.header
-                  )}
-                </th>
-              ))}
+                          : direction === 'desc'
+                            ? 'descending'
+                            : 'none'
+                        : undefined
+                    }
+                  >
+                    {sortable ? (
+                      <button
+                        type="button"
+                        className="table-sort"
+                        onClick={() => {
+                          const nextDirection = direction === 'asc' ? 'desc' : 'asc';
+                          if (onSortChange && column.sortField) {
+                            const existing = serverSort?.find(
+                              (item) => item.field === column.sortField,
+                            );
+                            onSortChange([
+                              {
+                                field: column.sortField,
+                                dir: nextDirection,
+                                nulls: existing?.nulls ?? 'last',
+                              },
+                              ...(serverSort ?? [])
+                                .filter((item) => item.field !== column.sortField)
+                                .slice(0, 2),
+                            ]);
+                          } else setSort({ key: column.key, direction: nextDirection });
+                        }}
+                      >
+                        {column.header}
+                        <span aria-hidden="true">
+                          {direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '↕'}
+                        </span>
+                      </button>
+                    ) : (
+                      column.header
+                    )}
+                  </th>
+                );
+              })}
               {rowActions ? (
                 <th scope="col" className="table-actions-cell">
                   <span className="visually-hidden">{t('contextMenu.actions')}</span>
@@ -331,7 +365,9 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
-      {!loading && rows.length === 0 ? <EmptyState title={emptyText} /> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState title={emptyText} description={emptyDescription} action={emptyAction} />
+      ) : null}
       {loadMoreError ? <ApiErrorAlert error={loadMoreError} /> : null}
       {hasMore && onLoadMore ? (
         <div className="load-more">

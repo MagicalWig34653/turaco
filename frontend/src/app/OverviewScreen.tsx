@@ -3,7 +3,7 @@ import { pathEnabled } from '../platform/modules/model';
 import { BriefingCoverage } from '../modules/my-work/BriefingCoverage';
 import type { ReactNode } from 'react';
 import { appRoutes, canViewRoute, type RouteId } from './routes';
-import { useAsync, usePagedList } from '../platform/api/useAsync';
+import { useAsync } from '../platform/api/useAsync';
 import { useI18n } from '../platform/i18n/I18nProvider';
 import type { MessageKey } from '../platform/i18n/i18n';
 import { Link } from '../platform/router/Router';
@@ -17,13 +17,16 @@ import { Card, MetricCard, Skeleton } from '../platform/ui/Workspace';
 import { briefingApi } from '../modules/briefing/api';
 import { resolveFeedTitle, sourceKey } from '../modules/briefing/feed';
 import type { FeedEntry } from '../modules/briefing/types';
-import { tasksApi } from '../modules/tasks/api';
+import { figureOf, priorityOf } from '../modules/my-work/feedModel';
+import { SourceNotice } from '../modules/my-work/SourceNotice';
+import { useMyWorkFeed } from '../modules/my-work/useMyWorkFeed';
 import {
   buildAttention,
   overviewMetrics,
   type AttentionItem,
 } from '../modules/my-work/overviewModel';
 import { summarizeFeed } from '../modules/my-work/workModel';
+import { QueueHealth } from '../modules/tickets/QueueHealth';
 
 const quickActions: ReadonlyArray<{ route: RouteId; icon: RouteId; label: MessageKey }> = [
   { route: 'taskNew', icon: 'tasks', label: 'overview.action.createTask' },
@@ -56,19 +59,20 @@ function AttentionCard({ item }: { item: AttentionItem }) {
   let meta: ReactNode;
   let action: string;
   let time: string | null | undefined;
-  if (item.kind === 'task') {
-    to = `/tasks/${encodeURIComponent(item.task.id)}`;
-    icon = 'tasks';
-    title = item.task.title;
+  if (item.kind === 'work') {
+    const ticket = item.item.kind === 'ticket';
+    to = item.item.href;
+    icon = ticket ? 'myTickets' : 'tasks';
+    title = item.item.title;
     meta = (
       <>
-        {t(`tasks.priority.${item.task.priority}`)}
+        {item.item.reference ? `${item.item.reference} · ` : ''}
+        {t(`tasks.priority.${priorityOf(item.item)}`)}
         {item.overdue ? ` · ${t('overview.overdueTask')}` : ''}
-        {item.task.assignedTeamName ? ` · ${item.task.assignedTeamName}` : ''}
       </>
     );
-    action = t('dashboard.openTask');
-    time = item.task.dueAt ?? item.task.createdAt;
+    action = t(ticket ? 'dashboard.openTicket' : 'dashboard.openTask');
+    time = item.item.dueAt ?? item.item.updatedAt;
   } else if (item.kind === 'approvals') {
     to = '/approvals';
     icon = 'approvals';
@@ -108,8 +112,14 @@ export function OverviewScreen() {
   const { can } = useSession();
   const greeting = useGreeting();
   const { enabled } = useModules();
-  const list = usePagedList((cursor, signal) => tasksApi.myWork(cursor, signal), []);
-  const briefingEnabled = enabled('briefing');
+  const work = useMyWorkFeed('all');
+  const list = work.list;
+  const briefingRoute = appRoutes.find((route) => route.id === 'briefing');
+  // The feed answers 403 without a briefing-related permission, so do not ask at all.
+  const briefingEnabled =
+    enabled('briefing') && (!briefingRoute || canViewRoute(can, briefingRoute, enabled));
+  const queueRoute = appRoutes.find((route) => route.id === 'ticketQueue');
+  const showQueueHealth = !!queueRoute && canViewRoute(can, queueRoute, enabled);
   const feed = useAsync(
     (signal) =>
       briefingEnabled
@@ -123,8 +133,12 @@ export function OverviewScreen() {
     : [];
   const feedIncomplete =
     !!feed.data?.unavailable.length || Object.values(feed.data?.truncated ?? {}).some(Boolean);
-  const metrics = overviewMetrics(list.items, entries, now);
-  const attention = buildAttention(list.items, entries, now);
+  const metrics = overviewMetrics(work.items, entries, now);
+  const attention = buildAttention(work.items, entries, now);
+  // Separate, labelled figures: work assigned to me, tickets of my teams to take over.
+  const assigned = figureOf(work.counts, ['tickets', 'tasks']);
+  const takeOver = figureOf(work.counts, ['team_tickets']);
+  const countsPending = work.countsLoading;
   const summary = summarizeFeed(entries);
   const highlight = summary.highlight ?? entries.find((entry) => entry.severity !== 'info');
   const otherSignals = entries.filter(
@@ -134,7 +148,7 @@ export function OverviewScreen() {
     const found = appRoutes.find((candidate) => candidate.id === route);
     return found ? canViewRoute(can, found, enabled) : false;
   });
-  const loading = (list.loading && !list.items.length) || (feed.loading && !feed.data);
+  const loading = (list.loading && !work.items.length) || (feed.loading && !feed.data);
   const today = new Intl.DateTimeFormat(locale, {
     weekday: 'long',
     day: 'numeric',
@@ -160,15 +174,46 @@ export function OverviewScreen() {
         <div
           className="workspace-metrics dashboard-metrics"
           aria-label={t('overview.metrics')}
-          style={{ '--metric-count': metrics.approvals === undefined ? 3 : 4 } as never}
+          style={
+            {
+              '--metric-count':
+                2 +
+                (takeOver.absent ? 0 : 1) +
+                (metrics.approvals === undefined ? 0 : 1) +
+                (briefingEnabled ? 1 : 0),
+            } as never
+          }
         >
-          <MetricCard
-            label={t('overview.metric.open')}
-            value={metrics.open}
-            to="/my-work"
-            caption={t('overview.metric.openCaption')}
-            icon={<NavIcon id="myWork" />}
-          />
+          {!assigned.absent || countsPending ? (
+            <MetricCard
+              label={t('overview.metric.assigned')}
+              value={countsPending || assigned.unknown ? metrics.open : assigned.value}
+              capped={!countsPending && !assigned.unknown && assigned.capped}
+              {...(!countsPending && assigned.unknown
+                ? { unavailable: t('overview.metric.unavailable') }
+                : {})}
+              to="/my-work"
+              caption={
+                assigned.partial && !assigned.unknown
+                  ? t('overview.metric.partialCaption')
+                  : t('overview.metric.assignedCaption')
+              }
+              icon={<NavIcon id="myWork" />}
+            />
+          ) : null}
+          {!takeOver.absent ? (
+            <MetricCard
+              label={t('overview.metric.takeOver')}
+              value={takeOver.value}
+              capped={takeOver.capped}
+              {...(takeOver.unknown ? { unavailable: t('overview.metric.unavailable') } : {})}
+              to="/my-work?source=team_tickets"
+              tone="warning"
+              caption={t('overview.metric.takeOverCaption')}
+              zeroCaption={t('overview.metric.takeOverZero')}
+              icon={<NavIcon id="ticketQueue" />}
+            />
+          ) : null}
           <MetricCard
             label={t('overview.metric.overdue')}
             value={metrics.overdue}
@@ -216,6 +261,9 @@ export function OverviewScreen() {
           </Button>
         </p>
       ) : null}
+      {work.unavailable.length > 0 ? (
+        <SourceNotice sources={work.unavailable} onRetry={work.reload} />
+      ) : null}
       <section aria-labelledby="overview-needs">
         <div className="dashboard-section-heading">
           <h2 id="overview-needs">
@@ -232,9 +280,9 @@ export function OverviewScreen() {
             {attention.map((item) => (
               <AttentionCard
                 key={
-                  item.kind === 'task'
-                    ? item.task.id
-                    : `${item.kind}-${item.entry.source}-${item.entry.titleKey}`
+                  item.kind === 'work'
+                    ? `${item.item.source}-${item.item.id}`
+                    : `${item.kind}-${item.entry.source}-${item.entry.linkPath}-${item.entry.titleKey}`
                 }
                 item={item}
               />
@@ -249,6 +297,7 @@ export function OverviewScreen() {
           </div>
         ) : null}
       </section>
+      {showQueueHealth ? <QueueHealth /> : null}
       <div className="overview-columns">
         <Card className="dashboard-timeline" title={t('overview.recent')}>
           <div className="dashboard-section-heading">

@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,6 +25,13 @@ const (
 // CalendarStatuses are the statuses whose maintenance windows the calendar
 // shows: approved (planned), scheduled and in progress.
 var CalendarStatuses = []string{StatusApproved, StatusScheduled, StatusInProgress}
+
+// ProposedStatuses are the statuses of submitted Changes whose maintenance window is only proposed: in
+// assessment, or waiting for the approval. The calendar can show them flagged as proposed.
+var ProposedStatuses = []string{StatusAssessment, StatusPendingApproval}
+
+// Proposed reports that the window of the Change is only proposed (the Change is not approved yet).
+func (c Change) Proposed() bool { return slices.Contains(ProposedStatuses, c.Status) }
 
 // CalendarEntry is a Change whose maintenance window lies in the calendar range,
 // with the resources it affects (current AFFECTS links, at most MaxAffected).
@@ -47,6 +55,17 @@ type CalendarPage struct {
 // read models of other modules (Planning's maintenance calendar, the
 // briefing), which authorize and redact for their own caller.
 func (s *Service) Calendar(ctx context.Context, from, to time.Time, limit int) (CalendarPage, error) {
+	return s.calendar(ctx, CalendarStatuses, from, to, limit)
+}
+
+// CalendarWithProposed is Calendar plus the submitted Changes (assessment, pending approval) with a proposed
+// maintenance window, so planners see a window before it is approved. Entries of those Changes report
+// Change.Proposed(); their status is the Change status.
+func (s *Service) CalendarWithProposed(ctx context.Context, from, to time.Time, limit int) (CalendarPage, error) {
+	return s.calendar(ctx, append(slices.Clone(CalendarStatuses), ProposedStatuses...), from, to, limit)
+}
+
+func (s *Service) calendar(ctx context.Context, statuses []string, from, to time.Time, limit int) (CalendarPage, error) {
 	if !to.After(from) {
 		return CalendarPage{}, invalid("the calendar range must end after it starts")
 	}
@@ -56,7 +75,7 @@ func (s *Service) Calendar(ctx context.Context, from, to time.Time, limit int) (
 	if limit <= 0 || limit > MaxCalendarEntries {
 		limit = MaxCalendarEntries
 	}
-	list, err := s.store.InWindow(ctx, CalendarStatuses, from.UTC(), to.UTC(), limit+1)
+	list, err := s.store.InWindow(ctx, statuses, from.UTC(), to.UTC(), limit+1)
 	if err != nil {
 		return CalendarPage{}, err
 	}

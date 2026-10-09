@@ -16,7 +16,36 @@ import (
 
 // Repository reads Organization data with explicit SQL.
 type Repository struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	guards   application.AccessGuards
+	sessions application.SessionRevoker
+	counters []application.ReferenceCounter
+	issuer   application.CredentialIssuer
+	mailer   application.CredentialMailer
+}
+
+// WithCredentials returns a copy that can issue invitation and reset links.
+func (r *Repository) WithCredentials(i application.CredentialIssuer, m application.CredentialMailer) *Repository {
+	c := *r
+	c.issuer, c.mailer = i, m
+	return &c
+}
+
+// WithGuards returns a copy of the repository whose people operations enforce the access guards (dominance,
+// last administrator) and end sessions and credential tokens through revoker. Without them the operations that
+// need them fail closed.
+func (r *Repository) WithGuards(g application.AccessGuards, revoker application.SessionRevoker) *Repository {
+	c := *r
+	c.guards, c.sessions = g, revoker
+	return &c
+}
+
+// WithReferenceCounters returns a copy that also counts references to Locations held by other modules (through
+// their public contracts) when a Location is deactivated.
+func (r *Repository) WithReferenceCounters(c ...application.ReferenceCounter) *Repository {
+	cp := *r
+	cp.counters = append([]application.ReferenceCounter(nil), c...)
+	return &cp
 }
 
 var _ application.Reader = (*Repository)(nil)
@@ -144,12 +173,14 @@ func (r *Repository) exists(ctx context.Context, sql string, id string) error {
 // ---- users ----
 
 const userColumns = `id::text, display_name, given_name, family_name, primary_email, status,
-	department_id::text, primary_location_id::text, manager_user_id::text, updated_at`
+	department_id::text, primary_location_id::text, manager_user_id::text, updated_at,
+	employee_number, status_source, account_kind, origin, access_expires_at, version`
 
 func scanUser(row pgx.Row) (application.User, error) {
 	var u application.User
 	err := row.Scan(&u.ID, &u.DisplayName, &u.GivenName, &u.FamilyName, &u.PrimaryEmail, &u.Status,
-		&u.DepartmentID, &u.PrimaryLocationID, &u.ManagerUserID, &u.UpdatedAt)
+		&u.DepartmentID, &u.PrimaryLocationID, &u.ManagerUserID, &u.UpdatedAt,
+		&u.EmployeeNumber, &u.StatusSource, &u.AccountKind, &u.Origin, &u.AccessExpiresAt, &u.Version)
 	return u, err
 }
 
@@ -161,7 +192,9 @@ func (r *Repository) ListUsers(ctx context.Context, f application.UserFilter) (a
 	}
 	var q listQuery
 	if f.Query != "" {
-		q.add(`lower(display_name) LIKE lower(?) || '%'`, prefixPattern(f.Query))
+		// Any part of the name or the e-mail address matches (surname, second given name, "Dr. Brandt"), not only the
+		// start of the display name. Served by the trigram indexes users_display_name_trgm_idx and users_primary_email_trgm_idx.
+		q.add(`(display_name ILIKE '%' || ? || '%' OR primary_email ILIKE '%' || ? || '%')`, prefixPattern(f.Query))
 	}
 	if f.Status != "" {
 		q.add(`status = ?`, f.Status)
@@ -183,9 +216,11 @@ func (r *Repository) GetUser(ctx context.Context, id string) (application.User, 
 
 // ---- teams ----
 
+const teamColumns = `id::text, name, active, updated_at, description, version`
+
 func scanTeam(row pgx.Row) (application.Team, error) {
 	var t application.Team
-	err := row.Scan(&t.ID, &t.Name, &t.Active, &t.UpdatedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.Active, &t.UpdatedAt, &t.Description, &t.Version)
 	return t, err
 }
 
@@ -200,7 +235,7 @@ func (r *Repository) ListTeams(ctx context.Context, f application.NameFilter) (a
 		q.add(`lower(name) LIKE lower(?) || '%'`, prefixPattern(f.Query))
 	}
 	suffix := q.keyset("id", cur, p.Limit)
-	rows, err := r.pool.Query(ctx, `SELECT id::text, name, active, updated_at FROM organization.teams`+q.where()+suffix, q.args...)
+	rows, err := r.pool.Query(ctx, `SELECT `+teamColumns+` FROM organization.teams`+q.where()+suffix, q.args...)
 	if err != nil {
 		return application.Result[application.Team]{}, fmt.Errorf("list teams: %w", err)
 	}
@@ -211,7 +246,7 @@ func (r *Repository) ListTeams(ctx context.Context, f application.NameFilter) (a
 }
 
 func (r *Repository) GetTeam(ctx context.Context, id string) (application.Team, error) {
-	return getOne(ctx, r, "team", id, `SELECT id::text, name, active, updated_at FROM organization.teams WHERE id = $1`, scanTeam)
+	return getOne(ctx, r, "team", id, `SELECT `+teamColumns+` FROM organization.teams WHERE id = $1`, scanTeam)
 }
 
 // ListTeamMembers returns current members of a team, one row per user, paginated by user id.
@@ -254,12 +289,73 @@ WHERE true` + cursorCond + fmt.Sprintf(` ORDER BY tm.user_id LIMIT $%d`, len(arg
 	})
 }
 
+// ListTeamLeads returns the current leads of a Team ordered by user id (at most 50).
+func (r *Repository) ListTeamLeads(ctx context.Context, teamID string) ([]application.TeamMember, error) {
+	if err := r.exists(ctx, `SELECT 1 FROM organization.teams WHERE id = $1`, teamID); err != nil {
+		return nil, err
+	}
+	team, _ := parseID(teamID)
+	rows, err := r.pool.Query(ctx, `
+		SELECT tm.user_id::text, u.display_name, tm.role, tm.source, tm.valid_from
+		FROM organization.team_memberships tm JOIN organization.users u ON u.id = tm.user_id
+		WHERE tm.team_id = $1 AND tm.role = 'lead' AND tm.valid_from <= now() AND (tm.valid_until IS NULL OR tm.valid_until > now())
+		ORDER BY tm.user_id LIMIT 50`, team)
+	if err != nil {
+		return nil, fmt.Errorf("list team leads: %w", err)
+	}
+	defer rows.Close()
+	out := []application.TeamMember{}
+	for rows.Next() {
+		var m application.TeamMember
+		if err := rows.Scan(&m.UserID, &m.DisplayName, &m.Role, &m.Source, &m.ValidFrom); err != nil {
+			return nil, fmt.Errorf("list team leads: scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ---- locations ----
+
+const locationColumns = `id::text, name, external_key, active, updated_at, kind, parent_location_id::text, code, description, version`
 
 func scanLocation(row pgx.Row) (application.Location, error) {
 	var l application.Location
-	err := row.Scan(&l.ID, &l.Name, &l.ExternalKey, &l.Active, &l.UpdatedAt)
+	err := row.Scan(&l.ID, &l.Name, &l.ExternalKey, &l.Active, &l.UpdatedAt, &l.Kind, &l.ParentID, &l.Code, &l.Description, &l.Version)
 	return l, err
+}
+
+const departmentColumns = `id::text, name, code, parent_department_id::text, external_key, active, updated_at, version`
+
+func scanDepartment(row pgx.Row) (application.Department, error) {
+	var d application.Department
+	err := row.Scan(&d.ID, &d.Name, &d.Code, &d.ParentID, &d.ExternalKey, &d.Active, &d.UpdatedAt, &d.Version)
+	return d, err
+}
+
+func (r *Repository) ListDepartments(ctx context.Context, f application.NameFilter) (application.Result[application.Department], error) {
+	p := f.Page.Normalize()
+	cur, err := parseCursor(p.Cursor)
+	if err != nil {
+		return application.Result[application.Department]{}, err
+	}
+	var q listQuery
+	if f.Query != "" {
+		q.add(`lower(name) LIKE lower(?) || '%'`, prefixPattern(f.Query))
+	}
+	suffix := q.keyset("id", cur, p.Limit)
+	rows, err := r.pool.Query(ctx, `SELECT `+departmentColumns+` FROM organization.departments`+q.where()+suffix, q.args...)
+	if err != nil {
+		return application.Result[application.Department]{}, fmt.Errorf("list departments: %w", err)
+	}
+	return collect(rows, p.Limit, func(rows pgx.Rows) (application.Department, string, error) {
+		d, err := scanDepartment(rows)
+		return d, d.ID, err
+	})
+}
+
+func (r *Repository) GetDepartment(ctx context.Context, id string) (application.Department, error) {
+	return getOne(ctx, r, "department", id, `SELECT `+departmentColumns+` FROM organization.departments WHERE id = $1`, scanDepartment)
 }
 
 func (r *Repository) ListLocations(ctx context.Context, f application.NameFilter) (application.Result[application.Location], error) {
@@ -273,7 +369,7 @@ func (r *Repository) ListLocations(ctx context.Context, f application.NameFilter
 		q.add(`lower(name) LIKE lower(?) || '%'`, prefixPattern(f.Query))
 	}
 	suffix := q.keyset("id", cur, p.Limit)
-	rows, err := r.pool.Query(ctx, `SELECT id::text, name, external_key, active, updated_at FROM organization.locations`+q.where()+suffix, q.args...)
+	rows, err := r.pool.Query(ctx, `SELECT `+locationColumns+` FROM organization.locations`+q.where()+suffix, q.args...)
 	if err != nil {
 		return application.Result[application.Location]{}, fmt.Errorf("list locations: %w", err)
 	}
@@ -284,7 +380,7 @@ func (r *Repository) ListLocations(ctx context.Context, f application.NameFilter
 }
 
 func (r *Repository) GetLocation(ctx context.Context, id string) (application.Location, error) {
-	return getOne(ctx, r, "location", id, `SELECT id::text, name, external_key, active, updated_at FROM organization.locations WHERE id = $1`, scanLocation)
+	return getOne(ctx, r, "location", id, `SELECT `+locationColumns+` FROM organization.locations WHERE id = $1`, scanLocation)
 }
 
 // ---- directory groups ----

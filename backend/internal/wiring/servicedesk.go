@@ -13,6 +13,7 @@ import (
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 )
 
 type deviceAdapter struct{ a *assetspublic.Assets }
@@ -30,18 +31,40 @@ func (d deviceAdapter) Snapshot(ctx context.Context, assetID, holder string) (ma
 
 // MajorIncidents builds the Major Incident service.
 func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
-	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool))
+	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool))
 }
 
 // Problems builds the Problem service.
 func Problems(pool *pgxpool.Pool) *servicedeskapp.ProblemService {
-	return servicedeskapp.NewProblemService(servicedeskrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)))
+	return servicedeskapp.NewProblemService(servicedeskrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool))).WithTicketAccess(ServiceDesk(pool))
+}
+
+// queueMemberships answers the Queue grant questions with Organization (Teams) and the permission evaluator
+// (roles, and the global permissions of an assignee).
+type queueMemberships struct {
+	teams *orgpublic.WorkDirectory
+	eval  *roles.Evaluator
+}
+
+func (m queueMemberships) TeamIDs(ctx context.Context, userID string) ([]string, error) {
+	return m.teams.CurrentTeamIDs(ctx, userID)
+}
+
+func (m queueMemberships) RoleIDs(ctx context.Context, userID string) ([]string, error) {
+	return m.eval.RoleIDs(ctx, userID)
+}
+
+func (m queueMemberships) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
+	return m.eval.Permissions(ctx, userID)
 }
 
 // ServiceDesk builds the ticket service over the other modules' public contracts.
 func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
-	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
-	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))})
+	org := orgrepository.New(pool)
+	dir := orgpublic.NewWorkDirectory(org)
+	members := queueMemberships{teams: dir, eval: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org))}
+	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).
+		WithQueryEngine(QueryEngine(pool)).WithMemberships(members)
 }
 
 // gatewayAdapter adapts the Autotask adapter to the Service Desk port.

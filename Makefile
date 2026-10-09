@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # which can contain Go packages (and tests) shipped by npm dependencies.
 GO_PACKAGES := ./backend/... ./agents/... ./tools/...
 
-.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down lab-up lab-down lab-reset lab-verify migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
+.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down lab-up lab-down lab-reset lab-verify migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck load-test doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
 
 help:
 	@printf '%s\n' \
@@ -23,6 +23,7 @@ help:
 	  '  make frontend     Run Vite dev server natively' \
 	  '  make dev          Print the recommended local dev commands' \
 	  '  make check        Run the repository quality gate' \
+	  '  make load-test    Run the development load generator (LOADTEST_ARGS="--profile ramp ...")' \
 	  '  make build        Build backend, agents, and frontend' \
 	  '  make site-build   Install dependencies and build the public website' \
 	  '  make site-serve   Serve the built public website locally' \
@@ -102,6 +103,12 @@ typecheck:
 
 archcheck:
 	@go run ./tools/archcheck
+
+# Development-only load generator against a running local API (docs/development/load-testing.md).
+# Not part of `make check`. Example: make load-test LOADTEST_ARGS="--profile ramp --rate-scale 0.25 --pg-url $$DATABASE_URL"
+LOADTEST_ARGS ?= --profile smoke
+load-test:
+	@go run ./tools/loadtest run $(LOADTEST_ARGS)
 
 doccheck:
 	@go run ./tools/doccheck

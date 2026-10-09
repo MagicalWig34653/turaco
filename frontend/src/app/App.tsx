@@ -110,6 +110,7 @@ import { OrdersScreen } from '../modules/procurement/OrdersScreen';
 import { SuppliersScreen } from '../modules/procurement/SuppliersScreen';
 import { TicketCreateScreen } from '../modules/tickets/TicketCreateScreen';
 import { TicketDetailScreen } from '../modules/tickets/TicketDetailScreen';
+import { QueuesAdminScreen } from '../modules/tickets/QueuesAdminScreen';
 import { TicketsScreen } from '../modules/tickets/TicketsScreen';
 import { ArticleDetailScreen } from '../modules/knowledge/ArticleDetailScreen';
 import { ArticleEditScreen } from '../modules/knowledge/ArticleEditScreen';
@@ -122,6 +123,8 @@ import { RunbookDetailScreen } from '../modules/runbooks/RunbookDetailScreen';
 import { RunbookEditScreen } from '../modules/runbooks/RunbookEditScreen';
 import { RunbooksScreen } from '../modules/runbooks/RunbooksScreen';
 import { MyWorkScreen } from '../modules/my-work/MyWorkScreen';
+import { BoardScreen } from '../modules/tasks/boards/BoardScreen';
+import { BoardsScreen } from '../modules/tasks/boards/BoardsScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
 import { TasksScreen } from '../modules/tasks/TasksScreen';
@@ -315,6 +318,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <TicketDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'ticketQueue':
       return <TicketsScreen scope="all" />;
+    case 'ticketQueues':
+      return <QueuesAdminScreen />;
     case 'knowledge':
       return <ArticlesScreen />;
     case 'articleNew':
@@ -341,6 +346,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <RunbookDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'tasks':
       return <TasksScreen />;
+    case 'taskBoards':
+      return <BoardsScreen />;
+    case 'taskBoard':
+      return <BoardScreen key={params.id} id={params.id ?? ''} />;
     case 'taskNew':
       return <TaskCreateScreen />;
     case 'taskDetail':
@@ -404,8 +413,12 @@ function AuthenticatedApp() {
 }
 
 function Gate() {
-  const { t } = useI18n();
+  const { t, applyProfileLocale } = useI18n();
   const { state } = useSession();
+  const profileLocale = state.status === 'authenticated' ? state.session.locale : undefined;
+  useEffect(() => {
+    applyProfileLocale(profileLocale);
+  }, [applyProfileLocale, profileLocale]);
   useEffect(() => {
     if (state.status === 'anonymous') document.title = `${t('login.title')} – ${t('app.name')}`;
   }, [state.status, t]);

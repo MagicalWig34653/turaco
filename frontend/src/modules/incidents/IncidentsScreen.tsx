@@ -7,13 +7,15 @@ import { asApiError, usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
-import { Badge } from '../../platform/ui/Alert';
+import { Alert, Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Dialog } from '../../platform/ui/Dialog';
 import { Checkbox, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { TicketPicker } from '../tickets/TicketPicker';
+import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi, type MajorIncident } from './api';
 
 export function IncidentBadge({ status }: { status: MajorIncident['status'] }) {
@@ -31,20 +33,50 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
   const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [tickets, setTickets] = useState<TicketHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
+  const [unlinked, setUnlinked] = useState<TicketHit[]>([]);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(undefined);
     try {
-      await incidentsApi.declare(title.trim(), message.trim());
+      const incident = await incidentsApi.declare(title.trim(), message.trim());
+      // The declaration is committed; a ticket that cannot be linked is reported, not retried silently.
+      const failed: TicketHit[] = [];
+      for (const hit of tickets) {
+        try {
+          await incidentsApi.linkTicket(incident.id, hit.id);
+        } catch {
+          failed.push(hit);
+        }
+      }
+      if (failed.length > 0) {
+        setUnlinked(failed);
+        return;
+      }
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
       setBusy(false);
     }
   };
+  if (unlinked.length > 0)
+    return (
+      <Dialog title={t('incidents.declare')} onClose={onDone}>
+        <Alert kind="warning">
+          {t('incidents.declare.unlinked', {
+            references: unlinked.map((hit) => hit.reference).join(', '),
+          })}
+        </Alert>
+        <div className="dialog-actions">
+          <Button variant="primary" onClick={onDone}>
+            {t('action.close')}
+          </Button>
+        </div>
+      </Dialog>
+    );
   return (
     <Dialog title={t('incidents.declare')} onClose={onClose}>
       <form className="form" onSubmit={(event) => void submit(event)}>
@@ -65,6 +97,14 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
           rows={4}
           required
           onChange={(event) => setMessage(event.target.value)}
+        />
+        <TicketPicker
+          label={t('incidents.declare.tickets')}
+          hint={t('incidents.declare.tickets.hint')}
+          multiple
+          selected={tickets}
+          disabled={busy}
+          onChange={setTickets}
         />
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>

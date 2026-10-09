@@ -11,8 +11,13 @@ registerErrorResolver((error) =>
   error.code.startsWith('organization.invalid_') ? 'error.invalidRequest' : undefined,
 );
 
+export type PersonHit = { id: string; displayName: string; department?: string };
+
 /** Users and Directory Groups (used by the shell, profile and subject pickers). */
 export const organizationApi = {
+  /** Colleague lookup for every signed-in person (min. 3 characters; 404 when switched off, 429 when too fast). */
+  lookupPeople: (q: string, signal?: Signal) =>
+    api.get<{ items: PersonHit[] }>('/people/lookup', { signal, query: { q } }),
   location: (id: string, signal?: Signal) => api.get<Location>(`/locations/${enc(id)}`, { signal }),
   user: (id: string, signal?: Signal) => api.get<User>(`/users/${enc(id)}`, { signal }),
   searchUsers: (q: string, signal?: Signal) =>

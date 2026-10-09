@@ -1,33 +1,72 @@
 import { UserAvailability } from '../presence/AvailabilityChip';
 import { SegmentedFilter } from '../../platform/ui/FilterBar';
 import { useMemo } from 'react';
-import { usePagedList } from '../../platform/api/useAsync';
 import { TableDate } from '../../platform/ui/TableDate';
 import { NavIcon } from '../../platform/ui/NavIcon';
 import { focusSummary } from './workModel';
 import { useI18n } from '../../platform/i18n/I18nProvider';
+import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link, navigate, useLocation } from '../../platform/router/Router';
 import { dayPart, greetingName } from '../../platform/session/identity';
 import { useSession } from '../../platform/session/SessionProvider';
+import { Badge } from '../../platform/ui/Alert';
 import { Button } from '../../platform/ui/Button';
 import { copyContextText, useContextMenu, type MenuItem } from '../../platform/ui/ContextMenu';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Card, EmptyState, MetricCard, Skeleton } from '../../platform/ui/Workspace';
-import { isOverdue } from '../tasks/actions';
-import { tasksApi } from '../tasks/api';
-import { StatusBadge } from '../tasks/TaskTable';
-import type { Task } from '../tasks/types';
+import { SourceNotice } from './SourceNotice';
+import { StatusBadge as TaskStatusBadge } from '../tasks/TaskTable';
+import type { TaskStatus } from '../tasks/types';
+import { TicketStatusBadge } from '../tickets/TicketsScreen';
+import { ticketStatuses, type TicketStatus } from '../tickets/types';
+import { workSources, type WorkItem } from './api';
+import {
+  countText,
+  isItemOverdue,
+  parseSourceFilter,
+  priorityOf,
+  sourceLabelKey,
+  totalOf,
+  type SourceFilter,
+} from './feedModel';
+import { useMyWorkFeed } from './useMyWorkFeed';
 
-const priorityRank: Record<Task['priority'], number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-export function prioritizeWork(items: readonly Task[]): Task[] {
+const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
+const taskStatuses: readonly string[] = [
+  'open',
+  'in_progress',
+  'blocked',
+  'completed',
+  'cancelled',
+];
+
+/** Urgent first, then the earlier due date. The server already merges in its shared order. */
+export function prioritizeWork<T extends Pick<WorkItem, 'priority' | 'dueAt'>>(
+  items: readonly T[],
+): T[] {
   return [...items].sort(
     (a, b) =>
-      priorityRank[a.priority] - priorityRank[b.priority] ||
+      priorityRank[priorityOf(a)] - priorityRank[priorityOf(b)] ||
       (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'),
   );
 }
 
-/** The shared Task queue remains the source of work; briefing entries remain linked read models. */
+const sourceCaption: Record<(typeof workSources)[number], MessageKey> = {
+  tickets: 'myWork.metric.ticketsCaption',
+  team_tickets: 'myWork.metric.teamTicketsCaption',
+  tasks: 'myWork.metric.tasksCaption',
+};
+
+function ItemStatus({ item }: { item: WorkItem }) {
+  const { t } = useI18n();
+  if (item.kind === 'ticket' && ticketStatuses.includes(item.status as TicketStatus))
+    return <TicketStatusBadge status={item.status as TicketStatus} />;
+  if (item.kind === 'task' && taskStatuses.includes(item.status))
+    return <TaskStatusBadge status={item.status as TaskStatus} />;
+  return <Badge tone="neutral">{item.status || t('myWork.statusUnknown')}</Badge>;
+}
+
+/** Tickets and tasks assigned to you, and tickets of your teams waiting to be picked up, in one list. */
 export function MyWorkScreen() {
   const { t } = useI18n();
   const { can, session } = useSession();
@@ -36,16 +75,19 @@ export function MyWorkScreen() {
   const greeting = name
     ? t(`overview.greeting.${part}`, { name })
     : t(`overview.greetingPlain.${part}`);
-  const list = usePagedList((cursor, signal) => tasksApi.myWork(cursor, signal), []);
   const { search } = useLocation();
-  const focus = new URLSearchParams(search).get('focus');
+  const params = new URLSearchParams(search);
+  const focus = params.get('focus');
   const shown = focus === 'high' || focus === 'urgent' || focus === 'overdue' ? focus : 'all';
+  const source: SourceFilter = parseSourceFilter(params.get('source'));
+  const feed = useMyWorkFeed(source);
+  const { list } = feed;
   const menu = useContextMenu();
   const now = new Date();
-  const ordered = useMemo(() => prioritizeWork(list.items), [list.items]);
-  const high = ordered.filter((task) => task.priority === 'high');
-  const critical = ordered.filter((task) => task.priority === 'urgent');
-  const overdue = ordered.filter((task) => isOverdue(task, now));
+  const ordered = useMemo(() => feed.items, [feed.items]);
+  const high = ordered.filter((item) => priorityOf(item) === 'high');
+  const critical = ordered.filter((item) => priorityOf(item) === 'urgent');
+  const overdue = ordered.filter((item) => isItemOverdue(item, now));
   const visible =
     shown === 'high'
       ? high
@@ -55,23 +97,41 @@ export function MyWorkScreen() {
           ? overdue
           : ordered;
   const summary = focusSummary(ordered, now);
+  const total = totalOf(feed.counts);
+  const countsKnown = feed.counts.size > 0;
+  const go = (nextSource: SourceFilter, nextFocus: string) => {
+    const next = new URLSearchParams();
+    if (nextSource !== 'all') next.set('source', nextSource);
+    if (nextFocus !== 'all') next.set('focus', nextFocus);
+    const text = next.toString();
+    navigate(text ? `/my-work?${text}` : '/my-work');
+  };
   const copy = async (value: string) => {
     if (!(await copyContextText(value))) window.prompt(t('contextMenu.copyFallback'), value);
   };
-  const actions = (task: Task): MenuItem[] => [
+  const actions = (item: WorkItem): MenuItem[] => [
     {
       id: 'open',
       label: t('contextMenu.open'),
-      onSelect: () => navigate(`/tasks/${encodeURIComponent(task.id)}`),
+      onSelect: () => navigate(item.href),
     },
+    ...(item.reference
+      ? [
+          {
+            id: 'copy-reference',
+            label: t('contextMenu.copyReference'),
+            onSelect: () => void copy(item.reference ?? ''),
+          },
+        ]
+      : []),
     {
       id: 'copy-link',
       label: t('contextMenu.copyLink'),
-      onSelect: () =>
-        void copy(new URL(`/tasks/${encodeURIComponent(task.id)}`, window.location.origin).href),
+      onSelect: () => void copy(new URL(item.href, window.location.origin).href),
     },
   ];
   const priorities = ['urgent', 'high', 'normal', 'low'] as const;
+  const loadingFirst = list.loading && !list.items.length;
   return (
     <div className="work-dashboard work-bench">
       <PageHeader
@@ -87,40 +147,56 @@ export function MyWorkScreen() {
         }
       />
       {session?.userId ? <UserAvailability userId={session.userId} /> : null}
-      {list.loading && !list.items.length ? (
+      {feed.countsLoading ? (
         <Skeleton lines={2} />
-      ) : !list.error ? (
+      ) : (
         <div
           className="workspace-metrics dashboard-metrics work-metrics"
           aria-label={t('overview.metrics')}
+          style={
+            {
+              '--metric-count': workSources.filter((key) => feed.counts.has(key)).length + 1,
+            } as never
+          }
         >
-          <MetricCard
-            label={t('myWork.loaded')}
-            value={ordered.length}
-            to="/my-work"
-            caption={t('overview.metric.openCaption')}
-            icon={<NavIcon id="myWork" />}
-          />
-          <MetricCard
-            label={t('overview.metric.overdue')}
-            value={overdue.length}
-            to="/my-work?focus=overdue"
-            tone="danger"
-            caption={t('overview.metric.overdueCaption')}
-            zeroCaption={t('overview.metric.overdueZero')}
-            icon={<NavIcon id="maintenanceCalendar" />}
-          />
-          <MetricCard
-            label={t('tasks.priority.urgent')}
-            value={critical.length}
-            to="/my-work?focus=urgent"
-            tone="warning"
-            caption={t('myWork.polish.priorityCaption')}
-            icon={<NavIcon id="tasks" />}
-          />
+          {workSources
+            .filter((key) => feed.counts.has(key))
+            .map((key) => {
+              const view = feed.counts.get(key);
+              return (
+                <MetricCard
+                  key={key}
+                  label={t(sourceLabelKey(key))}
+                  value={view?.count ?? 0}
+                  capped={view?.capped ?? false}
+                  {...(view?.unavailable ? { unavailable: t('myWork.countUnavailable') } : {})}
+                  to={`/my-work?source=${key}`}
+                  caption={t(sourceCaption[key])}
+                  icon={<NavIcon id={key === 'tasks' ? 'tasks' : 'myTickets'} />}
+                />
+              );
+            })}
+          {!list.error ? (
+            <MetricCard
+              label={t('overview.metric.overdue')}
+              value={overdue.length}
+              to="/my-work?focus=overdue"
+              tone="danger"
+              caption={t('myWork.metric.overdueCaption')}
+              zeroCaption={t('overview.metric.overdueZero')}
+              icon={<NavIcon id="maintenanceCalendar" />}
+            />
+          ) : null}
         </div>
+      )}
+      <p className="dashboard-scope">
+        {feed.countsError || (countsKnown && total.partial)
+          ? t('myWork.scopePartial')
+          : t('myWork.scope')}
+      </p>
+      {feed.unavailable.length > 0 ? (
+        <SourceNotice sources={feed.unavailable} onRetry={feed.reload} />
       ) : null}
-      <p className="dashboard-scope">{t('myWork.polish.scope')}</p>
       <div className="dashboard-columns">
         <div className="dashboard-primary">
           <Card title={t('myWork.queue')}>
@@ -134,9 +210,31 @@ export function MyWorkScreen() {
             </div>
             <div className="workspace-toolbar">
               <SegmentedFilter
+                label={t('myWork.sourceFilter')}
+                value={source}
+                onChange={(key) => go(parseSourceFilter(key), shown)}
+                options={[
+                  {
+                    value: 'all',
+                    label: t('myWork.source.all'),
+                    // A partial total is only a lower bound, so it is not shown as a number.
+                    ...(countsKnown && !total.unknown && !total.partial
+                      ? { count: `${total.value}${total.capped ? '+' : ''}` }
+                      : {}),
+                  },
+                  ...workSources
+                    .filter((key) => feed.counts.has(key))
+                    .map((key) => ({
+                      value: key,
+                      label: t(sourceLabelKey(key)),
+                      count: countText(feed.counts.get(key)),
+                    })),
+                ]}
+              />
+              <SegmentedFilter
                 label={t('myWork.filter')}
                 value={shown}
-                onChange={(key) => navigate(key === 'all' ? '/my-work' : `/my-work?focus=${key}`)}
+                onChange={(key) => go(source, key)}
                 options={(['all', 'high', 'urgent', 'overdue'] as const).map((key) => ({
                   value: key,
                   label: t(`myWork.filter.${key}`),
@@ -149,83 +247,106 @@ export function MyWorkScreen() {
                 }))}
               />
             </div>
-            {list.loading && !list.items.length ? <Skeleton lines={5} /> : null}
+            {loadingFirst ? <Skeleton lines={5} /> : null}
             {list.error ? (
               <p role="alert" className="workspace-source-notice">
-                {t('error.generic')} <Button onClick={list.reload}>{t('action.retry')}</Button>
+                {t('error.generic')} <Button onClick={feed.reload}>{t('action.retry')}</Button>
               </p>
             ) : null}
             {!list.loading && !list.error && visible.length === 0 ? (
-              <EmptyState title={shown === 'all' ? t('myWork.empty') : t('myWork.emptyFilter')} />
+              <EmptyState
+                title={
+                  shown === 'all' && feed.unavailable.length === 0
+                    ? t('myWork.empty')
+                    : shown === 'all'
+                      ? t('myWork.emptyPartial')
+                      : t('myWork.emptyFilter')
+                }
+              />
             ) : null}
             {visible.length ? (
               <ul className="work-list">
-                {visible.map((task) => (
-                  <li
-                    key={task.id}
-                    className={`work-row priority-${task.priority}`}
-                    tabIndex={0}
-                    onContextMenu={(event) => {
-                      if (
-                        (event.target as Element).closest('a,button') ||
-                        window.getSelection()?.toString()
-                      )
-                        return;
-                      event.preventDefault();
-                      menu.openAtPoint(
-                        actions(task),
-                        { x: event.clientX, y: event.clientY },
-                        event.currentTarget,
-                        t('contextMenu.actions'),
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
+                {visible.map((item) => {
+                  const priority = priorityOf(item);
+                  return (
+                    <li
+                      key={`${item.source}:${item.id}`}
+                      className={`work-row priority-${priority}`}
+                      tabIndex={0}
+                      onContextMenu={(event) => {
+                        if (
+                          (event.target as Element).closest('a,button') ||
+                          window.getSelection()?.toString()
+                        )
+                          return;
                         event.preventDefault();
-                        menu.openAtElement(
-                          actions(task),
+                        menu.openAtPoint(
+                          actions(item),
+                          { x: event.clientX, y: event.clientY },
                           event.currentTarget,
                           t('contextMenu.actions'),
                         );
-                      }
-                    }}
-                  >
-                    <span className="dashboard-icon" aria-hidden="true">
-                      <NavIcon id="tasks" />
-                    </span>
-                    <div className="work-row-body">
-                      <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
-                      <small>
-                        {task.assignedTeamName ?? t('dashboard.task')} ·{' '}
-                        {task.dueAt ? (
-                          <>
-                            {t('myWork.due')} <TableDate value={task.dueAt} />
-                          </>
-                        ) : (
-                          t('myWork.noDueDate')
-                        )}
-                      </small>
-                    </div>
-                    <span className={`priority-chip priority-chip-${task.priority}`}>
-                      {t(`tasks.priority.${task.priority}`)}
-                    </span>
-                    <StatusBadge status={task.status} />
-                    <Button
-                      type="button"
-                      className="table-actions-trigger"
-                      aria-label={`${t('contextMenu.actions')}: ${task.title}`}
-                      onClick={(event) =>
-                        menu.openAtElement(
-                          actions(task),
-                          event.currentTarget,
-                          t('contextMenu.actions'),
-                        )
-                      }
+                      }}
+                      onKeyDown={(event) => {
+                        if (
+                          (event.shiftKey && event.key === 'F10') ||
+                          event.key === 'ContextMenu'
+                        ) {
+                          event.preventDefault();
+                          menu.openAtElement(
+                            actions(item),
+                            event.currentTarget,
+                            t('contextMenu.actions'),
+                          );
+                        }
+                      }}
                     >
-                      ⋯
-                    </Button>
-                  </li>
-                ))}
+                      <span className="dashboard-icon" aria-hidden="true">
+                        <NavIcon id={item.kind === 'ticket' ? 'myTickets' : 'tasks'} />
+                      </span>
+                      <div className="work-row-body">
+                        <span className="work-row-title">
+                          {item.reference ? (
+                            <span className="incident-reference">{item.reference}</span>
+                          ) : null}
+                          <Link to={item.href}>{item.title}</Link>
+                        </span>
+                        <small>
+                          <span className="work-source-chip">{t(sourceLabelKey(item.source))}</span>{' '}
+                          ·{' '}
+                          {item.dueAt ? (
+                            <>
+                              {t('myWork.due')} <TableDate value={item.dueAt} />
+                            </>
+                          ) : (
+                            t('myWork.noDueDate')
+                          )}
+                          {item.waitingReason
+                            ? ` · ${t(`tickets.waiting.${item.waitingReason}` as MessageKey)}`
+                            : ''}
+                        </small>
+                      </div>
+                      <span className={`priority-chip priority-chip-${priority}`}>
+                        {t(`tasks.priority.${priority}`)}
+                      </span>
+                      <ItemStatus item={item} />
+                      <Button
+                        type="button"
+                        className="table-actions-trigger"
+                        aria-label={`${t('contextMenu.actions')}: ${item.title}`}
+                        onClick={(event) =>
+                          menu.openAtElement(
+                            actions(item),
+                            event.currentTarget,
+                            t('contextMenu.actions'),
+                          )
+                        }
+                      >
+                        ⋯
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
             {list.hasMore ? (
@@ -247,7 +368,7 @@ export function MyWorkScreen() {
           </Card>
         </div>
         <aside className="dashboard-context" aria-label={t('myWork.focus')}>
-          {list.loading && !list.items.length ? (
+          {loadingFirst ? (
             <Skeleton lines={4} />
           ) : !list.error ? (
             <>
@@ -279,10 +400,10 @@ export function MyWorkScreen() {
                 <h2>{t('myWork.dueSoon')}</h2>
                 {summary.dueSoon.length ? (
                   <ul>
-                    {summary.dueSoon.map((task) => (
-                      <li key={task.id}>
-                        <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
-                        <TableDate value={task.dueAt} />
+                    {summary.dueSoon.map((item) => (
+                      <li key={`${item.source}:${item.id}`}>
+                        <Link to={item.href}>{item.title}</Link>
+                        <TableDate value={item.dueAt} />
                       </li>
                     ))}
                   </ul>

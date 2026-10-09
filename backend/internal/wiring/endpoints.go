@@ -132,7 +132,7 @@ func Endpoints(pool *pgxpool.Pool, provider intune.Provider, syncEnabled bool, s
 	approvals := deploymentApprovals{a: approvalspublic.New(approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(org), nil))}
 	approvers := deploymentApprovers{perms: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)), teams: orgpublic.NewWorkDirectory(org)}
 	return endpointsapp.NewService(endpointsrepository.New(pool), assetLookup{assets}, provider, syncEnabled, nil).
-		WithViews(dir, assets).WithSoftware(software, softwareSync).
+		WithQueryEngine(QueryEngine(pool)).WithViews(dir, assets).WithSoftware(software, softwareSync).
 		WithDeployments(approvals, changeWindows{c: changespublic.NewChanges(Changes(pool))}, assets).
 		WithDeploymentApprovers(approvers).
 		WithSecurity(deploymentSecurity{a: securitypublic.NewAdvisories(Security(pool))})

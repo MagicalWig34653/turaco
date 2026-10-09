@@ -80,6 +80,12 @@ func (services) Lookup(_ context.Context, ids []string) (map[string]application.
 	}
 	return out, nil
 }
+func (services) Search(_ context.Context, text string, _ int) ([]application.LookupHit, error) {
+	if strings.Contains("http-service", strings.ToLower(text)) {
+		return []application.LookupHit{{Type: "service", ID: svcID, Reference: "SVC-000001", Name: "http-service", Detail: "high"}}, nil
+	}
+	return nil, nil
+}
 func (services) Impact(_ context.Context, _ application.Principal, t, id string, _ int) (application.Impact, error) {
 	return application.Impact{Type: t, ID: id}, nil
 }
@@ -336,3 +342,53 @@ func TestHTTPLifecycleAndAccess(t *testing.T) {
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
 func mustJSON(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+func TestSubmitErrorNamesTheMissingFieldsAndTheLookupFindsResources(t *testing.T) {
+	h := serve(t, as(manager, "changes.manage", "services.view"))
+	code, body := do(t, h, "POST", "/api/v1/changes", `{"title":"http-wizard","kind":"normal","risk":"medium"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %v", code, body)
+	}
+	id, _ := body["id"].(string)
+	// A draft without window, rollback plan and affected resource names every missing field at once.
+	code, body = do(t, h, "POST", "/api/v1/changes/"+id+"/submit", `{"expectedVersion":1}`)
+	if code != http.StatusBadRequest || errCode(body) != "changes.invalid_request" {
+		t.Fatalf("submit = %d %v", code, body)
+	}
+	e, _ := body["error"].(map[string]any)
+	details, _ := e["details"].(map[string]any)
+	fields, _ := details["fields"].([]any)
+	got := map[string]bool{}
+	for _, f := range fields {
+		m, _ := f.(map[string]any)
+		got[m["field"].(string)] = m["code"] == "required"
+	}
+	if !got["affectedResources"] || !got["windowStart"] || !got["rollbackPlan"] {
+		t.Errorf("details.fields = %v", fields)
+	}
+	if msg, _ := e["message"].(string); !strings.Contains(msg, "affected resource") {
+		t.Errorf("message = %q", msg)
+	}
+	// The lookup finds the service, refuses a bad request, and a caller who may not see services learns nothing.
+	code, body = do(t, h, "GET", "/api/v1/changes/affected-lookup?type=service&q=HTTP", "")
+	items, _ := body["items"].([]any)
+	if code != http.StatusOK || len(items) != 1 {
+		t.Fatalf("lookup = %d %v", code, body)
+	}
+	if code, body := do(t, h, "GET", "/api/v1/changes/affected-lookup?type=bogus&q=x", ""); code != http.StatusBadRequest {
+		t.Errorf("unknown type = %d %v", code, body)
+	}
+	if code, _ := do(t, h, "GET", "/api/v1/changes/affected-lookup?type=service", ""); code != http.StatusBadRequest {
+		t.Errorf("missing q = %d", code)
+	}
+	if code, _ := do(t, h, "GET", "/api/v1/changes/affected-lookup?type=asset&q=ws", ""); code != http.StatusOK {
+		t.Errorf("asset lookup without assets.view = %d", code)
+	}
+	hBlind := serve(t, as(manager, "changes.manage"))
+	if code, body := do(t, hBlind, "GET", "/api/v1/changes/affected-lookup?type=service&q=http", ""); code != http.StatusOK || len(body["items"].([]any)) != 0 {
+		t.Errorf("a caller without services.view must get nothing: %d %v", code, body)
+	}
+	if code, _ := do(t, serve(t, as(outsider, "changes.view")), "GET", "/api/v1/changes/affected-lookup?type=service&q=http", ""); code != http.StatusForbidden {
+		t.Errorf("lookup without changes.manage = %d", code)
+	}
+}

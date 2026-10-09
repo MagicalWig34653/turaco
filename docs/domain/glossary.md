@@ -13,8 +13,14 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Directory Group Membership** — observed User/Device membership in a Directory Group with source/freshness, kept as interval history; dynamic-group rule evaluation stays with the provider unless explicitly supported.
 - **Directory Group Nesting** — observed direct membership of one Directory Group in another, kept as interval history; transitive membership is derived, not stored.
 - **Directory Sync Run** — one execution of directory synchronization for one provider, with outcome, counts and conflicts; the provenance record for directory observations.
-- **Department** — organizational business unit.
-- **Location** — organizational/support/inventory location, distinct from physical infrastructure Site.
+- **Department** — organizational business unit; a tree with a code, maintained in Turaco (F14).
+- **Location** — organizational/support/inventory location, distinct from physical infrastructure Site. A tree of two kinds: `site` (root) and `area` (below, up to four levels), maintained in Turaco (F14).
+- **Field Owner** — who maintains a User attribute: the directory (read-only in Turaco for directory-origin Users) or the platform (editable).
+- **Local Account** — a User created in Turaco without a directory account who signs in with email and a password they set through a single-use Credential Token (ADR-0034); distinct from the emergency (break-glass) account.
+- **Credential Token** — single-use invitation or reset token of a Local Account (256 bit, only its hash stored, 7 days or 24 hours).
+- **Role Template** — built-in permission list shipped as data and copied into an ordinary role that records `templateKey` and `templateVersion`; never updates the role.
+- **Separation-of-Duties Rule** — a pair of permission sets that should not be held together; violating it is a warning that needs an acknowledgement with a reason.
+- **Dominance rule** — an actor may reset, invite, change the email of, deactivate, reactivate or depart an account only as platform administrator or when holding every effective permission of that account.
 - **Cost Center** — accounting/organizational allocation.
 
 ## Products, assets and devices
@@ -41,6 +47,17 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Supplier** — organization goods/services are purchased from.
 
 ## Service management
+- **Field Catalog** — module-declared list fields and their caller-visible filter, sort and search operators; SQL expressions stay server-owned.
+- **Filter AST** — versioned tree of conditions and AND/OR groups evaluated under the caller's resource scope.
+- **Saved View** — stored query intent (Filter AST, sort, columns) of one resource with an owner and a version; never results and never a grant of row access: it always runs as the viewer, through the owning module's query endpoint (`platform/views`, F13 Q-B).
+- **View Share** — explicit, revocable access to a Saved View for a User, Team, role or everyone at level `use` or `edit`; resolved at read time; grants no data access.
+- **Board** — Task Board (Kanban): a Saved View over Tasks plus ordered columns that each map to one Task status (optional soft WIP limit) and per-board card ranks; sharing is the View's; a card move runs the existing Task lifecycle operation with a mandatory `expectedVersion`, never a status write (`tasks` module, F13 Q-D).
+- **Pin** — personal sidebar placement of a Saved View (group, position, hidden).
+- **Pin Rule** — Team- or role-wide Pin created with `views.pin_for_groups`; shows the View only to members who may use it and grants no access; a member can hide it for themselves.
+- **Ticket Queue** — a Service Desk desk (IT, HR, Facility) with a frozen key and prefix, its own committed number counter, explicit grants (`create`, `view`, `work`, `manage`) and a visibility (`internal`, `public`); every Ticket belongs to exactly one. Distinct from a Saved View and from the routing Team (`routing_team`), which only hints who handles a Ticket inside its desk.
+- **Reference alias** — an earlier display number of a Ticket (it got a new one when it moved to another Queue); always resolves to the Ticket, never reissued, shown only to callers who may know the Queue it was issued from.
+- **System View** — a built-in, per-caller View definition offered by a module (Tickets: My open tickets, Unassigned, one per viewed Queue); cannot be edited or shared, runs through the views engine as the viewer.
+- **Work Item source** — a module's contribution to My Work (`platform/workitems`): authorizes every item and its count for the caller, returns items in the shared order and runs only while its module is on.
 - **Ticket** — generic tracked support record; employee UI should use friendlier language.
 - **Incident** — unplanned interruption/degradation/malfunction.
 - **Service Request** — structured request to provide/change/grant something.
@@ -157,7 +174,6 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Impact** — the bounded set of records affected if a record is down (downstream: its dependents) or that it depends on (upstream), found by walking current Relationships up to depth 6 and 500 records; the result says when it was truncated.
 - **Event** — business fact that happened; past-tense name.
 - **Audit Event** — immutable security/compliance record of action/state transition.
-- **Saved View** — reusable query/filter/presentation.
 - **Role** — named set of permissions; custom, or the built-in immutable `platform-administrator` holding all permissions. Not a Team and not an Assignment of work.
 - **Role Assignment** — grant of a Role to a User or a Directory Group within a scope (currently only `global`); revoked assignments are kept as history.
 - **Emergency Account** — local break-glass login for a dedicated User when directory login is unavailable; disabled by default and managed only by the operator CLI.

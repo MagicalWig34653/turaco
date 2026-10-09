@@ -31,6 +31,7 @@ const paths: Partial<Record<RouteId, string>> = {
   procurementRequests: 'M4 5h16v14H4zM8 9h8m-8 4h8m-8 3h4',
   suppliers: 'M3 21V8l6-4v17m0-12 6-4v16m0-12 6-3v15M5 12h2m4 0h2m4 0h2',
   ticketQueue: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM12 5v14',
+  ticketQueues: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM8 9h8M8 12h8M8 15h5',
   problems: 'M12 3a8 8 0 0 0-5 14v4h10v-4a8 8 0 0 0-5-14ZM9 21h6M12 7v5m0 3v1',
   runbooks: 'M4 4h16v16H4zM8 9h8M8 13h8M8 17h5',
   devices: 'M3 5h18v12H3zM9 21h6m-3-4v4',

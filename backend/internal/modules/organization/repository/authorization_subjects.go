@@ -34,6 +34,29 @@ func (r *Repository) GroupIDsOfUser(ctx context.Context, userID string) ([]strin
 	return collectStrings(rows, "group ids of user")
 }
 
+// GroupMemberUserIDs expands the groups over currently observed nesting to child groups and returns the
+// currently observed members, ordered by id.
+func (r *Repository) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH RECURSIVE g(id) AS (
+			SELECT dg.id FROM organization.directory_groups dg
+			WHERE dg.id = ANY($1::text[]::uuid[]) AND dg.deleted_observed_at IS NULL
+			UNION
+			SELECT n.child_group_id
+			FROM g
+			JOIN organization.directory_group_nesting n ON n.parent_group_id = g.id AND n.observed_until IS NULL
+			JOIN organization.directory_groups cg ON cg.id = n.child_group_id AND cg.deleted_observed_at IS NULL
+		)
+		SELECT DISTINCT m.user_id::text
+		FROM organization.directory_group_memberships m JOIN g ON g.id = m.group_id
+		WHERE m.observed_until IS NULL
+		ORDER BY 1 LIMIT $2`, groupIDs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("group member user ids: %w", err)
+	}
+	return collectStrings(rows, "group member user ids")
+}
+
 func collectStrings(rows pgx.Rows, what string) ([]string, error) {
 	defer rows.Close()
 	out := []string{}
@@ -133,4 +156,52 @@ func (r *Repository) UserByEmail(ctx context.Context, email string) (string, boo
 		return "", false, fmt.Errorf("user by email: %w", err)
 	}
 	return id, true, nil
+}
+
+// ActiveEmployees returns id -> true for each id that is an active internal employee account (not external, not the
+// emergency account). Used where a person may name another person without directory permissions (on-behalf tickets).
+func (r *Repository) ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND status = 'active' AND account_kind = 'employee' AND origin <> 'emergency'`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("active employees: %w", err)
+	}
+	active, err := collectStrings(rows, "active employees")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(active))
+	for _, id := range active {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// PrimaryLocationIDs returns user id -> primary Location id for Users that have one.
+func (r *Repository) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, primary_location_id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND primary_location_id IS NOT NULL`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("primary locations: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, loc string
+		if err := rows.Scan(&id, &loc); err != nil {
+			return nil, fmt.Errorf("primary locations: scan: %w", err)
+		}
+		out[id] = loc
+	}
+	return out, rows.Err()
+}
+
+// SearchUserIDs returns the ids of up to limit Users (any status) whose display name or e-mail contains text, by
+// name. The text is escaped; the trigram indexes serve texts of 3 or more characters.
+func (r *Repository) SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM organization.users
+		WHERE display_name ILIKE '%' || $1 || '%' OR primary_email ILIKE '%' || $1 || '%' ORDER BY display_name, id LIMIT $2`, prefixPattern(text), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search users: %w", err)
+	}
+	return collectStrings(rows, "search users")
 }

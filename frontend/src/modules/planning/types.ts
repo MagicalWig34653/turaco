@@ -131,6 +131,8 @@ export type CalendarEntry = {
   kind: string | null;
   risk: string | null;
   status: string;
+  /** True while the Change is submitted but not approved: the window may still change. */
+  proposed?: boolean;
   windowStart: string;
   windowEnd: string;
   affected: CalendarAffected[];

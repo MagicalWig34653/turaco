@@ -1,0 +1,61 @@
+/* Maintenance calendar: firm windows are solid, proposed windows are dashed and hatched. */
+.calendar-entries {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.calendar-entry {
+  padding: 10px 14px;
+  border: 1px solid var(--border-token);
+  border-inline-start: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.calendar-entry p {
+  margin: 4px 0 0;
+}
+.calendar-entry-proposed {
+  border-style: dashed;
+  border-inline-start-style: dashed;
+  border-inline-start-color: var(--state-info);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 8px,
+    var(--state-info-bg) 8px 10px
+  );
+}
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+}
+.calendar-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.calendar-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 14px;
+  border: 1px solid var(--border-token);
+  border-inline-start: 4px solid var(--accent);
+  border-radius: 2px;
+  background: var(--surface-raised);
+}
+.calendar-swatch-proposed {
+  border-style: dashed;
+  border-inline-start-color: var(--state-info);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 4px,
+    var(--state-info-bg) 4px 6px
+  );
+}

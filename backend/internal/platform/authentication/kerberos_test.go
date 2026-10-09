@@ -116,15 +116,15 @@ func TestKerberosMethodsReportsAvailability(t *testing.T) {
 	f, _ := newKerberosFixture(t)
 	rec := httptest.NewRecorder()
 	f.handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/auth/methods", nil))
-	if body := strings.TrimSpace(rec.Body.String()); body != `{"emergency":false,"kerberos":true,"password":true}` {
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"emergency":false,"kerberos":true,"local":false,"password":true}` {
 		t.Fatalf("methods = %s", body)
 	}
 	// Kerberos does not need the password verifier.
 	f2, _ := newKerberosFixture(t, withoutPasswordLogin())
 	rec = httptest.NewRecorder()
 	f2.handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/auth/methods", nil))
-	if body := strings.TrimSpace(rec.Body.String()); body != `{"emergency":false,"kerberos":true,"password":true}` &&
-		body != `{"emergency":false,"kerberos":true,"password":false}` {
+	if body := strings.TrimSpace(rec.Body.String()); body != `{"emergency":false,"kerberos":true,"local":false,"password":true}` &&
+		body != `{"emergency":false,"kerberos":true,"local":false,"password":false}` {
 		t.Fatalf("methods = %s", body)
 	}
 }

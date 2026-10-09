@@ -20,12 +20,17 @@ import (
 // master data and example catalog items through the same audited application
 // operations as the API. It is for local test instances only and refuses to
 // run unless APP_ENV=development. It is idempotent.
+//
+// "demo seed-hospital" additionally creates the hospital IT simulation (docs/development/simulation-hospital.md).
 func runDemo(ctx context.Context, e env, command string, args []string) error {
-	if command != "seed" || len(args) != 0 {
+	if (command != "seed" && command != "seed-hospital") || len(args) != 0 {
 		return errUsage
 	}
 	if e.cfg.Environment != "development" {
-		return fmt.Errorf("demo seed runs only with APP_ENV=development (APP_ENV is %q)", e.cfg.Environment)
+		return fmt.Errorf("demo %s runs only with APP_ENV=development (APP_ENV is %q)", command, e.cfg.Environment)
+	}
+	if command == "seed-hospital" {
+		return seedHospital(ctx, e)
 	}
 	return seedDemo(ctx, e)
 }
@@ -38,25 +43,30 @@ type demoSeeder struct {
 	cc       catalogapp.Caller
 }
 
-func seedDemo(ctx context.Context, e env) error {
+// newDemoSeeder wires the services of the seeders; correlationID tags every audit entry of the run.
+func newDemoSeeder(e env, correlationID string) *demoSeeder {
 	productsRepo := productsrepository.New(e.pool)
-	d := &demoSeeder{
+	return &demoSeeder{
 		e:        e,
 		products: productsapp.NewService(productsRepo),
 		catalog: catalogapp.NewService(catalogrepository.New(e.pool), orgpublic.NewWorkDirectory(orgrepo.New(e.pool)),
 			catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))),
-		pc: productsapp.Caller{Actor: e.auditActor(), CorrelationID: "demo-seed"},
-		cc: catalogapp.Caller{Actor: e.auditActor(), CorrelationID: "demo-seed"},
+		pc: productsapp.Caller{Actor: e.auditActor(), CorrelationID: correlationID},
+		cc: catalogapp.Caller{Actor: e.auditActor(), CorrelationID: correlationID},
 	}
-	laptops, err := d.category(ctx, "Notebooks")
+}
+
+func seedDemo(ctx context.Context, e env) error {
+	d := newDemoSeeder(e, "demo-seed")
+	laptops, err := d.category(ctx, "Notebooks", "")
 	if err != nil {
 		return err
 	}
-	monitors, err := d.category(ctx, "Monitors")
+	monitors, err := d.category(ctx, "Monitore", "Monitors")
 	if err != nil {
 		return err
 	}
-	peripherals, err := d.category(ctx, "Peripherals")
+	peripherals, err := d.category(ctx, "Peripherie", "Peripherals")
 	if err != nil {
 		return err
 	}
@@ -65,17 +75,18 @@ func seedDemo(ctx context.Context, e env) error {
 		return err
 	}
 	ids := map[string]string{}
+	// The product names are German; legacy is the English name an earlier seed run used (renamed in place).
 	for _, p := range []struct {
-		name, mpn, ipn, category string
-		serialized, asset        bool
+		name, legacy, mpn, ipn, category string
+		serialized, asset                bool
 	}{
-		{"Business notebook 14\"", "EH-NB-14", "NB-14", laptops, true, true},
-		{"Business notebook 16\"", "EH-NB-16", "NB-16", laptops, true, true},
-		{"Monitor 27\"", "EH-MON-27", "MON-27", monitors, true, true},
-		{"Docking station", "EH-DOCK", "DOCK-1", peripherals, true, true},
-		{"Wireless mouse", "EH-MOUSE", "MOUSE-1", peripherals, false, false},
+		{"Business-Notebook 14\"", "Business notebook 14\"", "EH-NB-14", "NB-14", laptops, true, true},
+		{"Business-Notebook 16\"", "Business notebook 16\"", "EH-NB-16", "NB-16", laptops, true, true},
+		{"Monitor 27\"", "", "EH-MON-27", "MON-27", monitors, true, true},
+		{"Dockingstation", "Docking station", "EH-DOCK", "DOCK-1", peripherals, true, true},
+		{"Kabellose Maus", "Wireless mouse", "EH-MOUSE", "MOUSE-1", peripherals, false, false},
 	} {
-		id, err := d.product(ctx, vendor, p.category, p.name, p.mpn, p.ipn, p.serialized, p.asset)
+		id, err := d.product(ctx, vendor, p.category, p.name, p.legacy, p.mpn, p.ipn, p.serialized, p.asset)
 		if err != nil {
 			return err
 		}
@@ -118,7 +129,23 @@ func (d *demoSeeder) manufacturer(ctx context.Context, name string) (string, err
 	return m.ID, err
 }
 
-func (d *demoSeeder) category(ctx context.Context, name string) (string, error) {
+// category returns the category of that name. legacy is the English name an earlier seed run used: that category is
+// renamed in place instead of creating a second one.
+func (d *demoSeeder) category(ctx context.Context, name, legacy string) (string, error) {
+	if legacy != "" {
+		list, err := d.products.ListCategories(ctx, d.manage(), legacy, productsapp.Page{Limit: 50})
+		if err != nil {
+			return "", err
+		}
+		for _, x := range list.Items {
+			if x.Name == legacy && x.ParentID == nil {
+				if _, err := d.products.RenameCategory(ctx, d.pc, d.manage(), x.ID, x.Version, name); err != nil && !errors.Is(err, productsapp.ErrConflict) {
+					return "", err
+				}
+				return x.ID, nil
+			}
+		}
+	}
 	c, err := d.products.CreateCategory(ctx, d.pc, d.manage(), name, nil)
 	if errors.Is(err, productsapp.ErrConflict) {
 		list, lerr := d.products.ListCategories(ctx, d.manage(), name, productsapp.Page{Limit: 50})
@@ -135,7 +162,21 @@ func (d *demoSeeder) category(ctx context.Context, name string) (string, error) 
 }
 
 // product creates a product or returns the existing one of that name.
-func (d *demoSeeder) product(ctx context.Context, manufacturerID, categoryID, name, mpn, ipn string, serialized, asset bool) (string, error) {
+func (d *demoSeeder) product(ctx context.Context, manufacturerID, categoryID, name, legacy, mpn, ipn string, serialized, asset bool) (string, error) {
+	if legacy != "" {
+		list, err := d.products.ListProducts(ctx, d.manage(), productsapp.ProductFilter{TitlePrefix: legacy, Page: productsapp.Page{Limit: 50}})
+		if err != nil {
+			return "", err
+		}
+		for _, x := range list.Items {
+			if x.Name == legacy {
+				if _, err := d.products.UpdateProduct(ctx, d.pc, d.manage(), x.ID, x.Version, productsapp.UpdateProductInput{Name: &name}); err != nil {
+					return "", err
+				}
+				return x.ID, nil
+			}
+		}
+	}
 	stock := !serialized
 	p, err := d.products.CreateProduct(ctx, d.pc, d.manage(), productsapp.ProductInput{
 		Name: name, ManufacturerID: &manufacturerID, CategoryID: &categoryID,
@@ -161,13 +202,99 @@ func (d *demoSeeder) item(ctx context.Context, it demoItem) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	_, err = d.catalog.Create(ctx, d.cc, catalogapp.Principal{Manage: true}, catalogapp.CreateInput{
+	p := catalogapp.Principal{Manage: true}
+	_, err = d.catalog.Create(ctx, d.cc, p, catalogapp.CreateInput{
 		Key: it.Key, Title: it.Title, Description: it.Description, Definition: raw,
 	})
 	if errors.Is(err, catalogapp.ErrConflict) {
-		return false, nil
+		// The item exists from an earlier run: bring its texts (and form) up to date, e.g. the German translation.
+		return false, d.refreshItem(ctx, p, it, raw)
 	}
 	return err == nil, err
+}
+
+// itemByKey finds a catalog item by its key (all statuses).
+func (d *demoSeeder) itemByKey(ctx context.Context, p catalogapp.Principal, key string) (catalogapp.Item, bool, error) {
+	page := catalogapp.Page{Limit: 100}
+	for {
+		res, err := d.catalog.List(ctx, p, "", page)
+		if err != nil {
+			return catalogapp.Item{}, false, err
+		}
+		for _, x := range res.Items {
+			if x.Key == key {
+				return x, true, nil
+			}
+		}
+		if res.NextCursor == "" {
+			return catalogapp.Item{}, false, nil
+		}
+		page.Cursor = res.NextCursor
+	}
+}
+
+// refreshItem updates an existing item when its title, description or definition differs from the seed's.
+func (d *demoSeeder) refreshItem(ctx context.Context, p catalogapp.Principal, it demoItem, raw []byte) error {
+	cur, ok, err := d.itemByKey(ctx, p, it.Key)
+	if err != nil || !ok {
+		return err
+	}
+	want, err := catalogapp.ParseDefinition(raw)
+	if err != nil {
+		return err
+	}
+	// Keep a fallback Team set by another seed step: it is not part of the base definition.
+	for i := range want.Approvals {
+		if i < len(cur.Definition.Approvals) && want.Approvals[i].FallbackTeamID == nil {
+			want.Approvals[i].FallbackTeamID = cur.Definition.Approvals[i].FallbackTeamID
+		}
+	}
+	wantRaw, err := want.Marshal()
+	if err != nil {
+		return err
+	}
+	curRaw, err := cur.Definition.Marshal()
+	if err != nil {
+		return err
+	}
+	if cur.Title == it.Title && cur.Description == it.Description && string(curRaw) == string(wantRaw) {
+		return nil
+	}
+	_, err = d.catalog.Update(ctx, d.cc, p, cur.ID, cur.Version, catalogapp.UpdateInput{Title: &it.Title, Description: &it.Description, Definition: wantRaw})
+	return err
+}
+
+// setManagerFallback lets the manager approval steps of the items fall back to a Team when the requested-for person has
+// no manager (or the manager may not decide), so a request never dead-ends.
+func (d *demoSeeder) setManagerFallback(ctx context.Context, keys []string, teamID string) error {
+	p := catalogapp.Principal{Manage: true}
+	for _, key := range keys {
+		cur, ok, err := d.itemByKey(ctx, p, key)
+		if err != nil || !ok {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		def := cur.Definition
+		changed := false
+		for i := range def.Approvals {
+			if def.Approvals[i].Approver == "manager" && (def.Approvals[i].FallbackTeamID == nil || *def.Approvals[i].FallbackTeamID != teamID) {
+				def.Approvals[i].FallbackTeamID, changed = &teamID, true
+			}
+		}
+		if !changed {
+			continue
+		}
+		raw, err := def.Marshal()
+		if err != nil {
+			return err
+		}
+		if _, err := d.catalog.Update(ctx, d.cc, p, cur.ID, cur.Version, catalogapp.UpdateInput{Definition: raw}); err != nil {
+			return fmt.Errorf("fallback of %s: %w", key, err)
+		}
+	}
+	return nil
 }
 
 type demoItem struct {
@@ -179,75 +306,75 @@ type demoItem struct {
 // the requested-for User's manager; fulfillment tasks are unassigned so any task manager can pick
 // them up. Teams and approvers are environment specific, so a real catalog sets them explicitly.
 func demoItems(laptops, monitors, peripherals string) []demoItem {
-	reason := map[string]any{"key": "reason", "type": "longtext", "label": "Business reason", "required": true, "maxLength": 1000}
+	reason := map[string]any{"key": "reason", "type": "longtext", "label": "Begründung", "required": true, "maxLength": 1000}
 	manager := []map[string]any{{"approver": "manager"}}
 	return []demoItem{
 		{
-			Key: "hardware-notebook", Title: "Notebook", Description: "Request a notebook for yourself or a colleague.",
+			Key: "hardware-notebook", Title: "Notebook", Description: "Ein Notebook für sich selbst oder für eine Kollegin bzw. einen Kollegen beantragen.",
 			Definition: map[string]any{
 				"allowRequestedFor": true,
 				"fields": []map[string]any{
-					{"key": "model", "type": "product", "label": "Model", "required": true, "categoryId": laptops},
+					{"key": "model", "type": "product", "label": "Modell", "required": true, "categoryId": laptops},
 					reason,
 				},
 				"approvals": manager,
 				"fulfillment": []map[string]any{
-					{"title": "Prepare and image the notebook", "priority": "normal", "dueAfterHours": 72},
-					{"title": "Hand over the notebook", "priority": "normal", "dueAfterHours": 120},
+					{"title": "Notebook vorbereiten und installieren", "priority": "normal", "dueAfterHours": 72},
+					{"title": "Notebook übergeben", "priority": "normal", "dueAfterHours": 120},
 				},
 			},
 		},
 		{
-			Key: "software-request", Title: "Software", Description: "Request an application that is not part of the standard setup.",
+			Key: "software-request", Title: "Software", Description: "Eine Anwendung beantragen, die nicht zur Standardausstattung gehört.",
 			Definition: map[string]any{
 				"fields": []map[string]any{
-					{"key": "software", "type": "text", "label": "Software name", "required": true, "maxLength": 200},
-					{"key": "licence", "type": "select", "label": "Licence", "required": true, "options": []map[string]any{
-						{"value": "free", "label": "Free or open source"},
-						{"value": "paid", "label": "Paid licence"},
+					{"key": "software", "type": "text", "label": "Name der Software", "required": true, "maxLength": 200},
+					{"key": "licence", "type": "select", "label": "Lizenz", "required": true, "options": []map[string]any{
+						{"value": "free", "label": "Kostenlos oder Open Source"},
+						{"value": "paid", "label": "Kostenpflichtige Lizenz"},
 					}},
 					reason,
 				},
 				"approvals": manager,
 				"fulfillment": []map[string]any{
-					{"title": "Check licence and security of the software", "priority": "normal"},
-					{"title": "Install the software", "priority": "normal"},
+					{"title": "Lizenz und Sicherheit der Software prüfen", "priority": "normal"},
+					{"title": "Software installieren", "priority": "normal"},
 				},
 			},
 		},
 		{
-			Key: "access-request", Title: "System access", Description: "Request access to an application or a share.",
+			Key: "access-request", Title: "Systemzugang", Description: "Zugriff auf eine Anwendung oder ein Laufwerk beantragen.",
 			Definition: map[string]any{
 				"allowRequestedFor": true,
 				"fields": []map[string]any{
-					{"key": "system", "type": "text", "label": "System or share", "required": true, "maxLength": 200},
-					{"key": "level", "type": "select", "label": "Access level", "required": true, "options": []map[string]any{
-						{"value": "read", "label": "Read"},
-						{"value": "write", "label": "Write"},
+					{"key": "system", "type": "text", "label": "System oder Laufwerk", "required": true, "maxLength": 200},
+					{"key": "level", "type": "select", "label": "Zugriffsstufe", "required": true, "options": []map[string]any{
+						{"value": "read", "label": "Lesen"},
+						{"value": "write", "label": "Schreiben"},
 					}},
 					reason,
 				},
 				"approvals":   manager,
-				"fulfillment": []map[string]any{{"title": "Grant the access", "priority": "high", "dueAfterHours": 24}},
+				"fulfillment": []map[string]any{{"title": "Zugriff einrichten", "priority": "high", "dueAfterHours": 24}},
 			},
 		},
 		{
-			Key: "new-workplace", Title: "New workplace", Description: "Everything a new colleague needs on the first day.",
+			Key: "new-workplace", Title: "Neuer Arbeitsplatz", Description: "Alles, was eine neue Kollegin oder ein neuer Kollege am ersten Tag braucht.",
 			Definition: map[string]any{
 				"allowRequestedFor": true,
 				"fields": []map[string]any{
-					{"key": "startDate", "type": "date", "label": "First day", "required": true},
+					{"key": "startDate", "type": "date", "label": "Erster Arbeitstag", "required": true},
 					{"key": "notebook", "type": "product", "label": "Notebook", "required": true, "categoryId": laptops},
 					{"key": "monitor", "type": "product", "label": "Monitor", "required": false, "categoryId": monitors},
-					{"key": "peripheral", "type": "product", "label": "Mouse or dock", "required": false, "categoryId": peripherals},
-					{"key": "remarks", "type": "longtext", "label": "Remarks", "required": false, "maxLength": 1000},
+					{"key": "peripheral", "type": "product", "label": "Maus oder Dockingstation", "required": false, "categoryId": peripherals},
+					{"key": "remarks", "type": "longtext", "label": "Anmerkungen", "required": false, "maxLength": 1000},
 				},
 				"approvals": manager,
 				"fulfillment": []map[string]any{
-					{"title": "Prepare the notebook", "priority": "normal", "dueAfterHours": 72},
-					{"title": "Set up the monitor and peripherals", "priority": "normal", "mandatory": false},
-					{"title": "Create accounts and mailbox", "priority": "high", "dueAfterHours": 48},
-					{"title": "Welcome the colleague and hand over the equipment", "priority": "normal", "dueAfterHours": 120},
+					{"title": "Notebook vorbereiten", "priority": "normal", "dueAfterHours": 72},
+					{"title": "Monitor und Peripherie einrichten", "priority": "normal", "mandatory": false},
+					{"title": "Konten und Postfach anlegen", "priority": "high", "dueAfterHours": 48},
+					{"title": "Neue Kollegin bzw. neuen Kollegen begrüßen und Ausstattung übergeben", "priority": "normal", "dueAfterHours": 120},
 				},
 			},
 		},

@@ -1044,3 +1044,18 @@ html[data-motion='reduced'] .turaco-theme-toggle:active,
 html[data-motion='reduced'] .turaco-brand-mark:hover {
   transform: none;
 }
+
+/* Object results (tickets) sit under their own heading inside the same listbox. */
+.turaco-command-group {
+  padding: 8px 12px 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.turaco-command-status {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}

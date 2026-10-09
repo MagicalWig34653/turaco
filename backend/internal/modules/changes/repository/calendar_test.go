@@ -89,3 +89,39 @@ func keys(m map[string]application.CalendarEntry) []string {
 	}
 	return out
 }
+
+// Submitted Changes (assessment, pending approval) show their proposed window in the extended calendar only;
+// drafts never show, and the plain calendar (briefing) stays limited to approved work.
+func TestCalendarWithProposedShowsSubmittedWindows(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx()
+	draft := e.drive("normal", "low", "draft")
+	submitted := e.drive("normal", "low", "assessment")
+	pending := e.drive("normal", "medium", "pending_approval")
+	approved := e.drive("normal", "low", "approved")
+	if submitted.WindowStart == nil || !submitted.Proposed() || !pending.Proposed() || approved.Proposed() || draft.Proposed() {
+		t.Fatalf("proposed flags: %v %v %v %v", submitted.Proposed(), pending.Proposed(), approved.Proposed(), draft.Proposed())
+	}
+	from, to := submitted.WindowStart.Add(-time.Hour), submitted.WindowEnd.Add(time.Hour)
+	ids := func(p application.CalendarPage) map[string]bool {
+		out := map[string]bool{}
+		for _, en := range p.Entries {
+			out[en.Change.ID] = true
+		}
+		return out
+	}
+	plain, err := e.svc.Calendar(ctx, from, to, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(plain); got[submitted.ID] || got[pending.ID] || got[draft.ID] || !got[approved.ID] {
+		t.Errorf("plain calendar = %v", got)
+	}
+	ext, err := e.svc.CalendarWithProposed(ctx, from, to, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(ext); !got[submitted.ID] || !got[pending.ID] || !got[approved.ID] || got[draft.ID] {
+		t.Errorf("extended calendar = %v", got)
+	}
+}

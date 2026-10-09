@@ -31,6 +31,8 @@ export type MajorIncident = {
 
 export type MajorIncidentDetail = MajorIncident & {
   updates: Array<{ id: string; status: string; body: string; createdAt: string }>;
+  /** Linked tickets the caller may see; absent on servers that do not return them yet. */
+  tickets?: Array<{ id: string; reference: string; title: string; status: string }>;
   allowedOperations: string[];
 };
 

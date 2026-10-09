@@ -9,14 +9,23 @@ import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
-import { availableActions, canEditTask, isOverdue, reasonRequired } from './actions';
+import {
+  availableActions,
+  canEditTask,
+  isOverdue,
+  needsCompleteConfirmation,
+  reasonRequired,
+} from './actions';
 import { tasksApi } from './api';
-import { AssignDialog, EditDialog, ReasonDialog } from './TaskDialogs';
+import { AssignDialog, CompleteDialog, EditDialog, ReasonDialog } from './TaskDialogs';
 import { assigneeLabel, StatusBadge } from './TaskTable';
 import type { Task, TaskAction } from './types';
 
 type Dialog =
-  { kind: 'reason'; action: 'block' | 'cancel' | 'reopen' } | { kind: 'edit' } | { kind: 'assign' };
+  | { kind: 'reason'; action: 'block' | 'cancel' | 'reopen' }
+  | { kind: 'edit' }
+  | { kind: 'assign' }
+  | { kind: 'complete' };
 
 function isReasonAction(action: TaskAction): action is 'block' | 'cancel' | 'reopen' {
   return reasonRequired.has(action);
@@ -87,7 +96,11 @@ export function TaskDetailScreen({ id }: { id: string }) {
                 busy={busyAction === action}
                 disabled={busyAction !== null}
                 onClick={() =>
-                  isReasonAction(action) ? setDialog({ kind: 'reason', action }) : void run(action)
+                  isReasonAction(action)
+                    ? setDialog({ kind: 'reason', action })
+                    : action === 'complete'
+                      ? setDialog({ kind: 'complete' })
+                      : void run(action)
                 }
               >
                 {t(`tasks.action.${action}`)}
@@ -126,6 +139,12 @@ export function TaskDetailScreen({ id }: { id: string }) {
             <dd>{formatDateTime(locale, task.completedAt)}</dd>
           </>
         ) : null}
+        {task.resultNote ? (
+          <>
+            <dt>{t('tasks.fact.resultNote')}</dt>
+            <dd className="preline">{task.resultNote}</dd>
+          </>
+        ) : null}
         {task.contextType === 'deployment' && task.contextId ? (
           <>
             <dt>{t('tasks.fact.context')}</dt>
@@ -151,6 +170,14 @@ export function TaskDetailScreen({ id }: { id: string }) {
         <ReasonDialog
           task={task}
           action={dialog.action}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      ) : null}
+      {dialog?.kind === 'complete' ? (
+        <CompleteDialog
+          task={task}
+          confirm={needsCompleteConfirmation(can)}
           onClose={() => setDialog(null)}
           onDone={done}
         />

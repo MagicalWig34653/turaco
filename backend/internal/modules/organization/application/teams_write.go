@@ -17,7 +17,6 @@ import (
 
 const (
 	maxTeamNameLength = 100
-	maxMemberRoleLen  = 100
 )
 
 var (
@@ -43,6 +42,9 @@ func invalid(format string, args ...any) error {
 type Caller struct {
 	Actor         audit.Actor
 	CorrelationID string
+	// ExternalPartiesManage says the actor holds organization.external_parties.manage (adding an external
+	// account to a Team needs it, review rule R2). The transport fills it from the principal.
+	ExternalPartiesManage bool
 }
 
 func (c Caller) validate() error {
@@ -124,12 +126,8 @@ func (t *Teams) AddMember(ctx context.Context, c Caller, teamID, userID string, 
 	if err := c.validate(); err != nil {
 		return TeamMember{}, err
 	}
-	if role != nil {
-		r, err := cleanText("role", *role, maxMemberRoleLen)
-		if err != nil {
-			return TeamMember{}, err
-		}
-		role = &r
+	if role != nil && *role != TeamRoleLead && *role != TeamRoleMember {
+		return TeamMember{}, invalid("role must be lead or member")
 	}
 	return t.store.AddTeamMember(ctx, c, teamID, userID, role)
 }

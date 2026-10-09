@@ -68,6 +68,8 @@ type Task struct {
 	// Recurring Task Definition; the definition may have been deleted since.
 	RecurrenceDefinitionID *string
 	ScheduledFor           *time.Time
+	// ResultNote is the closing comment left when the task was completed; nil otherwise.
+	ResultNote *string
 	// Version starts at 1 and increases with every change.
 	Version   int
 	CreatedAt time.Time
@@ -98,6 +100,8 @@ type Principal struct {
 	Work bool
 	// RecurrenceManage (tasks.recurrence.manage) manages Recurring Task Definitions.
 	RecurrenceManage bool
+	// BoardsManageTeam (tasks.boards.manage_team) creates and edits Team-owned Task Boards.
+	BoardsManageTeam bool
 }
 
 // Caller identifies who performs a mutation and the request it belongs to.

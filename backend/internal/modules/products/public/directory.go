@@ -74,3 +74,18 @@ func (d *Directory) ActiveInCategory(ctx context.Context, categoryID string, lim
 func (d *Directory) CategoriesExist(ctx context.Context, ids []string) (map[string]bool, error) {
 	return d.r.CategoriesByIDs(ctx, ids)
 }
+
+// Searcher is the optional Reader capability behind Directory.Search.
+type Searcher interface {
+	SearchProductIDs(ctx context.Context, text string, limit int) ([]string, error)
+}
+
+// Search returns the ids of products whose name, manufacturer or part number matches the text (at most limit).
+// Readers without the capability find nothing.
+func (d *Directory) Search(ctx context.Context, text string, limit int) ([]string, error) {
+	s, ok := d.r.(Searcher)
+	if !ok {
+		return []string{}, nil
+	}
+	return s.SearchProductIDs(ctx, text, limit)
+}

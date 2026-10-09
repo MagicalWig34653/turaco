@@ -50,6 +50,7 @@ func (s *Service) checkReferences(ctx context.Context, d Definition) error {
 	for _, a := range d.Approvals {
 		add(&users, a.ApproverUserID)
 		add(&teams, a.ApproverTeamID)
+		add(&teams, a.FallbackTeamID)
 	}
 	for _, t := range d.Fulfillment {
 		add(&users, t.AssignedUserID)

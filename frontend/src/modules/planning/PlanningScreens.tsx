@@ -20,7 +20,9 @@ import { planningApi } from './api';
 import {
   availableActions,
   calendarRange,
+  calendarLegend,
   groupCalendarByDay,
+  isProposedWindow,
   itemPath,
   localDate,
 } from './helpers';
@@ -875,6 +877,7 @@ export function MaintenanceCalendarScreen() {
   }
   const calendar = useAsync((signal) => planningApi.calendar(from, to, signal), [from, to]);
   const groups = groupCalendarByDay(calendar.data?.items ?? []);
+  const legend = calendarLegend(calendar.data?.items ?? []);
   const serviceIds = [
     ...new Set(
       (calendar.data?.items ?? []).flatMap((entry) =>
@@ -947,6 +950,22 @@ export function MaintenanceCalendarScreen() {
         <p>{t('planning.calendar.empty')}</p>
       )}
       {calendar.data?.truncated && <p>{t('planning.truncated')}</p>}
+      {legend.proposed || legend.firm ? (
+        <ul className="calendar-legend" aria-label={t('planning.calendar.legend')}>
+          {legend.firm ? (
+            <li>
+              <span className="calendar-swatch calendar-swatch-firm" aria-hidden="true" />
+              {t('planning.calendar.legend.firm')}
+            </li>
+          ) : null}
+          {legend.proposed ? (
+            <li>
+              <span className="calendar-swatch calendar-swatch-proposed" aria-hidden="true" />
+              {t('planning.calendar.legend.proposed')}
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
       {Object.entries(groups)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([day, entries]) => (
@@ -956,9 +975,16 @@ export function MaintenanceCalendarScreen() {
                 new Date(`${day}T00:00:00`),
               )}
             </h2>
-            <ul>
+            <ul className="calendar-entries">
               {entries.map((x) => (
-                <li key={x.changeId}>
+                <li
+                  key={x.changeId}
+                  className={
+                    isProposedWindow(x)
+                      ? 'calendar-entry calendar-entry-proposed'
+                      : 'calendar-entry'
+                  }
+                >
                   {x.title ? (
                     <Link to={`/changes/${enc(x.changeId)}`}>
                       {x.reference} · {x.title}
@@ -968,7 +994,10 @@ export function MaintenanceCalendarScreen() {
                   )}{' '}
                   · {x.kind && <Badge>{t(`changes.kind.${x.kind}` as MessageKey)}</Badge>}{' '}
                   {x.risk && <Badge>{t(`changes.risk.${x.risk}` as MessageKey)}</Badge>}{' '}
-                  <Badge>{t(`changes.status.${x.status}` as MessageKey)}</Badge>
+                  <Badge>{t(`changes.status.${x.status}` as MessageKey)}</Badge>{' '}
+                  {isProposedWindow(x) ? (
+                    <Badge tone="info">{t('planning.calendar.proposed')}</Badge>
+                  ) : null}
                   <p>
                     {new Intl.DateTimeFormat(locale, {
                       dateStyle: 'short',

@@ -55,6 +55,14 @@ func (f *fakeDirectory) ActiveUsers(_ context.Context, ids []string) (map[string
 	return out, nil
 }
 
+func (f *fakeDirectory) GroupIDsOfUser(context.Context, string) ([]string, error) {
+	return []string{}, nil
+}
+
+func (f *fakeDirectory) GroupMemberUserIDs(context.Context, []string, int) ([]string, error) {
+	return []string{}, nil
+}
+
 type fixed struct {
 	p  authorization.Principal
 	ok bool

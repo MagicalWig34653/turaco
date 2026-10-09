@@ -4,6 +4,9 @@ type Permission struct {
 	Name        string
 	Description string
 	Risk        string
+	// Needs lists companion permissions the permission is documented to be useless without (the role editor warns
+	// when they are missing). It is registry data, not parsed from the description.
+	Needs []string
 }
 
 var Registry = []Permission{
@@ -15,11 +18,17 @@ var Registry = []Permission{
 	{Name: "organization.view", Description: "View organization users, teams and locations.", Risk: "normal"},
 	{Name: "organization.directory.view", Description: "View observed Directory Groups and their memberships.", Risk: "normal"},
 	{Name: "organization.directory.sync", Description: "Request an immediate directory synchronization run.", Risk: "elevated"},
+	{Name: "organization.users.manage", Description: "Create local Users, edit the platform-owned and local profile fields of Users (department, primary location, manager, names and email of local Users), deactivate, reactivate and mark Users departed, and send invitations and password resets of local accounts. Deactivating, reactivating, marking departed, invitations, resets and email changes of an account additionally need the platform administrator or a holder of every permission of that account (dominance rule), and nobody can deactivate or depart their own account with it.", Risk: "elevated"},
+	{Name: "organization.users.view_details", Description: "See HR-adjacent User details in lists, catalogs and the User detail (manager, department, primary location, employee number, directory freshness, sign-in state) and read the effective permissions of a User and the holders of a permission.", Risk: "elevated"},
+	{Name: "organization.locations.manage", Description: "Create, rename, move, deactivate and activate Locations (Sites and areas).", Risk: "normal"},
+	{Name: "organization.departments.manage", Description: "Create, rename, move, deactivate and activate Departments.", Risk: "normal"},
+	{Name: "organization.external_parties.manage", Description: "Create external accounts and add external accounts to Teams. External accounts are restricted principals; this permission is the only way to put one into a Team.", Risk: "elevated"},
 	{Name: "organization.teams.manage", Description: "Create, rename and deactivate Teams and manage their members. Team membership determines which tasks a user with tasks.work can see and which notifications they receive, so this permission indirectly controls task access.", Risk: "elevated"},
 	{Name: "tasks.view", Description: "View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams.", Risk: "normal"},
 	{Name: "tasks.work", Description: "See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams.", Risk: "normal"},
 	{Name: "tasks.recurrence.manage", Description: "Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule.", Risk: "normal"},
 	{Name: "tasks.manage", Description: "Create, edit, assign, cancel and reopen any task and work on any task.", Risk: "normal"},
+	{Name: "tasks.boards.manage_team", Description: "Create Team-owned Task Boards (shared with the Team's members) and, as a member of the owning Team, edit their columns, filter and card order. Team Boards otherwise need tasks.manage. A Board never grants access to tasks: every viewer sees only the cards their own task permissions allow, and moving a card needs the permission of the task operation.", Risk: "normal"},
 	{Name: "briefing.view", Description: "View published IT Briefing items.", Risk: "normal"},
 	{Name: "briefing.manage", Description: "Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items.", Risk: "elevated"},
 	{Name: "products.view", Description: "View the product catalog: products, manufacturers and product categories.", Risk: "normal"},
@@ -30,7 +39,8 @@ var Registry = []Permission{
 	{Name: "assets.view", Description: "View assets and device context within authorized scope.", Risk: "normal"},
 	{Name: "assets.manage", Description: "Create and update assets within authorized scope.", Risk: "elevated"},
 	{Name: "endpoints.view", Description: "View provider-observed Devices, their installed software and endpoint data-quality findings.", Risk: "normal"},
-	{Name: "endpoints.manage", Description: "Link and unlink Devices to Assets by hand (also needs assets.view), register normalized software products and run the endpoint provider synchronization (devices and management data) and snapshot ingestion (the sync is covered by this permission; no separate sync permission exists).", Risk: "elevated"},
+	{Name: "endpoints.manage", Description: "Link and unlink Devices to Assets by hand (also needs assets.view), register normalized software products and run the endpoint provider synchronization (devices and management data) and snapshot ingestion (the sync is covered by this permission; no separate sync permission exists).", Risk: "elevated",
+		Needs: []string{"assets.view"}},
 	{Name: "endpoint.management.view", Description: "View normalized endpoint-management artifacts, assignments and filters, and (together with endpoints.view) the provider-reported observations of a Device; the Expected Applicability views (Device, Assignment Path, reverse lookup of an artifact) need no further permission for assignments and counts but show Device data only with endpoints.view, Directory Group and User views need organization.directory.view, and the Device of a User or the User of a Device needs assets.view (without it the User is unknown, never guessed). An assignment's target group id is shown only to callers who also hold organization.directory.view. endpoints.manage includes this read access.", Risk: "normal"},
 	{Name: "integrations.intune.manage", Description: "Administer Intune integration configuration, credentials and synchronization controls.", Risk: "high"},
 	{Name: "procurement.view", Description: "View suppliers, procurement requests and purchase orders.", Risk: "normal"},
@@ -48,6 +58,7 @@ var Registry = []Permission{
 	{Name: "runbooks.execute", Description: "Start and cancel runbook executions, which create tracked tasks. Reading runbooks needs knowledge.view or this permission.", Risk: "elevated"},
 	{Name: "tickets.view", Description: "View all tickets and their internal comments. Every signed-in user can raise tickets and read their own.", Risk: "normal"},
 	{Name: "tickets.manage", Description: "Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket.", Risk: "elevated"},
+	{Name: "servicedesk.queues.manage", Description: "Create, rename, archive and restore Ticket Queues, set their visibility, routing and defaults, and replace their grants. Also allows moving a Ticket into a Queue the actor holds no grant in. Queue-level access (create, view, work, manage) is data held in Queue grants, not a permission; tickets.view and tickets.manage keep acting as global view and work grants in every Queue.", Risk: "elevated"},
 	{Name: "changes.view", Description: "View all Changes (risk, rollback plan, maintenance window, affected resources, approvals, execution tasks, history) and the Change impact view. Requesters and owners see their own Changes without it; affected Services need services.view, Virtual Machines and Locations infrastructure.view, Assets assets.view to be shown by name.", Risk: "normal"},
 	{Name: "changes.manage", Description: "Create and change Changes, edit their affected resources, submit, assess, schedule, review, close and cancel them, approve emergency changes on a justification and add execution tasks. Scheduling and emergency approval affect other people's maintenance planning.", Risk: "elevated"},
 	{Name: "changes.execute", Description: "Run Changes: start, complete and fail them and add execution tasks. The owner of a Change may do the same for that Change without this permission.", Risk: "elevated"},
@@ -67,7 +78,8 @@ var Registry = []Permission{
 	{Name: "deployments.approve", Description: "Approve or reject high-impact Deployment plans as their named approver (or approver Team member). Required when the plan is submitted and verified again when the decision is applied; owners, creators, editors, the submitter and the authors and last editors of the plan's Target Sets never approve. Approvers read the plan and its Target Sets' definitions and evaluation counts.", Risk: "elevated"},
 	// Remote Access (ADR-0026): reserved, planned and not implemented; no route checks these yet.
 	{Name: "remote_access.view", Description: "See whether attended remote access is available for a Device: enabled providers, mapped peers (peer ids masked), freshness of the last observation and why a session is blocked. Does not allow starting a session.", Risk: "normal"},
-	{Name: "remote_access.start_attended", Description: "Request and launch an attended remote-access session for a Device from an open Ticket whose affected User is the Device's holder (or with a reason code), through an enabled Remote Access Provider; the user consents in the provider client. Policy may require a second approver. Rate limited; see the own sessions.", Risk: "high"},
+	{Name: "remote_access.start_attended", Description: "Request and launch an attended remote-access session for a Device from an open Ticket whose affected User is the Device's holder (or with a reason code), through an enabled Remote Access Provider; the user consents in the provider client. Policy may require a second approver. Rate limited; see the own sessions.", Risk: "high",
+		Needs: []string{"assets.view", "remote_access.view"}},
 	{Name: "remote_access.start_unattended", Description: "Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): start an unattended remote-access session on a Device named by an unattended-access policy record, with a linked Ticket.", Risk: "high"},
 	{Name: "remote_access.terminal", Description: "Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): use the provider's terminal channel inside an authorized remote-access session.", Risk: "high"},
 	{Name: "remote_access.file_transfer", Description: "Planned (reserved, checked by no route; unattended access, terminal and file transfer are not offered in F10): transfer files inside an authorized remote-access session.", Risk: "high"},
@@ -84,4 +96,8 @@ var Registry = []Permission{
 	{Name: "ai.settings.view", Description: "View the AI Provider configuration (never secrets), the data classes allowed per provider, caps and retention.", Risk: "elevated"},
 	{Name: "ai.settings.manage", Description: "Configure AI Providers, allowed data classes, caps, conversation retention and the runtime switch of the assistant. Decides which business data may leave the installation for an external provider.", Risk: "high"},
 	{Name: "ai.usage.view", Description: "View aggregated AI usage and estimated cost (counts only, no prompts).", Risk: "elevated"},
+	{Name: "views.share", Description: "Share one's own Saved Views with named Users, Teams and roles (use or edit level) and revoke those shares. A share never grants data access: the viewer's own permissions and scope always apply when the View runs. Using Views, creating private ones and pinning them needs no permission beyond reading the resource.", Risk: "normal"},
+	{Name: "views.publish", Description: "Share a Saved View with everyone (use level only). The View appears in every signed-in User's list of shared Views; each viewer still sees only the rows their own permissions allow. Every publication is audited.", Risk: "elevated"},
+	{Name: "views.pin_for_groups", Description: "Create and delete Pin Rules that show a Saved View in the sidebar of the members of a Team or role. This is the only permission for pinning for groups; a rule shows a View only to members who may use it and grants no access. Every change is audited.", Risk: "elevated"},
+	{Name: "views.admin", Description: "List every Saved View, unshare, archive, restore or take over any View (for example after its owner left). Does not allow running a View one has no share for, and never exposes data rows. Every change is audited.", Risk: "elevated"},
 }

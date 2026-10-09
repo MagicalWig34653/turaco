@@ -54,3 +54,19 @@ func (l *LoginAccounts) LockActiveUser(ctx context.Context, tx pgx.Tx, userID st
 func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, displayName, correlationID string, actor audit.Actor) (string, error) {
 	return l.app.CreateEmergencyUser(ctx, tx, displayName, correlationID, actor)
 }
+
+var _ authentication.LocalAccountDirectory = (*LoginAccounts)(nil)
+
+// FindLocalAccount implements authentication.LocalAccountDirectory.
+func (l *LoginAccounts) FindLocalAccount(ctx context.Context, identifier string) (string, bool, error) {
+	return l.app.FindLocalAccount(ctx, identifier)
+}
+
+// LocalAccountInfo implements authentication.LocalAccountDirectory.
+func (l *LoginAccounts) LocalAccountInfo(ctx context.Context, tx pgx.Tx, userID string) (authentication.LocalAccountInfo, error) {
+	st, err := l.app.LocalAccountState(ctx, tx, userID)
+	if err != nil {
+		return authentication.LocalAccountInfo{}, err
+	}
+	return authentication.LocalAccountInfo{Exists: st.Exists, Local: st.Local, Active: st.Active, DisplayName: st.DisplayName, Email: st.Email}, nil
+}

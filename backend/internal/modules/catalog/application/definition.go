@@ -84,6 +84,10 @@ type ApprovalStep struct {
 	ApproverTeamID *string `json:"approverTeamId,omitempty"`
 	// Approver "manager" means the manager of the requested-for User.
 	Approver string `json:"approver,omitempty"`
+	// FallbackTeamID is only valid with Approver "manager": when the requested-for User has no manager, or the manager
+	// may not decide (requester, requested-for or named in an answer), this Team approves instead. The Team's members
+	// are still bound by the exclusions, so nobody approves their own request.
+	FallbackTeamID *string `json:"fallbackTeamId,omitempty"`
 }
 
 // TaskTemplate is one fulfillment task created when the request is approved.
@@ -199,6 +203,14 @@ func (d *Definition) normalizeAndValidate() error {
 		}
 		if n != 1 {
 			return invalid("approval step %d needs exactly one approver", i+1)
+		}
+		if a.FallbackTeamID != nil {
+			if a.Approver != "manager" {
+				return invalid("approval step %d: fallbackTeamId is only valid together with approver manager", i+1)
+			}
+			if !uuidRegexp.MatchString(*a.FallbackTeamID) {
+				return invalid("approval step %d: fallbackTeamId must be a team id", i+1)
+			}
 		}
 	}
 	if len(d.Fulfillment) > MaxFulfillment {

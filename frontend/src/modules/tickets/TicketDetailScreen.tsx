@@ -1,4 +1,4 @@
-import { ModuleFeature, useModules } from '../../platform/modules/ModulesProvider';
+import { useModules } from '../../platform/modules/ModulesProvider';
 import { AskTuraco } from '../ai/AiProvider';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -17,13 +17,26 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { Avatar, Card, Skeleton, StatusBadge, Tabs } from '../../platform/ui/Workspace';
 import { useContextMenu } from '../../platform/ui/ContextMenu';
 import { TableDate } from '../../platform/ui/TableDate';
-import { appendWorkaround, clearSubmittedDraft, primaryTicketOperation } from './workspaceModel';
+import {
+  appendWorkaround,
+  clearSubmittedDraft,
+  effectiveCommentKind,
+  primaryTicketOperation,
+  resolveAbilities,
+} from './workspaceModel';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
-import { TicketRemoteSupport } from '../remoteaccess/RemoteSupportCard';
+import { RemoteSupportGate, TicketRemoteSupport } from '../remoteaccess/RemoteSupportCard';
 import { problemsApi } from '../problems/api';
-import { ticketsApi } from './api';
+import { incidentsApi } from '../incidents/api';
+import { IncidentBadge } from '../incidents/IncidentsScreen';
+import { notifySidebarChanged } from '../../platform/ui/views/api';
+import { ticketQueuesApi, ticketsApi } from './api';
+import { aliasList, canOfferMove, ticketQueueName } from './queueModel';
+import { TicketMoveDialog } from './TicketMoveDialog';
+import { DuplicateDialog, LinkToDialog } from './LinkDialogs';
+import { describeHistory, isAssignmentEntry, mergeTimeline, viaKey } from './historyModel';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
 
@@ -39,16 +52,23 @@ function AssignDialog({
   onDone: () => void;
 }) {
   const { t } = useI18n();
+  const [mode, setMode] = useState<'user' | 'team'>('user');
   const [assignee, setAssignee] = useState<Assignee | null>(null);
+  const [queue, setQueue] = useState<Assignee | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
+  const target = mode === 'user' ? assignee : queue;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!assignee) return;
+    if (!target) return;
     setBusy(true);
     setError(undefined);
     try {
-      await ticketsApi.assign(ticket.id, ticket.version, { assigneeId: assignee.id });
+      await ticketsApi.assign(
+        ticket.id,
+        ticket.version,
+        mode === 'user' ? { assigneeId: target.id } : { queueTeamId: target.id },
+      );
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
@@ -59,15 +79,75 @@ function AssignDialog({
     <Dialog title={t('tickets.action.assign')} onClose={onClose}>
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
-        <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+        <fieldset className="assign-mode">
+          <legend>{t('tickets.assign.mode')}</legend>
+          <label>
+            <input
+              type="radio"
+              name="assign-mode"
+              checked={mode === 'user'}
+              onChange={() => setMode('user')}
+            />{' '}
+            {t('tickets.assign.mode.user')}
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="assign-mode"
+              checked={mode === 'team'}
+              onChange={() => setMode('team')}
+            />{' '}
+            {t('tickets.assign.mode.team')}
+          </label>
+        </fieldset>
+        {mode === 'user' ? (
+          <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+        ) : (
+          <AssigneePicker
+            type="team"
+            label={t('tickets.assign.queue')}
+            hint={t('tickets.assign.queue.hint')}
+            value={queue}
+            onChange={setQueue}
+          />
+        )}
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
-          <Button type="submit" variant="primary" busy={busy} disabled={!assignee}>
-            {t('tickets.action.assign')}
+          <Button type="submit" variant="primary" busy={busy} disabled={!target}>
+            {t(mode === 'user' ? 'tickets.action.assign' : 'tickets.assign.moveToQueue')}
           </Button>
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** The Major Incident this ticket is linked to, so staff see the wider outage context. */
+function LinkedIncident({ id }: { id: string }) {
+  const { t } = useI18n();
+  const loaded = useAsync((signal) => incidentsApi.get(id, signal), [id]);
+  return (
+    <Card title={t('tickets.section.majorIncident')}>
+      <h2>{t('tickets.section.majorIncident')}</h2>
+      {loaded.error ? (
+        <p className="incident-muted">{t('tickets.majorIncident.unavailable')}</p>
+      ) : !loaded.data ? (
+        <Skeleton lines={2} />
+      ) : (
+        <>
+          <p>
+            <span className="incident-reference">{loaded.data.reference}</span>{' '}
+            <IncidentBadge status={loaded.data.status} />
+          </p>
+          <p>
+            <Link to={`/incidents/${encodeURIComponent(loaded.data.id)}`}>{loaded.data.title}</Link>
+          </p>
+          <p className="incident-muted">
+            {t('incidents.linked', { count: loaded.data.linkedTickets })}
+          </p>
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -135,9 +215,19 @@ function TicketWorkspace({ id }: { id: string }) {
     async (signal) => (staffReader ? await ticketsApi.externalSync(id, signal) : null),
     [id, staffReader],
   );
+  // Assignment and status changes with actor and reason; a failure only hides them.
+  const history = useAsync(
+    async (signal) => (staffReader ? await ticketsApi.history(id, signal) : null),
+    [id, staffReader],
+  );
+  // The caller's level in the Ticket's Queue decides whether "Move to queue" is offered (the server still authorizes).
+  const queues = useAsync(
+    async (signal) => (staffReader ? (await ticketQueuesApi.list(false, signal)).items : []),
+    [staffReader],
+  );
   const [retrying, setRetrying] = useState(false);
   const [dialog, setDialog] = useState<{
-    kind: 'text' | 'wait' | 'assign';
+    kind: 'text' | 'wait' | 'assign' | 'move' | 'linkProblem' | 'linkIncident' | 'duplicate';
     op?: TicketOperation;
   } | null>(null);
   const [busyOp, setBusyOp] = useState<string | null>(null);
@@ -148,9 +238,7 @@ function TicketWorkspace({ id }: { id: string }) {
   const composer = useRef<HTMLFormElement>(null);
   const commentPending = useRef(false);
   const menu = useContextMenu();
-  const [internal, setInternal] = useState(false);
-  const mode = internal ? 'internal' : 'reply';
-  const comment = drafts[mode];
+  const [internalChoice, setInternalChoice] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [commentError, setCommentError] = useState<ApiError | undefined>(undefined);
 
@@ -179,7 +267,27 @@ function TicketWorkspace({ id }: { id: string }) {
     setDialog(null);
     setActionError(undefined);
     loaded.reload();
+    history.reload();
   };
+  const queueName = ticketQueueName(ticket);
+  const aliases = aliasList(ticket);
+  const queueLevel = queues.data?.find((queue) => queue.id === ticket.queueId)?.level;
+  const isOwner =
+    session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
+  const abilities = resolveAbilities(ticket.abilities, {
+    manage,
+    isOwner,
+    open: ticket.status !== 'closed' && ticket.status !== 'cancelled',
+    canMove:
+      staffReader &&
+      canOfferMove(ticket) &&
+      (manage || queueLevel === 'work' || queueLevel === 'manage'),
+  });
+  // A server that returns abilities already accounts for the Ticket state and Queue level.
+  const canMove = abilities.move && canOfferMove(ticket);
+  const mode = effectiveCommentKind(abilities, internalChoice);
+  const internal = mode === 'internal';
+  const comment = drafts[mode];
   const run = async (op: TicketOperation) => {
     setBusyOp(op);
     setActionError(undefined);
@@ -216,11 +324,8 @@ function TicketWorkspace({ id }: { id: string }) {
       setCommenting(false);
     }
   };
-  const isOwner =
-    session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
-  const canComment =
-    ticket.status !== 'closed' && ticket.status !== 'cancelled' && (manage || isOwner);
-  const ops = ticket.allowedOperations as TicketOperation[];
+  const canComment = abilities.composer;
+  const ops = abilities.transition ? (ticket.allowedOperations as TicketOperation[]) : [];
   const textKey = (op: TicketOperation) => `tickets.action.${op}` as MessageKey;
   const primaryOp = primaryTicketOperation(ops);
   const focusComposer = () => {
@@ -234,6 +339,17 @@ function TicketWorkspace({ id }: { id: string }) {
       </Link>
       <div className="incident-heading-meta">
         <span className="incident-reference">{ticket.reference}</span>
+        {aliases.length > 0 ? (
+          <span className="ticket-aliases" title={t('tickets.aliases.hint')}>
+            {t('tickets.aliases.previously')}{' '}
+            {aliases.map((alias, index) => (
+              <span key={alias}>
+                {index > 0 ? ', ' : ''}
+                <span className="incident-reference">{alias}</span>
+              </span>
+            ))}
+          </span>
+        ) : null}
         <TicketStatusBadge status={ticket.status} />
         <StatusBadge
           tone={
@@ -309,28 +425,74 @@ function TicketWorkspace({ id }: { id: string }) {
                   </p>
                 </div>
               </li>
-              {ticket.comments.map((c) => (
-                <li
-                  key={c.id}
-                  className={`incident-event ${c.internal ? 'incident-event-internal' : ''}`}
-                >
-                  <Avatar name={name(c.authorId)} />
-                  <div className="incident-event-body">
-                    <header>
-                      <strong>{name(c.authorId)}</strong>
-                      <TableDate value={c.createdAt} />
-                    </header>
-                    <span className="incident-event-label">
-                      {c.internal ? (
-                        <StatusBadge tone="warning">{t('tickets.comment.internal')}</StatusBadge>
-                      ) : (
-                        t('ticketWorkspace.reply')
-                      )}
-                    </span>
-                    <p className="preline">{c.body}</p>
-                  </div>
-                </li>
-              ))}
+              {mergeTimeline(ticket.comments, history.data?.items).map((item) => {
+                if (item.type === 'history') {
+                  const entry = item.entry;
+                  const historyName = (key: string | null | undefined) =>
+                    key
+                      ? (history.data?.names?.[key] ??
+                        ticket.names[key] ??
+                        t('ticketWorkspace.unknownPerson'))
+                      : '';
+                  const text = describeHistory(entry, historyName, (kind, value) =>
+                    t(
+                      (kind === 'status'
+                        ? `tickets.status.${value}`
+                        : `tickets.priority.${value}`) as MessageKey,
+                    ),
+                  );
+                  const via = viaKey(entry.via);
+                  return (
+                    <li
+                      key={`h-${entry.id}`}
+                      className={`incident-event ticket-history ${isAssignmentEntry(entry) ? 'ticket-history-assignment' : ''}`}
+                    >
+                      <Avatar name={entry.actorId ? historyName(entry.actorId) : null} />
+                      <div className="incident-event-body">
+                        <header>
+                          <strong>
+                            {entry.actorId ? historyName(entry.actorId) : t('ticketHistory.system')}
+                          </strong>
+                          <TableDate value={entry.at} />
+                        </header>
+                        <p>{t(text.key, text.params)}</p>
+                        {via ? <small className="incident-muted">{t(via)}</small> : null}
+                        {entry.reason ? (
+                          <p className="preline ticket-history-reason">
+                            <span className="incident-event-label">
+                              {t('ticketHistory.reason')}
+                            </span>{' '}
+                            {entry.reason}
+                          </p>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                }
+                const c = item.comment;
+                return (
+                  <li
+                    key={c.id}
+                    className={`incident-event ${c.internal ? 'incident-event-internal' : ''}`}
+                  >
+                    <Avatar name={name(c.authorId)} />
+                    <div className="incident-event-body">
+                      <header>
+                        <strong>{name(c.authorId)}</strong>
+                        <TableDate value={c.createdAt} />
+                      </header>
+                      <span className="incident-event-label">
+                        {c.internal ? (
+                          <StatusBadge tone="warning">{t('tickets.comment.internal')}</StatusBadge>
+                        ) : (
+                          t('ticketWorkspace.reply')
+                        )}
+                      </span>
+                      <p className="preline">{c.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
             {ticket.resolution ? (
               <section className="incident-resolution">
@@ -351,7 +513,7 @@ function TicketWorkspace({ id }: { id: string }) {
                 className={`form incident-composer ${internal ? 'incident-composer-internal' : ''}`}
                 onSubmit={(event) => void submitComment(event)}
               >
-                {manage ? (
+                {abilities.canChooseKind ? (
                   <div
                     className="incident-composer-mode"
                     role="group"
@@ -360,14 +522,14 @@ function TicketWorkspace({ id }: { id: string }) {
                     <Button
                       disabled={commenting}
                       aria-pressed={!internal}
-                      onClick={() => setInternal(false)}
+                      onClick={() => setInternalChoice(false)}
                     >
                       {t('ticketWorkspace.reply')}
                     </Button>
                     <Button
                       disabled={commenting}
                       aria-pressed={internal}
-                      onClick={() => setInternal(true)}
+                      onClick={() => setInternalChoice(true)}
                     >
                       {t('ticketWorkspace.internalNote')}
                     </Button>
@@ -420,9 +582,14 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t(textKey(primaryOp))}
                   </Button>
                 ) : null}
-                {manage ? (
+                {abilities.assign ? (
                   <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'assign' })}>
                     {t('tickets.action.assign')}
+                  </Button>
+                ) : null}
+                {canMove ? (
+                  <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'move' })}>
+                    {t('tickets.action.moveQueue')}
                   </Button>
                 ) : null}
                 {canComment ? (
@@ -466,14 +633,40 @@ function TicketWorkspace({ id }: { id: string }) {
               </dd>
               <dt>{t('tickets.fact.assignee')}</dt>
               <dd>{name(ticket.assigneeId)}</dd>
-              {staff && ticket.queueTeamId ? (
+              {queueName ? (
                 <>
                   <dt>{t('tickets.fact.queue')}</dt>
+                  <dd>
+                    {queueName}
+                    {ticket.queue ? (
+                      <small className="ticket-queue-prefix"> ({ticket.queue.prefix})</small>
+                    ) : null}
+                  </dd>
+                </>
+              ) : null}
+              {staff && ticket.queueTeamId ? (
+                <>
+                  <dt>{t('tickets.fact.routingTeam')}</dt>
                   <dd>{name(ticket.queueTeamId)}</dd>
                 </>
               ) : null}
+              {aliases.length > 0 ? (
+                <>
+                  <dt>{t('tickets.aliases.title')}</dt>
+                  <dd>
+                    <ul className="ticket-alias-list">
+                      {aliases.map((alias) => (
+                        <li key={alias} className="incident-reference">
+                          {alias}
+                        </li>
+                      ))}
+                    </ul>
+                    <small>{t('tickets.aliases.hint')}</small>
+                  </dd>
+                </>
+              ) : null}
             </dl>
-            {manage ? (
+            {abilities.setPriority ? (
               <Select
                 label={t('tickets.col.priority')}
                 value={ticket.priority}
@@ -509,10 +702,33 @@ function TicketWorkspace({ id }: { id: string }) {
               </div>
             ) : null}
           </Card>
+          {ticket.majorIncidentId ? <LinkedIncident id={ticket.majorIncidentId} /> : null}
+          {abilities.markDuplicate || can('problems.manage') || can('majorincidents.manage') ? (
+            <Card title={t('ticketLink.title')}>
+              <h2>{t('ticketLink.title')}</h2>
+              <div className="link-panel-actions">
+                {can('problems.manage') ? (
+                  <Button onClick={() => setDialog({ kind: 'linkProblem' })}>
+                    {t('ticketLink.toProblem')}
+                  </Button>
+                ) : null}
+                {can('majorincidents.manage') && !ticket.majorIncidentId ? (
+                  <Button onClick={() => setDialog({ kind: 'linkIncident' })}>
+                    {t('ticketLink.toIncident')}
+                  </Button>
+                ) : null}
+                {abilities.markDuplicate ? (
+                  <Button onClick={() => setDialog({ kind: 'duplicate' })}>
+                    {t('ticketLink.duplicate')}
+                  </Button>
+                ) : null}
+              </div>
+            </Card>
+          ) : null}
           {can('remote_access.view') ? (
-            <ModuleFeature module="remoteaccess">
+            <RemoteSupportGate>
               <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
-            </ModuleFeature>
+            </RemoteSupportGate>
           ) : null}
           {staffReader ? (
             <Card title={t('tickets.section.knownErrors')}>
@@ -629,6 +845,27 @@ function TicketWorkspace({ id }: { id: string }) {
       </div>
       {dialog?.kind === 'assign' ? (
         <AssignDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
+      ) : null}
+      {dialog?.kind === 'move' ? (
+        <TicketMoveDialog
+          ticket={ticket}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            notifySidebarChanged();
+            done();
+          }}
+        />
+      ) : null}
+      {dialog?.kind === 'linkProblem' || dialog?.kind === 'linkIncident' ? (
+        <LinkToDialog
+          kind={dialog.kind === 'linkProblem' ? 'problem' : 'incident'}
+          ticketId={ticket.id}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      ) : null}
+      {dialog?.kind === 'duplicate' ? (
+        <DuplicateDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
       ) : null}
       {dialog?.kind === 'wait' ? (
         <WaitDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />

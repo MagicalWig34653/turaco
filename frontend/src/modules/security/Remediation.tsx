@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
 import type { ApiError } from '../../platform/api/client';
+import { formatDate, formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
@@ -27,7 +28,7 @@ function TaskSection({
   version: number;
   onCreated: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can } = useSession();
   const tasks = useAsync((signal) => securityApi.tasks(kind, id, signal), [kind, id, version]);
   const [open, setOpen] = useState(false);
@@ -87,7 +88,7 @@ function TaskSection({
                 )}
               </td>
               <td>{t(`tasks.status.${task.status}` as MessageKey)}</td>
-              <td>{task.dueAt ? new Date(task.dueAt).toLocaleDateString() : '—'}</td>
+              <td>{task.dueAt ? formatDate(locale, task.dueAt) : '—'}</td>
               <td>
                 {task.assigneeHidden
                   ? t('security.restrictedAssignee')
@@ -172,7 +173,7 @@ export function AdvisoryRemediation({
   version: number;
   onChanged: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can } = useSession();
   const progress = useAsync((signal) => securityApi.progress(id, signal), [id, version]);
   const changes = useAsync((signal) => securityApi.changes(id, signal), [id, version]);
@@ -243,14 +244,14 @@ export function AdvisoryRemediation({
           </p>
           {p.residualRisk === 'unknown' && <p>{t('security.residualRiskUnknown')}</p>}
           <p>
-            {t('security.progressGeneratedAt')}: {new Date(p.generatedAt).toLocaleString()}
+            {t('security.progressGeneratedAt')}: {formatDateTime(locale, p.generatedAt)}
           </p>
           <p>
             {t('security.shareRemediated')}: {(p.shareRemediated * 100).toFixed(0)}%
           </p>
           <p>
             {t('security.acceptedRisks')}: {p.acceptedRiskCount} · {t('security.earliestReview')}:{' '}
-            {p.earliestRiskReviewBy ? new Date(p.earliestRiskReviewBy).toLocaleDateString() : '—'}
+            {p.earliestRiskReviewBy ? formatDate(locale, p.earliestRiskReviewBy) : '—'}
           </p>
           <p>
             {t('security.oldestOpenAge')}: {p.oldestOpenFindingAgeDays ?? '—'}

@@ -16,6 +16,7 @@ import (
 
 const (
 	permView          = "organization.view"
+	permViewDetails   = "organization.users.view_details"
 	permDirectoryView = "organization.directory.view"
 	permDirectorySync = "organization.directory.sync"
 	maxQueryLen       = 100
@@ -139,7 +140,8 @@ func (h *handler) getUser(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	ok(w, toUserDetail(u, identities))
+	p, _ := authorization.PrincipalFrom(r.Context())
+	ok(w, toUserDetail(u, identities, p.Has(permViewDetails)))
 }
 
 func (h *handler) listTeams(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +163,17 @@ func (h *handler) getTeam(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	ok(w, toTeam(t))
+	out := toTeam(t)
+	leads, err := h.reader.ListTeamLeads(r.Context(), t.ID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out.Leads = make([]teamMemberDTO, 0, len(leads))
+	for _, l := range leads {
+		out.Leads = append(out.Leads, toTeamMember(l))
+	}
+	ok(w, out)
 }
 
 func (h *handler) listTeamMembers(w http.ResponseWriter, r *http.Request) {

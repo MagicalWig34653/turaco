@@ -230,6 +230,8 @@ export function AssetsScreen() {
       >
         <TextField
           label={t('assets.filter.search')}
+          hint={t('assets.filter.searchHelp')}
+          placeholder={t('assets.filter.searchPlaceholder')}
           type="search"
           value={query}
           maxLength={100}

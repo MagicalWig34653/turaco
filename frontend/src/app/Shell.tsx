@@ -12,10 +12,12 @@ import { Link, navigate, useLocation } from '../platform/router/Router';
 import { useSession } from '../platform/session/SessionProvider';
 import { sessionDisplayName } from '../platform/session/identity';
 import { useTheme } from '../platform/theme/ThemeProvider';
-import { NavIcon } from '../platform/ui/NavIcon';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
+import type { PaletteSearch } from '../platform/ui/shell/paletteCommands';
+import { buildObjectSearch, searchSources } from './objectSearch';
 import { navigationCommands } from '../platform/ui/shell/paletteCommands';
 import { appRoutes, isNavActive } from './routes';
+import { Sidebar } from './Sidebar';
 import { shellNavigation } from './shellNavigation';
 import type { MessageKey } from '../platform/i18n/i18n';
 
@@ -83,6 +85,14 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
     ],
     [can, t, openAi, enabled],
   );
+  // Tickets, problems, major incidents, knowledge, devices and people (where permitted); each source is authorized by the server.
+  const ticketSearch = useMemo<PaletteSearch | undefined>(
+    () =>
+      buildObjectSearch(searchSources(can, enabled), {
+        alias: (old, current) => t('shell.ticketAlias', { old, current }),
+      }),
+    [can, enabled, t],
+  );
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))
     .sort((left, right) => right.path.length - left.path.length)[0]?.path;
@@ -94,7 +104,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
       : activeNavPath;
   const area =
     navigation.find(({ items }) => items.some((item) => item.pattern === displayedNavPath))
-      ?.label ?? 'shell.workspace';
+      ?.label ?? 'sidebar.section.work';
   const themeLabels: Record<typeof theme, MessageKey> = {
     auto: 'shell.themeAuto',
     turaco: 'shell.themeTuraco',
@@ -261,37 +271,13 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
             {collapsed ? '»' : '«'}
           </button>
         </div>
-        <nav aria-label={t('nav.primary')}>
-          {navigation.map(({ label, items }) => {
-            return (
-              <div className="nav-section turaco-rail-section" key={label}>
-                {label && <p className="nav-heading">{t(label)}</p>}
-                {items.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={item.pattern}
-                    title={collapsed ? t(item.titleKey) : undefined}
-                    aria-label={collapsed ? t(item.titleKey) : undefined}
-                    aria-current={item.pattern === displayedNavPath ? 'page' : undefined}
-                  >
-                    <span className="turaco-rail-icon">
-                      <NavIcon id={item.id} />
-                    </span>
-                    <span className="turaco-rail-label">{t(item.titleKey)}</span>
-                    {item.id === 'notifications' && unreadValue && (
-                      <span
-                        className="badge badge-info nav-count"
-                        aria-label={t('notifications.unreadCount', { count: unreadValue })}
-                      >
-                        {unreadValue}
-                      </span>
-                    )}
-                  </Link>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+        <Sidebar
+          sections={navigation}
+          rail={collapsed}
+          activePath={displayedNavPath}
+          unreadLabel={unreadValue}
+          unreadAria={unreadValue ? t('notifications.unreadCount', { count: unreadValue }) : null}
+        />
         <div className="turaco-rail-footer">
           <Link to="/notifications" className="turaco-rail-bottom">
             <span
@@ -489,6 +475,7 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
         onClose={() => setPaletteOpen(false)}
         commands={commands}
         recentPaths={recentPaths}
+        searchObjects={ticketSearch}
       />
     </div>
   );
