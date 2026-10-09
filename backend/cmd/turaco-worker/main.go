@@ -45,6 +45,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/views"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
@@ -225,6 +226,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		}},
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
+		{"saved views retention", func() error { return registerViewsPurge(runner, pool) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
@@ -562,6 +564,13 @@ func registerPresence(runner *jobs.Runner, pool *pgxpool.Pool, cfg presenceapp.C
 
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
 // when ADVISORY_SYNC is on. The dedupe key keeps several workers from queueing the same run.
+func registerViewsPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	if err := runner.Register(views.PurgeJobType, views.PurgeJobTimeout, views.NewPurgeHandler(pool)); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: views.PurgeJobType, DedupeKey: views.PurgeJobType, Interval: views.PurgeInterval, MaxAttempts: 2})
+}
+
 func registerAdvisorySync(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	cfg, err := config.LoadAdvisoryFeeds()
 	if err != nil {

@@ -77,5 +77,7 @@
 | `TicketResolved` | 1 | service-desk | A ticket was resolved. Payload: ticketId, reporterId, affectedUserId. |
 | `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
 | `UserSynchronized` | 1 | organization | Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md. |
+| `ViewArchived` | 1 | views | A Saved View was archived by its owner or an administrator; its shares stop working. Payload: viewId, resource. |
+| `ViewShared` | 1 | views | A Saved View was shared with a User, Team, role or everyone (or the level of a share changed). Payload: viewId, resource, subjectType, subjectId (empty for everyone), level. Carries no name and no filter. |
 | `VirtualMachineChanged` | 1 | infrastructure | A Virtual Machine was created, changed, moved to another state or hypervisor, or decommissioned. Payload: virtualMachineId, operation, state, hypervisorAssetId; decommissioning also reason. |
 | `VulnerabilityFindingChanged` | 1 | security | A vulnerability finding was created or changed status. Payload: findingId, advisoryId, deviceId, status, confidence, operation, previousStatus and reason when applicable. |

@@ -72,6 +72,7 @@ import (
 	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
+	viewstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/views/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
 )
 
@@ -227,6 +228,14 @@ func main() {
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)
+	// Saved Views, shares and pins (ADR-0033). A View runs through the owning module's own query endpoints (the mux
+	// below the gate), so viewer scope and field redaction are the module's; the module switch is checked by Views.
+	viewsSvc, err := wiring.Views(pool, mux, moduleSvc)
+	if err != nil {
+		logger.Error("configure saved views", "error", err)
+		os.Exit(1)
+	}
+	viewstransport.Register(mux, viewsSvc, sessionAuth, logger)
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,

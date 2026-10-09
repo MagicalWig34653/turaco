@@ -5891,6 +5891,384 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /views:
+    get:
+      operationId: listViews
+      summary: List Saved Views the caller may see.
+      description: >-
+        Scope all (default) is the caller's own Views plus those shared with them (user, Team, role or everyone, resolved now); mine, shared; admin (requires `views.admin`)
+        lists every View including those of deactivated owners. Archived Views appear only with scope mine or admin and archived=true. Views of resources the caller may not read are never listed.
+        Keyset pagination, newest first.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: resource, in: query, schema: {type: string, enum: [tickets, devices, tasks]}}
+        - {name: scope, in: query, schema: {type: string, enum: [all, mine, shared, admin], default: all}}
+        - {name: archived, in: query, schema: {type: boolean}}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200':
+          description: One page of Views.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SavedView'}}
+                  nextCursor: {type: string}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createView
+      summary: Create a private Saved View.
+      description: >-
+        Any signed-in User who may read the resource. The definition is validated by running it once (one row) through the resource's own query endpoint as the caller,
+        so only conditions the caller could run are accepted; the module's query errors are passed through unchanged (query.invalid_filter, query.too_complex, ...).
+        Audited as views.view.created. At most 200 active Views per owner.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewCreate'}
+      responses:
+        '201':
+          description: The created View.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SavedView'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getView
+      summary: Get a Saved View.
+      description: >-
+        Owner, anyone an active Share applies to (never an archived View, never one whose owner was deactivated, never one over a resource the caller may not read) or `views.admin`.
+        Everything else answers an identical 404 views.not_found, so a View's existence, name and owner cannot be probed. The share list is returned to the owner and `views.admin` only.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The View with the caller's access level.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SavedView'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+    patch:
+      operationId: updateView
+      summary: Rename or change the definition of a Saved View.
+      description: >-
+        Owner or an `edit` share. expectedVersion is required (400 without; 409 views.conflict when stale). Audited as views.view.renamed and/or views.view.definition_changed
+        (ids, resource, version and condition counts only, never filter values). Editing a shared View changes what all viewers see at once.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewUpdate'}
+      responses:
+        '200':
+          description: The updated View.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SavedView'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/archive:
+    post:
+      operationId: archiveView
+      summary: Archive a Saved View (owner or `views.admin`).
+      description: Requires expectedVersion. Shares and pins stop working while archived; restorable until the daily retention job deletes it 90 days after archiving. Audited, publishes ViewArchived.
+      security: [{sessionAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody: {$ref: '#/components/requestBodies/ViewVersion'}
+      responses:
+        '200': {$ref: '#/components/responses/ViewOk'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/restore:
+    post:
+      operationId: restoreView
+      summary: Restore an archived Saved View (owner or `views.admin`).
+      description: Requires expectedVersion. 409 views.name_taken when the owner meanwhile created a View with the same name.
+      security: [{sessionAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody: {$ref: '#/components/requestBodies/ViewVersion'}
+      responses:
+        '200': {$ref: '#/components/responses/ViewOk'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/take-over:
+    post:
+      operationId: takeOverView
+      summary: Take over the ownership of a Saved View (`views.admin`).
+      description: Requires expectedVersion. For example after the owner left; shares stay. Audited as views.view.ownership_taken. An administrator can see, archive and take over a View but never run one that is not shared with them.
+      security: [{sessionAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody: {$ref: '#/components/requestBodies/ViewVersion'}
+      responses:
+        '200': {$ref: '#/components/responses/ViewOk'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/duplicate:
+    post:
+      operationId: duplicateView
+      summary: Copy a Saved View the caller may use into a private View they own.
+      security: [{sessionAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '201':
+          description: The copy ("<name> (copy)").
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SavedView'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/shares:
+    put:
+      operationId: setViewShares
+      summary: Replace the share set of a Saved View.
+      description: >-
+        Owner or `views.admin`; expectedVersion is required. Subjects are users, Teams, roles (level use or edit) or everyone (level use only). Adding or raising a share needs `views.share`,
+        adding an everyone share needs `views.publish`; removing shares needs no permission. Subjects must exist and be active (404 views.subject_not_found). At most 50 shares. A share never grants
+        data access: the viewer's own permissions and scope apply whenever the View runs. Audited per share (views.share.granted, views.share.revoked, views.published); publishes ViewShared per added share.
+      security: [{sessionAuth: []}]
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewSharesPut'}
+      responses:
+        '200': {$ref: '#/components/responses/ViewOk'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/results:
+    get:
+      operationId: runView
+      summary: Run a Saved View as the caller.
+      description: >-
+        Every execution re-checks, in order: the caller may see the View (as for GET), the caller may read the resource, the owning module is on (else 404 views.module_disabled), then runs the stored
+        definition through the module's own query endpoint, which applies the caller's own permission, row scope and field redaction. A condition on a field, operator or enum value the caller may not use
+        evaluates to no rows (inside AND the whole group; inside OR only that branch) and is reported in warnings as query.field_unavailable; it is never dropped. After the query the share and the definition
+        version are read again: a View revoked or archived meanwhile answers 404, one edited meanwhile 409 views.conflict, and the rows are discarded. Module query errors (rate limit, invalid cursor) are passed through.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+        - {$ref: '#/components/parameters/Cursor'}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {$ref: '#/components/parameters/QueryCount'}
+      responses:
+        '200':
+          description: One page of the module's own items.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/QueryPage'}
+                  - type: object
+                    required: [view]
+                    properties:
+                      view:
+                        type: object
+                        required: [id, name, resource, version]
+                        properties:
+                          id: {type: string}
+                          name: {type: string}
+                          resource: {type: string}
+                          version: {type: integer}
+        '400': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '503': {$ref: '#/components/responses/QueryInvalid'}
+  /views/{id}/pin-rules:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      operationId: listViewPinRules
+      summary: List the Pin Rules of a Saved View (`views.pin_for_groups`).
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ViewPinRule'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+    post:
+      operationId: createViewPinRule
+      summary: Show a Saved View in the sidebar of a Team's or role's members (`views.pin_for_groups`).
+      description: >-
+        `views.pin_for_groups` is the only permission for pinning for groups; neither `views.publish`, `views.share` nor `views.admin` implies it. The caller must be able to use the View
+        (404 otherwise). A rule grants nothing: members who may not use the View never see it. Creating the same rule again updates its group and position. At most 50 rules per View. Audited.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewPinRuleCreate'}
+      responses:
+        '201':
+          description: The rule.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ViewPinRule'}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /views/{id}/pin-rules/{ruleId}:
+    delete:
+      operationId: deleteViewPinRule
+      summary: Delete a Pin Rule (`views.pin_for_groups`).
+      description: The rule must belong to the View in the path (another View's rule id answers 404). Audited.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/Id'}
+        - {name: ruleId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+  /me/pins:
+    get:
+      operationId: getMyPins
+      summary: The caller's pin state for the "Manage pins" dialog.
+      description: Own pins (including hidden ones) merged with the Pin Rules that apply to the caller's Teams and roles, limited to Views the caller may use now. source is user or rule.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: Pins ordered by group, position and name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ViewPin'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    put:
+      operationId: replaceMyPins
+      summary: Replace the caller's own pins (order, group, hidden).
+      description: >-
+        All or nothing: every View must be one the caller may use now (else 404 views.not_found and nothing changes). Send only pins the user set or overrides (hidden=true on a rule-pinned View hides it for the caller only).
+        At most 100 pins; group keys are the resource groups (tickets, tasks, endpoints) and work. Not audited (personal presentation).
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pins]
+              additionalProperties: false
+              properties:
+                pins:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [viewId, groupKey]
+                    additionalProperties: false
+                    properties:
+                      viewId: {type: string, format: uuid}
+                      groupKey: {type: string}
+                      position: {type: integer, minimum: 0, maximum: 10000}
+                      hidden: {type: boolean}
+      responses:
+        '200':
+          description: The resulting pin state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ViewPin'}}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/ViewsNotFound'}
+        '409': {$ref: '#/components/responses/ViewsConflict'}
+  /me/sidebar:
+    get:
+      operationId: getMySidebar
+      summary: The caller's pinned Views grouped for the sidebar.
+      description: >-
+        Visible (not hidden) pins and applicable Pin Rules, grouped by group key, plus the collapsed groups. Views the caller no longer may use (revoked share, archived, deactivated owner, unreadable resource)
+        and Views of a module that is switched off (ADR-0032) are omitted. Counts arrive with the Queue slice and are not part of this response.
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The sidebar groups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups, collapsedGroups]
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, items]
+                      properties:
+                        key: {type: string}
+                        items: {type: array, items: {$ref: '#/components/schemas/ViewPin'}}
+                  collapsedGroups: {type: array, items: {type: string}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/sidebar-state:
+    put:
+      operationId: setMySidebarState
+      summary: Store which sidebar groups the caller collapsed.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [collapsedGroups]
+              additionalProperties: false
+              properties:
+                collapsedGroups: {type: array, maxItems: 20, items: {type: string, pattern: '^[a-z][a-z0-9_]{0,39}$'}}
+      responses:
+        '204': {description: Stored.}
+        '400': {$ref: '#/components/responses/ViewsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
   /roles:
     get:
       operationId: listRoles
@@ -11667,12 +12045,43 @@ components:
       in: query
       description: Exact directory provider key filter, at most 100 characters (else 400 organization.invalid_provider_key).
       schema: {type: string, maxLength: 100}
+  requestBodies:
+    ViewVersion:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [expectedVersion]
+            additionalProperties: false
+            properties:
+              expectedVersion: {type: integer, minimum: 1}
   responses:
     QueryInvalid:
       description: Query error; codes include query.invalid_filter, query.too_complex, query.field_unavailable, query.invalid_cursor, query.unindexed_sort, query.rate_limited and query.timeout.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    ViewsInvalid:
+      description: Invalid request (views.invalid_request) or a query error of the resource's catalog passed through unchanged (query.invalid_filter, query.too_complex, ...).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ViewsNotFound:
+      description: Unknown, private to someone else, archived, owned by a deactivated User, over a resource the caller may not read, or a subject that does not exist (views.not_found, views.subject_not_found), or the owning module is switched off (views.module_disabled). Unknown and invisible Views answer identically.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ViewsConflict:
+      description: Stale expectedVersion or a View changed while it ran (views.conflict), archived (views.archived), name already used by the owner for this resource (views.name_taken), or a limit (views.limit_reached).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ViewOk:
+      description: The updated View.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SavedView'}
     SecurityNotFound:
       description: Advisory or finding not found (security.not_found).
       content:
@@ -12259,6 +12668,110 @@ components:
             properties:
               code: {type: string}
               path: {type: string}
+    ViewDefinition:
+      type: object
+      additionalProperties: false
+      description: Filter AST (platform query engine) plus visible columns; at most 16 KiB. Stored canonical; never contains results.
+      properties:
+        filter: {$ref: '#/components/schemas/QueryFilter'}
+        columns: {type: array, maxItems: 40, items: {type: string, pattern: '^[a-z][a-z0-9_]{0,39}$'}}
+    ViewShare:
+      type: object
+      required: [subjectType, level]
+      properties:
+        subjectType: {type: string, enum: [user, team, role, everyone]}
+        subjectId: {type: string, format: uuid}
+        level: {type: string, enum: [use, edit]}
+        grantedBy: {type: string}
+        grantedAt: {type: string, format: date-time}
+    SavedView:
+      type: object
+      required: [id, resource, name, description, ownerId, definition, visibility, version, access, moduleEnabled, pinned, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        resource: {type: string, enum: [tickets, devices, tasks]}
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        ownerId: {type: string}
+        ownerName: {type: string}
+        definition: {$ref: '#/components/schemas/ViewDefinition'}
+        visibility: {type: string, enum: [private, shared]}
+        version: {type: integer, description: Optimistic lock; every change including shares, archive and take-over increments it.}
+        access: {type: string, enum: [owner, edit, use, admin], description: The caller's relation; admin may manage but not run the View.}
+        moduleEnabled: {type: boolean}
+        pinned: {type: boolean}
+        lastEditedBy: {type: string}
+        archivedAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        shares: {type: array, items: {$ref: '#/components/schemas/ViewShare'}, description: Owner and `views.admin` only.}
+    ViewCreate:
+      type: object
+      required: [resource, name]
+      additionalProperties: false
+      properties:
+        resource: {type: string, enum: [tickets, devices, tasks]}
+        name: {type: string, minLength: 1, maxLength: 80, description: Unique per owner and resource, case-insensitive; no control or bidirectional characters.}
+        description: {type: string, maxLength: 500}
+        definition: {$ref: '#/components/schemas/ViewDefinition'}
+    ViewUpdate:
+      type: object
+      required: [expectedVersion]
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        definition: {$ref: '#/components/schemas/ViewDefinition'}
+    ViewSharesPut:
+      type: object
+      required: [expectedVersion, shares]
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        shares:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [subjectType, level]
+            additionalProperties: false
+            properties:
+              subjectType: {type: string, enum: [user, team, role, everyone]}
+              subjectId: {type: string, format: uuid, description: Omit for everyone.}
+              level: {type: string, enum: [use, edit], description: everyone only allows use.}
+    ViewPinRuleCreate:
+      type: object
+      required: [subjectType, subjectId, groupKey]
+      additionalProperties: false
+      properties:
+        subjectType: {type: string, enum: [team, role]}
+        subjectId: {type: string, format: uuid}
+        groupKey: {type: string}
+        position: {type: integer, minimum: 0, maximum: 10000}
+    ViewPinRule:
+      type: object
+      required: [id, viewId, subjectType, subjectId, groupKey, position, createdBy, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        viewId: {type: string, format: uuid}
+        subjectType: {type: string, enum: [team, role]}
+        subjectId: {type: string, format: uuid}
+        groupKey: {type: string}
+        position: {type: integer}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+    ViewPin:
+      type: object
+      required: [viewId, name, resource, groupKey, position, hidden, source]
+      properties:
+        viewId: {type: string, format: uuid}
+        name: {type: string}
+        resource: {type: string}
+        groupKey: {type: string}
+        position: {type: integer}
+        hidden: {type: boolean}
+        source: {type: string, enum: [user, rule]}
     Initiative:
       type: object
       required: [id, reference, title, ownerId, status, version, createdAt, updatedAt]

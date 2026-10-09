@@ -76,8 +76,9 @@ func (e *env) resource() query.Resource {
 		DefaultSort: []query.SortSpec{{Field: "title", Dir: "asc"}},
 		Fields: []query.Field{
 			{Key: "title", Type: query.TypeText, Column: col("title"), SortColumn: query.Lower(col("title")), Operators: textOps,
-				Filterable: true, Sortable: true, Searchable: true, SortIndexed: true, Index: query.IndexBtree},
-			{Key: "note", Type: query.TypeText, Column: col("note"), Nullable: true, Operators: textOps, Filterable: true, Searchable: true},
+				Filterable: true, Sortable: true, Searchable: true, SortIndexed: true, Index: query.IndexTrigram},
+			{Key: "note", Type: query.TypeText, Column: col("note"), Nullable: true, Operators: textOps, Filterable: true, Searchable: true,
+				Index: query.IndexTrigram},
 			{Key: "qty", Type: query.TypeNumber, Column: col("qty"), Nullable: true, Operators: query.OperatorsOf(query.TypeNumber),
 				Filterable: true, Sortable: true, SortIndexed: true, Index: query.IndexBtree},
 			{Key: "flag", Type: query.TypeBoolean, Column: col("flag"), Nullable: true, Operators: query.OperatorsOf(query.TypeBoolean), Filterable: true},
@@ -98,7 +99,7 @@ func (e *env) resource() query.Resource {
 				Filterable: true, Sortable: true, SortIndexed: true, Permission: "q.cost", Redaction: query.RedactHidden},
 			// Gate-restricted (row-specific disclosure) searchable text.
 			{Key: "body", Type: query.TypeText, Column: col("body"), Nullable: true, Operators: textOps, Filterable: true, Searchable: true,
-				Gate: func(s query.Subject) bool { return s.Has("q.staff") }, Redaction: query.RedactHidden},
+				Index: query.IndexTrigram, Gate: func(s query.Subject) bool { return s.Has("q.staff") }, Redaction: query.RedactHidden},
 			{Key: "tag", Type: query.TypeTags, Operators: []query.Op{query.OpHasAny, query.OpHasAll, query.OpHasNone}, Filterable: true,
 				EnumValues: []query.EnumValue{{Value: "red"}, {Value: "blue"}, {Value: "green"}, {Value: "vip", Permission: "q.vip"}},
 				Sub: &query.Sub{Table: e.child, Alias: "g", LinkColumn: "item_id", ValueColumn: "tag",
@@ -114,8 +115,8 @@ func (e *env) seed(t *testing.T) {
 	rows := []string{
 		fmt.Sprintf(`(%d, 'Alpha', 'x', 1, true, 'open', 'high', '%s', '2026-10-01T10:00:00Z', '2026-10-01', 's1', 10, 'b1')`, 1, u1),
 		fmt.Sprintf(`(%d, 'alpha two', NULL, 2, false, 'open', 'low', '%s', '2026-10-02T10:00:00Z', '2026-10-02', 's2', 20, NULL)`, 2, u1),
-		fmt.Sprintf(`(%d, 'Beta%%', '', 3, NULL, 'closed', 'low', '%s', NULL, NULL, 's3', NULL, 'b3')`, 3, u2),
-		fmt.Sprintf(`(%d, 'Be_ta', 'y', NULL, true, 'closed', 'urgent', '%s', '2026-09-01T00:00:00Z', '2026-09-01', NULL, 40, 'b4')`, 4, u2),
+		fmt.Sprintf(`(%d, 'Beta%%', '', 3, NULL, 'closed', 'low', '%s', NULL, NULL, 's3', NULL, 'body3')`, 3, u2),
+		fmt.Sprintf(`(%d, 'Be_ta', 'yak', NULL, true, 'closed', 'urgent', '%s', '2026-09-01T00:00:00Z', '2026-09-01', NULL, 40, 'b4')`, 4, u2),
 		fmt.Sprintf(`(%d, 'Gamma\x', NULL, 5, false, 'open', 'normal', NULL, '2026-10-08T00:30:00Z', '2026-10-08', 's5', 50, NULL)`, 5),
 		fmt.Sprintf(`(%d, 'Delta', 'z', -4.5, NULL, 'new', 'normal', NULL, '2026-10-07T23:30:00Z', '2026-10-07', 's6', 60, 'b6')`, 6),
 	}

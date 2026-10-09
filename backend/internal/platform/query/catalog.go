@@ -321,6 +321,10 @@ func (c *Catalog) validateField(f *Field) error {
 	if f.Searchable && (f.Type != TypeText || !f.Filterable) {
 		return fmt.Errorf("only filterable text fields are searchable")
 	}
+	if f.Searchable && f.Index != IndexTrigram {
+		// Search is an OR over the searchable fields; without a trigram index it would scan the table.
+		return fmt.Errorf("a searchable field needs a trigram index (Index: IndexTrigram)")
+	}
 	switch f.Redaction {
 	case RedactNone:
 	case RedactHidden:

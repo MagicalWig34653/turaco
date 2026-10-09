@@ -53,9 +53,9 @@ var deviceCatalog = query.MustCatalog(query.Resource{
 	DefaultSort: []query.SortSpec{{Field: "name", Dir: "asc"}},
 	Fields: []query.Field{
 		{Key: "name", Type: query.TypeText, Column: query.Col("d", "name"), SortColumn: query.Lower(query.Col("d", "name")), Operators: deviceTextOps,
-			Filterable: true, Sortable: true, Searchable: true, SortIndexed: true},
+			Filterable: true, Sortable: true, Searchable: true, SortIndexed: true, Index: query.IndexTrigram},
 		{Key: "serial_number", Type: query.TypeText, Column: query.Col("d", "serial_number"), Nullable: true, Operators: deviceNullText,
-			Filterable: true, Searchable: true, Index: query.IndexBtree},
+			Filterable: true, Searchable: true, Index: query.IndexTrigram},
 		{Key: "provider", Type: query.TypeText, Column: query.Col("d", "provider"), Index: query.IndexBtree, Filterable: true,
 			Operators: []query.Op{query.OpEquals, query.OpNotEquals, query.OpIn, query.OpNotIn}},
 		{Key: "platform", Type: query.TypeEnum, Column: query.Col("d", "os_platform"), Operators: deviceEnumOps, Filterable: true,

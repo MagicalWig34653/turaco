@@ -39,6 +39,7 @@ var goldenJobTypes = []string{
 	"servicedesk.external.push",
 	"services.vm_link_backfill",
 	"tasks.recurrence.generate",
+	"views.purge_archived",
 }
 
 func newSmokeRunner(t *testing.T, ldap config.LDAPConfig) (*jobs.Runner, *events.Dispatcher, jobDeps, time.Duration) {

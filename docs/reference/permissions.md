@@ -79,3 +79,7 @@
 | `tasks.work` | normal | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
 | `tickets.manage` | elevated | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
 | `tickets.view` | normal | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. |
+| `views.admin` | elevated | List every Saved View, unshare, archive, restore or take over any View (for example after its owner left). Does not allow running a View one has no share for, and never exposes data rows. Every change is audited. |
+| `views.pin_for_groups` | elevated | Create and delete Pin Rules that show a Saved View in the sidebar of the members of a Team or role. This is the only permission for pinning for groups; a rule shows a View only to members who may use it and grants no access. Every change is audited. |
+| `views.publish` | elevated | Share a Saved View with everyone (use level only). The View appears in every signed-in User's list of shared Views; each viewer still sees only the rows their own permissions allow. Every publication is audited. |
+| `views.share` | normal | Share one's own Saved Views with named Users, Teams and roles (use or edit level) and revoke those shares. A share never grants data access: the viewer's own permissions and scope always apply when the View runs. Using Views, creating private ones and pinning them needs no permission beyond reading the resource. |

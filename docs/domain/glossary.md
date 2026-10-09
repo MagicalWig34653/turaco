@@ -43,9 +43,11 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 ## Service management
 - **Field Catalog** — module-declared list fields and their caller-visible filter, sort and search operators; SQL expressions stay server-owned.
 - **Filter AST** — versioned tree of conditions and AND/OR groups evaluated under the caller's resource scope.
-- **Saved View** — planned stored query intent and columns; never a grant of row access.
+- **Saved View** — stored query intent (Filter AST, sort, columns) of one resource with an owner and a version; never results and never a grant of row access: it always runs as the viewer, through the owning module's query endpoint (`platform/views`, F13 Q-B).
+- **View Share** — explicit, revocable access to a Saved View for a User, Team, role or everyone at level `use` or `edit`; resolved at read time; grants no data access.
 - **Board** — planned Task presentation over a Saved View with columns; card moves use Task lifecycle operations.
-- **Pin** — planned personal or group sidebar placement of a View or Queue.
+- **Pin** — personal sidebar placement of a Saved View (group, position, hidden); a Queue pin follows with Q-C.
+- **Pin Rule** — Team- or role-wide Pin created with `views.pin_for_groups`; shows the View only to members who may use it and grants no access; a member can hide it for themselves.
 - **Ticket Queue** — planned Service Desk ownership and numbering boundary; distinct from a Saved View and from the existing queue Team hint.
 - **Ticket** — generic tracked support record; employee UI should use friendlier language.
 - **Incident** — unplanned interruption/degradation/malfunction.
@@ -163,7 +165,6 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Impact** — the bounded set of records affected if a record is down (downstream: its dependents) or that it depends on (upstream), found by walking current Relationships up to depth 6 and 500 records; the result says when it was truncated.
 - **Event** — business fact that happened; past-tense name.
 - **Audit Event** — immutable security/compliance record of action/state transition.
-- **Saved View** — reusable query/filter/presentation.
 - **Role** — named set of permissions; custom, or the built-in immutable `platform-administrator` holding all permissions. Not a Team and not an Assignment of work.
 - **Role Assignment** — grant of a Role to a User or a Directory Group within a scope (currently only `global`); revoked assignments are kept as history.
 - **Emergency Account** — local break-glass login for a dedicated User when directory login is unavailable; disabled by default and managed only by the operator CLI.

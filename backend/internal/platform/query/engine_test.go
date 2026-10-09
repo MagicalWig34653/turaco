@@ -152,13 +152,17 @@ func TestSearchCoversOnlyPermittedSearchableFields(t *testing.T) {
 		return got
 	}
 	sameSet(t, "search title", run(e.subject(), "ALPHA"), ids(1, 2))
-	sameSet(t, "search note", run(e.subject(), "y"), ids(4))
-	// "b3" occurs only in the gated body field: invisible to the search of a caller without the gate.
-	sameSet(t, "gated field is not searched without the gate", run(e.subject(), "b3"), nil)
-	sameSet(t, "gated field is searched with the gate", run(e.subject("q.staff"), "b3"), ids(3))
+	sameSet(t, "search note", run(e.subject(), "yak"), ids(4))
+	// "body3" occurs only in the gated body field: invisible to the search of a caller without the gate.
+	sameSet(t, "gated field is not searched without the gate", run(e.subject(), "body3"), nil)
+	sameSet(t, "gated field is searched with the gate", run(e.subject("q.staff"), "body3"), ids(3))
 	// LIKE metacharacters are literal.
-	sameSet(t, "percent", run(e.subject(), "%"), ids(3))
-	sameSet(t, "underscore", run(e.subject(), "_"), ids(4))
+	sameSet(t, "percent", run(e.subject(), "ta%"), ids(3))
+	sameSet(t, "underscore", run(e.subject(), "e_t"), ids(4))
+	// A text shorter than a trigram would scan the whole index and is refused.
+	if _, _, err := e.idsOf(t, e.subject(), query.Request{Search: "ab", Limit: 10}, query.Fragment{}); err == nil {
+		t.Error("a two-character search must be refused")
+	}
 	if got := run(e.subject(), "   "); len(got) != 6 {
 		t.Errorf("blank search must not filter, got %d rows", len(got))
 	}
@@ -189,7 +193,7 @@ func TestVisibilityPredicateCannotBeWidened(t *testing.T) {
 		}
 	}
 	// Search and counts are scoped too.
-	_, page, err := e.idsOf(t, s, query.Request{Search: "a", Count: true, Limit: 100}, vis)
+	_, page, err := e.idsOf(t, s, query.Request{Search: "alp", Count: true, Limit: 100}, vis)
 	if err != nil || page.Count == nil || *page.Count > 2 {
 		t.Errorf("count escaped visibility: %v %v", page.Count, err)
 	}
@@ -377,6 +381,28 @@ func TestValidationLimits(t *testing.T) {
 	}
 }
 
+// A trigram index serves a substring of three characters or more: contains is cheap enough for an OR group, a
+// shorter text and every not_contains are as slow as an unindexed match.
+func TestTrigramCostIsValueAware(t *testing.T) {
+	e := newEnv(t)
+	s := e.subject()
+	or := func(n query.Node) *query.Error {
+		return prepareErr(e, s, query.Request{Filter: filterOf(group("or", n, cond("status", query.OpEquals, "open")))})
+	}
+	if err := or(cond("title", query.OpContains, "alp")); err != nil {
+		t.Errorf("indexed contains in an OR group: %v", err)
+	}
+	if err := or(cond("title", query.OpContains, "al")); err == nil || err.Code != query.CodeTooComplex {
+		t.Errorf("a two-character contains must count as slow: %v", err)
+	}
+	if err := or(cond("title", query.OpNotContains, "alpha")); err == nil || err.Code != query.CodeTooComplex {
+		t.Errorf("not_contains cannot use a trigram index: %v", err)
+	}
+	if err := or(cond("title", query.OpEndsWith, "pha")); err != nil {
+		t.Errorf("indexed ends_with: %v", err)
+	}
+}
+
 func TestCostLimits(t *testing.T) {
 	e := newEnv(t)
 	s := e.subject()
@@ -400,7 +426,7 @@ func TestCostLimits(t *testing.T) {
 		t.Errorf("budget: %v", err)
 	}
 	// Search over several unindexed fields costs too and shares the budget.
-	if err := prepareErr(e, s, query.Request{Search: "a", Filter: filterOf(group("and", slow[:5]...))}); err == nil || err.Code != query.CodeTooComplex {
+	if err := prepareErr(e, s, query.Request{Search: "abc", Filter: filterOf(group("and", slow[:5]...))}); err == nil || err.Code != query.CodeTooComplex {
 		t.Errorf("search plus conditions: %v", err)
 	}
 	// Sorting needs an index.
@@ -439,22 +465,23 @@ func TestCatalogValidationRejectsUnsafeDeclarations(t *testing.T) {
 	}
 	field := func(r *query.Resource) *query.Field { return &r.Fields[0] }
 	cases := map[string]func(r *query.Resource){
-		"identifier with SQL in the column": func(r *query.Resource) { field(r).Column = query.Col("t", "title; DROP TABLE x") },
-		"uppercase identifier":              func(r *query.Resource) { field(r).Column = query.Col("t", "Title") },
-		"quoted identifier":                 func(r *query.Resource) { field(r).Column = query.Col("t", `"title"`) },
-		"wrong alias":                       func(r *query.Resource) { field(r).Column = query.Col("other", "title") },
-		"zero expression":                   func(r *query.Resource) { field(r).Column = query.Expr{} },
-		"injection in the table":            func(r *query.Resource) { r.Table = "x; DROP TABLE y" },
-		"injection in the schema":           func(r *query.Resource) { r.Schema = "a.b" },
-		"bad field key":                     func(r *query.Resource) { field(r).Key = "Title" },
-		"operator of another type":          func(r *query.Resource) { field(r).Operators = []query.Op{query.OpBetween} },
-		"unknown operator":                  func(r *query.Resource) { field(r).Operators = []query.Op{"equals; --"} },
-		"filterable without operators":      func(r *query.Resource) { field(r).Operators = nil },
-		"operators without filterable":      func(r *query.Resource) { field(r).Filterable = false },
-		"unknown type":                      func(r *query.Resource) { field(r).Type = "money" },
-		"masked but filterable":             func(r *query.Resource) { field(r).Redaction = query.RedactMasked },
-		"restricted without redaction":      func(r *query.Resource) { field(r).Permission = "p" },
-		"hidden without permission":         func(r *query.Resource) { field(r).Redaction = query.RedactHidden },
+		"identifier with SQL in the column":  func(r *query.Resource) { field(r).Column = query.Col("t", "title; DROP TABLE x") },
+		"uppercase identifier":               func(r *query.Resource) { field(r).Column = query.Col("t", "Title") },
+		"quoted identifier":                  func(r *query.Resource) { field(r).Column = query.Col("t", `"title"`) },
+		"wrong alias":                        func(r *query.Resource) { field(r).Column = query.Col("other", "title") },
+		"zero expression":                    func(r *query.Resource) { field(r).Column = query.Expr{} },
+		"injection in the table":             func(r *query.Resource) { r.Table = "x; DROP TABLE y" },
+		"injection in the schema":            func(r *query.Resource) { r.Schema = "a.b" },
+		"bad field key":                      func(r *query.Resource) { field(r).Key = "Title" },
+		"operator of another type":           func(r *query.Resource) { field(r).Operators = []query.Op{query.OpBetween} },
+		"unknown operator":                   func(r *query.Resource) { field(r).Operators = []query.Op{"equals; --"} },
+		"filterable without operators":       func(r *query.Resource) { field(r).Operators = nil },
+		"operators without filterable":       func(r *query.Resource) { field(r).Filterable = false },
+		"unknown type":                       func(r *query.Resource) { field(r).Type = "money" },
+		"masked but filterable":              func(r *query.Resource) { field(r).Redaction = query.RedactMasked },
+		"restricted without redaction":       func(r *query.Resource) { field(r).Permission = "p" },
+		"hidden without permission":          func(r *query.Resource) { field(r).Redaction = query.RedactHidden },
+		"searchable without a trigram index": func(r *query.Resource) { field(r).Searchable = true },
 		"searchable number": func(r *query.Resource) {
 			field(r).Type = query.TypeNumber
 			field(r).Operators = []query.Op{query.OpEquals}

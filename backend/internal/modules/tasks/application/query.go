@@ -39,9 +39,12 @@ var taskCatalog = query.MustCatalog(query.Resource{
 	// The shared task order: due date (none last), then priority (urgent first).
 	DefaultSort: []query.SortSpec{{Field: "due_at", Dir: "asc"}, {Field: "priority", Dir: "asc"}},
 	Fields: []query.Field{
-		{Key: "title", Type: query.TypeText, Column: query.Col("t", "title"), Operators: taskTextOps, Filterable: true, Searchable: true},
-		{Key: "description", Type: query.TypeText, Column: query.Col("t", "description"), Nullable: true, Filterable: true, Searchable: true,
-			Operators: append(append([]query.Op{}, taskTextOps...), query.OpIsEmpty, query.OpIsNotEmpty)},
+		// Substring matches (contains, search) on the title are served by a trigram index (migration 000060). The
+		// description has none: only emptiness can be filtered and search does not cover it.
+		{Key: "title", Type: query.TypeText, Column: query.Col("t", "title"), Operators: taskTextOps, Filterable: true, Searchable: true,
+			Index: query.IndexTrigram},
+		{Key: "description", Type: query.TypeText, Column: query.Col("t", "description"), Nullable: true, Filterable: true,
+			Operators: []query.Op{query.OpIsEmpty, query.OpIsNotEmpty}},
 		{Key: "status", Type: query.TypeEnum, Column: query.Col("t", "status"), Operators: taskEnumOps, Filterable: true, EnumValues: enumValues(statuses...)},
 		{Key: "priority", Type: query.TypeEnum, Column: query.Col("t", "priority"), Operators: taskEnumOps, Filterable: true,
 			Sortable: true, SortIndexed: true, SortByEnumOrder: true, EnumValues: enumValues(PriorityUrgent, PriorityHigh, PriorityNormal, PriorityLow)},

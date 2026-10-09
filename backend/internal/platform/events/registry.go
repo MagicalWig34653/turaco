@@ -87,4 +87,6 @@ var Registry = []Definition{
 	{Name: "DeploymentFailureClusterDetected", Version: 1, Owner: "endpoints", Description: "The correlation found a failure cluster of a Deployment (failed or expired targets sharing an error code, device model, manufacturer, OS version or ring); the Endpoint Finding deployment_failure_cluster was raised. Payload: deploymentId, findingId, dimension, failed."},
 	{Name: "DeploymentFailed", Version: 1, Owner: "endpoints", Description: "A Deployment failed before or during execution (target resolution refused, gates closed). Payload: deploymentId, reason."},
 	{Name: "AIProviderChanged", Version: 1, Owner: "platform", Description: "An AI Provider was created or reconfigured. Payload: providerId, operation (created, updated), enabled. Carries no endpoint, secret reference or settings."},
+	{Name: "ViewShared", Version: 1, Owner: "views", Description: "A Saved View was shared with a User, Team, role or everyone (or the level of a share changed). Payload: viewId, resource, subjectType, subjectId (empty for everyone), level. Carries no name and no filter."},
+	{Name: "ViewArchived", Version: 1, Owner: "views", Description: "A Saved View was archived by its owner or an administrator; its shares stop working. Payload: viewId, resource."},
 }

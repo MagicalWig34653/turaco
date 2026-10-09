@@ -103,6 +103,9 @@ type compiler struct {
 	cost     int
 	used     map[string]bool
 	warnings []Warning
+	// valueCost is set by an operator whose cost depends on the value (a substring shorter than a trigram
+	// cannot use the trigram index); condition() consumes it.
+	valueCost int
 }
 
 func (c *compiler) arg(v any) string {
@@ -176,6 +179,9 @@ func (c *compiler) condition(n Node, path string) (compiled, error) {
 		return compiled{}, err
 	}
 	cost := opCost(f, op)
+	if c.valueCost > 0 {
+		cost, c.valueCost = c.valueCost, 0
+	}
 	c.cost += cost
 	c.used[f.Key] = true
 	return compiled{sql: sql, cost: cost, maxCost: cost}, nil
@@ -419,6 +425,9 @@ func (c *compiler) text(f *Field, col string, op Op, raw json.RawMessage, path s
 	v, err := decodeString(raw, path)
 	if err != nil {
 		return "", err
+	}
+	if op == OpContains || op == OpEndsWith || op == OpStartsWith {
+		c.valueCost = textValueCost(f, op, v)
 	}
 	switch op {
 	case OpEquals:
@@ -753,6 +762,9 @@ func (c *compiler) search(s string) (string, error) {
 	}
 	if utf8.RuneCountInString(s) > MaxSearchLength || !utf8.ValidString(s) || strings.ContainsRune(s, 0) {
 		return "", invalid("search", "The search text is invalid.")
+	}
+	if utf8.RuneCountInString(s) < MinSearchLength {
+		return "", invalid("search", "The search text is too short.")
 	}
 	var parts []string
 	pat := "%" + likeEscape(s) + "%"

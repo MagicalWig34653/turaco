@@ -38,11 +38,15 @@ var ticketCatalog = query.MustCatalog(query.Resource{
 	Key: "tickets", Module: "servicedesk", Schema: "servicedesk", Table: "tickets", Alias: "t", IDColumn: "id",
 	DefaultSort: []query.SortSpec{{Field: "created_at", Dir: "desc"}},
 	Fields: []query.Field{
+		// Substring matches (contains, search) are served by trigram indexes (migration 000060) on reference and
+		// title. The description has no trigram index (multi-kilobyte text): only emptiness can be filtered, so a
+		// request can never ask for an unindexed scan of it, and search does not cover it.
 		{Key: "reference", Type: query.TypeText, Column: query.Col("t", "reference"), Operators: textOps,
-			Filterable: true, Sortable: true, Searchable: true, SortIndexed: true, Index: query.IndexBtree},
-		{Key: "title", Type: query.TypeText, Column: query.Col("t", "title"), Operators: textOps, Filterable: true, Searchable: true},
-		{Key: "description", Type: query.TypeText, Column: query.Col("t", "description"), Operators: nullableTextOps,
-			Filterable: true, Searchable: true, Nullable: true},
+			Filterable: true, Sortable: true, Searchable: true, SortIndexed: true, Index: query.IndexTrigram},
+		{Key: "title", Type: query.TypeText, Column: query.Col("t", "title"), Operators: textOps, Filterable: true, Searchable: true,
+			Index: query.IndexTrigram},
+		{Key: "description", Type: query.TypeText, Column: query.Col("t", "description"),
+			Operators: []query.Op{query.OpIsEmpty, query.OpIsNotEmpty}, Filterable: true, Nullable: true},
 		{Key: "status", Type: query.TypeEnum, Column: query.Col("t", "status"), Operators: enumOps, Filterable: true,
 			EnumValues: enumValues(Statuses...)},
 		{Key: "waiting_reason", Type: query.TypeEnum, Column: query.Col("t", "waiting_reason"), Filterable: true, Nullable: true,
