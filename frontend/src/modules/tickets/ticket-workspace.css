@@ -518,3 +518,18 @@ html[data-motion='reduced'] .incident-workspace * {
     flex-wrap: wrap;
   }
 }
+
+.queue-teams {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.queue-teams li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-token);
+  padding-block: 6px;
+}

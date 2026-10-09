@@ -107,6 +107,14 @@ export function RequestDetail({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const name = (id: string | null) => (id ? (request.names[id] ?? id) : '–');
+  /** Who has to decide: the named person, else the approving team, else a neutral wording. */
+  const approver = (approval: ServiceRequestDetail['approvals'][number]) => {
+    const id = approval.approverUserId ?? approval.approverTeamId;
+    const known = id ? request.names[id] : undefined;
+    if (known)
+      return approval.approverUserId ? known : t('requests.approval.team', { name: known });
+    return t('requests.approval.unknownApprover');
+  };
 
   const act = async (action: RequestAction) => {
     if (action === 'cancel' || action === 'put_on_hold' || action === 'complete') {
@@ -212,6 +220,8 @@ export function RequestDetail({
               </Badge>
               {approval.decidedByUserId ? (
                 <> {t('requests.approval.by', { name: name(approval.decidedByUserId) })}</>
+              ) : approval.status === 'pending' ? (
+                <> {t('requests.approval.waitingFor', { name: approver(approval) })}</>
               ) : null}
               {approval.decisionComment ? (
                 <p className="preline">{approval.decisionComment}</p>

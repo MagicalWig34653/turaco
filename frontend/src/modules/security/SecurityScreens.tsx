@@ -3,6 +3,7 @@ import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState, type FormEvent } from 'react';
 import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import type { ApiError } from '../../platform/api/client';
+import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link, navigate, useLocation } from '../../platform/router/Router';
@@ -120,7 +121,7 @@ function Field({
   );
 }
 function Transitions({ items }: { items: Transition[] }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <section>
       <h2>{t('security.transitions')}</h2>
@@ -136,7 +137,7 @@ function Transitions({ items }: { items: Transition[] }) {
         <tbody>
           {items.map((x) => (
             <tr key={x.id}>
-              <td>{new Date(x.createdAt).toLocaleString()}</td>
+              <td>{formatDateTime(locale, x.createdAt)}</td>
               <td>{t(`security.operation.${x.operation}` as MessageKey)}</td>
               <td>
                 <Label kind="status" value={x.toStatus} />

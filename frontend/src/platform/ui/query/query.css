@@ -1,0 +1,158 @@
+.query-workbench {
+  margin-block: 12px;
+  color: var(--text-primary);
+}
+.query-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.query-count {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.query-workbench .active-filters {
+  list-style: none;
+  margin-block: 10px 0;
+  padding-inline: 0;
+}
+.filter-chip-item {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+}
+.filter-chip-item > .filter-chip:not(:only-child) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+  border-inline-end: 0;
+}
+.filter-chip-remove {
+  border: 1px solid var(--border-token);
+  border-start-end-radius: 18px;
+  border-end-end-radius: 18px;
+  background: var(--surface-selected);
+  color: var(--text-secondary);
+  font: inherit;
+  min-width: 32px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.filter-chip-remove:hover {
+  color: var(--text-primary);
+}
+.query-panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-token);
+  padding: 16px;
+  border-radius: var(--radius-md);
+  margin-block: 10px;
+  display: grid;
+  gap: 12px;
+}
+.query-workbench label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.query-workbench input:not([type='checkbox']):not([type='radio']),
+.query-workbench select {
+  min-height: 34px;
+  max-width: 100%;
+}
+.query-workbench fieldset {
+  min-width: 0;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin: 0;
+}
+.query-condition,
+.query-sort,
+.query-actions,
+.query-columns li {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.query-child {
+  border-inline-start: 2px solid var(--border-token);
+  padding: 8px 0 8px 10px;
+  margin-block: 6px;
+}
+.query-group {
+  background: var(--surface-base);
+}
+.query-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.query-workbench label.query-choice,
+.query-columns label,
+.query-reference-results label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.query-columns {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.query-columns label {
+  min-width: 10rem;
+}
+.query-columns-box > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  padding-block: 6px;
+}
+.query-reference {
+  display: grid;
+  gap: 6px;
+  min-width: 14rem;
+}
+.query-reference-results {
+  max-height: 12rem;
+  overflow: auto;
+}
+.query-errors {
+  color: var(--state-critical);
+  background: var(--state-critical-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+.query-errors p {
+  margin: 2px 0;
+}
+.query-workbench button:focus-visible,
+.query-workbench summary:focus-visible,
+.query-workbench input:focus-visible,
+.query-workbench select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .query-condition > label,
+  .query-reference {
+    width: 100%;
+  }
+  .query-panel {
+    padding: 10px;
+  }
+}
+
+/* Segmented quick toggles (Mine / Unassigned / All) and similar pressed buttons. */
+.btn[aria-pressed='true'] {
+  background: var(--surface-selected);
+  color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}

@@ -24,6 +24,7 @@ import {
   type AttentionItem,
 } from '../modules/my-work/overviewModel';
 import { summarizeFeed } from '../modules/my-work/workModel';
+import { QueueHealth } from '../modules/tickets/QueueHealth';
 
 const quickActions: ReadonlyArray<{ route: RouteId; icon: RouteId; label: MessageKey }> = [
   { route: 'taskNew', icon: 'tasks', label: 'overview.action.createTask' },
@@ -109,7 +110,12 @@ export function OverviewScreen() {
   const greeting = useGreeting();
   const { enabled } = useModules();
   const list = usePagedList((cursor, signal) => tasksApi.myWork(cursor, signal), []);
-  const briefingEnabled = enabled('briefing');
+  const briefingRoute = appRoutes.find((route) => route.id === 'briefing');
+  // The feed answers 403 without a briefing-related permission, so do not ask at all.
+  const briefingEnabled =
+    enabled('briefing') && (!briefingRoute || canViewRoute(can, briefingRoute, enabled));
+  const queueRoute = appRoutes.find((route) => route.id === 'ticketQueue');
+  const showQueueHealth = !!queueRoute && canViewRoute(can, queueRoute, enabled);
   const feed = useAsync(
     (signal) =>
       briefingEnabled
@@ -234,7 +240,7 @@ export function OverviewScreen() {
                 key={
                   item.kind === 'task'
                     ? item.task.id
-                    : `${item.kind}-${item.entry.source}-${item.entry.titleKey}`
+                    : `${item.kind}-${item.entry.source}-${item.entry.linkPath}-${item.entry.titleKey}`
                 }
                 item={item}
               />
@@ -249,6 +255,7 @@ export function OverviewScreen() {
           </div>
         ) : null}
       </section>
+      {showQueueHealth ? <QueueHealth canListTeams={can('organization.view')} /> : null}
       <div className="overview-columns">
         <Card className="dashboard-timeline" title={t('overview.recent')}>
           <div className="dashboard-section-heading">

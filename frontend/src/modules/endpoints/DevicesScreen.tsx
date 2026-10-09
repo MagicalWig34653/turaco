@@ -2,8 +2,10 @@ import { useAi } from '../ai/AiProvider';
 import { TableDate } from '../../platform/ui/TableDate';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
+import { useQueryList } from '../../platform/ui/query/useQueryList';
+import { QueryWorkbench } from '../../platform/ui/query/QueryWorkbench';
 import type { ApiError } from '../../platform/api/client';
-import { asApiError, usePagedList } from '../../platform/api/useAsync';
+import { asApiError } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link, navigate } from '../../platform/router/Router';
@@ -46,15 +48,11 @@ export function DevicesScreen() {
   const [syncError, setSyncError] = useState<ApiError>();
   const [syncResult, setSyncResult] = useState<SyncCounts>();
   const managementAllowed = can('endpoint.management.view') || can('endpoints.manage');
-  const list = usePagedList(
-    (cursor, signal) =>
-      endpointsApi.devices(
-        managementAllowed ? filters : { ...filters, managementState: '' },
-        cursor,
-        signal,
-      ),
-    [filters],
-  );
+  const [visibleKeys, setVisibleKeys] = useState<string[]>();
+  const query = useQueryList<Device>('devices', {
+    ...(managementAllowed ? filters : { ...filters, managementState: '' }),
+  });
+  const { list } = query;
   const change = (patch: Partial<DeviceFilters>) =>
     setFilters((current) => ({ ...current, ...patch }));
   const sync = async () => {
@@ -73,6 +71,7 @@ export function DevicesScreen() {
   const columns: Column<Device>[] = [
     {
       key: 'name',
+      sortField: 'name',
       sortValue: (d) => d.name,
       header: t('endpoints.name'),
       render: (d) => <Link to={`/devices/${encodeURIComponent(d.id)}`}>{d.name}</Link>,
@@ -341,10 +340,23 @@ export function DevicesScreen() {
           onChange={(e) => change({ includeDeleted: e.target.checked })}
         />
       </FilterBar>
+      <QueryWorkbench
+        query={query}
+        columns={columns}
+        listKey="devices"
+        onColumnsChange={setVisibleKeys}
+      />
       <DataTable
         filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.devices')}
-        columns={columns}
+        columns={
+          visibleKeys
+            ? visibleKeys.flatMap((key) => columns.filter((column) => column.key === key))
+            : columns
+        }
+        serverSort={query.state.sort}
+        onSortChange={(sort) => query.setState({ ...query.state, sort })}
+        totalCount={query.countCapped ? undefined : query.count}
         rows={list.items}
         rowKey={(d) => d.id}
         rowActions={(d) => [

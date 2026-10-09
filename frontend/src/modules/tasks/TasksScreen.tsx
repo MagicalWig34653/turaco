@@ -1,19 +1,18 @@
 import { useFilterQuery } from '../../platform/ui/useFilterQuery';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
-import { usePagedList } from '../../platform/api/useAsync';
+import { useQueryList } from '../../platform/ui/query/useQueryList';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { PageHeader } from '../../platform/ui/PageHeader';
-import { tasksApi } from './api';
 import { TaskTable } from './TaskTable';
 import {
   taskPriorities,
   taskStatuses,
-  type TaskFilter,
+  type Task,
   type TaskPriority,
   type TaskStatus,
 } from './types';
@@ -36,17 +35,8 @@ export function TasksScreen() {
   useFilterQuery({ priority, overdue, mine });
   const q = useDebouncedValue(query.trim(), 300);
 
-  const filter: TaskFilter = {
-    ...(status ? { status } : {}),
-    ...(priority ? { priority } : {}),
-    ...(overdue ? { overdue: true } : {}),
-    ...(mine ? { mine: true } : {}),
-    ...(q ? { q } : {}),
-  };
-  const list = usePagedList(
-    (cursor, signal) => tasksApi.list(filter, cursor, signal),
-    [status, priority, overdue, mine, q],
-  );
+  const workbench = useQueryList<Task>('tasks', { status, priority, overdue, mine, q });
+  const { list } = workbench;
 
   const activeFilters = [
     ...(query
@@ -166,6 +156,7 @@ export function TasksScreen() {
         caption={t('nav.tasks')}
         emptyText={t('tasks.empty')}
         list={list}
+        query={workbench}
       />
     </>
   );

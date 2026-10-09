@@ -35,12 +35,21 @@ export const ticketsApi = {
   ) =>
     api.get<Page<Ticket>>('/tickets', { signal, query: { scope, ...filter, limit: 50, cursor } }),
   get: (id: string, signal?: Signal) => api.get<TicketDetail>(`/tickets/${enc(id)}`, { signal }),
-  create: (body: { title: string; description?: string; assetId?: string }) =>
-    api.post<Ticket>('/tickets', body),
+  create: (body: {
+    title: string;
+    description?: string;
+    assetId?: string;
+    affectedUserId?: string;
+    priority?: string;
+    queueTeamId?: string;
+  }) => api.post<Ticket>('/tickets', body),
   comment: (id: string, body: string, internal: boolean) =>
     api.post<TicketComment>(`/tickets/${enc(id)}/comments`, { body, internal }),
-  assign: (id: string, expectedVersion: number, body: { assigneeId?: string }) =>
-    api.post<Ticket>(`/tickets/${enc(id)}/assign`, { expectedVersion, ...body }),
+  assign: (
+    id: string,
+    expectedVersion: number,
+    body: { assigneeId?: string; queueTeamId?: string },
+  ) => api.post<Ticket>(`/tickets/${enc(id)}/assign`, { expectedVersion, ...body }),
   setPriority: (id: string, expectedVersion: number, priority: string) =>
     api.post<Ticket>(`/tickets/${enc(id)}/priority`, { expectedVersion, priority }),
   operate: (id: string, op: TicketOperation, expectedVersion: number, reason = '') =>

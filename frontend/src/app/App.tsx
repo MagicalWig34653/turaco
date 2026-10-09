@@ -404,8 +404,12 @@ function AuthenticatedApp() {
 }
 
 function Gate() {
-  const { t } = useI18n();
+  const { t, applyProfileLocale } = useI18n();
   const { state } = useSession();
+  const profileLocale = state.status === 'authenticated' ? state.session.locale : undefined;
+  useEffect(() => {
+    applyProfileLocale(profileLocale);
+  }, [applyProfileLocale, profileLocale]);
   useEffect(() => {
     if (state.status === 'anonymous') document.title = `${t('login.title')} – ${t('app.name')}`;
   }, [state.status, t]);

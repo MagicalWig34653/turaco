@@ -23,6 +23,8 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { TicketRemoteSupport } from '../remoteaccess/RemoteSupportCard';
 import { problemsApi } from '../problems/api';
+import { incidentsApi } from '../incidents/api';
+import { IncidentBadge } from '../incidents/IncidentsScreen';
 import { ticketsApi } from './api';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
@@ -39,16 +41,23 @@ function AssignDialog({
   onDone: () => void;
 }) {
   const { t } = useI18n();
+  const [mode, setMode] = useState<'user' | 'team'>('user');
   const [assignee, setAssignee] = useState<Assignee | null>(null);
+  const [queue, setQueue] = useState<Assignee | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
+  const target = mode === 'user' ? assignee : queue;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!assignee) return;
+    if (!target) return;
     setBusy(true);
     setError(undefined);
     try {
-      await ticketsApi.assign(ticket.id, ticket.version, { assigneeId: assignee.id });
+      await ticketsApi.assign(
+        ticket.id,
+        ticket.version,
+        mode === 'user' ? { assigneeId: target.id } : { queueTeamId: target.id },
+      );
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
@@ -59,15 +68,75 @@ function AssignDialog({
     <Dialog title={t('tickets.action.assign')} onClose={onClose}>
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
-        <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+        <fieldset className="assign-mode">
+          <legend>{t('tickets.assign.mode')}</legend>
+          <label>
+            <input
+              type="radio"
+              name="assign-mode"
+              checked={mode === 'user'}
+              onChange={() => setMode('user')}
+            />{' '}
+            {t('tickets.assign.mode.user')}
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="assign-mode"
+              checked={mode === 'team'}
+              onChange={() => setMode('team')}
+            />{' '}
+            {t('tickets.assign.mode.team')}
+          </label>
+        </fieldset>
+        {mode === 'user' ? (
+          <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+        ) : (
+          <AssigneePicker
+            type="team"
+            label={t('tickets.assign.queue')}
+            hint={t('tickets.assign.queue.hint')}
+            value={queue}
+            onChange={setQueue}
+          />
+        )}
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
-          <Button type="submit" variant="primary" busy={busy} disabled={!assignee}>
-            {t('tickets.action.assign')}
+          <Button type="submit" variant="primary" busy={busy} disabled={!target}>
+            {t(mode === 'user' ? 'tickets.action.assign' : 'tickets.assign.moveToQueue')}
           </Button>
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** The Major Incident this ticket is linked to, so staff see the wider outage context. */
+function LinkedIncident({ id }: { id: string }) {
+  const { t } = useI18n();
+  const loaded = useAsync((signal) => incidentsApi.get(id, signal), [id]);
+  return (
+    <Card title={t('tickets.section.majorIncident')}>
+      <h2>{t('tickets.section.majorIncident')}</h2>
+      {loaded.error ? (
+        <p className="incident-muted">{t('tickets.majorIncident.unavailable')}</p>
+      ) : !loaded.data ? (
+        <Skeleton lines={2} />
+      ) : (
+        <>
+          <p>
+            <span className="incident-reference">{loaded.data.reference}</span>{' '}
+            <IncidentBadge status={loaded.data.status} />
+          </p>
+          <p>
+            <Link to={`/incidents/${encodeURIComponent(loaded.data.id)}`}>{loaded.data.title}</Link>
+          </p>
+          <p className="incident-muted">
+            {t('incidents.linked', { count: loaded.data.linkedTickets })}
+          </p>
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -509,6 +578,7 @@ function TicketWorkspace({ id }: { id: string }) {
               </div>
             ) : null}
           </Card>
+          {ticket.majorIncidentId ? <LinkedIncident id={ticket.majorIncidentId} /> : null}
           {can('remote_access.view') ? (
             <ModuleFeature module="remoteaccess">
               <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />

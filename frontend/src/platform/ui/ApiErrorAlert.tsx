@@ -17,6 +17,14 @@ export function ApiErrorAlert({
   return (
     <Alert kind="error">
       <p>{t(errorMessageKey(error))}</p>
+      {error.code === 'query.too_complex' && error.message ? (
+        <p className="alert-meta">{t('query.error.detail', { detail: error.message })}</p>
+      ) : null}
+      {error.code === 'query.rate_limited' && error.retryAfterSeconds ? (
+        <p className="alert-meta">
+          {t('query.error.retryAfter', { seconds: error.retryAfterSeconds })}
+        </p>
+      ) : null}
       {error.requestId ? (
         <p className="alert-meta">{t('error.reference', { id: error.requestId })}</p>
       ) : null}

@@ -37,6 +37,7 @@ export type Ticket = {
   queueTeamId: string | null;
   assigneeId: string | null;
   assetId: string | null;
+  majorIncidentId: string | null;
   deviceSnapshot: Record<string, unknown> | null;
   resolvedAt: string | null;
   closedAt: string | null;

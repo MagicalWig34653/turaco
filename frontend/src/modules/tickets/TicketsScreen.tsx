@@ -1,8 +1,12 @@
 import { useAi } from '../ai/AiProvider';
 import { TableDate } from '../../platform/ui/TableDate';
 import { FilterBar } from '../../platform/ui/FilterBar';
-import { useState } from 'react';
-import { usePagedList } from '../../platform/api/useAsync';
+import { useEffect, useState } from 'react';
+import { useQueryList } from '../../platform/ui/query/useQueryList';
+import { QueryWorkbench } from '../../platform/ui/query/QueryWorkbench';
+import { useFilterQuery } from '../../platform/ui/useFilterQuery';
+import { organizationApi } from '../organization/api';
+import { Button } from '../../platform/ui/Button';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link, navigate } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
@@ -41,16 +45,64 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const { can, session } = useSession();
   const ai = useAi();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [status, setStatus] = useState<TicketStatus | ''>('');
-  const [openOnly, setOpenOnly] = useState(true);
-  const list = usePagedList(
-    (cursor, signal) => ticketsApi.list(scope, { status, open: openOnly }, cursor, signal),
-    [scope, status, openOnly],
+  const [actionSuccess, setActionSuccess] = useState(false);
+  const [visibleKeys, setVisibleKeys] = useState<string[]>();
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [assignment, setAssignment] = useState<'mine' | 'unassigned' | 'all'>(() => {
+    const value = new URLSearchParams(window.location.search).get('assignment');
+    return value === 'mine' || value === 'unassigned' ? value : 'all';
+  });
+  const [status, setStatus] = useState<TicketStatus | ''>(() => {
+    const value = new URLSearchParams(window.location.search).get('status');
+    return ticketStatuses.includes(value as TicketStatus) ? (value as TicketStatus) : '';
+  });
+  const [openOnly, setOpenOnly] = useState(
+    () => new URLSearchParams(window.location.search).get('open') !== 'false',
   );
+  useFilterQuery({ status, open: openOnly ? 'true' : 'false', assignment });
+  const query = useQueryList<Ticket>(
+    'tickets',
+    {
+      scope,
+      status,
+      open: openOnly,
+      assigneeId: scope === 'all' && assignment === 'mine' ? session?.userId : undefined,
+    },
+    scope === 'all' && assignment === 'unassigned'
+      ? { type: 'condition', field: 'assignee', op: 'is_empty' }
+      : undefined,
+  );
+  const { list } = query;
+  const personIds = [
+    ...new Set(
+      list.items
+        .flatMap((ticket) => [ticket.assigneeId, ticket.reporterId])
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ]
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (scope !== 'all' || !personIds) return;
+    const controller = new AbortController();
+    void Promise.all(
+      personIds.split(',').map(async (id) => {
+        try {
+          return [id, (await organizationApi.user(id, controller.signal)).displayName] as const;
+        } catch {
+          return [id, ''] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!controller.signal.aborted) setNames(Object.fromEntries(entries));
+    });
+    return () => controller.abort();
+  }, [personIds, scope]);
   const title = t(scope === 'mine' ? 'nav.myTickets' : 'nav.ticketQueue');
   const columns: Column<Ticket>[] = [
     {
       key: 'reference',
+      sortField: 'reference',
       sortValue: (x) => x.reference,
       header: t('tickets.col.reference'),
       render: (x) => <Link to={`/support/${encodeURIComponent(x.id)}`}>{x.reference}</Link>,
@@ -71,6 +123,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       ? [
           {
             key: 'priority',
+            sortField: 'priority',
             sortValue: (x: Ticket) => ({ low: 0, normal: 1, high: 2, urgent: 3 })[x.priority],
             header: t('tickets.col.priority'),
             render: (x: Ticket) => t(`tickets.priority.${x.priority}`),
@@ -79,11 +132,33 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       : []),
     {
       key: 'updated',
+      sortField: 'updated_at',
       sortValue: (x) => x.updatedAt,
       header: t('tickets.col.updated'),
       render: (x) => <TableDate value={x.updatedAt} />,
     },
   ];
+  if (scope === 'all')
+    columns.splice(
+      columns.length - 1,
+      0,
+      {
+        key: 'assignee',
+        header: t('tickets.col.assignee'),
+        render: (ticket) =>
+          ticket.assigneeId
+            ? names[ticket.assigneeId] || t('tickets.personUnknown')
+            : t('tickets.fact.unassigned'),
+      },
+      {
+        key: 'requester',
+        header: t('tickets.col.requester'),
+        render: (ticket) => names[ticket.reporterId] || t('tickets.personUnknown'),
+      },
+    );
+  const visibleColumns = visibleKeys
+    ? visibleKeys.flatMap((key) => columns.filter((column) => column.key === key))
+    : columns;
   const rowActions = (ticket: Ticket): MenuItem[] => {
     const path = `/support/${encodeURIComponent(ticket.id)}`;
     const copy = async (value: string) => {
@@ -110,11 +185,13 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
               id: 'assign-me',
               label: t('tickets.action.assignMe'),
               onSelect: () => {
+                setActionSuccess(false);
                 void ticketsApi
                   .assign(ticket.id, ticket.version, { assigneeId: session.userId })
                   .then(
                     () => {
                       setActionError(null);
+                      setActionSuccess(true);
                       list.reload();
                     },
                     () => setActionError(t('error.generic')),
@@ -136,6 +213,15 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     ];
   };
   const activeFilters = [
+    ...(scope === 'all' && assignment !== 'all'
+      ? [
+          {
+            key: 'assignment',
+            label: t(`tickets.filter.${assignment}`),
+            onRemove: () => setAssignment('all'),
+          },
+        ]
+      : []),
     ...(status
       ? [
           {
@@ -172,12 +258,26 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
         }
       />
       {scope === 'mine' ? <IncidentBanner /> : null}
+      {actionSuccess ? <Toast kind="success">{t('tickets.assignedToMe')}</Toast> : null}
       {actionError ? <Toast kind="error">{actionError}</Toast> : null}
       <FilterBar
         activeFilters={activeFilters}
         role="search"
         onSubmit={(event) => event.preventDefault()}
       >
+        {scope === 'all' ? (
+          <div role="group" aria-label={t('tickets.filter.assignment')}>
+            {(['mine', 'unassigned', 'all'] as const).map((value) => (
+              <Button
+                key={value}
+                aria-pressed={assignment === value}
+                onClick={() => setAssignment(value)}
+              >
+                {t(`tickets.filter.${value}`)}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <Select
           label={t('tickets.col.status')}
           value={status}
@@ -193,10 +293,19 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
           onChange={(event) => setOpenOnly(event.target.checked)}
         />
       </FilterBar>
+      <QueryWorkbench
+        query={query}
+        columns={columns}
+        listKey={`tickets-${scope}`}
+        onColumnsChange={setVisibleKeys}
+      />
       <DataTable
         filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={title}
-        columns={columns}
+        columns={visibleColumns}
+        serverSort={query.state.sort}
+        onSortChange={(sort) => query.setState({ ...query.state, sort })}
+        totalCount={query.countCapped ? undefined : query.count}
         rows={list.items}
         rowKey={(x) => x.id}
         rowActions={rowActions}

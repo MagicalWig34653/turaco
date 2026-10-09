@@ -13,6 +13,13 @@ export function formatDateTime(locale: Locale, iso: string | null | undefined): 
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' }).format(date);
 }
 
+export function formatDate(locale: Locale, iso: string | null | undefined): string {
+  if (!iso) return '–';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
+}
+
 /** Money from minor units (cents) with the currency; falls back to a plain number for unknown codes. */
 export function formatMoney(locale: Locale, cents: number, currency: string): string {
   try {

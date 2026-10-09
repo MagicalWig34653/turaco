@@ -13,6 +13,13 @@ const byCode: Record<string, MessageKey> = {
   'platform.csrf_rejected': 'error.csrf',
   'platform.internal_error': 'error.internal',
   'auth.temporarily_unavailable': 'login.error.temporarilyUnavailable',
+  'query.invalid_filter': 'query.error.invalid_filter',
+  'query.too_complex': 'query.error.too_complex',
+  'query.field_unavailable': 'query.error.field_unavailable',
+  'query.invalid_cursor': 'query.error.invalid_cursor',
+  'query.unindexed_sort': 'query.error.unindexed_sort',
+  'query.timeout': 'query.error.timeout',
+  'query.rate_limited': 'query.error.rate_limited',
 };
 
 const resolvers: Array<(error: ErrorLike) => MessageKey | undefined> = [];

@@ -9,7 +9,9 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { TextArea, TextField } from '../../platform/ui/Field';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
+import { useSession } from '../../platform/session/SessionProvider';
 import { assetsApi } from '../assets/api';
+import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { IncidentBanner } from '../incidents/IncidentBanner';
 import { Suggestions } from '../knowledge/Suggestions';
 import { ticketsApi } from './api';
@@ -47,6 +49,9 @@ function ReportIcon({ kind }: { kind: 'device' | 'message' | 'book' | 'check' })
 /** Raising a ticket asks for little: what is wrong, and optionally which of my devices. */
 export function TicketCreateScreen() {
   const { t } = useI18n();
+  const { can } = useSession();
+  const staff = can('tickets.manage');
+  const [onBehalf, setOnBehalf] = useState<Assignee | null>(null);
   const devices = useAsync(async (signal) => assetsApi.mine(undefined, signal), []);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -67,7 +72,8 @@ export function TicketCreateScreen() {
         await ticketsApi.create({
           title: title.trim(),
           description: description.trim(),
-          ...(assetId ? { assetId } : {}),
+          ...(assetId && !onBehalf ? { assetId } : {}),
+          ...(onBehalf ? { affectedUserId: onBehalf.id } : {}),
         }),
       );
     } catch (cause) {
@@ -128,7 +134,7 @@ export function TicketCreateScreen() {
           <span aria-hidden="true">←</span> {t('tickets.back')}
         </Link>
       </header>
-      <IncidentBanner />
+      <IncidentBanner compact />
       <div className="report-layout">
         <form className="report-form" onSubmit={(event) => void submit(event)}>
           {error ? <ApiErrorAlert error={error} /> : null}
@@ -164,6 +170,23 @@ export function TicketCreateScreen() {
               onChange={(event) => setDescription(event.target.value)}
             />
           </Card>
+          {staff ? (
+            <Card className="report-section">
+              <details open={onBehalf !== null}>
+                <summary>{t('tickets.onBehalf.title')}</summary>
+                <p className="field-hint">{t('tickets.onBehalf.hint')}</p>
+                <AssigneePicker
+                  type="user"
+                  label={t('tickets.onBehalf.search')}
+                  value={onBehalf}
+                  onChange={setOnBehalf}
+                />
+                {onBehalf ? (
+                  <Button onClick={() => setOnBehalf(null)}>{t('tickets.onBehalf.clear')}</Button>
+                ) : null}
+              </details>
+            </Card>
+          ) : null}
           <Card className="report-section">
             <div className="report-section-heading">
               <span className="report-step" aria-hidden="true">
@@ -175,13 +198,22 @@ export function TicketCreateScreen() {
               </div>
               <span className="report-optional">{t('reportPolish.optional')}</span>
             </div>
-            {devices.loading ? <Skeleton lines={2} /> : null}
-            {devices.error ? (
+            {onBehalf ? (
+              <p className="report-device-note" role="status">
+                {t('tickets.onBehalf.noDevice', { name: onBehalf.label })}
+              </p>
+            ) : null}
+            {devices.loading && !onBehalf ? <Skeleton lines={2} /> : null}
+            {devices.error && !onBehalf ? (
               <p className="report-device-note" role="status">
                 {t('reportPolish.devicesUnavailable')}
               </p>
             ) : null}
-            <fieldset className="report-devices" disabled={busy}>
+            <fieldset
+              className="report-devices"
+              disabled={busy || onBehalf !== null}
+              hidden={onBehalf !== null}
+            >
               <legend className="report-sr-only">{t('tickets.field.device')}</legend>
               <label className={`report-device ${assetId === '' ? 'is-selected' : ''}`}>
                 <input

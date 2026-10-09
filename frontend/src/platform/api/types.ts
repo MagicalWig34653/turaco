@@ -11,6 +11,8 @@ export type AuthSession = {
   displayName?: string;
   /** The user's given name when the directory provides one. */
   givenName?: string;
+  /** The user's preferred UI language when the profile has one ('de' or 'en'). */
+  locale?: string;
 };
 
 export type LoginRequest = { identifier: string; password: string };

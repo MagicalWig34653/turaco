@@ -12,7 +12,7 @@ import { incidentsApi } from './api';
  * Known outages shown before a ticket is raised, so people can follow an incident instead of
  * reporting it again. Renders nothing when everything is fine.
  */
-export function IncidentBanner() {
+export function IncidentBanner({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const loaded = useAsync(
     async (signal) => (await incidentsApi.list(true, undefined, signal)).items,
@@ -29,8 +29,8 @@ export function IncidentBanner() {
       setError(asApiError(cause));
     }
   };
-  return (
-    <section aria-label={t('incidents.banner.title')}>
+  const list = (
+    <>
       {error ? <ApiErrorAlert error={error} /> : null}
       {loaded.data.map((m) => (
         <Alert key={m.id} kind="warning" className="incident-banner">
@@ -51,6 +51,18 @@ export function IncidentBanner() {
           </Button>
         </Alert>
       ))}
-    </section>
+    </>
+  );
+  if (!compact) return <section aria-label={t('incidents.banner.title')}>{list}</section>;
+  return (
+    <details className="incident-banner-compact" aria-label={t('incidents.banner.title')}>
+      <summary>
+        <span className="incident-banner-icon" aria-hidden="true">
+          !
+        </span>
+        {t('incidents.banner.summary', { count: loaded.data.length })}
+      </summary>
+      {list}
+    </details>
   );
 }
