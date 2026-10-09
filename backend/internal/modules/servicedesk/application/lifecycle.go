@@ -51,3 +51,39 @@ func AllowedOperations(t Ticket, p Principal) []string {
 	}
 	return out
 }
+
+// Abilities is what the caller may do with one Ticket, computed with the same rules the operations enforce
+// (queue grants, global permissions, reporter or affected User, and the status). The UI shows actions from it; the
+// backend still authorizes every operation.
+type Abilities struct {
+	// Comment adds a public comment.
+	Comment bool
+	// InternalComment adds an internal comment (staff of the Queue).
+	InternalComment bool
+	// Assign changes assignee or routing Team.
+	Assign bool
+	// SetPriority changes the priority.
+	SetPriority bool
+	// Transition is true when at least one lifecycle operation in AllowedOperations is possible.
+	Transition bool
+	// MoveQueue moves the Ticket to another Queue.
+	MoveQueue bool
+	// MarkDuplicate cancels the Ticket as a duplicate of another one.
+	MarkDuplicate bool
+}
+
+// AbilitiesOf computes the Abilities of the caller (with their authority ep over the Ticket's Queue) for a Ticket.
+// canMove says whether the deployment has Queues, which a move needs.
+func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
+	owner := ep.UserID != "" && (t.ReporterID == ep.UserID || t.AffectedUserID == ep.UserID)
+	open := t.Status != StatusClosed && t.Status != StatusCancelled
+	return Abilities{
+		Comment:         (ep.Manage || owner) && open,
+		InternalComment: ep.Manage && open,
+		Assign:          ep.Manage && !slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, t.Status),
+		SetPriority:     ep.Manage,
+		Transition:      len(AllowedOperations(t, ep)) > 0,
+		MoveQueue:       ep.Manage && canMove,
+		MarkDuplicate:   ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
+	}
+}

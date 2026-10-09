@@ -90,6 +90,14 @@ func (c changes) Calendar(ctx context.Context, _, _ time.Time, _ int) ([]applica
 	return []application.ChangeCalendarEntry{{Change: found[chgID]}}, false, nil
 }
 
+// CalendarWithProposed adds a submitted Change (CHG-000002, assessment) with a proposed window.
+func (c changes) CalendarWithProposed(ctx context.Context, from, to time.Time, limit int) ([]application.ChangeCalendarEntry, bool, error) {
+	entries, truncated, err := c.Calendar(ctx, from, to, limit)
+	s, e := window()
+	proposed := application.ChangeInfo{ID: "00000000-0000-7000-8000-0000000000d2", Reference: "CHG-000002", Title: "Switch swap", Status: "assessment", RequesterID: outsider, WindowStart: s, WindowEnd: e}
+	return append(entries, application.ChangeCalendarEntry{Change: proposed}), truncated, err
+}
+
 type tasks struct{}
 
 func (tasks) Tasks(context.Context, []string) ([]application.TaskInfo, error) { return nil, nil }
@@ -249,10 +257,16 @@ func TestHTTPInitiativeAndCalendar(t *testing.T) {
 	}
 	code, body = do(t, h, "GET", "/api/v1/maintenance-calendar?from=2099-01-01T00:00:00Z&to=2099-02-01T00:00:00Z", "")
 	cal, _ := body["items"].([]any)
-	if code != http.StatusOK || len(cal) != 1 {
+	if code != http.StatusOK || len(cal) != 2 {
 		t.Fatalf("calendar = %d %v", code, body)
 	}
+	if p := cal[1].(map[string]any); p["proposed"] != true || p["status"] != "assessment" || p["reference"] != "CHG-000002" {
+		t.Errorf("a submitted change shows its proposed window flagged: %v", p)
+	}
 	entry := cal[0].(map[string]any)
+	if entry["proposed"] != false {
+		t.Errorf("a scheduled change is not proposed: %v", entry)
+	}
 	inits, _ := entry["initiatives"].([]any)
 	if entry["title"] != "Firmware" || len(inits) != 1 {
 		t.Errorf("calendar entry = %v", entry)

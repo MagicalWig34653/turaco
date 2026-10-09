@@ -61,7 +61,7 @@ Personas follow the simulation: 32 logins in 7 classes. `--users N` takes the fi
 | employee | 14 hospital staff | list own tickets, report a ticket, open and comment own tickets, knowledge search, catalog, queues for create, unread count |
 | firstlevel, technician | `lena.bauer`, `murat.demir`; six `it-specialist` | `POST /tickets/query` with filter variants (open unassigned, new and urgent, title contains tag, text search, waiting, mine) with cursor paging, list all, open ticket, assign, public and internal comment, transitions (start, wait, resume, resolve, close, reopen), priority, move queue (only when two or more active Queues exist), knowledge, my-work, view counts |
 | lead | three site leads | briefing feed, sidebar, view and queue counts, my-work, a few queries, opens, assigns, comments |
-| viewer | `uwe.pohl`, `mirja.engel` (`tickets.view` only) | query, open, list, counts, and a write that must be denied |
+| viewer | `uwe.pohl`, `mirja.engel` (infrastructure engineers: read access, plus work access in their own Queue through a Queue grant) | query, open, list, counts, and a comment probe: the probe first reads the ticket and its `abilities`; a comment is expected to be denied only where `abilities.comment` (or `abilities.internalComment`) is false, so the team that works its own Queue is not a leak |
 | admin | `devadmin`, `ines.falk`, `deniz.arslan` | user list, audit search, queries, counts, sidebar, briefing |
 | vendor | two `vendor-restricted` users | list own tickets, my-work, a probe that reads somebody else's ticket (must be denied), knowledge |
 

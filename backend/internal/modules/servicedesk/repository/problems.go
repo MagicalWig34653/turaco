@@ -188,3 +188,29 @@ func (r *Repository) KnownErrorsOfTicket(ctx context.Context, ticketID string) (
 	}
 	return out, rows.Err()
 }
+
+// VisibleProblemCounts implements application.ProblemStore.
+func (r *Repository) VisibleProblemCounts(ctx context.Context, problemIDs []string, scope application.TicketScope) (map[string]int, error) {
+	out := map[string]int{}
+	ids := validUUIDs(problemIDs)
+	if len(ids) == 0 {
+		return out, nil
+	}
+	all, queues, user := scopeArgs(scope)
+	rows, err := r.pool.Query(ctx, `SELECT pt.problem_id::text, count(*) FROM servicedesk.problem_tickets pt
+		JOIN servicedesk.tickets t ON t.id = pt.ticket_id
+		WHERE pt.problem_id = ANY($1::text[]::uuid[]) AND `+visibleTicketCond+` GROUP BY 1`, ids, all, queues, user)
+	if err != nil {
+		return nil, fmt.Errorf("count visible problem tickets: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("count visible problem tickets: scan: %w", err)
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}

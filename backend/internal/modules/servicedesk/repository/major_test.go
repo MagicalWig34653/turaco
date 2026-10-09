@@ -58,15 +58,27 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 		t.Errorf("reporter after linking: %+v", d.Incident)
 	}
 	// The detail lists the linked tickets the reader may view: the reporter sees theirs, an unrelated employee none
-	// (the total still counts it).
+	// (and the count follows the list: no hidden counts).
 	if d, err := svc.Get(ctx, e.alice, false, m.ID); err != nil || len(d.Tickets) != 1 || d.Tickets[0].ID != tk.ID {
 		t.Errorf("reporter's linked tickets = %+v %v", d.Tickets, err)
 	}
-	if d, err := svc.Get(ctx, e.bob, false, m.ID); err != nil || len(d.Tickets) != 0 || d.Incident.Tickets != 1 {
+	if d, err := svc.Get(ctx, e.bob, false, m.ID); err != nil || len(d.Tickets) != 0 || d.Incident.Tickets != 0 {
 		t.Errorf("unrelated employee: tickets %+v total %d %v", d.Tickets, d.Incident.Tickets, err)
 	}
-	if d, err := svc.Get(ctx, e.agent, true, m.ID); err != nil || len(d.Tickets) != 1 {
+	if d, err := svc.Get(ctx, e.agent, true, m.ID); err != nil || len(d.Tickets) != 1 || d.Incident.Tickets != 1 {
 		t.Errorf("agent's linked tickets = %+v %v", d.Tickets, err)
+	}
+	// The list shapes the count by the same rule.
+	for who, want := range map[string]int{e.alice: 1, e.bob: 0, e.agent: 1} {
+		res, err := svc.List(ctx, who, true, application.Page{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, it := range res.Items {
+			if it.ID == m.ID && it.Tickets != want {
+				t.Errorf("list count for %s = %d, want %d", who, it.Tickets, want)
+			}
+		}
 	}
 	// Unlinking: permission, unknown ticket, then the ticket leaves the incident (idempotent).
 	if err := svc.UnlinkTicket(ctx, e.c(e.agent), false, m.ID, tk.ID); !errors.Is(err, application.ErrForbidden) {

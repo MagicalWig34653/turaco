@@ -431,3 +431,26 @@ func (s *Service) VMsByIDs(ctx context.Context, ids []string) ([]VirtualMachine,
 	}
 	return s.store.VMsByIDs(ctx, ids)
 }
+
+// SearchVMs finds Virtual Machines that are not decommissioned by name for other modules' pickers. It authorizes
+// nothing; at most limit results (1 to 50).
+func (s *Service) SearchVMs(ctx context.Context, text string, limit int) ([]VirtualMachine, error) {
+	text = strings.TrimSpace(text)
+	if text == "" || len(text) > maxName {
+		return []VirtualMachine{}, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	res, err := s.store.ListVMs(ctx, VMFilter{Query: text, Page: Page{Limit: limit + 10}})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VirtualMachine, 0, limit)
+	for _, v := range res.Items {
+		if v.State != VMDecommissioned && len(out) < limit {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}

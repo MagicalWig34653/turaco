@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -54,6 +55,30 @@ func (p products) Products(_ context.Context, ids []string) (map[string]applicat
 	for _, id := range ids {
 		if v, ok := p[id]; ok {
 			out[id] = v
+		}
+	}
+	return out, nil
+}
+
+// SearchProducts is the optional ProductSearcher capability: a plain substring match on the fake product names.
+func (p products) SearchProducts(_ context.Context, text string, _ int) ([]string, error) {
+	out := []string{}
+	for id, v := range p {
+		if strings.Contains(strings.ToLower(v.Name), strings.ToLower(text)) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// hosts is a fake DeviceSearcher: hostname -> asset id.
+type hosts map[string]string
+
+func (h hosts) AssetIDsByHostname(_ context.Context, text string, _ int) ([]string, error) {
+	out := []string{}
+	for name, id := range h {
+		if strings.Contains(strings.ToLower(name), strings.ToLower(text)) {
+			out = append(out, id)
 		}
 	}
 	return out, nil
@@ -518,5 +543,62 @@ func TestAssetsByIDsIsBoundedAndTolerant(t *testing.T) {
 	}
 	if _, err := pub.AssetsByIDs(ctx, make([]string, application.MaxLookupIDs+1)); err == nil {
 		t.Fatal("lookup must be bounded")
+	}
+}
+
+func TestAssetSearchMatchesTagsProductsHostnamesAndTokens(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ws := e.create(application.CreateInput{ProductID: e.laptop, AssetTag: "KIS-WS-" + e.corr, SerialNumber: "SN-" + e.corr})
+	other := e.create(application.CreateInput{ProductID: e.mouse, AssetTag: "MS-" + e.corr})
+	e.svc.WithDeviceSearch(hosts{"orbis-pc-" + e.corr: other.ID})
+	ids := func(p application.Principal, q string) []string {
+		res, err := e.svc.List(ctx, p, application.Filter{Query: q})
+		if err != nil {
+			t.Fatalf("search %q: %v", q, err)
+		}
+		out := []string{}
+		for _, a := range res.Items {
+			out = append(out, a.ID)
+		}
+		return out
+	}
+	has := func(got []string, a application.Asset) bool { return slices.Contains(got, a.ID) }
+	// A short word matches the start of a part of the tag (two characters are below the trigram minimum).
+	if got := ids(e.view, "ws"); !has(got, ws) || has(got, other) {
+		t.Errorf("ws = %v", got)
+	}
+	// Three characters or more match anywhere in the reference, tag or serial number.
+	for _, q := range []string{"-ws-" + e.corr, "kis-ws", "sn-" + e.corr, ws.Reference[len(ws.Reference)-4:] + ""} {
+		if got := ids(e.view, q); !has(got, ws) {
+			t.Errorf("%q misses the workstation: %v", q, got)
+		}
+	}
+	// The product name matches (fake product search), and words narrow the result (AND).
+	if got := ids(e.view, "laptop"); !has(got, ws) || has(got, other) {
+		t.Errorf("product name = %v", got)
+	}
+	if got := ids(e.view, "laptop kis"); !has(got, ws) {
+		t.Errorf("two words = %v", got)
+	}
+	if got := ids(e.view, "laptop ms-"+e.corr); has(got, ws) || has(got, other) {
+		t.Errorf("words must all match: %v", got)
+	}
+	// Hostnames are searched only for callers who may see devices (endpoints.view).
+	if got := ids(e.view, "orbis-pc-"+e.corr); len(got) != 0 {
+		t.Errorf("hostname search without endpoints.view found %v", got)
+	}
+	withHosts := e.view
+	withHosts.Hostnames = true
+	if got := ids(withHosts, "orbis-pc-"+e.corr); !has(got, other) {
+		t.Errorf("hostname search = %v", got)
+	}
+	// Wildcards are literals, and the lookup contract finds assets without authorization.
+	if got := ids(e.view, "%"); len(got) != 0 {
+		t.Errorf("a percent sign must not match everything: %v", got)
+	}
+	hits, err := e.svc.Search(ctx, "kis-ws-"+e.corr, 5)
+	if err != nil || len(hits) != 1 || hits[0].Asset.ID != ws.ID || hits[0].ProductName != "Laptop" {
+		t.Errorf("Search = %+v %v", hits, err)
 	}
 }

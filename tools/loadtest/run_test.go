@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,6 +22,8 @@ type fakeAPI struct {
 	queue   string
 	logins  int
 	break5x bool // answer GET /knowledge-articles with 500
+	// leakyComments lets everybody who can read a ticket comment, ignoring the abilities (a broken server).
+	leakyComments bool
 }
 
 type fakeTicket struct {
@@ -154,15 +157,23 @@ func (a *fakeAPI) ticketRoute(w http.ResponseWriter, r *http.Request, login stri
 		return
 	}
 	isReporter := t.Reporter == "u-"+login
-	if !isReporter && !isStaffLogin(login) {
+	// uwe.pohl works the ticket's Queue through a queue grant; mirja.engel may only read it.
+	canComment := isReporter || isStaffLogin(login) || login == "uwe.pohl"
+	if !isReporter && !isStaffLogin(login) && login != "uwe.pohl" && login != "mirja.engel" {
 		writeErr(w, 404, "tickets.not_found")
 		return
 	}
 	if len(parts) == 1 {
-		writeJSON(w, 200, t.json())
+		j := t.json()
+		j["abilities"] = map[string]any{"comment": canComment, "internalComment": isStaffLogin(login) || login == "uwe.pohl"}
+		writeJSON(w, 200, j)
 		return
 	}
 	if parts[1] == "comments" {
+		if !canComment && !a.leakyComments {
+			writeErr(w, 403, "platform.forbidden")
+			return
+		}
 		if t.Status == "closed" {
 			writeErr(w, 409, "tickets.invalid_state")
 			return
@@ -404,5 +415,48 @@ func TestOverloadIsMeasuredNotHidden(t *testing.T) {
 	rep := BuildReport(ReportInput{Plan: plan, Rec: rec, Run: res, Env: env, SLOP99: time.Second})
 	if !rep.Stages[0].Saturated || rep.Stages[0].Dropped == 0 {
 		t.Errorf("stage not flagged saturated: %+v", rep.Stages[0])
+	}
+}
+
+// The leak probe follows the abilities of the ticket: a person who works the Queue (uwe.pohl) legitimately comments
+// and is not a leak; a person who only reads (mirja.engel) is probed, and a successful write is a violation.
+func TestWriteDeniedProbeUsesTicketAbilities(t *testing.T) {
+	run := func(t *testing.T, api *fakeAPI, login string) (probes, leaks int64, violations int) {
+		t.Helper()
+		env, _, _ := newTestEnv(t, api, 0)
+		var sess *Session
+		for _, p := range Roster("pw") {
+			if p.Login == login {
+				p.Password = "pw"
+				sess = &Session{P: p}
+			}
+		}
+		if err := env.Client.Login(context.Background(), sess, false); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 3; i++ {
+			env.Pool.Add(&Entry{ID: fmt.Sprintf("id-%d", i+1), Ref: fmt.Sprintf("TKT-%06d", i+1), Reporter: "somebody"})
+			api.tickets[fmt.Sprintf("id-%d", i+1)] = &fakeTicket{ID: fmt.Sprintf("id-%d", i+1), Ref: fmt.Sprintf("TKT-%06d", i+1), Status: "open", Reporter: "u-somebody", Version: 1}
+		}
+		rng := rand.New(rand.NewSource(1))
+		for i := 0; i < 20; i++ {
+			opWriteDenied(context.Background(), env, &JobCtx{Stage: 0}, sess, rng)
+		}
+		_, counts, _ := env.Trk.Snapshot()
+		return env.probes.Load(), env.leaks.Load(), counts["authorization_leak"]
+	}
+	if p, l, v := run(t, newFakeAPI(), "uwe.pohl"); p != 0 || l != 0 || v != 0 {
+		t.Errorf("a queue worker is not probed: probes %d leaks %d violations %d", p, l, v)
+	}
+	if p, l, v := run(t, newFakeAPI(), "mirja.engel"); p == 0 || l != 0 || v != 0 {
+		t.Errorf("a reader is probed and denied: probes %d leaks %d violations %d", p, l, v)
+	}
+	broken := newFakeAPI()
+	broken.leakyComments = true
+	if p, l, v := run(t, broken, "mirja.engel"); p == 0 || l == 0 || v == 0 {
+		t.Errorf("a successful write by a reader must be a violation: probes %d leaks %d violations %d", p, l, v)
+	}
+	if probe, internal := probeWrites(nil); !probe || !internal {
+		t.Error("without abilities both comment kinds must be denied")
 	}
 }

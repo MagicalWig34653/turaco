@@ -291,7 +291,18 @@ func (e *InvalidTransitionError) Error() string {
 }
 
 // InvalidInputError carries a user-safe validation message.
-type InvalidInputError struct{ Message string }
+type InvalidInputError struct {
+	Message string
+	// Issues names the fields that block the operation (all of them at once), so a client can point at each one.
+	Issues []FieldIssue
+}
+
+// FieldIssue is one field-level problem: Field is the API name of the field or collection (windowStart,
+// rollbackPlan, affectedResources), Code a stable machine code (required).
+type FieldIssue struct {
+	Field string
+	Code  string
+}
 
 func (e *InvalidInputError) Error() string { return "changes: invalid input: " + e.Message }
 

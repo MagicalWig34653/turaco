@@ -373,6 +373,16 @@ type Changes interface {
 	Calendar(ctx context.Context, from, to time.Time, limit int) (entries []ChangeCalendarEntry, truncated bool, err error)
 }
 
+// ProposedChanges is the optional capability of the Changes contract that adds submitted Changes (in assessment
+// or pending approval) with their proposed window to the calendar. Without it the calendar shows only approved,
+// scheduled and in-progress Changes.
+type ProposedChanges interface {
+	CalendarWithProposed(ctx context.Context, from, to time.Time, limit int) (entries []ChangeCalendarEntry, truncated bool, err error)
+}
+
+// ProposedStatuses are the Change statuses whose maintenance window is only proposed.
+var ProposedStatuses = []string{"assessment", "pending_approval"}
+
 // TaskInfo is what Planning knows about a Task.
 type TaskInfo struct {
 	ID     string

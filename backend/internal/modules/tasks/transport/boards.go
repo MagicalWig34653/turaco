@@ -137,11 +137,11 @@ type columnCardsDTO struct {
 	Warnings    []query.Warning `json:"warnings,omitempty"`
 }
 
-func toColumnCards(c application.ColumnCards) columnCardsDTO {
+func toColumnCards(c application.ColumnCards, f func(application.TaskView) taskDTO) columnCardsDTO {
 	out := columnCardsDTO{ColumnID: c.Column.ID, Items: make([]cardDTO, 0, len(c.Items)), NextCursor: c.NextCursor, Count: c.Count,
 		CountCapped: c.CountCapped, WIPLimit: c.Column.WIPLimit, OverWIP: c.OverWIP, Warnings: c.Warnings}
 	for _, card := range c.Items {
-		out.Items = append(out.Items, cardDTO{taskDTO: toTask(card.TaskView), Rank: card.Rank})
+		out.Items = append(out.Items, cardDTO{taskDTO: f(card.TaskView), Rank: card.Rank})
 	}
 	return out
 }
@@ -302,7 +302,7 @@ func (h *boardHandler) cards(w http.ResponseWriter, r *http.Request) {
 		Columns []columnCardsDTO `json:"columns"`
 	}{Columns: make([]columnCardsDTO, 0, len(cols))}
 	for _, c := range cols {
-		out.Columns = append(out.Columns, toColumnCards(c))
+		out.Columns = append(out.Columns, toColumnCards(c, shaperFor(r)))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -332,7 +332,7 @@ func (h *boardHandler) move(w http.ResponseWriter, r *http.Request) {
 		Operation string  `json:"operation,omitempty"`
 		Placed    bool    `json:"placed"`
 		Rank      *string `json:"rank"`
-	}{Task: toTask(res.Task), Operation: res.Operation, Placed: res.Placed, Rank: res.Rank})
+	}{Task: shaperFor(r)(res.Task), Operation: res.Operation, Placed: res.Placed, Rank: res.Rank})
 }
 
 type ranksBody struct {

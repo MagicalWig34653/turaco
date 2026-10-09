@@ -1227,7 +1227,7 @@ paths:
     post:
       operationId: completeTask
       summary: Complete a task.
-      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). Audited (tasks.task.completed). Emits TaskCompleted."
+      description: "Requires `tasks.manage`, or `tasks.work` on a task assigned to the caller or one of its Teams (otherwise 404 if invisible, 403 if visible). The optional `resultNote` (1 to 1000 characters of plain text, line breaks allowed, no control or invisible formatting characters; blank means none) is stored as the closing comment and returned as `resultNote` while the task is completed; reopening clears it. It is not copied into audit events or notifications (the audit metadata says only `hasResultNote`). Audited (tasks.task.completed). Emits TaskCompleted."
       security:
         - sessionAuth: []
       parameters:
@@ -1237,7 +1237,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TaskVersion'
+              $ref: '#/components/schemas/TaskComplete'
       responses:
         '200':
           description: The task.
@@ -2403,7 +2403,7 @@ paths:
     get:
       operationId: listAssets
       summary: List assets.
-      description: "Needs `assets.view` or `assets.manage`. Filters combine; `q` matches the reference, serial number or asset tag by prefix. Keyset paginated."
+      description: "Needs `assets.view` or `assets.manage`. Filters combine. `q` is split into at most four words that must all match (AND). A word of three or more characters matches anywhere in the reference, serial number, asset tag, product name, manufacturer name and manufacturer or internal part number (trigram indexes, ADR-0033); with `endpoints.view` it also matches the hostname of the linked endpoint device. A shorter word matches only the start of the reference, serial number, product name or part number, or of a part of the asset tag (`ws` finds `KIS-WS-014`). Wildcard characters are literals. Keyset paginated."
       security:
         - sessionAuth: []
       parameters:
@@ -2424,6 +2424,7 @@ paths:
           schema: {type: string, format: uuid}
         - name: q
           in: query
+          description: "Search text, at most 100 characters (see the operation description)."
           schema: {type: string, maxLength: 100}
       responses:
         '200':
@@ -9198,6 +9199,43 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /changes/affected-lookup:
+    get:
+      operationId: lookupAffectedResources
+      summary: Find resources a change can affect
+      description: "Requires changes.manage. Picker for the change wizard: finds Services (`type=service`, name or reference), Virtual Machines (`vm`, name) and Assets (`asset`, reference, tag, serial number, product name, manufacturer, part number; same matching as `GET /assets?q=`) that are not retired, decommissioned, disposed or lost. A type the caller may not see (services.view, infrastructure.view, assets.view) answers 200 with no items, so hidden records are never confirmed. `q` is 1 to 100 characters; at most `limit` (default 20, at most 50) items. Add a result with `POST /changes/{id}/affected`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: type, in: query, required: true, schema: {type: string, enum: [service, vm, asset]}}
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        '200':
+          description: Candidates.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [type, id, name]
+                      properties:
+                        type: {type: string, enum: [service, vm, asset]}
+                        id: {type: string, format: uuid}
+                        reference: {type: string, description: "SVC-xxxxxx or AST-xxxxxx; absent for Virtual Machines."}
+                        name: {type: string}
+                        detail: {type: string, description: "Criticality of a Service, state of a Virtual Machine, status of an Asset."}
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ChangesForbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /changes:
     get:
       operationId: listChanges
@@ -9354,7 +9392,7 @@ paths:
     post:
       operationId: submitChange
       summary: Draft to assessment
-      description: "Requires window, rollback plan for medium/high risk and affected resource unless standard. Version guarded and audited."
+      description: "Requires a window, a rollback plan for medium/high risk and an affected resource unless standard. Version guarded and audited. When the change is not ready, 400 `changes.invalid_request` lists every missing item at once in `error.details.fields` (`field` is `windowStart`, `rollbackPlan` or `affectedResources`, `code` is `required`); the affected resources are added with `POST /changes/{id}/affected` and found with `GET /changes/affected-lookup`. The same details come back from the assessment."
       security:
         - sessionAuth: []
       parameters:
@@ -10195,7 +10233,7 @@ paths:
     get:
       operationId: getMaintenanceCalendar
       summary: Get maintenance calendar
-      description: "Requires planning.view or planning.manage or changes.view, changes.manage or changes.execute. RFC 3339 range must be at most 92 days; to is exclusive. At most 500 approved, scheduled or in-progress Changes; truncated also reports capped initiative links. Change title, kind and risk require Change read access. Affected Service and Location names are redacted without their permissions; including initiatives require Initiative read access."
+      description: "Requires planning.view or planning.manage or changes.view, changes.manage or changes.execute. RFC 3339 range must be at most 92 days; to is exclusive. At most 500 approved, scheduled or in-progress Changes plus submitted Changes (`assessment`, `pending_approval`) with their proposed window, which carry `proposed: true` and their status; truncated also reports capped initiative links. Change title, kind and risk require Change read access. Affected Service and Location names are redacted without their permissions; including initiatives require Initiative read access."
       security:
         - sessionAuth: []
       parameters:
@@ -14731,7 +14769,8 @@ components:
         title: {type: string, nullable: true, description: Null without Change read access.}
         kind: {type: string, nullable: true, enum: [standard, normal, emergency]}
         risk: {type: string, nullable: true, enum: [low, medium, high]}
-        status: {type: string, enum: [approved, scheduled, in_progress]}
+        status: {type: string, enum: [assessment, pending_approval, approved, scheduled, in_progress]}
+        proposed: {type: boolean, description: "True while the Change is submitted but not approved (status assessment or pending_approval): the window is only proposed and may still change."}
         windowStart: {type: string, format: date-time}
         windowEnd: {type: string, format: date-time}
         affected: {type: array, items: {$ref: '#/components/schemas/MaintenanceCalendarAffected'}}
@@ -15829,7 +15868,7 @@ components:
     Task:
       type: object
       additionalProperties: false
-      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, version, createdAt, updatedAt]
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, resultNote, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -15841,12 +15880,13 @@ components:
         assignedUserName: {type: [string, "null"]}
         assignedTeamId: {type: [string, "null"], format: uuid}
         assignedTeamName: {type: [string, "null"]}
-        contextType: {type: [string, "null"], description: 'Context type `deployment` (F9 G4 follow-up Tasks) names a Deployment in `contextId`.'}
+        contextType: {type: [string, "null"], description: 'Context type `deployment` (F9 G4 follow-up Tasks) names a Deployment in `contextId`. Always null for a caller whose only permission is `tasks.work` (the external vendor ceiling): such a caller learns of other records only through what the title and description say.'}
         contextId: {type: [string, "null"], format: uuid}
         dueAt: {type: [string, "null"], format: date-time}
         completedAt: {type: [string, "null"], format: date-time}
-        createdByUserId: {type: [string, "null"], format: uuid}
-        completedByUserId: {type: [string, "null"], format: uuid}
+        createdByUserId: {type: [string, "null"], format: uuid, description: "Null for a caller whose only permission is `tasks.work`."}
+        completedByUserId: {type: [string, "null"], format: uuid, description: "For a caller whose only permission is `tasks.work`: set only when the caller completed the task."}
+        resultNote: {type: [string, "null"], description: "The closing comment given with `complete`; null otherwise and after a reopen."}
         recurrenceDefinitionId: {type: [string, "null"], format: uuid, description: "Set on tasks generated from a recurring task definition (which may have been deleted since)."}
         version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
         createdAt: {type: string, format: date-time}
@@ -17102,7 +17142,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/Ticket'
         - type: object
-          required: [comments, allowedOperations, names]
+          required: [comments, allowedOperations, abilities, names]
           properties:
             comments:
               type: array
@@ -17110,6 +17150,19 @@ components:
             allowedOperations:
               type: array
               items: {type: string}
+            abilities:
+              type: object
+              additionalProperties: false
+              description: "What the caller may do with this Ticket, computed from the global permissions, the Queue grants (a work grant in the Ticket's Queue works it), reporter/affected status and the Ticket status, with the same rules the operations enforce. The UI shows composer and actions from it; every operation is still authorized by the backend."
+              required: [comment, internalComment, assign, setPriority, transition, move, markDuplicate]
+              properties:
+                comment: {type: boolean, description: "POST /tickets/{id}/comments with internal=false."}
+                internalComment: {type: boolean, description: "POST /tickets/{id}/comments with internal=true."}
+                assign: {type: boolean, description: "POST /tickets/{id}/assign."}
+                setPriority: {type: boolean, description: "POST /tickets/{id}/priority."}
+                transition: {type: boolean, description: "At least one lifecycle operation of allowedOperations is possible."}
+                move: {type: boolean, description: "POST /tickets/{id}/move-queue (the target Queue needs the create level)."}
+                markDuplicate: {type: boolean, description: "POST /tickets/{id}/duplicate."}
             names:
               type: object
               additionalProperties: {type: string}
@@ -17208,7 +17261,7 @@ components:
         resolvedAt: {type: [string, "null"], format: date-time}
         closedAt: {type: [string, "null"], format: date-time}
         subscribed: {type: boolean, description: "Whether the caller follows the incident."}
-        linkedTickets: {type: integer, minimum: 0}
+        linkedTickets: {type: integer, minimum: 0, description: "Linked Tickets the reader may view (their Queue access, or reporter/affected) on lists and detail alike; Tickets the reader cannot see are not counted."}
         version: {type: integer, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -17228,7 +17281,7 @@ components:
           required: [updates, tickets, allowedOperations]
           properties:
             tickets:
-              description: "Linked tickets the reader may view (Queue grants, or reporter/affected); `linkedTickets` counts all of them."
+              description: "Linked tickets the reader may view (Queue grants, or reporter/affected); `linkedTickets` counts exactly these (no hidden count)."
               type: array
               items:
                 type: object
@@ -17298,7 +17351,7 @@ components:
         workaround: {type: [string, "null"]}
         resolution: {type: [string, "null"]}
         ownerId: {type: [string, "null"], format: uuid}
-        linkedTickets: {type: integer, minimum: 0}
+        linkedTickets: {type: integer, minimum: 0, description: "Linked Tickets the reader may view (their Queue access, or reporter/affected) on lists and detail alike; Tickets the reader cannot see are not counted."}
         resolvedAt: {type: [string, "null"], format: date-time}
         closedAt: {type: [string, "null"], format: date-time}
         version: {type: integer, minimum: 1}
@@ -18802,6 +18855,12 @@ components:
       additionalProperties: false
       properties:
         expectedVersion: {type: integer, minimum: 1}
+    TaskComplete:
+      type: object
+      additionalProperties: false
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        resultNote: {type: string, maxLength: 1000, description: "Optional closing comment, plain text. Sent with any other operation it is refused (400 tasks.invalid_request)."}
     TaskBoardColumn:
       type: object
       additionalProperties: false

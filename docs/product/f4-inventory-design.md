@@ -92,3 +92,7 @@ None: no new framework, database or major dependency. The append-only trigger an
 ## 15. Slices (all implemented; see [current status](current-status.md))
 
 1. Assets backend. 2. Inventory backend (warehouses, ledger, balances, reservations). 3. Procurement backend (suppliers, needs, purchase orders, approval). 4. Goods receipt. 5. UI. 6. Demo seed, reviews, PR.
+
+## Simulation round 4: asset search (2026-10-09)
+
+`GET /assets?q=` and the Changes affected-resource lookup use one search: up to four words, each matching reference, serial number, asset tag, product name, manufacturer, part numbers and (with `endpoints.view`) the device hostname; trigram indexes from migration `000069` serve words of three or more characters, shorter words match prefixes. See [F7](f7-infrastructure-change-design.md#simulation-round-4-wizard-lookup-and-calendar-2026-10-09).

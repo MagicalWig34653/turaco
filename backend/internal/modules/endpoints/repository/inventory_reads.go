@@ -197,3 +197,35 @@ func (r *Repository) SoftwareProductByAlias(ctx context.Context, alias string) (
 	}
 	return &out[0], nil
 }
+
+// AssetIDsByHostname returns the assets linked to a live device whose name contains the text (trigram index on the
+// device name; a text shorter than three characters matches the start of the name).
+func (r *Repository) AssetIDsByHostname(ctx context.Context, text string, limit int) ([]string, error) {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return []string{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(text)
+	pattern := esc + "%"
+	if len([]rune(text)) >= 3 {
+		pattern = "%" + esc + "%"
+	}
+	rows, err := r.pool.Query(ctx, `SELECT asset_id::text FROM endpoints.devices
+		WHERE asset_id IS NOT NULL AND deleted_observed_at IS NULL AND name ILIKE $1 ESCAPE '\' ORDER BY id LIMIT $2`, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("asset ids by hostname: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("asset ids by hostname: scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

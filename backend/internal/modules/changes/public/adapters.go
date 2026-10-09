@@ -6,6 +6,7 @@ package public
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -174,6 +175,53 @@ func (x *Tasks) Tasks(ctx context.Context, ids []string) ([]application.TaskInfo
 	out := make([]application.TaskInfo, 0, len(ts))
 	for _, t := range ts {
 		out = append(out, application.TaskInfo{ID: t.ID, Title: t.Title, Status: t.Status, DueAt: t.DueAt})
+	}
+	return out, nil
+}
+
+// Search finds active Services for the affected-resource picker.
+func (x *Services) Search(ctx context.Context, text string, limit int) ([]application.LookupHit, error) {
+	found, err := x.s.Search(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]application.LookupHit, 0, len(found))
+	for _, v := range found {
+		out = append(out, application.LookupHit{Type: application.NodeService, ID: v.ID, Reference: v.Reference, Name: v.Name, Detail: v.Criticality})
+	}
+	return out, nil
+}
+
+// Search finds Virtual Machines that are not decommissioned for the affected-resource picker.
+func (x *Infrastructure) Search(ctx context.Context, text string, limit int) ([]application.LookupHit, error) {
+	found, err := x.i.SearchVMs(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]application.LookupHit, 0, len(found))
+	for _, v := range found {
+		out = append(out, application.LookupHit{Type: application.NodeVM, ID: v.ID, Name: v.Name, Detail: v.State})
+	}
+	return out, nil
+}
+
+// Search finds usable Assets for the affected-resource picker (by reference, tag, serial number, product name,
+// manufacturer or part number).
+func (x *Assets) Search(ctx context.Context, text string, limit int) ([]application.LookupHit, error) {
+	found, err := x.a.Search(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]application.LookupHit, 0, len(found))
+	for _, h := range found {
+		if !(application.AssetInfo{Status: h.Asset.Status}).Usable() {
+			continue
+		}
+		name := h.ProductName
+		if h.Asset.AssetTag != nil {
+			name = strings.TrimSpace(name + " " + *h.Asset.AssetTag)
+		}
+		out = append(out, application.LookupHit{Type: application.NodeAsset, ID: h.Asset.ID, Reference: h.Asset.Reference, Name: name, Detail: h.Asset.Status})
 	}
 	return out, nil
 }

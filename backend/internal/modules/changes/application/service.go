@@ -589,11 +589,15 @@ func (s *Service) RemoveAffected(ctx context.Context, c Caller, p Principal, cha
 // maintenance window, a rollback plan for medium and high risk and, unless the
 // Change is standard, at least one affected resource.
 func (s *Service) checkReady(ctx context.Context, tx pgx.Tx, c Change, risk string) error {
+	var issues []FieldIssue
+	var parts []string
 	if c.WindowStart == nil {
-		return invalid("a maintenance window is required")
+		issues = append(issues, FieldIssue{Field: "windowStart", Code: "required"})
+		parts = append(parts, "a maintenance window")
 	}
 	if risk != RiskLow && c.RollbackPlan == nil {
-		return invalid("a rollback plan is required for medium and high risk")
+		issues = append(issues, FieldIssue{Field: "rollbackPlan", Code: "required"})
+		parts = append(parts, "a rollback plan (medium and high risk)")
 	}
 	if c.Kind != KindStandard {
 		page, err := s.graph.Outgoing(ctx, tx, relationships.Node{Type: NodeChange, ID: c.ID}, []string{RelAffects}, "", 1)
@@ -601,8 +605,12 @@ func (s *Service) checkReady(ctx context.Context, tx pgx.Tx, c Change, risk stri
 			return fmt.Errorf("count affected resources: %w", err)
 		}
 		if len(page.Items) == 0 {
-			return invalid("at least one affected resource is required")
+			issues = append(issues, FieldIssue{Field: "affectedResources", Code: "required"})
+			parts = append(parts, "at least one affected resource (service, virtual machine, asset or location)")
 		}
+	}
+	if len(issues) > 0 {
+		return &InvalidInputError{Message: "The change is not ready: " + strings.Join(parts, ", ") + " required.", Issues: issues}
 	}
 	return nil
 }

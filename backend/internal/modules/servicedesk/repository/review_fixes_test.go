@@ -190,20 +190,70 @@ func TestProblemsAndIncidentsRespectQueueAccessOfTickets(t *testing.T) {
 		t.Fatal(err)
 	}
 	d, err := problems.Get(ctx, manager, pr.ID)
-	if err != nil || len(d.Tickets) != 0 {
-		t.Errorf("a manager without desk access sees %+v %v", d.Tickets, err)
+	if err != nil || len(d.Tickets) != 0 || d.Problem.Tickets != 0 {
+		t.Errorf("a manager without desk access sees %+v (count %d) %v", d.Tickets, d.Problem.Tickets, err)
+	}
+	// Counts are shaped like the lists: no hidden count on the detail, the list or a Major Incident.
+	counts := func(who string, staff bool) (int, int, int) {
+		var pd application.ProblemDetail
+		listed := 0
+		if staff { // Problems are staff only
+			var err error
+			if pd, err = problems.Get(ctx, application.ProblemPrincipal{UserID: who, Staff: true}, pr.ID); err != nil {
+				t.Fatal(err)
+			}
+			pl, err := problems.List(ctx, application.ProblemPrincipal{UserID: who, Staff: true}, "", application.Page{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			listed = -1
+			for _, x := range pl.Items {
+				if x.ID == pr.ID {
+					listed = x.Tickets
+				}
+			}
+		}
+		md, err := major.Get(ctx, who, false, mi.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ml, err := major.List(ctx, who, true, application.Page{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, x := range ml.Items {
+			if x.ID == mi.ID && x.Tickets != md.Incident.Tickets {
+				t.Errorf("incident list count %d differs from detail %d", x.Tickets, md.Incident.Tickets)
+			}
+		}
+		if md.Incident.Tickets != len(md.Tickets) || pd.Problem.Tickets != len(pd.Tickets) {
+			t.Errorf("count differs from the listed tickets: incident %d/%d problem %d/%d", md.Incident.Tickets, len(md.Tickets), pd.Problem.Tickets, len(pd.Tickets))
+		}
+		return pd.Problem.Tickets, listed, md.Incident.Tickets
+	}
+	if a, b, c := counts(e.u1, true); a != 0 || b != 0 || c != 0 {
+		t.Errorf("counts without desk access = %d %d %d, want 0", a, b, c)
+	}
+	if a, b, c := counts(e.u2, false); a != 0 || b != 0 || c != 0 {
+		t.Errorf("counts for an external user = %d %d %d, want 0", a, b, c)
 	}
 	d, err = problems.Get(ctx, application.ProblemPrincipal{UserID: e.global.UserID, Staff: true}, pr.ID)
 	if err != nil || len(d.Tickets) != 1 {
 		t.Errorf("staff with desk access sees %+v %v", d.Tickets, err)
+	}
+	if a, b, c := counts(e.global.UserID, true); a != 1 || b != 1 || c != 1 {
+		t.Errorf("counts with global access = %d %d %d, want 1", a, b, c)
 	}
 	// A view grant on the desk opens linking and listing.
 	e.grant(hr, user(e.u1, "view"))
 	if err := problems.LinkTicket(ctx, e.c(e.u1), manager, pr.ID, tk.ID, true); err != nil {
 		t.Errorf("link with a view grant: %v", err)
 	}
-	if d, _ = problems.Get(ctx, manager, pr.ID); len(d.Tickets) != 1 {
+	if d, _ = problems.Get(ctx, manager, pr.ID); len(d.Tickets) != 1 || d.Problem.Tickets != 1 {
 		t.Errorf("a viewer of the desk sees %+v", d.Tickets)
+	}
+	if a, b, c := counts(e.u1, true); a != 1 || b != 1 || c != 1 {
+		t.Errorf("counts with a view grant = %d %d %d, want 1", a, b, c)
 	}
 	// Without a Ticket authorization nothing is linked or listed.
 	bare := application.NewProblemService(repository.New(e.pool), dir{})

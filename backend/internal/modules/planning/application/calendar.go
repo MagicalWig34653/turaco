@@ -31,12 +31,15 @@ type InitiativeRef struct {
 // requester or its owner); Kind and Risk follow the same rule.
 // Initiatives lists only Initiatives the caller may read.
 type CalendarItem struct {
-	ChangeID    string
-	Reference   string
-	Title       *string
-	Kind        *string
-	Risk        *string
-	Status      string
+	ChangeID  string
+	Reference string
+	Title     *string
+	Kind      *string
+	Risk      *string
+	Status    string
+	// Proposed: the Change is submitted but not approved yet (status assessment or pending_approval), so the
+	// window is only proposed and may still change.
+	Proposed    bool
 	WindowStart time.Time
 	WindowEnd   time.Time
 	Affected    []CalendarAffected
@@ -72,10 +75,18 @@ func checkRange(from, to time.Time) error {
 // approved, scheduled and in-progress Change whose window overlaps [from, to)
 // with its affected records and the ids of the Initiatives that include it.
 func (s *Service) RawCalendar(ctx context.Context, from, to time.Time) ([]ChangeCalendarEntry, map[string][]string, bool, error) {
+	return s.rawCalendar(ctx, from, to, false)
+}
+
+func (s *Service) rawCalendar(ctx context.Context, from, to time.Time, proposed bool) ([]ChangeCalendarEntry, map[string][]string, bool, error) {
 	if err := checkRange(from, to); err != nil {
 		return nil, nil, false, err
 	}
-	entries, truncated, err := s.changes.Calendar(ctx, from.UTC(), to.UTC(), MaxCalendarEntries)
+	load := s.changes.Calendar
+	if pc, ok := s.changes.(ProposedChanges); ok && proposed {
+		load = pc.CalendarWithProposed
+	}
+	entries, truncated, err := load(ctx, from.UTC(), to.UTC(), MaxCalendarEntries)
 	if errors.Is(err, ErrInvalidRange) {
 		return nil, nil, false, invalid("invalid calendar range")
 	}
@@ -100,7 +111,8 @@ func (s *Service) RawCalendar(ctx context.Context, from, to time.Time) ([]Change
 	return entries, byChange, truncated, nil
 }
 
-// MaintenanceCalendar lists the approved, scheduled and in-progress Changes
+// MaintenanceCalendar lists the approved, scheduled and in-progress Changes, and the submitted ones (assessment,
+// pending approval) with their proposed window flagged Proposed,
 // whose maintenance window overlaps [from, to) (at most 92 days, at most
 // MaxCalendarEntries Changes, ordered by window start). It needs planning.view|manage
 // or changes.view|manage|execute. Titles appear only for Changes the caller may
@@ -111,7 +123,7 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 	if p.UserID == "" || !p.mayReadCalendar() {
 		return Calendar{}, ErrForbidden
 	}
-	entries, byChange, truncated, err := s.RawCalendar(ctx, from, to)
+	entries, byChange, truncated, err := s.rawCalendar(ctx, from, to, true)
 	if err != nil {
 		return Calendar{}, err
 	}
@@ -168,7 +180,7 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 		if c.WindowStart == nil || c.WindowEnd == nil {
 			continue
 		}
-		item := CalendarItem{ChangeID: c.ID, Reference: c.Reference, Status: c.Status,
+		item := CalendarItem{ChangeID: c.ID, Reference: c.Reference, Status: c.Status, Proposed: slices.Contains(ProposedStatuses, c.Status),
 			WindowStart: *c.WindowStart, WindowEnd: *c.WindowEnd, Affected: []CalendarAffected{}, Initiatives: []InitiativeRef{}}
 		if p.ChangesView || c.RequesterID == p.UserID || c.OwnerID != nil && *c.OwnerID == p.UserID {
 			title := c.Title

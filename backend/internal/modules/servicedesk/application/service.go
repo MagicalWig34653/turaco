@@ -858,7 +858,9 @@ type Detail struct {
 	Ticket   Ticket
 	Comments []Comment
 	Allowed  []string
-	Names    map[string]string
+	// Abilities is what the caller may do with the Ticket (see AbilitiesOf).
+	Abilities Abilities
+	Names     map[string]string
 }
 
 // Get returns a ticket the caller may see (404 otherwise). Internal comments need view access in the Queue.
@@ -879,7 +881,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	if err != nil {
 		return Detail{}, err
 	}
-	d := Detail{Ticket: t, Comments: comments, Allowed: AllowedOperations(t, ep)}
+	d := Detail{Ticket: t, Comments: comments, Allowed: AllowedOperations(t, ep), Abilities: AbilitiesOf(t, ep, s.queues != nil)}
 	if d.Ticket.Aliases, err = s.aliasesFor(ctx, a, t); err != nil {
 		return Detail{}, err
 	}

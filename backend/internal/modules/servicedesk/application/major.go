@@ -75,6 +75,8 @@ type MajorStore interface {
 	UnlinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (bool, error)
 	// MajorTickets lists the tickets linked to an incident (newest first, at most 200).
 	MajorTickets(ctx context.Context, majorID string) ([]Ticket, error)
+	// VisibleMajorCounts counts, per incident, the linked tickets inside the scope (the rule of VisibleTickets).
+	VisibleMajorCounts(ctx context.Context, majorIDs []string, scope TicketScope) (map[string]int, error)
 }
 
 // MajorResult is one page of incidents.
@@ -433,7 +435,7 @@ type MajorDetail struct {
 	Incident MajorIncident
 	Updates  []MajorUpdate
 	// Tickets are the linked Tickets the reader may view (their Queue grants, or being reporter or affected); the
-	// others are not listed, so Incident.Tickets (the total) can be larger than len(Tickets).
+	// others are neither listed nor counted: Incident.Tickets counts the visible ones only.
 	Tickets    []Ticket
 	Operations []string
 }
@@ -452,7 +454,10 @@ func (s *MajorService) Get(ctx context.Context, user string, manage bool, id str
 		return MajorDetail{}, err
 	}
 	d := MajorDetail{Incident: m, Updates: updates, Tickets: []Ticket{}, Operations: []string{}}
-	if s.access != nil && m.Tickets > 0 {
+	// The count is shaped like the list: only linked Tickets the reader may view (no hidden counts).
+	if s.access == nil {
+		d.Incident.Tickets = 0
+	} else if m.Tickets > 0 {
 		linked, err := s.store.MajorTickets(ctx, id)
 		if err != nil {
 			return MajorDetail{}, err
@@ -460,6 +465,11 @@ func (s *MajorService) Get(ctx context.Context, user string, manage bool, id str
 		if d.Tickets, err = s.access.VisibleTickets(ctx, user, linked); err != nil {
 			return MajorDetail{}, err
 		}
+		counts, err := s.visibleCounts(ctx, user, []string{id})
+		if err != nil {
+			return MajorDetail{}, err
+		}
+		d.Incident.Tickets = counts[id]
 	}
 	if manage {
 		d.Operations = MajorOperations(m.Status)
@@ -472,5 +482,31 @@ func (s *MajorService) List(ctx context.Context, user string, activeOnly bool, p
 	if user == "" {
 		return MajorResult{}, ErrForbidden
 	}
-	return s.store.ListMajor(ctx, user, activeOnly, page.Normalize())
+	res, err := s.store.ListMajor(ctx, user, activeOnly, page.Normalize())
+	if err != nil {
+		return MajorResult{}, err
+	}
+	ids := make([]string, 0, len(res.Items))
+	for _, m := range res.Items {
+		ids = append(ids, m.ID)
+	}
+	counts := map[string]int{}
+	if s.access != nil && len(ids) > 0 {
+		if counts, err = s.visibleCounts(ctx, user, ids); err != nil {
+			return MajorResult{}, err
+		}
+	}
+	for i := range res.Items {
+		res.Items[i].Tickets = counts[res.Items[i].ID]
+	}
+	return res, nil
+}
+
+// visibleCounts counts the linked Tickets the User may view per incident.
+func (s *MajorService) visibleCounts(ctx context.Context, user string, ids []string) (map[string]int, error) {
+	scope, err := s.access.ViewScope(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.VisibleMajorCounts(ctx, ids, scope)
 }

@@ -108,3 +108,17 @@ func (s *Services) Lookup(ctx context.Context, ids []string) (map[string]Service
 func (s *Services) Impact(ctx context.Context, p ImpactCaller, in ImpactInput) (ImpactResult, error) {
 	return s.app.Impact(ctx, p, in)
 }
+
+// Search finds active Services by name or reference (at most limit, 50 at most). It performs no permission check.
+func (s *Services) Search(ctx context.Context, text string, limit int) ([]ServiceInfo, error) {
+	found, err := s.app.Search(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ServiceInfo, 0, len(found))
+	for _, v := range found {
+		out = append(out, ServiceInfo{ID: v.ID, Reference: v.Reference, Name: v.Name, Status: v.Status, Criticality: v.Criticality,
+			OwnerUserID: v.OwnerUserID, OwnerTeamID: v.OwnerTeamID, SupportTeamID: v.SupportTeamID})
+	}
+	return out, nil
+}

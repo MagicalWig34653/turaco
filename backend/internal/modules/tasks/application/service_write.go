@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -222,8 +223,31 @@ func (s *Service) Unassign(ctx context.Context, c Caller, p Principal, id string
 // need tasks.manage or tasks.work on a task assigned to the caller or its
 // Teams; cancel and reopen need tasks.manage.
 func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op Operation, reason string) (TaskView, error) {
+	return s.transition(ctx, c, p, id, expected, op, reason, "")
+}
+
+// Complete finishes a task like Transition with OpComplete and stores the optional result note (at most 1000
+// characters of plain text without control or invisible formatting characters) as its closing comment. The note
+// is shown with the task and kept only while the task is completed; it is not copied into audit events or
+// notifications (they carry only whether a note exists).
+func (s *Service) Complete(ctx context.Context, c Caller, p Principal, id string, expected *int, resultNote string) (TaskView, error) {
+	return s.transition(ctx, c, p, id, expected, OpComplete, "", resultNote)
+}
+
+func (s *Service) transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op Operation, reason, resultNote string) (TaskView, error) {
 	if err := c.validate(); err != nil {
 		return TaskView{}, err
+	}
+	var note *string
+	if strings.TrimSpace(resultNote) != "" {
+		if op != OpComplete {
+			return TaskView{}, invalid("a result note is only valid when completing a task")
+		}
+		n, err := cleanResultNote(resultNote)
+		if err != nil {
+			return TaskView{}, err
+		}
+		note = &n
 	}
 	tr, ok := transitions[op]
 	if !ok {
@@ -251,7 +275,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		}
 		nx := cur
 		nx.Status = to
-		nx.StatusReason, nx.CompletedAt, nx.CompletedByUserID = nil, nil, nil
+		nx.StatusReason, nx.CompletedAt, nx.CompletedByUserID, nx.ResultNote = nil, nil, nil, nil
 		meta := map[string]any{}
 		var events []Event
 		switch op {
@@ -267,6 +291,8 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 			if by != "" {
 				nx.CompletedByUserID = &by
 			}
+			nx.ResultNote = note
+			meta["hasResultNote"] = note != nil
 			events = append(events, Event{Type: "TaskCompleted", Payload: map[string]any{
 				"taskId": cur.ID, "completedByUserId": nx.CompletedByUserID,
 			}})

@@ -16,6 +16,7 @@ const (
 	maxTitleLength       = 200
 	maxDescriptionLength = 10000
 	maxReasonLength      = 500
+	maxResultNoteLength  = 1000
 )
 
 // Service performs Task operations. Authorization decisions use the
@@ -111,6 +112,19 @@ func cleanReason(s string) (string, error) {
 	}
 	if safetext.ContainsUnsafe(s, false) {
 		return "", invalid("reason must not contain control or invisible formatting characters")
+	}
+	return s, nil
+}
+
+// cleanResultNote validates the closing comment of a completed task: trimmed, 1 to 1000 characters, line breaks
+// allowed, no other control or invisible formatting characters.
+func cleanResultNote(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || utf8.RuneCountInString(s) > maxResultNoteLength || !utf8.ValidString(s) {
+		return "", invalid("result note must be 1-%d characters", maxResultNoteLength)
+	}
+	if safetext.ContainsUnsafe(s, true) {
+		return "", invalid("result note must not contain control or invisible formatting characters")
 	}
 	return s, nil
 }

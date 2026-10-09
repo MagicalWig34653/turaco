@@ -163,7 +163,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 			h.fail(w, r, err)
 			return
 		}
-		httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, toTask))
+		httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, shaperFor(r)))
 		return
 	}
 	res, err := h.svc.List(r.Context(), principal(r), f)
@@ -171,7 +171,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	httpx.JSON(w, http.StatusOK, toList(res, shaperFor(r)))
 }
 
 // fields returns the task Field Catalog as the caller may use it.
@@ -196,7 +196,7 @@ func (h *handler) query(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, toTask))
+	httpx.JSON(w, http.StatusOK, query.NewEnvelope(res, shaperFor(r)))
 }
 
 func (h *handler) myWork(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +209,7 @@ func (h *handler) myWork(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toList(res))
+	httpx.JSON(w, http.StatusOK, toList(res, shaperFor(r)))
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
@@ -218,7 +218,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toTask(v))
+	httpx.JSON(w, http.StatusOK, shaperFor(r)(v))
 }
 
 type createBody struct {
@@ -334,6 +334,8 @@ func (h *handler) unassign(w http.ResponseWriter, r *http.Request) {
 type transitionBody struct {
 	ExpectedVersion *int   `json:"expectedVersion"`
 	Reason          string `json:"reason"`
+	// ResultNote is the optional closing comment of complete (at most 1000 characters).
+	ResultNote string `json:"resultNote"`
 }
 
 func (h *handler) transition(op application.Operation) http.HandlerFunc {
@@ -342,12 +344,21 @@ func (h *handler) transition(op application.Operation) http.HandlerFunc {
 		if !decode(w, r, &b) {
 			return
 		}
-		v, err := h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, b.Reason)
+		var v application.TaskView
+		var err error
+		if op == application.OpComplete {
+			v, err = h.svc.Complete(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.ResultNote)
+		} else if b.ResultNote != "" {
+			httpx.WriteError(w, http.StatusBadRequest, "tasks.invalid_request", "A result note is only valid when completing a task.")
+			return
+		} else {
+			v, err = h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, b.Reason)
+		}
 		if err != nil {
 			h.fail(w, r, err)
 			return
 		}
-		httpx.JSON(w, http.StatusOK, toTask(v))
+		httpx.JSON(w, http.StatusOK, shaperFor(r)(v))
 	}
 }
 

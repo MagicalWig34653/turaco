@@ -24,6 +24,7 @@ type Service struct {
 	store    Store
 	dir      Directory
 	products Products
+	devices  DeviceSearcher
 	now      func() time.Time
 }
 
@@ -657,7 +658,85 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, erro
 	f.AssignedToUser = ""
 	f.Query = strings.TrimSpace(f.Query)
 	f.Page = f.Page.Normalize()
+	var err error
+	if f.Terms, err = s.searchTerms(ctx, f.Query, p.Hostnames); err != nil {
+		return Result{}, err
+	}
 	return s.store.List(ctx, f)
+}
+
+// WithDeviceSearch lets searches match the hostname of the linked endpoint device (for callers that may see it).
+func (s *Service) WithDeviceSearch(d DeviceSearcher) *Service {
+	s.devices = d
+	return s
+}
+
+const (
+	maxSearchWords = 4
+	searchHitLimit = 200
+)
+
+// searchTerms splits the search text into at most four words and resolves, per word, the products (name,
+// manufacturer, part number) and the assets (device hostname) that match it, so the store can OR them with the
+// asset's own columns.
+func (s *Service) searchTerms(ctx context.Context, query string, hostnames bool) ([]SearchTerm, error) {
+	words := strings.Fields(query)
+	if len(words) > maxSearchWords {
+		words = words[:maxSearchWords]
+	}
+	terms := make([]SearchTerm, 0, len(words))
+	ps, _ := s.products.(ProductSearcher)
+	for _, w := range words {
+		t := SearchTerm{Text: w}
+		var err error
+		if ps != nil {
+			if t.ProductIDs, err = ps.SearchProducts(ctx, w, searchHitLimit); err != nil {
+				return nil, fmt.Errorf("search products: %w", err)
+			}
+		}
+		if hostnames && s.devices != nil {
+			if t.AssetIDs, err = s.devices.AssetIDsByHostname(ctx, w, searchHitLimit); err != nil {
+				return nil, fmt.Errorf("search device hostnames: %w", err)
+			}
+		}
+		terms = append(terms, t)
+	}
+	return terms, nil
+}
+
+// SearchHit is an asset found by Search with the name of its product.
+type SearchHit struct {
+	Asset       Asset
+	ProductName string
+}
+
+// Search finds assets by text (see Filter.Query) without any authorization, for contracts used by modules that
+// authorized the caller themselves (the affected-resource lookup of Changes). At most limit hits.
+func (s *Service) Search(ctx context.Context, text string, limit int) ([]SearchHit, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return []SearchHit{}, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	terms, err := s.searchTerms(ctx, text, false)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.store.List(ctx, Filter{Query: text, Terms: terms, Page: Page{Limit: limit}})
+	if err != nil {
+		return nil, err
+	}
+	names, err := s.ProductNames(ctx, res.Items)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchHit, 0, len(res.Items))
+	for _, a := range res.Items {
+		out = append(out, SearchHit{Asset: a, ProductName: names[a.ProductID]})
+	}
+	return out, nil
 }
 
 // holderView hides the internal fields (notes, status reason, supplier) from the person an asset is assigned to.

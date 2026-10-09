@@ -44,6 +44,16 @@ func (x *ChangesAdapter) Lookup(ctx context.Context, ids []string) (map[string]a
 
 func (x *ChangesAdapter) Calendar(ctx context.Context, from, to time.Time, limit int) ([]application.ChangeCalendarEntry, bool, error) {
 	page, err := x.c.Calendar(ctx, from, to, limit, changespublic.ReadScope{IncludeDetails: true, IncludeAffectedIDs: true})
+	return convertCalendar(page, err)
+}
+
+// CalendarWithProposed also lists submitted Changes with their proposed window (application.ProposedChanges).
+func (x *ChangesAdapter) CalendarWithProposed(ctx context.Context, from, to time.Time, limit int) ([]application.ChangeCalendarEntry, bool, error) {
+	page, err := x.c.CalendarWithProposed(ctx, from, to, limit, changespublic.ReadScope{IncludeDetails: true, IncludeAffectedIDs: true})
+	return convertCalendar(page, err)
+}
+
+func convertCalendar(page changespublic.CalendarPage, err error) ([]application.ChangeCalendarEntry, bool, error) {
 	if errors.Is(err, changespublic.ErrInvalidRange) {
 		return nil, false, application.ErrInvalidRange
 	}

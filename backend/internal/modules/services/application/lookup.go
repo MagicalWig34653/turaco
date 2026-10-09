@@ -29,3 +29,20 @@ func (s *App) Lookup(ctx context.Context, ids []string) (map[string]Service, err
 	}
 	return out, nil
 }
+
+// Search finds active (not retired) Services by name or reference for other modules' pickers (the affected-resource
+// lookup of Changes). It performs no permission check; at most limit results (1 to 50).
+func (s *App) Search(ctx context.Context, text string, limit int) ([]Service, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return []Service{}, nil
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	res, err := s.store.List(ctx, Filter{Query: text, Page: Page{Limit: limit}})
+	if err != nil {
+		return nil, err
+	}
+	return res.Items, nil
+}

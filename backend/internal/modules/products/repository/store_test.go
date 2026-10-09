@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -211,5 +212,32 @@ func TestDatabaseInvariants(t *testing.T) {
 		if _, err := f.pool.Exec(context.Background(), sql, p.ID); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+func TestSearchProductIDsMatchesNameManufacturerAndPartNumber(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	mfr, _ := f.repo.InsertManufacturer(ctx, f.caller(), f.pfx+" Nordtech")
+	mpn := f.pfx + "-MPN-77"
+	p, err := f.repo.InsertProduct(ctx, f.caller(), application.NewProduct{Name: f.pfx + " Workstation WS-100", ManufacturerID: &mfr.ID, ManufacturerPartNumber: &mpn, AssetManaged: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := f.repo.InsertProduct(ctx, f.caller(), application.NewProduct{Name: f.pfx + " Monitor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"workstation", "WS-100", "nordtech", "mpn-77", f.pfx, "ws"} {
+		ids, err := f.repo.SearchProductIDs(ctx, q, 50)
+		if err != nil || !slices.Contains(ids, p.ID) {
+			t.Errorf("%q misses the workstation: %v %v", q, ids, err)
+		}
+	}
+	if ids, _ := f.repo.SearchProductIDs(ctx, "nordtech", 50); slices.Contains(ids, other.ID) {
+		t.Error("the manufacturer match must not return products of other manufacturers")
+	}
+	if ids, _ := f.repo.SearchProductIDs(ctx, "%", 50); slices.Contains(ids, p.ID) || slices.Contains(ids, other.ID) {
+		t.Errorf("a percent sign is a literal: %v", ids)
 	}
 }

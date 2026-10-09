@@ -84,3 +84,17 @@ func (x *Assets) Assets(ctx context.Context, ids []string) (map[string]applicati
 	}
 	return out, nil
 }
+
+// SearchVMs finds Virtual Machines that are not decommissioned by name (at most limit, 50 at most). It authorizes
+// nothing: the caller decides who may see the names.
+func (i *Infrastructure) SearchVMs(ctx context.Context, text string, limit int) ([]VM, error) {
+	found, err := i.svc.SearchVMs(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VM, 0, len(found))
+	for _, v := range found {
+		out = append(out, VM{ID: v.ID, Name: v.Name, State: v.State, HypervisorAssetID: v.HypervisorAssetID})
+	}
+	return out, nil
+}

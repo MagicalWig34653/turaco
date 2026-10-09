@@ -196,7 +196,18 @@ type detailDTO struct {
 	ticketDTO
 	Comments          []commentDTO      `json:"comments"`
 	AllowedOperations []string          `json:"allowedOperations"`
+	Abilities         abilitiesDTO      `json:"abilities"`
 	Names             map[string]string `json:"names"`
+}
+
+type abilitiesDTO struct {
+	Comment         bool `json:"comment"`
+	InternalComment bool `json:"internalComment"`
+	Assign          bool `json:"assign"`
+	SetPriority     bool `json:"setPriority"`
+	Transition      bool `json:"transition"`
+	Move            bool `json:"move"`
+	MarkDuplicate   bool `json:"markDuplicate"`
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +305,8 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names}
+	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names, Abilities: abilitiesDTO{Comment: d.Abilities.Comment, InternalComment: d.Abilities.InternalComment,
+		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate}}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, commentDTO{ID: c.ID, AuthorID: c.AuthorID, Body: c.Body, Internal: c.Internal, CreatedAt: ts(c.CreatedAt)})
 	}

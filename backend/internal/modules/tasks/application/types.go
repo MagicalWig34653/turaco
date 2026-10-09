@@ -68,6 +68,8 @@ type Task struct {
 	// Recurring Task Definition; the definition may have been deleted since.
 	RecurrenceDefinitionID *string
 	ScheduledFor           *time.Time
+	// ResultNote is the closing comment left when the task was completed; nil otherwise.
+	ResultNote *string
 	// Version starts at 1 and increases with every change.
 	Version   int
 	CreatedAt time.Time

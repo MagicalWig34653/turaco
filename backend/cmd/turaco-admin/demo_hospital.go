@@ -77,6 +77,7 @@ func seedHospital(ctx context.Context, e env) error {
 		{"tickets", h.ticketsAndComments},
 		{"problems", h.problems},
 		{"major incident", h.majorIncident},
+		{"services and changes", h.servicesAndChanges},
 		{"tasks", h.workTasks},
 		{"briefing", h.briefing},
 		{"catalog", h.catalog},

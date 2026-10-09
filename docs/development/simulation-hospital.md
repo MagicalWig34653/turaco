@@ -67,7 +67,7 @@ Meetings or a calendar do not exist in Turaco (see the gap list); testers run th
 | Tickets | 27 | all states, four priorities, routing Teams of all five teams, each in the desk of its Team; comments (public and internal), some with the reporter's device attached |
 | Problems | 3 | two Known Errors with workaround (ORBIS medication timeout, WLAN roaming), one under investigation |
 | Major incident | 1 | "ORBIS: Anmeldung am Standort Nord gestört" with two linked tickets |
-| Knowledge | 13 articles | ORBIS, WLAN, printing, phishing, triage guide, vendor rules (employee and internal audiences) |
+| Knowledge | 14 articles | ORBIS, WLAN, printing, phishing, triage guide, vendor rules (employee and internal audiences) |
 | Tasks | 5 | one for the vendor team and one each for First Level Support, Telefonie & WLAN, Infrastruktur and Security (all assigned to the team) |
 | Briefing | 3 published items | ORBIS maintenance window, phishing wave, new WLAN profile |
 | Catalog items | 4 | ORBIS access, medical device network, DECT phone, printer setup (team-routed fulfillment tasks; one with Security as approver team) |

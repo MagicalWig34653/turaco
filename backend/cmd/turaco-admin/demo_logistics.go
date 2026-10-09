@@ -23,20 +23,28 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 	ic := inventoryapp.Caller{Actor: d.e.auditActor(), CorrelationID: "demo-seed"}
 	im := inventoryapp.Principal{Manage: true}
 
-	wh, err := inv.CreateWarehouse(ctx, ic, im, "Main warehouse", nil)
-	if errors.Is(err, inventoryapp.ErrConflict) {
-		list, lerr := inv.ListWarehouses(ctx, im, true, inventoryapp.Page{Limit: 200})
-		if lerr != nil {
-			return lerr
-		}
-		for _, w := range list.Items {
-			if w.Name == "Main warehouse" {
-				wh, err = w, nil
-			}
-		}
-	}
+	// Earlier seeds used English names; those rows are renamed in place instead of creating a second warehouse.
+	const warehouseName = "Hauptlager"
+	var wh inventoryapp.Warehouse
+	list, err := inv.ListWarehouses(ctx, im, true, inventoryapp.Page{Limit: 200})
 	if err != nil {
 		return fmt.Errorf("warehouse: %w", err)
+	}
+	for _, w := range list.Items {
+		if w.Name == warehouseName || (w.Name == "Main warehouse" && wh.ID == "") {
+			wh = w
+		}
+	}
+	switch {
+	case wh.ID == "":
+		if wh, err = inv.CreateWarehouse(ctx, ic, im, warehouseName, nil); err != nil {
+			return fmt.Errorf("warehouse: %w", err)
+		}
+	case wh.Name != warehouseName:
+		name := warehouseName
+		if wh, err = inv.UpdateWarehouse(ctx, ic, im, wh.ID, wh.Version, inventoryapp.WarehouseUpdate{Name: &name}); err != nil {
+			return fmt.Errorf("rename warehouse: %w", err)
+		}
 	}
 	locations := map[string]string{}
 	existing, err := inv.ListStorageLocations(ctx, im, wh.ID, true, inventoryapp.Page{Limit: 200})
@@ -44,9 +52,16 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 		return err
 	}
 	for _, l := range existing.Items {
+		if legacy, ok := map[string]string{"Shelf A1": "Regal A1", "Shelf A2": "Regal A2"}[l.Name]; ok {
+			if _, taken := locations[legacy]; !taken {
+				if l, err = inv.RenameStorageLocation(ctx, ic, im, l.ID, l.Version, legacy); err != nil {
+					return fmt.Errorf("rename storage location: %w", err)
+				}
+			}
+		}
 		locations[l.Name] = l.ID
 	}
-	for _, name := range []string{"Shelf A1", "Shelf A2"} {
+	for _, name := range []string{"Regal A1", "Regal A2"} {
 		if _, ok := locations[name]; ok {
 			continue
 		}
@@ -61,7 +76,7 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 	for _, s := range []struct {
 		part, shelf string
 		quantity    int
-	}{{"MOUSE-1", "Shelf A1", 25}} {
+	}{{"MOUSE-1", "Regal A1", 25}} {
 		have, err := inv.ListStock(ctx, im, inventoryapp.StockFilter{ProductID: ids[s.part], StorageLocationID: locations[s.shelf]})
 		if err != nil {
 			return err
@@ -69,7 +84,7 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 		if len(have.Items) > 0 {
 			continue
 		}
-		if _, err := inv.Correct(ctx, ic, im, inventoryapp.Correction{ProductID: ids[s.part], StorageLocationID: locations[s.shelf], Delta: s.quantity, Reason: "demo seed opening stock"}); err != nil {
+		if _, err := inv.Correct(ctx, ic, im, inventoryapp.Correction{ProductID: ids[s.part], StorageLocationID: locations[s.shelf], Delta: s.quantity, Reason: "Anfangsbestand (Demo)"}); err != nil {
 			return fmt.Errorf("opening stock %s: %w", s.part, err)
 		}
 	}
@@ -96,7 +111,17 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 
 	pc := procurementapp.Caller{Actor: d.e.auditActor(), CorrelationID: "demo-seed"}
 	pm := procurementapp.Principal{Manage: true}
-	if _, err := proc.CreateSupplier(ctx, pc, pm, "Example Supplies GmbH", "DEMO-1001"); err != nil && !errors.Is(err, procurementapp.ErrConflict) {
+	const supplierName = "Beispiel Bürobedarf GmbH"
+	suppliers, err := proc.ListSuppliers(ctx, pm, "Example Supplies", true, procurementapp.Page{Limit: 5})
+	if err != nil {
+		return fmt.Errorf("supplier: %w", err)
+	}
+	if len(suppliers.Items) > 0 && suppliers.Items[0].Name == "Example Supplies GmbH" {
+		name := supplierName
+		if _, err := proc.UpdateSupplier(ctx, pc, pm, suppliers.Items[0].ID, suppliers.Items[0].Version, procurementapp.SupplierUpdate{Name: &name}); err != nil {
+			return fmt.Errorf("rename supplier: %w", err)
+		}
+	} else if _, err := proc.CreateSupplier(ctx, pc, pm, supplierName, "DEMO-1001"); err != nil && !errors.Is(err, procurementapp.ErrConflict) {
 		return fmt.Errorf("supplier: %w", err)
 	}
 	open, err := proc.ListNeeds(ctx, pm, procurementapp.NeedFilter{ProductID: ids["NB-14"], Status: procurementapp.NeedOpen, Page: procurementapp.Page{Limit: 1}})
@@ -104,7 +129,7 @@ func (d *demoSeeder) logistics(ctx context.Context, ids map[string]string) error
 		return err
 	}
 	if len(open.Items) == 0 {
-		if _, err := proc.CreateNeed(ctx, pc, pm, procurementapp.NewNeed{ProductID: ids["NB-14"], Quantity: 5, Notes: "Replenish the notebook pool"}); err != nil {
+		if _, err := proc.CreateNeed(ctx, pc, pm, procurementapp.NewNeed{ProductID: ids["NB-14"], Quantity: 5, Notes: "Notebook-Pool auffüllen"}); err != nil {
 			return fmt.Errorf("procurement request: %w", err)
 		}
 	}

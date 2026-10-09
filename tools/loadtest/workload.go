@@ -142,7 +142,7 @@ func Ops() map[string][]OpDef {
 }
 
 // ExpectsDenied lists operations whose 403/404 answers are the expected result.
-var ExpectsDenied = map[string]bool{"tickets.probe_foreign": true, "tickets.write_denied": true}
+var ExpectsDenied = map[string]bool{"tickets.probe_foreign": true, "tickets.write_denied": true, "tickets.abilities": true}
 
 func esc(s string) string { return url.QueryEscape(s) }
 
@@ -485,17 +485,52 @@ func opAudit(ctx context.Context, e *Env, jc *JobCtx, s *Session, rng *rand.Rand
 	e.Client.Call(ctx, jc, s, "audit.search", http.MethodGet, "/audit-events?limit=50&actionPrefix="+esc(prefixes[rng.Intn(len(prefixes))])+"&from="+esc(from), nil, nil)
 }
 
-// opWriteDenied tries a write that a read-only persona must not be allowed to do.
+// ticketAbilities is the part of the ticket detail the leak probe needs: what the caller may do with the ticket.
+type ticketAbilities struct {
+	Abilities *struct {
+		Comment         bool `json:"comment"`
+		InternalComment bool `json:"internalComment"`
+	} `json:"abilities"`
+}
+
+// probeWrites decides which comment probes must be denied for a caller, from the abilities the API reports for
+// the ticket (queue grants and permissions): a person who works the ticket's Queue (the Infrastruktur team in its
+// own Queue) legitimately comments and is not probed for the public comment. Without abilities (an older server)
+// both kinds of comment must be denied.
+func probeWrites(a *ticketAbilities) (public, internal bool) {
+	if a == nil || a.Abilities == nil {
+		return true, true
+	}
+	return !a.Abilities.Comment, !a.Abilities.InternalComment
+}
+
+// opWriteDenied tries writes that the ticket's abilities say the persona must not be allowed to do. It reads the
+// ticket first: a ticket the persona may not see is a denied read and needs no write probe.
 func opWriteDenied(ctx context.Context, e *Env, jc *JobCtx, s *Session, rng *rand.Rand) {
 	ent := e.Pool.Pick(rng, e.Cfg.HotTickets, e.Cfg.HotProb)
 	if ent == nil {
 		return
 	}
-	e.probes.Add(1)
-	r := e.Client.Call(ctx, jc, s, "tickets.write_denied", http.MethodPost, "/tickets/"+ent.ID+"/comments", map[string]any{"body": e.commentBody(rng)}, nil)
-	if r.OK() {
-		e.leaks.Add(1)
-		e.Trk.Violate("authorization_leak", "%s (read-only role) added a comment to ticket %s", s.P.Login, ent.Ref)
+	var detail ticketAbilities
+	if r := e.Client.Call(ctx, jc, s, "tickets.abilities", http.MethodGet, "/tickets/"+ent.ID, nil, &detail); !r.OK() {
+		return
+	}
+	public, internal := probeWrites(&detail)
+	if public {
+		e.probes.Add(1)
+		r := e.Client.Call(ctx, jc, s, "tickets.write_denied", http.MethodPost, "/tickets/"+ent.ID+"/comments", map[string]any{"body": e.commentBody(rng)}, nil)
+		if r.OK() {
+			e.leaks.Add(1)
+			e.Trk.Violate("authorization_leak", "%s (abilities.comment=false) added a comment to ticket %s", s.P.Login, ent.Ref)
+		}
+	}
+	if internal && !public {
+		e.probes.Add(1)
+		r := e.Client.Call(ctx, jc, s, "tickets.write_denied", http.MethodPost, "/tickets/"+ent.ID+"/comments", map[string]any{"body": e.commentBody(rng), "internal": true}, nil)
+		if r.OK() {
+			e.leaks.Add(1)
+			e.Trk.Violate("authorization_leak", "%s (abilities.internalComment=false) added an internal comment to ticket %s", s.P.Login, ent.Ref)
+		}
 	}
 }
 

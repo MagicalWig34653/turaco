@@ -413,6 +413,33 @@ type TicketAccess interface {
 	// VisibleTickets keeps the Tickets the User may view (or reported or is affected by) and applies the
 	// per-row disclosure of Queue and number.
 	VisibleTickets(ctx context.Context, userID string, ts []Ticket) ([]Ticket, error)
+	// ViewScope returns which Tickets the User may view, so counts on Problems and Major Incidents can be computed
+	// from the same rule as the lists (no count may reveal Tickets the list does not show).
+	ViewScope(ctx context.Context, userID string) (TicketScope, error)
+}
+
+// TicketScope is the set of Tickets one User may view: every Ticket (All), the Tickets of the listed Queues, and
+// the Tickets they reported or are affected by.
+type TicketScope struct {
+	UserID   string
+	All      bool
+	QueueIDs []string
+}
+
+// ViewScope implements TicketAccess.
+func (s *Service) ViewScope(ctx context.Context, userID string) (TicketScope, error) {
+	if userID == "" {
+		return TicketScope{}, nil
+	}
+	p, err := s.principalOf(ctx, userID)
+	if err != nil {
+		return TicketScope{}, err
+	}
+	a, err := s.resolve(ctx, p)
+	if err != nil {
+		return TicketScope{}, err
+	}
+	return TicketScope{UserID: userID, All: a.global(), QueueIDs: a.viewIDs()}, nil
 }
 
 // CanViewTicket implements TicketAccess.
