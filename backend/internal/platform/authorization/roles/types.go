@@ -39,6 +39,10 @@ type GroupResolver interface {
 // SubjectDirectory answers questions about assignment subjects without
 // touching Organization storage. Implemented by organization/public.
 type SubjectDirectory interface {
+	GroupResolver
+	// GroupMemberUserIDs returns the ids of the Users that currently belong to any of the groups, directly or
+	// through observed nesting (child group into parent group), at most limit, ordered by id.
+	GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error)
 	UserExists(ctx context.Context, id string) (bool, error)
 	// DirectoryGroupObserved reports whether the group exists and is not
 	// marked deleted.
@@ -61,7 +65,36 @@ var (
 	ErrDuplicateAssignment = errors.New("authorization: duplicate active assignment")
 	ErrLastAdministrator   = errors.New("authorization: last administrator assignment")
 	ErrInvalidCursor       = errors.New("authorization: invalid cursor")
+
+	// Escalation guards (F14 section 2.5). Each maps to one API error code.
+	ErrGrantExceedsHolder         = errors.New("authorization: grant exceeds the permissions the actor holds")
+	ErrHighRiskNeedsAdministrator = errors.New("authorization: high-risk permissions need a platform administrator")
+	ErrSelfAssignment             = errors.New("authorization: nobody changes their own assignments or the roles they hold")
+	ErrRoleNotHeld                = errors.New("authorization: the actor does not hold the role")
+	ErrAdminNoExpiry              = errors.New("authorization: the administrator role is never time-limited")
+	ErrLocalAccountHighRisk       = errors.New("authorization: local accounts cannot hold high-risk permissions")
+	ErrVersionConflict            = errors.New("authorization: version conflict")
+	ErrUnknownTemplate            = errors.New("authorization: unknown role template")
 )
+
+// SoDRequiredError reports separation-of-duties rules the change would violate and the caller has not
+// acknowledged. It matches ErrSoDAcknowledgementRequired.
+type SoDRequiredError struct{ Rules []string }
+
+// ErrSoDAcknowledgementRequired is the sentinel of SoDRequiredError.
+var ErrSoDAcknowledgementRequired = errors.New("authorization: separation-of-duties acknowledgement required")
+
+func (e *SoDRequiredError) Error() string {
+	return "authorization: separation-of-duties acknowledgement required: " + strings.Join(e.Rules, ", ")
+}
+func (e *SoDRequiredError) Is(target error) bool { return target == ErrSoDAcknowledgementRequired }
+
+// Acknowledgement acknowledges separation-of-duties warnings of a change (design section 2.4): the rule keys the
+// caller saw and a reason. Warnings never block; they need this to be sent.
+type Acknowledgement struct {
+	Rules  []string
+	Reason string
+}
 
 // InvalidError is a validation failure whose message is safe to show.
 type InvalidError struct{ Message string }
@@ -83,12 +116,17 @@ func (e *UnknownPermissionError) Is(target error) bool { return target == ErrUnk
 
 // Role is a named set of registered permissions.
 type Role struct {
-	ID                string
-	Key               string
-	Name              string
-	Description       string
-	BuiltIn           bool
-	Permissions       []string // sorted effective permissions
+	ID          string
+	Key         string
+	Name        string
+	Description string
+	BuiltIn     bool
+	Permissions []string // sorted effective permissions
+	// Version counts changes of name, description and permissions (expectedVersion of the mutations).
+	Version int
+	// TemplateKey and TemplateVersion record the Role Template a role was created from; a template never updates a role.
+	TemplateKey       string
+	TemplateVersion   int
 	ActiveAssignments int
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -103,10 +141,13 @@ type Assignment struct {
 	SubjectID          string
 	SubjectDisplayName string
 	Scope              string
-	CreatedAt          time.Time
-	CreatedBy          string // User id; empty for CLI
-	RevokedAt          *time.Time
-	RevokedBy          string // User id; empty for CLI or when active
+	// ExpiresAt, when set, ends the assignment: the evaluator ignores it from then on and the job
+	// access.expire_assignments revokes it.
+	ExpiresAt *time.Time
+	CreatedAt time.Time
+	CreatedBy string // User id; empty for CLI
+	RevokedAt *time.Time
+	RevokedBy string // User id; empty for CLI or when active
 }
 
 // Page is keyset pagination (descending id). Cursor is the last id of the

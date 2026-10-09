@@ -57,9 +57,15 @@ var ErrHashBusy = errors.New("authentication: password hashing is busy")
 // acquireHashSlot waits for a slot until ctx ends or, when wait is positive,
 // for at most wait (then ErrHashBusy).
 func acquireHashSlot(ctx context.Context, wait time.Duration) (func(), error) {
-	release := func() { <-hashSlots }
+	return acquireSlot(ctx, hashSlots, wait)
+}
+
+// acquireSlot is acquireHashSlot over a given slot pool (the emergency account and local accounts have separate
+// pools, so a flood of local logins cannot starve the break-glass account).
+func acquireSlot(ctx context.Context, slots chan struct{}, wait time.Duration) (func(), error) {
+	release := func() { <-slots }
 	select {
-	case hashSlots <- struct{}{}:
+	case slots <- struct{}{}:
 		return release, nil
 	default:
 	}
@@ -70,7 +76,7 @@ func acquireHashSlot(ctx context.Context, wait time.Duration) (func(), error) {
 		timeout = t.C
 	}
 	select {
-	case hashSlots <- struct{}{}:
+	case slots <- struct{}{}:
 		return release, nil
 	case <-timeout:
 		return nil, ErrHashBusy

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -17,6 +18,7 @@ import (
 const (
 	permRolesView   = "platform.roles.view"
 	permRolesManage = "platform.roles.manage"
+	permViewDetails = "organization.users.view_details"
 	maxBodyBytes    = 64 << 10
 )
 
@@ -35,7 +37,14 @@ func Register(mux *http.ServeMux, svc *roles.Service, auth authorization.Authent
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
+	both := func(next http.Handler) http.Handler { return view(authorization.Require(auth, permViewDetails)(next)) }
 	route("GET /api/v1/permissions", view, h.listPermissions)
+	route("GET /api/v1/role-templates", view, h.listTemplates)
+	route("GET /api/v1/access/sod-rules", view, h.listSoDRules)
+	// These reveal who can do what: the role permission and the elevated HR-detail permission are both required.
+	route("GET /api/v1/users/{id}/effective-permissions", both, h.effectivePermissions)
+	route("GET /api/v1/access/holders", both, h.holders)
+	route("GET /api/v1/roles/{id}/members", view, h.roleMembers)
 	route("GET /api/v1/roles", view, h.listRoles)
 	route("POST /api/v1/roles", manage, h.createRole)
 	route("GET /api/v1/roles/{id}", view, h.getRole)
@@ -75,6 +84,30 @@ func (h *httpHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "authorization.duplicate_assignment", "The role is already assigned to this subject.")
 	case errors.Is(err, roles.ErrLastAdministrator):
 		httpx.WriteError(w, http.StatusConflict, "authorization.last_administrator", "The last administrator assignment cannot be revoked.")
+	case errors.Is(err, roles.ErrGrantExceedsHolder):
+		httpx.WriteError(w, http.StatusForbidden, "access.grant_exceeds_holder", "You can only grant or take away permissions that you hold yourself.")
+	case errors.Is(err, roles.ErrHighRiskNeedsAdministrator):
+		httpx.WriteError(w, http.StatusForbidden, "access.high_risk_requires_administrator", "Only a platform administrator can grant high-risk permissions.")
+	case errors.Is(err, roles.ErrRoleNotHeld):
+		httpx.WriteError(w, http.StatusForbidden, "access.role_not_held", "You can only assign roles that you hold yourself.")
+	case errors.Is(err, roles.ErrSelfAssignment):
+		httpx.WriteError(w, http.StatusConflict, "access.self_assignment", "You cannot change your own role assignments or add permissions to a role you hold.")
+	case errors.Is(err, roles.ErrAdminNoExpiry):
+		httpx.WriteError(w, http.StatusConflict, "access.admin_no_expiry", "The administrator role cannot be assigned with an expiry date.")
+	case errors.Is(err, roles.ErrLocalAccountHighRisk):
+		httpx.WriteError(w, http.StatusConflict, "access.local_account_high_risk", "Local accounts cannot hold high-risk permissions.")
+	case errors.Is(err, roles.ErrVersionConflict):
+		httpx.WriteError(w, http.StatusConflict, "authorization.version_conflict", "The role changed since it was loaded.")
+	case errors.Is(err, roles.ErrUnknownTemplate):
+		httpx.WriteError(w, http.StatusBadRequest, "authorization.unknown_template", "The role template is unknown.")
+	case errors.Is(err, roles.ErrSoDAcknowledgementRequired):
+		var sod *roles.SoDRequiredError
+		rules := []string{}
+		if errors.As(err, &sod) {
+			rules = sod.Rules
+		}
+		httpx.WriteErrorDetails(w, http.StatusConflict, "access.sod_acknowledgement_required",
+			"The change creates a separation-of-duties conflict; acknowledge the rules with a reason to continue.", map[string]any{"rules": rules})
 	default:
 		h.logger.ErrorContext(r.Context(), "authorization request failed", "request_id", httpx.RequestID(w), "method", r.Method, "path", r.URL.Path, "error", err)
 		httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
@@ -98,9 +131,12 @@ func actor(r *http.Request) audit.Actor {
 }
 
 type permissionDTO struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Risk        string `json:"risk"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Risk        string   `json:"risk"`
+	Module      string   `json:"module"`
+	Group       string   `json:"group"`
+	Needs       []string `json:"needs"`
 }
 
 type roleDTO struct {
@@ -110,6 +146,9 @@ type roleDTO struct {
 	Description       string    `json:"description"`
 	BuiltIn           bool      `json:"builtIn"`
 	Permissions       []string  `json:"permissions"`
+	Version           int       `json:"version"`
+	TemplateKey       string    `json:"templateKey,omitempty"`
+	TemplateVersion   int       `json:"templateVersion,omitempty"`
 	ActiveAssignments int       `json:"activeAssignments"`
 	CreatedAt         time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
@@ -121,7 +160,7 @@ func toRoleDTO(r roles.Role) roleDTO {
 		perms = []string{}
 	}
 	return roleDTO{ID: r.ID, Key: r.Key, Name: r.Name, Description: r.Description, BuiltIn: r.BuiltIn, Permissions: perms,
-		ActiveAssignments: r.ActiveAssignments, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
+		Version: r.Version, TemplateKey: r.TemplateKey, TemplateVersion: r.TemplateVersion, ActiveAssignments: r.ActiveAssignments, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt}
 }
 
 type assignmentDTO struct {
@@ -132,6 +171,7 @@ type assignmentDTO struct {
 	SubjectID          string     `json:"subjectId"`
 	SubjectDisplayName string     `json:"subjectDisplayName"`
 	Scope              string     `json:"scope"`
+	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	CreatedBy          string     `json:"createdBy,omitempty"`
 	RevokedAt          *time.Time `json:"revokedAt,omitempty"`
@@ -140,14 +180,19 @@ type assignmentDTO struct {
 
 func toAssignmentDTO(a roles.Assignment) assignmentDTO {
 	return assignmentDTO{ID: a.ID, RoleID: a.RoleID, RoleKey: a.RoleKey, SubjectType: a.SubjectType, SubjectID: a.SubjectID,
-		SubjectDisplayName: a.SubjectDisplayName, Scope: a.Scope, CreatedAt: a.CreatedAt, CreatedBy: a.CreatedBy,
+		SubjectDisplayName: a.SubjectDisplayName, Scope: a.Scope, ExpiresAt: a.ExpiresAt, CreatedAt: a.CreatedAt, CreatedBy: a.CreatedBy,
 		RevokedAt: a.RevokedAt, RevokedBy: a.RevokedBy}
 }
 
 func (h *httpHandler) listPermissions(w http.ResponseWriter, _ *http.Request) {
 	items := []permissionDTO{}
 	for _, p := range h.svc.ListPermissions() {
-		items = append(items, permissionDTO{Name: p.Name, Description: p.Description, Risk: p.Risk})
+		needs := p.Needs
+		if needs == nil {
+			needs = []string{}
+		}
+		items = append(items, permissionDTO{Name: p.Name, Description: p.Description, Risk: p.Risk,
+			Module: permissionModule(p.Name), Group: permissionGroup(p.Name), Needs: needs})
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -174,17 +219,32 @@ func (h *httpHandler) getRole(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, toRoleDTO(role))
 }
 
+// ackBody is the acknowledgement part of the bodies that can create separation-of-duties conflicts.
+type ackBody struct {
+	AcknowledgedRules []string `json:"acknowledgedRules"`
+	Reason            string   `json:"reason"`
+}
+
+func (a ackBody) toAck() roles.Acknowledgement {
+	return roles.Acknowledgement{Rules: a.AcknowledgedRules, Reason: a.Reason}
+}
+
 func (h *httpHandler) createRole(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Key         string   `json:"key"`
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Permissions []string `json:"permissions"`
+		Key             string   `json:"key"`
+		Name            string   `json:"name"`
+		Description     string   `json:"description"`
+		Permissions     []string `json:"permissions"`
+		TemplateKey     string   `json:"templateKey"`
+		CloneFromRoleID string   `json:"cloneFromRoleId"`
+		ackBody
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	role, err := h.svc.CreateRole(r.Context(), actor(r), httpx.RequestID(w), roles.CreateRoleInput{Key: body.Key, Name: body.Name, Description: body.Description, Permissions: body.Permissions})
+	role, err := h.svc.CreateRole(r.Context(), actor(r), httpx.RequestID(w), roles.CreateRoleInput{Key: body.Key, Name: body.Name,
+		Description: body.Description, Permissions: body.Permissions, TemplateKey: body.TemplateKey, CloneFromRoleID: body.CloneFromRoleID,
+		Acknowledgement: body.toAck()})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -194,13 +254,15 @@ func (h *httpHandler) createRole(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpHandler) updateRole(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
+		Name            *string `json:"name"`
+		Description     *string `json:"description"`
+		ExpectedVersion int     `json:"expectedVersion"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	role, err := h.svc.UpdateRole(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id"), roles.UpdateRoleInput{Name: body.Name, Description: body.Description})
+	role, err := h.svc.UpdateRole(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id"),
+		roles.UpdateRoleInput{Name: body.Name, Description: body.Description, ExpectedVersion: body.ExpectedVersion})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -210,7 +272,9 @@ func (h *httpHandler) updateRole(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpHandler) setPermissions(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Permissions *[]string `json:"permissions"`
+		Permissions     *[]string `json:"permissions"`
+		ExpectedVersion int       `json:"expectedVersion"`
+		ackBody
 	}
 	if !decodeBody(w, r, &body) {
 		return
@@ -219,7 +283,8 @@ func (h *httpHandler) setPermissions(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "authorization.invalid_request", "permissions is required.")
 		return
 	}
-	role, err := h.svc.SetRolePermissions(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id"), *body.Permissions)
+	role, err := h.svc.SetRolePermissions(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id"),
+		roles.SetRolePermissionsInput{Permissions: *body.Permissions, ExpectedVersion: body.ExpectedVersion, Acknowledgement: body.toAck()})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -227,8 +292,14 @@ func (h *httpHandler) setPermissions(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, toRoleDTO(role))
 }
 
+// deleteRole needs the expected version as query parameter (a DELETE has no body).
 func (h *httpHandler) deleteRole(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteRole(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id")); err != nil {
+	version, err := strconv.Atoi(r.URL.Query().Get("expectedVersion"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "authorization.invalid_request", "expectedVersion is required.")
+		return
+	}
+	if err := h.svc.DeleteRole(r.Context(), actor(r), httpx.RequestID(w), r.PathValue("id"), version); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -270,14 +341,17 @@ func (h *httpHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpHandler) assign(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		RoleID      string `json:"roleId"`
-		SubjectType string `json:"subjectType"`
-		SubjectID   string `json:"subjectId"`
+		RoleID      string     `json:"roleId"`
+		SubjectType string     `json:"subjectType"`
+		SubjectID   string     `json:"subjectId"`
+		ExpiresAt   *time.Time `json:"expiresAt"`
+		ackBody
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	a, err := h.svc.AssignRole(r.Context(), actor(r), httpx.RequestID(w), roles.AssignInput{RoleID: body.RoleID, SubjectType: body.SubjectType, SubjectID: body.SubjectID})
+	a, err := h.svc.AssignRole(r.Context(), actor(r), httpx.RequestID(w), roles.AssignInput{RoleID: body.RoleID, SubjectType: body.SubjectType,
+		SubjectID: body.SubjectID, ExpiresAt: body.ExpiresAt, Acknowledgement: body.toAck()})
 	if err != nil {
 		h.fail(w, r, err)
 		return

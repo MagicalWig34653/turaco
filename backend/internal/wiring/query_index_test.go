@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
@@ -22,7 +23,7 @@ func TestSubstringAndSearchUseTrigramIndexes(t *testing.T) {
 	ctx := context.Background()
 	engine := QueryEngine(pool)
 	staff := query.Subject{UserID: "00000000-0000-7000-8000-0000000009a1", Permissions: map[string]bool{
-		"tickets.view": true, "tasks.view": true, "endpoints.view": true}}
+		"tickets.view": true, "tasks.view": true, "endpoints.view": true, "organization.view": true}}
 	cases := []struct {
 		name  string
 		cat   *query.Catalog
@@ -36,6 +37,8 @@ func TestSubstringAndSearchUseTrigramIndexes(t *testing.T) {
 		{"task search", tasksapp.TaskCatalog(), query.Request{Search: "printer"}, []string{"tasks_title_trgm_idx"}},
 		{"device name contains", endpointsapp.DeviceCatalog(), contains("name", "laptop"), []string{"devices_name_trgm_idx"}},
 		{"device search", endpointsapp.DeviceCatalog(), query.Request{Search: "laptop"}, []string{"devices_name_trgm_idx"}},
+		{"user name contains", orgapp.Catalogs()[0], contains("display_name", "meier"), []string{"users_display_name_trgm_idx"}},
+		{"user search", orgapp.Catalogs()[0], query.Request{Search: "meier"}, []string{"users_display_name_trgm_idx"}},
 	}
 	for _, c := range cases {
 		plan, err := engine.Prepare(c.cat, staff, c.req, "all", query.Options{})
@@ -81,11 +84,13 @@ func TestSubstringAndSearchUseTrigramIndexes(t *testing.T) {
 func TestTrigramIndexDefinitions(t *testing.T) {
 	pool := dbtest.Pool(t)
 	want := map[string]string{
-		"tickets_reference_trgm_idx": "USING gin (reference gin_trgm_ops)",
-		"tickets_title_trgm_idx":     "USING gin (title gin_trgm_ops)",
-		"tasks_title_trgm_idx":       "USING gin (title gin_trgm_ops)",
-		"devices_name_trgm_idx":      "USING gin (name gin_trgm_ops)",
-		"devices_serial_trgm_idx":    "USING gin (serial_number gin_trgm_ops)",
+		"tickets_reference_trgm_idx":   "USING gin (reference gin_trgm_ops)",
+		"tickets_title_trgm_idx":       "USING gin (title gin_trgm_ops)",
+		"tasks_title_trgm_idx":         "USING gin (title gin_trgm_ops)",
+		"devices_name_trgm_idx":        "USING gin (name gin_trgm_ops)",
+		"devices_serial_trgm_idx":      "USING gin (serial_number gin_trgm_ops)",
+		"users_display_name_trgm_idx":  "USING gin (display_name gin_trgm_ops)",
+		"users_primary_email_trgm_idx": "USING gin (primary_email gin_trgm_ops)",
 	}
 	for name, def := range want {
 		var got string
@@ -107,7 +112,7 @@ func contains(field, value string) query.Request {
 // descriptions can only be tested for emptiness.
 func TestCatalogsOfferNoUnindexedSubstringScan(t *testing.T) {
 	subj := query.Subject{UserID: "u", Permissions: map[string]bool{"tickets.view": true, "tasks.view": true, "endpoints.view": true, "endpoint.management.view": true}}
-	for _, cat := range []*query.Catalog{servicedeskapp.TicketCatalog(), tasksapp.TaskCatalog(), endpointsapp.DeviceCatalog()} {
+	for _, cat := range append([]*query.Catalog{servicedeskapp.TicketCatalog(), tasksapp.TaskCatalog(), endpointsapp.DeviceCatalog()}, orgapp.Catalogs()...) {
 		for _, f := range cat.Describe(subj).Fields {
 			if f.Key == "description" {
 				for _, op := range f.Operators {
@@ -119,6 +124,22 @@ func TestCatalogsOfferNoUnindexedSubstringScan(t *testing.T) {
 					t.Errorf("%s.description is searchable", cat.Key())
 				}
 			}
+		}
+	}
+}
+
+// Every Organization catalog column exists with the declared type in the migrated schema, and the keyset sorts of
+// the lists have an index.
+func TestOrganizationCatalogsMatchTheSchema(t *testing.T) {
+	pool := dbtest.Pool(t)
+	if err := ValidateQueryCatalogs(context.Background(), pool); err != nil {
+		t.Fatal(err)
+	}
+	for _, idx := range []string{"users_display_name_sort_idx", "users_status_sort_idx", "users_created_sort_idx", "users_updated_sort_idx",
+		"teams_name_sort_idx", "locations_name_sort_idx", "departments_name_sort_idx"} {
+		var n int
+		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM pg_indexes WHERE indexname = $1`, idx).Scan(&n); err != nil || n != 1 {
+			t.Errorf("index %s missing (%v)", idx, err)
 		}
 	}
 }

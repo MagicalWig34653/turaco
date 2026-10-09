@@ -13,8 +13,14 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Directory Group Membership** — observed User/Device membership in a Directory Group with source/freshness, kept as interval history; dynamic-group rule evaluation stays with the provider unless explicitly supported.
 - **Directory Group Nesting** — observed direct membership of one Directory Group in another, kept as interval history; transitive membership is derived, not stored.
 - **Directory Sync Run** — one execution of directory synchronization for one provider, with outcome, counts and conflicts; the provenance record for directory observations.
-- **Department** — organizational business unit.
-- **Location** — organizational/support/inventory location, distinct from physical infrastructure Site.
+- **Department** — organizational business unit; a tree with a code, maintained in Turaco (F14).
+- **Location** — organizational/support/inventory location, distinct from physical infrastructure Site. A tree of two kinds: `site` (root) and `area` (below, up to four levels), maintained in Turaco (F14).
+- **Field Owner** — who maintains a User attribute: the directory (read-only in Turaco for directory-origin Users) or the platform (editable).
+- **Local Account** — a User created in Turaco without a directory account who signs in with email and a password they set through a single-use Credential Token (ADR-0034); distinct from the emergency (break-glass) account.
+- **Credential Token** — single-use invitation or reset token of a Local Account (256 bit, only its hash stored, 7 days or 24 hours).
+- **Role Template** — built-in permission list shipped as data and copied into an ordinary role that records `templateKey` and `templateVersion`; never updates the role.
+- **Separation-of-Duties Rule** — a pair of permission sets that should not be held together; violating it is a warning that needs an acknowledgement with a reason.
+- **Dominance rule** — an actor may reset, invite, change the email of, deactivate, reactivate or depart an account only as platform administrator or when holding every effective permission of that account.
 - **Cost Center** — accounting/organizational allocation.
 
 ## Products, assets and devices

@@ -140,3 +140,7 @@ Automated: unit + PostgreSQL tests per operation (incl. audit rows), concurrency
 
 - **PR A:** migrations 000010 (authorization + audit indexes) and 000011 (local credentials + throttle), slices 3b, 5, 6, emergency account, CLI, UI.
 - **PR B:** slice 4 Kerberos (ADR-0023) and its UI hook-up.
+
+## Update 2026-10-09: local accounts and role guards (F14 A-A, A-A2, A-B)
+
+Implemented in the backend: a second credential kind (`local`) in `platform.local_credentials` for Users created in Turaco, set up through single-use invitation or reset tokens and signed in at `POST /auth/local-login` (switch `AUTH_LOCAL_LOGIN_ENABLED`, default off; separate throttling keys, account lock, hash slot pool and password policy; the emergency endpoint finds only emergency credentials). The role service enforces the escalation guards (grant and removal ceiling, role-holding rule, no self-assignment, no expiry on the administrator role, no high-risk permission for local accounts, assignment expiry) and `organization.users.manage` operations follow the dominance rule. Details and API: [F14 design](../product/f14-administration-design.md), [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md), [current status](../product/current-status.md).

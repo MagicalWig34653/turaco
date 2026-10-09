@@ -12,6 +12,13 @@ Implemented transitions (F1 slice 3, directory sync only; see the [sync design](
 - `inactive → active` only when `status_source = directory` and a directory identity is enabled again.
 - Sync never sets or leaves `departed`, `external` or `unknown`, and never reactivates an `inactive` User whose `status_source` is `platform`.
 
+Platform operations (F14, `ChangeStatus`; see [F14](../product/f14-administration-design.md)), all with `expectedVersion`, a closed reason code, the dominance rule and `status_source = platform`:
+- `deactivate`: `active → inactive`; `mark_departed`: `active|inactive → departed`; `reactivate`: `inactive|departed → active` (refused while a directory-origin User's identity is disabled).
+- Refused for the emergency account, for the actor's own account and when the last active platform administrator would leave `active`.
+- Audit: `organization.user.deactivated|departed|reactivated`; events `UserDeactivated|UserDeparted`. Open invitation and reset tokens end with the status change.
+
+`account_kind` (`employee|external`) and `origin` (`directory|local|emergency`) never change after creation (database trigger).
+
 Invariants every current and future status operation must keep:
 - A platform-side status change sets `status_source = platform`, so directory sync does not undo it.
 - Leaving `active` revokes all of the User's sessions in the same transaction (`authentication.RevokeUserSessions`). Sessions are honoured only while the User is `active`.

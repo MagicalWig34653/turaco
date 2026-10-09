@@ -32,6 +32,11 @@ func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID strin
 	return s.svc.GroupIDsOfUser(ctx, userID)
 }
 
+// GroupMemberUserIDs returns the Users currently in any of the groups, directly or through observed nesting.
+func (s *AuthorizationSubjects) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {
+	return s.svc.GroupMemberUserIDs(ctx, groupIDs, limit)
+}
+
 // UserExists reports whether the User exists.
 func (s *AuthorizationSubjects) UserExists(ctx context.Context, id string) (bool, error) {
 	return s.svc.UserExists(ctx, id)

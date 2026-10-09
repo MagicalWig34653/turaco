@@ -93,11 +93,16 @@ func (f *boardFixture) user() string {
 
 func newBoardFixture(t *testing.T, teams map[string][]string) *boardFixture {
 	t.Helper()
+	return newBoardFixtureWithLimiter(t, teams, query.NewLimiter(100000, 100000))
+}
+
+func newBoardFixtureWithLimiter(t *testing.T, teams map[string][]string, limiter *query.Limiter) *boardFixture {
+	t.Helper()
 	pool := dbtest.Pool(t)
 	f := &boardFixture{t: t, pool: pool, mux: http.NewServeMux(), token: "bt" + newUUID(t)[:8]}
 	dir := boardDirectory{teams: teams}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	engine := query.NewEphemeralEngine().WithLimiter(query.NewLimiter(100000, 100000))
+	engine := query.NewEphemeralEngine().WithLimiter(limiter)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), dir, nil).WithQueryEngine(engine)
 	taskstransport.Register(f.mux, tasksSvc, cookieAuth{}, logger)
 	resources, routes := ViewResources()
@@ -1016,5 +1021,46 @@ func TestBoardRanksRebalanceKeepsTheOrder(t *testing.T) {
 	var longest int
 	if err := f.pool.QueryRow(context.Background(), `SELECT max(length(rank)) FROM tasks.board_card_ranks WHERE board_id = $1::uuid`, b.ID).Scan(&longest); err != nil || longest > 48 {
 		t.Fatalf("longest rank %d %v", longest, err)
+	}
+}
+
+// Loading a Board costs one rate-limit token however many columns it has (it used to cost one per column).
+func TestBoardLoadTakesOneRateLimitToken(t *testing.T) {
+	const burst = 20
+	// No refill within the test, so the burst is the total budget of the principal.
+	f := newBoardFixtureWithLimiter(t, nil, query.NewLimiter(0.0001, burst))
+	owner := f.user()
+	b := f.create(owner, nil)
+	version := b.Version
+	for i := 0; len(b.Columns) < 8; i++ {
+		r := f.do(owner, manage, "POST", "/api/v1/tasks/boards/"+b.ID+"/columns",
+			map[string]any{"operation": "add", "title": "Extra " + string(rune('A'+i)), "mapsTo": "open", "expectedVersion": version})
+		if r.code != http.StatusOK {
+			t.Fatalf("add column: %d %s", r.code, r.body)
+		}
+		r.json(t, &b)
+		version = b.Version
+	}
+	if len(b.Columns) != 8 {
+		t.Fatalf("columns: %d", len(b.Columns))
+	}
+	loads := 0
+	for ; loads <= burst; loads++ {
+		r := f.do(owner, manage, "GET", "/api/v1/tasks/boards/"+b.ID+"/cards", nil)
+		if r.code == http.StatusTooManyRequests {
+			break
+		}
+		if r.code != http.StatusOK {
+			t.Fatalf("board load %d: %d %s", loads, r.code, r.body)
+		}
+	}
+	// One token per load: with the few tokens the setup used, far more than burst/8 loads fit. Eight tokens per
+	// load would allow at most two.
+	if loads < burst/2 || loads > burst {
+		t.Fatalf("an 8-column board allowed %d loads from a budget of %d tokens", loads, burst)
+	}
+	// The limit is per principal.
+	if r := f.do(f.user(), manage, "GET", "/api/v1/tasks/boards/"+b.ID+"/cards", nil); r.code == http.StatusTooManyRequests {
+		t.Fatalf("another principal was limited: %d %s", r.code, r.body)
 	}
 }

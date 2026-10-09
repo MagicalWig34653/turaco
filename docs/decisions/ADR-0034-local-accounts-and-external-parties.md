@@ -1,6 +1,6 @@
 # ADR-0034: Local accounts with invitation tokens and restricted external accounts
 
-- Status: Accepted (2026-10-09). Not implemented; accepted after the Opus security review, whose blockers are resolved below. Design: [F14 Administration](../product/f14-administration-design.md).
+- Status: Accepted (2026-10-09). Local accounts (points 1 to 3, 5 and 6) are implemented in the backend since 2026-10-09 (slices A-A and A-A2; external accounts, point 4, follow with slice A-G); accepted after the Opus security review, whose blockers are resolved below. Design: [F14 Administration](../product/f14-administration-design.md).
 
 ## Context
 

@@ -19,6 +19,9 @@ type APIError struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
 	RequestID string `json:"requestId,omitempty"`
+	// Details carries machine-readable context of the error (for example the rule keys of an acknowledgement that
+	// is required). It never contains internal error text.
+	Details map[string]any `json:"details,omitempty"`
 }
 
 var validClientRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)

@@ -66,7 +66,7 @@ type ColumnCards struct {
 	Warnings []query.Warning
 }
 
-func (b *Boards) columnPage(ctx context.Context, q boardQuery, col Column, cursor string, limit int, count bool) (ColumnCards, error) {
+func (b *Boards) columnPage(ctx context.Context, q boardQuery, col Column, cursor string, limit int, count, rateLimited bool) (ColumnCards, error) {
 	out := ColumnCards{Column: col, Items: []Card{}, Warnings: q.warnings}
 	if q.empty {
 		return out, nil
@@ -75,7 +75,7 @@ func (b *Boards) columnPage(ctx context.Context, q boardQuery, col Column, curso
 	place := &CardPlacement{BoardID: q.ld.ID, ColumnID: col.ID, First: first.ID == col.ID}
 	scope := "board:" + q.ld.ID + ":" + col.ID + ":" + q.scope
 	plan, err := b.svc.engine.Prepare(taskCatalog, q.a.subject(), q.request(&col, cursor, limit, count), scope,
-		query.Options{Lead: &query.LeadKey{Expr: "r.rank"}})
+		query.Options{Lead: &query.LeadKey{Expr: "r.rank"}, RateLimited: rateLimited})
 	if err != nil {
 		return ColumnCards{}, err
 	}
@@ -127,7 +127,7 @@ func (b *Boards) Cards(ctx context.Context, vc views.Caller, p Principal, boardI
 		if !ok {
 			return nil, invalid("unknown column")
 		}
-		cc, err := b.columnPage(ctx, q, col, cursor, limit, true)
+		cc, err := b.columnPage(ctx, q, col, cursor, limit, true, false)
 		if err != nil {
 			return nil, err
 		}
@@ -136,9 +136,13 @@ func (b *Boards) Cards(ctx context.Context, vc views.Caller, p Principal, boardI
 	if cursor != "" {
 		return nil, invalid("a cursor needs a column")
 	}
+	// One board load is one rate-limit token, however many columns it has.
+	if err := b.svc.engine.Take(a.subject()); err != nil {
+		return nil, err
+	}
 	out := make([]ColumnCards, 0, len(ld.Columns))
 	for _, col := range ld.Columns {
-		cc, err := b.columnPage(ctx, q, col, "", limit, true)
+		cc, err := b.columnPage(ctx, q, col, "", limit, true, true)
 		if err != nil {
 			return nil, err
 		}
@@ -409,7 +413,7 @@ func (b *Boards) computeRank(ctx context.Context, tx RankTx, q boardQuery, col C
 	var cards []Card
 	cursor := ""
 	for len(cards) < MaxCardsPerColumn {
-		win, err := b.columnPage(ctx, q, col, cursor, query.MaxPageSize, false)
+		win, err := b.columnPage(ctx, q, col, cursor, query.MaxPageSize, false, false)
 		if err != nil {
 			return "", false, err
 		}

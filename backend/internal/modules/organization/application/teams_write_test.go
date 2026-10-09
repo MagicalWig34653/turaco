@@ -68,15 +68,18 @@ func TestCallerIsRequired(t *testing.T) {
 func TestMemberRoleValidation(t *testing.T) {
 	s := &recordingStore{}
 	teams := NewTeams(s)
-	bad := ""
-	if _, err := teams.AddMember(context.Background(), goodCaller(), "t", "u", &bad); err == nil {
-		t.Error("an empty role must be rejected")
+	for _, bad := range []string{"", "Lead", "  lead ", "owner"} {
+		bad := bad
+		if _, err := teams.AddMember(context.Background(), goodCaller(), "t", "u", &bad); err == nil {
+			t.Errorf("role %q must be rejected: only lead and member exist", bad)
+		}
 	}
-	role := "  lead "
+	role := "lead"
 	if _, err := teams.AddMember(context.Background(), goodCaller(), "t", "u", &role); err != nil || s.role == nil || *s.role != "lead" {
-		t.Errorf("role must be trimmed: %v %v", s.role, err)
+		t.Errorf("lead must pass: %v %v", s.role, err)
 	}
+	s.role = nil
 	if _, err := teams.AddMember(context.Background(), goodCaller(), "t", "u", nil); err != nil || s.role != nil {
-		t.Errorf("nil role must pass through: %v %v", s.role, err)
+		t.Errorf("nil role must pass through (the store makes it a member): %v %v", s.role, err)
 	}
 }

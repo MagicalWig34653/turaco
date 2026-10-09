@@ -44,6 +44,15 @@ type SessionAuthenticator struct {
 	users       UserGate
 	permissions PermissionLoader
 	secure      bool
+	// localEnabled mirrors AUTH_LOCAL_LOGIN_ENABLED: while it is off, sessions of local accounts are rejected even if
+	// they exist (the switch disables local accounts completely).
+	localEnabled bool
+}
+
+// WithLocalLogin sets whether sessions created by local-account login are accepted.
+func (a *SessionAuthenticator) WithLocalLogin(enabled bool) *SessionAuthenticator {
+	a.localEnabled = enabled
+	return a
 }
 
 var _ authorization.Authenticator = (*SessionAuthenticator)(nil)
@@ -71,6 +80,9 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	}
 	if err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("authenticate session: %w", err)
+	}
+	if s.AuthMethod == methodLocal && !a.localEnabled {
+		return Session{}, authorization.Principal{}, false, nil
 	}
 	active, err := a.users.IsActive(r.Context(), s.UserID)
 	if err != nil {

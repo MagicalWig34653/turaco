@@ -16,6 +16,10 @@ func (f *fakeSubjectStore) GroupIDsOfUser(context.Context, string) ([]string, er
 	f.calls++
 	return []string{"g"}, nil
 }
+func (f *fakeSubjectStore) GroupMemberUserIDs(context.Context, []string, int) ([]string, error) {
+	return nil, nil
+}
+
 func (f *fakeSubjectStore) UserExists(_ context.Context, id string) (bool, error) {
 	f.calls++
 	return f.exists[id], nil

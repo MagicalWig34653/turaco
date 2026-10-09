@@ -30,10 +30,11 @@ import (
 const hospitalCorrelation = "demo-seed-hospital"
 
 // hospitalSeeder creates the hospital simulation (docs/development/simulation-hospital.md). It builds on
-// demoSeeder for products and catalog items. Everything goes through audited application operations except
-// Locations, Departments and the profile attributes of Users (primary location, department, manager, name,
-// email): Organization has no write operation for them yet (directory synchronization is their only writer),
-// so those rows are written directly and audited as demo.hospital.* actions.
+// demoSeeder for products and catalog items. Everything goes through audited application operations (Locations,
+// Departments, Teams, Roles and assignments use the People and role operations of F14) except the profile
+// attributes of the simulation Users: they are emergency accounts (so the simulation can sign every persona in
+// without a directory), whose lifecycle is CLI-only and which the People operations deliberately refuse, so
+// their profile rows are written directly and audited as demo.hospital.* actions.
 type hospitalSeeder struct {
 	*demoSeeder
 
@@ -98,51 +99,78 @@ func (h *hospitalSeeder) caller() orgapp.Caller {
 	return orgapp.Caller{Actor: h.e.auditActor(), CorrelationID: hospitalCorrelation}
 }
 
-// ---- organization: locations, departments (direct, audited) ----
+// ---- organization: locations, departments (People operations) ----
 
-// ensureOrgRow returns the id of the row of table with external key key, creating it when missing. table is
-// a constant of this file.
-func (h *hospitalSeeder) ensureOrgRow(ctx context.Context, table, targetType, key, name string) (string, error) {
+// seedRepo returns the Organization repository with the guards the People operations need; the seed runs as the
+// CLI actor, which is exempt from the actor-relative rules.
+func (h *hospitalSeeder) seedRepo() (*orgrepo.Repository, error) {
+	return wiring.Organization(h.e.pool, wiring.OrganizationConfig{})
+}
+
+// findOrgRow returns the id of the active row of table with the code (or the legacy external key of earlier
+// seeds). table is a constant of this file.
+func (h *hospitalSeeder) findOrgRow(ctx context.Context, table, code string) (string, bool, error) {
 	var id string
-	err := pgx.BeginFunc(ctx, h.e.pool, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `SELECT id::text FROM organization.`+table+` WHERE external_key = $1 ORDER BY created_at LIMIT 1`, key).Scan(&id)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO organization.`+table+` (name, external_key) VALUES ($1, $2) RETURNING id::text`, name, key).Scan(&id); err != nil {
-			return err
-		}
-		h.count(table)
-		return audit.Record(ctx, tx, audit.Change{
-			Action: "demo.hospital." + targetType + "_seeded", TargetType: targetType, TargetID: id, Actor: h.e.auditActor(),
-			CorrelationID: hospitalCorrelation, After: map[string]any{"name": name, "externalKey": key},
-		})
-	})
-	return id, err
+	err := h.e.pool.QueryRow(ctx, `SELECT id::text FROM organization.`+table+`
+		WHERE lower(code) = lower($1) OR external_key = $1 ORDER BY created_at LIMIT 1`, code).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, err == nil, err
 }
 
 func (h *hospitalSeeder) organization(ctx context.Context) error {
+	repo, err := h.seedRepo()
+	if err != nil {
+		return err
+	}
+	people := orgapp.NewPeople(repo)
 	for _, s := range simSites {
-		id, err := h.ensureOrgRow(ctx, "locations", "location", "SIM-SITE-"+s.Key, s.Name)
+		code := "SIM-SITE-" + s.Key
+		id, found, err := h.findOrgRow(ctx, "locations", code)
 		if err != nil {
 			return fmt.Errorf("site %s: %w", s.Key, err)
+		}
+		if !found {
+			l, err := people.CreateLocation(ctx, h.caller(), orgapp.NewLocationInput{Kind: orgapp.LocationSite, Name: s.Name, Code: &code})
+			if err != nil {
+				return fmt.Errorf("site %s: %w", s.Key, err)
+			}
+			id = l.ID
+			h.count("locations")
 		}
 		h.locations[s.Key] = id
 	}
 	for _, a := range simAreas {
-		id, err := h.ensureOrgRow(ctx, "locations", "location", "SIM-AREA-"+a.Key, a.Name)
+		code := "SIM-AREA-" + a.Key
+		id, found, err := h.findOrgRow(ctx, "locations", code)
 		if err != nil {
 			return fmt.Errorf("area %s: %w", a.Key, err)
+		}
+		if !found {
+			parent := h.locations[a.Site]
+			l, err := people.CreateLocation(ctx, h.caller(), orgapp.NewLocationInput{Kind: orgapp.LocationArea, ParentID: &parent, Name: a.Name, Code: &code})
+			if err != nil {
+				return fmt.Errorf("area %s: %w", a.Key, err)
+			}
+			id = l.ID
+			h.count("locations")
 		}
 		h.locations[a.Key] = id
 	}
 	for _, d := range simDepartments {
-		id, err := h.ensureOrgRow(ctx, "departments", "department", "SIM-DEPT-"+d.Key, d.Name)
+		code := "SIM-DEPT-" + d.Key
+		id, found, err := h.findOrgRow(ctx, "departments", code)
 		if err != nil {
 			return fmt.Errorf("department %s: %w", d.Key, err)
+		}
+		if !found {
+			dep, err := people.CreateDepartment(ctx, h.caller(), orgapp.NewDepartmentInput{Name: d.Name, Code: &code})
+			if err != nil {
+				return fmt.Errorf("department %s: %w", d.Key, err)
+			}
+			id = dep.ID
+			h.count("departments")
 		}
 		h.depts[d.Key] = id
 	}
@@ -208,12 +236,12 @@ func (h *hospitalSeeder) people(ctx context.Context) error {
 	teams := orgapp.NewTeams(orgrepo.New(h.e.pool))
 	for _, p := range simPeople {
 		for _, m := range p.Teams {
-			var role *string
+			// Leaders of the simulation (non-empty free-text title) are Team leads, everyone else a member.
+			role := orgapp.TeamRoleMember
 			if m.Role != "" {
-				r := m.Role
-				role = &r
+				role = orgapp.TeamRoleLead
 			}
-			_, err := teams.AddMember(ctx, h.caller(), h.teams[m.Team], h.users[p.Login], role)
+			_, err := teams.AddMember(ctx, h.caller(), h.teams[m.Team], h.users[p.Login], &role)
 			if errors.Is(err, orgapp.ErrConflict) {
 				continue
 			}
@@ -257,15 +285,32 @@ func (h *hospitalSeeder) profile(ctx context.Context, p simPerson) error {
 
 // ---- roles ----
 
+// simRoleTemplates maps the simulation role keys to the Role Template they start from. The roles keep their
+// simulation-specific permission lists (explicit final lists recorded with template_key), so the seed also shows
+// "template plus changes".
+var simRoleTemplates = map[string]string{
+	roleFirstLevel: "first-level-support", roleSpecialist: "it-specialist", roleSiteLead: "team-lead",
+	roleSecurity: "security-analyst", roleInfra: "infrastructure-engineer", roleVendor: "vendor-restricted",
+}
+
 func (h *hospitalSeeder) rolesAndAssignments(ctx context.Context) error {
 	svc := roles.NewService(h.e.pool, orgpublic.NewAuthorizationSubjects(orgrepo.New(h.e.pool)))
 	actor := h.e.auditActor()
+	// The simulation deliberately gives some roles combinations the separation-of-duties hygiene warns about
+	// (the site lead approves the changes the team creates); the seed acknowledges them with a reason.
+	var ackRules []string
+	for _, r := range roles.SoDRules() {
+		ackRules = append(ackRules, r.Key)
+	}
+	ack := roles.Acknowledgement{Rules: ackRules, Reason: "hospital simulation seed"}
 	for _, r := range simRoles {
-		role, err := svc.CreateRole(ctx, actor, hospitalCorrelation, roles.CreateRoleInput{Key: r.Key, Name: r.Name, Description: r.Description, Permissions: r.Permissions})
+		role, err := svc.CreateRole(ctx, actor, hospitalCorrelation, roles.CreateRoleInput{Key: r.Key, Name: r.Name, Description: r.Description,
+			Permissions: r.Permissions, TemplateKey: simRoleTemplates[r.Key], Acknowledgement: ack})
 		if errors.Is(err, roles.ErrDuplicateKey) {
 			role, err = svc.GetRoleByKey(ctx, r.Key)
 			if err == nil && !samePermissions(role.Permissions, r.Permissions) {
-				role, err = svc.SetRolePermissions(ctx, actor, hospitalCorrelation, role.ID, r.Permissions)
+				role, err = svc.SetRolePermissions(ctx, actor, hospitalCorrelation, role.ID,
+					roles.SetRolePermissionsInput{Permissions: r.Permissions, ExpectedVersion: role.Version, Acknowledgement: ack})
 			}
 		} else if err == nil {
 			h.count("roles")
@@ -279,7 +324,8 @@ func (h *hospitalSeeder) rolesAndAssignments(ctx context.Context) error {
 		if p.Role == "" {
 			continue
 		}
-		_, err := svc.AssignRole(ctx, actor, hospitalCorrelation, roles.AssignInput{RoleID: h.roleIDs[p.Role], SubjectType: roles.SubjectUser, SubjectID: h.users[p.Login]})
+		_, err := svc.AssignRole(ctx, actor, hospitalCorrelation, roles.AssignInput{RoleID: h.roleIDs[p.Role], SubjectType: roles.SubjectUser,
+			SubjectID: h.users[p.Login], Acknowledgement: ack})
 		if errors.Is(err, roles.ErrDuplicateAssignment) {
 			continue
 		}

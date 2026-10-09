@@ -59,6 +59,11 @@ type LoginConfig struct {
 	TrustedProxies []netip.Prefix
 	// MinFailureTime defaults to 400 ms.
 	MinFailureTime time.Duration
+	// LocalEnabled mirrors AUTH_LOCAL_LOGIN_ENABLED: local accounts sign in with POST /auth/local-login and set
+	// their password with invitation and reset tokens. Off by default; off disables local accounts completely.
+	LocalEnabled bool
+	// LocalHashWait bounds the wait for a local-account hash slot; defaults to one second.
+	LocalHashWait time.Duration
 	// EmergencyHashWait bounds the wait for a password hash slot of an
 	// emergency login; defaults to one second.
 	EmergencyHashWait time.Duration
@@ -77,8 +82,10 @@ type LoginDeps struct {
 	// Kerberos validates SPNEGO tickets; nil disables GET /auth/kerberos. It
 	// also needs Directory and LoginConfig.ProviderKey.
 	Kerberos KerberosValidator
-	Users    UserLocker
-	Logger   *slog.Logger
+	// LocalAccounts resolves local accounts; required when LoginConfig.LocalEnabled.
+	LocalAccounts LocalAccountDirectory
+	Users         UserLocker
+	Logger        *slog.Logger
 	// Now and Sleep are injectable for tests; defaults are time.Now and a
 	// context-aware sleep.
 	Now   func() time.Time
@@ -97,6 +104,7 @@ type loginHandler struct {
 	directory AccountDirectory
 	verifier  PasswordVerifier
 	krb       KerberosValidator
+	localDir  LocalAccountDirectory
 	users     UserLocker
 	cfg       LoginConfig
 	logger    *slog.Logger
@@ -117,7 +125,7 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	}
 	h := &loginHandler{
 		pool: d.Pool, sessions: d.Sessions, throttle: d.Throttle,
-		directory: d.Directory, verifier: d.Verifier, krb: d.Kerberos, users: d.Users,
+		directory: d.Directory, verifier: d.Verifier, krb: d.Kerberos, users: d.Users, localDir: d.LocalAccounts,
 		cfg: cfg, logger: d.Logger, now: d.Now, sleep: d.Sleep,
 	}
 	if h.logger == nil {
@@ -132,6 +140,9 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	if h.cfg.MinFailureTime <= 0 {
 		h.cfg.MinFailureTime = defaultMinFailureTime
 	}
+	if h.cfg.LocalHashWait <= 0 {
+		h.cfg.LocalHashWait = defaultLocalHashWait
+	}
 	if h.cfg.EmergencyHashWait <= 0 {
 		h.cfg.EmergencyHashWait = defaultEmergencyHashWait
 	}
@@ -139,6 +150,8 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	mux.Handle("POST /api/v1/auth/login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.login))))
 	mux.Handle("POST /api/v1/auth/emergency-login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.emergencyLogin))))
 	mux.Handle("GET /api/v1/auth/kerberos", httpx.NoStore(http.HandlerFunc(h.kerberos)))
+	mux.Handle("POST /api/v1/auth/local-login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.localLogin))))
+	mux.Handle("POST /api/v1/auth/credential-tokens/redeem", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.redeem))))
 }
 
 func sleepContext(ctx context.Context, d time.Duration) {
@@ -159,6 +172,7 @@ func (h *loginHandler) methods(w http.ResponseWriter, _ *http.Request) {
 		"password":  h.passwordEnabled(),
 		"kerberos":  h.kerberosEnabled(),
 		"emergency": h.cfg.EmergencyEnabled,
+		"local":     h.localEnabled(),
 	})
 }
 

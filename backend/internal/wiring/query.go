@@ -7,6 +7,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
@@ -15,7 +16,8 @@ import (
 // ValidateQueryCatalogs fails API startup when a declared field does not
 // match the migrated schema. Catalog expressions are never accepted from HTTP.
 func ValidateQueryCatalogs(ctx context.Context, pool *pgxpool.Pool) error {
-	return query.ValidateSchema(ctx, pool, servicedeskapp.TicketCatalog(), endpointsapp.DeviceCatalog(), tasksapp.TaskCatalog())
+	catalogs := append([]*query.Catalog{servicedeskapp.TicketCatalog(), endpointsapp.DeviceCatalog(), tasksapp.TaskCatalog()}, orgapp.Catalogs()...)
+	return query.ValidateSchema(ctx, pool, catalogs...)
 }
 
 var (

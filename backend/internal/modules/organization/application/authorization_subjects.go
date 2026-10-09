@@ -14,6 +14,9 @@ type AuthorizationSubjectStore interface {
 	// user currently belongs to, directly or through currently observed
 	// nesting (child group -> parent group).
 	GroupIDsOfUser(ctx context.Context, userID string) ([]string, error)
+	// GroupMemberUserIDs returns the ids of Users that currently belong to any of the groups directly or through
+	// observed nesting (child group into parent group), ordered by id, at most limit.
+	GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error)
 	UserExists(ctx context.Context, id string) (bool, error)
 	DirectoryGroupObserved(ctx context.Context, id string) (bool, error)
 	DisplayNames(ctx context.Context, userIDs, groupIDs []string) (map[string]string, error)
@@ -45,6 +48,20 @@ func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID strin
 		return []string{}, nil
 	}
 	return s.store.GroupIDsOfUser(ctx, userID)
+}
+
+// GroupMemberUserIDs returns the Users of the given groups; malformed group ids are ignored.
+func (s *AuthorizationSubjects) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {
+	var valid []string
+	for _, id := range groupIDs {
+		if subjectUUID.MatchString(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 || limit < 1 {
+		return []string{}, nil
+	}
+	return s.store.GroupMemberUserIDs(ctx, valid, limit)
 }
 
 func (s *AuthorizationSubjects) UserExists(ctx context.Context, id string) (bool, error) {

@@ -69,6 +69,11 @@ type Config struct {
 
 	// AuthEmergencyLoginEnabled exposes POST /auth/emergency-login.
 	AuthEmergencyLoginEnabled bool
+	// AuthLocalLoginEnabled exposes POST /auth/local-login and the credential token redemption for local accounts.
+	AuthLocalLoginEnabled bool
+	// EmailBaseURL is EMAIL_BASE_URL (validated, no trailing slash); empty when unset. Invitation and reset links
+	// are built only from it.
+	EmailBaseURL string
 	// TrustedProxies are the networks whose X-Forwarded-For header is
 	// trusted when determining the client address (login throttling, audit).
 	TrustedProxies []netip.Prefix
@@ -170,6 +175,7 @@ var Registry = []Descriptor{
 	{Name: "SESSION_IDLE_TIMEOUT", Type: "duration", Default: "8h", Description: "Session idle timeout; must be positive and not exceed SESSION_ABSOLUTE_TIMEOUT."},
 	{Name: "SESSION_ABSOLUTE_TIMEOUT", Type: "duration", Default: "24h", Description: "Maximum session lifetime regardless of activity; must be positive."},
 	{Name: "SESSION_COOKIE_SECURE", Type: "bool", Default: "true", Description: "Set the Secure attribute on the session cookie; disable only for local plain-HTTP development."},
+	{Name: "AUTH_LOCAL_LOGIN_ENABLED", Type: "bool", Default: "false", Description: "Enable local accounts (ADR-0034): People administration can invite Users who are not in the directory, and they sign in with POST /api/v1/auth/local-login after setting a password through a single-use link. Off disables local accounts completely (the endpoints answer 404 and existing local sessions are rejected). Needs EMAIL_BASE_URL for the links. Local accounts never hold high-risk permissions."},
 	{Name: "AUTH_EMERGENCY_LOGIN_ENABLED", Type: "bool", Default: "false", Description: "Expose POST /api/v1/auth/emergency-login for the local break-glass account (created with turaco-admin). Every use is audited and logged at error level."},
 	{Name: "HTTP_TRUSTED_PROXIES", Type: "string", Description: "Comma-separated CIDR prefixes of reverse proxies (for example the turaco-web container network) whose X-Forwarded-For header is trusted for the client address used by login throttling and audit. Empty trusts no proxy."},
 	{Name: "KERBEROS_KEYTAB_FILE", Type: "string", Secret: true, Description: "Path to the keytab file (a deployment secret, mounted only into turaco-api) holding the key of KERBEROS_SERVICE_PRINCIPAL. Setting it enables Kerberos/SPNEGO login (GET /api/v1/auth/kerberos) and requires LDAP_URL: tickets are mapped to synced directory accounts. Empty disables Kerberos."},
@@ -293,6 +299,15 @@ func Load() (Config, error) {
 	}
 	if cfg.AuthEmergencyLoginEnabled, err = getBool("AUTH_EMERGENCY_LOGIN_ENABLED", false); err != nil {
 		return Config{}, err
+	}
+	if cfg.AuthLocalLoginEnabled, err = getBool("AUTH_LOCAL_LOGIN_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	if cfg.EmailBaseURL, err = LoadEmailBaseURL(cfg.Environment); err != nil {
+		return Config{}, err
+	}
+	if cfg.AuthLocalLoginEnabled && cfg.EmailBaseURL == "" {
+		return Config{}, fmt.Errorf("AUTH_LOCAL_LOGIN_ENABLED requires EMAIL_BASE_URL (invitation and reset links are built only from it)")
 	}
 	if cfg.Kerberos, err = loadKerberos(cfg.DirectoryProviderKey != ""); err != nil {
 		return Config{}, err

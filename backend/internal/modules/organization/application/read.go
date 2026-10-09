@@ -53,13 +53,24 @@ type User struct {
 	PrimaryLocationID *string
 	ManagerUserID     *string
 	UpdatedAt         time.Time
+
+	// F14 fields. Origin says who owns the profile attributes: "directory" (synchronized, read-only here),
+	// "local" (created in Turaco) or "emergency" (the CLI-only break-glass account).
+	EmployeeNumber  *string
+	StatusSource    string
+	AccountKind     string
+	Origin          string
+	AccessExpiresAt *time.Time
+	Version         int
 }
 
 type Team struct {
-	ID        string
-	Name      string
-	Active    bool
-	UpdatedAt time.Time
+	ID          string
+	Name        string
+	Active      bool
+	UpdatedAt   time.Time
+	Description string
+	Version     int
 }
 
 // TeamMember is a current membership (valid_from <= now < valid_until).
@@ -77,6 +88,24 @@ type Location struct {
 	ExternalKey *string
 	Active      bool
 	UpdatedAt   time.Time
+
+	Kind        string
+	ParentID    *string
+	Code        *string
+	Description string
+	Version     int
+}
+
+// Department is an organizational unit; Departments form a tree.
+type Department struct {
+	ID          string
+	Name        string
+	Code        *string
+	ParentID    *string
+	ExternalKey *string
+	Active      bool
+	UpdatedAt   time.Time
+	Version     int
 }
 
 // DirectoryGroup is a group observed from an external directory. It is not a Team.
@@ -172,8 +201,12 @@ type Reader interface {
 	ListTeams(ctx context.Context, f NameFilter) (Result[Team], error)
 	GetTeam(ctx context.Context, id string) (Team, error)
 	ListTeamMembers(ctx context.Context, teamID string, p Page) (Result[TeamMember], error)
+	// ListTeamLeads returns the current leads of a Team (at most 50).
+	ListTeamLeads(ctx context.Context, teamID string) ([]TeamMember, error)
 	ListLocations(ctx context.Context, f NameFilter) (Result[Location], error)
 	GetLocation(ctx context.Context, id string) (Location, error)
+	ListDepartments(ctx context.Context, f NameFilter) (Result[Department], error)
+	GetDepartment(ctx context.Context, id string) (Department, error)
 	ListDirectoryGroups(ctx context.Context, f NameFilter) (Result[DirectoryGroup], error)
 	GetDirectoryGroup(ctx context.Context, id string) (DirectoryGroup, error)
 	// ListDirectoryGroupMembers returns only currently observed members.

@@ -21,6 +21,7 @@ import (
 // update it together with the docs (docs/product/current-status.md) and make sure the new job's timeout and
 // schedule are intended.
 var goldenJobTypes = []string{
+	"access.expire_assignments",
 	"ai.retention.purge",
 	"ai.sessions.expire",
 	"changes.reminders",

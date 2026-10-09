@@ -34,6 +34,29 @@ func (r *Repository) GroupIDsOfUser(ctx context.Context, userID string) ([]strin
 	return collectStrings(rows, "group ids of user")
 }
 
+// GroupMemberUserIDs expands the groups over currently observed nesting to child groups and returns the
+// currently observed members, ordered by id.
+func (r *Repository) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH RECURSIVE g(id) AS (
+			SELECT dg.id FROM organization.directory_groups dg
+			WHERE dg.id = ANY($1::text[]::uuid[]) AND dg.deleted_observed_at IS NULL
+			UNION
+			SELECT n.child_group_id
+			FROM g
+			JOIN organization.directory_group_nesting n ON n.parent_group_id = g.id AND n.observed_until IS NULL
+			JOIN organization.directory_groups cg ON cg.id = n.child_group_id AND cg.deleted_observed_at IS NULL
+		)
+		SELECT DISTINCT m.user_id::text
+		FROM organization.directory_group_memberships m JOIN g ON g.id = m.group_id
+		WHERE m.observed_until IS NULL
+		ORDER BY 1 LIMIT $2`, groupIDs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("group member user ids: %w", err)
+	}
+	return collectStrings(rows, "group member user ids")
+}
+
 func collectStrings(rows pgx.Rows, what string) ([]string, error) {
 	defer rows.Close()
 	out := []string{}

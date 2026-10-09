@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -15,7 +16,14 @@ type AssignInput struct {
 	RoleID      string
 	SubjectType string
 	SubjectID   string
+	// ExpiresAt optionally ends the assignment. It is forbidden for the built-in administrator role and at most
+	// MaxHighRiskAssignmentDays away for a role that holds a high-risk permission.
+	ExpiresAt       *time.Time
+	Acknowledgement Acknowledgement
 }
+
+// MaxHighRiskAssignmentDays is the longest assignment of a role that holds a high-risk permission.
+const MaxHighRiskAssignmentDays = 366
 
 // RevokeOutcome reports what RevokeAssignment did.
 type RevokeOutcome struct {
@@ -29,14 +37,14 @@ type RevokeOutcome struct {
 
 const assignmentSelect = `
 	SELECT a.id::text, a.role_id::text, r.key, a.subject_type, a.subject_id::text, a.scope,
-	       a.created_at, a.created_by->>'userId', a.revoked_at, a.revoked_by->>'userId'
+	       a.created_at, a.created_by->>'userId', a.revoked_at, a.revoked_by->>'userId', a.expires_at
 	FROM platform.role_assignments a JOIN platform.roles r ON r.id = a.role_id`
 
 func scanAssignment(row pgx.Row) (Assignment, error) {
 	var a Assignment
 	var createdBy, revokedBy *string
 	if err := row.Scan(&a.ID, &a.RoleID, &a.RoleKey, &a.SubjectType, &a.SubjectID, &a.Scope,
-		&a.CreatedAt, &createdBy, &a.RevokedAt, &revokedBy); err != nil {
+		&a.CreatedAt, &createdBy, &a.RevokedAt, &revokedBy, &a.ExpiresAt); err != nil {
 		return Assignment{}, err
 	}
 	if createdBy != nil {
@@ -49,10 +57,21 @@ func scanAssignment(row pgx.Row) (Assignment, error) {
 }
 
 func assignmentState(a Assignment) map[string]any {
-	return map[string]any{"roleId": a.RoleID, "roleKey": a.RoleKey, "subjectType": a.SubjectType, "subjectId": a.SubjectID, "scope": a.Scope}
+	m := map[string]any{"roleId": a.RoleID, "roleKey": a.RoleKey, "subjectType": a.SubjectType, "subjectId": a.SubjectID, "scope": a.Scope}
+	if a.ExpiresAt != nil {
+		m["expiresAt"] = a.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	return m
 }
 
-// AssignRole grants a role to an existing User or non-deleted Directory Group.
+// AssignRole grants a role to an existing User or non-deleted Directory Group. For a user actor:
+//   - nobody assigns to themselves or to a Directory Group they belong to (access.self_assignment);
+//   - the actor holds the role or is a platform administrator, because the role also hands over the queue grants
+//     and View shares attached to it (access.role_not_held, review rule R2);
+//   - the grant ceiling applies to every permission of the role, high-risk roles only by an administrator;
+//
+// for every actor: the administrator role has no expiry, a high-risk role is not given to a local account (R10) and
+// expires within 366 days, and newly created separation-of-duties conflicts need an acknowledgement.
 func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlationID string, in AssignInput) (Assignment, error) {
 	if err := validateActor(actor, correlationID); err != nil {
 		return Assignment{}, err
@@ -66,13 +85,28 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 	if !uuidPattern.MatchString(in.SubjectID) {
 		return Assignment{}, invalid("subjectId must be a UUID")
 	}
+	now := s.now().UTC()
+	if in.ExpiresAt != nil && !in.ExpiresAt.After(now) {
+		return Assignment{}, invalid("expiresAt must be in the future")
+	}
 	var out Assignment
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if err := lockRole(ctx, tx, in.RoleID, "SHARE"); err != nil {
 			return err
 		}
+		role, err := loadRole(ctx, tx, "r.id = $1", in.RoleID)
+		if err != nil {
+			return err
+		}
+		if in.ExpiresAt != nil {
+			if role.BuiltIn {
+				return ErrAdminNoExpiry
+			}
+			if hasHighRisk(role.Permissions) && in.ExpiresAt.After(now.AddDate(0, 0, MaxHighRiskAssignmentDays)) {
+				return invalid("a role with high-risk permissions is assigned for at most %d days", MaxHighRiskAssignmentDays)
+			}
+		}
 		var exists bool
-		var err error
 		if in.SubjectType == SubjectUser {
 			exists, err = s.subjects.UserExists(ctx, in.SubjectID)
 		} else {
@@ -84,11 +118,65 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 		if !exists {
 			return ErrSubjectNotFound
 		}
+		a, err := s.actorOf(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
+		if err := a.checkNotSelf(in.SubjectType, in.SubjectID); err != nil {
+			return err
+		}
+		if !a.exempt() && !a.holdsRole(in.RoleID) {
+			return ErrRoleNotHeld
+		}
+		if err := a.checkGrant(role.Permissions); err != nil {
+			return err
+		}
+		var target holdings
+		if in.SubjectType == SubjectUser {
+			if target, err = s.eval.holdingsOf(ctx, tx, in.SubjectID); err != nil {
+				return fmt.Errorf("evaluate subject: %w", err)
+			}
+			local, err := userIsLocal(ctx, tx, in.SubjectID)
+			if err != nil {
+				return err
+			}
+			if local && hasHighRisk(role.Permissions) {
+				return ErrLocalAccountHighRisk
+			}
+		}
+		// A role the subject holds already (or an administrator) adds no new conflicts; the built-in role is the
+		// administrators' own and exempt from separation-of-duties hygiene.
+		if !role.BuiltIn && !target.admin {
+			combined := permSet(role.Permissions)
+			for p := range target.perms {
+				combined[p] = struct{}{}
+			}
+			if err := s.requireAcknowledgement(ctx, tx, actor, correlationID, "role_assignment", in.SubjectID,
+				newViolations(target.perms, combined), in.Acknowledgement); err != nil {
+				return err
+			}
+		}
+		// An assignment whose expiry passed is still "active" until the job revokes it; it must not block a new one.
+		var expiredID string
+		err = tx.QueryRow(ctx, `
+			UPDATE platform.role_assignments SET revoked_at = now(), revoked_by = $4
+			WHERE role_id = $1 AND subject_type = $2 AND subject_id = $3 AND scope = 'global' AND revoked_at IS NULL
+			  AND expires_at IS NOT NULL AND expires_at <= now()
+			RETURNING id::text`, in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(audit.SystemActor("access-expiry")))).Scan(&expiredID)
+		switch {
+		case err == nil:
+			if err := s.record(ctx, tx, audit.SystemActor("access-expiry"), correlationID, "authorization.role.assignment_expired",
+				"role_assignment", expiredID, nil, nil, map[string]any{"reason": "replaced_after_expiry"}); err != nil {
+				return err
+			}
+		case !errors.Is(err, pgx.ErrNoRows):
+			return fmt.Errorf("revoke expired assignment: %w", err)
+		}
 		var id string
 		err = tx.QueryRow(ctx, `
-			INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by)
-			VALUES ($1,$2,$3,$4) RETURNING id::text`,
-			in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(actor))).Scan(&id)
+			INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by, expires_at)
+			VALUES ($1,$2,$3,$4,$5) RETURNING id::text`,
+			in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(actor)), in.ExpiresAt).Scan(&id)
 		if isUnique(err) {
 			return ErrDuplicateAssignment
 		}
@@ -146,6 +234,22 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor audit.Actor, corre
 			out = before
 			outcome.AlreadyRevoked = true
 			return nil
+		}
+		a, err := s.actorOf(ctx, tx, actor)
+		if err != nil {
+			return err
+		}
+		if err := a.checkNotSelf(before.SubjectType, before.SubjectID); err != nil {
+			return err
+		}
+		if !a.exempt() {
+			role, err := loadRole(ctx, tx, "r.id = $1", roleID)
+			if err != nil {
+				return err
+			}
+			if err := a.checkRemoval(role.Permissions); err != nil {
+				return err
+			}
 		}
 		extra := map[string]any{}
 		if roleKey == AdministratorRoleKey && before.SubjectType == SubjectUser {
@@ -205,7 +309,8 @@ func (s *Service) ListAssignments(ctx context.Context, f AssignmentFilter) (Assi
 		add("a.subject_id = $%d", f.SubjectID)
 	}
 	if !f.IncludeRevoked {
-		conds = append(conds, "a.revoked_at IS NULL")
+		// An expired assignment grants nothing even before the job revokes it.
+		conds = append(conds, "a.revoked_at IS NULL", "(a.expires_at IS NULL OR a.expires_at > now())")
 	}
 	if page.Cursor != "" {
 		if !uuidPattern.MatchString(page.Cursor) {

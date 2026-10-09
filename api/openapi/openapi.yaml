@@ -40,6 +40,28 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createLocalUser
+      summary: Create a local User.
+      description: "Requires `organization.users.manage`. The User is created in Turaco (origin `local`), active, without a credential; send an invitation to let the person sign in. The primary email is unique. `accountKind` is `employee`; external accounts are not available yet and the kind can never change afterwards. Audited (organization.user.created_local)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserCreate'}
+      responses:
+        '201':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /users/{id}:
     get:
       operationId: getUser
@@ -56,6 +78,288 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserDetail'
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/fields:
+    get:
+      operationId: getUserQueryFields
+      summary: Caller-visible Users field catalog.
+      description: "Requires `organization.view`. HR-adjacent fields (manager, department, location, employee_number, access_expires_at) exist only with `organization.users.view_details`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/query:
+    post:
+      operationId: queryUsers
+      summary: Query Users with a versioned filter AST.
+      description: "Requires `organization.view`. Items carry manager, department, primary location, employee number and access expiry only with `organization.users.view_details`; a filter on those fields is refused without it."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserQueryPage'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/profile:
+    patch:
+      operationId: updateUserProfile
+      summary: Change profile fields of a User.
+      description: "Requires `organization.users.manage`. Named fields only (givenName, familyName, displayName, primaryEmail, employeeNumber; null clears except displayName). Directory-linked Users: these fields are directory-owned and refused per field (409 organization.field_directory_owned, details.fields). Emergency accounts are refused (409 organization.emergency_account). Changing primaryEmail needs the platform administrator or a holder of every effective permission of the target (403 access.dominance_required), revokes open credential tokens and is audited. `expectedVersion` is required (409 organization.version_conflict when stale). Audited (organization.user.profile_changed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserProfileUpdate'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/department:
+    put:
+      operationId: setUserDepartment
+      summary: Set or clear the department (platform-owned).
+      description: "Requires `organization.users.manage`. Set or clear the department (platform-owned). The department must be active. `expectedVersion` is required (409 organization.version_conflict when stale). The body must contain both keys (the target may be null)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserDepartmentSet'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/primary-location:
+    put:
+      operationId: setUserPrimaryLocation
+      summary: Set or clear the primary location (platform-owned).
+      description: "Requires `organization.users.manage`. Set or clear the primary location (platform-owned). The location must be active. `expectedVersion` is required (409 organization.version_conflict when stale). The body must contain both keys (the target may be null)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserLocationSet'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/manager:
+    put:
+      operationId: setUserManager
+      summary: Set or clear the manager.
+      description: "Requires `organization.users.manage`. Set or clear the manager. Directory-linked Users have a directory-owned manager (409 organization.field_directory_owned). The manager must be active; cycles are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). The body must contain both keys (the target may be null)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserManagerSet'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/deactivate:
+    post:
+      operationId: deactivateUser
+      summary: Deactivate a User.
+      description: "Requires `organization.users.manage`. Needs the platform administrator or a holder of every effective permission of the target (403 access.dominance_required). `reason` is a closed code. Sets status_source `platform`, revokes the User's sessions and open credential tokens in the same transaction and is audited (organization.user.deactivated|departed|reactivated). Refused for the emergency account (409 organization.emergency_account), for your own account (409 organization.self_operation) and when it would leave no active platform administrator (409 organization.last_administrator). Reactivation is refused while the directory identity is disabled (409 organization.directory_identity_disabled). `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserStatusChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/reactivate:
+    post:
+      operationId: reactivateUser
+      summary: Reactivate a User.
+      description: "Requires `organization.users.manage`. Needs the platform administrator or a holder of every effective permission of the target (403 access.dominance_required). `reason` is a closed code. Sets status_source `platform`, revokes the User's sessions and open credential tokens in the same transaction and is audited (organization.user.deactivated|departed|reactivated). Refused for the emergency account (409 organization.emergency_account), for your own account (409 organization.self_operation) and when it would leave no active platform administrator (409 organization.last_administrator). Reactivation is refused while the directory identity is disabled (409 organization.directory_identity_disabled). `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserStatusChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/mark-departed:
+    post:
+      operationId: markUserDeparted
+      summary: Mark a User as departed.
+      description: "Requires `organization.users.manage`. Needs the platform administrator or a holder of every effective permission of the target (403 access.dominance_required). `reason` is a closed code. Sets status_source `platform`, revokes the User's sessions and open credential tokens in the same transaction and is audited (organization.user.deactivated|departed|reactivated). Refused for the emergency account (409 organization.emergency_account), for your own account (409 organization.self_operation) and when it would leave no active platform administrator (409 organization.last_administrator). Reactivation is refused while the directory identity is disabled (409 organization.directory_identity_disabled). `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UserStatusChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/send-invitation:
+    post:
+      operationId: sendUserInvitation
+      summary: Invite a local account.
+      description: "Requires `organization.users.manage`. Local accounts only (409 organization.directory_user for directory-linked Users). For a never-activated account; dominance rule applies. The link is built from EMAIL_BASE_URL (409 auth.base_url_not_configured when unset), carries the single-use token in the URL fragment and is mailed to the stored primary address. Without a mail channel the link is returned once in `link`. Responses are never cacheable and send `Referrer-Policy: no-referrer`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredentialLink'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '502': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/reset-password:
+    post:
+      operationId: resetUserPassword
+      summary: Send a password reset to a local account.
+      description: "Requires `organization.users.manage`. For an activated local account; dominance rule applies. A reset is only ever mailed to the stored primary address and its link is never returned (409 auth.mail_not_configured without a working mail channel)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredentialLink'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '502': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/effective-permissions:
+    get:
+      operationId: getUserEffectivePermissions
+      summary: Explain the effective permissions of a User.
+      description: "Requires `platform.roles.view` and `organization.users.view_details`. Roles in force with their source (direct or directory group), per permission the assignments that grant it, separation-of-duties warnings and the ceilings applied. The same evaluation the authorizer uses."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EffectivePermissions'}
         '404': {$ref: '#/components/responses/NotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -105,6 +409,45 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/OrganizationConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /teams/fields:
+    get:
+      operationId: getTeamQueryFields
+      summary: Team field catalog.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/query:
+    post:
+      operationId: queryTeams
+      summary: Query Teams.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamQueryPage'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /teams/{id}:
     get:
       operationId: getTeam
@@ -127,8 +470,8 @@ paths:
         '500': {$ref: '#/components/responses/InternalError'}
     patch:
       operationId: renameTeam
-      summary: Rename a team.
-      description: "Requires `organization.teams.manage`. Audited (organization.team.renamed)."
+      summary: Rename a team or change its description.
+      description: "Requires `organization.teams.manage`. Send either `name` (audited organization.team.renamed) or `description` with the required `expectedVersion` (audited organization.team.description_changed), not both. `GET /teams/{id}` returns the current leads."
       security:
         - sessionAuth: []
       parameters:
@@ -138,7 +481,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TeamName'
+              $ref: '#/components/schemas/TeamPatch'
       responses:
         '200':
           description: The team.
@@ -262,6 +605,33 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /teams/{id}/members/{userId}/role:
+    put:
+      operationId: setTeamMemberRole
+      summary: Make a member a lead or a plain member.
+      description: "Requires `organization.teams.manage`. Leads are a marker for the UI, approvals and Queue defaults, not a permission. Nobody changes their own membership (409 access.team_membership_self, administrators included). Audited (organization.team.lead_set|lead_removed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TeamMemberRoleSet'}
+      responses:
+        '200':
+          description: The membership.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamMember'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
   /tasks:
     get:
@@ -6162,6 +6532,28 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createLocation
+      summary: Create a Location (site or area).
+      description: "Requires `organization.locations.manage`. A site has no parent; an area needs an active parent; the maximum depth is four levels. The code is unique among active locations (case-insensitive). Audited (organization.location.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocationCreate'}
+      responses:
+        '201':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Location'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /locations/{id}:
     get:
       operationId: getLocation
@@ -6179,6 +6571,352 @@ paths:
               schema:
                 $ref: '#/components/schemas/Location'
         '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateLocation
+      summary: Change name, code or description of a Location.
+      description: "Requires `organization.locations.manage`. `expectedVersion` is required (409 organization.version_conflict when stale). Audited (organization.location.updated)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocationUpdate'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Location'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/fields:
+    get:
+      operationId: getLocationQueryFields
+      summary: Location field catalog.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/query:
+    post:
+      operationId: queryLocations
+      summary: Query Locations.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LocationQueryPage'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/{id}/move:
+    post:
+      operationId: moveLocation
+      summary: Move an area below another Location.
+      description: "Requires `organization.locations.manage`. A site is a root and an area always has a parent. Cycles and a depth beyond four levels (site, area, sub-area, sub-sub-area) are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). Audited (organization.location.moved)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MoveRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Location'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/{id}/deactivate:
+    post:
+      operationId: deactivateLocation
+      summary: Deactivate a Location.
+      description: "Requires `organization.locations.manage`. Records that still point at the Location (Users, child areas) answer 409 organization.impact_confirmation_required with `details.counts`; repeat with `confirmImpact: true`. No hard delete. `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActiveChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Location'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /locations/{id}/activate:
+    post:
+      operationId: activateLocation
+      summary: Activate a Location.
+      description: "Requires `organization.locations.manage`. Records that still point at the Location (Users, child areas) answer 409 organization.impact_confirmation_required with `details.counts`; repeat with `confirmImpact: true`. No hard delete. `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActiveChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Location'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments:
+    get:
+      operationId: listDepartments
+      summary: List departments.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Query'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DepartmentList'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createDepartment
+      summary: Create a department.
+      description: "Requires `organization.departments.manage`. The code is unique among active departments (case-insensitive). Audited (organization.department.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DepartmentCreate'}
+      responses:
+        '201':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/fields:
+    get:
+      operationId: getDepartmentQueryFields
+      summary: Department field catalog.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/query:
+    post:
+      operationId: queryDepartments
+      summary: Query departments.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QueryRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DepartmentQueryPage'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '429': {$ref: '#/components/responses/QueryInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/{id}:
+    get:
+      operationId: getDepartment
+      summary: Get a department.
+      description: "Requires `organization.view`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateDepartment
+      summary: Rename a department or change its code.
+      description: "Requires `organization.departments.manage`. `expectedVersion` is required (409 organization.version_conflict when stale). Audited (organization.department.renamed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DepartmentUpdate'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/{id}/move:
+    post:
+      operationId: moveDepartment
+      summary: Move a department below another one (or to the root).
+      description: "Requires `organization.departments.manage`. Cycles are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MoveRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/{id}/deactivate:
+    post:
+      operationId: deactivateDepartment
+      summary: Deactivate a department.
+      description: "Requires `organization.departments.manage`. Users and active child departments that still point at it answer 409 organization.impact_confirmation_required with `details.counts`; repeat with `confirmImpact: true`. `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActiveChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /departments/{id}/activate:
+    post:
+      operationId: activateDepartment
+      summary: Activate a department.
+      description: "Requires `organization.departments.manage`. Users and active child departments that still point at it answer 409 organization.impact_confirmation_required with `details.counts`; repeat with `confirmImpact: true`. `expectedVersion` is required (409 organization.version_conflict when stale)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ActiveChange'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Department'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -6442,6 +7180,75 @@ paths:
           headers:
             Retry-After:
               schema: {type: integer}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/local-login:
+    post:
+      operationId: localLogin
+      summary: Log in to a local account with email and password.
+      description: "Exists only when AUTH_LOCAL_LOGIN_ENABLED=true; otherwise 404 auth.method_unavailable. The identifier is the primary email address. Source and account throttling, account lock after repeated failures (audited auth.local_login.locked), uniform 401 for unknown, not yet activated, disabled, locked and wrong-password accounts. Never finds the emergency account. Requests must be same-origin."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LocalLoginRequest'}
+      responses:
+        '204':
+          description: Logged in; the session cookie is set.
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '401':
+          description: Invalid credentials (auth.invalid_credentials).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Cross-origin request rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Local login is not enabled (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts (auth.too_many_attempts). See Retry-After.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /auth/credential-tokens/redeem:
+    post:
+      operationId: redeemCredentialToken
+      summary: Set the password of a local account with an invitation or reset token.
+      description: "Exists only when AUTH_LOCAL_LOGIN_ENABLED=true. The token (256-bit, single use, 7 days for an invitation and 24 hours for a reset, only its hash is stored) is sent in the body; links carry it in the URL fragment. Requires an active, unexpired, non-directory User, a same-origin request and source throttling. Every token failure answers the same 400 auth.invalid_token. A password that does not meet the local policy (at least 12 characters, not a common password, not containing the name, email or login) answers 400 auth.password_policy and keeps the token. It sets the password, revokes the User's sessions and never logs in. The response sends `Referrer-Policy: no-referrer`."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RedeemTokenRequest'}
+      responses:
+        '204':
+          description: The password was set. Sign in with it.
+        '400':
+          description: Invalid request, token or password (auth.invalid_request, auth.invalid_token, auth.password_policy).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Cross-origin request rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Local accounts are not enabled (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts (auth.too_many_attempts).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -6889,6 +7696,59 @@ paths:
         '204': {description: Stored.}
         '400': {$ref: '#/components/responses/ViewsInvalid'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /role-templates:
+    get:
+      operationId: listRoleTemplates
+      summary: List the built-in Role Templates.
+      description: "Requires `platform.roles.view`. Templates ship in the binary as data; a role created from one records `templateKey` and `templateVersion` and is never updated by a later release. `roles` lists the existing roles created from each template with the permission drift (missing, extra)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleTemplateList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /access/sod-rules:
+    get:
+      operationId: listSoDRules
+      summary: List the separation-of-duties rules.
+      description: "Requires `platform.roles.view`. Rules are warnings: a change that creates a conflict needs `acknowledgedRules` and a `reason` (409 access.sod_acknowledgement_required, details.rules)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SoDRuleList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /access/holders:
+    get:
+      operationId: listPermissionHolders
+      summary: Who holds a permission.
+      description: "Requires `platform.roles.view` and `organization.users.view_details`. Active assignments (direct and Directory Groups) whose role grants the permission, newest first."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: permission, in: query, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/Limit'}
+        - {$ref: '#/components/parameters/Cursor'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HolderList'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /roles:
     get:
       operationId: listRoles
@@ -6909,7 +7769,7 @@ paths:
     post:
       operationId: createRole
       summary: Create a custom role.
-      description: "Requires `platform.roles.manage`. Audited (authorization.role.created)."
+      description: "Requires `platform.roles.manage`. `templateKey` prefills the permissions from a Role Template and records template_key and template_version; `cloneFromRoleId` copies another role; `permissions` (when given) is the final list. Escalation guards for non-administrators: only permissions the actor holds (403 access.grant_exceeds_holder), never high-risk ones (403 access.high_risk_requires_administrator). Separation-of-duties conflicts need `acknowledgedRules` and `reason` (409 access.sod_acknowledgement_required). Audited (authorization.role.created, created_from_template, sod_acknowledged)."
       security:
         - sessionAuth: []
       requestBody:
@@ -6951,7 +7811,7 @@ paths:
     patch:
       operationId: updateRole
       summary: Rename or redescribe a custom role.
-      description: "Requires `platform.roles.manage`. The built-in role cannot be changed (409 authorization.built_in_role). Audited (authorization.role.updated)."
+      description: "Requires `platform.roles.manage`. `expectedVersion` is required (409 authorization.version_conflict). The built-in role cannot be changed (409 authorization.built_in_role). Audited (authorization.role.updated)."
       security:
         - sessionAuth: []
       parameters:
@@ -6976,11 +7836,12 @@ paths:
     delete:
       operationId: deleteRole
       summary: Delete a custom role without active assignments.
-      description: "Requires `platform.roles.manage`. 409 authorization.role_in_use while active assignments exist, 409 authorization.built_in_role for the built-in role. Audited (authorization.role.deleted)."
+      description: "Requires `platform.roles.manage`. `expectedVersion` (query) is required. 409 authorization.role_in_use while active assignments exist, 409 authorization.built_in_role for the built-in role. Audited (authorization.role.deleted)."
       security:
         - sessionAuth: []
       parameters:
         - $ref: '#/components/parameters/Id'
+        - {name: expectedVersion, in: query, required: true, schema: {type: integer, minimum: 1}}
       responses:
         '204':
           description: Deleted.
@@ -6993,7 +7854,7 @@ paths:
     put:
       operationId: setRolePermissions
       summary: Replace the permissions of a custom role.
-      description: "Requires `platform.roles.manage`. Every name must be registered (400 authorization.unknown_permission). Audited (authorization.role.permissions_changed) with before/after."
+      description: "Requires `platform.roles.manage`. `expectedVersion` is required. Every name must be registered (400 authorization.unknown_permission). Added permissions need the grant ceiling (403 access.grant_exceeds_holder, access.high_risk_requires_administrator), removed permissions the removal ceiling when the role has holders, and adding permissions to a role the actor holds is refused (409 access.self_assignment). A local account cannot gain a high-risk permission (409 access.local_account_high_risk). Audited (authorization.role.permissions_changed) with the added/removed diff."
       security:
         - sessionAuth: []
       parameters:
@@ -7014,6 +7875,25 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/AuthorizationNotFound'}
         '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /roles/{id}/members:
+    get:
+      operationId: listRoleMembers
+      summary: Effective members of a role.
+      description: "Requires `platform.roles.view`. Users assigned directly plus the members of assigned Directory Groups, at most 500 (`capped`)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleMemberList'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
   /role-assignments:
     get:
@@ -7042,7 +7922,7 @@ paths:
     post:
       operationId: assignRole
       summary: Assign a role to a User or Directory Group (global scope).
-      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment. Audited (authorization.role.assigned)."
+      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment. Guards: nobody assigns to themselves or to a Directory Group they belong to (409 access.self_assignment, administrators included; the CLI is exempt); a non-administrator assigns only roles they hold (403 access.role_not_held) and never high-risk ones; the built-in administrator role takes no expiry (409 access.admin_no_expiry); a role with a high-risk permission is assigned for at most 366 days and never to a local account (409 access.local_account_high_risk); new separation-of-duties conflicts need `acknowledgedRules` and `reason`. Audited (authorization.role.assigned)."
       security:
         - sessionAuth: []
       requestBody:
@@ -7066,7 +7946,7 @@ paths:
     post:
       operationId: revokeRoleAssignment
       summary: Revoke a role assignment.
-      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Audited (authorization.role.assignment_revoked)."
+      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Nobody revokes their own assignments (409 access.self_assignment) and a non-administrator needs every permission of the role (403 access.grant_exceeds_holder). Audited (authorization.role.assignment_revoked)."
       security:
         - sessionAuth: []
       parameters:
@@ -12837,6 +13717,21 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    PeopleInvalid:
+      description: Invalid input (organization.invalid_request) or a query error (query.*).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    PeopleConflict:
+      description: Conflict. Codes include organization.conflict, organization.version_conflict, organization.field_directory_owned (details.fields), organization.impact_confirmation_required (details.counts), organization.invalid_hierarchy, organization.target_inactive, organization.invalid_state, organization.directory_user, organization.emergency_account, organization.self_operation, organization.last_administrator, organization.directory_identity_disabled, organization.no_email, access.team_membership_self, auth.mail_not_configured, auth.base_url_not_configured; 502 auth.mail_failed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    AccessRefused:
+      description: Missing permission (platform.forbidden) or a refused escalation (access.dominance_required, access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held, access.external_party_permission_required).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     OrganizationInvalid:
       description: Invalid input (organization.invalid_request, organization.invalid_cursor, organization.invalid_limit, organization.invalid_query, organization.invalid_status).
       content:
@@ -13133,7 +14028,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     AuthorizationConflict:
-      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator).
+      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator, authorization.version_conflict, access.self_assignment, access.admin_no_expiry, access.local_account_high_risk, access.sod_acknowledgement_required with details.rules). Refusals of the escalation guards are 403 (access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held).
       content:
         application/json:
           schema:
@@ -14359,10 +15254,344 @@ components:
           type: string
         environment:
           type: string
+    UserCreate:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 200}
+        givenName: {type: [string, "null"], maxLength: 200}
+        familyName: {type: [string, "null"], maxLength: 200}
+        primaryEmail: {type: [string, "null"], format: email}
+        employeeNumber: {type: [string, "null"], maxLength: 40}
+        departmentId: {type: [string, "null"], format: uuid}
+        primaryLocationId: {type: [string, "null"], format: uuid}
+        accountKind: {type: string, enum: [employee], description: "External accounts follow with the External Party slice; the kind is immutable."}
+    UserProfileUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        displayName: {type: string}
+        givenName: {type: [string, "null"]}
+        familyName: {type: [string, "null"]}
+        primaryEmail: {type: [string, "null"]}
+        employeeNumber: {type: [string, "null"]}
+    UserDepartmentSet:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, departmentId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        departmentId: {type: [string, "null"], format: uuid}
+    UserLocationSet:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, locationId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        locationId: {type: [string, "null"], format: uuid}
+    UserManagerSet:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, managerUserId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        managerUserId: {type: [string, "null"], format: uuid}
+    UserStatusChange:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason:
+          type: string
+          description: "Closed reason code. deactivate: left_organization, extended_leave, security_concern, duplicate_account, no_longer_needed. mark-departed: left_organization, contract_ended, retired. reactivate: returned, mistake, contract_renewed."
+    CredentialLink:
+      type: object
+      additionalProperties: false
+      required: [expiresAt, mailed]
+      properties:
+        expiresAt: {type: string, format: date-time}
+        mailed: {type: boolean, description: The link was sent to the stored primary address.}
+        link: {type: string, description: "Only for the invitation of a never-activated account when no mail channel exists. Shown once, never stored; the token is in the URL fragment."}
+    UserListItem:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, status, statusSource, accountKind, source, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        displayName: {type: string}
+        givenName: {type: [string, "null"]}
+        familyName: {type: [string, "null"]}
+        primaryEmail: {type: [string, "null"]}
+        status: {type: string}
+        statusSource: {type: string, enum: [platform, directory]}
+        accountKind: {type: string, enum: [employee, external]}
+        source: {type: string, enum: [directory, local, emergency]}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+        departmentId: {type: [string, "null"], format: uuid, description: Only with organization.users.view_details.}
+        primaryLocationId: {type: [string, "null"], format: uuid, description: Only with organization.users.view_details.}
+        managerUserId: {type: [string, "null"], format: uuid, description: Only with organization.users.view_details.}
+        employeeNumber: {type: [string, "null"], description: Only with organization.users.view_details.}
+        accessExpiresAt: {type: [string, "null"], format: date-time, description: Only with organization.users.view_details.}
+    UserQueryPage:
+      allOf:
+        - {$ref: '#/components/schemas/QueryPage'}
+        - type: object
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/UserListItem'}}
+    TeamQueryPage:
+      allOf:
+        - {$ref: '#/components/schemas/QueryPage'}
+        - type: object
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/Team'}}
+    LocationQueryPage:
+      allOf:
+        - {$ref: '#/components/schemas/QueryPage'}
+        - type: object
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/Location'}}
+    DepartmentQueryPage:
+      allOf:
+        - {$ref: '#/components/schemas/QueryPage'}
+        - type: object
+          properties:
+            items: {type: array, items: {$ref: '#/components/schemas/Department'}}
+    TeamPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        description: {type: string, maxLength: 500}
+        expectedVersion: {type: integer, minimum: 1, description: Required with description.}
+    TeamMemberRoleSet:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {type: string, enum: [lead, member]}
+    MoveRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, parentId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        parentId: {type: [string, "null"], format: uuid, description: New parent; null moves a department to the root. The key is required.}
+    ActiveChange:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        confirmImpact: {type: boolean}
+    LocationCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        kind: {type: string, enum: [site, area]}
+        parentId: {type: [string, "null"], format: uuid}
+        name: {type: string, minLength: 1, maxLength: 200}
+        code: {type: [string, "null"], maxLength: 40}
+        description: {type: string, maxLength: 500}
+    LocationUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string}
+        code: {type: [string, "null"]}
+        description: {type: string}
+    Department:
+      type: object
+      additionalProperties: false
+      required: [id, name, active, updatedAt, version]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        code: {type: [string, "null"]}
+        parentId: {type: [string, "null"], format: uuid}
+        externalKey: {type: [string, "null"]}
+        active: {type: boolean}
+        updatedAt: {type: string, format: date-time}
+        version: {type: integer}
+    DepartmentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Department'}}
+        nextCursor: {type: string}
+    DepartmentCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        code: {type: [string, "null"], maxLength: 40}
+        parentId: {type: [string, "null"], format: uuid}
+    DepartmentUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        name: {type: string}
+        code: {type: [string, "null"]}
+    FieldOwner:
+      type: object
+      additionalProperties: false
+      required: [key, owner, source]
+      properties:
+        key: {type: string}
+        owner: {type: string, enum: [directory, platform]}
+        source: {type: string, description: "Directory provider key, or turaco."}
+        observedAt: {type: [string, "null"], format: date-time}
+    LocalLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier, password]
+      properties:
+        identifier: {type: string, minLength: 1, maxLength: 256, description: Primary email address.}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    RedeemTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token: {type: string, writeOnly: true}
+        password: {type: string, minLength: 1, maxLength: 1024, writeOnly: true}
+    RoleTemplate:
+      type: object
+      additionalProperties: false
+      required: [key, version, name, description, nameKey, descriptionKey, audience, permissions, requiresModules, externalOnly, administratorAssignOnly, roles]
+      properties:
+        key: {type: string}
+        version: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        nameKey: {type: string, description: "i18n key roles.template.<key>.name"}
+        descriptionKey: {type: string}
+        audience: {type: string}
+        permissions: {type: array, items: {type: string}}
+        requiresModules: {type: array, items: {type: string}}
+        externalOnly: {type: boolean}
+        administratorAssignOnly: {type: boolean, description: The role holds a high-risk permission; only a platform administrator creates or assigns it.}
+        roles:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [roleId, roleKey, name, templateVersion, missing, extra]
+            properties:
+              roleId: {type: string}
+              roleKey: {type: string}
+              name: {type: string}
+              templateVersion: {type: integer}
+              missing: {type: array, items: {type: string}, description: Template permissions the role lacks.}
+              extra: {type: array, items: {type: string}, description: Permissions beyond the template.}
+    RoleTemplateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/RoleTemplate'}}
+    SoDRuleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, messageKey, left, right]
+            properties:
+              key: {type: string}
+              messageKey: {type: string}
+              left: {type: array, items: {type: string}}
+              right: {type: array, items: {type: string}}
+    EffectivePermissions:
+      type: object
+      additionalProperties: false
+      required: [userId, roles, permissions, warnings, ceilings, localAccount, excluded]
+      properties:
+        userId: {type: string}
+        roles:
+          type: array
+          items:
+            type: object
+            required: [roleId, roleKey, roleName, builtInAdmin, assignmentId, source]
+            properties:
+              roleId: {type: string}
+              roleKey: {type: string}
+              roleName: {type: string}
+              builtInAdmin: {type: boolean}
+              assignmentId: {type: string}
+              source: {type: string, enum: [direct, directory_group]}
+              groupId: {type: string}
+              expiresAt: {type: string, format: date-time}
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [name, risk, module, grantedBy]
+            properties:
+              name: {type: string}
+              risk: {type: string}
+              module: {type: string}
+              grantedBy: {type: array, items: {type: string}, description: Assignment ids of `roles`.}
+        warnings: {type: array, items: {type: string}, description: Violated separation-of-duties rule keys.}
+        ceilings: {type: array, items: {type: string}}
+        localAccount: {type: boolean}
+        excluded: {type: array, items: {type: string}, description: High-risk permissions removed because the User is a local account.}
+    HolderList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [assignmentId, roleId, roleKey, roleName, builtInAdmin, subjectType, subjectId, subjectDisplayName]
+            properties:
+              assignmentId: {type: string}
+              roleId: {type: string}
+              roleKey: {type: string}
+              roleName: {type: string}
+              builtInAdmin: {type: boolean}
+              subjectType: {type: string, enum: [user, directory_group]}
+              subjectId: {type: string}
+              subjectDisplayName: {type: string}
+              expiresAt: {type: string, format: date-time}
+        nextCursor: {type: string}
+    RoleMemberList:
+      type: object
+      additionalProperties: false
+      required: [items, capped, limit]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [userId, displayName, source]
+            properties:
+              userId: {type: string}
+              displayName: {type: string}
+              source: {type: string, enum: [direct, directory_group]}
+        capped: {type: boolean}
+        limit: {type: integer}
     User:
       type: object
       additionalProperties: false
-      required: [id, displayName, status, updatedAt]
+      required: [id, displayName, status, updatedAt, version, statusSource, accountKind, source]
       properties:
         id:
           type: string
@@ -14390,11 +15619,18 @@ components:
         updatedAt:
           type: string
           format: date-time
+        version: {type: integer}
+        statusSource: {type: string, enum: [platform, directory]}
+        accountKind: {type: string, enum: [employee, external]}
+        source: {type: string, enum: [directory, local, emergency], description: Where the account comes from. Directory-origin Users have directory-owned profile attributes.}
     Team:
       type: object
       additionalProperties: false
-      required: [id, name, active, updatedAt]
+      required: [id, name, active, updatedAt, description, version]
       properties:
+        description: {type: string}
+        version: {type: integer}
+        leads: {type: array, items: {$ref: '#/components/schemas/TeamMember'}, description: "Only on GET /teams/{id}."}
         id:
           type: string
           format: uuid
@@ -17563,8 +18799,13 @@ components:
     Location:
       type: object
       additionalProperties: false
-      required: [id, name, active, updatedAt]
+      required: [id, name, active, updatedAt, kind, description, version]
       properties:
+        kind: {type: string, enum: [site, area]}
+        parentId: {type: [string, "null"], format: uuid}
+        code: {type: [string, "null"]}
+        description: {type: string}
+        version: {type: integer}
         id:
           type: string
           format: uuid
@@ -17622,8 +18863,15 @@ components:
     UserDetail:
       type: object
       additionalProperties: false
-      required: [id, displayName, status, updatedAt, externalIdentities]
+      required: [id, displayName, status, updatedAt, externalIdentities, fields, version, statusSource, accountKind, source]
       properties:
+        version: {type: integer}
+        statusSource: {type: string}
+        accountKind: {type: string}
+        source: {type: string}
+        fields: {type: array, items: {$ref: '#/components/schemas/FieldOwner'}, description: "Owner and source of every attribute, so the UI can show badges."}
+        employeeNumber: {type: [string, "null"], description: Only with organization.users.view_details.}
+        accessExpiresAt: {type: [string, "null"], format: date-time, description: Only with organization.users.view_details.}
         id:
           type: string
           format: uuid
@@ -17829,8 +19077,9 @@ components:
     AuthMethods:
       type: object
       additionalProperties: false
-      required: [password, kerberos, emergency]
+      required: [password, kerberos, emergency, local]
       properties:
+        local: {type: boolean, description: Local accounts are enabled (AUTH_LOCAL_LOGIN_ENABLED).}
         password: {type: boolean, description: Directory password login is configured.}
         kerberos: {type: boolean, description: Kerberos/SPNEGO is configured.}
         emergency: {type: boolean, description: Emergency login is enabled.}
@@ -17851,11 +19100,14 @@ components:
     Permission:
       type: object
       additionalProperties: false
-      required: [name, description, risk]
+      required: [name, description, risk, module, group, needs]
       properties:
         name: {type: string}
         description: {type: string}
         risk: {type: string, enum: [normal, elevated, high]}
+        module: {type: string, description: Module group of the permission (from its prefix).}
+        group: {type: string, enum: [view, manage, execute, approve, admin, other]}
+        needs: {type: array, items: {type: string}, description: Companion permissions the permission is documented to need.}
     PermissionList:
       type: object
       additionalProperties: false
@@ -17867,8 +19119,11 @@ components:
     Role:
       type: object
       additionalProperties: false
-      required: [id, key, name, description, builtIn, permissions, activeAssignments, createdAt, updatedAt]
+      required: [id, key, name, description, builtIn, permissions, version, activeAssignments, createdAt, updatedAt]
       properties:
+        version: {type: integer, description: Expected version of role mutations.}
+        templateKey: {type: string}
+        templateVersion: {type: integer}
         id: {type: string}
         key: {type: string, description: "Stable slug, ^[a-z0-9][a-z0-9-]{1,62}$."}
         name: {type: string}
@@ -17900,17 +19155,26 @@ components:
         permissions:
           type: array
           items: {type: string}
+        templateKey: {type: string}
+        cloneFromRoleId: {type: string, format: uuid}
+        acknowledgedRules: {type: array, items: {type: string}}
+        reason: {type: string, maxLength: 500}
     RoleUpdate:
       type: object
       additionalProperties: false
+      required: [expectedVersion]
       properties:
+        expectedVersion: {type: integer, minimum: 1}
         name: {type: string, minLength: 1, maxLength: 200}
         description: {type: string, maxLength: 2000}
     RolePermissionsUpdate:
       type: object
       additionalProperties: false
-      required: [permissions]
+      required: [permissions, expectedVersion]
       properties:
+        expectedVersion: {type: integer, minimum: 1}
+        acknowledgedRules: {type: array, items: {type: string}}
+        reason: {type: string, maxLength: 500}
         permissions:
           type: array
           items: {type: string}
@@ -17930,6 +19194,7 @@ components:
         createdBy: {type: string, description: User id of the creator; omitted for CLI-created assignments.}
         revokedAt: {type: string, format: date-time}
         revokedBy: {type: string}
+        expiresAt: {type: string, format: date-time, description: The assignment ends then; the evaluator ignores it from that moment and a job writes the revocation.}
     RoleAssignmentList:
       type: object
       additionalProperties: false
@@ -17947,6 +19212,9 @@ components:
         roleId: {type: string}
         subjectType: {type: string, enum: [user, directory_group]}
         subjectId: {type: string}
+        expiresAt: {type: string, format: date-time}
+        acknowledgedRules: {type: array, items: {type: string}}
+        reason: {type: string, maxLength: 500}
     AuditEvent:
       type: object
       additionalProperties: false
@@ -17988,6 +19256,9 @@ components:
               type: string
             requestId:
               type: string
+            details:
+              type: object
+              description: Machine-readable context (field names, impact counts, separation-of-duties rule keys). Never internal error text.
     SecurityRemediationTask:
       type: object
       description: Live shared Task projection. Assignee fields are omitted unless the caller has tasks.view.

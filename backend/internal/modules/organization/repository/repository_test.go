@@ -289,9 +289,9 @@ func TestListTeamMembersOnlyCurrent(t *testing.T) {
 		"", team, expired)
 	f.exec(`INSERT INTO organization.team_memberships(team_id,user_id,valid_from) VALUES ($1,$2,now() + interval '1 day')`,
 		"", team, future)
-	f.exec(`INSERT INTO organization.team_memberships(team_id,user_id,role,valid_from,valid_until) VALUES ($1,$2,'old',now() - interval '3 day', now() - interval '1 day')`,
+	f.exec(`INSERT INTO organization.team_memberships(team_id,user_id,role,valid_from,valid_until) VALUES ($1,$2,'lead',now() - interval '3 day', now() - interval '1 day')`,
 		"", team, multi)
-	f.exec(`INSERT INTO organization.team_memberships(team_id,user_id,role,valid_from) VALUES ($1,$2,'new',now() - interval '1 day')`,
+	f.exec(`INSERT INTO organization.team_memberships(team_id,user_id,role,valid_from) VALUES ($1,$2,'member',now() - interval '1 day')`,
 		"", team, multi)
 
 	res, err := f.repo.ListTeamMembers(ctx, team, application.Page{Limit: 10})
@@ -308,7 +308,7 @@ func TestListTeamMembersOnlyCurrent(t *testing.T) {
 	if m, ok := byID[cur]; !ok || m.Role == nil || *m.Role != "lead" || m.Source != "platform" || m.DisplayName != f.pfx+"-current" {
 		t.Fatalf("current member: %+v", m)
 	}
-	if m, ok := byID[multi]; !ok || m.Role == nil || *m.Role != "new" {
+	if m, ok := byID[multi]; !ok || m.Role == nil || *m.Role != "member" {
 		t.Fatalf("multi member: %+v", m)
 	}
 

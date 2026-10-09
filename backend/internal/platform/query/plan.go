@@ -28,6 +28,10 @@ type Options struct {
 	Lenient bool
 	// Lead is an optional module-defined leading sort key (see LeadKey).
 	Lead *LeadKey
+	// RateLimited is set by a caller that already took the request's token with Engine.Take. One request that
+	// runs several statements for one screen (a Board loads one page per column) takes a single token instead of
+	// one per statement.
+	RateLimited bool
 }
 
 // LeadKey is a trusted, module-written leading ORDER BY key for orderings the
@@ -116,6 +120,18 @@ func (p *Plan) WantCount() bool { return p.wantCount }
 // implicit default scope or narrow the rows when the request addresses it explicitly).
 func (p *Plan) Uses(field string) bool { return p.used[field] }
 
+// Take consumes one token of the subject's per-principal rate limit and returns ErrRateLimited when none is
+// left. Prepare takes one itself unless Options.RateLimited says the request already did.
+func (e *Engine) Take(subj Subject) error {
+	if subj.UserID == "" {
+		return invalid("", "A signed-in user is required.")
+	}
+	if !e.limiter.Allow(subj.UserID) {
+		return ErrRateLimited
+	}
+	return nil
+}
+
 // Prepare validates req against the catalog the subject may use and compiles
 // it. scope names the module-level visibility variant (for example "all" or
 // "mine") and is bound into cursors. It enforces the per-principal rate limit.
@@ -126,8 +142,10 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 	if req.Limit < 0 || req.Limit > MaxPageSize {
 		return nil, tooComplex("limit", "The page size is out of range.")
 	}
-	if !e.limiter.Allow(subj.UserID) {
-		return nil, ErrRateLimited
+	if !opts.RateLimited {
+		if err := e.Take(subj); err != nil {
+			return nil, err
+		}
 	}
 	f := Filter{V: 1}
 	if req.Filter != nil {

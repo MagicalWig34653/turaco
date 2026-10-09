@@ -25,6 +25,11 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 	JSON(w, status, ErrorEnvelope{Error: APIError{Code: code, Message: message, RequestID: RequestID(w)}})
 }
 
+// WriteErrorDetails is WriteError with machine-readable details.
+func WriteErrorDetails(w http.ResponseWriter, status int, code, message string, details map[string]any) {
+	JSON(w, status, ErrorEnvelope{Error: APIError{Code: code, Message: message, RequestID: RequestID(w), Details: details}})
+}
+
 // NoStore marks responses as not cacheable (authenticated API data).
 func NoStore(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

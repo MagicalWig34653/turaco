@@ -31,6 +31,22 @@ type SMTPConfig struct {
 	DefaultLocale string
 }
 
+// LoadEmailBaseURL validates EMAIL_BASE_URL and returns it without a trailing slash; "" when it is unset.
+func LoadEmailBaseURL(environment string) (string, error) {
+	base := strings.TrimRight(os.Getenv("EMAIL_BASE_URL"), "/")
+	if base == "" {
+		return "", nil
+	}
+	u, perr := url.Parse(base)
+	switch {
+	case perr != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil:
+		return "", fmt.Errorf("EMAIL_BASE_URL must be the web application's address, for example https://turaco.example.org")
+	case u.Scheme != "https" && !(u.Scheme == "http" && environment == "development"):
+		return "", fmt.Errorf("EMAIL_BASE_URL must use https (http is accepted only with APP_ENV=development)")
+	}
+	return base, nil
+}
+
 // Enabled reports whether email notifications are configured.
 func (c SMTPConfig) Enabled() bool { return c.Host != "" }
 

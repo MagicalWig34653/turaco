@@ -227,6 +227,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
 		{"saved views retention", func() error { return registerViewsPurge(runner, pool) }},
+		{"role assignment expiry", func() error { return registerAccessExpiry(runner, pool) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
@@ -569,6 +570,15 @@ func registerViewsPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
 		return err
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: views.PurgeJobType, DedupeKey: views.PurgeJobType, Interval: views.PurgeInterval, MaxAttempts: 2})
+}
+
+// registerAccessExpiry registers the job that revokes role assignments whose expiry passed (core, always on). The
+// evaluator already ignores them; the job writes the revocation and its audit event.
+func registerAccessExpiry(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	if err := runner.Register(roles.ExpireJobType, roles.ExpireJobTimeout, roles.NewExpireHandler(pool)); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: roles.ExpireJobType, DedupeKey: roles.ExpireJobType, Interval: roles.ExpireInterval, MaxAttempts: 2})
 }
 
 func registerAdvisorySync(runner *jobs.Runner, pool *pgxpool.Pool) error {

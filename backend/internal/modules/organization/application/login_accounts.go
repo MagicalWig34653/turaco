@@ -54,6 +54,16 @@ type LoginAccountStore interface {
 	// InsertLocalUser creates an active User with status_source "platform"
 	// and no external identity, and audits organization.user.created_local.
 	InsertLocalUser(ctx context.Context, tx pgx.Tx, in LocalUserInsert) (string, error)
+	// FindLocalAccountByEmail returns the id of the User with origin "local" and the (case-insensitive) primary email.
+	FindLocalAccountByEmail(ctx context.Context, email string) (id string, found bool, err error)
+	// LocalAccountState reads a User FOR SHARE inside tx.
+	LocalAccountState(ctx context.Context, tx pgx.Tx, userID string) (LocalAccountState, error)
+}
+
+// LocalAccountState is what authentication needs to know about a User.
+type LocalAccountState struct {
+	Exists, Local, Active bool
+	DisplayName, Email    string
 }
 
 // LoginAccounts implements the Organization side of login.
@@ -127,4 +137,18 @@ func (l *LoginAccounts) CreateEmergencyUser(ctx context.Context, tx pgx.Tx, disp
 	return l.store.InsertLocalUser(ctx, tx, LocalUserInsert{
 		DisplayName: displayName, CorrelationID: correlationID, Actor: actor, At: l.now(),
 	})
+}
+
+// FindLocalAccount resolves a login identifier to a local account: the identifier is the primary email address.
+func (l *LoginAccounts) FindLocalAccount(ctx context.Context, identifier string) (string, bool, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" || len(identifier) > 254 || !strings.Contains(identifier, "@") {
+		return "", false, nil
+	}
+	return l.store.FindLocalAccountByEmail(ctx, identifier)
+}
+
+// LocalAccountState reads the state of a User inside tx.
+func (l *LoginAccounts) LocalAccountState(ctx context.Context, tx pgx.Tx, userID string) (LocalAccountState, error) {
+	return l.store.LocalAccountState(ctx, tx, userID)
 }

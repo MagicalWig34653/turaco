@@ -97,7 +97,7 @@ func TestForPathAndForJob(t *testing.T) {
 func TestEveryRegisteredRouteFamilyIsInTheCatalog(t *testing.T) {
 	ix := modules.DefaultIndex()
 	platformSegments := map[string]bool{"auth": true, "roles": true, "role-assignments": true, "permissions": true, "modules": true, "admin": true,
-		"audit-events": true, "users": true, "teams": true, "directory-groups": true, "directory-sync-runs": true,
+		"audit-events": true, "users": true, "teams": true, "locations": true, "departments": true, "role-templates": true, "access": true, "directory-groups": true, "directory-sync-runs": true,
 		"tasks": true, "recurring-task-definitions": true, "my-work": true, "approvals": true, "notifications": true, "meta": true,
 		// Saved Views, shares and pins (ADR-0033) are a core platform capability: always on like My Work. A View of an
 		// optional module is gated by the views service itself (views.module_disabled), and /me/* is the caller's own presentation state.

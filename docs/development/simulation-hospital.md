@@ -330,3 +330,7 @@ Do: open `/admin/roles` and compare the six simulation roles with the tables abo
 | Audit | Every ticket assignment and role change by testers appears in the audit log with the right actor |
 | Notifications | After assigning a ticket, the assignee has an in-app notification; the reporter gets one on resolve |
 | Concurrency | Two leads change the same ticket; the second gets a version conflict message, not a silent overwrite |
+
+## How the seed writes organization data
+
+Sites, areas (Locations as a tree below their site, codes `SIM-SITE-*` and `SIM-AREA-*`), Departments, Teams (leaders become Team leads), Roles (created from the Role Templates, with `templateKey` recorded) and role assignments are created through the same audited People and role operations as the UI uses. The persona Users are emergency accounts (so every persona can sign in without a directory); their lifecycle is CLI-only and the People operations refuse them, so their profile attributes (names, email, department, location, manager) are written directly and audited as `demo.hospital.user_profile_seeded`. The seed is idempotent.
