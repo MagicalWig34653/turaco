@@ -1,0 +1,119 @@
+/* Grouped, collapsible sidebar. Colors come from the rail tokens so all three themes apply. */
+.turaco-shell .sidebar-items {
+  display: grid;
+  gap: 2px;
+}
+.turaco-shell .sidebar-items[hidden] {
+  display: none;
+}
+.turaco-shell .turaco-rail-section .sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 20px);
+  min-height: 28px;
+  margin: 10px 10px 2px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.turaco-shell .turaco-rail-section .sidebar-section-toggle:hover {
+  color: var(--rail-text);
+}
+.turaco-shell .turaco-rail-section .sidebar-section-toggle:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  color: var(--rail-text);
+}
+.sidebar-chevron {
+  display: inline-block;
+  width: 10px;
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  transform: rotate(90deg);
+  transition: transform var(--motion-fast);
+}
+.sidebar-section-toggle[aria-expanded='false'] .sidebar-chevron {
+  transform: rotate(0deg);
+}
+.sidebar-section-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-active-dot {
+  width: 6px;
+  height: 6px;
+  margin-inline-start: auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.sidebar-pinned .sidebar-section-label {
+  color: var(--rail-text);
+}
+
+/* Pinned Views: the row keeps the shared link look and gains a "more" button. */
+.sidebar-pin {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.turaco-shell .sidebar-pin > a {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-pin-more {
+  position: absolute;
+  inset-block: 4px;
+  inset-inline-end: 4px;
+  width: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--rail-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.sidebar-pin:hover .sidebar-pin-more,
+.sidebar-pin:focus-within .sidebar-pin-more {
+  opacity: 1;
+  background: var(--rail-active);
+  color: var(--rail-text);
+}
+.sidebar-pin-more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+}
+.sidebar-pin:hover .nav-count,
+.sidebar-pin:focus-within .nav-count {
+  visibility: hidden;
+}
+@media (hover: none) {
+  .sidebar-pin-more {
+    opacity: 1;
+  }
+  .sidebar-pin .nav-count {
+    margin-inline-end: 28px;
+  }
+}
+.sidebar-error {
+  margin: 4px 10px;
+  color: var(--state-critical);
+  font-size: 12px;
+}
+
+/* Icon-only rail: headings go away, sections are separated by a hairline. */
+.turaco-shell.turaco-shell-collapsed .turaco-rail-section .sidebar-section-toggle,
+.turaco-shell-collapsed .sidebar-pin-more {
+  display: none;
+}
+.turaco-shell-collapsed .sidebar-section + .sidebar-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rail-active);
+}

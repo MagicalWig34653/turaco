@@ -46,10 +46,13 @@ export function ColumnChooser({
   listKey,
   columns,
   onChange,
+  applied,
 }: {
   listKey: string;
   columns: readonly ColumnInfo[];
   onChange: (visible: string[]) => void;
+  /** Columns requested from outside (a Saved View); applied once per `id`, not stored locally. */
+  applied?: { id: number; keys: readonly string[] } | undefined;
 }) {
   const { t } = useI18n();
   const signature = columns.map((column) => column.key).join(',');
@@ -65,6 +68,17 @@ export function ColumnChooser({
   useEffect(() => {
     callback.current(visibleSignature ? visibleSignature.split(',') : []);
   }, [visibleSignature]);
+  const appliedId = applied?.id;
+  useEffect(() => {
+    if (!applied || applied.id === 0) return;
+    const wanted = applied.keys.filter((key) => keys.includes(key));
+    if (wanted.length === 0) return;
+    setLayout({
+      order: [...wanted, ...keys.filter((key) => !wanted.includes(key))],
+      hidden: keys.filter((key) => !wanted.includes(key)),
+    });
+    // Only a new request (id) applies; later layout edits by the user must stick.
+  }, [appliedId]);
   const save = (next: { order: string[]; hidden: string[] }) => {
     setLayout(next);
     try {

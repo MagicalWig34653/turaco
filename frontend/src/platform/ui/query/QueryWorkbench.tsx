@@ -24,6 +24,7 @@ import {
 import { useQueryLabels } from './queryLabels';
 import { referenceKind, useReferenceNames } from './referenceNames';
 import { SortEditor } from './SortEditor';
+import { ViewBar } from '../views/ViewBar';
 import type { QueryList } from './useQueryList';
 import './query.css';
 
@@ -33,8 +34,6 @@ type Props<T> = {
   /** Storage key for the per-list column layout. */
   listKey: string;
   onColumnsChange: (keys: string[]) => void;
-  /** Extension point for saved views (next slice). Off by default; the button stays disabled. */
-  showSaveView?: boolean;
 };
 
 /**
@@ -42,13 +41,7 @@ type Props<T> = {
  * with nested AND/OR groups, multi-column sort, a full-text box and the column chooser.
  * The catalog decides which fields and operators exist; the server stays the authority.
  */
-export function QueryWorkbench<T>({
-  query,
-  columns,
-  listKey,
-  onColumnsChange,
-  showSaveView = false,
-}: Props<T>) {
+export function QueryWorkbench<T>({ query, columns, listKey, onColumnsChange }: Props<T>) {
   const { t } = useI18n();
   const panelId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -59,6 +52,7 @@ export function QueryWorkbench<T>({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<QueryState>(query.state);
   const [undo, setUndo] = useState<QueryState>();
+  const [visibleColumns, setVisibleColumns] = useState<string[]>();
 
   const active = listConditions(query.state.filter.root);
   const resolve = useReferenceNames(
@@ -180,11 +174,16 @@ export function QueryWorkbench<T>({
         >
           {t('query.clear')}
         </Button>
-        {showSaveView ? <Button disabled>{t('query.saveView')}</Button> : null}
         <span role="status" className="query-count">
           {countText}
         </span>
       </div>
+
+      <ViewBar
+        query={query}
+        visibleColumns={visibleColumns}
+        offeredColumns={columns.map((column) => column.key)}
+      />
 
       {query.urlError ? (
         <Alert kind="warning">
@@ -323,7 +322,11 @@ export function QueryWorkbench<T>({
       <ColumnChooser
         listKey={listKey}
         columns={columns.map((column) => ({ key: column.key, header: column.header }))}
-        onChange={onColumnsChange}
+        onChange={(keys) => {
+          setVisibleColumns(keys);
+          onColumnsChange(keys);
+        }}
+        applied={{ id: query.viewApplied, keys: query.view?.definition.columns ?? [] }}
       />
     </section>
   );
