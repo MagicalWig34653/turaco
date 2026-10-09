@@ -237,7 +237,7 @@ Should see: security, tickets (read, internal comments), audit log, directory gr
 
 Must be denied: ticket assignment and resolve, role administration, changing assets.
 
-### Vendor (KIS-Hersteller) {#vendor-kis-hersteller}
+### Vendor (KIS-Hersteller)
 
 Logins `vendor.mueller` and `vendor.schmidt`.
 

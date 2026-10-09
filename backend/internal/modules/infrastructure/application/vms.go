@@ -446,7 +446,7 @@ func (s *Service) SearchVMs(ctx context.Context, text string, limit int) ([]Virt
 	if err != nil {
 		return nil, err
 	}
-	out := make([]VirtualMachine, 0, limit)
+	out := make([]VirtualMachine, 0, 50)
 	for _, v := range res.Items {
 		if v.State != VMDecommissioned && len(out) < limit {
 			out = append(out, v)
