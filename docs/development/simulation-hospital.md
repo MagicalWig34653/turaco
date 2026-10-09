@@ -13,6 +13,7 @@ make dev-setup                                   # once: infrastructure, migrati
 
 - The command is idempotent. A second run creates nothing and does not reset anything that testers changed; it only adds missing parts and restores the permissions of the simulation roles.
 - It does not call `demo seed`. Run `make dev-setup` (or `demo seed`) first if you also want the generic demo catalog items.
+- For load and concurrency tests with the same logins see [Load testing](load-testing.md).
 - To return to the baseline after testing, recreate the development database (stop the infrastructure, remove the PostgreSQL volume defined in `deploy/compose/dev.yaml`, run `make dev-setup`, then `demo seed-hospital`).
 - Local logins are emergency-style accounts. The API must run with `AUTH_EMERGENCY_LOGIN_ENABLED=true` (the **Turaco API** run configuration does). Sessions of these accounts end after one hour at the latest, and every login is logged at error level; both are expected.
 - Everything the seed writes is audited with the CLI actor and the correlation id `demo-seed-hospital`. Locations, departments and the profile attributes of users (name, email, department, primary location, manager) have no write operation in Organization yet; the seed writes them directly and audits them as `demo.hospital.*` actions.
