@@ -390,7 +390,8 @@ export const de: Record<MessageKey, string> = {
   'overview.metric.alerts': 'Briefing-Signale',
   'overview.metric.alertsCaption': 'Kritisch oder Warnung',
   'overview.metric.alertsZero': 'Alles ruhig',
-  'overview.scope': 'Basierend auf Ihrer geladenen Arbeitsliste und Ihrem aktuellen IT-Briefing.',
+  'overview.scope':
+    'Basierend auf Ihrer geladenen Arbeitsliste und Ihrem aktuellen IT-Briefing. „Mir zugewiesen“, „Zu übernehmen“ und „Nicht zugewiesen in meinen Warteschlangen“ sind getrennte Zahlen und werden nie addiert.',
   'overview.needsYou': 'Braucht Sie',
   'overview.viewAllWork': 'Zu Meine Arbeit',
   'overview.nothingNeeded': 'Alles erledigt. Gerade braucht Sie nichts.',
@@ -544,7 +545,7 @@ export const de: Record<MessageKey, string> = {
   'changes.polish.windowInvalid':
     'Wählen Sie ein Ende nach dem Beginn und füllen Sie beide Zeitangaben aus.',
   'shell.search': 'Suche',
-  'shell.searchPlaceholder': 'Seiten und Tickets suchen (Nummer oder Betreff)',
+  'shell.searchPlaceholder': 'Seiten, Tickets, Probleme, Wissen, Geräte und Personen suchen',
   'shell.commandTitle': 'Springen zu…',
   'shell.commandHint': 'Seite oder Ticket suchen und mit den Pfeiltasten auswählen.',
   'shell.noCommands': 'Keine passenden Ziele',
@@ -2123,8 +2124,9 @@ export const de: Record<MessageKey, string> = {
   'problems.field.resolution': 'Lösung',
   'problems.tickets': 'Verknüpfte Tickets',
   'problems.tickets.none': 'Es sind keine Tickets verknüpft.',
-  'problems.linkTicket': 'Ticket-ID',
-  'problems.linkTicket.hint': 'Die ID aus der Adresse des Tickets (…/support/<id>).',
+  'problems.linkTicket': 'Ticket suchen',
+  'problems.linkTicket.hint':
+    'Suchen Sie nach Ticketnummer oder Betreff, wählen Sie ein oder mehrere Tickets und verknüpfen Sie sie.',
   'problems.link': 'Verknüpfen',
   'problems.unlink': 'Lösen',
   'problems.status.new': 'Neu',
@@ -4049,8 +4051,9 @@ export const de: Record<MessageKey, string> = {
   'query.from': 'Von',
   'query.to': 'Bis',
   'query.days': 'Tage',
-  'query.utcValue': 'Wert (UTC)',
-  'query.utcHint': 'Uhrzeiten werden als UTC gelesen.',
+  'query.utcValue': 'Wert (Ortszeit)',
+  'query.utcHint':
+    'Zeiten werden in Ihrer Zeitzone ({zone}) eingegeben und als genauer Zeitpunkt gespeichert.',
   'query.sort': 'Sortierung',
   'query.sortDefault': 'Es gilt die Standardreihenfolge dieser Liste.',
   'query.direction': 'Richtung',
@@ -4241,8 +4244,9 @@ export const de: Record<MessageKey, string> = {
   'tickets.onBehalf.noDevice': 'Beim Anlegen für {name} wird keine Geräteauswahl angeboten.',
   'incidents.banner.summary': '{count} aktuelle Großstörungen. Bitte vor dem Melden prüfen.',
   'overview.queueHealth': 'Zustand der Warteschlange',
-  'overview.queue.unassigned': 'Nicht zugewiesen',
-  'overview.queue.unassignedCaption': 'Offene Tickets ohne Bearbeitung',
+  'overview.queue.unassigned': 'Nicht zugewiesen in meinen Warteschlangen',
+  'overview.queue.unassignedCaption':
+    'Offene Tickets in sichtbaren Warteschlangen, an denen niemand arbeitet',
   'overview.queue.unassignedZero': 'Jedes offene Ticket hat eine Bearbeitung',
   'overview.queue.stale': 'Länger ohne Update',
   'overview.queue.staleCaption': 'Offene Tickets ohne Aktualisierung seit {days}+ Tagen',
@@ -4560,9 +4564,9 @@ export const de: Record<MessageKey, string> = {
   'queues.ability.none': 'Nichts',
   'queues.grants.removeColumn': 'Entfernen',
   'shell.group.tickets': 'Tickets',
-  'shell.searching': 'Tickets werden gesucht…',
+  'shell.searching': 'Suche läuft …',
   'shell.searchUnavailable':
-    'Die Ticketsuche ist gerade nicht verfügbar. Seiten werden weiterhin angezeigt.',
+    'Einige Suchen sind gerade nicht verfügbar. Seiten und die übrigen Ergebnisse werden weiterhin angezeigt.',
   'shell.ticketAlias': '{old} (frühere Nummer von {current})',
   'myWork.source.all': 'Alle Arbeit',
   'myWork.source.tickets': 'Ihre Tickets',
@@ -4580,7 +4584,7 @@ export const de: Record<MessageKey, string> = {
   'myWork.scopePartial':
     'Einige Anzahlen sind nicht verfügbar und werden als Strich statt als Null angezeigt. Die Liste unten lädt seitenweise.',
   'myWork.partial':
-    'Einige Arbeit konnte nicht geladen werden: {sources}. Diese Einträge fehlen hier nur, sie sind nicht weg. Versuchen Sie es erneut.',
+    'Gerade nicht ladbar: {sources}. Diese Einträge fehlen hier nur, sie sind nicht weg, und die übrigen Zahlen bleiben korrekt. Versuchen Sie es erneut; falls es dauerhaft scheitert, informieren Sie Ihre Administration.',
   'myWork.emptyPartial':
     'Noch nichts geladen. Einige Quellen sind nicht verfügbar, daher ist diese Liste möglicherweise unvollständig.',
   'myWork.statusUnknown': 'Unbekannt',
@@ -4704,4 +4708,125 @@ export const de: Record<MessageKey, string> = {
   'tasks.board.error.limitReached': 'Das Limit von 20 aktiven Boards ist erreicht.',
   'tasks.board.error.anchorInvalid':
     'Die Karte konnte dort nicht platziert werden, weil sich das Board geändert hat. Es wurde neu geladen.',
+  'views.share.ownTeamsOnly':
+    'Sie können mit Ihren eigenen Teams teilen. Für andere Benutzer oder Rollen fehlt Ihnen die Berechtigung zum Teilen von Ansichten; der Server prüft, ob Sie dem Team angehören.',
+  'ticketPicker.hint':
+    'Geben Sie eine Ticketnummer (auch eine frühere Nummer) oder mindestens drei Buchstaben des Betreffs ein.',
+  'ticketPicker.placeholder': 'TKT-000123 oder Betreff',
+  'ticketPicker.selected': 'Ausgewählte Tickets',
+  'ticketPicker.remove': '{reference} entfernen',
+  'ticketPicker.tooShort':
+    'Geben Sie mindestens 3 Zeichen oder eine vollständige Ticketnummer ein.',
+  'ticketPicker.unavailable': 'Die Ticketsuche ist gerade nicht verfügbar.',
+  'ticketPicker.empty': 'Keine passenden Tickets, die Sie sehen dürfen.',
+  'ticketPicker.alias': 'frühere Nummer',
+  'incidents.tickets': 'Verknüpfte Tickets',
+  'incidents.tickets.none': 'Noch keine Tickets verknüpft.',
+  'incidents.tickets.unavailable':
+    'Die Liste der verknüpften Tickets steht vom Server noch nicht zur Verfügung.',
+  'incidents.linkTicket': 'Tickets verknüpfen',
+  'incidents.link': 'Ausgewählte Tickets verknüpfen',
+  'incidents.declare.tickets': 'Betroffene Tickets (optional)',
+  'incidents.declare.tickets.hint':
+    'Ausgewählte Tickets werden direkt nach der Ausrufung verknüpft; deren Melder verfolgen die Störung.',
+  'incidents.declare.unlinked':
+    'Die Großstörung wurde ausgerufen, aber diese Tickets konnten nicht verknüpft werden: {references}. Verknüpfen Sie sie auf der Seite der Großstörung.',
+  'ticketHistory.assigned': 'Zugewiesen an {to}.',
+  'ticketHistory.unassigned': 'Zuweisung an {from} aufgehoben.',
+  'ticketHistory.reassigned': 'Von {from} an {to} neu zugewiesen.',
+  'ticketHistory.teamRouted': 'An Team {team} weitergeleitet.',
+  'ticketHistory.statusChanged': 'Status von {from} auf {to} geändert.',
+  'ticketHistory.priorityChanged': 'Priorität von {from} auf {to} geändert.',
+  'ticketHistory.queueMoved': 'In eine andere Warteschlange verschoben.',
+  'ticketHistory.other': 'Das Ticket wurde geändert.',
+  'ticketHistory.system': 'System',
+  'ticketHistory.reason': 'Begründung:',
+  'ticketHistory.via.start': 'Automatisch zugewiesen, als die Bearbeitung begann.',
+  'ticketHistory.via.queueMove': 'Folge einer Verschiebung in eine andere Warteschlange.',
+  'ticketHistory.via.reopen': 'Folge der Wiedereröffnung des Tickets.',
+  'ticketLink.title': 'Verknüpfen und bündeln',
+  'ticketLink.toProblem': 'Mit Problem verknüpfen',
+  'ticketLink.toIncident': 'Mit Großstörung verknüpfen',
+  'ticketLink.problem': 'Problem',
+  'ticketLink.incident': 'Großstörung',
+  'ticketLink.noProblems':
+    'Es gibt kein offenes Problem zum Verknüpfen. Legen Sie zuerst ein Problem an.',
+  'ticketLink.noIncidents': 'Es gibt keine aktive Großstörung.',
+  'ticketLink.link': 'Verknüpfen',
+  'ticketLink.duplicate': 'Als Duplikat markieren',
+  'ticketLink.duplicate.of': 'Duplikat von',
+  'ticketLink.duplicate.hint': 'Suchen Sie das Ticket, das offen bleibt.',
+  'ticketLink.duplicate.note': 'Notiz (optional)',
+  'ticketLink.duplicate.confirm': 'Als Duplikat markieren',
+  'ticketLink.duplicate.unavailable':
+    'Das Markieren von Duplikaten steht auf diesem Server noch nicht zur Verfügung. Nennen Sie das andere Ticket stattdessen in einer internen Notiz.',
+  'overview.metric.assigned': 'Mir zugewiesen',
+  'overview.metric.assignedCaption': 'Ihre offenen Tickets und Aufgaben',
+  'overview.metric.takeOver': 'Zu übernehmen',
+  'overview.metric.takeOverCaption': 'Nicht zugewiesene Tickets Ihrer Teams',
+  'overview.metric.takeOverZero': 'Nichts wartet auf Sie',
+  'shell.searchTooShort':
+    'Geben Sie mindestens 3 Zeichen ein, um Tickets, Probleme, Wissen, Geräte und Personen zu suchen. Seiten werden bereits gefiltert.',
+  'shell.group.problems': 'Probleme',
+  'shell.group.incidents': 'Großstörungen',
+  'shell.group.knowledge': 'Wissen',
+  'shell.group.devices': 'Geräte',
+  'shell.group.people': 'Personen',
+  'incidents.banner.all': 'Alle Großstörungen',
+  'report.impact.title': 'Wie stark betrifft das Ihre Arbeit?',
+  'report.impact.intro':
+    'Optional. Es hilft dem IT-Team zu entscheiden, was zuerst angesehen wird. Eine Priorität legen Sie damit nicht fest.',
+  'report.impact.none': 'Keine Angabe',
+  'report.impact.none.hint': 'Das IT-Team schätzt es ein.',
+  'report.impact.patient_care': 'Patientenversorgung betroffen',
+  'report.impact.patient_care.hint':
+    'Patientinnen und Patienten können nicht sicher versorgt werden.',
+  'report.impact.blocked': 'Arbeit blockiert',
+  'report.impact.blocked.hint': 'Es gibt keinen Ausweg.',
+  'report.impact.impaired': 'Behinderung',
+  'report.impact.impaired.hint': 'Es geht, aber langsam oder nur mit Umwegen.',
+  'report.impact.request': 'Anfrage, keine Störung',
+  'report.impact.request.hint': 'Sie benötigen etwas, es ist nichts defekt.',
+  'report.impact.note':
+    'Bei unmittelbarer Gefahr für Menschen rufen Sie bitte die Notrufnummer Ihres Standorts an, statt dieses Formular zu nutzen.',
+  'report.devices.forPerson': 'Geräte von {name}',
+  'report.devices.shared': 'Gemeinsam genutzte Geräte an Ihrem Standort',
+  'report.deviceNote.field': 'Anderes Gerät oder anderer Ort (optional)',
+  'report.deviceNote.hint':
+    'Zum Beispiel „Drucker in der Notaufnahme“. Es wird der Beschreibung hinzugefügt.',
+  'report.deviceNote.label': 'Gerät oder Ort',
+  'report.duplicate.title': 'Sie haben bereits ein offenes Ticket mit demselben Betreff:',
+  'report.duplicate.hint':
+    'Falls es dasselbe Problem ist, ergänzen Sie Ihre Angaben dort, statt ein zweites Ticket anzulegen.',
+  'personLookup.placeholder': 'Nachname, Vorname oder beides',
+  'personLookup.tooShort': 'Geben Sie mindestens 3 Zeichen ein.',
+  'personLookup.empty': 'Keine aktive Kollegin und kein aktiver Kollege gefunden.',
+  'personLookup.rateLimited': 'Zu schnell gesucht. Warten Sie eine Sekunde und tippen Sie weiter.',
+  'personLookup.unavailable': 'Die Personensuche ist gerade nicht verfügbar.',
+  'personLookup.off':
+    'Die Kollegensuche ist auf diesem System abgeschaltet. Bitten Sie den IT-Service, die Anfrage für Sie anzulegen.',
+  'catalog.approval.title': 'Genehmigungsweg',
+  'catalog.approval.none':
+    'Diese Anfrage braucht keine Genehmigung. Sie geht direkt in die Umsetzung.',
+  'catalog.approval.step.user': 'Genehmigung durch {name}',
+  'catalog.approval.step.team': 'Genehmigung durch ein Mitglied des Teams {name}',
+  'catalog.approval.step.manager': 'Genehmigung durch die Führungskraft: {name}',
+  'catalog.approval.step.fallback':
+    'Genehmigung durch {name} (Vertretung, weil die übliche Person nicht verfügbar ist)',
+  'catalog.approval.step.unresolved':
+    'Für diesen Schritt konnte keine genehmigende Person ermittelt werden.',
+  'catalog.approval.unavailable':
+    'Der Genehmigungsweg kann gerade nicht angezeigt werden. Sie können die Anfrage trotzdem senden.',
+  'catalog.approval.blockedTitle': 'Diese Anfrage kann noch nicht gesendet werden',
+  'catalog.approval.blocked':
+    'Dafür ist keine genehmigende Person hinterlegt, zum Beispiel weil keine Führungskraft eingetragen ist. Bitten Sie den IT-Service, das zu klären; danach können Sie die Anfrage senden.',
+  'catalog.approval.contact': 'IT-Service kontaktieren',
+  'catalog.form.forOther': 'Für eine andere Person anfragen',
+  'catalog.form.forMe': 'Die Anfrage wird für Sie gestellt.',
+  'catalog.form.requestedFor.search': 'Kollegin oder Kollege',
+  'remoteaccess.disabled.action': 'Fernwartung starten',
+  'remoteaccess.disabled.reason': 'Die Fernwartung ist auf diesem System abgeschaltet.',
+  'remoteaccess.disabled.admin': 'Unter „Module“ einschalten.',
+  'remoteaccess.disabled.ask':
+    'Bitten Sie eine Administratorin oder einen Administrator, das Modul einzuschalten.',
 };

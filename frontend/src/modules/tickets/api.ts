@@ -11,6 +11,7 @@ import type {
   Ticket,
   TicketComment,
   TicketDetail,
+  TicketHistoryEntry,
   TicketExternalSync,
   TicketOperation,
   TicketQueue,
@@ -61,6 +62,9 @@ export const ticketsApi = {
     /** The Ticket Queue; omit for the intake Queue. */
     queueId?: string;
     queueKey?: string;
+    /** Impact signal for triage (employees never set the priority). */
+    impact?: string;
+    patientImpact?: boolean;
   }) => api.post<Ticket>('/tickets', body),
   moveToQueue: (
     id: string,
@@ -83,6 +87,15 @@ export const ticketsApi = {
     api.post<Ticket>(`/tickets/${enc(id)}/priority`, { expectedVersion, priority }),
   operate: (id: string, op: TicketOperation, expectedVersion: number, reason = '') =>
     api.post<Ticket>(`/tickets/${enc(id)}/${op}`, { expectedVersion, reason }),
+  /** Staff-visible change history with a name map for the ids in it; 403/404 for requesters. */
+  history: (id: string, signal?: Signal) =>
+    api.get<{ items: TicketHistoryEntry[]; names?: Record<string, string> }>(
+      `/tickets/${enc(id)}/history`,
+      { signal },
+    ),
+  /** Marks this Ticket as a duplicate of another; the server may not offer it yet (404/405). */
+  markDuplicate: (id: string, expectedVersion: number, duplicateOfId: string, note: string) =>
+    api.post<Ticket>(`/tickets/${enc(id)}/duplicate`, { expectedVersion, duplicateOfId, note }),
   externalSync: (id: string, signal?: Signal) =>
     api.get<TicketExternalSync>(`/tickets/${enc(id)}/external-sync`, { signal }),
   retryExternalSync: (id: string) => api.post<void>(`/tickets/${enc(id)}/external-sync`, {}),

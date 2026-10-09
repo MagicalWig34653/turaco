@@ -12,6 +12,8 @@ import { Button } from '../../platform/ui/Button';
 import { TextArea } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
+import { TicketPicker } from '../tickets/TicketPicker';
+import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi } from './api';
 import { IncidentBadge } from './IncidentsScreen';
 
@@ -21,6 +23,7 @@ export function IncidentDetailScreen({ id }: { id: string }) {
   const loaded = useAsync((signal) => incidentsApi.get(id, signal), [id]);
   const [op, setOp] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [picked, setPicked] = useState<TicketHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   if (loaded.error) return <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />;
@@ -53,6 +56,14 @@ export function IncidentDetailScreen({ id }: { id: string }) {
       setMessage('');
     });
   };
+  const linkTickets = (event: FormEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      for (const hit of picked) await incidentsApi.linkTicket(incident.id, hit.id);
+      setPicked([]);
+    });
+  };
+  const linked = incident.tickets ?? [];
   return (
     <>
       <PageHeader
@@ -110,6 +121,41 @@ export function IncidentDetailScreen({ id }: { id: string }) {
             </li>
           ))}
         </ul>
+      </section>
+      <section>
+        <h2>{t('incidents.tickets')}</h2>
+        {incident.tickets === undefined && incident.linkedTickets > 0 ? (
+          <p className="field-hint">{t('incidents.tickets.unavailable')}</p>
+        ) : linked.length === 0 ? (
+          <p className="empty">{t('incidents.tickets.none')}</p>
+        ) : (
+          <ul className="plain-list">
+            {linked.map((tk) => (
+              <li key={tk.id}>
+                <Link to={`/support/${encodeURIComponent(tk.id)}`}>
+                  {tk.reference} · {tk.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {manage && active ? (
+          <form className="link-panel" onSubmit={linkTickets}>
+            <TicketPicker
+              label={t('incidents.linkTicket')}
+              multiple
+              selected={picked}
+              excludeIds={linked.map((tk) => tk.id)}
+              disabled={busy}
+              onChange={setPicked}
+            />
+            <div className="form-actions">
+              <Button type="submit" busy={busy} disabled={picked.length === 0}>
+                {t('incidents.link')}
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </section>
       {manage && incident.status !== 'closed' ? (
         <form className="form" onSubmit={postUpdate}>

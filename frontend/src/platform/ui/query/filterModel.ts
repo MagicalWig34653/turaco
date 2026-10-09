@@ -347,3 +347,50 @@ export const limitOfError: Record<string, string> = {
   maxStringLength: 'maxStringLength',
   maxSearchLength: 'maxSearchLength',
 };
+
+/**
+ * Date and time values. A `date` field holds a calendar day (`2026-10-09`, no time zone). A `datetime`
+ * field holds an exact instant: the person enters local time, the filter stores the UTC instant
+ * (`2026-10-09T12:30:00Z` for 14:30 in Berlin in summer), and shows it back in local time.
+ */
+
+const localInput = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/** `datetime-local` text to a UTC instant; '' for empty or invalid input. */
+export function localToInstant(raw: string): string {
+  const match = localInput.exec(raw);
+  if (!match) return '';
+  const [, year, month, day, hour, minute, second] = match;
+  const local = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second ?? 0),
+  );
+  if (!Number.isFinite(local.valueOf())) return '';
+  // Reject a day that does not exist (31 February) instead of silently rolling over.
+  if (local.getDate() !== Number(day) || local.getMonth() !== Number(month) - 1) return '';
+  return local.toISOString().replace('.000Z', 'Z');
+}
+
+const pad = (value: number) => String(value).padStart(2, '0');
+
+/** A stored instant (or date-only value) to `datetime-local` text in local time; '' when unreadable. */
+export function instantToLocal(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value}T00:00`;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.valueOf())) return '';
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+/** The viewer's IANA time zone, for the hint next to date-time inputs. */
+export function localZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}

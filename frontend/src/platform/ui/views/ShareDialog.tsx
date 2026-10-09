@@ -14,6 +14,7 @@ import {
   hasEditShare,
   removeShare,
   shareProblems,
+  shareRecipientTypes,
   sharesChanged,
   toDraft,
   upsertShare,
@@ -89,7 +90,8 @@ function ShareEditor({
   const everyone = draft.some((share) => share.subjectType === 'everyone');
   const problems = shareProblems(saved, draft, can);
   const changed = sharesChanged(saved, draft);
-  const canAdd = can('views.share');
+  const recipientTypes = shareRecipientTypes(can);
+  const ownTeamsOnly = !can('views.share');
   const typeLabel = (type: string) => t(`views.share.type.${type}` as MessageKey);
 
   const save = async () => {
@@ -178,34 +180,29 @@ function ShareEditor({
       )}
 
       <h3>{t('views.share.add')}</h3>
-      {canAdd ? (
-        <div className="view-share-add">
-          <SubjectChooser types={['user', 'team', 'role']} value={picked} onChange={setPicked} />
-          <Select
-            label={t('views.share.level')}
-            value={level}
-            options={[
-              { value: 'use', label: t('views.share.level.use') },
-              { value: 'edit', label: t('views.share.level.edit') },
-            ]}
-            onChange={(event) => setLevel(event.target.value as ShareLevel)}
-          />
-          <Button
-            disabled={!picked}
-            onClick={() => {
-              if (!picked) return;
-              setDraft(
-                upsertShare(draft, { subjectType: picked.type, subjectId: picked.id, level }),
-              );
-              setPicked(null);
-            }}
-          >
-            {t('views.share.addShort')}
-          </Button>
-        </div>
-      ) : (
-        <p className="field-hint">{t('views.share.problem.needShare')}</p>
-      )}
+      {ownTeamsOnly ? <p className="field-hint">{t('views.share.ownTeamsOnly')}</p> : null}
+      <div className="view-share-add">
+        <SubjectChooser types={recipientTypes} value={picked} onChange={setPicked} />
+        <Select
+          label={t('views.share.level')}
+          value={level}
+          options={[
+            { value: 'use', label: t('views.share.level.use') },
+            { value: 'edit', label: t('views.share.level.edit') },
+          ]}
+          onChange={(event) => setLevel(event.target.value as ShareLevel)}
+        />
+        <Button
+          disabled={!picked}
+          onClick={() => {
+            if (!picked) return;
+            setDraft(upsertShare(draft, { subjectType: picked.type, subjectId: picked.id, level }));
+            setPicked(null);
+          }}
+        >
+          {t('views.share.addShort')}
+        </Button>
+      </div>
 
       {hasEditShare(draft) ? <Alert kind="info">{t('views.share.editWarning')}</Alert> : null}
       {problems.length > 0 ? (

@@ -5,13 +5,15 @@ import type { Ticket } from './types';
 
 /** Ticket results for the command palette: reference or earlier number first, then titles. */
 
-/** A reference as people type it: a prefix, a hyphen and a number ("tkt-12", "HR-0003"). */
-export const referenceQuery = /^[a-z][a-z0-9]{1,7}-\d{1,9}$/i;
-export const minTitleQuery = 2;
-export const resultLimit = 5;
+import { looksLikeReference, minTitleQuery, normalizeReference } from './ticketLookup';
 
-export const normalizeReference = (query: string): string => query.trim().toUpperCase();
-export const looksLikeReference = (query: string): boolean => referenceQuery.test(query.trim());
+export {
+  looksLikeReference,
+  minTitleQuery,
+  normalizeReference,
+  referenceQuery,
+} from './ticketLookup';
+export const resultLimit = 5;
 
 type Hit = { ticketId: string; reference: string; alias: boolean };
 

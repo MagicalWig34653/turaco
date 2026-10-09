@@ -121,7 +121,7 @@ export type Abilities = {
 type Can = (permission: string) => boolean;
 
 /** Presentation hints only; the backend re-checks every operation. */
-export function abilities(view: Pick<SavedView, 'access' | 'system'>, can: Can): Abilities {
+export function abilities(view: Pick<SavedView, 'access' | 'system'>): Abilities {
   if (view.system)
     // Built-in System Views are code: they can be opened and filtered, nothing else.
     return {
@@ -139,7 +139,8 @@ export function abilities(view: Pick<SavedView, 'access' | 'system'>, can: Can):
     canRun: !admin,
     canEdit: owner || view.access === 'edit',
     canManage: owner || admin,
-    canShare: (owner || admin) && (can('views.share') || can('views.publish')),
+    // Owners may always open the dialog: without views.share it still offers their own Teams (the server decides).
+    canShare: owner || admin,
     canPin: !admin,
     canTakeOver: admin,
     readOnly: view.access === 'use',
@@ -226,7 +227,15 @@ export function sharesChanged(a: readonly ShareDraft[], b: readonly ShareDraft[]
   return text(a) !== text(b);
 }
 
-/** Share rights the draft would need beyond removal: adding or raising needs views.share, everyone needs views.publish. */
+/**
+ * Recipient kinds the picker offers. views.share allows users, Teams and roles; without it only Teams
+ * stay selectable because a team lead may share with their own Teams (the server decides which).
+ */
+export function shareRecipientTypes(can: Can): Array<'user' | 'team' | 'role'> {
+  return can('views.share') ? ['user', 'team', 'role'] : ['team'];
+}
+
+/** Share rights the draft would need beyond removal: adding or raising needs views.share (own-Team shares are left to the server), everyone needs views.publish. */
 export function shareProblems(
   saved: readonly ShareDraft[],
   draft: readonly ShareDraft[],
@@ -242,7 +251,7 @@ export function shareProblems(
     if (!added && !raised) continue;
     if (share.subjectType === 'everyone') {
       if (!can('views.publish')) problems.add('needPublish');
-    } else if (!can('views.share')) problems.add('needShare');
+    } else if (!can('views.share') && share.subjectType !== 'team') problems.add('needShare');
   }
   return [...problems];
 }

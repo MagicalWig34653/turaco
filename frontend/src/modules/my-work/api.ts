@@ -35,6 +35,14 @@ export type WorkCount = {
   status: 'ok' | 'unavailable';
 };
 
+/** `total`, `totalCapped` and `complete` are absent on servers that predate them. */
+export type WorkCounts = {
+  items: WorkCount[];
+  total?: number;
+  totalCapped?: boolean;
+  complete?: boolean;
+};
+
 registerErrorMessages({
   'mywork.invalid_request': 'error.invalidRequest',
   'mywork.invalid_cursor': 'error.invalidRequest',
@@ -60,7 +68,7 @@ export const myWorkApi = {
       },
     }),
   counts: (sources?: readonly WorkSource[] | undefined, signal?: Signal) =>
-    api.get<{ items: WorkCount[] }>('/my-work/counts', {
+    api.get<WorkCounts>('/my-work/counts', {
       signal,
       query: { sources: sources?.length ? sources.join(',') : undefined },
     }),

@@ -64,8 +64,42 @@ export type TicketComment = {
   createdAt: string;
 };
 
+export const historyKinds = [
+  'created',
+  'assigned',
+  'unassigned',
+  'reassigned',
+  'team_routed',
+  'status_changed',
+  'priority_changed',
+  'queue_moved',
+] as const;
+export type TicketHistoryKind = (typeof historyKinds)[number];
+
+/** One staff-visible change of a Ticket (derived from its audit events by the server). */
+export type TicketHistoryEntry = {
+  id: string;
+  /** When the change happened. */
+  at: string;
+  kind: TicketHistoryKind | string;
+  actorId?: string | null;
+  /** The operation that caused the change (assign, start, queue_move, ...). */
+  via?: string | null;
+  reason?: string | null;
+  fromUserId?: string | null;
+  toUserId?: string | null;
+  fromTeamId?: string | null;
+  toTeamId?: string | null;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  fromPriority?: string | null;
+  toPriority?: string | null;
+};
+
 export type TicketDetail = Ticket & {
   comments: TicketComment[];
+  /** Absent for requesters and on servers that do not return history yet. */
+  history?: TicketHistoryEntry[];
   allowedOperations: string[];
   names: Record<string, string>;
 };

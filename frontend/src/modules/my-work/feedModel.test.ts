@@ -4,6 +4,7 @@ import {
   countText,
   countViews,
   dedupeItems,
+  figureOf,
   isItemOverdue,
   parseSourceFilter,
   priorityOf,
@@ -100,5 +101,32 @@ describe('source counts', () => {
       partial: false,
       unknown: false,
     });
+  });
+});
+
+describe('figureOf', () => {
+  const counts = countViews([
+    { source: 'tickets', count: 2, status: 'ok' },
+    { source: 'tasks', count: 3, capped: true, status: 'ok' },
+    { source: 'team_tickets', status: 'unavailable' },
+  ]);
+  it('sums the selected sources and keeps them apart', () => {
+    expect(figureOf(counts, ['tickets', 'tasks'])).toMatchObject({
+      value: 5,
+      capped: true,
+      partial: false,
+      unknown: false,
+    });
+  });
+  it('never turns an unavailable source into zero', () => {
+    expect(figureOf(counts, ['team_tickets'])).toMatchObject({ unknown: true, partial: true });
+    expect(figureOf(counts, ['tickets', 'team_tickets'])).toMatchObject({
+      value: 2,
+      partial: true,
+      unknown: false,
+    });
+  });
+  it('marks sources the caller does not have as absent', () => {
+    expect(figureOf(new Map(), ['tickets']).absent).toBe(true);
   });
 });

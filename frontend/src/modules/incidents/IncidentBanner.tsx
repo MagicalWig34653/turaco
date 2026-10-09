@@ -55,14 +55,28 @@ export function IncidentBanner({ compact = false }: { compact?: boolean }) {
   );
   if (!compact) return <section aria-label={t('incidents.banner.title')}>{list}</section>;
   return (
-    <details className="incident-banner-compact" aria-label={t('incidents.banner.title')}>
-      <summary>
-        <span className="incident-banner-icon" aria-hidden="true">
-          !
-        </span>
-        {t('incidents.banner.summary', { count: loaded.data.length })}
-      </summary>
-      {list}
-    </details>
+    <div className="incident-banner-compact-wrap">
+      <details className="incident-banner-compact" aria-label={t('incidents.banner.title')}>
+        <summary>
+          <span className="incident-banner-icon" aria-hidden="true">
+            !
+          </span>
+          {t('incidents.banner.summary', { count: loaded.data.length })}
+        </summary>
+        {list}
+      </details>
+      <ul className="incident-banner-links" aria-label={t('incidents.banner.title')}>
+        {loaded.data.map((m) => (
+          <li key={m.id}>
+            <Link to={`/incidents/${encodeURIComponent(m.id)}`}>
+              {m.reference} · {m.title}
+            </Link>
+          </li>
+        ))}
+        <li>
+          <Link to="/incidents">{t('incidents.banner.all')}</Link>
+        </li>
+      </ul>
+    </div>
   );
 }

@@ -17,7 +17,7 @@ import { Card, MetricCard, Skeleton } from '../platform/ui/Workspace';
 import { briefingApi } from '../modules/briefing/api';
 import { resolveFeedTitle, sourceKey } from '../modules/briefing/feed';
 import type { FeedEntry } from '../modules/briefing/types';
-import { priorityOf, totalOf } from '../modules/my-work/feedModel';
+import { figureOf, priorityOf } from '../modules/my-work/feedModel';
 import { SourceNotice } from '../modules/my-work/SourceNotice';
 import { useMyWorkFeed } from '../modules/my-work/useMyWorkFeed';
 import {
@@ -135,7 +135,10 @@ export function OverviewScreen() {
     !!feed.data?.unavailable.length || Object.values(feed.data?.truncated ?? {}).some(Boolean);
   const metrics = overviewMetrics(work.items, entries, now);
   const attention = buildAttention(work.items, entries, now);
-  const total = totalOf(work.counts);
+  // Separate, labelled figures: work assigned to me, tickets of my teams to take over.
+  const assigned = figureOf(work.counts, ['tickets', 'tasks']);
+  const takeOver = figureOf(work.counts, ['team_tickets']);
+  const countsPending = work.countsLoading;
   const summary = summarizeFeed(entries);
   const highlight = summary.highlight ?? entries.find((entry) => entry.severity !== 'info');
   const otherSignals = entries.filter(
@@ -171,23 +174,46 @@ export function OverviewScreen() {
         <div
           className="workspace-metrics dashboard-metrics"
           aria-label={t('overview.metrics')}
-          style={{ '--metric-count': metrics.approvals === undefined ? 3 : 4 } as never}
+          style={
+            {
+              '--metric-count':
+                2 +
+                (takeOver.absent ? 0 : 1) +
+                (metrics.approvals === undefined ? 0 : 1) +
+                (briefingEnabled ? 1 : 0),
+            } as never
+          }
         >
-          <MetricCard
-            label={t('overview.metric.open')}
-            value={work.countsLoading || total.unknown ? metrics.open : total.value}
-            capped={!total.unknown && total.capped}
-            {...(!work.countsLoading && total.unknown
-              ? { unavailable: t('overview.metric.unavailable') }
-              : {})}
-            to="/my-work"
-            caption={
-              total.partial && !total.unknown
-                ? t('overview.metric.partialCaption')
-                : t('overview.metric.openCaption')
-            }
-            icon={<NavIcon id="myWork" />}
-          />
+          {!assigned.absent || countsPending ? (
+            <MetricCard
+              label={t('overview.metric.assigned')}
+              value={countsPending || assigned.unknown ? metrics.open : assigned.value}
+              capped={!countsPending && !assigned.unknown && assigned.capped}
+              {...(!countsPending && assigned.unknown
+                ? { unavailable: t('overview.metric.unavailable') }
+                : {})}
+              to="/my-work"
+              caption={
+                assigned.partial && !assigned.unknown
+                  ? t('overview.metric.partialCaption')
+                  : t('overview.metric.assignedCaption')
+              }
+              icon={<NavIcon id="myWork" />}
+            />
+          ) : null}
+          {!takeOver.absent ? (
+            <MetricCard
+              label={t('overview.metric.takeOver')}
+              value={takeOver.value}
+              capped={takeOver.capped}
+              {...(takeOver.unknown ? { unavailable: t('overview.metric.unavailable') } : {})}
+              to="/my-work?source=team_tickets"
+              tone="warning"
+              caption={t('overview.metric.takeOverCaption')}
+              zeroCaption={t('overview.metric.takeOverZero')}
+              icon={<NavIcon id="ticketQueue" />}
+            />
+          ) : null}
           <MetricCard
             label={t('overview.metric.overdue')}
             value={metrics.overdue}

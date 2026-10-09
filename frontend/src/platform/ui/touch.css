@@ -1,0 +1,41 @@
+/*
+ * Touch targets. Every interactive element is at least 32px (the floor on pointer devices) and
+ * 44px on phones and coarse pointers, including text links that stand alone on a line.
+ */
+.back-link,
+.incident-back,
+.section-link,
+.report-card-footer,
+.overview-highlight-link,
+.overview-highlight-more,
+.incident-banner-links a,
+.catalog-card .btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+@media (max-width: 640px), (pointer: coarse) {
+  .back-link,
+  .incident-back,
+  .section-link,
+  .report-card-footer,
+  .overview-highlight-link,
+  .overview-highlight-more,
+  .incident-banner-links a {
+    min-height: 44px;
+  }
+  .turaco-shell .btn,
+  .turaco-shell button:not(.ticket-picker-remove),
+  .turaco-shell select,
+  .turaco-shell input:not([type='radio']):not([type='checkbox']) {
+    min-height: 44px;
+  }
+  .incident-banner-compact summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+  .ticket-picker-option {
+    min-height: 44px;
+  }
+}

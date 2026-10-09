@@ -126,7 +126,7 @@ export function BoardScreen({ id }: { id: string }) {
   const collapsed = Object.fromEntries(
     columns.map((column) => [column.id, collapseOverride[column.id] ?? column.collapsed]),
   );
-  const rights = view ? abilities(view, can) : undefined;
+  const rights = view ? abilities(view) : undefined;
   const pinned = pinOverride ?? view?.pinned ?? false;
   const editable = board.canEdit && !board.archived;
   const conditions = listConditions(board.filter?.root).length;

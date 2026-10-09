@@ -1,4 +1,3 @@
-import { ModuleFeature } from '../../platform/modules/ModulesProvider';
 import { AskTuraco } from '../ai/AiProvider';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
@@ -16,7 +15,7 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { endpointsApi } from './api';
-import { DeviceRemoteSupport } from '../remoteaccess/RemoteSupportCard';
+import { DeviceRemoteSupport, RemoteSupportGate } from '../remoteaccess/RemoteSupportCard';
 import { DeviceManagementSection } from './ManagementScreens';
 import { HistorySection } from './HistoryDiffScreens';
 import {
@@ -210,9 +209,9 @@ export function DeviceDetailScreen({ id }: { id: string }) {
         <dd>{date(d.deletedObservedAt)}</dd>
       </dl>
       {can('remote_access.view') ? (
-        <ModuleFeature module="remoteaccess">
+        <RemoteSupportGate>
           <DeviceRemoteSupport deviceId={d.id} />
-        </ModuleFeature>
+        </RemoteSupportGate>
       ) : null}
       <section>
         <h2>{t('endpoints.software')}</h2>

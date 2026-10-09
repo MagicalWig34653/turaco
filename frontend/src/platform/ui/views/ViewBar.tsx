@@ -64,7 +64,7 @@ export function ViewBar<T>({
   const [error, setError] = useState<ApiError>();
   const [notice, setNotice] = useState('');
 
-  const rights = view ? abilities(view, can) : undefined;
+  const rights = view ? abilities(view) : undefined;
   const viewName = view ? (view.nameKey ? t(view.nameKey as MessageKey) : view.name) : '';
   const dirty = view ? isDirty(view, state, visibleColumns, offeredColumns) : false;
 
@@ -153,7 +153,7 @@ export function ViewBar<T>({
 
   /** Actions on any View of the list or the current one. */
   const actionsFor = (target: SavedView): MenuItem[] => {
-    const rights = abilities(target, can);
+    const rights = abilities(target);
     const items: MenuItem[] = [
       rights.canRun
         ? { id: 'open', label: t('views.action.open'), onSelect: () => open_(target) }

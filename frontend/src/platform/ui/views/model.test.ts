@@ -15,6 +15,7 @@ import {
   removeShare,
   sameQuery,
   shareProblems,
+  shareRecipientTypes,
   sharesChanged,
   stateToDefinition,
   unavailableConditions,
@@ -155,31 +156,27 @@ describe('unavailable conditions', () => {
 });
 
 describe('abilities', () => {
-  const none = () => false;
-  it('lets owners manage and editors edit but not share', () => {
-    expect(abilities({ access: 'owner' }, none)).toMatchObject({
+  it('lets owners manage and open sharing, editors edit but not share', () => {
+    expect(abilities({ access: 'owner' })).toMatchObject({
       canEdit: true,
       canManage: true,
-      canShare: false,
-    });
-    expect(abilities({ access: 'owner' }, (p) => p === 'views.share')).toMatchObject({
       canShare: true,
     });
-    expect(abilities({ access: 'edit' }, () => true)).toMatchObject({
+    expect(abilities({ access: 'edit' })).toMatchObject({
       canEdit: true,
       canManage: false,
       canShare: false,
     });
   });
   it('marks use-level views read-only', () => {
-    expect(abilities({ access: 'use' }, none)).toMatchObject({
+    expect(abilities({ access: 'use' })).toMatchObject({
       readOnly: true,
       canEdit: false,
       canRun: true,
     });
   });
   it('lets admins manage and take over but not run or pin', () => {
-    expect(abilities({ access: 'admin' }, none)).toMatchObject({
+    expect(abilities({ access: 'admin' })).toMatchObject({
       canRun: false,
       canManage: true,
       canTakeOver: true,
@@ -230,7 +227,13 @@ describe('shares', () => {
     const none = () => false;
     expect(shareProblems(saved, [], none)).toEqual([]);
     expect(shareProblems(saved, saved, none)).toEqual([]);
-    expect(shareProblems(saved, [{ ...saved[0]!, level: 'edit' }], none)).toEqual(['needShare']);
+    // Team shares are left to the server (own-Team rule); other recipients need views.share.
+    expect(shareProblems(saved, [{ ...saved[0]!, level: 'edit' }], none)).toEqual([]);
+    expect(
+      shareProblems(saved, [...saved, { subjectType: 'user', subjectId: 'u', level: 'use' }], none),
+    ).toEqual(['needShare']);
+    expect(shareRecipientTypes(none)).toEqual(['team']);
+    expect(shareRecipientTypes((p) => p === 'views.share')).toEqual(['user', 'team', 'role']);
     expect(
       shareProblems(
         saved,
@@ -339,7 +342,7 @@ describe('System Views', () => {
       system: true,
     });
     expect(view).toMatchObject({ system: true, name: 'HR', access: 'use' });
-    expect(view && abilities(view, () => true)).toEqual({
+    expect(view && abilities(view)).toEqual({
       canRun: true,
       canEdit: false,
       canManage: false,

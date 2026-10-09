@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import {
+  instantToLocal,
   isMultiValue,
+  localToInstant,
+  localZone,
   relativeOperators,
   unaryOperators,
   type Condition,
@@ -73,8 +76,8 @@ function scalarInput(
     typeof current === 'number'
       ? current
       : typeof current === 'string'
-        ? field.type === 'datetime'
-          ? current.replace(/Z$/, '').slice(0, 16)
+        ? field.type === 'datetime' && !relative
+          ? instantToLocal(current)
           : current
         : '';
   return (
@@ -90,8 +93,7 @@ function scalarInput(
         onChange={(event) => {
           const raw = event.target.value;
           if (type === 'number') update(raw === '' ? '' : Number(raw));
-          else if (isDate && field.type === 'datetime')
-            update(raw ? `${raw.length === 16 ? `${raw}:00` : raw}Z` : '');
+          else if (isDate && field.type === 'datetime') update(localToInstant(raw));
           else update(raw);
         }}
       />
@@ -168,7 +170,9 @@ export function ValueEditor({ catalog, field, condition, onChange }: Props) {
           onChange([next, pair[1] ?? '']),
         )}
         {scalarInput(field, op, pair[1], t('query.to'), (next) => onChange([pair[0] ?? '', next]))}
-        {utc ? <small className="field-hint">{t('query.utcHint')}</small> : null}
+        {utc ? (
+          <small className="field-hint">{t('query.utcHint', { zone: localZone() })}</small>
+        ) : null}
       </>
     );
   }

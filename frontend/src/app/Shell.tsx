@@ -14,7 +14,7 @@ import { sessionDisplayName } from '../platform/session/identity';
 import { useTheme } from '../platform/theme/ThemeProvider';
 import { CommandPalette } from '../platform/ui/shell/CommandPalette';
 import type { PaletteSearch } from '../platform/ui/shell/paletteCommands';
-import { searchTickets } from '../modules/tickets/paletteSearch';
+import { buildObjectSearch, searchSources } from './objectSearch';
 import { navigationCommands } from '../platform/ui/shell/paletteCommands';
 import { appRoutes, isNavActive } from './routes';
 import { Sidebar } from './Sidebar';
@@ -85,17 +85,13 @@ export function Shell({ title, children }: { title: string; children: ReactNode 
     ],
     [can, t, openAi, enabled],
   );
-  const serviceDeskOn = enabled('servicedesk');
-  // Tickets can be found by reference, earlier number or title (the server scopes the results).
+  // Tickets, problems, major incidents, knowledge, devices and people (where permitted); each source is authorized by the server.
   const ticketSearch = useMemo<PaletteSearch | undefined>(
     () =>
-      serviceDeskOn
-        ? (query, signal) =>
-            searchTickets(query, signal, {
-              alias: (old, current) => t('shell.ticketAlias', { old, current }),
-            })
-        : undefined,
-    [serviceDeskOn, t],
+      buildObjectSearch(searchSources(can, enabled), {
+        alias: (old, current) => t('shell.ticketAlias', { old, current }),
+      }),
+    [can, enabled, t],
   );
   const activeNavPath = commands
     .filter((command) => isNavActive(command.path, pathname))

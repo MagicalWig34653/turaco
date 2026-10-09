@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
+import { useModules } from '../../platform/modules/ModulesProvider';
+import { Link } from '../../platform/router/Router';
 import { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -478,4 +480,36 @@ export function DeviceRemoteSupport({ deviceId }: { deviceId: string }) {
       ) : null}
     </Card>
   );
+}
+
+/**
+ * Shown instead of the remote support card while the module is switched off: a disabled action
+ * with the reason, and (for module administrators) a link to switch it on.
+ */
+export function RemoteSupportDisabled() {
+  const { t } = useI18n();
+  const { can } = useSession();
+  return (
+    <Card title={t('remoteaccess.card.title')}>
+      <h2>{t('remoteaccess.card.title')}</h2>
+      <Button disabled aria-describedby="remote-support-disabled-reason">
+        {t('remoteaccess.disabled.action')}
+      </Button>
+      <p id="remote-support-disabled-reason" className="field-hint">
+        {t('remoteaccess.disabled.reason')}{' '}
+        {can('modules.manage') ? (
+          <Link to="/admin/modules">{t('remoteaccess.disabled.admin')}</Link>
+        ) : (
+          t('remoteaccess.disabled.ask')
+        )}
+      </p>
+    </Card>
+  );
+}
+
+/** The remote support card of a ticket or device, or its disabled explanation. */
+export function RemoteSupportGate({ children }: { children: ReactNode }) {
+  const { enabled, loading } = useModules();
+  if (loading) return null;
+  return enabled('remoteaccess') ? children : <RemoteSupportDisabled />;
 }

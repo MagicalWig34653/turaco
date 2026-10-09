@@ -20,7 +20,16 @@ export type PaletteCommand = {
 export type PaletteSearch = (
   query: string,
   signal: AbortSignal,
-) => Promise<{ items: PaletteCommand[]; unavailable: boolean }>;
+) => Promise<{
+  items: PaletteCommand[];
+  /** Sources that failed (as opposed to having no results). */
+  unavailable: boolean;
+  /** The query is too short to search objects; nothing was requested. */
+  tooShort?: boolean;
+}>;
+
+/** Object search starts here; shorter text only filters pages (the server refuses shorter search text). */
+export const minObjectQuery = 3;
 
 /** Navigation results first, object results after them; exact object hits lead everything. */
 export function arrangeResults(

@@ -1,7 +1,14 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { CatalogForm, CatalogItem, CatalogItemCreate, CatalogItemUpdate } from './types';
+import { ApiError } from '../../platform/api/client';
+import type {
+  ApprovalPreview,
+  CatalogForm,
+  CatalogItem,
+  CatalogItemCreate,
+  CatalogItemUpdate,
+} from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
@@ -29,3 +36,20 @@ export const catalogApi = {
       expectedVersion,
     }),
 };
+
+/** Who would approve a request before it is sent; null when this server cannot tell (404/405). */
+export async function approvalPreview(
+  catalogItemId: string,
+  requestedForId: string | undefined,
+  signal?: Signal,
+): Promise<ApprovalPreview | null> {
+  try {
+    return await api.get<ApprovalPreview>('/service-requests/approval-preview', {
+      signal,
+      query: { catalogItemId, requestedForId },
+    });
+  } catch (cause) {
+    if (cause instanceof ApiError && (cause.status === 404 || cause.status === 405)) return null;
+    throw cause;
+  }
+}

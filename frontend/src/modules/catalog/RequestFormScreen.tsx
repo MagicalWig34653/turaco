@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
@@ -12,7 +12,11 @@ import { Checkbox, Select, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { requestsApi } from '../requests/api';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
-import { catalogApi } from './api';
+import { PersonLookup } from '../organization/PersonLookup';
+import { Card, Skeleton } from '../../platform/ui/Workspace';
+import { useDebouncedValue } from '../../platform/ui/hooks';
+import { previewState, stepText } from './approvalModel';
+import { approvalPreview, catalogApi } from './api';
 import { fieldErrorKey, initialValues, toAnswers, type FormValues } from './formModel';
 import type { CatalogForm, FormField } from './types';
 
@@ -43,6 +47,67 @@ function UserField({
       />
       {error ? <p className="field-error">{error}</p> : null}
     </fieldset>
+  );
+}
+
+/** Who approves this request, before it is sent; hidden when the server cannot tell. */
+function ApprovalRoute({
+  itemId,
+  requestedForId,
+  onBlocked,
+}: {
+  itemId: string;
+  requestedForId: string | undefined;
+  onBlocked: (blocked: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const preview = useAsync(
+    (signal) => approvalPreview(itemId, requestedForId, signal),
+    [itemId, requestedForId],
+  );
+  const blocked = previewState(preview.data) === 'blocked';
+  useEffect(() => {
+    onBlocked(blocked);
+  }, [blocked, onBlocked]);
+  if (preview.loading && !preview.data) return <Skeleton lines={2} />;
+  if (preview.error) {
+    // The preview is advice; a failure must not stop the request.
+    return (
+      <p className="field-hint" role="status">
+        {t('catalog.approval.unavailable')}
+      </p>
+    );
+  }
+  const state = previewState(preview.data);
+  if (state === 'unknown') return null;
+  return (
+    <Card className="catalog-approval" title={t('catalog.approval.title')}>
+      <h2>{t('catalog.approval.title')}</h2>
+      {state === 'none' ? <p>{t('catalog.approval.none')}</p> : null}
+      {preview.data && state !== 'none' ? (
+        <ol className="catalog-approval-steps">
+          {preview.data.steps.map((step) => {
+            const text = stepText(step);
+            return (
+              <li key={step.index} className={step.resolved ? '' : 'is-unresolved'}>
+                {t(text.key, text.params)}
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+      {state === 'blocked' ? (
+        <Alert kind="warning">
+          <p>
+            <strong>{t('catalog.approval.blockedTitle')}</strong>
+          </p>
+          <p>{t('catalog.approval.blocked')}</p>
+          <p>
+            <Link to="/support/new">{t('catalog.approval.contact')}</Link>
+          </p>
+        </Alert>
+      ) : null}
+    </Card>
   );
 }
 
@@ -147,6 +212,9 @@ function RequestForm({ form }: { form: CatalogForm }) {
   const { t } = useI18n();
   const [values, setValues] = useState<FormValues>(() => initialValues(form.fields));
   const [requestedFor, setRequestedFor] = useState<Assignee | null>(null);
+  const [forOther, setForOther] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const previewFor = useDebouncedValue(forOther ? requestedFor?.id : undefined, 300);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
@@ -166,7 +234,7 @@ function RequestForm({ form }: { form: CatalogForm }) {
     try {
       const created = await requestsApi.submit({
         catalogItemId: form.id,
-        ...(requestedFor ? { requestedForId: requestedFor.id } : {}),
+        ...(forOther && requestedFor ? { requestedForId: requestedFor.id } : {}),
         answers,
       });
       navigate(`/requests/${encodeURIComponent(created.id)}`);
@@ -192,13 +260,30 @@ function RequestForm({ form }: { form: CatalogForm }) {
         {form.allowRequestedFor ? (
           <fieldset className="field">
             <legend>{t('catalog.form.requestedFor')}</legend>
-            <p className="field-hint">{t('catalog.form.requestedFor.hint')}</p>
-            <AssigneePicker type="user" value={requestedFor} onChange={setRequestedFor} />
+            <Checkbox
+              label={t('catalog.form.forOther')}
+              checked={forOther}
+              onChange={(event) => {
+                setForOther(event.target.checked);
+                if (!event.target.checked) setRequestedFor(null);
+              }}
+            />
+            {forOther ? (
+              <PersonLookup
+                label={t('catalog.form.requestedFor.search')}
+                hint={t('catalog.form.requestedFor.hint')}
+                value={requestedFor}
+                onChange={setRequestedFor}
+              />
+            ) : (
+              <p className="field-hint">{t('catalog.form.forMe')}</p>
+            )}
             {fieldErrors.requestedForId ? (
               <p className="field-error">{message(fieldErrors.requestedForId)}</p>
             ) : null}
           </fieldset>
         ) : null}
+        <ApprovalRoute itemId={form.id} requestedForId={previewFor} onBlocked={setBlocked} />
         {form.fields.map((field) => (
           <FieldInput
             key={field.key}
@@ -209,7 +294,12 @@ function RequestForm({ form }: { form: CatalogForm }) {
           />
         ))}
         <div className="form-actions">
-          <Button type="submit" variant="primary" busy={busy}>
+          <Button
+            type="submit"
+            variant="primary"
+            busy={busy}
+            disabled={blocked || (forOther && !requestedFor)}
+          >
             {t('catalog.form.submit')}
           </Button>
         </div>

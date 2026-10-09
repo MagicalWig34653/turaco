@@ -4,7 +4,13 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { navigate } from '../../router/Router';
 import { useDebouncedValue } from '../hooks';
 import type { PaletteCommand, PaletteSearch } from './paletteCommands';
-import { arrangeResults, filterCommands, moveCommandSelection } from './paletteCommands';
+import {
+  arrangeResults,
+  filterCommands,
+  minObjectQuery,
+  moveCommandSelection,
+} from './paletteCommands';
+import type { MessageKey } from '../../i18n/i18n';
 
 const SEARCH_DELAY_MS = 250;
 
@@ -40,6 +46,7 @@ export function CommandPalette({
     query: string;
     items: PaletteCommand[];
     unavailable: boolean;
+    tooShort?: boolean | undefined;
   }>({ query: '', items: [], unavailable: false });
   const searchRef = useRef(searchObjects);
   searchRef.current = searchObjects;
@@ -47,6 +54,11 @@ export function CommandPalette({
   useEffect(() => {
     if (!open || !searchEnabled || !debounced) {
       setObjects({ query: '', items: [], unavailable: false });
+      return undefined;
+    }
+    if ([...debounced].length < minObjectQuery) {
+      // No request for text the server would refuse; the palette explains instead of failing.
+      setObjects({ query: debounced, items: [], unavailable: false, tooShort: true });
       return undefined;
     }
     const controller = new AbortController();
@@ -63,6 +75,8 @@ export function CommandPalette({
   }, [open, searchEnabled, debounced]);
   // Results of an older query are not shown for the current text.
   const searching = searchEnabled && query.trim() !== '' && objects.query !== query.trim();
+  const tooShort =
+    searchEnabled && query.trim() !== '' && [...query.trim()].length < minObjectQuery;
   const objectItems = searchEnabled && objects.query === query.trim() ? objects.items : [];
   const displayed = query.trim()
     ? arrangeResults(results, objectItems)
@@ -155,7 +169,7 @@ export function CommandPalette({
             <div key={command.id} role="presentation">
               {command.group && displayed[index - 1]?.group !== command.group ? (
                 <div className="turaco-command-group" role="presentation">
-                  {t('shell.group.tickets')}
+                  {t(`shell.group.${command.group}` as MessageKey)}
                 </div>
               ) : null}
               <div
@@ -177,7 +191,11 @@ export function CommandPalette({
         ) : searching ? null : (
           <p className="turaco-command-empty">{t('shell.noCommands')}</p>
         )}
-        {searching ? (
+        {tooShort ? (
+          <p className="turaco-command-status" role="status">
+            {t('shell.searchTooShort')}
+          </p>
+        ) : searching ? (
           <p className="turaco-command-status" role="status">
             {t('shell.searching')}
           </p>

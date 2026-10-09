@@ -3,6 +3,8 @@ import {
   asGroup,
   defaultCondition,
   duplicateAt,
+  instantToLocal,
+  localToInstant,
   listConditions,
   normalize,
   replaceAt,
@@ -328,5 +330,40 @@ describe('query tree editing', () => {
     expect(listConditions(copy)[1]?.node).toEqual(a);
     expect(duplicateAt(a, []).type).toBe('group');
     expect(asGroup(a).children).toEqual([a]);
+  });
+});
+
+describe('date and time values', () => {
+  it('stores a local time as the real UTC instant, not as local time with a literal Z', () => {
+    const iso = localToInstant('2026-10-09T14:30');
+    expect(iso).toBe(new Date(2026, 9, 9, 14, 30).toISOString().replace('.000Z', 'Z'));
+    expect(iso.endsWith('Z')).toBe(true);
+  });
+  it('round-trips through the local representation', () => {
+    expect(instantToLocal(localToInstant('2026-03-29T02:30'))).toMatch(/^2026-03-29T0[23]:30$/);
+    expect(instantToLocal(localToInstant('2026-10-09T08:05'))).toBe('2026-10-09T08:05');
+  });
+  it('keeps a date-only value a calendar day and rejects invalid input', () => {
+    expect(instantToLocal('2026-10-09')).toBe('2026-10-09T00:00');
+    expect(localToInstant('')).toBe('');
+    expect(localToInstant('2026-02-31T10:00')).toBe('');
+    expect(instantToLocal('nonsense')).toBe('');
+    expect(instantToLocal(null)).toBe('');
+  });
+  it('produces values the datetime validator accepts', () => {
+    const cat: Catalog = { ...catalog, fields: [field('created_at', 'datetime', ['after'])] };
+    const state: QueryState = {
+      ...emptyState(),
+      filter: {
+        v: 1,
+        root: {
+          type: 'condition',
+          field: 'created_at',
+          op: 'after',
+          value: localToInstant('2026-10-09T14:30'),
+        },
+      },
+    };
+    expect(validate(state, cat)).toEqual([]);
   });
 });

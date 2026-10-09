@@ -98,3 +98,33 @@ const sourceLabels: Record<WorkSource, MessageKey> = {
 /** Display name of a source; an unknown key reads as a generic "some work". */
 export const sourceLabelKey = (source: string): MessageKey =>
   (sourceLabels as Record<string, MessageKey | undefined>)[source] ?? 'myWork.source.unknown';
+
+export type Figure = {
+  value: number;
+  capped: boolean;
+  /** At least one of the sources is unavailable, so the value is a lower bound. */
+  partial: boolean;
+  /** No source answered (or none is offered): there is no number to show. */
+  unknown: boolean;
+  /** The caller has none of these sources (module off or no access); the figure is not offered. */
+  absent: boolean;
+};
+
+/** One labelled figure from selected sources, e.g. "assigned to me" = tickets + tasks. */
+export function figureOf(
+  counts: ReadonlyMap<string, CountView>,
+  sources: readonly string[],
+): Figure {
+  const views = sources.flatMap((source) => {
+    const view = counts.get(source);
+    return view ? [view] : [];
+  });
+  const known = views.filter((view) => view.count !== undefined);
+  return {
+    value: known.reduce((sum, view) => sum + (view.count ?? 0), 0),
+    capped: known.some((view) => view.capped),
+    partial: views.some((view) => view.unavailable),
+    unknown: views.length > 0 && known.length === 0,
+    absent: views.length === 0,
+  };
+}
