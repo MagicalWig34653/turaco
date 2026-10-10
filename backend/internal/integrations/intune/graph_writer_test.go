@@ -22,6 +22,8 @@ type tenant struct {
 	objects     map[string]string // aad device id -> device object id
 	nextID      int
 	writes      []string
+	// foreign marks groups that carry the ring name but were not created by Turaco (no owner marker).
+	foreign map[string]bool
 }
 
 func newTenant() *tenant {
@@ -44,7 +46,11 @@ func (tn *tenant) install(t *testing.T, s *graphServer) {
 			var items []string
 			for id, name := range tn.groups {
 				if filter == "displayName eq '"+name+"'" {
-					items = append(items, fmt.Sprintf(`{"id":%q,"displayName":%q}`, id, name))
+					desc := ownerMarker(name)
+					if tn.foreign[id] {
+						desc = "someone else's group"
+					}
+					items = append(items, fmt.Sprintf(`{"id":%q,"displayName":%q,"description":%q,"mailNickname":%q,"securityEnabled":true,"mailEnabled":false,"groupTypes":[]}`, id, name, desc, name))
 				}
 			}
 			json200(w, `{"value":[`+strings.Join(items, ",")+`]}`)
@@ -328,5 +334,25 @@ func TestGraphWriterAddMemberAlreadyPresentIsSuccess(t *testing.T) {
 	}
 	if err := w.addMember(context.Background(), gid, "aaaaaaaa-0000-0000-0000-000000000001"); err != nil {
 		t.Fatalf("already a member: %v", err)
+	}
+}
+
+// A group that merely carries a ring's display name is not Turaco's: the writer refuses it and writes nothing.
+func TestGraphWriterRefusesAForeignGroupWithARingName(t *testing.T) {
+	tn := newTenant()
+	tn.foreign = map[string]bool{}
+	name := strings.ToLower(RingGroupID("ring-a"))
+	id := tn.newID()
+	tn.groups[id], tn.members[id] = name, map[string]bool{"cccccccc-0000-0000-0000-000000000001": true}
+	tn.foreign[id] = true
+	s := newGraphServer(t)
+	tn.install(t, s)
+	w := NewGraphWriter(s.graph(t))
+	_, _, err := w.findGroup(context.Background(), name)
+	if !errors.Is(err, ErrPermanent) || !strings.Contains(err.Error(), "does not own") {
+		t.Fatalf("expected a permanent refusal, got %v", err)
+	}
+	if len(tn.writes) != 0 || !tn.members[id]["cccccccc-0000-0000-0000-000000000001"] {
+		t.Fatalf("a foreign group must not be changed: writes %v", tn.writes)
 	}
 }

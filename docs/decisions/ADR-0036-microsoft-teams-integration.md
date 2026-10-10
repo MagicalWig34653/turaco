@@ -35,3 +35,8 @@ Turaco notifies in-app and by email through the platform Notification service an
 - A new inbound, unauthenticated-by-session HTTP endpoint (T-C) becomes a trust boundary and needs `review-security`.
 - On-prem installations need outbound egress (and for T-C an inbound path from the Bot Framework); health and setup show what is missing.
 - Category texts gain Teams card templates in English and German.
+
+
+## Implementation note (2026-10-10)
+
+Slice T-A posts through Workflows webhooks. A Workflows flow cannot deduplicate on a delivery id, so a worker crash between an accepted post and the delivery status update can post the same card twice. This is an accepted operational limitation of webhook channel posts; the card text carries the reference number so a duplicate is harmless. Deliveries themselves are deduplicated by their database key.

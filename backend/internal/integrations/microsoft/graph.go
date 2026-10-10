@@ -330,6 +330,11 @@ func (g *Graph) send(ctx context.Context, r Request, payload []byte) (Response, 
 		if err != nil {
 			if isTransient(err) {
 				lastErr = err
+				if !safeToRetry(r.Method, err) {
+					// An ambiguous failure of a non-idempotent write (timeout, 500, 502, 504) may have been
+					// committed: the caller rereads the target and reconciles before it writes again.
+					return Response{}, err
+				}
 				continue
 			}
 			return Response{}, err
@@ -344,6 +349,18 @@ func (g *Graph) send(ctx context.Context, r Request, payload []byte) (Response, 
 		return resp, nil
 	}
 	return Response{}, lastErr
+}
+
+// safeToRetry reports whether the request may be sent again after err. Reads, PUT and DELETE are idempotent. POST and
+// PATCH are retried only after an explicit throttle answer (429, 503), where the service states it did not process
+// the request; a lost response or a 500, 502 or 504 is ambiguous.
+func safeToRetry(method string, err error) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions:
+		return true
+	}
+	var te *TransientError
+	return errors.As(err, &te) && (te.Status == http.StatusTooManyRequests || te.Status == http.StatusServiceUnavailable)
 }
 
 func isTransient(err error) bool {

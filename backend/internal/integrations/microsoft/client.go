@@ -242,11 +242,19 @@ func sanitize(err error) error {
 }
 
 func retryAfter(h http.Header) time.Duration {
-	if s, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After"))); err == nil && s > 0 {
-		if s > 3600 {
-			s = 3600
-		}
-		return time.Duration(s) * time.Second
+	v := strings.TrimSpace(h.Get("Retry-After"))
+	var d time.Duration
+	if secs, err := strconv.Atoi(v); err == nil {
+		d = time.Duration(secs) * time.Second
+	} else if t, err := http.ParseTime(v); err == nil {
+		// The HTTP-date form is allowed by RFC 9110.
+		d = time.Until(t)
 	}
-	return 0
+	if d <= 0 {
+		return 0
+	}
+	if d > time.Hour {
+		d = time.Hour
+	}
+	return d
 }

@@ -132,3 +132,8 @@ Ownership and idempotency: the writer only touches the group named `turaco-ring-
 ### Unverified and to check with a real tenant
 
 Whether `$expand=assignments` is honoured on every collection above (if the `assignments` key is missing the assignments are reported as unknown and the previous ones stay), the per-device `detectedApps` path, `transitiveMembers/microsoft.graph.device` with `ConsistencyLevel: eventual`, the meaning of `deviceId` in application install statuses, the page sizes and throttling limits for Intune endpoints (the Graph throttling page names none), `Group.ReadWrite.All` being sufficient to add devices to a group, the replication delay after creating a group, and the beta shapes. Findings from a real run belong into this section.
+
+
+## Ring group ownership (review 2026-10-10)
+
+The writer treats a group as Turaco-owned only when its display name, mail nickname, description marker (`Owned by Turaco: deployment ring group <name>...`) and shape (security group, no mail, no group types) all match what Turaco creates; a group that only carries the ring name is refused with a permanent error and never changed. The marker is not tamper-proof against a Group administrator, so restrict the write registration with a restricted-management administrative unit that contains only the ring groups, and keep the write permissions off the sign-in and read registrations.

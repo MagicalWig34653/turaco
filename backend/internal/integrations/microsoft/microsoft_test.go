@@ -214,3 +214,44 @@ func TestExpiryStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryAfterAcceptsSecondsAndHTTPDate(t *testing.T) {
+	h := http.Header{}
+	h.Set("Retry-After", "7")
+	if retryAfter(h) != 7*time.Second {
+		t.Errorf("seconds: %v", retryAfter(h))
+	}
+	h.Set("Retry-After", time.Now().Add(90*time.Second).UTC().Format(http.TimeFormat))
+	if d := retryAfter(h); d < 80*time.Second || d > 91*time.Second {
+		t.Errorf("http-date: %v", d)
+	}
+	h.Set("Retry-After", time.Now().Add(5*time.Hour).UTC().Format(http.TimeFormat))
+	if retryAfter(h) != time.Hour {
+		t.Errorf("cap: %v", retryAfter(h))
+	}
+	for _, bad := range []string{"", "-5", "soon", time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)} {
+		h.Set("Retry-After", bad)
+		if retryAfter(h) != 0 {
+			t.Errorf("%q: %v", bad, retryAfter(h))
+		}
+	}
+}
+
+func TestSafeToRetryOnlyForIdempotentOrExplicitThrottle(t *testing.T) {
+	throttle := &TransientError{Status: 429}
+	unavailable := &TransientError{Status: 503}
+	lost := &TransientError{Err: errors.New("timeout")}
+	badGateway := &TransientError{Status: 502}
+	for _, tc := range []struct {
+		method string
+		err    error
+		want   bool
+	}{
+		{"GET", lost, true}, {"DELETE", badGateway, true}, {"PUT", lost, true},
+		{"POST", throttle, true}, {"POST", unavailable, true}, {"POST", lost, false}, {"POST", badGateway, false}, {"PATCH", lost, false},
+	} {
+		if got := safeToRetry(tc.method, tc.err); got != tc.want {
+			t.Errorf("%s %v: %v", tc.method, tc.err, got)
+		}
+	}
+}

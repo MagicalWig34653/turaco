@@ -179,18 +179,34 @@ func classify(step string, err error) error {
 // read 2026-10-10). The name is validated (turaco-ring-<uuid>) before it reaches the filter.
 func (w *GraphWriter) findGroup(ctx context.Context, name string) (string, bool, error) {
 	var ids []string
-	err := w.g.List(ctx, query("/v1.0/groups", "$filter", "displayName eq '"+name+"'", "$select", "id,displayName"), nil, func(raw json.RawMessage) error {
+	foreign := 0
+	err := w.g.List(ctx, query("/v1.0/groups", "$filter", "displayName eq '"+name+"'", "$select", "id,displayName,description,mailNickname,securityEnabled,mailEnabled,groupTypes"), nil, func(raw json.RawMessage) error {
 		var g struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"displayName"`
+			ID              string   `json:"id"`
+			DisplayName     string   `json:"displayName"`
+			Description     string   `json:"description"`
+			MailNickname    string   `json:"mailNickname"`
+			SecurityEnabled bool     `json:"securityEnabled"`
+			MailEnabled     bool     `json:"mailEnabled"`
+			GroupTypes      []string `json:"groupTypes"`
 		}
-		if json.Unmarshal(raw, &g) == nil && g.ID != "" && strings.EqualFold(g.DisplayName, name) {
-			ids = append(ids, g.ID)
+		if json.Unmarshal(raw, &g) != nil || g.ID == "" || !strings.EqualFold(g.DisplayName, name) {
+			return nil
 		}
+		// A name is not proof of ownership: a group someone else renamed to a ring name is never written. The group
+		// must carry the marker Turaco wrote at creation and have the shape Turaco creates.
+		if g.Description != ownerMarker(name) || !strings.EqualFold(g.MailNickname, name) || !g.SecurityEnabled || g.MailEnabled || len(g.GroupTypes) != 0 {
+			foreign++
+			return nil
+		}
+		ids = append(ids, g.ID)
 		return nil
 	})
 	if err != nil {
 		return "", false, classify("find group", err)
+	}
+	if foreign > 0 {
+		return "", false, fmt.Errorf("%w: find group: a group with the ring name exists that Turaco does not own", ErrPermanent)
 	}
 	switch len(ids) {
 	case 0:
@@ -211,7 +227,7 @@ func (w *GraphWriter) createGroup(ctx context.Context, name string) (string, err
 		ID string `json:"id"`
 	}
 	body := map[string]any{
-		"displayName": name, "mailNickname": name, "description": "Owned by Turaco: deployment ring group. Membership is managed automatically.",
+		"displayName": name, "mailNickname": name, "description": ownerMarker(name),
 		"mailEnabled": false, "securityEnabled": true, "groupTypes": []string{},
 	}
 	if _, err := w.g.Call(ctx, microsoft.Request{Method: http.MethodPost, Target: "/v1.0/groups", Body: body}, &out); err != nil {
@@ -392,4 +408,9 @@ func (w *GraphWriter) deleteAssignment(ctx context.Context, artifact, assignment
 		return nil
 	}
 	return classify("delete assignment", err)
+}
+
+// ownerMarker is the description Turaco writes into a ring group at creation and requires before any write.
+func ownerMarker(name string) string {
+	return "Owned by Turaco: deployment ring group " + name + ". Membership is managed automatically."
 }
