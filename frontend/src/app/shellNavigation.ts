@@ -1,7 +1,7 @@
 import type { ModuleEnabled } from '../platform/modules/model';
 import type { MessageKey } from '../platform/i18n/i18n';
 import type { CanFn } from '../platform/session/permissions';
-import { appRoutes, canViewRoute, type AppRoute, type NavGroup, type RouteId } from './routes';
+import { appRoutes, canShowInNav, type AppRoute, type NavGroup, type RouteId } from './routes';
 
 /** Sidebar section keys double as the persisted collapsed-state ids (`PUT /me/sidebar-state`). */
 export const sectionKeys = [
@@ -75,7 +75,7 @@ export type NavSection = { key: SectionKey; label: MessageKey; items: AppRoute[]
 export function shellNavigation(can: CanFn, enabled?: ModuleEnabled): NavSection[] {
   const sections = new Map<SectionKey, AppRoute[]>(sectionKeys.map((key) => [key, []]));
   for (const route of appRoutes) {
-    if (!route.nav || !canViewRoute(can, route, enabled)) continue;
+    if (!route.nav || !canShowInNav(can, route, enabled)) continue;
     sections.get(sectionOf(route))?.push(route);
   }
   return sectionKeys

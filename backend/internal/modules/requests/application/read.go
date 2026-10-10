@@ -97,10 +97,21 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	}
 	for _, rt := range rts {
 		if t, ok := byID[rt.TaskID]; ok {
+			// A result note marked for the requester is for the people who asked for the work and the request's
+			// staff; approvers who can merely view the request do not get it.
+			if !mayReadRequesterNotes(p, r) {
+				t.ResultNote = nil
+			}
 			d.Tasks = append(d.Tasks, TaskView{RequestTask: rt, Task: t})
 		}
 	}
 	return d, s.resolveNames(ctx, &d)
+}
+
+// mayReadRequesterNotes reports whether the caller gets the task result notes marked for the requester: the
+// requester, the requested-for User and the request's staff. Approvers who only view the request do not.
+func mayReadRequesterNotes(p Principal, r Request) bool {
+	return p.View || p.Manage || r.RequesterID == p.UserID || r.RequestedForID == p.UserID
 }
 
 func (s *Service) resolveNames(ctx context.Context, d *Detail) error {

@@ -9,6 +9,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
+	changespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
@@ -64,7 +65,7 @@ func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	dir := orgpublic.NewWorkDirectory(org)
 	members := queueMemberships{teams: dir, eval: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org))}
 	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).
-		WithQueryEngine(QueryEngine(pool)).WithMemberships(members)
+		WithQueryEngine(QueryEngine(pool)).WithMemberships(members).WithChanges(changespublic.NewChanges(Changes(pool)), Relationships(), pool)
 }
 
 // gatewayAdapter adapts the Autotask adapter to the Service Desk port.

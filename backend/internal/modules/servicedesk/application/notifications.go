@@ -27,6 +27,7 @@ func NotificationCategories() []notifications.Category {
 	return []notifications.Category{
 		cat("ticket.assigned", "Ticket assigned: %s", "A ticket was assigned to you:", "Ticket zugewiesen: %s", "Dir wurde ein Ticket zugewiesen:"),
 		cat("ticket.comment", "New reply on ticket: %s", "There is a new reply on a ticket:", "Neue Antwort im Ticket: %s", "Es gibt eine neue Antwort in einem Ticket:"),
+		cat("ticket.mention", "You were mentioned on ticket: %s", "You were mentioned in an internal note on a ticket:", "Du wurdest im Ticket erwähnt: %s", "Du wurdest in einer internen Notiz zu einem Ticket erwähnt:"),
 		majorCategory(),
 		cat("ticket.resolved", "Ticket resolved: %s", "Your ticket was resolved:", "Ticket gelöst: %s", "Dein Ticket wurde gelöst:"),
 	}
@@ -150,12 +151,21 @@ func (c *Consumers) OnCommentAdded(ctx context.Context, tx pgx.Tx, ev events.Out
 		TicketID string `json:"ticketId"`
 		Internal bool   `json:"internal"`
 		AuthorID string `json:"authorId"`
+		// MentionedUserIDs were checked against the Queue when the note was added.
+		MentionedUserIDs []string `json:"mentionedUserIds"`
 	}
 	if err := decodePayload(ev, &p); err != nil {
 		return err
 	}
 	if p.Internal {
-		return nil
+		if len(p.MentionedUserIDs) == 0 {
+			return nil
+		}
+		t, ok, err := c.load(ctx, p.TicketID)
+		if err != nil || !ok {
+			return err
+		}
+		return c.notify(ctx, tx, ev, "ticket.mention", t, p.MentionedUserIDs)
 	}
 	t, ok, err := c.load(ctx, p.TicketID)
 	if err != nil || !ok {

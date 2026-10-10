@@ -24,7 +24,7 @@ func TestTicketAbilitiesMatchTheOperationsTheBackendAllows(t *testing.T) {
 		want application.Abilities
 	}{
 		{"reporter", e.employee(e.alice), application.Abilities{Comment: true}},
-		{"work grant", e.employee(e.u1), application.Abilities{Comment: true, InternalComment: true, Assign: true, SetPriority: true, Transition: true, MoveQueue: true, MarkDuplicate: true}},
+		{"work grant", e.employee(e.u1), application.Abilities{Comment: true, InternalComment: true, Assign: true, SetPriority: true, Transition: true, MoveQueue: true, SetLocation: true, MarkDuplicate: true}},
 		{"view grant", e.employee(e.u2), application.Abilities{}},
 	}
 	for _, c := range cases {

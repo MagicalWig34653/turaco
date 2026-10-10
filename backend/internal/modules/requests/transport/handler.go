@@ -233,6 +233,8 @@ type taskDTO struct {
 	DueAt          *string `json:"dueAt"`
 	AssignedUserID *string `json:"assignedUserId"`
 	AssignedTeamID *string `json:"assignedTeamId"`
+	// ResultNote is the closing note of a completed task when its completer marked it for the requester.
+	ResultNote *string `json:"resultNote"`
 }
 
 type referenceDTO struct {
@@ -292,6 +294,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		dto.Tasks = append(dto.Tasks, taskDTO{
 			ID: t.Task.ID, Title: t.Task.Title, Status: t.Task.Status, Priority: t.Task.Priority, Mandatory: t.Mandatory,
 			DueAt: tsPtr(t.Task.DueAt), AssignedUserID: t.Task.AssignedUserID, AssignedTeamID: t.Task.AssignedTeamID,
+			ResultNote: t.Task.ResultNote,
 		})
 	}
 	httpx.JSON(w, http.StatusOK, dto)

@@ -30,6 +30,8 @@ describe('ticket workspace', () => {
   it('inserts a workaround without replacing the draft and respects the comment limit', () => {
     expect(appendWorkaround('My reply  ', ' Workaround ')).toBe('My reply\n\nWorkaround');
     expect(appendWorkaround('', ' Workaround ')).toBe('Workaround');
+    expect(appendWorkaround('Hi', 'Reboot', 'From PRB-1:')).toBe('Hi\n\nFrom PRB-1:\nReboot');
+    expect(appendWorkaround('', '  ', 'From PRB-1:')).toBe('');
     expect(appendWorkaround('x'.repeat(4999), 'Workaround')).toHaveLength(5000);
   });
 });
@@ -74,5 +76,11 @@ describe('ticket abilities', () => {
     expect(effectiveCommentKind({ comment: false, internalComment: true }, false)).toBe('internal');
     expect(effectiveCommentKind({ comment: true, internalComment: false }, true)).toBe('reply');
     expect(effectiveCommentKind({ comment: true, internalComment: true }, true)).toBe('internal');
+  });
+  it('offers the location correction only when the server says so', () => {
+    const fallback = { manage: true, isOwner: false, open: true, canMove: false };
+    expect(resolveAbilities(undefined, fallback).setLocation).toBe(false);
+    const base = resolveAbilities(undefined, fallback);
+    expect(resolveAbilities({ ...base, setLocation: true }, fallback).setLocation).toBe(true);
   });
 });

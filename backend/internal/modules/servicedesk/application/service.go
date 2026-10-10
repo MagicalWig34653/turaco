@@ -15,6 +15,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -29,6 +30,10 @@ type Service struct {
 	engine  *query.Engine
 	queues  QueueStore
 	members Memberships
+	// changes, graph and graphDB link Tickets to Changes (WithChanges); nil without them.
+	changes ChangeReader
+	graph   *relationships.Graph
+	graphDB relationships.Querier
 }
 
 // NewService builds the service. A store that also implements QueueStore enables Queues; without it every Ticket
@@ -443,7 +448,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		case OpCancel:
 			next.StatusReason = &text
 		}
-		if op == OpStart && next.AssigneeID == nil && c.Actor.UserID != "" {
+		if (op == OpStart || op == OpResume) && next.AssigneeID == nil && c.Actor.UserID != "" {
 			me := c.Actor.UserID
 			next.AssigneeID = &me
 		}
@@ -680,10 +685,24 @@ func (s *Service) SetPriority(ctx context.Context, c Caller, p Principal, id str
 // for the customer resumes it); people who work the Queue add public or internal ones; view access alone cannot
 // comment.
 func (s *Service) AddComment(ctx context.Context, c Caller, p Principal, id, body string, internal bool) (Comment, error) {
+	return s.AddCommentWithMentions(ctx, c, p, id, body, internal, nil)
+}
+
+// MaxMentions is how many people one internal note can mention.
+const MaxMentions = 10
+
+// AddCommentWithMentions is AddComment with the people an internal note mentions. Mentions are only allowed on
+// internal notes. Mentioned people who are inactive or cannot view the Ticket's Queue are dropped (a mention must
+// not disclose a Ticket); the stored list holds the rest and drives the ticket.mention notification.
+func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Principal, id, body string, internal bool, mentions []string) (Comment, error) {
 	if err := c.validate(); err != nil {
 		return Comment{}, err
 	}
 	b, err := cleanText(body, maxText, true, "comment")
+	if err != nil {
+		return Comment{}, err
+	}
+	mentioned, err := cleanMentions(mentions, internal)
 	if err != nil {
 		return Comment{}, err
 	}
@@ -707,7 +726,11 @@ func (s *Service) AddComment(ctx context.Context, c Caller, p Principal, id, bod
 		if cur.Status == StatusCancelled || cur.Status == StatusClosed {
 			return &InvalidTransitionError{Operation: "comment", From: cur.Status}
 		}
-		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: cur.ID, AuthorID: p.UserID, Body: b, Internal: internal})
+		mentioned, err = s.mentionable(ctx, tx, mentioned, p.UserID, cur.QueueID)
+		if err != nil {
+			return err
+		}
+		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: cur.ID, AuthorID: p.UserID, Body: b, Internal: internal, MentionedUserIDs: mentioned})
 		if err != nil {
 			return err
 		}
@@ -723,12 +746,129 @@ func (s *Service) AddComment(ctx context.Context, c Caller, p Principal, id, bod
 			}
 		}
 		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.comment_added", TargetType: "ticket", TargetID: cur.ID, Actor: c.Actor,
-			CorrelationID: c.CorrelationID, Metadata: map[string]any{"commentId": out.ID, "internal": internal}}); err != nil {
+			CorrelationID: c.CorrelationID, Metadata: map[string]any{"commentId": out.ID, "internal": internal, "mentionCount": len(out.MentionedUserIDs)}}); err != nil {
 			return err
 		}
-		return publish(ctx, tx, c, "TicketCommentAdded", map[string]any{"ticketId": cur.ID, "commentId": out.ID, "internal": internal, "authorId": p.UserID})
+		return publish(ctx, tx, c, "TicketCommentAdded", map[string]any{"ticketId": cur.ID, "commentId": out.ID, "internal": internal, "authorId": p.UserID, "mentionedUserIds": out.MentionedUserIDs})
 	})
 	return out, err
+}
+
+// cleanMentions validates the mention list: internal notes only, at most MaxMentions distinct ids.
+func cleanMentions(ids []string, internal bool) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if !internal {
+		return nil, invalid("only internal notes can mention people")
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if !uuidPattern.MatchString(id) {
+			return nil, invalid("mentionedUserIds must be user ids")
+		}
+		if !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	if len(out) > MaxMentions {
+		return nil, invalid("a note can mention at most %d people", MaxMentions)
+	}
+	return out, nil
+}
+
+// mentionable keeps the mentioned people who are active and may view the Queue; the author is dropped.
+func (s *Service) mentionable(ctx context.Context, tx pgx.Tx, ids []string, authorID, queueID string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	active, err := s.dir.ActiveUsers(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("check mentioned users: %w", err)
+	}
+	out := []string{}
+	for _, id := range ids {
+		if id == authorID || !active[id] {
+			continue
+		}
+		ok, err := s.assigneeMaySee(ctx, tx, id, queueID)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// SetLocation sets the affected Location of the Ticket (the place the problem is at, which the reporter's profile
+// only suggests at creation). A nil locationID clears it. Requires work access in the Ticket's Queue; the Location
+// must exist and be active. Version-guarded, audited and part of the Ticket history.
+func (s *Service) SetLocation(ctx context.Context, c Caller, p Principal, id string, expected *int, locationID *string) (Ticket, error) {
+	if err := c.validate(); err != nil {
+		return Ticket{}, err
+	}
+	if err := needVersion(expected); err != nil {
+		return Ticket{}, err
+	}
+	var loc *string
+	if locationID != nil {
+		l := strings.ToLower(strings.TrimSpace(*locationID))
+		if !uuidPattern.MatchString(l) {
+			return Ticket{}, invalid("locationId must be a location id")
+		}
+		ld, ok := s.dir.(interface {
+			ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
+		})
+		if !ok {
+			return Ticket{}, invalid("locations are not available")
+		}
+		active, err := ld.ActiveLocations(ctx, []string{l})
+		if err != nil {
+			return Ticket{}, fmt.Errorf("check location: %w", err)
+		}
+		if !active[l] {
+			return Ticket{}, invalid("the location does not exist or is not active")
+		}
+		loc = &l
+	}
+	m, err := s.memberships(ctx, p.UserID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	var out Ticket
+	var acc access
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, a, ep, err := s.work(ctx, tx, p, m, id)
+		if err != nil {
+			return err
+		}
+		acc = a
+		if !AbilitiesOf(cur, ep, s.queues != nil).SetLocation {
+			if !ep.Manage {
+				return ErrForbidden
+			}
+			return &InvalidTransitionError{Operation: "set_location", From: cur.Status}
+		}
+		if *expected != cur.Version {
+			return ErrVersionConflict
+		}
+		if samePtr(cur.AffectedLocationID, loc) {
+			out = cur
+			return nil
+		}
+		out, err = s.store.UpdateLocationTx(ctx, tx, cur.ID, loc)
+		if err != nil {
+			return err
+		}
+		return record(ctx, tx, c, "servicedesk.ticket.location_changed", &cur, &out, map[string]any{"fromLocationId": deref(cur.AffectedLocationID), "toLocationId": deref(out.AffectedLocationID)})
+	})
+	if err != nil {
+		return out, err
+	}
+	return out, s.shape(ctx, acc, &out)
 }
 
 // MoveReasonValid reports whether the reason code is one of MoveReasons.

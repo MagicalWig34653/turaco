@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -127,8 +128,8 @@ func TestHospitalRolesUseRegisteredPermissions(t *testing.T) {
 
 func TestHospitalAssets(t *testing.T) {
 	assets := hospitalAssets()
-	if len(assets) != 60 {
-		t.Fatalf("%d assets, want 60", len(assets))
+	if len(assets) != 69 {
+		t.Fatalf("%d assets, want 69", len(assets))
 	}
 	products := keysOf(simProducts, func(p simProduct) string { return p.IPN })
 	areas := keysOf(simAreas, func(a simArea) string { return a.Key })
@@ -219,7 +220,11 @@ func TestHospitalTickets(t *testing.T) {
 			t.Errorf("major incident links unknown ticket %q", title)
 		}
 	}
+	internalRef := regexp.MustCompile(`\b[A-Z]{3,4}-\d+`)
 	for _, task := range simTasks {
+		if task.Team == teamVendor && internalRef.MatchString(task.Title+" "+task.Description) {
+			t.Errorf("vendor task %q mentions an internal reference", task.Title)
+		}
 		if !teams[task.Team] || (task.User != "" && !logins[task.User]) {
 			t.Errorf("task %q references an unknown team or person", task.Title)
 		}

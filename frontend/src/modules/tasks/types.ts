@@ -31,6 +31,8 @@ export type Task = {
   completedByUserId: string | null;
   /** The closing comment given when the task was completed; null otherwise. Absent on older servers. */
   resultNote?: string | null;
+  /** True when the requester of the originating Service Request may read the result note. */
+  resultNoteForRequester?: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;

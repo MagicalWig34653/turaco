@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { describeHistory, isAssignmentEntry, mergeTimeline, viaKey } from './historyModel';
+import {
+  describeHistory,
+  historyReason,
+  isAssignmentEntry,
+  mergeTimeline,
+  viaKey,
+} from './historyModel';
 import type { TicketComment, TicketHistoryEntry } from './types';
 
 const comment = (id: string, createdAt: string): TicketComment => ({
@@ -14,6 +20,27 @@ const entry = (id: string, at: string, kind: string, extra = {}): TicketHistoryE
   at,
   kind,
   ...extra,
+});
+
+describe('describeHistory location', () => {
+  const name = (id: string | null | undefined) => (id ? `N:${id}` : '');
+  const label = (_: 'status' | 'priority', v: string) => v;
+  it('describes set, change and clear', () => {
+    const at = '2026-10-01T10:00:00Z';
+    expect(
+      describeHistory(entry('1', at, 'location_changed', { toLocationId: 'b' }), name, label),
+    ).toEqual({ key: 'ticketHistory.locationSet', params: { to: 'N:b' } });
+    expect(
+      describeHistory(
+        entry('2', at, 'location_changed', { fromLocationId: 'a', toLocationId: 'b' }),
+        name,
+        label,
+      ),
+    ).toEqual({ key: 'ticketHistory.locationChanged', params: { from: 'N:a', to: 'N:b' } });
+    expect(
+      describeHistory(entry('3', at, 'location_changed', { fromLocationId: 'a' }), name, label).key,
+    ).toBe('ticketHistory.locationCleared');
+  });
 });
 
 describe('mergeTimeline', () => {
@@ -77,5 +104,25 @@ describe('describeHistory', () => {
     expect(isAssignmentEntry({ kind: 'status_changed' })).toBe(false);
     expect(viaKey('start')).toBe('ticketHistory.via.start');
     expect(viaKey('assign')).toBeUndefined();
+  });
+});
+
+describe('historyReason', () => {
+  it('maps waiting and move codes to labels and keeps free text', () => {
+    expect(
+      historyReason({ kind: 'status_changed', toStatus: 'waiting', reason: 'vendor' }),
+    ).toEqual({
+      kind: 'waiting',
+      key: 'tickets.waiting.vendor',
+    });
+    expect(historyReason({ kind: 'queue_moved', reason: 'different_skill' })).toEqual({
+      kind: 'move',
+      key: 'tickets.move.reason.different_skill',
+    });
+    expect(historyReason({ kind: 'status_changed', reason: 'Fixed by reboot' })).toEqual({
+      kind: 'text',
+      text: 'Fixed by reboot',
+    });
+    expect(historyReason({ kind: 'assigned', reason: ' ' })).toBeUndefined();
   });
 });

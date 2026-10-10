@@ -10,6 +10,7 @@ import type {
   ResourceType,
   Affected,
   AffectedCandidate,
+  ChangeTicketLink,
 } from './types';
 const enc = encodeURIComponent;
 registerErrorMessages({
@@ -91,6 +92,9 @@ export const changesApi = {
       query: { cursor, limit: 50 },
       signal,
     }),
+  /** Tickets linked to this Change that the caller may see. */
+  tickets: (id: string, signal?: AbortSignal) =>
+    api.get<{ items: ChangeTicketLink[] }>(`/changes/${enc(id)}/tickets`, { signal }),
   impact: (id: string, depth: number, signal?: AbortSignal) =>
     api.get<ChangeImpact>(`/changes/${enc(id)}/impact`, { query: { depth }, signal }),
 };

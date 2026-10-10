@@ -12,6 +12,7 @@ import (
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
+	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/services/application"
 	servicespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/services/public"
 	servicesrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/services/repository"
@@ -32,6 +33,7 @@ func Relationships() *relationships.Graph {
 		reg.Register(changesapp.Triples...)
 		reg.Register(planningapp.Triples...)
 		reg.Register(securityapp.Triples...)
+		reg.Register(servicedeskapp.Triples...)
 		graph = relationships.New(reg)
 	})
 	return graph

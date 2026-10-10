@@ -339,6 +339,25 @@ func TestRestrictedViewerGetsNoInternalReferences(t *testing.T) {
 	}
 }
 
+func TestResultNoteCanBeMarkedForTheRequester(t *testing.T) {
+	rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", `{"resultNote":"DECT 4711","resultNoteForRequester":true}`)
+	if rec.Code != 200 {
+		t.Fatalf("complete = %d %s", rec.Code, rec.Body.String())
+	}
+	if m := decodeMap(t, rec); m["resultNoteForRequester"] != true {
+		t.Errorf("response = %v", m)
+	}
+	if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", `{}`); decodeMap(t, rec)["resultNoteForRequester"] != false {
+		t.Errorf("the default keeps the note internal: %s", rec.Body.String())
+	}
+	if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/complete", `{"resultNoteForRequester":true}`); rec.Code != 400 {
+		t.Errorf("a requester flag without a note = %d, want 400", rec.Code)
+	}
+	if rec := serve(t, contextTask(), with("tasks.work"), "POST", taskPath+"/start", `{"resultNoteForRequester":true}`); rec.Code != 400 {
+		t.Errorf("the flag on start = %d, want 400", rec.Code)
+	}
+}
+
 func TestCompleteTakesABoundedResultNote(t *testing.T) {
 	store := contextTask()
 	rec := serve(t, store, with("tasks.work"), "POST", taskPath+"/complete", `{"resultNote":"  Hotfix eingespielt.\nAlles geprüft.  "}`)

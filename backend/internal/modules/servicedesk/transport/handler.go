@@ -47,6 +47,11 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("GET /api/v1/tickets/{id}/history", h.history)
 	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
+	route("POST /api/v1/tickets/{id}/location", h.location)
+	route("GET /api/v1/tickets/{id}/changes", h.linkedChanges)
+	route("POST /api/v1/tickets/{id}/changes", h.linkChange)
+	route("DELETE /api/v1/tickets/{id}/changes/{changeId}", h.unlinkChange)
+	route("GET /api/v1/changes/{id}/tickets", h.ticketsOfChange)
 	registerQueues(route, h)
 	for _, op := range []string{application.OpStart, application.OpWait, application.OpResume, application.OpResolve, application.OpClose, application.OpReopen, application.OpCancel} {
 		route("POST /api/v1/tickets/{id}/"+op, h.transition(op))
@@ -108,7 +113,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage)}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage),
+		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -185,11 +191,20 @@ func toTicket(t application.Ticket) ticketDTO {
 }
 
 type commentDTO struct {
-	ID        string `json:"id"`
-	AuthorID  string `json:"authorId"`
-	Body      string `json:"body"`
-	Internal  bool   `json:"internal"`
-	CreatedAt string `json:"createdAt"`
+	ID               string   `json:"id"`
+	AuthorID         string   `json:"authorId"`
+	Body             string   `json:"body"`
+	Internal         bool     `json:"internal"`
+	MentionedUserIDs []string `json:"mentionedUserIds"`
+	CreatedAt        string   `json:"createdAt"`
+}
+
+func toComment(c application.Comment) commentDTO {
+	m := c.MentionedUserIDs
+	if m == nil {
+		m = []string{}
+	}
+	return commentDTO{ID: c.ID, AuthorID: c.AuthorID, Body: c.Body, Internal: c.Internal, MentionedUserIDs: m, CreatedAt: ts(c.CreatedAt)}
 }
 
 type detailDTO struct {
@@ -208,6 +223,7 @@ type abilitiesDTO struct {
 	Transition      bool `json:"transition"`
 	Move            bool `json:"move"`
 	MarkDuplicate   bool `json:"markDuplicate"`
+	SetLocation     bool `json:"setLocation"`
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -306,9 +322,9 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names, Abilities: abilitiesDTO{Comment: d.Abilities.Comment, InternalComment: d.Abilities.InternalComment,
-		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate}}
+		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation}}
 	for _, c := range d.Comments {
-		out.Comments = append(out.Comments, commentDTO{ID: c.ID, AuthorID: c.AuthorID, Body: c.Body, Internal: c.Internal, CreatedAt: ts(c.CreatedAt)})
+		out.Comments = append(out.Comments, toComment(c))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -344,16 +360,18 @@ func (h *handler) comment(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Body     string `json:"body"`
 		Internal bool   `json:"internal"`
+		// MentionedUserIDs name people an internal note mentions (they are notified when they may view the Queue).
+		MentionedUserIDs []string `json:"mentionedUserIds"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
-	c, err := h.svc.AddComment(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.Body, b.Internal)
+	c, err := h.svc.AddCommentWithMentions(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.Body, b.Internal, b.MentionedUserIDs)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, commentDTO{ID: c.ID, AuthorID: c.AuthorID, Body: c.Body, Internal: c.Internal, CreatedAt: ts(c.CreatedAt)})
+	httpx.JSON(w, http.StatusCreated, toComment(c))
 }
 
 func (h *handler) assign(w http.ResponseWriter, r *http.Request) {
@@ -406,21 +424,23 @@ func (h *handler) markDuplicate(w http.ResponseWriter, r *http.Request) {
 }
 
 type historyDTO struct {
-	ID            string `json:"id"`
-	At            string `json:"at"`
-	Kind          string `json:"kind"`
-	ActorID       string `json:"actorId,omitempty"`
-	Via           string `json:"via"`
-	Reason        string `json:"reason,omitempty"`
-	FromUserID    string `json:"fromUserId,omitempty"`
-	ToUserID      string `json:"toUserId,omitempty"`
-	FromTeamID    string `json:"fromTeamId,omitempty"`
-	ToTeamID      string `json:"toTeamId,omitempty"`
-	FromStatus    string `json:"fromStatus,omitempty"`
-	ToStatus      string `json:"toStatus,omitempty"`
-	FromPrio      string `json:"fromPriority,omitempty"`
-	ToPrio        string `json:"toPriority,omitempty"`
-	DuplicateOfID string `json:"duplicateOfId,omitempty"`
+	ID             string `json:"id"`
+	At             string `json:"at"`
+	Kind           string `json:"kind"`
+	ActorID        string `json:"actorId,omitempty"`
+	Via            string `json:"via"`
+	Reason         string `json:"reason,omitempty"`
+	FromUserID     string `json:"fromUserId,omitempty"`
+	ToUserID       string `json:"toUserId,omitempty"`
+	FromTeamID     string `json:"fromTeamId,omitempty"`
+	ToTeamID       string `json:"toTeamId,omitempty"`
+	FromStatus     string `json:"fromStatus,omitempty"`
+	ToStatus       string `json:"toStatus,omitempty"`
+	FromPrio       string `json:"fromPriority,omitempty"`
+	ToPrio         string `json:"toPriority,omitempty"`
+	DuplicateOfID  string `json:"duplicateOfId,omitempty"`
+	FromLocationID string `json:"fromLocationId,omitempty"`
+	ToLocationID   string `json:"toLocationId,omitempty"`
 }
 
 // history lists the change history of a Ticket (assignments, routing, status, priority, Queue moves) for people
@@ -434,7 +454,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	out := make([]historyDTO, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
-			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID})
+			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID})
 	}
 	httpx.JSON(w, http.StatusOK, struct {
 		Items []historyDTO      `json:"items"`
@@ -451,6 +471,23 @@ func (h *handler) priority(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := h.svc.SetPriority(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.Priority)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+// location sets (or, with a null locationId, clears) the affected Location of the ticket.
+func (h *handler) location(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int    `json:"expectedVersion"`
+		LocationID      *string `json:"locationId"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	t, err := h.svc.SetLocation(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.LocationID)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -513,4 +550,79 @@ func nilStr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+type changeLinkDTO struct {
+	ID        string `json:"id"`
+	ChangeID  string `json:"changeId,omitempty"`
+	Reference string `json:"reference,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Hidden    bool   `json:"hidden"`
+}
+
+func toChangeLink(l application.ChangeLink) changeLinkDTO {
+	return changeLinkDTO{ID: l.ID, ChangeID: l.ChangeID, Reference: l.Reference, Title: l.Title, Status: l.Status, Hidden: l.Hidden}
+}
+
+// linkedChanges lists the Changes related to the ticket.
+func (h *handler) linkedChanges(w http.ResponseWriter, r *http.Request) {
+	links, err := h.svc.LinkedChanges(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := make([]changeLinkDTO, 0, len(links))
+	for _, l := range links {
+		out = append(out, toChangeLink(l))
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []changeLinkDTO `json:"items"`
+	}{out})
+}
+
+// linkChange relates the ticket to a Change (idempotent).
+func (h *handler) linkChange(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ChangeID string `json:"changeId"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	l, err := h.svc.LinkChange(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ChangeID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toChangeLink(l))
+}
+
+func (h *handler) unlinkChange(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.UnlinkChange(r.Context(), caller(w, r), principal(r), r.PathValue("id"), r.PathValue("changeId")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ticketsOfChange lists the tickets related to a Change that the caller may see.
+func (h *handler) ticketsOfChange(w http.ResponseWriter, r *http.Request) {
+	links, err := h.svc.TicketsOfChange(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	type item struct {
+		TicketID  string `json:"ticketId"`
+		Reference string `json:"reference"`
+		Title     string `json:"title"`
+		Status    string `json:"status"`
+	}
+	out := make([]item, 0, len(links))
+	for _, l := range links {
+		out = append(out, item{l.TicketID, l.Reference, l.Title, l.Status})
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []item `json:"items"`
+	}{out})
 }

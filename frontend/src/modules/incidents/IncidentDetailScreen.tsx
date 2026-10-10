@@ -159,7 +159,9 @@ export function IncidentDetailScreen({ id }: { id: string }) {
         {incident.tickets === undefined && incident.linkedTickets > 0 ? (
           <p className="field-hint">{t('incidents.tickets.unavailable')}</p>
         ) : linked.length === 0 ? (
-          <p className="empty">{t('incidents.tickets.none')}</p>
+          <p className="empty">
+            {t(manage ? 'incidents.tickets.none' : 'incidents.tickets.noneVisible')}
+          </p>
         ) : (
           <ul className="plain-list">
             {linked.map((tk) => (

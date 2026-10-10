@@ -336,6 +336,8 @@ type transitionBody struct {
 	Reason          string `json:"reason"`
 	// ResultNote is the optional closing comment of complete (at most 1000 characters).
 	ResultNote string `json:"resultNote"`
+	// ResultNoteForRequester shows the note to the requester of the request the task belongs to (needs a note).
+	ResultNoteForRequester bool `json:"resultNoteForRequester"`
 }
 
 func (h *handler) transition(op application.Operation) http.HandlerFunc {
@@ -347,8 +349,8 @@ func (h *handler) transition(op application.Operation) http.HandlerFunc {
 		var v application.TaskView
 		var err error
 		if op == application.OpComplete {
-			v, err = h.svc.Complete(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.ResultNote)
-		} else if b.ResultNote != "" {
+			v, err = h.svc.CompleteWithVisibility(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.ResultNote, b.ResultNoteForRequester)
+		} else if b.ResultNote != "" || b.ResultNoteForRequester {
 			httpx.WriteError(w, http.StatusBadRequest, "tasks.invalid_request", "A result note is only valid when completing a task.")
 			return
 		} else {

@@ -4249,7 +4249,7 @@ paths:
     post:
       operationId: addTicketComment
       summary: Add a comment.
-      description: "The reporter and the affected user add public comments (a reply on a ticket waiting for the customer resumes it); `tickets.manage` adds public or internal ones. 409 on closed or cancelled tickets."
+      description: "The reporter and the affected user add public comments (a reply on a ticket waiting for the customer resumes it); `tickets.manage` adds public or internal ones. Internal notes may carry `mentionedUserIds` (notification category `ticket.mention`). 409 on closed or cancelled tickets."
       security:
         - sessionAuth: []
       parameters:
@@ -4684,7 +4684,7 @@ paths:
                       properties:
                         id: {type: string, format: uuid}
                         at: {type: string, format: date-time}
-                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate]}
+                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed]}
                         actorId: {type: string, format: uuid}
                         via: {type: string}
                         reason: {type: string}
@@ -4697,6 +4697,9 @@ paths:
                         fromPriority: {type: string}
                         toPriority: {type: string}
                         duplicateOfId: {type: string}
+                        fromLocationId: {type: string, description: "location_changed: the earlier affected Location; absent when there was none."}
+                        toLocationId: {type: string, description: "location_changed: the new affected Location; absent when it was cleared."}
+                      description: "Every entry has its own id; several entries made by one audit event (for example the assignee and the status of a start) are distinct."
                   names:
                     type: object
                     additionalProperties: {type: string}
@@ -4767,6 +4770,138 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/location:
+    post:
+      operationId: setTicketLocation
+      summary: Set the affected location.
+      description: "Explicit operation: the location the problem is at (the ticket starts with the affected person's profile location). Needs work access in the ticket's Queue (`abilities.setLocation`); `expectedVersion` is required (409 tickets.version_conflict). The Location must be active (400). Audited (servicedesk.ticket.location_changed) and listed in the history as `location_changed`. Setting the current value changes nothing."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketLocation'
+      responses:
+        '200':
+          description: The ticket.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ticket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/changes:
+    get:
+      operationId: listTicketChanges
+      summary: List the Changes related to a ticket.
+      description: "For people who view the ticket's Queue. Relationship `ticket RELATES_TO change` of the platform relationship service (owner: servicedesk). Changes the caller may not read appear as hidden placeholders."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The links.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/TicketChangeLink'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: linkTicketChange
+      summary: Relate a ticket to a Change.
+      description: "Needs work access in the ticket's Queue and the right to read the Change (an unreadable and an unknown Change are the same 404). Idempotent. At most 25 Changes per ticket. Audited (servicedesk.ticket.change_linked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [changeId]
+              properties:
+                changeId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketChangeLink'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/changes/{changeId}:
+    delete:
+      operationId: unlinkTicketChange
+      summary: Remove a ticket-to-Change link.
+      description: "Needs work access in the ticket's Queue. Idempotent. Audited (servicedesk.ticket.change_unlinked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: changeId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Link removed.}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/tickets:
+    get:
+      operationId: listChangeTickets
+      summary: List the tickets related to a Change.
+      description: "Served by the Service Desk. The caller must be able to read the Change (changes.view|manage|execute, requester or owner; otherwise 404). Only tickets the caller may view are listed."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The tickets.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [ticketId, reference, title, status]
+                      properties:
+                        ticketId: {type: string, format: uuid}
+                        reference: {type: string}
+                        title: {type: string}
+                        status: {type: string}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /tickets/{id}/start:
     post:
       operationId: startTicket
@@ -4825,7 +4960,7 @@ paths:
     post:
       operationId: resumeTicket
       summary: Resume work.
-      description: "Allowed from: waiting; `tickets.manage`. Audited (servicedesk.ticket.resume). 409 tickets.invalid_transition otherwise."
+      description: "Allowed from: waiting; `tickets.manage`. Assigns the caller when nobody is assigned (a colleague's assignee is kept). Audited (servicedesk.ticket.resume). 409 tickets.invalid_transition otherwise."
       security:
         - sessionAuth: []
       parameters:
@@ -16200,7 +16335,7 @@ components:
     Task:
       type: object
       additionalProperties: false
-      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, resultNote, version, createdAt, updatedAt]
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, resultNote, resultNoteForRequester, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -16219,6 +16354,7 @@ components:
         createdByUserId: {type: [string, "null"], format: uuid, description: "Null for a caller whose only permission is `tasks.work`."}
         completedByUserId: {type: [string, "null"], format: uuid, description: "For a caller whose only permission is `tasks.work`: set only when the caller completed the task."}
         resultNote: {type: [string, "null"], description: "The closing comment given with `complete`; null otherwise and after a reopen."}
+        resultNoteForRequester: {type: boolean, description: "True when the completer marked the note for the requester of the request."}
         recurrenceDefinitionId: {type: [string, "null"], format: uuid, description: "Set on tasks generated from a recurring task definition (which may have been deleted since)."}
         version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
         createdAt: {type: string, format: date-time}
@@ -16774,8 +16910,9 @@ components:
           items:
             type: object
             additionalProperties: false
-            required: [id, title, status, priority, mandatory, dueAt, assignedUserId, assignedTeamId]
+            required: [id, title, status, priority, mandatory, dueAt, assignedUserId, assignedTeamId, resultNote]
             properties:
+              resultNote: {type: [string, "null"], description: "The task's closing note when its completer marked it for the requester; only returned to the requester, the requested-for user and request staff, otherwise null. Notifications never carry it."}
               id: {type: string, format: uuid}
               title: {type: string}
               status: {type: string}
@@ -17505,6 +17642,10 @@ components:
         authorId: {type: string, format: uuid}
         body: {type: string}
         internal: {type: boolean}
+        mentionedUserIds:
+          type: array
+          items: {type: string, format: uuid}
+          description: "People an internal note mentions who may view the ticket's Queue (always empty for public comments). They received a ticket.mention notification."
         createdAt: {type: string, format: date-time}
     TicketDetail:
       allOf:
@@ -17522,7 +17663,7 @@ components:
               type: object
               additionalProperties: false
               description: "What the caller may do with this Ticket, computed from the global permissions, the Queue grants (a work grant in the Ticket's Queue works it), reporter/affected status and the Ticket status, with the same rules the operations enforce. The UI shows composer and actions from it; every operation is still authorized by the backend."
-              required: [comment, internalComment, assign, setPriority, transition, move, markDuplicate]
+              required: [comment, internalComment, assign, setPriority, transition, move, markDuplicate, setLocation]
               properties:
                 comment: {type: boolean, description: "POST /tickets/{id}/comments with internal=false."}
                 internalComment: {type: boolean, description: "POST /tickets/{id}/comments with internal=true."}
@@ -17531,6 +17672,7 @@ components:
                 transition: {type: boolean, description: "At least one lifecycle operation of allowedOperations is possible."}
                 move: {type: boolean, description: "POST /tickets/{id}/move-queue (the target Queue needs the create level)."}
                 markDuplicate: {type: boolean, description: "POST /tickets/{id}/duplicate."}
+                setLocation: {type: boolean, description: "POST /tickets/{id}/location (work level in the Queue, ticket not closed or cancelled)."}
             names:
               type: object
               additionalProperties: {type: string}
@@ -17556,6 +17698,29 @@ components:
       properties:
         body: {type: string, maxLength: 5000}
         internal: {type: boolean}
+        mentionedUserIds:
+          type: array
+          maxItems: 10
+          items: {type: string, format: uuid}
+          description: "Only with internal=true (400 otherwise). Inactive people and people who cannot view the ticket's Queue are dropped silently; the author is never notified. The rest get a ticket.mention notification that names the ticket, never the note text."
+    TicketLocation:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        locationId: {type: [string, "null"], format: uuid, description: "An active Location (GET /locations lookup); null clears it."}
+    TicketChangeLink:
+      type: object
+      additionalProperties: false
+      required: [id, hidden]
+      properties:
+        id: {type: string}
+        changeId: {type: string, format: uuid}
+        reference: {type: string}
+        title: {type: string}
+        status: {type: string}
+        hidden: {type: boolean, description: "True when the caller may not read the Change (changes.view|manage|execute, requester or owner); the other fields are then absent."}
     TicketAssign:
       type: object
       additionalProperties: false
@@ -19245,6 +19410,7 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         resultNote: {type: string, maxLength: 1000, description: "Optional closing comment, plain text. Sent with any other operation it is refused (400 tasks.invalid_request)."}
+        resultNoteForRequester: {type: boolean, default: false, description: "Show the note to the requester of the service request the task belongs to (GET /requests/{id}). Needs a resultNote (400 otherwise); default false keeps the note internal. Cleared when the task is reopened."}
     TaskBoardColumn:
       type: object
       additionalProperties: false

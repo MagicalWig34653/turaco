@@ -9,6 +9,7 @@ import (
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	secpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 	sdpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -16,18 +17,20 @@ import (
 
 // AuditResolvers labels audit actors and targets with display names. Only names come back (Organization's public
 // contract returns nothing else); target types without a resolver keep their ids. Tickets resolve to their
-// number (never the title), queues and roles to their name, assets to their tag or reference. Module keys are
+// number (never the title), queues and roles to their name, assets to their tag or reference, security advisories to their identifier (never the title). Module keys are
 // already readable and are translated by the client (modules.<key>.name).
 func AuditResolvers(pool *pgxpool.Pool) *audit.Resolvers {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
 	sd := sdpublic.NewNameLookup(pool)
 	as := assetspublic.NewNameLookup(pool)
+	sec := secpublic.NewNameLookup(pool)
 	return audit.NewResolvers(
 		nameResolver{types: []string{"user"}, names: dir.UserNames},
 		nameResolver{types: []string{"team"}, names: dir.TeamNames},
 		nameResolver{types: []string{"location"}, names: dir.LocationNames},
 		nameResolver{types: []string{"ticket"}, names: uuidOnly(sd.TicketNumbers)},
 		nameResolver{types: []string{"ticket_queue"}, names: uuidOnly(sd.QueueNames)},
+		nameResolver{types: []string{"security_advisory", "advisory"}, names: uuidOnly(sec.AdvisoryLabels)},
 		nameResolver{types: []string{"asset"}, names: uuidOnly(as.AssetLabels)},
 		nameResolver{types: []string{"role"}, names: uuidOnly(func(ctx context.Context, ids []string) (map[string]string, error) {
 			return roles.RoleNames(ctx, pool, ids)

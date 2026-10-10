@@ -6,8 +6,11 @@ export function primaryTicketOperation(operations: readonly TicketOperation[]) {
   return order.find((operation) => operations.includes(operation));
 }
 
-export function appendWorkaround(draft: string, workaround: string): string {
-  return [draft.trimEnd(), workaround.trim()].filter(Boolean).join('\n\n').slice(0, 5000);
+/** Adds the workaround below the draft; `source` is a ready-made line such as "Workaround from PRB-1:". */
+export function appendWorkaround(draft: string, workaround: string, source = ''): string {
+  const text = workaround.trim();
+  const block = text && source.trim() ? `${source.trim()}\n${text}` : text;
+  return [draft.trimEnd(), block].filter(Boolean).join('\n\n').slice(0, 5000);
 }
 
 /** A successful send must not erase another mode or edits made while it was pending. */
@@ -27,7 +30,9 @@ export type AbilityFallback = {
   canMove: boolean;
 };
 
-export type ResolvedAbilities = TicketAbilities & {
+export type ResolvedAbilities = Omit<TicketAbilities, 'setLocation'> & {
+  /** The affected person's location may be corrected; only a server that says so offers it. */
+  setLocation: boolean;
   /** The composer is shown when at least one comment kind is allowed. */
   composer: boolean;
   /** Both kinds are allowed, so the reply/internal switch is offered. */
@@ -50,9 +55,11 @@ export function resolveAbilities(
     transition: true,
     move: fallback.canMove,
     markDuplicate: fallback.manage,
+    setLocation: false,
   };
   return {
     ...base,
+    setLocation: base.setLocation === true,
     composer: base.comment || base.internalComment,
     canChooseKind: base.comment && base.internalComment,
   };

@@ -56,3 +56,20 @@ func TestTerminalAndLabel(t *testing.T) {
 		t.Errorf("label = %q", l)
 	}
 }
+
+func TestRequesterNotesAreForTheRequesterAndStaffOnly(t *testing.T) {
+	r := Request{RequesterID: "u1", RequestedForID: "u3"}
+	for name, c := range map[string]struct {
+		p    Principal
+		want bool
+	}{
+		"requester":     {Principal{UserID: "u1"}, true},
+		"requested for": {Principal{UserID: "u3"}, true},
+		"staff":         {Principal{UserID: "u2", View: true}, true},
+		"approver only": {Principal{UserID: "u4"}, false},
+	} {
+		if got := mayReadRequesterNotes(c.p, r); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}

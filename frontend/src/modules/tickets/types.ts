@@ -68,6 +68,8 @@ export type TicketComment = {
   body: string;
   internal: boolean;
   createdAt: string;
+  /** Colleagues mentioned in an internal note (staff only). */
+  mentionedUserIds?: string[];
 };
 
 export const historyKinds = [
@@ -79,6 +81,7 @@ export const historyKinds = [
   'status_changed',
   'priority_changed',
   'queue_moved',
+  'location_changed',
 ] as const;
 export type TicketHistoryKind = (typeof historyKinds)[number];
 
@@ -100,6 +103,8 @@ export type TicketHistoryEntry = {
   toStatus?: string | null;
   fromPriority?: string | null;
   toPriority?: string | null;
+  fromLocationId?: string | null;
+  toLocationId?: string | null;
 };
 
 /** What the caller may do with this Ticket; decided by the server per Ticket. */
@@ -111,6 +116,8 @@ export type TicketAbilities = {
   transition: boolean;
   move: boolean;
   markDuplicate: boolean;
+  /** Whether the affected person's location may be corrected; absent on older servers. */
+  setLocation?: boolean;
 };
 
 export type TicketDetail = Ticket & {
@@ -171,4 +178,14 @@ export type TicketQueue = {
   canCreate: boolean;
   grants?: TicketQueueGrant[];
   archivedAt?: string;
+};
+
+/** A Change linked to a Ticket; `hidden` rows are linked but not visible to the caller. */
+export type TicketChangeLink = {
+  id: string;
+  changeId: string;
+  reference?: string;
+  title?: string;
+  status?: string;
+  hidden?: boolean;
 };

@@ -54,6 +54,8 @@ export type RequestTaskView = {
   dueAt: string | null;
   assignedUserId: string | null;
   assignedTeamId: string | null;
+  /** The result note, only when the assignee released it for the requester. */
+  resultNote?: string | null;
 };
 
 export type RequestField = {
