@@ -171,3 +171,15 @@ Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Know
 - **PARTLY PLANNED - Administration** (F14, [design](f14-administration-design.md)): A-A, A-A2, A-B, A-D and A-E are implemented. Backend implemented (A-C): platform health, worker heartbeat, setup checklist, audit names, export and retention. Their screens (A-F) are implemented; not implemented: connectivity probes, global search records, External Parties (A-G). CSV import, bulk edit, directory identity linking and access extension are implemented (entry "F14 people operations").
 - Endpoint Agent management (later/optional; the agent binary is a capability placeholder).
 - Sim 4 UI fixes (frontend): ticket timeline maps reason codes to labels, the wait dialog takes an optional note, assignment offers "Assign to me", paged lists ignore a repeated page, Audit has a "Last hour" range and shows the CLI `osUser` only with `platform.audit.export`, external-assignee Task assignment warns about internal references, and People/Teams/Locations/Departments leave the navigation for holders of only `organization.view` (routes stay reachable, backend unchanged).
+
+## Open backlog (2026-10-10)
+
+Recorded so the next session does not depend on conversation memory. Order is the product owner's priority after the F14 and F15 foundations merged (PR 56 to 59).
+
+- **Entra login rest (F15):** the sign-out redirect (`auth.entra_signout_mode` is stored, not applied), step-up and assurance (E-D), Graph reconciliation and cloud-only group sync (E-C), guests (after external parties).
+- **Teams:** personal Adaptive Cards (T-B), approve/reject actions with the Bot Framework verifier (T-C, hosted or published endpoints only), meeting and channel links (T-D); a test send and a per-destination rate limiter for T-A.
+- **F14 rest:** external parties and the vendor portal (A-G), active connection probes (`platform.health.probe`), `Mode()` on every provider port.
+- **Providers:** AnyDesk/HopToDesk URI formats and APIs against vendor documentation, the software provider client, OSV and MSRC advisory feeds (OSV in progress), real verification of the Intune, Autotask and Teams clients with live accounts.
+- **Storage:** master key rotation, ClamAV in the full compose and Swarm examples, signature freshness monitoring.
+- **Simulation findings not yet built:** partial-word search for problems/changes/requests (no text index, newest 200 only), ticket follow for requesters, callback tasks from tickets, manager overview, data-protection prompt on security tickets, structured measurement/firmware data on assets, expected delivery date on "waiting for hardware".
+- **Service desk:** SLA and time tracking, routing rules, meetings and calendar, per-site permission scoping (needs an ADR), production first-administrator path in the UI, migration command in the container images, release packages, Playwright end-to-end tests in the repository.
