@@ -3,8 +3,9 @@
 //
 // The port holds the normalized record types the Security module imports, the Provider contract a feed
 // adapter implements, an in-memory Fake for tests and local development and a placeholder that reports
-// "not configured". Real accountless adapters live in the sub-packages nvd (NVD API 2.0) and cisakev
-// (CISA Known Exploited Vulnerabilities catalog); OSV, vendor bulletins and MSRC are later adapters.
+// "not configured". Real accountless adapters live in the sub-packages nvd (NVD API 2.0), osv (OSV.dev
+// package queries) and cisakev (CISA Known Exploited Vulnerabilities catalog); vendor bulletins and MSRC
+// are later adapters.
 // Provider DTOs never cross this boundary: adapters return the normalized records below. The same
 // records are accepted by the bounded JSON import (POST /api/v1/security/advisories/import).
 //
@@ -111,6 +112,22 @@ type Syncer interface {
 	// Sync reads advisories modified since the given time (zero: the adapter's default window).
 	Sync(ctx context.Context, since time.Time) (SyncResult, error)
 	// ByID reads the advisories with the given ids (CVE ids); unknown ids are skipped.
+	ByID(ctx context.Context, ids []string) ([]AdvisoryRecord, error)
+}
+
+// PackageQuery names one package of a package ecosystem (for example ecosystem "npm", name "lodash").
+type PackageQuery struct {
+	Ecosystem string
+	Name      string
+}
+
+// PackageSource is a query-based advisory feed without a modification-time API (OSV): it reports every
+// known vulnerability of the given packages. The result is bounded like a Syncer read: Complete is false
+// when the record bound or an error stopped the read (Records then hold the progress made so far) and
+// Through is not used.
+type PackageSource interface {
+	Packages(ctx context.Context, pkgs []PackageQuery) (SyncResult, error)
+	// ByID reads the advisories with the given source ids; unknown ids are skipped.
 	ByID(ctx context.Context, ids []string) ([]AdvisoryRecord, error)
 }
 

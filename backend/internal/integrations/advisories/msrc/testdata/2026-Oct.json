@@ -1,0 +1,13 @@
+{"DocumentTitle":{"Value":"October 2026 Security Updates"},
+ "ProductTree":{"FullProductName":[
+  {"ProductID":"11926","Value":"Windows 11 Version 24H2 for x64-based Systems"},
+  {"ProductID":"12001","Value":"Microsoft Office 2021 LTSC"}]},
+ "Vulnerability":[
+  {"CVE":"CVE-2026-12345","Title":{"Value":"Windows Kernel Elevation of Privilege Vulnerability"},
+   "Notes":[{"Title":"Description","Type":1,"Ordinal":"1","Value":"An attacker could <b>gain</b> SYSTEM privileges."}],
+   "RevisionHistory":[{"Date":"2026-10-13T07:00:00Z"},{"Date":"2026-10-20T07:00:00Z"}],
+   "Threats":[{"Type":3,"Description":{"Value":"Important"},"ProductID":["11926"]},{"Type":3,"Description":{"Value":"Critical"},"ProductID":["12001"]}],
+   "ProductStatuses":[{"Type":3,"ProductID":["11926","12001","99999"]}],
+   "Remediations":[{"Type":2,"Description":{"Value":"5044285"},"FixedBuild":"10.0.26100.3194","ProductID":["11926"]}]},
+  {"CVE":"not-a-cve","Title":{"Value":"ignored"}},
+  {"CVE":"CVE-2026-12345","Title":{"Value":"duplicate is ignored"}}]}

@@ -10,7 +10,7 @@
 //	turaco-admin emergency set-password --login <name> [--password-stdin]
 //	turaco-admin emergency enable|disable --login <name>
 //	turaco-admin security import < advisories.json
-//	turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
+//	turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]
 //	turaco-admin demo seed   (APP_ENV=development only)
 //	turaco-admin demo seed-hospital   (APP_ENV=development only; hospital IT simulation)
 package main
@@ -58,7 +58,7 @@ const usage = `usage:
   turaco-admin entra link   --user <username|email|uuid> --tenant <guid> --object <guid>
   turaco-admin entra unlink --tenant <guid> --object <guid>
   turaco-admin security import < advisories.json
-  turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
+  turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]
   turaco-admin demo seed   (development only)
   turaco-admin demo seed-hospital   (development only; hospital IT simulation)`
 
