@@ -42,7 +42,12 @@ type Filter struct {
 	ActionPrefix  string
 	ActorID       string
 	CorrelationID string
-	From, To      *time.Time
+	// Via is "ai" or "mcp" (AI-assisted actions). ActorKind is "user" or "system"; SystemActor narrows system
+	// actors by name ("cli", "directory-sync", ...).
+	Via         string
+	ActorKind   string
+	SystemActor string
+	From, To    *time.Time
 }
 
 // Page is keyset pagination, newest first: events are ordered by
@@ -71,6 +76,8 @@ type Event struct {
 	Before        json.RawMessage
 	After         json.RawMessage
 	Metadata      json.RawMessage
+	// Via is "ai" or "mcp" for AI-assisted actions, empty otherwise.
+	Via string
 }
 
 // Reader queries platform.audit_events.
@@ -95,6 +102,15 @@ func (f Filter) validate() error {
 	if f.ActorID != "" && !uuidPattern.MatchString(f.ActorID) {
 		return ErrInvalidFilter
 	}
+	if f.Via != "" && f.Via != "ai" && f.Via != "mcp" {
+		return ErrInvalidFilter
+	}
+	if f.ActorKind != "" && f.ActorKind != "user" && f.ActorKind != "system" {
+		return ErrInvalidFilter
+	}
+	if f.SystemActor != "" && (utf8.RuneCountInString(f.SystemActor) > 64 || !utf8.ValidString(f.SystemActor) || strings.ContainsRune(f.SystemActor, 0)) {
+		return ErrInvalidFilter
+	}
 	if f.From != nil && f.To != nil && !f.From.Before(*f.To) {
 		return ErrInvalidFilter
 	}
@@ -115,6 +131,83 @@ func (r *Reader) List(ctx context.Context, f Filter, p Page) (Result, error) {
 	if p.Limit > MaxLimit {
 		p.Limit = MaxLimit
 	}
+	conds, args := f.conditions()
+	if p.Cursor != "" {
+		at, id, err := decodeCursor(p.Cursor)
+		if err != nil {
+			return Result{}, err
+		}
+		args = append(args, at, id)
+		conds = append(conds, fmt.Sprintf("(occurred_at, id) < ($%d, $%d)", len(args)-1, len(args)))
+	}
+	sql := `SELECT id::text, occurred_at, actor_id::text, action, target_type, target_id, correlation_id, before_data, after_data, metadata, via
+		FROM platform.audit_events`
+	if len(conds) > 0 {
+		sql += " WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, p.Limit+1)
+	sql += fmt.Sprintf(" ORDER BY occurred_at DESC, id DESC LIMIT $%d", len(args))
+	rows, err := r.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return Result{}, fmt.Errorf("query audit events: %w", err)
+	}
+	defer rows.Close()
+	res := Result{Items: []Event{}}
+	for rows.Next() {
+		var e Event
+		var via *string
+		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.Action, &e.TargetType, &e.TargetID, &e.CorrelationID, &e.Before, &e.After, &e.Metadata, &via); err != nil {
+			return Result{}, fmt.Errorf("query audit events: scan: %w", err)
+		}
+		if via != nil {
+			e.Via = *via
+		}
+		res.Items = append(res.Items, e)
+	}
+	if err := rows.Err(); err != nil {
+		return Result{}, fmt.Errorf("query audit events: %w", err)
+	}
+	if len(res.Items) > p.Limit {
+		res.Items = res.Items[:p.Limit]
+		res.NextCursor = encodeCursor(res.Items[p.Limit-1])
+	}
+	return res, nil
+}
+
+// Count returns the number of events matching f, but at most limit (a capped count: callers compare the result with
+// limit to learn that there are at least that many). It never scans more than limit rows.
+func (r *Reader) Count(ctx context.Context, f Filter, limit int) (int, error) {
+	if err := f.validate(); err != nil {
+		return 0, err
+	}
+	if limit <= 0 {
+		return 0, ErrInvalidLimit
+	}
+	conds, args := f.conditions()
+	sql := "SELECT count(*) FROM (SELECT 1 FROM platform.audit_events"
+	if len(conds) > 0 {
+		sql += " WHERE " + strings.Join(conds, " AND ")
+	}
+	args = append(args, limit)
+	sql += fmt.Sprintf(" LIMIT $%d) c", len(args))
+	var n int
+	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count audit events: %w", err)
+	}
+	return n, nil
+}
+
+// Oldest returns the time of the oldest stored event, or nil when there is none.
+func (r *Reader) Oldest(ctx context.Context) (*time.Time, error) {
+	var t *time.Time
+	if err := r.pool.QueryRow(ctx, `SELECT min(occurred_at) FROM platform.audit_events`).Scan(&t); err != nil {
+		return nil, fmt.Errorf("oldest audit event: %w", err)
+	}
+	return t, nil
+}
+
+// conditions returns the WHERE conditions and arguments of the filter (without the cursor).
+func (f Filter) conditions() ([]string, []any) {
 	var conds []string
 	var args []any
 	add := func(cond string, arg any) {
@@ -145,48 +238,26 @@ func (r *Reader) List(ctx context.Context, f Filter, p Page) (Result, error) {
 	if f.CorrelationID != "" {
 		add("correlation_id = ?", f.CorrelationID)
 	}
+	if f.Via != "" {
+		add("via = ?", f.Via)
+	}
+	switch f.ActorKind {
+	case "user":
+		conds = append(conds, "actor_id IS NOT NULL")
+	case "system":
+		conds = append(conds, "actor_id IS NULL")
+	}
+	if f.SystemActor != "" {
+		conds = append(conds, "actor_id IS NULL")
+		add("metadata->>'actor' = ?", f.SystemActor)
+	}
 	if f.From != nil {
 		add("occurred_at >= ?", f.From.UTC())
 	}
 	if f.To != nil {
 		add("occurred_at < ?", f.To.UTC())
 	}
-	if p.Cursor != "" {
-		at, id, err := decodeCursor(p.Cursor)
-		if err != nil {
-			return Result{}, err
-		}
-		args = append(args, at, id)
-		conds = append(conds, fmt.Sprintf("(occurred_at, id) < ($%d, $%d)", len(args)-1, len(args)))
-	}
-	sql := `SELECT id::text, occurred_at, actor_id::text, action, target_type, target_id, correlation_id, before_data, after_data, metadata
-		FROM platform.audit_events`
-	if len(conds) > 0 {
-		sql += " WHERE " + strings.Join(conds, " AND ")
-	}
-	args = append(args, p.Limit+1)
-	sql += fmt.Sprintf(" ORDER BY occurred_at DESC, id DESC LIMIT $%d", len(args))
-	rows, err := r.pool.Query(ctx, sql, args...)
-	if err != nil {
-		return Result{}, fmt.Errorf("query audit events: %w", err)
-	}
-	defer rows.Close()
-	res := Result{Items: []Event{}}
-	for rows.Next() {
-		var e Event
-		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.Action, &e.TargetType, &e.TargetID, &e.CorrelationID, &e.Before, &e.After, &e.Metadata); err != nil {
-			return Result{}, fmt.Errorf("query audit events: scan: %w", err)
-		}
-		res.Items = append(res.Items, e)
-	}
-	if err := rows.Err(); err != nil {
-		return Result{}, fmt.Errorf("query audit events: %w", err)
-	}
-	if len(res.Items) > p.Limit {
-		res.Items = res.Items[:p.Limit]
-		res.NextCursor = encodeCursor(res.Items[p.Limit-1])
-	}
-	return res, nil
+	return conds, args
 }
 
 // prefixUpperBound returns the smallest string greater than every string with

@@ -236,7 +236,8 @@ func main() {
 	}
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
-	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger)
+	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger,
+		audittransport.WithResolvers(wiring.AuditResolvers(pool)), audittransport.WithRetentionDays(cfg.AuditRetentionDays))
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)

@@ -6,7 +6,7 @@
     <title>Turaco — IT work, connected.</title>
     <meta
       name="description"
-      content="An open-source-first IT operations workspace for internal IT teams. Explore Turaco's early build, architecture, and public documentation."
+      content="An open-source-first IT operations workspace for internal IT teams, with a query workbench, ticket queues and boards. Early build; explore the status, architecture and public documentation."
     />
     <meta property="og:title" content="Turaco — IT work, connected." />
     <meta
@@ -82,6 +82,51 @@
             d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"
           />
         </symbol>
+        <symbol id="i-filter" viewBox="0 0 24 24">
+          <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+        </symbol>
+        <symbol id="i-bookmark" viewBox="0 0 24 24">
+          <path d="M6 3h12v18l-6-4-6 4zM9 8h6" />
+        </symbol>
+        <symbol id="i-sidebar" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M9 3v18M5.5 8h.01M5.5 12h.01M13 8h5m-5 4h5" />
+        </symbol>
+        <symbol id="i-columns" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="5" height="18" rx="1.5" />
+          <rect x="9.5" y="3" width="5" height="11" rx="1.5" />
+          <rect x="16" y="3" width="5" height="15" rx="1.5" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-4-4" />
+        </symbol>
+        <symbol id="i-users" viewBox="0 0 24 24">
+          <circle cx="9" cy="8" r="3.5" />
+          <path
+            d="M2 20a7 7 0 0 1 14 0m1-16a3.5 3.5 0 0 1 0 7m2 9a6 6 0 0 0-3-5"
+          />
+        </symbol>
+        <symbol id="i-key" viewBox="0 0 24 24">
+          <circle cx="8" cy="15" r="4" />
+          <path d="m11 12 9-9m-3 3 3 3m-6 0 2 2" />
+        </symbol>
+        <symbol id="i-mail" viewBox="0 0 24 24">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="m3 7 9 6 9-6" />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </symbol>
+        <symbol id="i-toggle" viewBox="0 0 24 24">
+          <rect x="2" y="7" width="20" height="10" rx="5" />
+          <circle cx="16" cy="12" r="2.5" />
+        </symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+        </symbol>
       </defs>
     </svg>
     <header class="landing-header wrap">
@@ -91,7 +136,8 @@
         >turaco<span class="preview-tag">PREVIEW</span></a
       >
       <nav aria-label="Main navigation">
-        <a href="#workspace">Workspace</a><a href="#roadmap">Roadmap</a
+        <a href="#workspace">Workspace</a><a href="#workbench">Workbench</a
+        ><a href="#roadmap">Roadmap</a
         ><a href="docs/README.html">Docs <span aria-hidden="true">↗</span></a>
       </nav>
       <label class="theme-control"
@@ -130,7 +176,7 @@
           <p class="hero-detail">
             One connected IT operations workspace for internal teams — from the
             first support request to the device, the change, and the bigger
-            picture.
+            picture — with views, queues and boards for the daily work.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="docs/README.html"
@@ -158,10 +204,12 @@
             </div>
             <div class="mock-body">
               <div class="mock-sidebar" aria-hidden="true">
-                <span class="mini-label">WORKSPACE</span
+                <span class="mini-label">WORKSPACE ▾</span
                 ><span class="selected">◈ &nbsp; My Work</span
                 ><span>▤ &nbsp; Service desk</span><span>▣ &nbsp; Assets</span
-                ><span>⌘ &nbsp; Endpoints</span><span>◇ &nbsp; Knowledge</span>
+                ><span>⌘ &nbsp; Endpoints</span
+                ><span class="mini-label">PINNED ▾</span
+                ><span>★ &nbsp; Open in IT</span>
                 <div class="mock-sidebar-bottom">◌ &nbsp; Settings</div>
               </div>
               <div class="mock-main">
@@ -269,8 +317,8 @@
             ><span class="card-status">Implemented core</span>
             <h3>Support with context</h3>
             <p>
-              Service desk, knowledge, problems and runbooks connect support
-              work to people and devices.
+              Service desk with queues, knowledge, problems and runbooks connect
+              support work to people and devices.
             </p>
             <a href="docs/product/current-status.html"
               >Service desk &amp; knowledge <span aria-hidden="true">↗</span></a
@@ -292,11 +340,12 @@
           <article class="feature-card">
             <svg class="feature-icon" aria-hidden="true">
               <use href="#i-device" /></svg
-            ><span class="card-status">UI + backend slices</span>
+            ><span class="card-status">UI · fake Intune adapter</span>
             <h3>Know your endpoints</h3>
             <p>
               Device and software observations keep their source and freshness.
-              Management intelligence backends separate intent from evidence.
+              Assigned, expected and observed stay separate. Software rollout
+              and remote access run against fake providers.
             </p>
             <a href="docs/product/f6-endpoint-intelligence-design.html"
               >Endpoint intelligence <span aria-hidden="true">↗</span></a
@@ -305,11 +354,11 @@
           <article class="feature-card">
             <svg class="feature-icon" aria-hidden="true">
               <use href="#i-branch" /></svg
-            ><span class="card-status">UI + backend slices</span>
+            ><span class="card-status">UI + backend</span>
             <h3>See what a change touches</h3>
             <p>
-              Physical topology has a UI. Services, dependencies, changes,
-              initiatives and maintenance have backend slices.
+              Topology, services and dependencies, changes with approvals,
+              initiatives and a maintenance calendar share one impact view.
             </p>
             <a href="docs/product/f7-infrastructure-change-design.html"
               >Infrastructure &amp; change <span aria-hidden="true">↗</span></a
@@ -318,7 +367,7 @@
           <article class="feature-card">
             <svg class="feature-icon" aria-hidden="true">
               <use href="#i-shield" /></svg
-            ><span class="card-status">Backend implemented</span>
+            ><span class="card-status">UI + backend</span>
             <h3>Turn security into work</h3>
             <p>
               Imported advisories, software matching, findings and remediation
@@ -331,11 +380,11 @@
           <article class="feature-card feature-highlight">
             <svg class="feature-icon" aria-hidden="true">
               <use href="#i-sun" /></svg
-            ><span class="card-status">Manual UI · feed backend</span>
+            ><span class="card-status">UI + computed feed</span>
             <h3>Start with what matters</h3>
             <p>
-              My Work brings tasks together. Manual briefing publications have a
-              UI; the computed briefing feed is backend-only.
+              My Work brings tasks together; the IT briefing is computed from
+              the rest of the workspace and filtered by what you may see.
             </p>
             <a href="docs/product/current-status.html"
               >My Work &amp; briefing <span aria-hidden="true">↗</span></a
@@ -346,12 +395,242 @@
           <span aria-hidden="true">↳</span>
           <p>
             <strong>A project, not a promise of production readiness.</strong>
-            Intune uses a fake adapter; advisories come from the NVD and CISA
-            KEV feeds or manual import. The live Graph client, the Autotask REST
-            client and webhook are not implemented.
+            Intune, software management and remote access run against fake
+            provider adapters; advisories come from the NVD and CISA KEV feeds
+            or manual import. Planned, not built: the live Microsoft Graph and
+            Autotask REST clients, an MCP server, AI writes and external
+            presence sources.
             <a href="docs/product/current-status.html"
               >Read the full implementation status.</a
             >
+          </p>
+        </aside>
+      </section>
+      <section id="workbench" class="section wrap reveal">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">02 / THE WORKBENCH</p>
+            <h2>
+              Your lists, your way.<br /><span class="soft-text"
+                >Shared on purpose.</span
+              >
+            </h2>
+          </div>
+          <p>
+            One query model sits under tickets, devices and tasks. Views, queues
+            and boards are built on it instead of becoming separate engines.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-filter" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>Filter builder</h3>
+            <p>
+              Click together conditions with operators and AND/OR groups on
+              tickets, devices and tasks. The filter lives in the URL and every
+              field respects what you may see.
+            </p>
+            <a href="docs/decisions/ADR-0033-workbench-views-query-engine.html"
+              >Query engine <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-bookmark" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>Saved and shared views</h3>
+            <p>
+              Save filter, sort and columns, then share with people, teams,
+              roles or everyone. A view runs as the viewer, so sharing never
+              grants data access.
+            </p>
+            <a href="docs/product/f13-workbench-views-design.html"
+              >Workbench design <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-sidebar" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>Pins and a calmer sidebar</h3>
+            <p>
+              Pin views to a sidebar grouped into collapsible sections, with
+              reorder and an icon-only rail. Administrators can pin views for
+              teams.
+            </p>
+            <a href="docs/development/ui-design-system.html"
+              >UI design system <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-ticket" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>Ticket queues</h3>
+            <p>
+              Each queue is a desk with its own numbering, such as IT-1042, and
+              per-queue access. Moving a ticket issues a new number and keeps
+              the old one as an alias. Routing rules are planned.
+            </p>
+            <a href="docs/product/f13-workbench-views-design.html"
+              >Queues and numbering <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-columns" /></svg
+            ><span class="card-status">Preview</span>
+            <h3>Kanban boards</h3>
+            <p>
+              A board is a saved task view with two to eight columns. Moving a
+              card runs the normal task operation with its own checks and audit.
+              Early UI.
+            </p>
+            <a href="docs/product/f13-workbench-views-design.html"
+              >Task boards <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-search" /></svg
+            ><span class="card-status">Preview</span>
+            <h3>Cmd+K search</h3>
+            <p>
+              Jump to any screen or command from one palette, and find tickets
+              by reference, title or person. Results follow your permissions.
+            </p>
+            <a href="docs/product/f14-administration-design.html"
+              >Search and palette <span aria-hidden="true">↗</span></a
+            >
+          </article>
+        </div>
+        <aside class="honesty-note">
+          <span aria-hidden="true">↳</span>
+          <p>
+            <strong>Previews are marked.</strong> Boards and Cmd+K ticket search
+            are early UI. Queue counts on system views, a restore screen for
+            archived views and view-share notifications are not built.
+            <a href="docs/product/current-status.html"
+              >See the implementation status.</a
+            >
+          </p>
+        </aside>
+      </section>
+      <section id="administration" class="section wrap reveal">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">03 / ADMINISTRATION</p>
+            <h2>
+              Run it your way.<br /><span class="soft-text"
+                >With a clear audit trail.</span
+              >
+            </h2>
+          </div>
+          <p>
+            An administration area for people, access and system switches. Least
+            privilege and audit apply to every change.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-users" /></svg
+            ><span class="card-status">Early UI</span>
+            <h3>People, teams, locations</h3>
+            <p>
+              Manage people, departments, teams and a location tree in one area.
+              Directory-owned fields stay read-only and show their source and
+              freshness.
+            </p>
+            <a href="docs/product/f14-administration-design.html"
+              >Administration design <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-key" /></svg
+            ><span class="card-status">Early UI</span>
+            <h3>Roles and effective permissions</h3>
+            <p>
+              Start from role templates and see why a person can do something,
+              with the roles and permissions behind it. Backend checks stay
+              authoritative.
+            </p>
+            <a href="docs/product/f14-administration-design.html"
+              >Roles and access <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-mail" /></svg
+            ><span class="card-status">Early UI</span>
+            <h3>Local accounts and invitations</h3>
+            <p>
+              People without a directory account sign in through single-use
+              invitation links that expire. Credentials are never shown to
+              administrators.
+            </p>
+            <a
+              href="docs/decisions/ADR-0034-local-accounts-and-external-parties.html"
+              >Local accounts <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-lock" /></svg
+            ><span class="card-status">In progress</span>
+            <h3>External vendor accounts</h3>
+            <p>
+              Restricted accounts for vendors and partners, kept apart from
+              employees and limited to explicit teams. The creation flow is not
+              finished.
+            </p>
+            <a
+              href="docs/decisions/ADR-0034-local-accounts-and-external-parties.html"
+              >External parties <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-toggle" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>Module switches</h3>
+            <p>
+              Enable or disable modules at runtime. Navigation, views and search
+              follow the switch, so a disabled area stays out of the way.
+            </p>
+            <a href="docs/decisions/ADR-0032-module-switches.html"
+              >Module switches <span aria-hidden="true">↗</span></a
+            >
+          </article>
+          <article class="feature-card">
+            <svg class="feature-icon" aria-hidden="true">
+              <use href="#i-globe" /></svg
+            ><span class="card-status">Implemented</span>
+            <h3>German, English, three themes</h3>
+            <p>
+              The interface ships in German and English with the Turaco, Dark
+              and Cyberpunk themes, plus Auto that follows your system.
+            </p>
+            <a href="docs/development/ui-design-system.html"
+              >Interface and themes <span aria-hidden="true">↗</span></a
+            >
+          </article>
+        </div>
+        <aside class="honesty-note">
+          <span aria-hidden="true">↳</span>
+          <p>
+            <strong>Still moving.</strong> The administration UI is new.
+            Integration and system health pages, audit usability and CSV import
+            are planned. For usability tests, a
+            <a href="docs/development/simulation-hospital.html"
+              >hospital-IT simulation dataset</a
+            >
+            and a
+            <a href="docs/development/load-testing.html">load generator</a>
+            exist as development tooling, not as product features.
           </p>
         </aside>
       </section>
@@ -359,7 +638,7 @@
         <div class="wrap section reveal">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">02 / BUILT WITH INTENTION</p>
+              <p class="eyebrow">04 / BUILT WITH INTENTION</p>
               <h2>Good foundations.<br />Fewer surprises.</h2>
             </div>
             <p>
@@ -424,7 +703,7 @@
       </section>
       <section class="section wrap architecture-section reveal">
         <div class="architecture-copy">
-          <p class="eyebrow">03 / UNDER THE HOOD</p>
+          <p class="eyebrow">05 / UNDER THE HOOD</p>
           <h2>
             Connected by design.<br /><span class="soft-text"
               >Clear at the boundaries.</span
@@ -542,7 +821,7 @@
       <section id="roadmap" class="section wrap reveal">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">04 / THE ROAD AHEAD</p>
+            <p class="eyebrow">06 / THE ROAD AHEAD</p>
             <h2>
               Built in slices.<br /><span class="soft-text"
                 >Shared in the open.</span
@@ -550,14 +829,14 @@
             </h2>
           </div>
           <p>
-            <strong><span data-count="12">12</span> phases</strong>, one
+            <strong><span data-count="14">14</span> phases</strong>, one
             connected direction. Status reflects the documented build, not a
-            release commitment. F9–F12 sequencing remains open.
+            release commitment. Nothing here is production-ready.
           </p>
         </div>
         <div class="roadmap-legend">
           <span
-            ><i class="done-dot"></i> Done: core scope with documented
+            ><i class="done-dot"></i> Done or implemented, with documented
             gaps</span
           ><span><i class="progress-dot"></i> In progress</span
           ><span><i class="planned-dot"></i> Planned</span>
@@ -623,37 +902,64 @@
               remain.
             </p>
           </li>
-          <li>
+          <li class="done">
             <span class="phase-id">F9 <b>Implemented</b></span>
             <h3>Software lifecycle</h3>
             <p>
               Approvals, packages, rings and deployments with read-back
-              verification. Provider clients are fakes until sandboxes exist.
+              verification. Fake provider adapters until sandboxes exist.
             </p>
           </li>
-          <li>
+          <li class="done">
             <span class="phase-id">F10 <b>Implemented</b></span>
             <h3>Remote access</h3>
             <p>
               Attended sessions with consent, one-time launch handles and audit.
-              HopToDesk, RustDesk and AnyDesk launch connectors; two URI formats
-              still unverified.
+              HopToDesk, RustDesk and AnyDesk launch connectors, fake adapters;
+              two URI formats still unverified.
             </p>
           </li>
-          <li>
+          <li class="done">
             <span class="phase-id">F11 <b>Implemented</b></span>
             <h3>Workforce presence</h3>
             <p>
-              Operational availability and team coverage, with privacy-scoped
-              access.
+              Opt-in operational availability and team coverage with manual
+              entries. Microsoft 365 and HR sources are planned.
             </p>
           </li>
-          <li>
+          <li class="done">
             <span class="phase-id">F12 <b>Implemented</b></span>
             <h3>Turaco AI</h3>
             <p>
               Typed tools acting as the requesting user. Read-only assistant
-              with fake and local providers; writes and MCP are planned.
+              with fake and local providers. AI writes and an MCP server are
+              planned.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F13 <b>Implemented</b></span>
+            <h3>Workbench: views, queues and boards</h3>
+            <p>
+              Query engine, saved and shared views, pins, ticket queues with own
+              numbering and task boards. Boards UI is early; routing rules are
+              planned.
+            </p>
+          </li>
+          <li class="in-progress">
+            <span class="phase-id">F14 <b>In progress</b></span>
+            <h3>Administration: people, roles, health</h3>
+            <p>
+              People, teams, locations, role templates and local accounts are
+              in. External accounts, health pages and audit usability remain.
+            </p>
+          </li>
+          <li class="planned roadmap-planned">
+            <span class="phase-id">NEXT <b>Planned</b></span>
+            <h3>Not built yet</h3>
+            <p>
+              Live Microsoft Graph and Autotask REST clients, an MCP server, AI
+              writes, external presence sources, ticket routing rules and the
+              OSV and MSRC advisory feeds.
             </p>
           </li>
         </ol>
@@ -665,11 +971,12 @@
       </section>
       <section id="get-started" class="get-started wrap reveal">
         <div>
-          <p class="eyebrow">05 / MAKE YOURSELF AT HOME</p>
+          <p class="eyebrow">07 / MAKE YOURSELF AT HOME</p>
           <h2>Curious?<br />Start at the source.</h2>
           <p>
             Explore the docs, inspect the decisions, or run the development
-            environment. This is an early build with a public trail.
+            environment and seed it with the hospital-IT simulation. This is an
+            early build with a public trail.
           </p>
           <div class="hero-actions">
             <a
@@ -726,6 +1033,10 @@ make frontend</code></pre>
         ><a href="docs/product/open-source-strategy.html">License direction</a
         ><a href="docs/product/name-clearance.html">Name clearance</a>
       </div>
+      <p class="license-note">
+        Status 2026-10-10: F0–F13 implemented with documented gaps, F14 in
+        progress. Early build, not production-ready.
+      </p>
       <p class="license-note">
         No LICENSE file is committed. No public distribution license is granted
         yet; AGPL-3.0-or-later is the preferred direction, pending legal review.

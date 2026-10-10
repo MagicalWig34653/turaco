@@ -857,6 +857,9 @@
   line-height: 1.8;
   margin: 0;
 }
+.roadmap-grid .roadmap-planned {
+  grid-column: span 2;
+}
 .roadmap-link {
   display: inline-block;
   margin-top: 25px;
@@ -1344,6 +1347,9 @@
   .roadmap-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+  .roadmap-grid .roadmap-planned {
+    grid-column: span 1;
+  }
   .roadmap-grid li {
     padding: 20px 17px;
   }
@@ -1672,6 +1678,9 @@
   }
   .roadmap-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .roadmap-grid .roadmap-planned {
+    grid-column: span 2;
   }
   .roadmap-grid li {
     padding: 19px 14px;

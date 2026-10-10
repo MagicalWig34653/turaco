@@ -30,19 +30,21 @@
 
 ## What it does
 
-| Area | What exists today |
-| --- | --- |
-| **Work** | Tasks, My Work, notifications (in-app and email), recurring work, manual IT briefing items |
-| **Requests** | Product catalog, request lifecycles, approvals with separation of duties |
-| **Service desk** | Tickets, major incidents, problems and known errors, knowledge articles, runbooks as tracked task lists, Autotask sync port |
-| **Assets and inventory** | Asset lifecycle and assignment, warehouses, stock ledger, reservations, procurement, goods receipt |
-| **Endpoint intelligence** | Devices, installed software, findings, management artifacts and assignments, *Assigned vs Expected vs Observed*, assignment paths, history and diff |
-| **Infrastructure and change** | Buildings, racks and placements, VMs, services with impact analysis, changes with approvals, planning and a maintenance calendar |
-| **Security** | Advisories, vulnerability findings with confidence, remediation tracking, risk acceptance, residual risk |
-| **Briefing** | A computed feed from all of the above, filtered by what you may see |
-| **Platform** | Authentication and roles, audit trail, transactional outbox, jobs, permissions registry, OpenAPI, i18n (English and German) |
+| Area                          | What exists today                                                                                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Work**                      | Tasks, My Work, notifications (in-app and email), recurring work, manual IT briefing items                                                                                                                   |
+| **Requests**                  | Product catalog, request lifecycles, approvals with separation of duties                                                                                                                                     |
+| **Service desk**              | Tickets in queues with their own numbering (IT-1042 style) and aliases, major incidents, problems and known errors, knowledge articles, runbooks as tracked task lists, Autotask sync port                   |
+| **Assets and inventory**      | Asset lifecycle and assignment, warehouses, stock ledger, reservations, procurement, goods receipt                                                                                                           |
+| **Endpoint intelligence**     | Devices, installed software, findings, management artifacts and assignments, _Assigned vs Expected vs Observed_, assignment paths, history and diff                                                          |
+| **Infrastructure and change** | Buildings, racks and placements, VMs, services with impact analysis, changes with approvals, planning and a maintenance calendar                                                                             |
+| **Security**                  | Advisories, vulnerability findings with confidence, remediation tracking, risk acceptance, residual risk                                                                                                     |
+| **Briefing**                  | A computed feed from all of the above, filtered by what you may see                                                                                                                                          |
+| **Workbench**                 | Click-together filter builder (operators, AND/OR) over tickets, devices and tasks, saved and shared views, pins with a grouped collapsible sidebar, Cmd+K search, Kanban boards over tasks (early UI)        |
+| **Administration**            | People, teams, locations and departments, role templates with an effective-permissions viewer, local accounts with invitations, runtime module switches; restricted external vendor accounts are in progress |
+| **Platform**                  | Authentication and roles, audit trail, transactional outbox, jobs, permissions registry, OpenAPI, i18n (English and German), three themes plus Auto                                                          |
 
-Implemented with fake provider adapters: software lifecycle and patching (F9) and attended remote access with HopToDesk, RustDesk and AnyDesk launch connectors (F10). Workforce presence (F11, opt-in, privacy-first) is implemented for manual entries; Microsoft 365 and HR sources are planned. Turaco AI (F12) is implemented as a read-only, user-delegated assistant (fake and local Ollama-compatible providers); confirmed writes and an MCP server are planned. Live provider clients (Microsoft Graph, Autotask REST, advisory feeds) are not built yet; their ports have fakes and imports.
+Roadmap F0 to F13 are implemented with documented gaps; F14 (administration: people, roles, health) is in progress. Nothing here is production-ready. Implemented with fake provider adapters: software lifecycle and patching (F9) and attended remote access with HopToDesk, RustDesk and AnyDesk launch connectors (F10). Workforce presence (F11, opt-in, privacy-first) is implemented for manual entries; Microsoft 365 and HR sources are planned. Turaco AI (F12) is implemented as a read-only, user-delegated assistant (fake and local Ollama-compatible providers); confirmed writes and an MCP server are planned. Planned, not built: live Microsoft Graph and Autotask REST clients, the OSV and MSRC advisory feeds, an MCP server, AI writes and external presence sources; their ports have fakes and imports. A hospital-IT simulation dataset (`turaco-admin demo seed-hospital`) and a load generator support usability and load tests as development tooling.
 
 ## Principles
 
