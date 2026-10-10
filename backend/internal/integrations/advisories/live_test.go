@@ -6,11 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories/cisakev"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories/nvd"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories/osv"
 )
 
-// The live smoke tests talk to the public NVD and CISA services. They are skipped unless
+// The live smoke tests talk to the public NVD, OSV and CISA services. They are skipped unless
 // TURACO_LIVE_FEED_TESTS=1 (see docs/integrations/advisory-feeds.md); NVD_API_KEY_FILE is optional.
 func liveOnly(t *testing.T) {
 	t.Helper()
@@ -68,5 +70,27 @@ func TestLiveCISAKEV(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("conditional fetch: notModified=%v", again.NotModified)
+	}
+}
+
+func TestLiveOSV(t *testing.T) {
+	liveOnly(t)
+	c, err := osv.New(osv.Config{MaxRecords: 50, Version: "live-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	res, err := c.Packages(ctx, []advisories.PackageQuery{{Ecosystem: "PyPI", Name: "jinja2"}})
+	if err != nil || len(res.Records) == 0 {
+		t.Fatalf("osv: %d records, %v", len(res.Records), err)
+	}
+	for _, r := range res.Records {
+		if r.ExternalID == "" || r.Title == "" || r.SourceURL == "" {
+			t.Fatalf("incomplete record %+v", r)
+		}
+	}
+	if got, err := c.ByID(ctx, []string{res.Records[0].ExternalID}); err != nil || len(got) != 1 {
+		t.Fatalf("by id: %v %v", got, err)
 	}
 }

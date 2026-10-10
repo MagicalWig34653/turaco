@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,4 +48,14 @@ func TestFeedSourceKeysOrder(t *testing.T) {
 	if len(f.FeedSourceKeys()) != 0 {
 		t.Fatal("no sources configured")
 	}
+	f = FeedSources{KEV: stubKEV{}, OSV: stubOSV{}, NVD: stubNVD{}}
+	if got := f.FeedSourceKeys(); !slices.Equal(got, []string{FeedNVD, FeedOSV, FeedCISAKEV}) {
+		t.Fatalf("run order: %v", got)
+	}
 }
+
+type stubNVD struct{ advisories.Syncer }
+
+type stubOSV struct{ advisories.PackageSource }
+
+type stubKEV struct{ advisories.KEVSource }

@@ -61,11 +61,11 @@ func runSecurity(ctx context.Context, e env, command string, args []string) erro
 const syncFeedsTimeout = 30 * time.Minute
 
 // runSyncFeeds runs the advisory feed synchronization once, in the foreground, with the same code and
-// bounds as the worker job: turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD].
+// bounds as the worker job: turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD].
 // Sources come from ADVISORY_SOURCES; NVD_API_KEY_FILE is honored. The result is printed as JSON.
 func runSyncFeeds(ctx context.Context, e env, args []string) error {
 	fs := newFlagSet("security sync-feeds")
-	source := fs.String("source", "", "nvd or cisa_kev (default: every configured source)")
+	source := fs.String("source", "", "nvd, osv, msrc or cisa_kev (default: every configured source)")
 	since := fs.String("since", "", "read NVD changes since this date (YYYY-MM-DD); never moves the stored cursor backwards")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		return errUsage

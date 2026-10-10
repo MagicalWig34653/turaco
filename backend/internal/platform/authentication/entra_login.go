@@ -200,7 +200,8 @@ func (h *loginHandler) entraStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	returnTo := safeReturnTo(r.URL.Query().Get("returnTo"))
-	ok, err := h.createOIDCTransaction(r.Context(), sha256Bytes(state), sha256Bytes(binding), nonce, verifier, returnTo)
+	shared := r.URL.Query().Get("shared") == "1"
+	ok, err := h.createOIDCTransaction(r.Context(), sha256Bytes(state), sha256Bytes(binding), nonce, verifier, returnTo, shared)
 	if err != nil {
 		writeInternal(h.logger, w, r, err)
 		return
@@ -299,9 +300,11 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 			lifetime = c
 		}
 	}
+	txShared := tx.shared
 	session := LoginSession{UserID: userID, AuthMethod: methodEntra, CorrelationID: httpx.RequestID(w), Locker: h.users, MaxLifetime: lifetime}
-	if locker, ok := h.entra.Identities.(EntraLinkLocker); ok {
-		session.AfterCreate = func(ctx context.Context, tx pgx.Tx, _ Session) error {
+	locker, hasLocker := h.entra.Identities.(EntraLinkLocker)
+	session.AfterCreate = func(ctx context.Context, tx pgx.Tx, created Session) error {
+		if hasLocker {
 			held, err := locker.LockEntraLink(ctx, tx, userID, ident.TenantID, ident.ObjectID)
 			if err != nil {
 				return err
@@ -309,8 +312,13 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 			if !held {
 				return errEntraLinkGone
 			}
-			return nil
 		}
+		if tx2 := tx; txShared {
+			// The sign-in page said "shared computer": logging out ends the Entra session too.
+			_, err := tx2.Exec(ctx, `UPDATE platform.sessions SET shared_workstation = true WHERE id = $1::uuid`, created.ID)
+			return err
+		}
+		return nil
 	}
 	sessionToken, sess, err := h.createSession(r, session)
 	switch {
@@ -405,11 +413,12 @@ type oidcTransaction struct {
 	nonce       string
 	verifier    string
 	returnTo    string
+	shared      bool
 }
 
 // createOIDCTransaction stores a new transaction after pruning expired ones. It returns false when too many are
 // pending (a flood), without storing anything.
-func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bindingHash []byte, nonce, verifier, returnTo string) (bool, error) {
+func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bindingHash []byte, nonce, verifier, returnTo string, shared bool) (bool, error) {
 	var stored bool
 	err := pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM platform.oidc_login_transactions WHERE created_at < now() - $1::interval`,
@@ -423,8 +432,8 @@ func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bin
 		if pending >= maxPendingOIDCTransactions {
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO platform.oidc_login_transactions (state_hash, binding_hash, nonce, code_verifier, return_to)
-			VALUES ($1, $2, $3, $4, $5)`, stateHash, bindingHash, nonce, verifier, returnTo); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO platform.oidc_login_transactions (state_hash, binding_hash, nonce, code_verifier, return_to, shared)
+			VALUES ($1, $2, $3, $4, $5, $6)`, stateHash, bindingHash, nonce, verifier, returnTo, shared); err != nil {
 			return err
 		}
 		stored = true
@@ -438,7 +447,7 @@ func (h *loginHandler) consumeOIDCTransaction(ctx context.Context, stateHash []b
 	var t oidcTransaction
 	var created time.Time
 	err := h.pool.QueryRow(ctx, `DELETE FROM platform.oidc_login_transactions WHERE state_hash = $1
-		RETURNING binding_hash, nonce, code_verifier, return_to, created_at`, stateHash).Scan(&t.bindingHash, &t.nonce, &t.verifier, &t.returnTo, &created)
+		RETURNING binding_hash, nonce, code_verifier, return_to, shared, created_at`, stateHash).Scan(&t.bindingHash, &t.nonce, &t.verifier, &t.returnTo, &t.shared, &created)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return oidcTransaction{}, false, nil
 	}

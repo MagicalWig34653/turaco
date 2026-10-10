@@ -34,11 +34,11 @@ function entraErrorFromUrl() {
   }
 }
 
-function entraStartUrl() {
+function entraStartUrl(shared: boolean) {
   // Return to the page the user wanted when it is an in-app path other than the login page.
   const here = window.location.pathname + window.location.search;
   const target = here.startsWith('/') && !here.startsWith('/login') ? here : '/';
-  return `/api/v1/auth/entra/start?returnTo=${encodeURIComponent(target)}`;
+  return `/api/v1/auth/entra/start?returnTo=${encodeURIComponent(target)}${shared ? '&shared=1' : ''}`;
 }
 
 export function LoginScreen() {
@@ -57,6 +57,7 @@ export function LoginScreen() {
 
   const available = methods.data;
   const entraError = entraErrorFromUrl();
+  const [sharedComputer, setSharedComputer] = useState(false);
 
   // Try Kerberos/SPNEGO once; on any non-204 outcome fall back to the form.
   useEffect(() => {
@@ -142,9 +143,17 @@ export function LoginScreen() {
 
         {available && kerberos !== 'trying' && available.entra ? (
           <p className="login-entra">
-            <a className="btn btn-primary btn-block" href={entraStartUrl()}>
+            <a className="btn btn-primary btn-block" href={entraStartUrl(sharedComputer)}>
               {t('login.entra.button')}
             </a>
+            <label className="login-shared">
+              <input
+                type="checkbox"
+                checked={sharedComputer}
+                onChange={(event) => setSharedComputer(event.target.checked)}
+              />{' '}
+              {t('login.entra.shared')}
+            </label>
           </p>
         ) : null}
 

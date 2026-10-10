@@ -338,3 +338,63 @@ func TestKnownExploitedAdvisoriesSortFirst(t *testing.T) {
 		t.Fatal("kev dates without known_exploited must violate the check constraint")
 	}
 }
+
+type fakeOSV struct {
+	records []advisories.AdvisoryRecord
+	err     error
+	asked   []advisories.PackageQuery
+}
+
+func (f *fakeOSV) Packages(_ context.Context, pkgs []advisories.PackageQuery) (advisories.SyncResult, error) {
+	f.asked = pkgs
+	return advisories.SyncResult{Records: f.records, Complete: f.err == nil}, f.err
+}
+
+func (f *fakeOSV) ByID(context.Context, []string) ([]advisories.AdvisoryRecord, error) {
+	return nil, nil
+}
+
+func TestAdvisorySyncJobImportsOSVPackagesIdempotently(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	prefix := feedTestPrefix(t)
+	cleanFeedTest(t, pool, prefix)
+	mod := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	rec := feedRecord(prefix+"A", mod)
+	rec.Source = "osv"
+	rec.SourceURL = "https://osv.dev/vulnerability/" + rec.ExternalID
+	osv := &fakeOSV{records: []advisories.AdvisoryRecord{rec}}
+	pkgs := []advisories.PackageQuery{{Ecosystem: "npm", Name: "example-lib"}}
+	svc := wiring.Security(pool).WithFeeds(securityapp.FeedSources{OSV: osv, OSVPackages: pkgs})
+
+	runSyncJob(t, svc, "")
+	if len(osv.asked) != 1 || osv.asked[0] != pkgs[0] {
+		t.Fatalf("the configured packages are queried: %+v", osv.asked)
+	}
+	var version int
+	if err := pool.QueryRow(ctx, `SELECT version FROM security.advisories WHERE source = 'osv' AND external_id = $1`, rec.ExternalID).Scan(&version); err != nil {
+		t.Fatalf("the OSV record was not imported: %v", err)
+	}
+	var success *time.Time
+	var lastErr, cursor *string
+	if err := pool.QueryRow(ctx, `SELECT last_success_at, last_error, cursor FROM security.feed_state WHERE source = 'osv'`).Scan(&success, &lastErr, &cursor); err != nil {
+		t.Fatal(err)
+	}
+	if success == nil || lastErr != nil || cursor != nil {
+		t.Fatalf("osv state success=%v err=%v cursor=%v (OSV has no cursor)", success, lastErr, cursor)
+	}
+
+	// A second run without changes leaves the advisory alone.
+	runSyncJob(t, svc, `{"sources":["osv"]}`)
+	var again int
+	if err := pool.QueryRow(ctx, `SELECT version FROM security.advisories WHERE source = 'osv' AND external_id = $1`, rec.ExternalID).Scan(&again); err != nil || again != version {
+		t.Fatalf("an unchanged run must not touch the advisory: %d -> %d (%v)", version, again, err)
+	}
+
+	// A failing source is recorded with a constant code and does not fail the job.
+	osv.records, osv.err = nil, advisories.ErrRateLimited
+	runSyncJob(t, svc, "")
+	if err := pool.QueryRow(ctx, `SELECT last_error FROM security.feed_state WHERE source = 'osv'`).Scan(&lastErr); err != nil || lastErr == nil || *lastErr != securityapp.FeedErrRateLimited {
+		t.Fatalf("last_error = %v (%v)", lastErr, err)
+	}
+}

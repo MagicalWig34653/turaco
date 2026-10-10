@@ -1,0 +1,39 @@
+{
+  "vulns": [
+    {
+      "id": "GHSA-aaaa-bbbb-cccc",
+      "modified": "2026-09-20T14:00:00.123456Z",
+      "published": "2026-09-01T10:15:07Z",
+      "aliases": ["CVE-2026-2001", "CVE-2026-2001", "bad alias with spaces"],
+      "summary": "Prototype pollution in example-lib",
+      "details": "A crafted object pollutes Object.prototype.‮evil\nSecond line.",
+      "database_specific": {"severity": "HIGH"},
+      "references": [
+        {"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc"},
+        {"type": "WEB", "url": "http://insecure.example.org/x"},
+        {"type": "WEB", "url": "https://github.com/advisories/GHSA-aaaa-bbbb-cccc"}
+      ],
+      "affected": [
+        {
+          "package": {"ecosystem": "npm", "name": "example-lib"},
+          "ranges": [
+            {"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.2.3"}, {"introduced": "2.0.0"}, {"fixed": "2.4.0"}]},
+            {"type": "GIT", "repo": "https://github.com/example/example-lib", "events": [{"introduced": "0"}, {"fixed": "abcdef"}]}
+          ],
+          "versions": ["1.0.0", "bad version!"]
+        }
+      ]
+    },
+    {
+      "id": "GHSA-withdrawn-0001",
+      "modified": "2026-09-21T00:00:00Z",
+      "withdrawn": "2026-09-22T00:00:00Z",
+      "summary": "Withdrawn"
+    },
+    {
+      "id": "bad id",
+      "modified": "2026-09-21T00:00:00Z"
+    }
+  ],
+  "next_page_token": "page-2"
+}

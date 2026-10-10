@@ -385,3 +385,22 @@ func (p *Provider) refreshLocked(ctx context.Context) error {
 	p.keys, p.keysFetched = keys, p.now()
 	return nil
 }
+
+// EndSessionURL is the Entra end-session endpoint of the configured authority.
+func EndSessionURL(cfg config.EntraConfig) string {
+	authority := cfg.TenantID
+	if cfg.TenantMode == config.EntraTenantMultiRestricted {
+		authority = "organizations"
+	}
+	return "https://" + AuthorityHost + "/" + authority + "/oauth2/v2.0/logout"
+}
+
+// PostLogoutURL is where Entra sends the browser after sign-out: the login page of the host of the registered
+// redirect URL (never derived from request headers). It must be registered on the app registration.
+func PostLogoutURL(cfg config.EntraConfig) string {
+	u, err := url.Parse(cfg.RedirectURL)
+	if err != nil {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + "/login"
+}

@@ -26,6 +26,8 @@ const (
 	AdvisorySyncJobTimeout = 45 * time.Minute
 
 	FeedNVD     = "nvd"
+	FeedOSV     = "osv"
+	FeedMSRC    = "msrc"
 	FeedCISAKEV = "cisa_kev"
 
 	feedActor = "advisory-feed"
@@ -54,16 +56,27 @@ const (
 // FeedSources are the configured feeds; a nil source is not configured.
 type FeedSources struct {
 	NVD advisories.Syncer
-	KEV advisories.KEVSource
+	// OSV is query based (no modification-time API): each run asks for the vulnerabilities of OSVPackages.
+	OSV advisories.PackageSource
+	// MSRC reads the monthly Microsoft security update documents (incremental through the release date).
+	MSRC        advisories.Syncer
+	OSVPackages []advisories.PackageQuery
+	KEV         advisories.KEVSource
 	// KEVFetchPerRun bounds the by-id fetches for KEV CVEs without an advisory (default DefaultKEVFetchPerRun).
 	KEVFetchPerRun int
 }
 
-// FeedSourceKeys lists the feeds in run order (KEV after NVD so fresh CVEs can be enriched at once).
+// FeedSourceKeys lists the feeds in run order (KEV last so fresh CVEs can be enriched at once).
 func (f FeedSources) FeedSourceKeys() []string {
 	var out []string
 	if f.NVD != nil {
 		out = append(out, FeedNVD)
+	}
+	if f.OSV != nil {
+		out = append(out, FeedOSV)
+	}
+	if f.MSRC != nil {
+		out = append(out, FeedMSRC)
 	}
 	if f.KEV != nil {
 		out = append(out, FeedCISAKEV)
@@ -251,7 +264,11 @@ func (s *Service) syncSource(ctx context.Context, store feedStore, c Caller, src
 	var runErr error
 	switch src {
 	case FeedNVD:
-		fin, runErr = s.runNVD(ctx, c, st, p, &res)
+		fin, runErr = s.runSyncer(ctx, c, st, p, &res, s.feeds.NVD)
+	case FeedOSV:
+		fin, runErr = s.runOSV(ctx, c, &res)
+	case FeedMSRC:
+		fin, runErr = s.runSyncer(ctx, c, st, p, &res, s.feeds.MSRC)
 	case FeedCISAKEV:
 		fin, runErr = s.runKEV(ctx, store, c, st, &res)
 	}
@@ -282,7 +299,7 @@ func (s *Service) syncSource(ctx context.Context, store feedStore, c Caller, src
 // errFeedInternal marks failures of Turaco's own storage during a run (they fail the job, unlike failures of the source).
 var errFeedInternal = errors.New("security: feed storage failure")
 
-func (s *Service) runNVD(ctx context.Context, c Caller, st FeedState, p AdvisorySyncPayload, res *FeedRunResult) (FeedFinish, error) {
+func (s *Service) runSyncer(ctx context.Context, c Caller, st FeedState, p AdvisorySyncPayload, res *FeedRunResult, syncer advisories.Syncer) (FeedFinish, error) {
 	now := s.now()
 	since := now.Add(-DefaultFeedStart)
 	var stored time.Time
@@ -295,7 +312,7 @@ func (s *Service) runNVD(ctx context.Context, c Caller, st FeedState, p Advisory
 	if p.Since != nil {
 		since = p.Since.UTC()
 	}
-	sync, syncErr := s.feeds.NVD.Sync(ctx, since)
+	sync, syncErr := syncer.Sync(ctx, since)
 	// The records read before an error are imported and the cursor advances to the last completely read
 	// window, so a failing run keeps its progress.
 	res.Fetched, res.Complete = len(sync.Records), sync.Complete && syncErr == nil
@@ -311,6 +328,20 @@ func (s *Service) runNVD(ctx context.Context, c Caller, st FeedState, p Advisory
 		fin.Cursor = &cursor
 	}
 	return fin, syncErr
+}
+
+// runOSV imports the vulnerabilities of the configured packages. OSV has no incremental query, so there is
+// no cursor: the import is idempotent and leaves unchanged records untouched. Records read before an error
+// are imported.
+func (s *Service) runOSV(ctx context.Context, c Caller, res *FeedRunResult) (FeedFinish, error) {
+	read, readErr := s.feeds.OSV.Packages(ctx, s.feeds.OSVPackages)
+	res.Fetched, res.Complete = len(read.Records), read.Complete && readErr == nil
+	if len(read.Records) > 0 {
+		if err := s.importRecords(ctx, c, read.Records, &res.Import); err != nil {
+			return FeedFinish{ErrorCode: FeedErrImport}, fmt.Errorf("%w: %w", errFeedInternal, err)
+		}
+	}
+	return FeedFinish{}, readErr
 }
 
 func (s *Service) runKEV(ctx context.Context, store feedStore, c Caller, st FeedState, res *FeedRunResult) (FeedFinish, error) {

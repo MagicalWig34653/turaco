@@ -922,6 +922,7 @@ export const en = {
   'login.submit': 'Sign in',
   'login.submitting': 'Signing in…',
   'login.entra.button': 'Sign in with Microsoft Entra',
+  'login.entra.shared': 'This is a shared computer (sign out of Microsoft as well when I log out)',
   'login.entra.failed': 'Sign-in with Microsoft failed. Try again or contact your administrator.',
   'login.entra.notLinked':
     'Your Microsoft account is not linked to a Turaco account yet. Ask your administrator to link it.',

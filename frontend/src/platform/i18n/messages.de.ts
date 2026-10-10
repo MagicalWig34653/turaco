@@ -951,6 +951,8 @@ export const de: Record<MessageKey, string> = {
   'login.submit': 'Anmelden',
   'login.submitting': 'Anmeldung läuft…',
   'login.entra.button': 'Mit Microsoft Entra anmelden',
+  'login.entra.shared':
+    'Dies ist ein gemeinsam genutzter Computer (beim Abmelden auch bei Microsoft abmelden)',
   'login.entra.failed':
     'Die Anmeldung mit Microsoft ist fehlgeschlagen. Versuchen Sie es erneut oder wenden Sie sich an Ihre Administration.',
   'login.entra.notLinked':

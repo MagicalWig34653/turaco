@@ -1,6 +1,6 @@
-# Advisory feeds (NVD, CISA KEV)
+# Advisory feeds (NVD, OSV, MSRC, CISA KEV)
 
-**Status:** implemented, 2026-10. Decision B1 of the [F8 design](../product/f8-security-briefing-design.md). Both feeds are public and need no account. Rate limits and terms of use below are marked *verify*: they were taken from the vendors' public documentation and must be re-checked before production use.
+**Status:** implemented, 2026-10. Decision B1 of the [F8 design](../product/f8-security-briefing-design.md). All feeds are public and need no account. Rate limits and terms of use below are marked *verify*: they were taken from the vendors' public documentation and must be re-checked before production use.
 
 ## What exists
 
@@ -8,6 +8,8 @@
 |---|---|
 | Port (normalized records, `Syncer`, `KEVSource`, errors, `Fake`, `NotConfigured`) | `backend/internal/integrations/advisories` |
 | NVD API 2.0 client | `backend/internal/integrations/advisories/nvd` |
+| OSV.dev client (package queries) | `backend/internal/integrations/advisories/osv` |
+| Microsoft MSRC CVRF client | `backend/internal/integrations/advisories/msrc` |
 | CISA KEV catalog client | `backend/internal/integrations/advisories/cisakev` |
 | Sync job `security.advisory_sync`, KEV enrichment, feed state | `backend/internal/modules/security/application/feeds.go`, migration `000053_advisory_feeds.up.sql` |
 | Wiring | `backend/internal/wiring/advisory_feeds.go`, `cmd/turaco-worker`, `turaco-admin security sync-feeds` |
@@ -21,11 +23,12 @@ Registry: [configuration reference](../reference/configuration.md).
 | Variable | Default | Meaning |
 |---|---|---|
 | `ADVISORY_SYNC` | `false` | Schedules the worker job. Off: nothing is scheduled; `turaco-admin security sync-feeds` still works. |
-| `ADVISORY_SOURCES` | `nvd,cisa_kev` | Feeds to read. |
+| `ADVISORY_SOURCES` | `nvd,cisa_kev` | Feeds to read: `nvd`, `osv`, `msrc`, `cisa_kev`. Run order is always NVD, OSV, MSRC, KEV. |
+| `OSV_PACKAGES` | empty | Packages the `osv` source queries, `ecosystem=name` entries separated by commas (for example `npm=lodash,Maven=org.apache.logging.log4j:log4j-core`). Required when `osv` is selected; at most 200. |
 | `NVD_API_KEY_FILE` | empty | Optional file with an NVD API key. The key is read once by the worker, sent only as the `apiKey` header to the NVD API and never stored or logged. |
 | `ADVISORY_SYNC_INTERVAL` | `6h` | Job interval, at least `1h`. |
 
-Run once by hand: `turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]`. `--since` sets the NVD start for this run (backfill) and never moves the stored cursor backwards. The result (counts and error codes per source) is printed as JSON.
+Run once by hand: `turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]`. `--since` sets the NVD start for this run (backfill) and never moves the stored cursor backwards. The result (counts and error codes per source) is printed as JSON.
 
 ## NVD
 
@@ -52,6 +55,16 @@ Run once by hand: `turaco-admin security sync-feeds [--source nvd|cisa_kev] [--s
 Version rules per `cpeMatch`: start-inclusive plus end-exclusive → `introduced`/`fixed`; end-exclusive only → `lt`; end-inclusive only → `le`; start only → `introduced`; exact CPE version → `eq`; version `*` or `-` without range → no rules (every version). A product with any unconstrained match gets no rules. Deliberate over-approximations that never hide an installation: a start-exclusive bound is treated as inclusive, and a range with an inclusive end becomes `le` (the lower bound is dropped). A match whose version contains unusual characters is skipped. At most 50 criteria and 20 rules per criterion are kept. Nothing is dropped silently: products or rules beyond these bounds, skipped matches and unparseable CPE names are counted, the advisory is marked `criteria_incomplete` (`criteriaIncomplete`, `criteriaSkipped` in the API) and shows a "criteria incomplete" badge in the list and detail; marking such an advisory not applicable, resolved or archived returns the `criteria_incomplete` warning. Analysts must not treat these criteria as complete. Hardware and operating-system parts, non-vulnerable matches and negated nodes are deliberately out of scope and not counted.
 
 Not mapped: CVSS vectors and scores, CWE, EPSS, hardware and operating-system CPEs (an operating-system CVE therefore arrives without criteria and analysts decide), non-English descriptions, and references beyond the summary text. CVEs with `vulnStatus` `Rejected` are skipped; a CVE rejected after import stays as it was (analysts archive it). Advisories without usable criteria are still imported with empty criteria.
+
+## OSV
+
+- Endpoint `https://api.osv.dev` (no account, no key): `POST /v1/query` with `{"package": {"name", "ecosystem"}}` and `page_token` for the next page, `GET /v1/vulns/{id}` for single records (see the [OSV API documentation](https://google.github.io/osv.dev/api/)).
+- OSV has no "modified since" query, so the source is **query based**: every run asks for all known vulnerabilities of the packages in `OSV_PACKAGES`. There is no cursor (`security.feed_state` keeps the last success and error code only); imports are idempotent, so unchanged records are left alone. Without `OSV_PACKAGES` the `osv` source is refused at startup. Turaco does not derive packages from its software inventory yet, because inventory names are not package ecosystem names.
+- Per run at most 2,000 records and 20 pages per package (the bound ends the run as incomplete), 30 s per request, 16 MiB response cap, `User-Agent: turaco/<version>`, retries with exponential backoff (2 s base, 3 retries) on 429, 5xx and network errors, `Retry-After` honored (above two minutes: `rate_limited`). No redirect to another host or to plain http is followed. Rate limit and terms *(verify)*: OSV publishes no hard limit for these endpoints; keep the package list small and the interval at six hours or more.
+- Mapping: source `osv`, external id = the OSV id (`GHSA-…`, `PYSEC-…`, `GO-…`, `RUSTSEC-…`; the CVE alias is listed in the summary as `Aliases: …`), title = id and OSV `summary`, summary = `details` (cleaned like NVD), published/modified from `published`/`modified`, source URL `https://osv.dev/vulnerability/<id>`, up to ten https references. Withdrawn records are skipped.
+- Severity: only the label of `database_specific.severity` (`LOW`, `MODERATE`, `HIGH`, `CRITICAL`, as GitHub advisories publish it) is mapped. OSV otherwise carries CVSS vectors, not scores, and Turaco does not compute scores, so such records are `none` until analysts rate them.
+- Criteria: one per package name (publisher and OS platform stay empty; ecosystems with equal package names are merged). Per `SEMVER`/`ECOSYSTEM` range an `introduced`/`fixed` event pair becomes `introduced` and `fixed` rules (an `introduced` of `0` is kept so several ranges stay correct), an `introduced` without end an `introduced` rule, `last_affected` a `le` rule (the lower bound is dropped, an over-approximation like NVD's); explicit `versions` become `eq` rules; an entry without ranges or versions affects every version. `GIT` ranges, versions with unusual characters, packages beyond 50 and rules beyond 20 per package are counted in `criteriaSkipped` and mark the advisory `criteria_incomplete`.
+- Not mapped: CVSS vectors, `severity` arrays, `database_specific` beyond the severity label, credits, ecosystem-specific data and the `related` field.
 
 ## CISA KEV
 
@@ -84,4 +97,11 @@ Accepted: the first run imports up to 30 days of NVD changes and every new advis
 
 ## Not built
 
-OSV.dev, vendor RSS and Microsoft Security Update Guide (MSRC) adapters, persisting references and CVSS data, EPSS and exploit intelligence, and an admin UI for feed state.
+Deriving OSV packages from the software inventory, OSV batch queries and version-specific queries, vendor RSS and Microsoft Security Update Guide (MSRC) adapters, persisting references and CVSS data, EPSS and exploit intelligence, and an admin UI for feed state.
+
+## MSRC
+
+- Public API `https://api.msrc.microsoft.com/cvrf/v3.0` (no account, no key): `GET /updates` lists the monthly security update documents, `GET /cvrf/{id}` (for example `2026-Oct`) returns one CVRF document as JSON ([MSRC Security Updates API](https://github.com/microsoft/MSRC-Microsoft-Security-Updates-API), read 2026-10-10).
+- Incremental through the release date: the cursor is the `CurrentReleaseDate` of the last document read completely; a run reads at most three documents, oldest first, and without a cursor only the latest document. A revised document (newer `CurrentReleaseDate`) is read again and the import is idempotent.
+- Mapping: CVE id, title, description (HTML tags removed), severity from the CVRF severity threat (Critical, Important to high, Moderate to medium, Low), revision dates, affected products of the product tree with the fixed build of the vendor-fix remediation as a `fixed` version rule (at most 40 products per advisory, the rest counted in `CriteriaSkipped`).
+- **Not verified against the live service.** The field names follow the published CVRF JSON shape; the by-id lookup is not supported (the NVD feed covers CVE lookups).

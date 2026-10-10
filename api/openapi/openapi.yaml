@@ -7822,6 +7822,16 @@ paths:
       summary: End the current session.
       description: "Revokes the session in the `turaco_session` cookie and clears the cookie. Idempotent: without a valid session the cookie is still cleared and 204 is returned. Requests must be same-origin (`Sec-Fetch-Site` / `Origin`); otherwise 403 `platform.csrf_rejected`."
       responses:
+        '200':
+          description: "Logged out and the cookie is cleared; the session was started with Microsoft Entra on a shared computer (or the setting `auth.entra_signout_mode` is `always`), so the browser must open `redirectUrl` (the Entra end-session endpoint) to end the Microsoft session too."
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [redirectUrl]
+                properties:
+                  redirectUrl: {type: string, format: uri}
         '204':
           description: Logged out; the session cookie is cleared.
         '403':
