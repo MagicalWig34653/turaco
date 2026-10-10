@@ -243,7 +243,7 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 			out = r
 			return nil
 		}
-		out, err = s.startFulfillment(ctx, tx, c, r)
+		out, err = s.startFulfillment(ctx, tx, c, r, true)
 		return err
 	})
 	if err != nil {
@@ -292,13 +292,15 @@ func excludedUsers(requester, requestedFor string, refs []catalogpublic.Referenc
 // startFulfillment moves an approved (or approval-free) request into
 // fulfillment: it creates the template tasks and, without any, completes the
 // request at once. It runs in the caller's transaction and returns the
-// updated request.
-func (s *Service) startFulfillment(ctx context.Context, tx pgx.Tx, c Caller, r Request) (Request, error) {
+// updated request. approvalFree marks a request without approval steps; the
+// ServiceRequestApproved payload carries it so the requester is told the
+// request was accepted, not approved.
+func (s *Service) startFulfillment(ctx context.Context, tx pgx.Tx, c Caller, r Request, approvalFree bool) (Request, error) {
 	before := r
 	now := s.now().UTC()
 	r.Status, r.CurrentStep, r.WaitingReason = StatusInFulfillment, nil, nil
 	r.StatusReason = nil
-	if err := publish(ctx, tx, c, "ServiceRequestApproved", map[string]any{"requestId": r.ID}); err != nil {
+	if err := publish(ctx, tx, c, "ServiceRequestApproved", map[string]any{"requestId": r.ID, "approvalFree": approvalFree}); err != nil {
 		return Request{}, err
 	}
 	var requested []string
@@ -403,7 +405,7 @@ func (s *Service) OnApprovalDecided(ctx context.Context, tx pgx.Tx, ev events.Ou
 	}
 	next := p.StepIndex + 1
 	if next >= len(r.Definition.Approvals) {
-		_, err := s.startFulfillment(ctx, tx, c, r)
+		_, err := s.startFulfillment(ctx, tx, c, r, false)
 		return err
 	}
 	excluded, err := s.excludedForNextStep(ctx, r)

@@ -1,3 +1,4 @@
+import type { Node } from '../../platform/ui/query/filterModel';
 import type { QueueLevel, QueueSubjectType, Ticket, TicketQueue, TicketQueueGrant } from './types';
 
 /** Pure Ticket Queue logic: validation, intake choice, labels and the grants matrix. */
@@ -104,7 +105,28 @@ export const canOfferMove = (ticket: Pick<Ticket, 'status'>): boolean =>
 
 /** "TKT-000012" shows as the new number; the move result carries it, aliases hold the old ones. */
 export function aliasList(ticket: Pick<Ticket, 'aliases' | 'reference'>): string[] {
-  return (ticket.aliases ?? []).filter((alias) => alias && alias !== ticket.reference);
+  // A ticket moved A -> B -> A repeats an alias; each one is listed once.
+  return [
+    ...new Set((ticket.aliases ?? []).filter((alias) => alias && alias !== ticket.reference)),
+  ];
+}
+
+/** Extra list filter of the ticket queue: unassigned tickets and the affected person's Location. */
+export function ticketExtraFilter(options: {
+  unassigned: boolean;
+  locationId: string;
+}): Node | undefined {
+  const children: Node[] = [];
+  if (options.unassigned) children.push({ type: 'condition', field: 'assignee', op: 'is_empty' });
+  if (options.locationId)
+    children.push({
+      type: 'condition',
+      field: 'location',
+      op: 'equals',
+      value: options.locationId,
+    });
+  if (children.length === 0) return undefined;
+  return children.length === 1 ? children[0] : { type: 'group', logic: 'and', children };
 }
 
 // ---- Grants matrix -------------------------------------------------------------------------

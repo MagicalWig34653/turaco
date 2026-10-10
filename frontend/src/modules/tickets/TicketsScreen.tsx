@@ -19,7 +19,7 @@ import { Toast } from '../../platform/ui/Workspace';
 import { IncidentBanner } from '../incidents/IncidentBanner';
 import { useAsync } from '../../platform/api/useAsync';
 import { ticketQueuesApi, ticketsApi } from './api';
-import { ticketQueueName } from './queueModel';
+import { ticketExtraFilter, ticketQueueName } from './queueModel';
 import { ticketStatuses, type Ticket, type TicketStatus } from './types';
 
 const tone: Record<TicketStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
@@ -70,7 +70,17 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const [queueFilter, setQueueFilter] = useState(
     () => new URLSearchParams(window.location.search).get('queue') ?? '',
   );
-  useFilterQuery({ status, open: openOnly ? 'true' : 'false', assignment, queue: queueFilter });
+  const [locationFilter, setLocationFilter] = useState(
+    () => new URLSearchParams(window.location.search).get('location') ?? '',
+  );
+  const [locationNames, setLocationNames] = useState<Record<string, string>>({});
+  useFilterQuery({
+    status,
+    open: openOnly ? 'true' : 'false',
+    assignment,
+    queue: queueFilter,
+    location: locationFilter,
+  });
   const query = useQueryList<Ticket>(
     'tickets',
     {
@@ -80,8 +90,8 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       queue: scope === 'all' ? queueFilter : undefined,
       assigneeId: scope === 'all' && assignment === 'mine' ? session?.userId : undefined,
     },
-    scope === 'all' && assignment === 'unassigned'
-      ? { type: 'condition', field: 'assignee', op: 'is_empty' }
+    scope === 'all'
+      ? ticketExtraFilter({ unassigned: assignment === 'unassigned', locationId: locationFilter })
       : undefined,
   );
   const { list } = query;
@@ -110,6 +120,31 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
     });
     return () => controller.abort();
   }, [personIds, scope]);
+  const locationIds = [
+    ...new Set(
+      [...list.items.map((ticket) => ticket.affectedLocationId), locationFilter].filter(
+        (id): id is string => Boolean(id),
+      ),
+    ),
+  ]
+    .sort()
+    .join(',');
+  useEffect(() => {
+    if (scope !== 'all' || !locationIds) return;
+    const controller = new AbortController();
+    void Promise.all(
+      locationIds.split(',').map(async (id) => {
+        try {
+          return [id, (await organizationApi.location(id, controller.signal)).name] as const;
+        } catch {
+          return [id, ''] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!controller.signal.aborted) setLocationNames(Object.fromEntries(entries));
+    });
+    return () => controller.abort();
+  }, [locationIds, scope]);
   const title = t(scope === 'mine' ? 'nav.myTickets' : 'nav.ticketQueue');
   const columns: Column<Ticket>[] = [
     {
@@ -123,7 +158,17 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       key: 'title',
       sortValue: (x) => x.title,
       header: t('tickets.col.title'),
-      render: (x) => x.title,
+      render: (x) => (
+        <>
+          {x.title}
+          {x.patientImpact ? (
+            <>
+              {' '}
+              <Badge tone="warning">{t('tickets.patientImpact')}</Badge>
+            </>
+          ) : null}
+        </>
+      ),
     },
     {
       key: 'status',
@@ -162,6 +207,25 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       render: (x) => <TableDate value={x.updatedAt} />,
     },
   ];
+  if (scope === 'all')
+    columns.splice(columns.length - 1, 0, {
+      key: 'location',
+      sortValue: (ticket) => locationNames[ticket.affectedLocationId ?? ''] ?? '',
+      header: t('tickets.col.location'),
+      render: (ticket) =>
+        ticket.affectedLocationId ? (
+          <button
+            type="button"
+            className="btn btn-link"
+            title={t('tickets.filter.locationHint')}
+            onClick={() => setLocationFilter(ticket.affectedLocationId ?? '')}
+          >
+            {locationNames[ticket.affectedLocationId] || t('tickets.personUnknown')}
+          </button>
+        ) : (
+          '–'
+        ),
+    });
   if (scope === 'all')
     columns.splice(
       columns.length - 1,
@@ -255,6 +319,17 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
               t('query.referenceUnknown')
             }`,
             onRemove: () => setQueueFilter(''),
+          },
+        ]
+      : []),
+    ...(locationFilter
+      ? [
+          {
+            key: 'location',
+            label: `${t('tickets.col.location')}: ${
+              locationNames[locationFilter] || t('query.referenceUnknown')
+            }`,
+            onRemove: () => setLocationFilter(''),
           },
         ]
       : []),

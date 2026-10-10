@@ -419,6 +419,14 @@ export function SecurityOverviewScreen() {
               </Link>
             </p>
           ))}
+          <h2>{t('security.untriagedBySeverity')}</h2>
+          {Object.entries(p.untriagedBySeverity ?? {}).map(([severity, count]) => (
+            <p key={severity}>
+              <Link to={overviewLinks.untriaged(severity)}>
+                {t(`security.severity.${severity}` as MessageKey)}: {count}
+              </Link>
+            </p>
+          ))}
           <h2>{t('security.openByConfidence')}</h2>
           {Object.entries(p.openFindingsByConfidence).map(([confidence, count]) => (
             <p key={confidence}>

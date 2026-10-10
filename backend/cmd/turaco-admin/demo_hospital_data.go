@@ -513,4 +513,4 @@ var simArticles = []simArticle{
 
 // simCatalogKeys are the catalog items created by seed-hospital (definitions are built at run time because
 // they reference Team ids).
-var simCatalogKeys = []string{"orbis-access", "medical-device-network", "dect-phone", "printer-setup"}
+var simCatalogKeys = []string{"orbis-access", "medical-device-network", "dect-phone", "printer-setup", "device-procure", "password-reset", "peripheral-request"}

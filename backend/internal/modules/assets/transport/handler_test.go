@@ -37,7 +37,10 @@ func as(user string, perms ...string) fakeAuth {
 	return fakeAuth{user: user, perms: m, ok: true}
 }
 
-type dir struct{ active map[string]bool }
+type dir struct {
+	active  map[string]bool
+	primary map[string]string
+}
 
 func (d dir) pick(ids []string) map[string]bool {
 	out := map[string]bool{}
@@ -61,6 +64,15 @@ func (d dir) UserNames(context.Context, []string) (map[string]string, error) {
 func (d dir) TeamNames(context.Context, []string) (map[string]string, error) {
 	return map[string]string{}, nil
 }
+func (d dir) PrimaryLocationIDs(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		if loc, ok := d.primary[id]; ok {
+			out[id] = loc
+		}
+	}
+	return out, nil
+}
 func (d dir) LocationNames(context.Context, []string) (map[string]string, error) {
 	return map[string]string{}, nil
 }
@@ -78,16 +90,18 @@ func (p products) Products(_ context.Context, ids []string) (map[string]applicat
 }
 
 const (
-	holder   = "00000000-0000-7000-8000-0000000000a1"
-	stranger = "00000000-0000-7000-8000-0000000000b2"
-	admin    = "00000000-0000-7000-8000-0000000000c3"
-	product  = "00000000-0000-7000-8000-0000000000d4"
+	holder    = "00000000-0000-7000-8000-0000000000a1"
+	stranger  = "00000000-0000-7000-8000-0000000000b2"
+	admin     = "00000000-0000-7000-8000-0000000000c3"
+	product   = "00000000-0000-7000-8000-0000000000d4"
+	site      = "00000000-0000-7000-8000-0000000000e5"
+	elsewhere = "00000000-0000-7000-8000-0000000000f6"
 )
 
 func serve(t *testing.T, a authorization.Authenticator) http.Handler {
 	t.Helper()
 	pool := dbtest.Pool(t)
-	svc := application.NewService(repository.New(pool), dir{active: map[string]bool{holder: true}},
+	svc := application.NewService(repository.New(pool), dir{active: map[string]bool{holder: true, site: true, elsewhere: true}, primary: map[string]string{holder: site}},
 		products{product: {ID: product, Name: "Mouse", Active: true, AssetManaged: true}}, nil)
 	mux := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -184,5 +198,41 @@ func TestValidationErrorsOverHTTP(t *testing.T) {
 	}
 	if rec := do(h, "GET", "/api/v1/assets/00000000-0000-7000-8000-0000000000ee", ""); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown asset = %d", rec.Code)
+	}
+}
+
+func TestSharedDevicesOfThePrimaryLocationOnly(t *testing.T) {
+	manage := serve(t, as(admin, "assets.manage"))
+	create := func(serial string) string {
+		rec := do(manage, "POST", "/api/v1/assets", `{"productId":"`+product+`","serialNumber":"`+serial+`","notes":"internal note"}`)
+		var c struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &c)
+		if rec.Code != http.StatusCreated || c.ID == "" {
+			t.Fatalf("create = %d %s", rec.Code, rec.Body)
+		}
+		return c.ID
+	}
+	shared, other := create("SHARED-1"), create("SHARED-2")
+	for id, loc := range map[string]string{shared: site, other: elsewhere} {
+		if rec := do(manage, "POST", "/api/v1/assets/"+id+"/assign", `{"assigneeType":"location","assigneeId":"`+loc+`"}`); rec.Code != http.StatusOK {
+			t.Fatalf("assign = %d %s", rec.Code, rec.Body)
+		}
+	}
+	asHolder := serve(t, as(holder))
+	rec := do(asHolder, "GET", "/api/v1/my-assets/shared", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), shared) {
+		t.Fatalf("shared = %d %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), other) || strings.Contains(rec.Body.String(), "internal note") {
+		t.Errorf("shared list leaks another location's asset or the notes: %s", rec.Body)
+	}
+	// A user without a primary Location sees nothing; anonymous callers are refused.
+	if rec := do(serve(t, as(stranger)), "GET", "/api/v1/my-assets/shared", ""); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), shared) {
+		t.Errorf("stranger shared = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(serve(t, fakeAuth{}), "GET", "/api/v1/my-assets/shared", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous = %d", rec.Code)
 	}
 }

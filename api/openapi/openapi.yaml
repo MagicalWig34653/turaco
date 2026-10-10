@@ -1498,6 +1498,21 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /briefing/announcements:
+    get:
+      operationId: getBriefingAnnouncements
+      summary: Get the employee-facing announcements.
+      description: "Any signed-in user (no briefing permission). Returns published, unexpired items with audience `all` (newest first, at most 20) and the public status of open Major Incidents that are not exercises (reference, title, public summary, status, next update due; no owner, tickets or counts). Items carry no author, status or version. `incidentsUnavailable` is true when the incident source failed; the items are still returned. The incident part is empty when Service Desk is switched off."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Announcements.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BriefingAnnouncements'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /briefing-items:
     get:
       operationId: listBriefingItems
@@ -2510,6 +2525,26 @@ paths:
       operationId: listMyAssets
       summary: List the assets assigned to me.
       description: "Any signed-in user; ownership is the rule. Lists assets with an active assignment to the caller."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AssetList'}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /my-assets/shared:
+    get:
+      operationId: listMySharedAssets
+      summary: List the shared devices of my primary Location.
+      description: "Any signed-in user. Lists assets with an active assignment to the caller's primary Location (carts, printers, monitors) in the redacted holder view (no notes, supplier or status reason). Empty without a primary Location. Never lists assets of other Locations."
       security:
         - sessionAuth: []
       parameters:
@@ -5081,6 +5116,10 @@ paths:
         - name: active
           in: query
           schema: {type: boolean}
+        - name: exercises
+          in: query
+          description: "`false` hides exercises (drills); the incident banner passes it. Default: exercises are included."
+          schema: {type: boolean}
       responses:
         '200':
           description: One page.
@@ -5337,6 +5376,105 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/MajorIncidentTransition'
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/owner:
+    post:
+      operationId: setMajorIncidentOwner
+      summary: Set or clear the owner.
+      description: "Needs `majorincidents.manage`. The owner must be an active user; `null` clears it. Not allowed on closed incidents. Versioned (`expectedVersion`), audited (servicedesk.major_incident.owner_set); no event, no public timeline entry. Setting the current value is a no-op."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ownerUserId]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                ownerUserId: {type: [string, "null"], format: uuid}
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/next-update:
+    post:
+      operationId: setMajorIncidentNextUpdate
+      summary: Set or clear when the next update is due.
+      description: "Needs `majorincidents.manage`. `dueAt` must be in the future and within 30 days; `null` clears it. Only for active incidents (resolving clears it). Versioned, audited (servicedesk.major_incident.next_update_set)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [dueAt]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                dueAt: {type: [string, "null"], format: date-time}
+      responses:
+        '200':
+          description: The incident.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MajorIncident'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /major-incidents/{id}/locations:
+    post:
+      operationId: setMajorIncidentLocations
+      summary: Replace the affected Locations.
+      description: "Needs `majorincidents.manage`. At most 20 active Organization Locations (validated through the Organization public contract); an empty list clears them. Not allowed on closed incidents. Versioned, audited with the before and after ids (servicedesk.major_incident.locations_set)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [locationIds]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                locationIds:
+                  type: array
+                  maxItems: 20
+                  items: {type: string, format: uuid}
       responses:
         '200':
           description: The incident.
@@ -16207,13 +16345,14 @@ components:
     BriefingItem:
       type: object
       additionalProperties: false
-      required: [id, title, body, severity, status, validUntil, authorUserId, publishedAt, publishedByUserId, withdrawnAt, withdrawnByUserId, version, createdAt, updatedAt]
+      required: [id, title, body, severity, status, audience, validUntil, authorUserId, publishedAt, publishedByUserId, withdrawnAt, withdrawnByUserId, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
         body: {type: string, description: "Plain text; clients must not render it as HTML."}
         severity: {type: string, enum: [info, warning, critical]}
         status: {type: string, enum: [draft, published, withdrawn]}
+        audience: {type: string, enum: [it, all], description: "`it` stays in the IT briefing; `all` is also announced to every signed-in user (see /briefing/announcements)."}
         validUntil: {type: [string, "null"], format: date-time, description: "After this instant a published item is hidden from viewers."}
         authorUserId: {type: [string, "null"], format: uuid}
         publishedAt: {type: [string, "null"], format: date-time}
@@ -16240,7 +16379,41 @@ components:
         title: {type: string, minLength: 1, maxLength: 200}
         body: {type: string, maxLength: 10000}
         severity: {type: string, enum: [info, warning, critical], default: info}
+        audience: {type: string, enum: [it, all], default: it}
         validUntil: {type: [string, "null"], format: date-time}
+    BriefingAnnouncements:
+      type: object
+      additionalProperties: false
+      required: [items, incidents, incidentsUnavailable]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, title, body, severity, publishedAt, validUntil]
+            properties:
+              id: {type: string, format: uuid}
+              title: {type: string}
+              body: {type: string, description: "Plain text; clients must not render it as HTML."}
+              severity: {type: string, enum: [info, warning, critical]}
+              publishedAt: {type: [string, "null"], format: date-time}
+              validUntil: {type: [string, "null"], format: date-time}
+        incidents:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, reference, title, summary, status, nextUpdateDue, updatedAt]
+            properties:
+              id: {type: string, format: uuid}
+              reference: {type: string}
+              title: {type: string}
+              summary: {type: string}
+              status: {type: string, enum: [identified, investigating, mitigating, monitoring]}
+              nextUpdateDue: {type: [string, "null"], format: date-time}
+              updatedAt: {type: string, format: date-time}
+        incidentsUnavailable: {type: boolean}
     BriefingItemUpdate:
       type: object
       additionalProperties: false
@@ -16250,6 +16423,7 @@ components:
         title: {type: string, minLength: 1, maxLength: 200}
         body: {type: string, maxLength: 10000}
         severity: {type: string, enum: [info, warning, critical]}
+        audience: {type: string, enum: [it, all]}
         validUntil: {type: string, format: date-time}
         clearValidUntil: {type: boolean}
     Manufacturer:
@@ -17445,7 +17619,7 @@ components:
     MajorIncident:
       type: object
       additionalProperties: false
-      required: [id, reference, title, summary, status, resolvedAt, closedAt, subscribed, linkedTickets, version, createdAt, updatedAt]
+      required: [id, reference, title, summary, status, resolvedAt, closedAt, subscribed, linkedTickets, version, createdAt, updatedAt, isExercise, nextUpdateDue]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string, description: "Human reference such as MI-000001."}
@@ -17459,6 +17633,9 @@ components:
         version: {type: integer, minimum: 1}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+        isExercise: {type: boolean, description: "A drill: excluded from the banner, the briefing and Overview counts; shown with an Exercise badge. Set when declared."}
+        nextUpdateDue: {type: [string, "null"], format: date-time, description: "When the next public update is promised; cleared on resolve."}
+        ownerUserId: {type: string, format: uuid, description: "Only returned to `majorincidents.manage` holders, and only when an owner is set."}
     MajorIncidentList:
       type: object
       additionalProperties: false
@@ -17472,10 +17649,22 @@ components:
       allOf:
         - $ref: '#/components/schemas/MajorIncident'
         - type: object
-          required: [updates, tickets, allowedOperations]
+          required: [updates, tickets, allowedOperations, locations]
           properties:
+            locations:
+              description: "Affected Organization Locations (active or not; unknown ones are left out)."
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [id, name]
+                properties:
+                  id: {type: string, format: uuid}
+                  name: {type: string}
+            hiddenLinkedTickets: {type: integer, minimum: 1, description: "Linked tickets the reader cannot see; only returned to `majorincidents.manage` holders when greater than zero (the UI shows \"+N not visible\")."}
+            ownerName: {type: string, description: "Display name of the owner; `majorincidents.manage` holders only."}
             tickets:
-              description: "Linked tickets the reader may view (Queue grants, or reporter/affected); `linkedTickets` counts exactly these (no hidden count)."
+              description: "Linked tickets the reader may view (Queue grants, or reporter/affected); `linkedTickets` counts exactly these; the number of the others is returned as `hiddenLinkedTickets` to `majorincidents.manage` holders only."
               type: array
               items:
                 type: object
@@ -17508,6 +17697,7 @@ components:
       properties:
         title: {type: string, maxLength: 200}
         message: {type: string, maxLength: 2000}
+        isExercise: {type: boolean, default: false, description: "Declare a drill. Cannot be changed afterwards."}
         ticketIds:
           type: array
           maxItems: 50
@@ -19906,10 +20096,11 @@ components:
         residualRisk: {type: string, enum: [none, low, medium, high, unknown], description: Unknown when the Advisory is outside the applicable family, matching is missing/incomplete/truncated or matched inventory ingestion is over 48 hours old. Otherwise derived from severity and live probable/potential findings including accepted risk.}
     SecurityOverview:
       type: object
-      required: [source, applicableBySeverity, openFindingsByConfidence, knownExploitedApplicable, overdueTasks, riskAcceptancesDueWithin30Days]
+      required: [source, applicableBySeverity, untriagedBySeverity, openFindingsByConfidence, knownExploitedApplicable, overdueTasks, riskAcceptancesDueWithin30Days]
       properties:
         source: {type: string, enum: [turaco_derived]}
         applicableBySeverity: {type: object, additionalProperties: {type: integer}}
+        untriagedBySeverity: {type: object, additionalProperties: {type: integer}, description: Advisories in status new (applicability not yet decided) by severity.}
         openFindingsByConfidence: {type: object, additionalProperties: {type: integer}}
         knownExploitedApplicable: {type: integer, description: Live advisories listed in the CISA Known Exploited Vulnerabilities catalog.}
         overdueTasks: {type: integer}

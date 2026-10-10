@@ -44,6 +44,8 @@ export const problemsApi = {
     api.post<Problem>('/problems', { title, description }),
   operate: (id: string, op: string, expectedVersion: number, text = '') =>
     api.post<Problem>(`/problems/${enc(id)}/${op.replaceAll('_', '-')}`, { expectedVersion, text }),
+  setOwner: (id: string, ownerId: string, expectedVersion: number) =>
+    api.post<Problem>(`/problems/${enc(id)}/owner`, { expectedVersion, ownerId }),
   linkTicket: (id: string, ticketId: string) =>
     api.post<void>(`/problems/${enc(id)}/tickets`, { ticketId }),
   unlinkTicket: (id: string, ticketId: string) =>

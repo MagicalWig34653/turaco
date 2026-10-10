@@ -4,27 +4,51 @@ import { useState } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
-import { Link } from '../../platform/router/Router';
+import { Link, navigate } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
-import { Checkbox } from '../../platform/ui/Field';
+import { Checkbox, Select } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { announceNotificationsChanged, notificationsApi } from './api';
+import { ticketsApi } from '../tickets/api';
+import { categoriesIn, filterByCategory, isProbedLink, isTargetGone } from './notificationModel';
 import { PreferencesPanel } from './PreferencesPanel';
-import { notificationLink, notificationText } from './text';
+import { categoryLabel, notificationLink, notificationText } from './text';
 import type { AppNotification } from './types';
 
 export function NotificationsScreen() {
   const { t } = useI18n();
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [category, setCategory] = useState('');
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const list = usePagedList(
     (cursor, signal) => notificationsApi.list(unreadOnly, cursor, signal),
     [unreadOnly],
   );
+
+  const visibleItems = filterByCategory(list.items, category);
+
+  // A target that no longer opens (deleted ticket) degrades to plain text instead of a dead link.
+  const open = async (notification: AppNotification, path: string) => {
+    void notificationsApi
+      .markRead(notification.id)
+      .then(announceNotificationsChanged, () => undefined);
+    if (isProbedLink(notification) && notification.linkId) {
+      try {
+        await ticketsApi.get(notification.linkId);
+      } catch (cause) {
+        if (isTargetGone(cause)) {
+          setGone((current) => new Set(current).add(notification.id));
+          return;
+        }
+      }
+    }
+    navigate(path);
+  };
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -48,19 +72,29 @@ export function NotificationsScreen() {
         const text = notificationText(t, notification);
         const link = notificationLink(notification);
         const content = notification.readAt ? text : <strong>{text}</strong>;
-        return link ? (
+        return link && !gone.has(notification.id) ? (
           <Link
             to={link}
-            onClick={() =>
-              void notificationsApi
-                .markRead(notification.id)
-                .then(announceNotificationsChanged, () => undefined)
-            }
+            onClick={(event) => {
+              if (!isProbedLink(notification)) {
+                void notificationsApi
+                  .markRead(notification.id)
+                  .then(announceNotificationsChanged, () => undefined);
+                return;
+              }
+              event.preventDefault();
+              void open(notification, link);
+            }}
           >
             {content}
           </Link>
         ) : (
-          content
+          <>
+            {content}
+            {gone.has(notification.id) ? (
+              <small className="field-hint"> {t('notifications.targetGone')}</small>
+            ) : null}
+          </>
         );
       },
     },
@@ -95,6 +129,15 @@ export function NotificationsScreen() {
   ];
 
   const activeFilters = [
+    ...(category
+      ? [
+          {
+            key: 'category',
+            label: categoryLabel(t, category),
+            onRemove: () => setCategory(''),
+          },
+        ]
+      : []),
     ...(unreadOnly
       ? [
           {
@@ -120,6 +163,18 @@ export function NotificationsScreen() {
         }
       />
       <FilterBar activeFilters={activeFilters}>
+        <Select
+          label={t('notifications.category')}
+          value={category}
+          onChange={(event) => setCategory(event.target.value)}
+          options={[
+            { value: '', label: t('notifications.category.any') },
+            ...categoriesIn(list.items).map((value) => ({
+              value,
+              label: categoryLabel(t, value),
+            })),
+          ]}
+        />
         <Checkbox
           label={t('notifications.unreadOnly')}
           checked={unreadOnly}
@@ -131,7 +186,7 @@ export function NotificationsScreen() {
         filterSummary={activeFilters.map((filter) => filter.label).join(' · ')}
         caption={t('nav.notifications')}
         columns={columns}
-        rows={list.items}
+        rows={visibleItems}
         rowKey={(notification) => notification.id}
         loading={list.loading}
         error={list.error}

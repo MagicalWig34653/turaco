@@ -10,7 +10,9 @@ import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
 import { TextArea } from '../../platform/ui/Field';
+import { useSession } from '../../platform/session/SessionProvider';
 import { requestsApi } from './api';
+import { canOpenTasks, taskHintKey } from './taskModel';
 import { RequestStatusBadge } from './RequestsScreen';
 import type { RequestAction, RequestField, ServiceRequestDetail } from './types';
 
@@ -103,6 +105,8 @@ export function RequestDetail({
   onChanged: () => void;
 }) {
   const { t, locale } = useI18n();
+  const { can } = useSession();
+  const taskLinks = canOpenTasks(can);
   const [dialog, setDialog] = useState<ReasonAction | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
@@ -237,11 +241,13 @@ export function RequestDetail({
         <ul className="plain-list">
           {request.tasks.map((task) => (
             <li key={task.id}>
-              <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>{' '}
+              {taskLinks ? (
+                <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
+              ) : (
+                task.title
+              )}{' '}
               <Badge>{t(`tasks.status.${task.status as 'open'}`)}</Badge>{' '}
-              <span className="field-hint">
-                {t(task.mandatory ? 'requests.task.mandatory' : 'requests.task.optional')}
-              </span>
+              <span className="field-hint">{t(taskHintKey(task.mandatory, taskLinks))}</span>
             </li>
           ))}
         </ul>

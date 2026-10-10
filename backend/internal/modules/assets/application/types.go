@@ -198,7 +198,9 @@ type Filter struct {
 	Terms []SearchTerm
 	// AssignedToUser restricts to assets actively assigned to this User (my assets).
 	AssignedToUser string
-	Page           Page
+	// AssignedToLocation restricts to assets actively assigned to this Location (shared devices).
+	AssignedToLocation string
+	Page               Page
 }
 
 // SearchTerm is one word of a search text with the ids other modules matched for it.
@@ -260,6 +262,8 @@ type Directory interface {
 	UserNames(ctx context.Context, ids []string) (map[string]string, error)
 	TeamNames(ctx context.Context, ids []string) (map[string]string, error)
 	LocationNames(ctx context.Context, ids []string) (map[string]string, error)
+	// PrimaryLocationIDs returns user id -> primary Location id for Users that have one.
+	PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error)
 }
 
 // ProductInfo is what assets need to know about a Product.

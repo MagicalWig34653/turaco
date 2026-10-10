@@ -3,6 +3,7 @@ import {
   abilitiesOf,
   addSubject,
   aliasList,
+  ticketExtraFilter,
   canOfferMove,
   grantsToMatrix,
   intakeChoice,
@@ -207,5 +208,29 @@ describe('grants matrix', () => {
     ];
     expect(sameMatrix(a, b)).toBe(true);
     expect(sameMatrix(a, [{ ...user, access: 'work' as const, create: false }])).toBe(false);
+  });
+});
+
+describe('alias and filter helpers', () => {
+  it('lists a repeated alias once (ticket moved A to B to A)', () => {
+    expect(aliasList({ reference: 'C-1', aliases: ['A-1', 'B-1', 'A-1'] })).toEqual(['A-1', 'B-1']);
+  });
+  it('builds the extra ticket filter from assignment and location', () => {
+    expect(ticketExtraFilter({ unassigned: false, locationId: '' })).toBeUndefined();
+    expect(ticketExtraFilter({ unassigned: true, locationId: '' })).toEqual({
+      type: 'condition',
+      field: 'assignee',
+      op: 'is_empty',
+    });
+    expect(ticketExtraFilter({ unassigned: false, locationId: 'l1' })).toEqual({
+      type: 'condition',
+      field: 'location',
+      op: 'equals',
+      value: 'l1',
+    });
+    expect(ticketExtraFilter({ unassigned: true, locationId: 'l1' })).toMatchObject({
+      type: 'group',
+      logic: 'and',
+    });
   });
 });

@@ -2,6 +2,7 @@ import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
 import type {
+  Announcements,
   BriefingCreateBody,
   BriefingItem,
   BriefingStatus,
@@ -23,6 +24,8 @@ registerErrorResolver((error) =>
 );
 
 export const briefingApi = {
+  /** Any signed-in user: audience-all items and the public status of open, non-exercise incidents. */
+  announcements: (signal?: Signal) => api.get<Announcements>('/briefing/announcements', { signal }),
   feed: (signal?: Signal) => api.get<FeedResult>('/briefing/feed', { signal }),
   /** Viewers get published, unexpired items; managers get all and may filter by status. */
   list: (status: BriefingStatus | '', cursor?: string, signal?: Signal) =>

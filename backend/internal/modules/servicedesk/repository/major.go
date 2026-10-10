@@ -13,7 +13,7 @@ import (
 var _ application.MajorStore = (*Repository)(nil)
 
 const majorCols = `m.id::text, m.reference, m.title, m.summary, m.status, m.declared_by::text, m.resolved_at, m.closed_at,
-	m.version, m.created_at, m.updated_at`
+	m.version, m.created_at, m.updated_at, m.is_exercise, m.owner_user_id::text, m.next_update_due`
 
 // majorView adds the viewer's subscription flag and the number of linked tickets.
 const majorView = majorCols + `,
@@ -22,7 +22,7 @@ const majorView = majorCols + `,
 
 func scanMajor(row pgx.Row, view bool) (application.MajorIncident, error) {
 	var m application.MajorIncident
-	dst := []any{&m.ID, &m.Reference, &m.Title, &m.Summary, &m.Status, &m.DeclaredBy, &m.ResolvedAt, &m.ClosedAt, &m.Version, &m.CreatedAt, &m.UpdatedAt}
+	dst := []any{&m.ID, &m.Reference, &m.Title, &m.Summary, &m.Status, &m.DeclaredBy, &m.ResolvedAt, &m.ClosedAt, &m.Version, &m.CreatedAt, &m.UpdatedAt, &m.IsExercise, &m.OwnerUserID, &m.NextUpdateDue}
 	if view {
 		dst = append(dst, &m.Subscribed, &m.Tickets)
 	}
@@ -32,8 +32,8 @@ func scanMajor(row pgx.Row, view bool) (application.MajorIncident, error) {
 
 func (r *Repository) InsertMajorTx(ctx context.Context, tx pgx.Tx, m application.MajorIncident) (application.MajorIncident, error) {
 	out, err := scanMajor(tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.major_incidents AS m (title, summary, status, declared_by) VALUES ($1, $2, $3, $4::uuid) RETURNING `+majorCols,
-		m.Title, m.Summary, m.Status, m.DeclaredBy), false)
+		INSERT INTO servicedesk.major_incidents AS m (title, summary, status, declared_by, is_exercise) VALUES ($1, $2, $3, $4::uuid, $5) RETURNING `+majorCols,
+		m.Title, m.Summary, m.Status, m.DeclaredBy, m.IsExercise), false)
 	if err != nil {
 		return application.MajorIncident{}, fmt.Errorf("insert major incident: %w", err)
 	}
@@ -56,8 +56,9 @@ func (r *Repository) LockMajorTx(ctx context.Context, tx pgx.Tx, id string) (app
 
 func (r *Repository) UpdateMajorTx(ctx context.Context, tx pgx.Tx, m application.MajorIncident) (application.MajorIncident, error) {
 	out, err := scanMajor(tx.QueryRow(ctx, `
-		UPDATE servicedesk.major_incidents AS m SET summary = $2, status = $3, resolved_at = $4, closed_at = $5, version = m.version + 1, updated_at = now()
-		WHERE m.id = $1::uuid RETURNING `+majorCols, m.ID, m.Summary, m.Status, m.ResolvedAt, m.ClosedAt), false)
+		UPDATE servicedesk.major_incidents AS m SET summary = $2, status = $3, resolved_at = $4, closed_at = $5, owner_user_id = $6::uuid, next_update_due = $7,
+			version = m.version + 1, updated_at = now()
+		WHERE m.id = $1::uuid RETURNING `+majorCols, m.ID, m.Summary, m.Status, m.ResolvedAt, m.ClosedAt, m.OwnerUserID, m.NextUpdateDue), false)
 	if err != nil {
 		return application.MajorIncident{}, fmt.Errorf("update major incident: %w", err)
 	}
@@ -88,7 +89,7 @@ func (r *Repository) GetMajor(ctx context.Context, id, viewer string) (applicati
 	return m, nil
 }
 
-func (r *Repository) ListMajor(ctx context.Context, viewer string, activeOnly bool, page application.Page) (application.MajorResult, error) {
+func (r *Repository) ListMajor(ctx context.Context, viewer string, activeOnly, includeExercises bool, page application.Page) (application.MajorResult, error) {
 	page = page.Normalize()
 	if !validUUID(viewer) {
 		return application.MajorResult{Items: []application.MajorIncident{}}, nil
@@ -97,6 +98,9 @@ func (r *Repository) ListMajor(ctx context.Context, viewer string, activeOnly bo
 	cond := "TRUE"
 	if activeOnly {
 		cond = "m.status NOT IN ('resolved', 'closed')"
+	}
+	if !includeExercises {
+		cond += " AND NOT m.is_exercise"
 	}
 	if page.Cursor != "" {
 		if !validUUID(page.Cursor) {
@@ -309,4 +313,53 @@ func validUUIDs(in []string) []string {
 		}
 	}
 	return out
+}
+
+// LocationIDs implements application.MajorStore.
+func (r *Repository) LocationIDs(ctx context.Context, id string) ([]string, error) {
+	if !validUUID(id) {
+		return []string{}, nil
+	}
+	return queryIDs(ctx, r.pool, id)
+}
+
+// LocationIDsTx implements application.MajorStore.
+func (r *Repository) LocationIDsTx(ctx context.Context, tx pgx.Tx, id string) ([]string, error) {
+	return queryIDs(ctx, tx, id)
+}
+
+type idQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func queryIDs(ctx context.Context, q idQuerier, id string) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT location_id::text FROM servicedesk.major_incident_locations WHERE major_incident_id = $1::uuid ORDER BY location_id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("list major incident locations: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var l string
+		if err := rows.Scan(&l); err != nil {
+			return nil, fmt.Errorf("list major incident locations: scan: %w", err)
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceLocationsTx implements application.MajorStore.
+func (r *Repository) ReplaceLocationsTx(ctx context.Context, tx pgx.Tx, id string, locationIDs []string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM servicedesk.major_incident_locations WHERE major_incident_id = $1::uuid`, id); err != nil {
+		return fmt.Errorf("clear major incident locations: %w", err)
+	}
+	if len(locationIDs) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO servicedesk.major_incident_locations(major_incident_id, location_id)
+		SELECT $1::uuid, l FROM unnest($2::text[]::uuid[]) AS l`, id, locationIDs); err != nil {
+		return fmt.Errorf("set major incident locations: %w", err)
+	}
+	return nil
 }

@@ -268,3 +268,35 @@ func TestDatabaseInvariants(t *testing.T) {
 		}
 	}
 }
+
+func TestAudienceIsStoredAndFiltered(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	it, err := f.repo.Insert(ctx, f.caller(), application.NewItem{Title: "For all", Body: "b", Severity: "info", Audience: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.ids = append(f.ids, it.ID)
+	internal := f.insert("IT only")
+	if it.Audience != "all" || internal.Audience != "it" {
+		t.Fatalf("audiences = %q %q", it.Audience, internal.Audience)
+	}
+	res, err := f.repo.List(ctx, application.ListQuery{Audience: "all", Page: application.Page{Limit: 200}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seenAll, seenIT bool
+	for _, x := range res.Items {
+		if x.Audience != "all" {
+			t.Errorf("audience filter returned %q", x.Audience)
+		}
+		seenAll = seenAll || x.ID == it.ID
+		seenIT = seenIT || x.ID == internal.ID
+	}
+	if !seenAll || seenIT {
+		t.Errorf("filter: all=%v it=%v", seenAll, seenIT)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE briefing.items SET audience = 'x' WHERE id = $1`, it.ID); err == nil {
+		t.Error("the database must reject unknown audiences")
+	}
+}

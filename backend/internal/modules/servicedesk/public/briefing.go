@@ -10,6 +10,7 @@ import (
 // ReadScope selects incident details. Its zero value exposes references and state only.
 type ReadScope = repository.BriefingReadScope
 type MajorIncident = repository.BriefingMajorIncident
+type PublicIncident = repository.PublicIncident
 type SyncStatus = repository.BriefingSyncStatus
 type Briefing struct{ repo *repository.Repository }
 
@@ -27,3 +28,8 @@ func (b *Briefing) UnassignedOpenTickets(ctx context.Context, scope ReadScope) (
 
 // SyncHealth returns Autotask push counts without raw errors.
 func (b *Briefing) SyncHealth(ctx context.Context) (SyncStatus, error) { return b.repo.SyncHealth(ctx) }
+
+// PublicOpenIncidents returns the public status of open, non-exercise incidents for every signed-in User.
+func (b *Briefing) PublicOpenIncidents(ctx context.Context) ([]PublicIncident, error) {
+	return b.repo.PublicOpenIncidents(ctx)
+}

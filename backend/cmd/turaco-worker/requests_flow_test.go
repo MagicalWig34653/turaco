@@ -173,8 +173,8 @@ func TestRequestWithoutApprovalIsFulfilledByTasksAndCompletes(t *testing.T) {
 		t.Errorf("task context = %q %q %v", ctype, cid, err)
 	}
 	f.dispatch()
-	if f.notified(f.creator, "request.approved") != 1 {
-		t.Error("the requester must be told the request is being fulfilled")
+	if f.notified(f.creator, "request.started") != 1 || f.notified(f.creator, "request.approved") != 0 {
+		t.Error("an approval-free request notifies request.started, never request.approved")
 	}
 	// The mandatory task alone does not complete the request: the optional one is still open.
 	f.runTask(f.creator, ids[0], "complete")

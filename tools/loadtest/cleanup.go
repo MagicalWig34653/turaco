@@ -55,6 +55,10 @@ func Cleanup(ctx context.Context, pgURL, tag string, dryRun bool) (CleanupResult
 		return res, fmt.Errorf("delete comments: %w", err)
 	}
 	res.Comments = ct.RowsAffected()
+	// Notifications created for those tickets carry the tag in their parameters and would dangle otherwise.
+	if _, err := tx.Exec(ctx, `DELETE FROM platform.notifications WHERE strpos(params::text, $1) > 0`, prefix); err != nil {
+		return res, fmt.Errorf("delete notifications: %w", err)
+	}
 	tt, err := tx.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE strpos(title, $1) = 1`, prefix)
 	if err != nil {
 		return res, fmt.Errorf("delete tickets: %w", err)

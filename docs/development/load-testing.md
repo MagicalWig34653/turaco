@@ -9,7 +9,7 @@ It is **development tooling**: it creates thousands of tickets and comments, wri
 - The tool refuses to run unless `--base-url` points to `localhost`, `127.0.0.1` or `::1`, `GET /api/v1/meta` reports a development-like environment (`development`, `dev`, `local`, `test`), the process environment `APP_ENV` (when set) is development-like, and `--pg-url` (when given) points to a local database. `--i-know` overrides all of these. Never use it against a shared or production system.
 - Everything it creates is tagged: ticket titles start with `[lt:<tag>]`, comments start with the same marker. The tag is printed at the start and in the report (`--tag` sets it).
 - Writes touch only tickets that the run created itself. Pre-existing tickets (the 27 simulation tickets, tickets of manual testers) are only read.
-- Audit events, notifications and queue number counters are not removed by cleanup (audit is append-only by design; counters never move backwards, so numbers of deleted tickets are never reused).
+- Notifications that mention the run tag are removed by cleanup. Audit events and queue number counters are not removed by cleanup (audit is append-only by design; counters never move backwards, so numbers of deleted tickets are never reused).
 - The development database is shared with manual testers. Prefer a throwaway stack ([lab services](lab-services.md): database `turaco_lab`, API on `:18090`, `APP_ENV=development`) for anything above the smoke profile.
 
 ## Prerequisites

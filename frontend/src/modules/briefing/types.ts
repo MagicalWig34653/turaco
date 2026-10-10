@@ -2,6 +2,9 @@
 
 export type BriefingStatus = 'draft' | 'published' | 'withdrawn';
 export type Severity = 'info' | 'warning' | 'critical';
+/** `it` stays in the IT briefing; `all` is also announced to every signed-in user. */
+export type Audience = 'it' | 'all';
+export const audiences: readonly Audience[] = ['it', 'all'];
 
 export type FeedKind =
   | 'manual_item'
@@ -43,6 +46,7 @@ export type BriefingItem = {
   body: string;
   severity: Severity;
   status: BriefingStatus;
+  audience: Audience;
   validUntil: string | null;
   authorUserId: string | null;
   publishedAt: string | null;
@@ -58,6 +62,7 @@ export type BriefingCreateBody = {
   title: string;
   body?: string;
   severity?: Severity;
+  audience?: Audience;
   validUntil?: string | null;
 };
 
@@ -66,6 +71,30 @@ export type BriefingUpdateBody = {
   title?: string;
   body?: string;
   severity?: Severity;
+  audience?: Audience;
   validUntil?: string;
   clearValidUntil?: boolean;
+};
+
+/** Employee-facing part of the briefing: no author, status or internal fields. */
+export type Announcements = {
+  items: Array<{
+    id: string;
+    title: string;
+    /** Plain text; never render it as HTML. */
+    body: string;
+    severity: Severity;
+    publishedAt: string | null;
+    validUntil: string | null;
+  }>;
+  incidents: Array<{
+    id: string;
+    reference: string;
+    title: string;
+    summary: string;
+    status: string;
+    nextUpdateDue: string | null;
+    updatedAt: string;
+  }>;
+  incidentsUnavailable: boolean;
 };

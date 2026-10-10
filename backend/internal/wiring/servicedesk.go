@@ -31,7 +31,7 @@ func (d deviceAdapter) Snapshot(ctx context.Context, assetID, holder string) (ma
 
 // MajorIncidents builds the Major Incident service.
 func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
-	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool))
+	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool)).WithDirectory(orgpublic.NewWorkDirectory(orgrepository.New(pool)))
 }
 
 // Problems builds the Problem service.

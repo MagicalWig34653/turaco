@@ -15,7 +15,7 @@ import { incidentsApi } from './api';
 export function IncidentBanner({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const loaded = useAsync(
-    async (signal) => (await incidentsApi.list(true, undefined, signal)).items,
+    async (signal) => (await incidentsApi.list(true, undefined, signal, false)).items,
     [],
   );
   const [error, setError] = useState<ApiError | undefined>(undefined);

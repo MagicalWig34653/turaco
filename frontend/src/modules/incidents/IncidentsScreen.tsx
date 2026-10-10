@@ -18,6 +18,11 @@ import { TicketPicker } from '../tickets/TicketPicker';
 import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi, type MajorIncident } from './api';
 
+export function ExerciseBadge() {
+  const { t } = useI18n();
+  return <Badge tone="info">{t('incidents.exercise')}</Badge>;
+}
+
 export function IncidentBadge({ status }: { status: MajorIncident['status'] }) {
   const { t } = useI18n();
   const tone =
@@ -33,6 +38,7 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
   const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [exercise, setExercise] = useState(false);
   const [tickets, setTickets] = useState<TicketHit[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
@@ -42,7 +48,7 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
     setBusy(true);
     setError(undefined);
     try {
-      const incident = await incidentsApi.declare(title.trim(), message.trim());
+      const incident = await incidentsApi.declare(title.trim(), message.trim(), exercise);
       // The declaration is committed; a ticket that cannot be linked is reported, not retried silently.
       const failed: TicketHit[] = [];
       for (const hit of tickets) {
@@ -98,6 +104,12 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
           required
           onChange={(event) => setMessage(event.target.value)}
         />
+        <Checkbox
+          label={t('incidents.declare.exercise')}
+          description={t('incidents.declare.exercise.hint')}
+          checked={exercise}
+          onChange={(event) => setExercise(event.target.checked)}
+        />
         <TicketPicker
           label={t('incidents.declare.tickets')}
           hint={t('incidents.declare.tickets.hint')}
@@ -135,7 +147,17 @@ export function IncidentsScreen() {
     {
       key: 'title',
       header: t('incidents.col.title'),
-      render: (m) => <Link to={`/incidents/${encodeURIComponent(m.id)}`}>{m.title}</Link>,
+      render: (m) => (
+        <>
+          <Link to={`/incidents/${encodeURIComponent(m.id)}`}>{m.title}</Link>
+          {m.isExercise ? (
+            <>
+              {' '}
+              <ExerciseBadge />
+            </>
+          ) : null}
+        </>
+      ),
     },
     {
       key: 'status',

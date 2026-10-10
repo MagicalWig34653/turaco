@@ -29,7 +29,14 @@ const (
 	SeverityCritical = "critical"
 )
 
+// Audiences. "it" items stay in the IT briefing; "all" items are also announced to every signed-in User.
+const (
+	AudienceIT  = "it"
+	AudienceAll = "all"
+)
+
 var (
+	audiences  = []string{AudienceIT, AudienceAll}
 	statuses   = []string{StatusDraft, StatusPublished, StatusWithdrawn}
 	severities = []string{SeverityInfo, SeverityWarning, SeverityCritical}
 )
@@ -57,6 +64,8 @@ type Item struct {
 	Body     string
 	Severity string
 	Status   string
+	// Audience is "it" (default) or "all"; it is fixed while the item is a draft.
+	Audience string
 	// ValidUntil hides a published item from viewers after this instant.
 	ValidUntil        *time.Time
 	AuthorUserID      *string
@@ -151,8 +160,10 @@ type Result struct {
 // items (what viewers see); Status filters managers' lists.
 type ListQuery struct {
 	PublishedOnly bool
-	Status        string
-	Page          Page
+	// Audience restricts to one audience when set.
+	Audience string
+	Status   string
+	Page     Page
 }
 
 // Event is a domain event recorded with a change.
@@ -175,6 +186,7 @@ type NewItem struct {
 	Title      string
 	Body       string
 	Severity   string
+	Audience   string // empty means it
 	ValidUntil *time.Time
 	Author     *string
 }
@@ -216,6 +228,13 @@ func cleanBody(s string) (string, error) {
 func validSeverity(s string) error {
 	if !contains(severities, s) {
 		return invalid("severity must be one of info, warning, critical")
+	}
+	return nil
+}
+
+func validAudience(s string) error {
+	if !contains(audiences, s) {
+		return invalid("audience must be one of it, all")
 	}
 	return nil
 }

@@ -29,6 +29,7 @@ export function BriefingCreateScreen() {
         title: values.title,
         body: values.body,
         severity: values.severity,
+        audience: values.audience,
         validUntil: values.validUntil,
       });
       navigate(`${listPath}/${encodeURIComponent(item.id)}`);
@@ -103,6 +104,7 @@ export function BriefingDetailScreen({ id }: { id: string }) {
                 title: values.title,
                 body: values.body,
                 severity: values.severity,
+                audience: values.audience,
                 ...(values.validUntil === null
                   ? { clearValidUntil: true }
                   : { validUntil: values.validUntil }),
@@ -153,6 +155,8 @@ export function BriefingDetailScreen({ id }: { id: string }) {
         <dd>
           <SeverityBadge severity={item.severity} />
         </dd>
+        <dt>{t('briefing.audience')}</dt>
+        <dd>{t(`briefing.audience.${item.audience}`)}</dd>
         {can('briefing.manage') ? (
           <>
             <dt>{t('tasks.col.status')}</dt>

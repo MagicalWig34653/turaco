@@ -78,7 +78,7 @@ func TestMajorIncidentUpdatesReachSubscribersOnly(t *testing.T) {
 	c := func(u string) servicedeskapp.Caller {
 		return servicedeskapp.Caller{Actor: audit.UserActor(u), CorrelationID: w.corr}
 	}
-	m, err := svc.Declare(ctx, c(w.assignee), true, "VPN outage", "The VPN gateway is unreachable.")
+	m, err := svc.Declare(ctx, c(w.assignee), true, "VPN outage", "The VPN gateway is unreachable.", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestLargeIncidentAudiencesAreNotifiedInChunks(t *testing.T) {
 	c := func(u string) servicedeskapp.Caller {
 		return servicedeskapp.Caller{Actor: audit.UserActor(u), CorrelationID: w.corr}
 	}
-	m, err := svc.Declare(ctx, c(w.assignee), true, "Chunked", "msg")
+	m, err := svc.Declare(ctx, c(w.assignee), true, "Chunked", "msg", false)
 	if err != nil {
 		t.Fatal(err)
 	}

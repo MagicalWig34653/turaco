@@ -161,7 +161,7 @@ func TestProblemsAndIncidentsRespectQueueAccessOfTickets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mi, err := major.Declare(ctx, e.c(e.global.UserID), true, "Print outage", "All printers are down")
+	mi, err := major.Declare(ctx, e.c(e.global.UserID), true, "Print outage", "All printers are down", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestProblemsAndIncidentsRespectQueueAccessOfTickets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ml, err := major.List(ctx, who, true, application.Page{})
+		ml, err := major.List(ctx, who, true, true, application.Page{})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -42,6 +42,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	if h.feed != nil {
 		route("GET /api/v1/briefing/feed", authorization.RequireAny(auth, feedPermissions()...), h.getFeed)
 	}
+	// Employee-facing: any signed-in User; only audience "all" items and the public Major Incident status.
+	route("GET /api/v1/briefing/announcements", authorization.RequireAuthenticated(auth), h.announcements)
 	route("POST /api/v1/briefing-items", manage, h.create)
 	route("GET /api/v1/briefing-items/{id}", anyBriefing, h.get)
 	route("PATCH /api/v1/briefing-items/{id}", manage, h.update)
@@ -150,6 +152,7 @@ type itemDTO struct {
 	Body              string  `json:"body"`
 	Severity          string  `json:"severity"`
 	Status            string  `json:"status"`
+	Audience          string  `json:"audience"`
 	ValidUntil        *string `json:"validUntil"`
 	AuthorUserID      *string `json:"authorUserId"`
 	PublishedAt       *string `json:"publishedAt"`
@@ -173,7 +176,7 @@ func tsPtr(t *time.Time) *string {
 
 func toItem(it application.Item) itemDTO {
 	return itemDTO{
-		ID: it.ID, Title: it.Title, Body: it.Body, Severity: it.Severity, Status: it.Status,
+		ID: it.ID, Title: it.Title, Body: it.Body, Severity: it.Severity, Status: it.Status, Audience: it.Audience,
 		ValidUntil: tsPtr(it.ValidUntil), AuthorUserID: it.AuthorUserID, PublishedAt: tsPtr(it.PublishedAt),
 		PublishedByUserID: it.PublishedByUserID, WithdrawnAt: tsPtr(it.WithdrawnAt), WithdrawnByUserID: it.WithdrawnByUserID,
 		Version: it.Version, CreatedAt: ts(it.CreatedAt), UpdatedAt: ts(it.UpdatedAt),
@@ -215,6 +218,7 @@ type createBody struct {
 	Title      string     `json:"title"`
 	Body       string     `json:"body"`
 	Severity   string     `json:"severity"`
+	Audience   string     `json:"audience"`
 	ValidUntil *time.Time `json:"validUntil"`
 }
 
@@ -224,7 +228,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := h.svc.Create(r.Context(), caller(w, r), principal(r), application.CreateInput{
-		Title: b.Title, Body: b.Body, Severity: b.Severity, ValidUntil: b.ValidUntil,
+		Title: b.Title, Body: b.Body, Severity: b.Severity, Audience: b.Audience, ValidUntil: b.ValidUntil,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -238,6 +242,7 @@ type updateBody struct {
 	Title           *string    `json:"title"`
 	Body            *string    `json:"body"`
 	Severity        *string    `json:"severity"`
+	Audience        *string    `json:"audience"`
 	ValidUntil      *time.Time `json:"validUntil"`
 	ClearValidUntil bool       `json:"clearValidUntil"`
 }
@@ -252,7 +257,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := h.svc.Update(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, application.UpdateInput{
-		Title: b.Title, Body: b.Body, Severity: b.Severity, ValidUntil: b.ValidUntil, ClearValidUntil: b.ClearValidUntil,
+		Title: b.Title, Body: b.Body, Severity: b.Severity, Audience: b.Audience, ValidUntil: b.ValidUntil, ClearValidUntil: b.ClearValidUntil,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -306,4 +311,44 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type announcementDTO struct {
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Body        string  `json:"body"`
+	Severity    string  `json:"severity"`
+	PublishedAt *string `json:"publishedAt"`
+	ValidUntil  *string `json:"validUntil"`
+}
+
+type announcementIncidentDTO struct {
+	ID            string  `json:"id"`
+	Reference     string  `json:"reference"`
+	Title         string  `json:"title"`
+	Summary       string  `json:"summary"`
+	Status        string  `json:"status"`
+	NextUpdateDue *string `json:"nextUpdateDue"`
+	UpdatedAt     string  `json:"updatedAt"`
+}
+
+func (h *handler) announcements(w http.ResponseWriter, r *http.Request) {
+	p, _ := authorization.PrincipalFrom(r.Context())
+	res, err := h.svc.Announcements(r.Context(), p.UserID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := struct {
+		Items                []announcementDTO         `json:"items"`
+		Incidents            []announcementIncidentDTO `json:"incidents"`
+		IncidentsUnavailable bool                      `json:"incidentsUnavailable"`
+	}{Items: make([]announcementDTO, 0, len(res.Items)), Incidents: make([]announcementIncidentDTO, 0, len(res.Incidents)), IncidentsUnavailable: res.IncidentsUnavailable}
+	for _, it := range res.Items {
+		out.Items = append(out.Items, announcementDTO{ID: it.ID, Title: it.Title, Body: it.Body, Severity: it.Severity, PublishedAt: tsPtr(it.PublishedAt), ValidUntil: tsPtr(it.ValidUntil)})
+	}
+	for _, m := range res.Incidents {
+		out.Incidents = append(out.Incidents, announcementIncidentDTO{ID: m.ID, Reference: m.Reference, Title: m.Title, Summary: m.Summary, Status: m.Status, NextUpdateDue: tsPtr(m.NextUpdateDue), UpdatedAt: ts(m.UpdatedAt)})
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }

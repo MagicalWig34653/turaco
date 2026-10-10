@@ -739,7 +739,7 @@ func (h *hospitalSeeder) problems(ctx context.Context) error {
 func (h *hospitalSeeder) majorIncident(ctx context.Context) error {
 	svc := wiring.MajorIncidents(h.e.pool)
 	c := h.leadCaller()
-	list, err := svc.List(ctx, h.users["christian.hoffmann"], false, servicedeskapp.Page{Limit: servicedeskapp.MaxLimit})
+	list, err := svc.List(ctx, h.users["christian.hoffmann"], false, true, servicedeskapp.Page{Limit: servicedeskapp.MaxLimit})
 	if err != nil {
 		return err
 	}
@@ -748,7 +748,7 @@ func (h *hospitalSeeder) majorIncident(ctx context.Context) error {
 			return nil
 		}
 	}
-	m, err := svc.Declare(ctx, c, true, simMajorIncident.Title, simMajorIncident.Summary)
+	m, err := svc.Declare(ctx, c, true, simMajorIncident.Title, simMajorIncident.Summary, false)
 	if err != nil {
 		return err
 	}
@@ -833,7 +833,7 @@ func (h *hospitalSeeder) catalog(ctx context.Context) error {
 			h.count("catalog items")
 		}
 	}
-	return h.setManagerFallback(ctx, []string{"hardware-notebook", "software-request", "access-request", "new-workplace", "orbis-access", "dect-phone"}, h.teams[teamLeads])
+	return h.setManagerFallback(ctx, []string{"hardware-notebook", "software-request", "access-request", "new-workplace", "orbis-access", "dect-phone", "device-procure", "peripheral-request"}, h.teams[teamLeads])
 }
 
 // hospitalCatalogItems are the catalog items of the simulation. teams maps team keys to ids.
@@ -906,6 +906,52 @@ func hospitalCatalogItems(teams map[string]string) []demoItem {
 				},
 				"approvals":   []map[string]any{},
 				"fulfillment": []map[string]any{{"title": "Drucker einrichten oder tauschen", "priority": "normal", "dueAfterHours": 48, "assignedTeamId": team(teamFLS)}},
+			},
+		},
+		{
+			// A procurement request: unlike "Medizingerät ins Netzwerk aufnehmen" it needs no serial number, because
+			// the device does not exist yet.
+			Key: "device-procure", Title: "Neues Gerät beschaffen", Description: "Ein neues Gerät (Medizin- oder IT-Gerät) beschaffen lassen. Eine Seriennummer ist noch nicht nötig.",
+			Definition: map[string]any{
+				"allowRequestedFor": true,
+				"fields": []map[string]any{
+					{"key": "what", "type": "text", "label": "Was wird benötigt?", "required": true, "maxLength": 200},
+					{"key": "location", "type": "text", "label": "Standort / Station", "required": true, "maxLength": 200},
+					reason,
+				},
+				"approvals": manager,
+				"fulfillment": []map[string]any{
+					{"title": "Angebot einholen und Beschaffung auslösen", "priority": "normal", "dueAfterHours": 120, "assignedTeamId": team(teamFLS)},
+					{"title": "Gerät nach Lieferung im Inventar erfassen", "priority": "normal", "dueAfterHours": 240, "assignedTeamId": team(teamFLS)},
+				},
+			},
+		},
+		{
+			Key: "password-reset", Title: "Passwort zurücksetzen", Description: "Das Passwort einer Kollegin oder eines Kollegen zurücksetzen lassen.",
+			Definition: map[string]any{
+				"fields": []map[string]any{
+					{"key": "person", "type": "user", "label": "Für wen?", "required": true},
+					{"key": "system", "type": "select", "label": "System", "required": true, "options": []map[string]any{
+						{"value": "windows", "label": "Windows-Anmeldung"}, {"value": "orbis", "label": "ORBIS"}, {"value": "mail", "label": "E-Mail"}, {"value": "other", "label": "Anderes"},
+					}},
+				},
+				"approvals":   []map[string]any{},
+				"fulfillment": []map[string]any{{"title": "Passwort zurücksetzen und Person informieren", "priority": "high", "dueAfterHours": 4, "assignedTeamId": team(teamFLS)}},
+			},
+		},
+		{
+			Key: "peripheral-request", Title: "Monitor oder Zubehör anfordern", Description: "Monitor, Tastatur, Maus oder Headset für einen Arbeitsplatz beantragen.",
+			Definition: map[string]any{
+				"allowRequestedFor": true,
+				"fields": []map[string]any{
+					{"key": "kind", "type": "select", "label": "Was wird benötigt?", "required": true, "options": []map[string]any{
+						{"value": "monitor", "label": "Monitor"}, {"value": "keyboard", "label": "Tastatur"}, {"value": "mouse", "label": "Maus"}, {"value": "headset", "label": "Headset"},
+					}},
+					{"key": "location", "type": "text", "label": "Arbeitsplatz / Station", "required": true, "maxLength": 200},
+					reason,
+				},
+				"approvals":   manager,
+				"fulfillment": []map[string]any{{"title": "Zubehör bereitstellen", "priority": "normal", "dueAfterHours": 72, "assignedTeamId": team(teamFLS)}},
 			},
 		},
 	}

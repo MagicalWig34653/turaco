@@ -266,6 +266,9 @@ func TestProgressOverviewAndPublicRiskReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if after.UntriagedBySeverity["high"] != before.UntriagedBySeverity["high"] {
+		t.Fatalf("untriaged before %+v after %+v: a triaged advisory must not count", before, after)
+	}
 	if after.ApplicableBySeverity["high"] != before.ApplicableBySeverity["high"]+1 || after.OpenFindingsByConfidence[securityapp.ConfidenceProbable] != before.OpenFindingsByConfidence[securityapp.ConfidenceProbable]+1 {
 		t.Fatalf("overview before %+v after %+v", before, after)
 	}

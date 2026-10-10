@@ -5,6 +5,8 @@ import { useSession } from '../platform/session/SessionProvider';
 import { PageHeader } from '../platform/ui/PageHeader';
 import { NavIcon } from '../platform/ui/NavIcon';
 import { Card } from '../platform/ui/Workspace';
+import { AnnouncementsBanner } from '../modules/briefing/AnnouncementsBanner';
+import { IncidentBanner } from '../modules/incidents/IncidentBanner';
 import { OverviewScreen, useGreeting } from './OverviewScreen';
 
 export function Home() {
@@ -20,6 +22,8 @@ export function Home() {
         title={greeting}
         intro={t('dashboard.employeeIntro')}
       />
+      {enabled('briefing') && <AnnouncementsBanner />}
+      {enabled('servicedesk') && <IncidentBanner />}
       {enabled('servicedesk') && (
         <Card className="employee-support">
           <span className="dashboard-icon">

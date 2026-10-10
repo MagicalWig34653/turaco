@@ -7,6 +7,7 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
+import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { TextArea } from '../../platform/ui/Field';
@@ -15,7 +16,9 @@ import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { TicketPicker } from '../tickets/TicketPicker';
 import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi } from './api';
-import { IncidentBadge } from './IncidentsScreen';
+import { nextUpdateState } from './incidentModel';
+import { IncidentManagePanel } from './IncidentManagePanel';
+import { ExerciseBadge, IncidentBadge } from './IncidentsScreen';
 
 export function IncidentDetailScreen({ id }: { id: string }) {
   const { t, locale } = useI18n();
@@ -106,9 +109,38 @@ export function IncidentDetailScreen({ id }: { id: string }) {
       </p>
       {error ? <ApiErrorAlert error={error} /> : null}
       <p>
-        <IncidentBadge status={incident.status} /> ·{' '}
-        {t('incidents.linked', { count: incident.linkedTickets })}
+        <IncidentBadge status={incident.status} />
+        {incident.isExercise ? (
+          <>
+            {' '}
+            <ExerciseBadge />
+          </>
+        ) : null}{' '}
+        · {t('incidents.linked', { count: incident.linkedTickets })}
+        {incident.hiddenLinkedTickets ? (
+          <>
+            {' '}
+            <span className="field-hint">
+              {t('incidents.hiddenTickets', { count: incident.hiddenLinkedTickets })}
+            </span>
+          </>
+        ) : null}
       </p>
+      {active && incident.nextUpdateDue ? (
+        <Alert kind={nextUpdateState(incident.nextUpdateDue) === 'overdue' ? 'warning' : 'info'}>
+          {t(
+            nextUpdateState(incident.nextUpdateDue) === 'overdue'
+              ? 'incidents.nextUpdate.overdue'
+              : 'incidents.nextUpdate.due',
+            { time: formatDateTime(locale, incident.nextUpdateDue) },
+          )}
+        </Alert>
+      ) : null}
+      {(incident.locations?.length ?? 0) > 0 ? (
+        <p>
+          {t('incidents.locations')}: {(incident.locations ?? []).map((l) => l.name).join(', ')}
+        </p>
+      ) : null}
       <p className="preline">{incident.summary}</p>
       <section>
         <h2>{t('incidents.timeline')}</h2>
@@ -157,6 +189,9 @@ export function IncidentDetailScreen({ id }: { id: string }) {
           </form>
         ) : null}
       </section>
+      {manage && incident.status !== 'closed' ? (
+        <IncidentManagePanel incident={incident} onChanged={loaded.reload} />
+      ) : null}
       {manage && incident.status !== 'closed' ? (
         <form className="form" onSubmit={postUpdate}>
           <TextArea

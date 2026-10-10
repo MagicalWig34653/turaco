@@ -19,13 +19,13 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	})
 	var inv *application.InvalidInputError
 	var tr *application.InvalidTransitionError
-	if _, err := svc.Declare(ctx, e.c(e.agent), false, "Mail down", "We are looking into it"); !errors.Is(err, application.ErrForbidden) {
+	if _, err := svc.Declare(ctx, e.c(e.agent), false, "Mail down", "We are looking into it", false); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("declare without permission: %v", err)
 	}
-	if _, err := svc.Declare(ctx, e.c(e.agent), true, "Mail down", " "); !errors.As(err, &inv) {
+	if _, err := svc.Declare(ctx, e.c(e.agent), true, "Mail down", " ", false); !errors.As(err, &inv) {
 		t.Errorf("declare without a message: %v", err)
 	}
-	m, err := svc.Declare(ctx, e.c(e.agent), true, "Mail down", "Nobody can send or receive mail.")
+	m, err := svc.Declare(ctx, e.c(e.agent), true, "Mail down", "Nobody can send or receive mail.", false)
 	if err != nil || m.Status != "identified" || m.Reference == "" || !m.Active() {
 		t.Fatalf("declare = %+v %v", m, err)
 	}
@@ -70,7 +70,7 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	}
 	// The list shapes the count by the same rule.
 	for who, want := range map[string]int{e.alice: 1, e.bob: 0, e.agent: 1} {
-		res, err := svc.List(ctx, who, true, application.Page{})
+		res, err := svc.List(ctx, who, true, true, application.Page{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -139,7 +139,7 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 	if _, err := svc.PostUpdate(ctx, e.c(e.agent), true, m.ID, "late"); !errors.As(err, &tr) {
 		t.Errorf("update on a closed incident: %v", err)
 	}
-	active, err := svc.List(ctx, e.bob, true, application.Page{})
+	active, err := svc.List(ctx, e.bob, true, true, application.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestMajorIncidentLifecycleSubscriptionsAndLinking(t *testing.T) {
 			t.Error("a closed incident is not active")
 		}
 	}
-	if all, _ := svc.List(ctx, e.bob, false, application.Page{}); len(all.Items) == 0 {
+	if all, _ := svc.List(ctx, e.bob, false, true, application.Page{}); len(all.Items) == 0 {
 		t.Error("all incidents include closed ones")
 	}
 	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND metadata::text LIKE '%Disk space freed%'`, e.corr) != 0 {
@@ -169,8 +169,8 @@ func TestLinkingIsOnceAndNeverMovesATicket(t *testing.T) {
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = ANY($1::uuid[])`, []string{e.alice, e.bob})
 		_, _ = e.pool.Exec(ctx, `DELETE FROM servicedesk.major_incidents WHERE declared_by = $1::uuid`, e.agent)
 	})
-	one, _ := svc.Declare(ctx, e.c(e.agent), true, "One", "first")
-	two, _ := svc.Declare(ctx, e.c(e.agent), true, "Two", "second")
+	one, _ := svc.Declare(ctx, e.c(e.agent), true, "One", "first", false)
+	two, _ := svc.Declare(ctx, e.c(e.agent), true, "Two", "second", false)
 	tk := e.raise()
 	if err := svc.LinkTicket(ctx, e.c(e.agent), true, one.ID, tk.ID); err != nil {
 		t.Fatal(err)

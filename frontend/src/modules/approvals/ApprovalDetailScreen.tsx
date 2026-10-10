@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
@@ -15,6 +15,7 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { requestsApi } from '../requests/api';
 import { RequestDetail } from '../requests/RequestDetail';
 import { approvalsApi } from './api';
+import { refetchDelayMs, shouldRefetchRequest } from './decisionModel';
 import { ApprovalStatusBadge } from './ApprovalsScreen';
 import type { Approval } from './types';
 
@@ -88,6 +89,19 @@ export function ApprovalDetailScreen({ id }: { id: string }) {
   );
   const [dialog, setDialog] = useState<'approve' | 'reject' | null>(null);
   const [decided, setDecided] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const requestStatus = request.data?.status;
+  const processing = shouldRefetchRequest(requestStatus, decided, attempt);
+  const reloadRequest = request.reload;
+  // The decision is applied by a background consumer; re-read the request until it has moved on.
+  useEffect(() => {
+    if (!processing) return;
+    const timer = window.setTimeout(() => {
+      setAttempt((value) => value + 1);
+      reloadRequest();
+    }, refetchDelayMs);
+    return () => window.clearTimeout(timer);
+  }, [processing, attempt, reloadRequest]);
 
   if (approval.error) return <ApiErrorAlert error={approval.error} onRetry={approval.reload} />;
   const current = approval.data;
@@ -119,6 +133,11 @@ export function ApprovalDetailScreen({ id }: { id: string }) {
         <Link to="/approvals">{t('approvals.back')}</Link>
       </p>
       {decided ? <Alert kind="success">{t('approvals.decided')}</Alert> : null}
+      {processing ? (
+        <p className="loading" role="status">
+          {t('approvals.processing')}
+        </p>
+      ) : null}
       <dl className="facts">
         <dt>{t('approvals.col.status')}</dt>
         <dd>
@@ -165,6 +184,7 @@ export function ApprovalDetailScreen({ id }: { id: string }) {
           onDone={() => {
             setDialog(null);
             setDecided(true);
+            setAttempt(0);
             approval.reload();
             request.reload();
           }}

@@ -56,6 +56,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/assets", write, h.create)
 	route("GET /api/v1/assets/lookup", read, h.lookup)
 	route("GET /api/v1/my-assets", authed, h.mine)
+	route("GET /api/v1/my-assets/shared", authed, h.shared)
 	route("GET /api/v1/assets/{id}", authed, h.get)
 	route("PATCH /api/v1/assets/{id}", write, h.update)
 	route("POST /api/v1/assets/{id}/provisioning", write, h.provisioning)
@@ -256,6 +257,24 @@ func (h *handler) mine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.svc.Mine(r.Context(), principal(r), page)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out, err := h.toList(r, res)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *handler) shared(w http.ResponseWriter, r *http.Request) {
+	page, ok := parsePage(w, r)
+	if !ok {
+		return
+	}
+	res, err := h.svc.SharedForMe(r.Context(), principal(r), page)
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -27,13 +27,13 @@ func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const target = "briefing_item"
 
-const columns = `id::text, title, body, severity, status, valid_until, author_user_id::text,
+const columns = `id::text, title, body, severity, status, audience, valid_until, author_user_id::text,
 	published_at, published_by_user_id::text, withdrawn_at, withdrawn_by_user_id::text,
 	version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Item, error) {
 	var it application.Item
-	err := row.Scan(&it.ID, &it.Title, &it.Body, &it.Severity, &it.Status, &it.ValidUntil, &it.AuthorUserID,
+	err := row.Scan(&it.ID, &it.Title, &it.Body, &it.Severity, &it.Status, &it.Audience, &it.ValidUntil, &it.AuthorUserID,
 		&it.PublishedAt, &it.PublishedByUserID, &it.WithdrawnAt, &it.WithdrawnByUserID,
 		&it.Version, &it.CreatedAt, &it.UpdatedAt)
 	return it, err
@@ -41,7 +41,7 @@ func scan(row pgx.Row) (application.Item, error) {
 
 // auditState never contains the title or body.
 func auditState(it application.Item) map[string]any {
-	return map[string]any{"status": it.Status, "severity": it.Severity, "validUntil": it.ValidUntil, "version": it.Version}
+	return map[string]any{"status": it.Status, "severity": it.Severity, "audience": it.Audience, "validUntil": it.ValidUntil, "version": it.Version}
 }
 
 func record(ctx context.Context, tx pgx.Tx, c application.Caller, action, id string, before, after any, meta map[string]any) error {
@@ -59,9 +59,9 @@ func (r *Repository) Insert(ctx context.Context, c application.Caller, n applica
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		var err error
 		out, err = scan(tx.QueryRow(ctx, `
-			INSERT INTO briefing.items(title, body, severity, valid_until, author_user_id)
-			VALUES ($1, $2, $3, $4, $5::uuid) RETURNING `+columns,
-			n.Title, n.Body, n.Severity, n.ValidUntil, n.Author))
+			INSERT INTO briefing.items(title, body, severity, audience, valid_until, author_user_id)
+			VALUES ($1, $2, $3, coalesce(nullif($4, ''), 'it'), $5, $6::uuid) RETURNING `+columns,
+			n.Title, n.Body, n.Severity, n.Audience, n.ValidUntil, n.Author))
 		if err != nil {
 			return fmt.Errorf("insert briefing item: %w", err)
 		}
@@ -109,11 +109,11 @@ func (r *Repository) Change(ctx context.Context, c application.Caller, id string
 		out, err = scan(tx.QueryRow(ctx, `
 			UPDATE briefing.items SET
 				title = $2, body = $3, severity = $4, status = $5, valid_until = $6,
-				published_at = $7, published_by_user_id = $8::uuid, withdrawn_at = $9, withdrawn_by_user_id = $10::uuid,
+				published_at = $7, published_by_user_id = $8::uuid, withdrawn_at = $9, withdrawn_by_user_id = $10::uuid, audience = $11,
 				version = version + 1, updated_at = now()
 			WHERE id = $1::uuid RETURNING `+columns,
 			id, n.Title, n.Body, n.Severity, n.Status, n.ValidUntil, n.PublishedAt, n.PublishedByUserID,
-			n.WithdrawnAt, n.WithdrawnByUserID))
+			n.WithdrawnAt, n.WithdrawnByUserID, n.Audience))
 		if err != nil {
 			return fmt.Errorf("update briefing item: %w", err)
 		}
@@ -203,6 +203,9 @@ func (r *Repository) List(ctx context.Context, q application.ListQuery) (applica
 	add := func(cond string, arg any) {
 		args = append(args, arg)
 		conds = append(conds, strings.ReplaceAll(cond, "?", fmt.Sprintf("$%d", len(args))))
+	}
+	if q.Audience != "" {
+		add(`audience = ?`, q.Audience)
 	}
 	if q.PublishedOnly {
 		conds = append(conds, `status = 'published' AND (valid_until IS NULL OR valid_until > now())`)

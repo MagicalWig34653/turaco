@@ -25,6 +25,7 @@ func NotificationCategories() []notifications.Category {
 	}
 	return []notifications.Category{
 		cat("request.approved", "Request approved: %s", "Your request was approved and is being fulfilled:", "Antrag genehmigt: %s", "Dein Antrag wurde genehmigt und wird bearbeitet:"),
+		cat("request.started", "Request accepted: %s", "Your request was accepted and is being processed:", "Antrag angenommen: %s", "Dein Antrag wurde angenommen und wird bearbeitet:"),
 		cat("request.rejected", "Request rejected: %s", "Your request was rejected:", "Antrag abgelehnt: %s", "Dein Antrag wurde abgelehnt:"),
 		cat("request.completed", "Request completed: %s", "Your request was completed:", "Antrag abgeschlossen: %s", "Dein Antrag wurde abgeschlossen:"),
 	}
@@ -77,10 +78,14 @@ func (c *Consumers) OnTaskFinished(ctx context.Context, tx pgx.Tx, ev events.Out
 func (c *Consumers) notifyOwners(category string) func(context.Context, pgx.Tx, events.OutboxEvent) error {
 	return func(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 		var p struct {
-			RequestID string `json:"requestId"`
+			RequestID    string `json:"requestId"`
+			ApprovalFree bool   `json:"approvalFree"`
 		}
 		if err := decode(ev, ev.EventType, &p); err != nil {
 			return err
+		}
+		if category == "request.approved" && p.ApprovalFree {
+			category = "request.started"
 		}
 		r, err := c.svc.store.LockTx(ctx, tx, p.RequestID)
 		if errors.Is(err, ErrNotFound) {

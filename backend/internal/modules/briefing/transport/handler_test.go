@@ -16,6 +16,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/briefing/application"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
+	deskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
@@ -286,5 +287,49 @@ func TestFeedPermissionTableExactFlagsAndRedaction(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+type incidentStub struct{ items []deskpublic.PublicIncident }
+
+func (i incidentStub) PublicOpenIncidents(context.Context) ([]deskpublic.PublicIncident, error) {
+	return i.items, nil
+}
+
+func TestAnnouncementsNeedOnlyASignedInUserAndExposeNoInternalFields(t *testing.T) {
+	s := newStub()
+	s.item.Status, s.item.Audience = "published", "all"
+	author, now := "00000000-0000-7000-8000-0000000000b2", time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	s.item.AuthorUserID, s.item.PublishedAt = &author, &now
+	svc := application.NewService(s, nil).WithIncidents(incidentStub{[]deskpublic.PublicIncident{{ID: "i1", Reference: "MI-000001", Title: "Mail", Summary: "Down", Status: "investigating", UpdatedAt: now}}})
+	run := func(a authorization.Authenticator) *httptest.ResponseRecorder {
+		mux := http.NewServeMux()
+		Register(mux, svc, a, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/briefing/announcements", nil))
+		return rec
+	}
+	if rec := run(fakeAuth{ok: false}); rec.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous = %d", rec.Code)
+	}
+	rec := run(with()) // no briefing permission at all
+	if rec.Code != http.StatusOK {
+		t.Fatalf("employee = %d %s", rec.Code, rec.Body)
+	}
+	if !s.query.PublishedOnly || s.query.Audience != "all" {
+		t.Errorf("query = %+v, want published items of audience all", s.query)
+	}
+	body := rec.Body.String()
+	for _, leak := range []string{"authorUserId", author, "publishedByUserId", "status\":\"published", "version", "audience"} {
+		if strings.Contains(body, leak) {
+			t.Errorf("announcement leaks %q: %s", leak, body)
+		}
+	}
+	var out struct {
+		Items     []struct{ Title string }
+		Incidents []struct{ Reference, Status string }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Items) != 1 || len(out.Incidents) != 1 || out.Incidents[0].Reference != "MI-000001" {
+		t.Errorf("body = %s (%v)", body, err)
 	}
 }

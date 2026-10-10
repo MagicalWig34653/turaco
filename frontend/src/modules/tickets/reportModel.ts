@@ -49,13 +49,30 @@ type OpenTicket = { id: string; reference: string; title: string; status: string
 
 const finished = new Set(['resolved', 'closed', 'cancelled']);
 
-/** Open tickets of the same person whose subject is identical (ignoring case and spacing). */
+/** Words of at least four characters, normalised; the basis of the similarity hint. */
+function significantWords(value: string): Set<string> {
+  return new Set(
+    normalizeTitle(value)
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => [...word].length >= 4),
+  );
+}
+
+/**
+ * Open tickets of the same person whose subject is identical (ignoring case and spacing) or shares
+ * at least two significant words with the new title. A hint only, never a block.
+ */
 export function duplicateCandidates<T extends OpenTicket>(title: string, mine: readonly T[]): T[] {
   const wanted = normalizeTitle(title);
   if ([...wanted].length < 4) return [];
-  return mine.filter(
-    (ticket) => !finished.has(ticket.status) && normalizeTitle(ticket.title) === wanted,
-  );
+  const words = significantWords(title);
+  return mine.filter((ticket) => {
+    if (finished.has(ticket.status)) return false;
+    if (normalizeTitle(ticket.title) === wanted) return true;
+    let shared = 0;
+    for (const word of significantWords(ticket.title)) if (words.has(word)) shared += 1;
+    return shared >= 2;
+  });
 }
 
 /** Devices not already offered, in a stable order. */
