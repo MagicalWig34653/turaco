@@ -43,7 +43,7 @@ func (h *teamHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Caller{Actor: audit.UserActor(p.UserID), CorrelationID: httpx.RequestID(w), ExternalPartiesManage: p.Has(permExternalParties)}
+	return application.Caller{Actor: audit.UserActor(p.UserID), CorrelationID: httpx.RequestID(w), ExternalPartiesManage: p.Has(permExternalParties), PlatformAdmin: p.Has(permPlatformAdmin)}
 }
 
 func decode(w http.ResponseWriter, r *http.Request, dst any) bool {

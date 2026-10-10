@@ -66,12 +66,24 @@ func (r *Reader) RecentExports(ctx context.Context, userID string) (int, error) 
 }
 
 // RecordExport writes the audit event of an export before it streams. The filter is stored as a hash and the range;
-// no filter text is copied.
+// no filter text is copied. The per-hour limit is enforced here under a per-user advisory lock, so parallel
+// requests cannot all pass the check: it returns ErrExportRateLimited when the user already exported ExportsPerHour times.
 func (r *Reader) RecordExport(ctx context.Context, userID, correlationID string, f Filter, rows int, details bool) error {
 	if correlationID == "" {
 		correlationID = "audit-export-" + userID
 	}
 	return pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('audit-export:' || $1, 0))`, userID); err != nil {
+			return fmt.Errorf("lock audit export: %w", err)
+		}
+		var used int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events
+			WHERE action = $1 AND actor_id = $2::uuid AND occurred_at > now() - interval '1 hour'`, ActionExported, userID).Scan(&used); err != nil {
+			return fmt.Errorf("count audit exports: %w", err)
+		}
+		if used >= ExportsPerHour {
+			return ErrExportRateLimited
+		}
 		return Record(ctx, tx, Change{
 			Action: ActionExported, TargetType: "audit_export", TargetID: userID, Actor: UserActor(userID), CorrelationID: correlationID,
 			After: map[string]any{"filterHash": f.Hash(), "from": rangeText(f.From), "to": rangeText(f.To), "rows": rows, "includeDetails": details},

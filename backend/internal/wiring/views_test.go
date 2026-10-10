@@ -197,7 +197,7 @@ func TestSharedViewRunsWithTheViewersOwnScopeAndFields(t *testing.T) {
 // The registered resources must match the catalogs and the permissions their routes require.
 func TestViewResourcesMatchTheModules(t *testing.T) {
 	resources, routes := ViewResources()
-	if len(resources) != 3 || len(routes) != 3 {
+	if len(resources) != 4 || len(routes) != 4 {
 		t.Fatalf("resources %d routes %d", len(resources), len(routes))
 	}
 	for _, r := range resources {
@@ -205,5 +205,33 @@ func TestViewResourcesMatchTheModules(t *testing.T) {
 		if !ok || !strings.HasPrefix(rt.QueryPath, "/api/v1/") || !strings.HasSuffix(rt.QueryPath, "/query") || !strings.HasSuffix(rt.FieldsPath, "/fields") {
 			t.Errorf("resource %s has no valid route: %+v", r.Key, rt)
 		}
+	}
+}
+
+// Saved Views over users need organization.view, as POST /users/query does.
+func TestUserViewsNeedOrganizationView(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	const viewer = "00000000-0000-7000-8000-0000000007d4"
+	resources, routes := ViewResources()
+	svc, err := views.NewService(pool, openDirectory{}, views.NewHTTPRunner(http.NewServeMux(), routes), allOn{}, resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM views.saved_views WHERE owner_user_id = $1::uuid`, viewer)
+	})
+	c := func(perms ...string) views.Caller {
+		m := map[string]struct{}{}
+		for _, p := range perms {
+			m[p] = struct{}{}
+		}
+		return views.Caller{UserID: viewer, Permissions: m, CorrelationID: "wiring-users", Header: cookieFor(viewer, perms...)}
+	}
+	if _, err := svc.Create(ctx, c(), views.CreateInput{Resource: "users", Name: "People"}); !errors.Is(err, views.ErrForbidden) {
+		t.Errorf("users view without organization.view: %v", err)
+	}
+	if _, err := svc.Create(ctx, c("organization.view"), views.CreateInput{Resource: "users", Name: "People"}); err != nil {
+		t.Errorf("users view with organization.view: %v", err)
 	}
 }

@@ -63,7 +63,8 @@ func (f *peopleFix) caller(userID string) application.Caller {
 	if userID != "" {
 		a = audit.UserActor(userID)
 	}
-	return application.Caller{Actor: a, CorrelationID: "corr-" + f.pfx}
+	// The CLI actor stands for an administrator: it may be shown an unmailed invitation link.
+	return application.Caller{Actor: a, CorrelationID: "corr-" + f.pfx, PlatformAdmin: userID == ""}
 }
 
 func (f *peopleFix) cleanupUser(id string) {
@@ -682,4 +683,24 @@ func (f *peopleFix) reloadTeam(id string) application.Team {
 		f.t.Fatal(err)
 	}
 	return tm
+}
+
+// Without a mail channel the invitation link is shown only to a platform administrator (ADR-0034): a delegated
+// manager gets a refusal and no token is issued.
+func TestInvitationLinkWithoutMailIsAdministratorOnly(t *testing.T) {
+	f := newPeopleFix(t)
+	ctx := context.Background()
+	u := f.local("Carla")
+	delegate := f.local("Delegate")
+	if _, err := f.repo.IssueCredentialLink(ctx, f.caller(delegate.ID), u.ID, application.CredentialInvitation); !errors.Is(err, application.ErrMailNotConfigured) {
+		t.Fatalf("delegate without mail: %v", err)
+	}
+	var tokens int
+	_ = f.pool.QueryRow(ctx, `SELECT count(*) FROM platform.credential_tokens WHERE user_id = $1`, u.ID).Scan(&tokens)
+	if tokens != 0 {
+		t.Fatalf("a refused invitation issued %d tokens", tokens)
+	}
+	if link, err := f.repo.IssueCredentialLink(ctx, f.caller(""), u.ID, application.CredentialInvitation); err != nil || link.Link == "" {
+		t.Fatalf("administrator: %+v %v", link, err)
+	}
 }

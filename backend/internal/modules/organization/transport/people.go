@@ -16,6 +16,7 @@ const (
 	permLocationsManage   = "organization.locations.manage"
 	permDepartmentsManage = "organization.departments.manage"
 	permExternalParties   = "organization.external_parties.manage"
+	permPlatformAdmin     = "platform.admin"
 	maxPeopleBody         = 8 << 10
 )
 

@@ -209,7 +209,11 @@ func TestListResolvedNamesAndFilters(t *testing.T) {
 			t.Errorf("missing %s in %s", want, body)
 		}
 	}
-	for q, wantCount := range map[string]int{"&actorKind=user": 1, "&actorKind=system": 1, "&systemActor=cli": 1, "&systemActor=nobody": 0} {
+	win := "&from=" + time.Now().Add(-48*time.Hour).UTC().Format(time.RFC3339) + "&to=" + time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	if rec := get(mux, "/api/v1/audit-events?actionPrefix="+pfx+"&systemActor=cli"); rec.Code != 400 || !strings.Contains(rec.Body.String(), "audit.range_required") {
+		t.Errorf("systemActor without a range: %d %s", rec.Code, rec.Body.String())
+	}
+	for q, wantCount := range map[string]int{"&actorKind=user": 1, "&actorKind=system": 1, "&systemActor=cli" + win: 1, "&systemActor=nobody" + win: 0} {
 		rec := get(mux, "/api/v1/audit-events?actionPrefix="+pfx+q)
 		if got := strings.Count(rec.Body.String(), `"correlationId"`); rec.Code != 200 || got != wantCount {
 			t.Errorf("%s: code %d count %d want %d (%s)", q, rec.Code, got, wantCount, rec.Body.String())
@@ -236,5 +240,37 @@ func TestListResolvedNamesAndFilters(t *testing.T) {
 		if rec.Code != 403 {
 			t.Errorf("%s without audit.view: %d", p, rec.Code)
 		}
+	}
+}
+
+// Parallel requests must not all pass the per-hour check: the limit is enforced under a per-user lock.
+func TestExportRateLimitHoldsUnderParallelRequests(t *testing.T) {
+	pool := dbtest.Pool(t)
+	user := uuid(t, pool)
+	pfx := "zp" + user[len(user)-6:]
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE actor_id = $1::uuid OR action LIKE $2 || '%'`, user, pfx)
+	})
+	seedEvents(t, pool, pfx, nil, "t1", time.Now().Add(-time.Hour))
+	mux := exportMux(t, pool, principal(user, "platform.audit.view", "platform.audit.export"))
+	const parallel = 12
+	codes := make(chan int, parallel)
+	for i := 0; i < parallel; i++ {
+		go func() { codes <- get(mux, "/api/v1/audit-events/export.csv?"+rangeQuery(pfx)).Code }()
+	}
+	ok, limited := 0, 0
+	for i := 0; i < parallel; i++ {
+		switch c := <-codes; c {
+		case 200:
+			ok++
+		case 429:
+			limited++
+		default:
+			t.Fatalf("unexpected status %d", c)
+		}
+	}
+	if ok != audit.ExportsPerHour || limited != parallel-audit.ExportsPerHour {
+		t.Fatalf("ok=%d limited=%d, want %d and %d", ok, limited, audit.ExportsPerHour, parallel-audit.ExportsPerHour)
 	}
 }

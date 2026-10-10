@@ -31,9 +31,17 @@ type SMTPConfig struct {
 	DefaultLocale string
 }
 
-// LoadEmailBaseURL validates EMAIL_BASE_URL and returns it without a trailing slash; "" when it is unset.
+// DevEmailBaseURL is the EMAIL_BASE_URL default of APP_ENV=development only: the Vite dev server. Every other
+// environment must set EMAIL_BASE_URL explicitly.
+const DevEmailBaseURL = "http://localhost:5173"
+
+// LoadEmailBaseURL validates EMAIL_BASE_URL and returns it without a trailing slash; "" when it is unset outside
+// development (in development it defaults to DevEmailBaseURL).
 func LoadEmailBaseURL(environment string) (string, error) {
 	base := strings.TrimRight(os.Getenv("EMAIL_BASE_URL"), "/")
+	if base == "" && environment == "development" {
+		base = DevEmailBaseURL
+	}
 	if base == "" {
 		return "", nil
 	}
@@ -98,6 +106,9 @@ func LoadSMTP(environment string) (SMTPConfig, error) {
 		return SMTPConfig{}, err
 	}
 	c.BaseURL = strings.TrimRight(os.Getenv("EMAIL_BASE_URL"), "/")
+	if c.BaseURL == "" && environment == "development" {
+		c.BaseURL = DevEmailBaseURL
+	}
 	u, perr := url.Parse(c.BaseURL)
 	switch {
 	case c.BaseURL == "" || perr != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil:

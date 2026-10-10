@@ -26,6 +26,7 @@ import {
   type AttentionItem,
 } from '../modules/my-work/overviewModel';
 import { summarizeFeed } from '../modules/my-work/workModel';
+import { SetupTile } from '../modules/health/SetupTile';
 import { QueueHealth } from '../modules/tickets/QueueHealth';
 
 const quickActions: ReadonlyArray<{ route: RouteId; icon: RouteId; label: MessageKey }> = [
@@ -119,6 +120,8 @@ export function OverviewScreen() {
   const briefingEnabled =
     enabled('briefing') && (!briefingRoute || canViewRoute(can, briefingRoute, enabled));
   const queueRoute = appRoutes.find((route) => route.id === 'ticketQueue');
+  const setupRoute = appRoutes.find((route) => route.id === 'setupAdmin');
+  const showSetup = !!setupRoute && canViewRoute(can, setupRoute, enabled);
   const showQueueHealth = !!queueRoute && canViewRoute(can, queueRoute, enabled);
   const feed = useAsync(
     (signal) =>
@@ -297,6 +300,7 @@ export function OverviewScreen() {
           </div>
         ) : null}
       </section>
+      {showSetup ? <SetupTile /> : null}
       {showQueueHealth ? <QueueHealth /> : null}
       <div className="overview-columns">
         <Card className="dashboard-timeline" title={t('overview.recent')}>

@@ -214,7 +214,7 @@ var Registry = []Descriptor{
 	{Name: "SMTP_CA_FILE", Type: "string", Description: "PEM file with CA certificates trusted for the relay, in addition to the system pool."},
 	{Name: "SMTP_FROM", Type: "string", Description: "Sender address of notification emails, for example `Turaco <turaco@example.org>`. Required when SMTP_HOST is set."},
 	{Name: "SMTP_TIMEOUT", Type: "duration", Default: "30s", Description: "Maximum duration of sending one email (connect, dialogue and transfer)."},
-	{Name: "EMAIL_BASE_URL", Type: "string", Description: "Externally reachable address of the web application without a path, for example `https://turaco.example.org`; emails link to it. Required when SMTP_HOST is set; must be https outside development."},
+	{Name: "EMAIL_BASE_URL", Type: "string", Description: "Externally reachable address of the web application without a path, for example `https://turaco.example.org`; emails link to it. Required when SMTP_HOST is set; must be https outside development. Defaults to `http://localhost:5173` when APP_ENV=development; every other environment must set it explicitly."},
 	{Name: "EMAIL_DEFAULT_LOCALE", Type: "string", Default: "en", Description: "Language of notification emails: `en` or `de` (recipients have no language setting yet)."},
 	{Name: "LDAP_URL", Type: "string", Description: "Directory server URL (`ldaps://host:636`, or `ldap://` with LDAP_START_TLS). Empty disables directory synchronization and password login."},
 	{Name: "LDAP_PROVIDER_KEY", Type: "string", Default: "ad", Description: "Stable key identifying this directory in external identities and directory groups; lowercase letters, digits and hyphens. Changing it makes all existing observations stale."},

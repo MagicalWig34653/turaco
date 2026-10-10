@@ -59,12 +59,14 @@ type teamDTO struct {
 	UpdatedAt   string `json:"updatedAt"`
 	Description string `json:"description"`
 	Version     int    `json:"version"`
+	// MemberCount is set by the list and query responses only.
+	MemberCount *int `json:"memberCount,omitempty"`
 	// Leads is filled by GET /teams/{id} only.
 	Leads []teamMemberDTO `json:"leads,omitempty"`
 }
 
 func toTeam(t application.Team) teamDTO {
-	return teamDTO{ID: t.ID, Name: t.Name, Active: t.Active, UpdatedAt: ts(t.UpdatedAt), Description: t.Description, Version: t.Version}
+	return teamDTO{ID: t.ID, Name: t.Name, Active: t.Active, UpdatedAt: ts(t.UpdatedAt), Description: t.Description, Version: t.Version, MemberCount: t.MemberCount}
 }
 
 type teamMemberDTO struct {
@@ -77,6 +79,19 @@ type teamMemberDTO struct {
 
 func toTeamMember(m application.TeamMember) teamMemberDTO {
 	return teamMemberDTO{m.UserID, m.DisplayName, m.Role, m.Source, ts(m.ValidFrom)}
+}
+
+type userTeamDTO struct {
+	TeamID    string  `json:"teamId"`
+	TeamName  string  `json:"teamName"`
+	Active    bool    `json:"active"`
+	Role      *string `json:"role"`
+	Source    string  `json:"source"`
+	ValidFrom string  `json:"validFrom"`
+}
+
+func toUserTeam(m application.UserTeam) userTeamDTO {
+	return userTeamDTO{m.TeamID, m.TeamName, m.Active, m.Role, m.Source, ts(m.ValidFrom)}
 }
 
 type locationDTO struct {

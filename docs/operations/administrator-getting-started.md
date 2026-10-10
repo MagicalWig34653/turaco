@@ -1,6 +1,6 @@
 # Getting started as an administrator
 
-This page walks a new administrator through the first hour with a running Turaco installation: first sign-in, modules, people, roles, Ticket Queues, Views and Boards. It describes only what exists in the repository today. [Current status](../product/current-status.md) is authoritative; steps that are not possible yet are marked **Gap**. Installation, TLS, directory and Kerberos setup are in [Deployment](deployment.md), [LDAP/AD](../integrations/ldap-ad.md) and [Backup and Restore](backup-restore.md). Every environment variable is listed in the generated [configuration reference](../reference/configuration.md); this page names only the ones that change what an administrator sees.
+This page walks a new administrator through the first hour with a running Turaco installation: first sign-in, modules, people, roles, Ticket Queues, Views and Boards. It describes only what exists in the repository today. [Current status](../product/current-status.md) is authoritative; steps that are not possible yet are marked **Gap**. Install first: [Installation](installation.md). TLS, directory and Kerberos setup are in [Deployment](deployment.md), [LDAP/AD](../integrations/ldap-ad.md) and [Backup and Restore](backup-restore.md). Every environment variable is listed in the generated [configuration reference](../reference/configuration.md); this page names only the ones that change what an administrator sees.
 
 ## 1. Before you start
 

@@ -45,6 +45,9 @@ type Caller struct {
 	// ExternalPartiesManage says the actor holds organization.external_parties.manage (adding an external
 	// account to a Team needs it, review rule R2). The transport fills it from the principal.
 	ExternalPartiesManage bool
+	// PlatformAdmin says the actor holds platform.admin. Only an administrator may be shown an invitation link
+	// when no mail channel exists (ADR-0034); the transport fills it from the principal.
+	PlatformAdmin bool
 }
 
 func (c Caller) validate() error {

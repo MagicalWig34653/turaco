@@ -16,6 +16,9 @@ import (
 )
 
 const (
+	// queryTimeout bounds one audit list or count query; the page limit bounds returned rows, not rows examined.
+	queryTimeout = 10 * time.Second
+
 	DefaultLimit = 50
 	MaxLimit     = 200
 )
@@ -27,6 +30,8 @@ var (
 	ErrInvalidCursor = errors.New("audit: invalid cursor")
 	// ErrInvalidLimit marks a non-positive limit.
 	ErrInvalidLimit = errors.New("audit: invalid limit")
+	// ErrExportRateLimited is returned when the user already made ExportsPerHour exports in the last hour.
+	ErrExportRateLimited = errors.New("audit: export rate limited")
 )
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -122,6 +127,8 @@ func (r *Reader) List(ctx context.Context, f Filter, p Page) (Result, error) {
 	if err := f.validate(); err != nil {
 		return Result{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
 	if p.Limit < 0 {
 		return Result{}, ErrInvalidLimit
 	}
@@ -180,6 +187,8 @@ func (r *Reader) Count(ctx context.Context, f Filter, limit int) (int, error) {
 	if err := f.validate(); err != nil {
 		return 0, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+	defer cancel()
 	if limit <= 0 {
 		return 0, ErrInvalidLimit
 	}

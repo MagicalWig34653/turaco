@@ -104,6 +104,9 @@ var departmentCatalog = query.MustCatalog(query.Resource{
 	},
 })
 
+// UserCatalog is the User Field Catalog (Saved Views registration, catalog tests and documentation).
+func UserCatalog() *query.Catalog { return userCatalog }
+
 // Catalogs returns the Organization catalogs (schema validation at startup and catalog tests).
 func Catalogs() []*query.Catalog {
 	return []*query.Catalog{userCatalog, teamCatalog, locationCatalog, departmentCatalog}

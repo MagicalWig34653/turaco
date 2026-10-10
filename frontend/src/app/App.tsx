@@ -12,6 +12,8 @@ import {
 } from '../modules/presence/PresenceScreens';
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { HealthScreen, IntegrationsScreen, SystemScreen } from '../modules/health/HealthScreens';
+import { SetupScreen } from '../modules/health/SetupScreen';
 import { AuditScreen } from '../modules/audit/AuditScreen';
 import { LoginScreen } from '../modules/auth/LoginScreen';
 import { MeScreen } from '../modules/access/MeScreen';
@@ -398,6 +400,14 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <DirectorySyncRunScreen key={params.id} id={params.id ?? ''} />;
     case 'audit':
       return <AuditScreen />;
+    case 'setupAdmin':
+      return <SetupScreen />;
+    case 'healthAdmin':
+      return <HealthScreen />;
+    case 'integrationsAdmin':
+      return <IntegrationsScreen />;
+    case 'systemAdmin':
+      return <SystemScreen />;
   }
 }
 

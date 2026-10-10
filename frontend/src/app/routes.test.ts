@@ -39,6 +39,12 @@ describe('visibleNavItems', () => {
   it('filters admin entries by permission', () => {
     expect(ids(['platform.roles.view'], 'admin')).toEqual(['roles', 'roleAssignments']);
     expect(ids(['platform.audit.view'], 'admin')).toEqual(['audit']);
+    expect(ids(['platform.health.view'], 'admin')).toEqual([
+      'setupAdmin',
+      'healthAdmin',
+      'integrationsAdmin',
+      'systemAdmin',
+    ]);
   });
 
   it('shows My Work and Tasks with any one task permission', () => {
@@ -551,5 +557,17 @@ describe('Administration routes (F14)', () => {
           route,
         ),
     ).toBe(true);
+  });
+});
+
+describe('administration health routes', () => {
+  it('need platform.health.view and are denied without it', () => {
+    for (const path of ['/admin/setup', '/admin/health', '/admin/integrations', '/admin/system']) {
+      const route = matchRoute(appRoutes, path)?.route;
+      expect(route, path).toBeDefined();
+      expect(canViewRoute(createCan({ permissions: [] }), route!)).toBe(false);
+      expect(canViewRoute(createCan({ permissions: ['platform.audit.view'] }), route!)).toBe(false);
+      expect(canViewRoute(createCan({ permissions: ['platform.health.view'] }), route!)).toBe(true);
+    }
   });
 });

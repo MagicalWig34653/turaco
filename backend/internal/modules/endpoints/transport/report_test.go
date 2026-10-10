@@ -13,25 +13,31 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 )
 
-func TestCSVCellNeutralizesFormulas(t *testing.T) {
-	tests := map[string]string{
-		"plain":                  "plain",
-		"":                       "",
-		"=HYPERLINK(\"x\")":      "'=HYPERLINK(\"x\")",
-		"+1+1":                   "'+1+1",
-		"-2":                     "'-2",
-		"@SUM(A1)":               "'@SUM(A1)",
-		"\t=1":                   "'\t=1",
-		"  =cmd|' /C calc'!A0":   "'  =cmd|' /C calc'!A0",
-		"a=b":                    "a=b",
-		"0x87D1041C":             "0x87D1041C",
-		"line\nbreak":            "line break",
-		"\r=1":                   "' =1",
-		"PC-01 (=not a formula)": "PC-01 (=not a formula)",
+func TestCSVExportNeutralizesFormulaCells(t *testing.T) {
+	srv := csvTestServer(t, func(begin func(application.Deployment), emit func(application.ReportRow) error) (bool, error) {
+		begin(application.Deployment{Reference: "DEP-1"})
+		reason := "+cmd|' /C calc'!A0"
+		_ = emit(application.ReportRow{RingName: "=HYPERLINK(\"http://evil\")", DeviceID: "d1", DeviceName: "@SUM(A1)", State: "failed", StateReason: &reason, ErrorCode: "0x87D1041C"})
+		return false, nil
+	})
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for in, want := range tests {
-		if got := csvCell(in); got != want {
-			t.Errorf("csvCell(%q) = %q, want %q", in, got, want)
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	body := string(raw)
+	if !strings.HasPrefix(body, "\ufeff") {
+		t.Error("export lacks the UTF-8 byte order mark")
+	}
+	for _, want := range []string{`"'=HYPERLINK(""http://evil"")"`, `'@SUM(A1)`, `'+cmd|' /C calc'!A0`, `0x87D1041C`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("export lacks %q:\n%s", want, body)
+		}
+	}
+	for _, bad := range []string{",=HYPERLINK", ",@SUM", ",+cmd", `,"=HYPERLINK`} {
+		if strings.Contains(body, bad) {
+			t.Errorf("export contains un-neutralized cell %q:\n%s", bad, body)
 		}
 	}
 }

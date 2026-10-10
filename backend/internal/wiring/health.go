@@ -53,10 +53,10 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 						code = "directory_sync_failed"
 					}
 					return health.Result{Status: health.StatusFailing, Mode: health.ModeReal, ErrorCode: code, LastSuccessAt: s.LastSuccessAt, LastAttemptAt: s.LastFailureAt,
-						NextStep: &health.NextStep{Kind: "route", Route: "/admin/directory"}}
+						NextStep: &health.NextStep{Kind: "route", Route: "/admin/directory-sync"}}
 				}
 			}
-			return health.Result{Status: health.StatusOK, Mode: health.ModeReal, NextStep: &health.NextStep{Kind: "route", Route: "/admin/directory"}}
+			return health.Result{Status: health.StatusOK, Mode: health.ModeReal, NextStep: &health.NextStep{Kind: "route", Route: "/admin/directory-sync"}}
 		}},
 		{Key: "kerberos", Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
 			if !cfg.KerberosConfigured {
@@ -247,7 +247,7 @@ func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry
 		}
 	}
 	items := []health.ItemDef{
-		{Key: "administrators", Order: 1, Route: "/admin/people", Derive: func(ctx context.Context) (bool, bool, error) {
+		{Key: "administrators", Order: 1, Route: "/admin/users", Derive: func(ctx context.Context) (bool, bool, error) {
 			rows, err := pool.Query(ctx, `SELECT a.subject_id FROM platform.role_assignments a JOIN platform.roles r ON r.id = a.role_id
 				WHERE r.key = 'platform-administrator' AND r.deleted_at IS NULL AND a.subject_type = 'user' AND a.revoked_at IS NULL
 				AND (a.expires_at IS NULL OR a.expires_at > now()) LIMIT 50`)
@@ -281,7 +281,7 @@ func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry
 			}
 			return n >= 2, n == 1, nil
 		}},
-		{Key: "directory", Order: 2, Route: "/admin/directory", Derive: checkOK("directory")},
+		{Key: "directory", Order: 2, Route: "/admin/directory-sync", Derive: checkOK("directory")},
 		{Key: "mail", Order: 3, Route: "/admin/health", Derive: checkOK("smtp")},
 		{Key: "teams", Order: 4, Route: "/admin/teams", Derive: atLeast(orgCounts.TeamsWithMembers, 1)},
 		{Key: "locations", Order: 5, Route: "/admin/locations", Derive: atLeast(orgCounts.ActiveSites, 1)},

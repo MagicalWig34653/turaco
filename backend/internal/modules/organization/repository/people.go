@@ -501,7 +501,7 @@ func (r *Repository) ChangeStatus(ctx context.Context, c application.Caller, id 
 // IssueCredentialLink issues an invitation (never-activated local account) or reset (activated local account).
 // Both are takeover-capable: they need the dominance rule (R1). The link is built from the configured base URL
 // only (R7). It is mailed to the stored primary address; without a mail channel only the invitation of a
-// never-activated account is shown, once, to the administrator.
+// never-activated account is shown, once, and only to a platform administrator.
 func (r *Repository) IssueCredentialLink(ctx context.Context, c application.Caller, id, purpose string) (application.CredentialLink, error) {
 	var out application.CredentialLink
 	if r.issuer == nil || r.mailer == nil {
@@ -511,6 +511,10 @@ func (r *Repository) IssueCredentialLink(ctx context.Context, c application.Call
 		return out, application.ErrBaseURLNotConfigured
 	}
 	if purpose == application.CredentialReset && !r.mailer.MailConfigured() {
+		return out, application.ErrMailNotConfigured
+	}
+	if !r.mailer.MailConfigured() && !c.PlatformAdmin {
+		// Without mail the only delivery is showing the link, which only an administrator may see (ADR-0034).
 		return out, application.ErrMailNotConfigured
 	}
 	var token, email, name string
@@ -566,7 +570,7 @@ func (r *Repository) IssueCredentialLink(ctx context.Context, c application.Call
 		out.Mailed = true
 		return out, nil
 	}
-	if purpose == application.CredentialInvitation {
+	if purpose == application.CredentialInvitation && c.PlatformAdmin {
 		out.Link = link
 	}
 	return out, nil

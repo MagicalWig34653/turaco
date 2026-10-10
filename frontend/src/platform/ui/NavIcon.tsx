@@ -72,6 +72,10 @@ const paths: Partial<Record<RouteId, string>> = {
   directorySync: 'M4 10a8 8 0 0 1 14-4l2 2M20 5v4h-4M20 14a8 8 0 0 1-14 4l-2-2M4 19v-4h4',
   aiAdmin: 'M4 4h16v13H9l-5 4zM8 8h8m-8 4h5',
   audit: 'M5 3h14v18H5zM8 8h8m-8 4h8m-8 4h5M16 15l2 2 3-4',
+  setupAdmin: 'M5 4h14v16H5zM8 9l2 2 3-3m-5 8 2 2 3-3m3-6h2m-2 8h2',
+  healthAdmin: 'M3 12h4l2-6 4 12 2-6h6',
+  integrationsAdmin: 'M9 3v5m6-5v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3',
+  systemAdmin: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   recurrence: 'M4 12a8 8 0 1 1 3 6M4 17v-5h5M12 8v5l3 2',
 };
 

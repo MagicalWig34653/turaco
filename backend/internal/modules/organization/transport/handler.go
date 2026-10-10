@@ -46,6 +46,7 @@ func Register(mux *http.ServeMux, reader application.Reader, syncer application.
 	}
 	route("/api/v1/users", org, h.listUsers)
 	route("/api/v1/users/{id}", org, h.getUser)
+	route("/api/v1/users/{id}/teams", org, h.listUserTeams)
 	route("/api/v1/teams", org, h.listTeams)
 	route("/api/v1/teams/{id}", org, h.getTeam)
 	route("/api/v1/teams/{id}/members", org, h.listTeamMembers)
@@ -187,6 +188,21 @@ func (h *handler) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, toList(res, toTeamMember))
+}
+
+// listUserTeams lists the current Teams of a User with the membership role. It discloses nothing beyond
+// GET /teams/{id}/members (same permission).
+func (h *handler) listUserTeams(w http.ResponseWriter, r *http.Request) {
+	p, valid := parsePage(w, r)
+	if !valid {
+		return
+	}
+	res, err := h.reader.ListUserTeams(r.Context(), r.PathValue("id"), p)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	ok(w, toList(res, toUserTeam))
 }
 
 func (h *handler) listLocations(w http.ResponseWriter, r *http.Request) {
