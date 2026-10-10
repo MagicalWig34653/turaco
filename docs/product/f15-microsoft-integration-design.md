@@ -344,7 +344,7 @@ Built: `integrations/microsoft` (https only, per-client host allow-list, no redi
 
 Deviations from the plan, chosen on purpose: the ID token is validated by a small RS256 verifier in `integrations/entra` instead of the libraries approved in ADR-0035 (go-oidc, go-jose, x/oauth2): the endpoints are fixed paths of the allow-listed authority, so no discovery document is fetched and no new dependency enters the build; the libraries remain approved should the verifier need to grow.
 
-Not built yet: Graph reconciliation and cloud-only group sync (E-C), step-up and assurance (E-D), the sign-out redirect (`auth.entra_signout_mode` is stored but not applied), guests and `multi_restricted` guest handling (E-E). Verified only against a fake identity provider and unit tests; no real Entra tenant was available.
+Not built yet: Graph reconciliation and cloud-only group sync (E-C), step-up and assurance (E-D), guests and `multi_restricted` guest handling (E-E). Verified only against a fake identity provider and unit tests; no real Entra tenant was available.
 
 ### Slice E-B (2026-10-10)
 

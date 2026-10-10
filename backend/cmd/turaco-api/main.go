@@ -166,7 +166,19 @@ func main() {
 		logger.Error("set up attachment storage", "error", err)
 		os.Exit(1)
 	}
-	authentication.Register(mux, sessions, sessionAuth, orgpublic.NewUserAccess(orgReader), cfg.SessionCookieSecure, logger)
+	entraCfg, err := config.LoadEntra()
+	if err != nil {
+		logger.Error("load entra sign-in configuration", "error", err)
+		os.Exit(1)
+	}
+	var sessionOpts []authentication.Option
+	if entraCfg.Enabled {
+		// Logging out can also end the Entra session (administration setting auth.entra_signout_mode).
+		sessionOpts = append(sessionOpts, authentication.WithLogoutRedirector(authentication.NewEntraLogout(
+			pool, entra.EndSessionURL(entraCfg), entra.PostLogoutURL(entraCfg),
+			func(ctx context.Context) string { return adminSettings.Enum(ctx, settings.KeyAuthEntraSignoutMode) })))
+	}
+	authentication.Register(mux, sessions, sessionAuth, orgpublic.NewUserAccess(orgReader), cfg.SessionCookieSecure, logger, sessionOpts...)
 
 	// Login. Password login binds as the synced account, so the API needs the
 	// directory connection settings but never the sync bind secret.
@@ -213,11 +225,6 @@ func main() {
 		loginDeps.Kerberos = validator
 	}
 	// Sign-in with Microsoft Entra ID (ADR-0035). It needs no directory; users are linked by tenant id + object id.
-	entraCfg, err := config.LoadEntra()
-	if err != nil {
-		logger.Error("load entra sign-in configuration", "error", err)
-		os.Exit(1)
-	}
 	var entraCredential microsoft.Credential
 	entraSignIn := orgpublic.NewEntraSignIn(orgReader, entraCfg.LinkDirectoryProviderKey)
 	if entraCfg.Enabled {

@@ -18,7 +18,10 @@ export function createEndpoints(client: ApiClient) {
       client.get<void>('/auth/kerberos', { signal, skipUnauthorizedHandler: true }),
     session: (signal?: Signal) =>
       client.get<AuthSession>('/auth/session', { signal, skipUnauthorizedHandler: true }),
-    logout: () => client.post<void>('/auth/logout', undefined, { skipUnauthorizedHandler: true }),
+    logout: () =>
+      client.post<{ redirectUrl?: string } | undefined>('/auth/logout', undefined, {
+        skipUnauthorizedHandler: true,
+      }),
   };
 }
 

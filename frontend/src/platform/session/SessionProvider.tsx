@@ -36,13 +36,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    let redirectUrl: string | undefined;
     try {
-      await endpoints.logout();
+      redirectUrl = (await endpoints.logout())?.redirectUrl;
     } catch {
       // The cookie may be unrevokable (network); the local session ends regardless.
     }
     suppressKerberosAutoLogin();
     setState({ status: 'anonymous', expired: false });
+    // A shared computer also ends the Microsoft session: the server names the end-session address.
+    if (redirectUrl && /^https:\/\/login\.microsoftonline\.com\//.test(redirectUrl)) {
+      window.location.assign(redirectUrl);
+    }
   }, []);
 
   useEffect(() => {

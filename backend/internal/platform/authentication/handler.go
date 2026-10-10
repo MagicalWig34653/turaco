@@ -29,7 +29,15 @@ type handler struct {
 	names    SessionNameLoader
 	secure   bool
 	logger   *slog.Logger
+	// logoutHook, when set, may turn a logout into a redirect to the identity provider's end-session endpoint.
+	logoutHook LogoutRedirector
 }
+
+// Option configures Register.
+type Option func(*handler)
+
+// WithLogoutRedirector enables the identity-provider sign-out on logout.
+func WithLogoutRedirector(l LogoutRedirector) Option { return func(h *handler) { h.logoutHook = l } }
 
 type sessionResponse struct {
 	UserID      string   `json:"userId"`
@@ -42,11 +50,14 @@ type sessionResponse struct {
 
 // Register mounts the session endpoints under /api/v1/auth. names may be nil;
 // the session response then carries no names.
-func Register(mux *http.ServeMux, sessions sessionStore, auth *SessionAuthenticator, names SessionNameLoader, secureCookie bool, logger *slog.Logger) {
+func Register(mux *http.ServeMux, sessions sessionStore, auth *SessionAuthenticator, names SessionNameLoader, secureCookie bool, logger *slog.Logger, opts ...Option) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	h := &handler{sessions: sessions, auth: auth, names: names, secure: secureCookie, logger: logger}
+	for _, o := range opts {
+		o(h)
+	}
 	mux.Handle("GET /api/v1/auth/session", httpx.NoStore(http.HandlerFunc(h.getSession)))
 	// The whole API is also wrapped by RequireSameOrigin in main; keeping it
 	// here makes logout safe even if mounted elsewhere.
@@ -94,10 +105,18 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 func (h *handler) logout(w http.ResponseWriter, r *http.Request) {
 	// Logout revokes the session even if its user has since become inactive,
 	// so it uses the session service directly instead of the user gate.
+	redirect := ""
 	if token, ok := tokenFromRequest(r, h.secure); ok {
 		s, err := h.sessions.Authenticate(r.Context(), token)
 		switch {
 		case err == nil:
+			if h.logoutHook != nil {
+				// Decided before the session is revoked; a failure here only loses the identity-provider sign-out.
+				if redirect, err = h.logoutHook.LogoutRedirect(r.Context(), s); err != nil {
+					h.logger.WarnContext(r.Context(), "logout redirect failed", "request_id", httpx.RequestID(w), "error", err)
+					redirect = ""
+				}
+			}
 			if err := h.sessions.Revoke(r.Context(), s.ID, s.UserID, httpx.RequestID(w)); err != nil {
 				writeInternal(h.logger, w, r, err)
 				return
@@ -110,6 +129,10 @@ func (h *handler) logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	ClearCookie(w, h.secure)
+	if redirect != "" {
+		httpx.JSON(w, http.StatusOK, map[string]string{"redirectUrl": redirect})
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

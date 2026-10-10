@@ -176,10 +176,12 @@ Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Know
 
 Recorded so the next session does not depend on conversation memory. Order is the product owner's priority after the F14 and F15 foundations merged (PR 56 to 59).
 
-- **Entra login rest (F15):** the sign-out redirect (`auth.entra_signout_mode` is stored, not applied), step-up and assurance (E-D), Graph reconciliation and cloud-only group sync (E-C), guests (after external parties).
+- **Entra login rest (F15):** step-up and assurance (E-D), Graph reconciliation and cloud-only group sync (E-C), guests (after external parties).
 - **Teams:** personal Adaptive Cards (T-B), approve/reject actions with the Bot Framework verifier (T-C, hosted or published endpoints only), meeting and channel links (T-D); a test send and a per-destination rate limiter for T-A.
 - **F14 rest:** external parties and the vendor portal (A-G), active connection probes (`platform.health.probe`), `Mode()` on every provider port.
 - **Providers:** AnyDesk/HopToDesk URI formats and APIs against vendor documentation, the software provider client, OSV and MSRC advisory feeds (OSV in progress), real verification of the Intune, Autotask and Teams clients with live accounts.
 - **Storage:** master key rotation, ClamAV in the full compose and Swarm examples, signature freshness monitoring.
 - **Simulation findings not yet built:** partial-word search for problems/changes/requests (no text index, newest 200 only), ticket follow for requesters, callback tasks from tickets, manager overview, data-protection prompt on security tickets, structured measurement/firmware data on assets, expected delivery date on "waiting for hardware".
 - **Service desk:** SLA and time tracking, routing rules, meetings and calendar, per-site permission scoping (needs an ADR), production first-administrator path in the UI, migration command in the container images, release packages, Playwright end-to-end tests in the repository.
+
+- Entra sign-out (2026-10-10, migration `000081`): the sign-in page offers "shared computer"; logout ends the Microsoft session too according to the setting `auth.entra_signout_mode` (`shared_only` by default); `POST /auth/logout` then answers 200 with `redirectUrl`.
