@@ -11,7 +11,8 @@ Turaco is an early build. There is no packaged release, installer, Helm chart or
 | Go | 1.27.0 or newer (`go.mod`) | Only to build from source. The Dockerfiles use `golang:1.27.1-alpine`. |
 | Node.js | `>=24 <27` (`frontend/package.json`) | Only to build the frontend. The web image uses `node:26.10.0-alpine`. |
 | PostgreSQL | 18 | Required. The compose files use `postgres:18.6-alpine`. Migration `000060` runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` (a contrib extension), so the migrating role must be allowed to create it or an administrator must create it beforehand (**not verified** for managed PostgreSQL services). |
-| S3-compatible object storage | any | One bucket (`S3_BUCKET`). Compose uses Adobe S3Mock, a test double that is not for production. Which features hard-require the bucket at startup is **not verified**. |
+| File storage for attachments | optional | A directory (`STORAGE_DRIVER=filesystem`) or an S3-compatible bucket (`STORAGE_DRIVER=s3`, the `S3_*` settings), see [section 5.1](#51-file-storage-and-attachments). Compose uses Adobe S3Mock, a test double that is not for production. Nothing else in Turaco uses the bucket today. |
+| ClamAV | optional, required with attachments | A `clamd` daemon reachable over TCP, in its own container ([section 5.1](#51-file-storage-and-attachments)). |
 | Reverse proxy with TLS | any | Required for production; the API itself speaks plain HTTP only. |
 | SMTP relay | optional | Notification email and the invitation and reset links of local accounts. |
 | LDAP / Active Directory | optional | Directory sync and password login; see [LDAP/AD](../integrations/ldap-ad.md). |
@@ -103,7 +104,8 @@ Minimum for a production installation (API and worker unless stated):
 | `SESSION_COOKIE_SECURE` | `true` (default) | Keep the default; `false` is for plain-HTTP development only. |
 | `SESSION_IDLE_TIMEOUT`, `SESSION_ABSOLUTE_TIMEOUT` | `8h`, `24h` (defaults) | Adjust to policy; idle must not exceed absolute. |
 | `HTTP_TRUSTED_PROXIES` | CIDR of the reverse proxy (API) | Without it login throttling treats every client as the proxy; see [Deployment](deployment.md#reverse-proxy-and-client-addresses). |
-| `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PATH_STYLE` | provider values | Defaults: bucket `turaco-dev`, region `us-east-1`, path style on. Set a real bucket name. |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PATH_STYLE` | provider values | Used only with `STORAGE_DRIVER=s3`. Defaults: bucket `turaco-dev`, region `us-east-1`, path style on. Set a real bucket name. |
+| `STORAGE_DRIVER`, `STORAGE_PATH`, `STORAGE_MASTER_KEY_FILE`, `CLAMAV_ADDRESS` | see [5.1](#51-file-storage-and-attachments) | Attachments. Empty `STORAGE_DRIVER` leaves them off. Same values on API and worker. |
 | `TENANT_ID` | `default` (default) | Fixed data plane id of this installation. |
 | `LOG_LEVEL` | `info` (default) | Application log level. |
 
@@ -118,9 +120,25 @@ Authentication mode (enable at least one way to sign in):
 
 Email (optional): `SMTP_HOST`, `SMTP_FROM`, `SMTP_SECURITY` (`starttls` default or `tls`), `SMTP_USERNAME`, `SMTP_PASSWORD_FILE`, `SMTP_CA_FILE`. Set them on the worker and, for local-account links, on the API.
 
+Microsoft Teams channel posts (optional): `TEAMS_CHANNEL_DESTINATIONS_FILE` (a secret file mapping destination keys to Workflows webhook URLs), read-only in the worker and the API; then switch on the module Microsoft Teams and add routes. See [Teams channel posts](../integrations/teams-email.md#teams-channel-posts-t-a).
+
 Optional module gates and flags such as `PRESENCE_ENABLED`, `AI_ENABLED`, `REMOTE_ACCESS_PROVIDERS`, `ADVISORY_SYNC` and `AUDIT_RETENTION_DAYS` are explained in the configuration reference and in [Getting started as an administrator](administrator-getting-started.md#3-modules). Settings that both processes read must have the same value on API and worker; the reference states which.
 
 Do not enable `INTUNE_SYNC`, `AUTOTASK_SYNC`, `SOFTWARE_PROVIDER_SYNC` or `SOFTWARE_DEPLOY_WRITE` expecting live integrations: the Intune Graph, Autotask REST and software provider clients are not implemented, and with the switch on runs report "not configured" or fail permanently ([current status](../product/current-status.md)).
+
+### 5.1 File storage and attachments
+
+Attachments on tickets and knowledge articles ([ADR-0037](../decisions/ADR-0037-file-storage-and-attachments.md)) are optional. They are off until `STORAGE_DRIVER` is set; every other function works without them.
+
+1. **Choose the driver.**
+   - `filesystem` suits a single server and on-premises installs: set `STORAGE_PATH` to an absolute directory that exists on a persistent disk (Turaco creates it with mode `0700`). API and worker must see the same directory, so on several hosts use a shared volume or choose `s3`. The directory holds only encrypted objects named by random ids; never a user file name.
+   - `s3` uses the `S3_*` settings and a private bucket whose access key is limited to that bucket.
+2. **Create the master key** once and keep a copy apart from the data backups: `openssl rand -hex 32 > /etc/turaco/storage-master.key`, owned by the user that runs the API and worker with mode `0400` or `0600` (`chmod 0400`); Turaco refuses to start when group or others have any access to the file (unix); then `STORAGE_MASTER_KEY_FILE=/etc/turaco/storage-master.key`. Upload exhaustion is bounded by `ATTACHMENT_UPLOADS_PER_HOUR` (per user, per process), `ATTACHMENT_USER_QUOTA_BYTES` and `ATTACHMENT_INSTALLATION_QUOTA_BYTES`; size the installation quota to the free space of the storage. Each file is encrypted with its own random data key, which the master key wraps (AES-256-GCM). **Without the master key every stored attachment is unreadable**; there is no recovery and master key rotation is not implemented.
+3. **Run ClamAV in its own container** and set `CLAMAV_ADDRESS=host:3310`. Uploads stay `pending` and cannot be downloaded until the worker has scanned them clean; infected files are quarantined and never downloadable. If ClamAV is down, uploads still succeed and wait as `pending` (platform health shows `attachment_scanner` failing with the backlog). `STORAGE_DRIVER` cannot be set without `CLAMAV_ADDRESS`.
+   - Development: `make infra-up` starts `clamav/clamav` from `deploy/compose/dev.yaml` on port 3310 (the first start downloads signatures and needs internet access for a minute or two).
+   - Production: run the official `clamav/clamav` image (clamd and freshclam in one container) on the private network, **never publish port 3310** (clamd has no authentication or TLS), pin the image by digest, give it persistent storage for `/var/lib/clamav` so restarts do not re-download the database, set `CLAMD_CONF_StreamMaxLength` and `CLAMD_CONF_MaxFileSize` to at least `ATTACHMENT_MAX_BYTES` (a smaller clamd limit makes large files `failed`), size memory generously (about 2 GiB, signature loading is memory hungry) and allow outbound access to the signature mirrors or provide an internal mirror for air-gapped sites (**not verified** for your environment). Monitor that the signatures are recent; Turaco does not.
+4. **Limits.** `ATTACHMENT_MAX_BYTES` (default 25 MiB, at most 100 MiB) and `ATTACHMENT_ALLOWED_TYPES` (default PDF, PNG, JPEG, GIF, WebP, plain text, CSV, Office Open XML documents; archives are opt-in; HTML, SVG and executables are never accepted). The web container's nginx allows request bodies up to 101 MiB on `/api/v1/attachments`; a different reverse proxy must allow `ATTACHMENT_MAX_BYTES` plus about 64 KiB, stream the body and allow ten minutes for transfers.
+5. **Verify.** `/admin/health` shows `object_storage` (a write, read and delete of a probe object) and `attachment_scanner` (pending scans, quarantined and failed counts); the setup checklist item "attachments" turns done when both are healthy.
 
 ## 6. Run migrations
 
@@ -271,7 +289,7 @@ In the container images `turaco-admin` is in the worker image: `docker exec <wor
 | API process alive | `curl -fsS http://127.0.0.1:8080/health/live` | `{"status":"ok"}` |
 | API can reach the database | `curl -fsS http://127.0.0.1:8080/health/ready` | `{"status":"ready"}`; 503 `platform.database_unavailable` otherwise (a 2 second database ping; it checks neither migrations nor the worker) |
 | Version and environment | `GET /api/v1/meta` | `environment` is `production` |
-| Platform health | `/admin/health` in the web UI, API `GET /api/v1/admin/health` | Checks for database, migrations, worker heartbeat, jobs, outbox, directory, mail, object storage and modules; providers without a client report `not_configured` |
+| Platform health | `/admin/health` in the web UI, API `GET /api/v1/admin/health` | Checks for database, migrations, worker heartbeat, jobs, outbox, directory, mail, object storage, attachment scanner and modules; providers without a client report `not_configured` |
 | Setup checklist | `/admin/setup` | Items derived from the same facts |
 
 The probe paths are `/health/live` and `/health/ready`, not `/healthz` and `/readyz`. The `/admin/health` and `/admin/setup` backend is documented as implemented (F14 A-C); the screens (A-F) may still be listed as not implemented in [current status](../product/current-status.md), so confirm in your build (**not verified**). The worker has no HTTP probe; use the worker heartbeat in platform health or your process supervisor.
@@ -281,7 +299,7 @@ The probe paths are `/health/live` and `/health/ready`, not `/healthz` and `/rea
 Strategy and restore order are in [Backup and Restore](backup-restore.md); this is the minimum.
 
 - **PostgreSQL:** logical dumps (`pg_dump -Fc turaco`) or base backups with WAL archiving. Sessions, audit events, jobs and all domain data are in the database.
-- **Object storage:** replicate or copy the bucket with your provider's tooling.
+- **Attachments:** back up `STORAGE_PATH` (or replicate the bucket) in step with PostgreSQL: the database holds the attachment metadata, the storage holds the encrypted content. A restore of one without the other leaves attachments without content or content without metadata (orphans are removed by the purge job). Back up `STORAGE_MASTER_KEY_FILE` separately from, and never inside, the data backup; without it the objects cannot be decrypted.
 - **Keys and configuration:** keep the environment file and mounted secrets (keytab, LDAP bind password file) in your secret manager. Key material follows the separate protected procedure in [Encryption](../security/encryption.md); key provider setup for a plain install is **not verified**.
 - **Restore order:** keys, PostgreSQL, object storage, then API and worker. Restore periodically into an isolated environment and record the date.
 - After restoring a database, start binaries of a version that matches its schema, or run `turaco-migrate` of the newer version before starting them.
@@ -328,7 +346,7 @@ Compatibility of old binaries with a newer schema during a rolling upgrade is **
 - [ ] `turaco-api` is reachable only from the proxy (private bind address or firewall for `:8080`); `/health/` is limited to monitoring.
 - [ ] `HTTP_TRUSTED_PROXIES` lists only the proxy's own address(es).
 - [ ] PostgreSQL requires TLS (`sslmode=verify-full`), listens on a private network and is accessed by a dedicated non-superuser role; the password is not in the repository, shell history or world-readable unit files.
-- [ ] The object storage bucket is private and its access key is restricted to that bucket.
+- [ ] The attachment storage (bucket or `STORAGE_PATH`) is private and writable only by the API and worker; the master key file is `0400`, copied to a vault and not in the backups of the data; `clamd` port 3310 is reachable only from API-adjacent hosts (the worker) and never from outside.
 - [ ] Secrets are in a root-only environment file or an orchestrator secret store; `_FILE` secrets (LDAP bind, SMTP, keytab) are readable only by the process that needs them; the keytab is mounted only into `turaco-api`.
 - [ ] `LDAP_URL` uses `ldaps://` (or StartTLS) with `LDAP_CA_FILE` for a private CA; the sync account is read-only.
 - [ ] Emergency login is disabled (`AUTH_EMERGENCY_LOGIN_ENABLED=false`, `emergency disable`) except during an outage; its password is in a vault and use raises an alert.

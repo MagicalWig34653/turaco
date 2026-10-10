@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
@@ -35,13 +37,40 @@ func (noMail) Link(token, purpose string) string {
 }
 func (noMail) Send(context.Context, string, string, string, string) error { return nil }
 
+type removeLocal struct{}
+
+func (removeLocal) DeleteLocalCredential(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM platform.local_credentials WHERE user_id = $1::uuid AND kind = 'local'`, userID)
+	return int(tag.RowsAffected()), err
+}
+
+// recordingNotifier records the identity notices (no mail is sent).
+type recordingNotifier struct {
+	mu     sync.Mutex
+	events []string
+	err    error
+}
+
+func (n *recordingNotifier) NotifyIdentityChange(_ context.Context, to, _, event string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.err != nil {
+		return n.err
+	}
+	n.events = append(n.events, event+" "+to)
+	return nil
+}
+
+const testEntraTenant = "11111111-2222-3333-4444-555555555555"
+
 type peopleHTTP struct {
-	t     *testing.T
-	pool  *pgxpool.Pool
-	mux   *http.ServeMux
-	pfx   string
-	actor string
-	perms map[string]struct{}
+	notices *recordingNotifier
+	t       *testing.T
+	pool    *pgxpool.Pool
+	mux     *http.ServeMux
+	pfx     string
+	actor   string
+	perms   map[string]struct{}
 }
 
 // as authenticates requests as userID holding perms.
@@ -60,14 +89,16 @@ func newPeopleHTTP(t *testing.T) *peopleHTTP {
 	pool := dbtest.Pool(t)
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
-	h := &peopleHTTP{t: t, pool: pool, pfx: "zt" + hex.EncodeToString(b), mux: http.NewServeMux()}
+	h := &peopleHTTP{t: t, pool: pool, pfx: "zt" + hex.EncodeToString(b), mux: http.NewServeMux(), notices: &recordingNotifier{}}
 	subjects := public.NewAuthorizationSubjects(repository.New(pool))
 	repo := repository.New(pool).WithGuards(roles.NewGuards(pool, subjects), authentication.SessionRevoker{}).
-		WithCredentials(authentication.NewLocalCredentials(nil), noMail{})
+		WithCredentials(authentication.NewLocalCredentials(nil), noMail{}).WithCredentialRemover(removeLocal{})
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	auth := as{h}
 	RegisterTeams(h.mux, application.NewTeams(repo), auth, logger)
 	RegisterPeople(h.mux, application.NewPeople(repo), application.NewQueries(repo, query.NewEphemeralEngine().WithLimiter(query.NewLimiter(1000, 1000))), repo, auth, logger)
+	RegisterImports(h.mux, application.NewImports(repo), auth, logger)
+	RegisterEntra(h.mux, application.NewEntraLinking(repo, []string{testEntraTenant}, h.notices), testEntraTenant, auth, logger)
 	Register(h.mux, repo, repo, "", auth, logger)
 	t.Cleanup(func() {
 		ctx := context.Background()
@@ -78,6 +109,8 @@ func newPeopleHTTP(t *testing.T) *peopleHTTP {
 			`DELETE FROM platform.credential_tokens WHERE user_id IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
 			`DELETE FROM platform.local_credentials WHERE user_id IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
 			`UPDATE organization.users SET department_id = NULL, primary_location_id = NULL WHERE display_name LIKE $1 || '%'`,
+			`DELETE FROM organization.import_batches WHERE created_by IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
+			`DELETE FROM organization.external_identities WHERE user_id IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
 			`DELETE FROM organization.users WHERE display_name LIKE $1 || '%'`,
 			`DELETE FROM organization.departments WHERE name LIKE $1 || '%'`,
 			`DELETE FROM organization.locations WHERE name LIKE $1 || '%'`,

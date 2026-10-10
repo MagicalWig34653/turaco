@@ -75,6 +75,8 @@ const paths: Partial<Record<RouteId, string>> = {
   setupAdmin: 'M5 4h14v16H5zM8 9l2 2 3-3m-5 8 2 2 3-3m3-6h2m-2 8h2',
   healthAdmin: 'M3 12h4l2-6 4 12 2-6h6',
   integrationsAdmin: 'M9 3v5m6-5v5M6 8h12v4a6 6 0 0 1-12 0zM12 18v3',
+  settingsAdmin: 'M4 7h10m4 0h2M4 17h2m4 0h10M16 4v6m-8 4v6',
+  teamsChannelAdmin: 'M4 5h16v11H9l-5 4zM12 8v5m-2.5-2.5h5',
   systemAdmin: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
   recurrence: 'M4 12a8 8 0 1 1 3 6M4 17v-5h5M12 8v5l3 2',
 };

@@ -57,7 +57,7 @@ The stable key is **`tid` + `oid`**: External Identity `provider_key = entra:<ti
 
 1. **Existing link** `(entra:<tid>, oid)` that is enabled: that User. The User must be active; `account_kind` is never changed.
 2. **Hybrid match** (only when `ENTRA_LINK_DIRECTORY_PROVIDER_KEY` binds this tenant to the synced on-prem directory, and only for tenant `ENTRA_TENANT_ID`): Graph `/me` returns `onPremisesSyncEnabled = true` and `onPremisesImmutableId`; Turaco decodes it (base64 of the source anchor, objectGUID or `mS-DS-ConsistencyGuid`, which equals objectGUID unless the customer changed the anchor) and looks up the External Identity of that directory provider whose `external_subject` is the same GUID. Exactly one active User: link atomically (insert the Entra identity, audit `organization.external_identity.linked` with `via: source_anchor`). Cloud-only Entra users, users of other tenants, or a sync-disabled attribute never match. This avoids a second User for a person who already exists through LDAP sync. Matching by `onprem_sid` would need the SID in directory sync, which Turaco does not read today; it is not used.
-3. **Automatic provisioning** (only when `ENTRA_PROVISIONING=auto_employee`): only members of `ENTRA_TENANT_ID` (guest or `acct = 1` users and other tenants never), only if no User has the same primary email (collision refuses with `entra_not_linked` and an attention entry for administrators; never a link by email), creates a User with `account_kind = employee`, origin `directory` (attributes owned by the provider `entra:<tid>`), no roles, no Team memberships, audited `organization.user.provisioned` with `via: entra`.
+3. **Automatic provisioning** (only when the runtime setting `auth.entra_provisioning` is `auto_employee`): only members of `ENTRA_TENANT_ID` (guest or `acct = 1` users and other tenants never), only if no User has the same primary email (collision refuses with `entra_not_linked` and an attention entry for administrators; never a link by email), creates a User with `account_kind = employee`, origin `directory` (attributes owned by the provider `entra:<tid>`), no roles, no Team memberships, audited `organization.user.provisioned` with `via: entra`.
 4. Otherwise `entra_not_linked` (default `link_only`).
 
 **Administrator linking** (`POST /users/{id}/external-identities/entra`, `DELETE /users/{id}/external-identities/{identityId}`): platform administrator only (takeover-capable, as directory linking in ADR-0034), never on oneself, `expectedVersion`, target must be active, audited, revokes the target's sessions and sends a notice to the target's email. The administrator enters the object id and tenant (copied from the Entra portal); Turaco does not search Entra by name or email. Linking a local account deletes its local credential, open tokens and sessions atomically and is refused while the User holds roles (ADR-0034 R5 applies unchanged). The emergency account can never be linked.
@@ -108,7 +108,7 @@ SCIM provisioning from Entra is deferred: it needs an inbound endpoint reachable
 
 ### Configuration keys (names only; planned)
 
-`AUTH_ENTRA_LOGIN_ENABLED`, `ENTRA_CLOUD` (`global|usgov|china`), `ENTRA_TENANT_MODE` (`single|multi_restricted`), `ENTRA_TENANT_ID`, `ENTRA_ALLOWED_TENANT_IDS`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_CERTIFICATE_FILE`, `ENTRA_CLIENT_PRIVATE_KEY_FILE`, `ENTRA_CLIENT_SECRET_FILE`, `ENTRA_CLIENT_SECRET_EXPIRES_AT`, `ENTRA_REDIRECT_URL`, `ENTRA_POST_LOGOUT_REDIRECT_URL`, `ENTRA_SIGN_OUT_REDIRECT`, `ENTRA_PROVISIONING` (`link_only|auto_employee`), `ENTRA_GUESTS` (`refuse|external`), `ENTRA_LINK_DIRECTORY_PROVIDER_KEY`, `ENTRA_MAX_CLOCK_SKEW`, `ENTRA_SESSION_MAX_AGE`, `ENTRA_STEP_UP_AUTH_CONTEXT`, `ENTRA_STEP_UP_MAX_AGE`, `ENTRA_RECONCILE`, `ENTRA_RECONCILE_INTERVAL`, `MICROSOFT_HTTP_PROXY`, `MICROSOFT_CA_FILE`. Graph read credentials: `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, `MICROSOFT_GRAPH_CLIENT_CERTIFICATE_FILE`, `MICROSOFT_GRAPH_CLIENT_PRIVATE_KEY_FILE`, `MICROSOFT_GRAPH_CLIENT_SECRET_FILE`. They enter the generated [configuration reference](../reference/configuration.md) when implemented.
+`AUTH_ENTRA_LOGIN_ENABLED`, `ENTRA_CLOUD` (`global|usgov|china`), `ENTRA_TENANT_MODE` (`single|multi_restricted`), `ENTRA_TENANT_ID`, `ENTRA_ALLOWED_TENANT_IDS`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_CERTIFICATE_FILE`, `ENTRA_CLIENT_PRIVATE_KEY_FILE`, `ENTRA_CLIENT_SECRET_FILE`, `ENTRA_CLIENT_SECRET_EXPIRES_AT`, `ENTRA_REDIRECT_URL`, `ENTRA_POST_LOGOUT_REDIRECT_URL`, `ENTRA_SIGN_OUT_REDIRECT`, `ENTRA_PROVISIONING` (superseded: provisioning is the runtime setting `auth.entra_provisioning`), `ENTRA_GUESTS` (`refuse|external`), `ENTRA_LINK_DIRECTORY_PROVIDER_KEY`, `ENTRA_MAX_CLOCK_SKEW`, `ENTRA_SESSION_MAX_AGE`, `ENTRA_STEP_UP_AUTH_CONTEXT`, `ENTRA_STEP_UP_MAX_AGE`, `ENTRA_RECONCILE`, `ENTRA_RECONCILE_INTERVAL`, `MICROSOFT_HTTP_PROXY`, `MICROSOFT_CA_FILE`. Graph read credentials: `MICROSOFT_GRAPH_TENANT_ID`, `MICROSOFT_GRAPH_CLIENT_ID`, `MICROSOFT_GRAPH_CLIENT_CERTIFICATE_FILE`, `MICROSOFT_GRAPH_CLIENT_PRIVATE_KEY_FILE`, `MICROSOFT_GRAPH_CLIENT_SECRET_FILE`. The Graph read keys, the separate `MICROSOFT_GRAPH_WRITE_*` keys of the Intune assignment writer and `INTUNE_GRAPH_BETA` are in the generated [configuration reference](../reference/configuration.md).
 
 ### Data and code (planned)
 
@@ -171,7 +171,7 @@ SCIM provisioning from Entra is deferred: it needs an inbound endpoint reachable
 
 ## Microsoft Teams
 
-Planned, not implemented ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)). Teams is a delivery and interaction channel; Turaco records stay authoritative.
+Slice T-A (channel posts) is implemented, see the [implementation record](#slice-t-a-2026-10-10); T-B to T-E are planned ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)). Teams is a delivery and interaction channel; Turaco records stay authoritative.
 
 ### Phases
 
@@ -316,7 +316,7 @@ Never requested: mail, chat or channel message read, files, `Directory.ReadWrite
 
 ### Shared HTTP client (`integrations/microsoft`, slice M-0)
 
-Cloud endpoint table (`global|usgov|china`), host allow-list per feature, `MICROSOFT_HTTP_PROXY` and `MICROSOFT_CA_FILE`, https only, no redirects, response size and time caps, dial-time IP checks when no proxy is used, client-credential token acquisition with certificate or secret, 429/`Retry-After` and transient-error classification, request ids in logs without tokens or bodies. The Intune Graph client (not implemented yet) is built on it as well.
+Cloud endpoint table (`global|usgov|china`), host allow-list per feature, `MICROSOFT_HTTP_PROXY` and `MICROSOFT_CA_FILE`, https only, no redirects, response size and time caps, dial-time IP checks when no proxy is used, client-credential token acquisition with certificate or secret, 429/`Retry-After` and transient-error classification, request ids in logs without tokens or bodies. The Intune Graph clients are built on it as well: `microsoft.TokenSource` (client credentials with caching) and `microsoft.Graph` (retry with `Retry-After`, `@odata.nextLink` restricted to the Graph host, caps) carry `integrations/intune` `GraphProvider` and `GraphWriter`, implemented per documentation and unverified against a live tenant ([Intune](../integrations/intune.md#microsoft-graph-clients-implemented-per-documentation-unverified)); the write registration uses `MICROSOFT_GRAPH_WRITE_*`.
 
 ## Implementation slicing
 
@@ -336,7 +336,49 @@ Cloud endpoint table (`global|usgov|china`), host allow-list per feature, `MICRO
 
 Every slice: OpenAPI, generated references, current status, this design's implementation record, `review-security` for E-A, E-B, E-D and T-C before merge.
 
-## Open questions for the product owner
+## Implementation record
+
+### Slices M-0 and E-A (2026-10-10)
+
+Built: `integrations/microsoft` (https only, per-client host allow-list, no redirects, response size and time caps, optional explicit proxy and CA file, dial-time public-address check when no proxy is set, client credential from a secret file that is re-read when its modification time changes or from a certificate with a signed client assertion, expiry status), `integrations/entra` (authorization URL with PKCE S256, `prompt=select_account` and no `offline_access`; code exchange; ID token validation: RS256 only, key by `kid` from the JWKS of the configured authority with a 24-hour cache and at most one refresh per five minutes, issuer bound to the token's own tenant, tenant allow-list, consumer tenant refused, audience and `azp`, `exp`/`nbf`/`iat` with skew, nonce in constant time, `ver` 2.0, GUID checks, guest detection by `acct` and `idp`), the port and browser flow in `platform/authentication` (`GET /api/v1/auth/entra/start|callback`: server-side transaction with hashed state and browser binding, single use also on failure, own throttle budget, uniform audited failures as redirects to `/login?error=<code>`, open-redirect guard on `returnTo`, session `auth_method = entra` limited by `ENTRA_SESSION_MAX_AGE` and the setting `auth.session_absolute_timeout`), identity lookup by tenant id + object id (`organization.external_identities`, provider key `entra:<tid>`), the CLI `turaco-admin entra link|unlink` (audited, revokes Entra sessions on unlink; users with a local credential are refused until the atomic replacement of the people administration is used), `GET /auth/methods` reports `entra`, configuration keys and health check `entra_login` (credential expiry: attention at 30 days, failing after expiry, unknown for a secret without `ENTRA_CLIENT_SECRET_EXPIRES_AT`), the login button "Sign in with Microsoft Entra", migration `000075`.
+
+Deviations from the plan, chosen on purpose: the ID token is validated by a small RS256 verifier in `integrations/entra` instead of the libraries approved in ADR-0035 (go-oidc, go-jose, x/oauth2): the endpoints are fixed paths of the allow-listed authority, so no discovery document is fetched and no new dependency enters the build; the libraries remain approved should the verifier need to grow.
+
+Not built yet: Graph reconciliation and cloud-only group sync (E-C), step-up and assurance (E-D), the sign-out redirect (`auth.entra_signout_mode` is stored but not applied), guests and `multi_restricted` guest handling (E-E). Verified only against a fake identity provider and unit tests; no real Entra tenant was available.
+
+### Slice E-B (2026-10-10)
+
+Built: the administrator API (`POST /users/{id}/external-identities/entra`, `DELETE /users/{id}/external-identities/{identityId}`, `GET /users/entra-linking`) with `application.EntraLinking` (input validation: GUIDs, tenant must be in `ENTRA_ALLOWED_TENANT_IDS`, the consumer tenant never; best-effort notice mail through `IdentityNotifier`) and the repository operations `LinkEntraIdentity`/`UnlinkEntraIdentity` (one transaction each: platform administrator, not oneself, emergency account refused, active employee, `expectedVersion`, dominance R1, local credential replaced atomically as ADR-0034 R5 and refused while roles are held, open credential tokens end, one identity per tenant, version bump, audit). The existing people operation `link-directory-identity` could not be reused: it is bound to a directory synchronization conflict and turns the origin into `directory`, whereas an Entra link keeps the origin; the R5 steps (credential remover, token and session revocation, role check) are reused through the same collaborators. A User with an Entra identity cannot be issued an invitation or reset (a new password would reopen the pre-provisioning path). The user detail lists identities with id, provider key, the last four characters of the subject, linked-at and `via` (migration `000078`, column `external_identities.linked_via`: `administrator|source_anchor|provisioning|cli`); the UI section "Microsoft Entra" (link dialog with GUID validation, tenant default from `GET /users/entra-linking`, takeover confirmation; unlink dialog).
+
+Hybrid match: with `ENTRA_LINK_DIRECTORY_PROVIDER_KEY` the authorization and token requests add the delegated scope `User.Read`; the adapter calls Graph `GET /v1.0/me?$select=onPremisesImmutableId,onPremisesSyncEnabled` once, in memory, only for a non-guest member of `ENTRA_TENANT_ID` (the key requires `ENTRA_TENANT_ID` in `ENTRA_ALLOWED_TENANT_IDS`), decodes the base64 anchor (16 bytes, Active Directory mixed-endian objectGUID, the same layout as LDAP sync) and sets `VerifiedIdentity.SourceAnchor` only when `onPremisesSyncEnabled` is true; any Graph failure or non-GUID anchor leaves it empty, which can only make the match fail. The login handler calls the match only for an unlinked home-tenant identity; the repository locks the directory identity's User and links only when exactly one enabled directory identity of that provider has the GUID and its User is an active directory-owned employee without an identity of this tenant (audit `organization.external_identity.linked`, `via: source_anchor`). An anchor that names an unusable User ends in `entra_not_linked` without falling through to provisioning; no match falls through. Ambiguity cannot occur in the database (unique provider key + subject) and is covered with a fake at the login layer. OpenLDAP (`entryUUID`) installations do not match, as designed (AD only).
+
+Provisioning: the runtime setting `auth.entra_provisioning` (`link_only` default, no longer `notYetActive`) is read per sign-in; `auto_employee` creates an employee (origin `directory`, active, no roles, no Team) for a first sign-in of a home-tenant member who is not a guest. Name and primary email come from the token and must pass the normal profile validation; a missing or invalid email refuses provisioning (the collision check needs it). A primary email that another User has (case-insensitive) refuses with `entra_not_linked`. Deviation: the "attention entry" for administrators is the audit trail (`auth.login.failed` reason `email_conflict` and `organization.user.provisioning_refused` on the existing User) rather than a new notification or dashboard concept; a health or attention surface can read these events later. A per-identity advisory lock and the unique indexes make concurrent first sign-ins converge on one User. Unlinking an inactive User's identity is allowed on purpose (only the link needs an active target).
+
+Not built: Graph reconciliation, step-up, guests, a bulk or CSV link.
+
+## Decisions of the product owner (2026-10-10)
+
+The fifteen open questions are answered. They bind the implementation; the numbering is that of the earlier question list.
+
+| # | Decision |
+| --- | --- |
+| 1 | Default provisioning is `link_only`; an administrator may switch to `auto_employee` in the settings. |
+| 2 | Entra is one sign-in method among several. LDAP/AD, Kerberos, local accounts and Entra can be enabled in any combination; the sign-in page shows a "Sign in with Microsoft Entra" button next to the others. Nothing forces Entra to be the only method. |
+| 3 | The Entra session cap is 8 hours by default and is a runtime setting in the administration settings (`/admin/settings`), not only an environment variable. |
+| 4 | Sign-out from Entra on Turaco logout is a setting with the values `never`, `shared_only` (default) and `always`. With `shared_only` the sign-in page offers a "shared computer" choice; logging out of such a session also ends the Entra session. |
+| 5 | Entra ID P1 (Conditional Access authentication context) is a supported prerequisite for MFA step-up. |
+| 6 | Both layouts are supported: separate registrations (recommended) and one combined registration for small installations (the same client id in several configuration keys is valid). |
+| 7 | Global cloud only (EU tenants and data boundary); sovereign clouds are not built. |
+| 8 | Guests (B2B) wait for F14 A-G (External Parties). |
+| 9 | No SCIM. The 15-minute reconciliation pull is sufficient. |
+| 10 | Phases T-A, then T-B, then T-C. On-premises installations have no inbound access from outside, so they get T-A (outbound only); T-B and T-C require a reachable bot endpoint and are available for hosted installations or on-premises installations that publish one deliberately. |
+| 11 | Personal Teams notifications are opt-in per user. An administrator can also set the default or switch the channel off for everybody in the settings. |
+| 12 | Ticket titles in personal cards (`with_titles`) stay off. An administrator can enable them only with an explicit acknowledgement in the settings and after the data protection review. |
+| 13 | Channel routing may carry Major Incident declared/updated and Change scheduled. The hospital's "Infrastruktur Ausfälle" chat is the first destination for Major Incidents. |
+| 14 | Teams links can be attached to Major Incidents and to Turaco Teams (for the daily and weekly meetings). |
+| 15 | The customer's Teams administrator publishes a Turaco-provided app package; Teams is already installed on the workstations. |
+
+## Superseded: open questions (kept for the rationale)
 
 1. Default provisioning: `link_only` (proposed) or `auto_employee` for cloud-only customers?
 2. Should Entra be allowed as the **only** sign-in method in production (no LDAP, no local accounts), given the emergency account remains the break-glass path?
@@ -353,3 +395,17 @@ Every slice: OpenAPI, generated references, current status, this design's implem
 13. Which categories may be routed to channels (proposed: Major Incident declared/updated, change scheduled)?
 14. Should Teams links be attachable to Turaco Teams for the daily and weekly meetings, or only to Major Incidents?
 15. Who publishes the Teams app package: the customer's Teams administrator from a Turaco-provided package (proposed) or a store listing?
+
+### Slice T-A (2026-10-10)
+
+Built: `integrations/teams` (the `Sender` port with `Mode()`, `DestinationKeys()` and `PostToChannel`; the `Workflows` adapter over the shared `integrations/microsoft` client with an exact-host allow-list derived from the destinations file; `Fake` and `NotConfigured` adapters; a contract test suite that runs all three), migration `000080` (`platform.notification_channel_routes`; `notification_deliveries` gains nullable `notification_id`, `destination_key`, `dedupe_key`, `payload` and the channel `teams_channel`, unique per channel, destination and dedupe key), `platform/notifications` (`Category.Broadcast` marks a category broadcastable and carries the English and German reference-only wording; `Service.PostToChannels` creates one delivery and one job per route inside the producer's outbox transaction; `ChannelSender` is the job handler `teams.channel_post`; route management with audit), the producers' consumers (`servicedesk.post-major-declared`, `servicedesk.notify-major` for updates, `changes.post-scheduled`), the optional module `teams` (route prefix `integrations`, administration routes open while it is off), the health check `teams`, the screen `/admin/teams-channels` and the permission `integrations.teams.manage`.
+
+Decisions taken in the slice:
+
+- Broadcastable categories are `majorincident.update` (kinds declared and updated) and `change.scheduled` (kind scheduled). Major Incident exercises are never posted. The continuation events of the notification fan-out never post, so one declaration or update is one post per destination; the outbox event id is the dedupe key.
+- A post carries the category wording, the reference number (validated to a title-free pattern) and a link built from `EMAIL_BASE_URL`; the card type has no field for a title, description or name. Content tests assert this at the Card, the delivery payload and the worker flow.
+- Webhook URLs come only from `TEAMS_CHANNEL_DESTINATIONS_FILE` (JSON object of destination key to URL; hosts `*.logic.azure.com` and `*.api.powerplatform.com`, https, port 443). Both processes read it: `turaco-worker` to post and `turaco-api` only for the key list. The API, UI, logs, audit and stored errors carry keys and short machine codes, never URLs or response bodies.
+- Module off: no delivery is created and the send job stays pending (durable job gate); a post that is still unsent after six hours is cancelled as `stale`, so enabling the module later does not announce old incidents. A deleted route cancels its waiting posts (`route_removed`).
+- 429 and 5xx are transient (the job is retried no earlier than `Retry-After`, at most one hour, with the normal back-off; every attempt counts, at most eight); other 4xx and redirects are permanent. The runner gained `jobs.RetryAfter` for this.
+- Not built in T-A: a per-destination token bucket (a Major Incident produces few posts), test send, per-user Teams preferences, `with_titles`, the personal channel and the bot (T-B onward). The Workflows request format and host names are from documentation and must be verified in a lab tenant before production use.
+

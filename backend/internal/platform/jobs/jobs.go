@@ -58,6 +58,35 @@ func IsPermanent(err error) bool {
 	return errors.As(err, &p)
 }
 
+// MaxRetryAfter caps the delay a handler may request with RetryAfter.
+const MaxRetryAfter = time.Hour
+
+type retryAfterError struct {
+	err   error
+	delay time.Duration
+}
+
+func (e retryAfterError) Error() string { return e.err.Error() }
+func (e retryAfterError) Unwrap() error { return e.err }
+
+// RetryAfter marks err as retryable no earlier than delay (capped at MaxRetryAfter), for example the Retry-After
+// of a rate-limited provider. The normal back-off still applies when it is longer. The attempt counts as usual.
+func RetryAfter(err error, delay time.Duration) error {
+	if err == nil {
+		return nil
+	}
+	return retryAfterError{err: err, delay: delay}
+}
+
+// retryDelay is the delay a handler error asks for; zero when it asks for none.
+func retryDelay(err error) time.Duration {
+	var r retryAfterError
+	if !errors.As(err, &r) || r.delay <= 0 {
+		return 0
+	}
+	return min(r.delay, MaxRetryAfter)
+}
+
 // Querier is satisfied by *pgxpool.Pool, *pgx.Conn and pgx.Tx, so a job can be
 // enqueued atomically with the business change that requires it.
 type Querier interface {

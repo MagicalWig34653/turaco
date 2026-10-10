@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MagicalWig34653/turaco/backend/internal/integrations/autotask"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/entra"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/kerberos"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/ldap"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/microsoft"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
@@ -59,6 +60,7 @@ import (
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
 	aitransport "github.com/MagicalWig34653/turaco/backend/internal/platform/ai/transport"
+	attachmentstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/attachments/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	audittransport "github.com/MagicalWig34653/turaco/backend/internal/platform/audit/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
@@ -72,6 +74,9 @@ import (
 	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	notificationstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/notifications/transport"
+	searchtransport "github.com/MagicalWig34653/turaco/backend/internal/platform/search/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/settings"
+	settingstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/settings/transport"
 	viewstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/views/transport"
 	workitemstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/workitems/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
@@ -119,7 +124,18 @@ func main() {
 	})
 
 	// Module switches (ADR-0032): the registry decides which optional modules are reachable (see the gate below).
-	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	teamsCfg, err := config.LoadTeams()
+	if err != nil {
+		logger.Error("load Teams configuration", "error", err)
+		os.Exit(1)
+	}
+	teamsSender, err := wiring.TeamsSender(teamsCfg)
+	if err != nil {
+		logger.Error("set up Teams channel", "error", err)
+		os.Exit(1)
+	}
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders,
+		TeamsConfigured: teamsCfg.Configured()})
 
 	// Browser sessions authenticate requests; their permissions come from
 	// role assignments to the User and its (transitive) Directory Groups.
@@ -134,8 +150,22 @@ func main() {
 		os.Exit(1)
 	}
 	subjects := orgpublic.NewAuthorizationSubjects(orgReader)
-	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout}, nil)
+	adminSettings := settings.New(pool, 0)
+	sessions := authentication.NewService(pool, authentication.Config{IdleTimeout: cfg.SessionIdleTimeout, AbsoluteTimeout: cfg.SessionAbsoluteTimeout,
+		AbsoluteTimeoutOverride: func(ctx context.Context) (time.Duration, bool) {
+			return adminSettings.StoredDuration(ctx, settings.KeyAuthSessionAbsoluteTimeout)
+		}}, nil)
 	sessionAuth := authentication.NewSessionAuthenticator(sessions, orgpublic.NewUserAccess(orgReader), roles.NewEvaluator(pool, subjects), cfg.SessionCookieSecure).WithLocalLogin(cfg.AuthLocalLoginEnabled)
+	storageCfg, err := config.LoadStorage()
+	if err != nil {
+		logger.Error("load storage configuration", "error", err)
+		os.Exit(1)
+	}
+	attachmentSvc, err := wiring.Attachments(pool, cfg, storageCfg, logger, true)
+	if err != nil {
+		logger.Error("set up attachment storage", "error", err)
+		os.Exit(1)
+	}
 	authentication.Register(mux, sessions, sessionAuth, orgpublic.NewUserAccess(orgReader), cfg.SessionCookieSecure, logger)
 
 	// Login. Password login binds as the synced account, so the API needs the
@@ -182,6 +212,48 @@ func main() {
 		}
 		loginDeps.Kerberos = validator
 	}
+	// Sign-in with Microsoft Entra ID (ADR-0035). It needs no directory; users are linked by tenant id + object id.
+	entraCfg, err := config.LoadEntra()
+	if err != nil {
+		logger.Error("load entra sign-in configuration", "error", err)
+		os.Exit(1)
+	}
+	var entraCredential microsoft.Credential
+	entraSignIn := orgpublic.NewEntraSignIn(orgReader, entraCfg.LinkDirectoryProviderKey)
+	if entraCfg.Enabled {
+		entraHosts := []string{entra.AuthorityHost}
+		if entraCfg.LinkDirectoryProviderKey != "" {
+			// Graph is called only for the hybrid source-anchor lookup (delegated User.Read, ADR-0035).
+			entraHosts = append(entraHosts, entra.GraphHost)
+		}
+		entraClient, err := microsoft.New(microsoft.Config{AllowedHosts: entraHosts, HTTPProxy: entraCfg.HTTPProxy, CAFile: entraCfg.CAFile})
+		if err != nil {
+			logger.Error("configure entra sign-in", "error", err)
+			os.Exit(1)
+		}
+		if entraCfg.ClientSecretFile != "" {
+			entraCredential, err = microsoft.NewSecretCredential(entraCfg.ClientSecretFile, entraCfg.ClientSecretExpiresAt)
+		} else {
+			entraCredential, err = microsoft.NewCertificateCredential(entraCfg.ClientCertificateFile, entraCfg.ClientPrivateKeyFile)
+		}
+		if err != nil {
+			logger.Error("configure entra sign-in credential", "error", err)
+			os.Exit(1)
+		}
+		loginDeps.Entra = &authentication.EntraLoginDeps{
+			Provider:      entra.New(entraCfg, entraClient, entraCredential, nil),
+			Identities:    orgpublic.NewEntraIdentities(orgReader),
+			SessionMaxAge: entraCfg.SessionMaxAge,
+			HomeTenantID:  entraCfg.TenantID,
+			Provisioner:   entraSignIn,
+			Provisioning: func(ctx context.Context) string {
+				return adminSettings.Enum(ctx, settings.KeyAuthEntraProvisioning)
+			},
+		}
+		if entraCfg.LinkDirectoryProviderKey != "" {
+			loginDeps.Entra.Anchors = entraSignIn
+		}
+	}
 	authentication.RegisterLogin(mux, loginDeps, loginCfg)
 
 	// Manual directory sync requests need a configured provider; the worker
@@ -189,6 +261,17 @@ func main() {
 	orgtransport.Register(mux, orgReader, orgReader, cfg.DirectoryProviderKey, sessionAuth, logger)
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	orgtransport.RegisterPeople(mux, orgapp.NewPeople(orgReader), orgapp.NewQueries(orgReader, wiring.QueryEngine(pool)), orgReader, sessionAuth, logger)
+	orgtransport.RegisterImports(mux, orgapp.NewImports(orgReader), sessionAuth, logger)
+	var entraTenants []string
+	if entraCfg.Enabled {
+		entraTenants = entraCfg.AllowedTenantIDs
+	}
+	entraLinking, err := wiring.EntraLinking(orgReader, wiring.OrganizationConfig{BaseURL: cfg.EmailBaseURL, SMTP: smtpCfg}, entraTenants)
+	if err != nil {
+		logger.Error("configure entra linking", "error", err)
+		os.Exit(1)
+	}
+	orgtransport.RegisterEntra(mux, entraLinking, entraCfg.TenantID, sessionAuth, logger)
 	orgtransport.RegisterLookup(mux, orgapp.NewPeopleLookup(orgReader), cfg.PeopleLookupEnabled, sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil).WithQueryEngine(wiring.QueryEngine(pool))
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
@@ -196,11 +279,39 @@ func main() {
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
-	endpointstransport.Register(mux, wiring.Endpoints(pool, intune.NotConfigured{}, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync).WithDeployWrite(cfg.SoftwareDeployWrite, intune.NotConfiguredWriter{}), sessionAuth, logger)
+	// Provider clients (docs/integrations): real clients written from the vendor documentation, "unverified" until a
+	// call succeeded; the placeholders remain when their configuration is absent. Only the worker writes assignments.
+	graphRead, err := config.LoadGraphRead()
+	if err != nil {
+		logger.Error("load Microsoft Graph read configuration", "error", err)
+		os.Exit(1)
+	}
+	graphBeta, err := config.IntuneGraphBeta()
+	if err != nil {
+		logger.Error("load Intune Graph configuration", "error", err)
+		os.Exit(1)
+	}
+	intuneProvider, intuneHealth, err := wiring.IntuneProvider(graphRead, graphBeta)
+	if err != nil {
+		logger.Error("configure Intune provider", "error", err)
+		os.Exit(1)
+	}
+	autotaskCfg, err := config.LoadAutotask()
+	if err != nil {
+		logger.Error("load Autotask configuration", "error", err)
+		os.Exit(1)
+	}
+	autotaskGateway, autotaskHealth, err := wiring.AutotaskGateway(autotaskCfg)
+	if err != nil {
+		logger.Error("configure Autotask gateway", "error", err)
+		os.Exit(1)
+	}
+	endpointstransport.Register(mux, wiring.Endpoints(pool, intuneProvider, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync).WithDeployWrite(cfg.SoftwareDeployWrite, intune.NotConfiguredWriter{}), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
-	servicedesktransport.RegisterExternal(mux, wiring.ExternalSync(pool, autotask.NotConfigured{}, cfg.AutotaskSync), sessionAuth, logger)
+	attachmentstransport.Register(mux, attachmentSvc, sessionAuth, logger)
+	servicedesktransport.RegisterExternal(mux, wiring.ExternalSync(pool, autotaskGateway, cfg.AutotaskSync), sessionAuth, logger)
 	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)
 	servicedesktransport.RegisterMajor(mux, wiring.MajorIncidents(pool), sessionAuth, logger)
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
@@ -236,6 +347,7 @@ func main() {
 		os.Exit(1)
 	}
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
+	notificationstransport.RegisterChannelRoutes(mux, notifications.NewService(pool, categories).WithChannelPosts(wiring.TeamsChannelOptions(teamsSender, moduleSvc)), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger,
 		audittransport.WithResolvers(wiring.AuditResolvers(pool)), audittransport.WithRetentionDays(cfg.AuditRetentionDays))
@@ -248,20 +360,25 @@ func main() {
 	}
 	healthRegistry, err := wiring.Health(pool, moduleSvc, wiring.HealthConfig{
 		Environment: cfg.Environment, Version: version, LDAPConfigured: ldapConn.Enabled(), KerberosConfigured: cfg.Kerberos.Enabled(),
-		SMTPConfigured: smtpCfg.Enabled(), EmailBaseURLSet: cfg.EmailBaseURL != "", S3Configured: cfg.S3Endpoint != "" || cfg.S3Bucket != "",
+		SMTPConfigured: smtpCfg.Enabled(), EmailBaseURLSet: cfg.EmailBaseURL != "", S3Configured: cfg.S3Endpoint != "" || cfg.S3Bucket != "", Attachments: attachmentSvc,
 		EmergencyLogin: cfg.AuthEmergencyLoginEnabled, LocalLogin: cfg.AuthLocalLoginEnabled,
 		IntuneSync: cfg.IntuneSync, SoftwareSync: cfg.SoftwareProviderSync, AutotaskSync: cfg.AutotaskSync, AdvisorySync: advisoryCfg.Enabled,
 		RemoteAccessProviders: cfg.RemoteAccessProviders,
+		Teams:                 wiring.TeamsHealth{Mode: teamsSender.Mode(), Destinations: len(teamsSender.DestinationKeys())},
+		Providers:             map[string]wiring.ProviderHealth{"intune": intuneHealth, "autotask": autotaskHealth, "software_provider": {}},
+		EntraEnabled:          entraCfg.Enabled, EntraCredentialKind: entraCredentialKind(entraCredential), EntraCredentialExpires: entraCredentialExpiry(entraCredential),
 	})
 	if err != nil {
 		logger.Error("register health checks", "error", err)
 		os.Exit(1)
 	}
+	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
 	healthtransport.Register(mux, healthRegistry, wiring.HealthSetup(pool, moduleSvc, healthRegistry),
 		healthtransport.SystemInfo{Version: version, Environment: cfg.Environment, StartedAt: time.Now()}, sessionAuth, logger)
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)
+	searchtransport.Register(mux, wiring.Search(pool, moduleSvc), sessionAuth, logger)
 	// Saved Views, shares and pins (ADR-0033). A View runs through the owning module's own query endpoints (the mux
 	// below the gate), so viewer scope and field redaction are the module's; the module switch is checked by Views.
 	viewsSvc, err := wiring.Views(pool, mux, moduleSvc)
@@ -317,4 +434,21 @@ func allCategories() []notifications.Category {
 	out = append(out, securityapp.NotificationCategories()...)
 	out = append(out, remoteaccessapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
+}
+
+func entraCredentialKind(c microsoft.Credential) string {
+	if c == nil {
+		return ""
+	}
+	return c.Kind()
+}
+
+func entraCredentialExpiry(c microsoft.Credential) *time.Time {
+	if c == nil {
+		return nil
+	}
+	if t, ok := c.ExpiresAt(); ok {
+		return &t
+	}
+	return nil
 }

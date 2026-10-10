@@ -108,6 +108,7 @@ export type RouteId =
   | 'recurrenceDetail'
   | 'users'
   | 'userNew'
+  | 'userImport'
   | 'userDetail'
   | 'teams'
   | 'teamDetail'
@@ -125,6 +126,8 @@ export type RouteId =
   | 'healthAdmin'
   | 'integrationsAdmin'
   | 'systemAdmin'
+  | 'settingsAdmin'
+  | 'teamsChannelAdmin'
   | 'securityAdvisories'
   | 'securityOverview'
   | 'securityAdvisoryNew'
@@ -804,6 +807,12 @@ export const appRoutes: readonly AppRoute[] = [
     requires: ['organization.users.manage', 'organization.view'],
   },
   {
+    id: 'userImport',
+    pattern: '/admin/users/import',
+    titleKey: 'people.import.title',
+    requires: ['organization.import', 'organization.view'],
+  },
+  {
     id: 'userDetail',
     pattern: '/admin/users/:id',
     titleKey: 'people.detail.title',
@@ -917,6 +926,20 @@ export const appRoutes: readonly AppRoute[] = [
     requires: ['platform.health.view'],
     nav: 'admin',
   },
+  {
+    id: 'settingsAdmin',
+    pattern: '/admin/settings',
+    titleKey: 'settings.title',
+    requires: ['platform.health.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'teamsChannelAdmin',
+    pattern: '/admin/teams-channels',
+    titleKey: 'teamsChannel.title',
+    requires: ['integrations.teams.manage'],
+    nav: 'admin',
+  },
 ];
 
 /** UI hiding only: all of `requires` and, when set, at least one of `requiresAny`. */
@@ -943,6 +966,7 @@ const directoryAdminPermissions = [
   'organization.directory.view',
   'organization.directory.sync',
   'organization.external_parties.manage',
+  'organization.import',
 ] as const;
 
 /**

@@ -140,10 +140,15 @@ type DirectoryGroupMember struct {
 	LastObservedAt time.Time
 }
 
-// ExternalIdentity is a directory account linked to a User. The external
-// subject and distinguished name are deliberately not exposed.
+// ExternalIdentity is an external account (directory or Entra) linked to a User. The subject and distinguished name
+// are deliberately not exposed; only the last four characters of the subject identify it to an administrator.
 type ExternalIdentity struct {
-	ProviderKey       string
+	ID            string
+	ProviderKey   string
+	SubjectSuffix string
+	CreatedAt     time.Time
+	// LinkedVia is administrator, source_anchor, provisioning or cli for Entra identities; empty otherwise.
+	LinkedVia         string
 	Username          *string
 	Enabled           bool
 	LastSeenAt        *time.Time

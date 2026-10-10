@@ -15,6 +15,32 @@ import { loginErrorMessage } from './loginErrors';
 
 type Mode = 'password' | 'emergency';
 
+/** Generic messages for the failure codes the Entra callback puts into the login page URL. */
+const entraErrorKeys: Record<
+  string,
+  'login.entra.failed' | 'login.entra.notLinked' | 'login.entra.unavailable'
+> = {
+  entra_failed: 'login.entra.failed',
+  entra_not_linked: 'login.entra.notLinked',
+  entra_unavailable: 'login.entra.unavailable',
+};
+
+function entraErrorFromUrl() {
+  try {
+    const code = new URLSearchParams(window.location.search).get('error');
+    return code ? (entraErrorKeys[code] ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+function entraStartUrl() {
+  // Return to the page the user wanted when it is an in-app path other than the login page.
+  const here = window.location.pathname + window.location.search;
+  const target = here.startsWith('/') && !here.startsWith('/login') ? here : '/';
+  return `/api/v1/auth/entra/start?returnTo=${encodeURIComponent(target)}`;
+}
+
 export function LoginScreen() {
   const { t, locale, setLocale } = useI18n();
   const { state, refresh } = useSession();
@@ -30,6 +56,7 @@ export function LoginScreen() {
   const passwordRef = useRef<HTMLInputElement>(null);
 
   const available = methods.data;
+  const entraError = entraErrorFromUrl();
 
   // Try Kerberos/SPNEGO once; on any non-204 outcome fall back to the form.
   useEffect(() => {
@@ -111,64 +138,76 @@ export function LoginScreen() {
 
         {kerberos === 'trying' ? <p role="status">{t('login.kerberos.trying')}</p> : null}
 
+        {entraError ? <Alert kind="error">{t(entraError)}</Alert> : null}
+
+        {available && kerberos !== 'trying' && available.entra ? (
+          <p className="login-entra">
+            <a className="btn btn-primary btn-block" href={entraStartUrl()}>
+              {t('login.entra.button')}
+            </a>
+          </p>
+        ) : null}
+
         {available && kerberos !== 'trying' ? (
-          available.password || available.emergency ? (
-            <form onSubmit={(event) => void submit(event)} noValidate>
-              {emergency ? (
-                <Alert kind="warning">
-                  <strong>{t('login.emergency.warningTitle')}</strong>
-                  <p>{t('login.emergency.warning')}</p>
-                </Alert>
-              ) : null}
-              {errorText ? <Alert kind="error">{errorText}</Alert> : null}
-              <TextField
-                ref={identifierRef}
-                label={emergency ? t('login.emergency.login') : t('login.identifier')}
-                hint={emergency ? undefined : t('login.identifier.hint')}
-                value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                maxLength={emergency ? 64 : 256}
-                required
-                autoFocus
-              />
-              <TextField
-                ref={passwordRef}
-                label={t('login.password')}
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                maxLength={1024}
-                required
-              />
-              <Button
-                type="submit"
-                variant={emergency ? 'danger' : 'primary'}
-                busy={busy}
-                disabled={identifier === '' || password === ''}
-                className="btn-block"
-              >
-                {busy
-                  ? t('login.submitting')
-                  : emergency
-                    ? t('login.emergency.submit')
-                    : t('login.submit')}
-              </Button>
-              {available.emergency && available.password ? (
-                <p className="login-switch">
-                  <Button
-                    variant="secondary"
-                    className="btn-link"
-                    onClick={() => switchMode(emergency ? 'password' : 'emergency')}
-                  >
-                    {emergency ? t('login.emergency.back') : t('login.emergency.link')}
-                  </Button>
-                </p>
-              ) : null}
-            </form>
+          available.password || available.emergency || available.entra ? (
+            available.password || available.emergency ? (
+              <form onSubmit={(event) => void submit(event)} noValidate>
+                {emergency ? (
+                  <Alert kind="warning">
+                    <strong>{t('login.emergency.warningTitle')}</strong>
+                    <p>{t('login.emergency.warning')}</p>
+                  </Alert>
+                ) : null}
+                {errorText ? <Alert kind="error">{errorText}</Alert> : null}
+                <TextField
+                  ref={identifierRef}
+                  label={emergency ? t('login.emergency.login') : t('login.identifier')}
+                  hint={emergency ? undefined : t('login.identifier.hint')}
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={emergency ? 64 : 256}
+                  required
+                  autoFocus
+                />
+                <TextField
+                  ref={passwordRef}
+                  label={t('login.password')}
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                  maxLength={1024}
+                  required
+                />
+                <Button
+                  type="submit"
+                  variant={emergency ? 'danger' : 'primary'}
+                  busy={busy}
+                  disabled={identifier === '' || password === ''}
+                  className="btn-block"
+                >
+                  {busy
+                    ? t('login.submitting')
+                    : emergency
+                      ? t('login.emergency.submit')
+                      : t('login.submit')}
+                </Button>
+                {available.emergency && available.password ? (
+                  <p className="login-switch">
+                    <Button
+                      variant="secondary"
+                      className="btn-link"
+                      onClick={() => switchMode(emergency ? 'password' : 'emergency')}
+                    >
+                      {emergency ? t('login.emergency.back') : t('login.emergency.link')}
+                    </Button>
+                  </p>
+                ) : null}
+              </form>
+            ) : null
           ) : (
             <Alert kind="warning">{t('login.noMethods')}</Alert>
           )

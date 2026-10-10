@@ -81,7 +81,7 @@ func Catalog() []Module {
 	return []Module{
 		core("platform", "meta"),
 		core("access", "auth", "roles", "role-assignments", "role-templates", "permissions", "modules", "access"),
-		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs"),
+		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs", "import-batches"),
 		core("audit", "audit-events"),
 		core("tasks", "tasks", "recurring-task-definitions", "my-work"),
 		core("approvals", "approvals"),
@@ -114,6 +114,11 @@ func Catalog() []Module {
 
 		{Key: "presence", Category: CategoryWorkforce, DefaultEnabled: false, RoutePrefixes: []string{"presence"},
 			OpenPaths: []string{"/api/v1/presence/status", "/api/v1/presence/settings*"}, AlwaysRunJobs: []string{"presence.purge"}, StartupGates: []string{"PRESENCE_ENABLED"}},
+
+		// Microsoft Teams channel posts (ADR-0036). The administration routes stay reachable while the module is off so
+		// routes can be prepared; posts are created only while it is on.
+		{Key: "teams", Category: CategoryWorkforce, DefaultEnabled: false, RoutePrefixes: []string{"integrations"},
+			OpenPaths: []string{"/api/v1/integrations/teams/*"}, StartupGates: []string{"TEAMS_CHANNEL_DESTINATIONS_FILE"}},
 
 		opt("briefing", CategoryInsight, nil, "briefing", "briefing-items"),
 		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai"},

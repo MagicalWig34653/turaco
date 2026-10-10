@@ -25,6 +25,26 @@ services:
     volumes:
       - s3mock-dev:/tmp/s3mock
 
+  # ClamAV daemon for the attachment virus scan gate (ADR-0037). Development only: the first start downloads the
+  # signature database (a minute or two) and the container reports healthy once clamd answers. Uploads stay
+  # `pending` until it does. Production notes: docs/operations/installation.md.
+  clamav:
+    image: clamav/clamav:1.4.2
+    environment:
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+    ports:
+      - "3310:3310"
+    volumes:
+      - clamav-dev:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
 volumes:
   postgres-dev:
   s3mock-dev:
+  clamav-dev:

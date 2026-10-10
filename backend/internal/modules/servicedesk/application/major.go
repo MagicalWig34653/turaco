@@ -94,6 +94,8 @@ type MajorStore interface {
 	Subscribers(ctx context.Context, tx pgx.Tx, id, after string, limit int) ([]string, error)
 	// MajorTitle returns "reference · title" of an incident, or ErrNotFound.
 	MajorTitle(ctx context.Context, tx pgx.Tx, id string) (string, error)
+	// MajorReference returns the reference number (for example MI-000012) of an incident, or ErrNotFound.
+	MajorReference(ctx context.Context, tx pgx.Tx, id string) (string, error)
 	// LinkTicketTx attaches a ticket (once); it reports the ticket's reporter and affected users.
 	LinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (reporter, affected string, err error)
 	// UnlinkTicketTx detaches a ticket from the incident; it reports whether the ticket was linked to it.

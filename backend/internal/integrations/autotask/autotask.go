@@ -1,9 +1,9 @@
 // Package autotask is the adapter to the Autotask service desk (docs/integrations/autotask.md).
 //
-// Only the internal side exists so far: the Gateway contract the Service Desk module is wired to,
-// an in-memory Fake for tests and local development, and a placeholder that reports "not configured".
-// The REST client (authentication, ticket mapping, webhook signature check) needs a tenant, API
-// credentials and a sandbox to be built and verified against, none of which this repository has.
+// It holds the Gateway contract the Service Desk module is wired to, an in-memory Fake for tests and local
+// development, the "not configured" placeholder, and the REST client (rest.go), which is written strictly from the
+// vendor documentation and unverified against a live Autotask database. Webhooks and polling for inbound changes
+// are not implemented.
 package autotask
 
 import (
@@ -23,8 +23,8 @@ type Ticket struct {
 	Resolution  string
 }
 
-// ErrNotConfigured is returned while no REST client exists or is configured.
-var ErrNotConfigured = errors.New("autotask: the REST client is not configured (not implemented yet)")
+// ErrNotConfigured is returned while the Autotask API user is not configured (AUTOTASK_*).
+var ErrNotConfigured = errors.New("autotask: the REST client is not configured")
 
 // Gateway creates or updates Autotask tickets.
 type Gateway interface {

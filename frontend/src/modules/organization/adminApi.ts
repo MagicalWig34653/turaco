@@ -4,14 +4,25 @@ import type { Page } from '../../platform/api/types';
 import type { QueryPageResult } from './adminModel';
 import type {
   AuthMethodsInfo,
+  BulkPreviewRequest,
   CredentialLink,
   DepartmentNode,
+  EntraLinkingInfo,
+  EntraLinkResult,
+  ExtendReason,
+  ImportBatch,
+  ImportBatchPreview,
+  ImportKind,
+  ImportMatchKey,
+  ImportMode,
+  ImportRow,
   LocationNode,
   PersonCreate,
   PersonDetail,
   PersonRow,
   ProfileUpdate,
   TeamMemberRow,
+  SyncConflictChoice,
   TeamRole,
   TeamRow,
 } from './adminTypes';
@@ -46,6 +57,17 @@ registerErrorMessages({
   'access.local_account_high_risk': 'access.error.localAccountHighRisk',
   'access.external_party_permission_required': 'access.error.externalPartyPermission',
   'access.sod_acknowledgement_required': 'access.error.sodRequired',
+  'organization.import_too_large': 'people.import.error.tooLarge',
+  'organization.import_too_many_rows': 'people.import.error.tooManyRows',
+  'organization.import_stale': 'people.import.error.stale',
+  'organization.import_preview_mismatch': 'people.import.error.mismatch',
+  'organization.directory_link_refused_roles': 'people.link.error.roles',
+  'organization.entra_not_configured': 'entra.error.notConfigured',
+  'organization.entra_tenant_not_allowed': 'entra.error.tenantNotAllowed',
+  'organization.entra_identity_in_use': 'entra.error.inUse',
+  'organization.entra_tenant_already_linked': 'entra.error.tenantAlreadyLinked',
+  'organization.directory_identity_in_use': 'people.link.error.inUse',
+  'access.admin_required': 'people.link.error.adminRequired',
   'auth.mail_not_configured': 'auth.error.mailNotConfigured',
   'auth.base_url_not_configured': 'auth.error.baseUrlNotConfigured',
   'auth.mail_failed': 'auth.error.mailFailed',
@@ -168,4 +190,97 @@ export const peopleAdminApi = {
       expectedVersion,
       ...(confirmImpact ? { confirmImpact: true } : {}),
     }),
+
+  // ---- CSV import, bulk operations, directory linking, access extension ----
+  previewImport: (
+    kind: ImportKind,
+    matchKey: ImportMatchKey,
+    mode: ImportMode,
+    file: File,
+  ): Promise<ImportBatchPreview> => {
+    const form = new FormData();
+    form.set('kind', kind);
+    form.set('matchKey', matchKey);
+    form.set('mode', mode);
+    form.set('file', file, file.name);
+    return api.post<ImportBatchPreview>('/import-batches', form);
+  },
+  importBatch: (id: string, signal?: Signal) =>
+    api.get<ImportBatch>(`/import-batches/${enc(id)}`, { signal }),
+  importRows: (id: string, action: string, cursor: string | undefined, signal?: Signal) =>
+    api.get<{ items: ImportRow[]; nextCursor?: string }>(`/import-batches/${enc(id)}/rows`, {
+      signal,
+      query: { action, cursor, limit: 100 },
+    }),
+  /** Path of the rejected-rows CSV download (same origin, session cookie). */
+  rejectedCsvPath: (id: string) => `/api/v1/import-batches/${enc(id)}/rejected.csv`,
+  applyImport: (id: string, previewHash: string, expectedRejects: number) =>
+    api.post<ImportBatchPreview>(`/import-batches/${enc(id)}/apply`, {
+      previewHash,
+      expectedRejects,
+    }),
+  bulkPreview: (request: BulkPreviewRequest) =>
+    api.post<ImportBatchPreview>('/users/bulk-operations', { ...request, dryRun: true }),
+  bulkApply: (batchId: string, previewHash: string, expectedRejects: number) =>
+    api.post<ImportBatchPreview>('/users/bulk-operations', {
+      dryRun: false,
+      batchId,
+      previewHash,
+      expectedRejects,
+    }),
+  linkDirectoryIdentity: (
+    id: string,
+    expectedVersion: number,
+    choice: Pick<SyncConflictChoice, 'runId' | 'externalId'>,
+  ) =>
+    api.post<PersonRow>(`/users/${enc(id)}/link-directory-identity`, {
+      expectedVersion,
+      runId: choice.runId,
+      externalId: choice.externalId,
+    }),
+  entraLinking: (signal?: Signal) => api.get<EntraLinkingInfo>('/users/entra-linking', { signal }),
+  linkEntraIdentity: (id: string, expectedVersion: number, tenantId: string, objectId: string) =>
+    api.post<EntraLinkResult>(`/users/${enc(id)}/external-identities/entra`, {
+      expectedVersion,
+      tenantId,
+      objectId,
+    }),
+  unlinkExternalIdentity: (id: string, identityId: string) =>
+    api.delete<EntraLinkResult>(`/users/${enc(id)}/external-identities/${enc(identityId)}`),
+  extendAccess: (
+    id: string,
+    expectedVersion: number,
+    accessExpiresAt: string,
+    reason: ExtendReason,
+  ) =>
+    api.post<PersonRow>(`/users/${enc(id)}/extend-access`, {
+      expectedVersion,
+      accessExpiresAt,
+      reason,
+    }),
+  /** Identities the directory could not create because their e-mail address belongs to a local account. */
+  syncConflicts: async (signal?: Signal): Promise<SyncConflictChoice[]> => {
+    const page = await api.get<
+      Page<{
+        id: string;
+        providerKey: string;
+        outcome: string;
+        conflicts: { kind: string; externalId: string; username: string }[];
+      }>
+    >('/directory-sync-runs', { signal, query: { limit: 5 } });
+    const out: SyncConflictChoice[] = [];
+    for (const run of page.items) {
+      if (run.outcome !== 'succeeded' && run.outcome !== 'sweep_withheld') continue;
+      for (const conflict of run.conflicts) {
+        if (conflict.kind === 'email_in_use')
+          out.push({
+            runId: run.id,
+            providerKey: run.providerKey,
+            externalId: conflict.externalId,
+            username: conflict.username,
+          });
+      }
+    }
+    return out;
+  },
 };

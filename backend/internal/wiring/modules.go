@@ -27,6 +27,7 @@ type ModuleGates struct {
 	PresenceEnabled       bool     // PRESENCE_ENABLED
 	AIEnabled             bool     // AI_ENABLED
 	RemoteAccessProviders []string // REMOTE_ACCESS_PROVIDERS
+	TeamsConfigured       bool     // TEAMS_CHANNEL_DESTINATIONS_FILE
 }
 
 // Modules builds the module registry with the preconditions of the modules that have their own gates: Workforce
@@ -68,6 +69,12 @@ func Modules(pool *pgxpool.Pool, gates ModuleGates) *modules.Service {
 			}
 			if !st.Enabled {
 				return BlockedRuntimeSettingOff, nil
+			}
+			return "", nil
+		},
+		"teams": func(context.Context) (string, error) {
+			if !gates.TeamsConfigured {
+				return BlockedNoProvidersConfigure, nil
 			}
 			return "", nil
 		},

@@ -33,11 +33,26 @@ export type FieldOwner = {
 };
 
 export type ExternalIdentity = {
+  id: string;
   providerKey: string;
+  /** Last four characters of the subject; the whole value is never sent. */
+  subjectSuffix: string;
+  linkedAt: string;
+  /** How an Entra identity was linked; empty for directory identities. */
+  via: '' | 'administrator' | 'source_anchor' | 'provisioning' | 'cli';
   username: string | null;
   enabled: boolean;
   lastSeenAt: string | null;
   deletedObservedAt: string | null;
+};
+
+/** What the link dialog needs to know about the installation (platform administrators only). */
+export type EntraLinkingInfo = { configured: boolean; tenantId: string; tenantIds: string[] };
+
+export type EntraLinkResult = {
+  user: PersonRow;
+  credentialDeleted: boolean;
+  noticeSent: boolean;
 };
 
 export type PersonDetail = PersonRow & {
@@ -131,3 +146,71 @@ export type AuthMethodsInfo = {
   kerberos: boolean;
   emergency: boolean;
 };
+
+// ---- CSV import, bulk operations, directory linking, access extension (F14 section 1.6) ----
+
+export type ImportKind = 'users' | 'locations' | 'departments';
+export type BatchKind = ImportKind | 'bulk_users';
+export type ImportMode = 'create_only' | 'update_only' | 'upsert';
+export type ImportMatchKey = 'primary_email' | 'employee_number' | 'code';
+export type RowAction = 'create' | 'update' | 'unchanged' | 'reject';
+
+export type ImportRowIssue = { field?: string; code: string };
+export type ImportDiffValue = { from: string | null; to: string | null };
+
+export type ImportRow = {
+  row: number;
+  action: RowAction;
+  /** Match key of an import row, or the User id of a bulk row. */
+  key: string;
+  label?: string;
+  userId?: string;
+  diff: Record<string, ImportDiffValue>;
+  errors: ImportRowIssue[];
+  warnings: ImportRowIssue[];
+};
+
+export type ImportBatch = {
+  id: string;
+  kind: BatchKind;
+  matchKey?: string;
+  mode?: string;
+  operation?: string;
+  status: 'previewed' | 'applied';
+  fileHash?: string;
+  previewHash: string;
+  rowCount: number;
+  counts: Partial<Record<RowAction, number>>;
+  unknownColumns: string[];
+  expiresAt: string;
+  appliedAt?: string;
+  appliedCounts?: Partial<Record<RowAction, number>>;
+};
+
+export type ImportBatchPreview = ImportBatch & {
+  rows: ImportRow[];
+  nextCursor?: string;
+  replayed?: boolean;
+};
+
+export type BulkOperation =
+  'set_department' | 'set_primary_location' | 'set_manager' | 'deactivate';
+
+export type BulkPreviewRequest = {
+  operation: BulkOperation;
+  userIds: string[];
+  departmentId?: string | null;
+  locationId?: string | null;
+  managerUserId?: string | null;
+  reason?: string;
+};
+
+export type SyncConflictChoice = {
+  runId: string;
+  providerKey: string;
+  externalId: string;
+  username: string;
+};
+
+export type ExtendReason =
+  'contract_renewed' | 'project_extended' | 'sponsor_request' | 'correction';

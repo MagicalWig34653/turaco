@@ -36,9 +36,17 @@ func NotificationCategories() []notifications.Category {
 			},
 		}
 	}
+	scheduled := cat("change.scheduled", "Change scheduled: %s", "A change that affects a service you own or support was scheduled:",
+		"Änderung geplant: %s", "Eine Änderung, die einen von dir betreuten Service betrifft, wurde eingeplant:")
+	// A scheduled Change may be posted to a Teams channel: generic wording and the reference number only.
+	scheduled.Broadcast = &notifications.Broadcast{Texts: map[string]map[string]notifications.ChannelText{
+		notifications.PostKindScheduled: {
+			"en": {Headline: "A change was scheduled", Action: "Open in Turaco"},
+			"de": {Headline: "Eine Änderung wurde eingeplant", Action: "In Turaco öffnen"},
+		},
+	}}
 	return []notifications.Category{
-		cat("change.scheduled", "Change scheduled: %s", "A change that affects a service you own or support was scheduled:",
-			"Änderung geplant: %s", "Eine Änderung, die einen von dir betreuten Service betrifft, wurde eingeplant:"),
+		scheduled,
 		cat("change.reminder", "Change starts soon: %s", "A change that affects a service you own or support starts soon:",
 			"Änderung beginnt bald: %s", "Eine Änderung, die einen von dir betreuten Service betrifft, beginnt bald:"),
 		cat("change.state", "Change status updated: %s", "The status of a change you requested or own changed:",
@@ -81,6 +89,53 @@ type Notifications struct {
 	logger    *slog.Logger
 	now       func() time.Time
 	chunk     int
+	channels  ChannelPoster
+}
+
+// ChannelPoster posts about a record to the routed channel destinations (the Notification service).
+type ChannelPoster interface {
+	PostToChannels(ctx context.Context, tx pgx.Tx, in notifications.ChannelPost) (int, error)
+}
+
+// WithChannelPosts enables channel posts for scheduled Changes.
+func (n *Notifications) WithChannelPosts(p ChannelPoster) *Notifications {
+	n.channels = p
+	return n
+}
+
+// PostChangeScheduled posts a scheduled Change to the routed channels, reference-only (the reference number and a
+// link, never the title). It consumes ChangeScheduled only, not the fan-out continuation, so one scheduling is one
+// post per destination; the event id is the idempotency key. A stale event (cancelled meanwhile) posts nothing.
+func (n *Notifications) PostChangeScheduled(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
+	if n.channels == nil {
+		return nil
+	}
+	var p struct {
+		ChangeID string `json:"changeId"`
+	}
+	if err := decodePayload(ev, &p); err != nil {
+		return err
+	}
+	if !uuidPattern.MatchString(p.ChangeID) {
+		return events.Permanent(fmt.Errorf("invalid change id in %s", ev.EventType))
+	}
+	c, err := n.store.Get(ctx, strings.ToLower(p.ChangeID))
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if c.Status != StatusScheduled && c.Status != StatusInProgress {
+		return nil
+	}
+	if _, err := n.channels.PostToChannels(ctx, tx, notifications.ChannelPost{
+		Category: "change.scheduled", Kind: notifications.PostKindScheduled, Reference: c.Reference,
+		LinkType: "change", LinkID: c.ID, DedupeKey: ev.ID,
+	}); err != nil {
+		return fmt.Errorf("post to channels: %w", err)
+	}
+	return nil
 }
 
 func NewNotifications(store Store, graph *relationships.Graph, dir Directory, services Services, notifier Notifier,

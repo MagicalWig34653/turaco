@@ -22,6 +22,14 @@ type Repository struct {
 	counters []application.ReferenceCounter
 	issuer   application.CredentialIssuer
 	mailer   application.CredentialMailer
+	removers application.LocalCredentialRemover
+}
+
+// WithCredentialRemover returns a copy that can delete a local credential when a directory identity is linked.
+func (r *Repository) WithCredentialRemover(rm application.LocalCredentialRemover) *Repository {
+	c := *r
+	c.removers = rm
+	return &c
 }
 
 // WithCredentials returns a copy that can issue invitation and reset links.

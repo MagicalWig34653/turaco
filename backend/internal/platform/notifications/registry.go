@@ -29,6 +29,29 @@ type Category struct {
 	// without a link leaves both empty.
 	LinkType string
 	LinkPath string
+	// Broadcast, when set, marks the category as broadcastable: the owning module allows its events to be posted
+	// to a channel (a Teams Channel Route) in addition to notifying Users. Personal categories never set it.
+	Broadcast *Broadcast
+}
+
+// Channel post kinds a Broadcast can describe.
+const (
+	PostKindDeclared  = "declared"
+	PostKindUpdated   = "updated"
+	PostKindScheduled = "scheduled"
+)
+
+// ChannelText is the generic, localized wording of a channel post. It never contains record content: the post
+// carries the reference number and a link besides it (ADR-0036, data minimisation).
+type ChannelText struct {
+	Headline string
+	// Action is the label of the link back to Turaco.
+	Action string
+}
+
+// Broadcast holds the channel post wording per kind and locale; "en" and "de" are required for every kind.
+type Broadcast struct {
+	Texts map[string]map[string]ChannelText
 }
 
 var categoryName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9_]*)+$`)
@@ -76,6 +99,25 @@ func NewRegistry(categories ...Category) (*Registry, error) {
 			}
 			r.linkPaths[c.LinkType] = c.LinkPath
 		}
+		if c.Broadcast != nil {
+			if c.LinkType == "" {
+				return nil, fmt.Errorf("notification category %q: a broadcastable category needs a link", c.Name)
+			}
+			if len(c.Broadcast.Texts) == 0 {
+				return nil, fmt.Errorf("notification category %q: broadcast texts are required", c.Name)
+			}
+			for kind, byLocale := range c.Broadcast.Texts {
+				if kind != PostKindDeclared && kind != PostKindUpdated && kind != PostKindScheduled {
+					return nil, fmt.Errorf("notification category %q: unknown channel post kind %q", c.Name, kind)
+				}
+				for _, locale := range requiredLocales {
+					t, ok := byLocale[locale]
+					if !ok || strings.TrimSpace(t.Headline) == "" || strings.TrimSpace(t.Action) == "" {
+						return nil, fmt.Errorf("notification category %q: complete %s channel text for %q is required", c.Name, locale, kind)
+					}
+				}
+			}
+		}
 		r.byName[c.Name] = c
 		r.names = append(r.names, c.Name)
 	}
@@ -91,6 +133,35 @@ func (r *Registry) Valid(name string) bool {
 
 // Names returns the registered category names, sorted.
 func (r *Registry) Names() []string { return append([]string(nil), r.names...) }
+
+// Broadcastable returns the names of the categories that may be routed to a channel, sorted.
+func (r *Registry) Broadcastable() []string {
+	var out []string
+	for _, n := range r.names {
+		if r.byName[n].Broadcast != nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// ChannelText returns the wording of a channel post; ok is false for a category that is not broadcastable or a
+// kind it does not describe. An unknown locale falls back to "en".
+func (r *Registry) ChannelText(category, kind, locale string) (ChannelText, bool) {
+	c, ok := r.byName[category]
+	if !ok || c.Broadcast == nil {
+		return ChannelText{}, false
+	}
+	byLocale, ok := c.Broadcast.Texts[kind]
+	if !ok {
+		return ChannelText{}, false
+	}
+	if t, ok := byLocale[locale]; ok {
+		return t, true
+	}
+	t, ok := byLocale["en"]
+	return t, ok
+}
 
 // Lookup returns a category.
 func (r *Registry) Lookup(name string) (Category, bool) {

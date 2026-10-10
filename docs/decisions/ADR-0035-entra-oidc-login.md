@@ -1,6 +1,6 @@
 # ADR-0035: Microsoft Entra ID Sign-in Through OpenID Connect for Every Deployment Variant
 
-- Status: Proposed (2026-10-10). Nothing in this ADR is implemented; [current status](../product/current-status.md) is authoritative. Design and threat model: [F15 Microsoft integration, Entra login](../product/f15-microsoft-integration-design.md#entra-login).
+- Status: Accepted (2026-10-10, product owner decisions in the design). Implemented in slices (E-A and E-B built, the rest planned per the slice list); [current status](../product/current-status.md) is authoritative. Design and threat model: [F15 Microsoft integration, Entra login](../product/f15-microsoft-integration-design.md#entra-login).
 
 ## Context
 
@@ -32,4 +32,13 @@
 - `platform/authentication` gains an OIDC login port and a short-lived login-transaction table; `integrations/entra` holds the Entra adapter, a Fake IdP for tests and `NotConfigured`; organization gains admin link/unlink operations for Entra identities; sessions gain an assurance attribute.
 - The evaluator gains one rule (high-risk permissions need MFA assurance in Entra sessions); `review-security` reviews login, linking and the evaluator change before merge.
 - New health checks and deployment configuration keys; operators must monitor credential expiry and egress.
-- Open product decisions are listed in the [F15 design](../product/f15-microsoft-integration-design.md#open-questions-for-the-product-owner).
+- Open product decisions are listed in the [F15 design](../product/f15-microsoft-integration-design.md#decisions-of-the-product-owner-2026-10-10).
+
+
+## Implementation note (2026-10-10)
+
+Slice E-A validates the ID token with a small RS256 verifier in `integrations/entra` and calls fixed endpoint paths of the allow-listed authority, so go-oidc, go-jose and x/oauth2 were not added. The approval for those libraries stays valid. All security rules of this ADR apply unchanged.
+
+## Implementation note, slice E-B (2026-10-10)
+
+Administrator linking, the hybrid source-anchor match and automatic provisioning follow point 3 unchanged. Two clarifications: automatic provisioning is controlled by the runtime setting `auth.entra_provisioning` (administration settings), not by an environment variable, and the delegated `User.Read` scope is requested only when `ENTRA_LINK_DIRECTORY_PROVIDER_KEY` is configured; the Graph token is used once in memory and discarded (point 6). The refusal of a provisioning attempt because of an email collision leaves its trace in the audit log instead of a separate attention concept.

@@ -55,6 +55,8 @@ const usage = `usage:
   turaco-admin emergency set-password --login <name> [--password-stdin]
   turaco-admin emergency enable  --login <name>
   turaco-admin emergency disable --login <name>
+  turaco-admin entra link   --user <username|email|uuid> --tenant <guid> --object <guid>
+  turaco-admin entra unlink --tenant <guid> --object <guid>
   turaco-admin security import < advisories.json
   turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
   turaco-admin demo seed   (development only)
@@ -95,6 +97,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runDemo(ctx, e, command, rest)
 	case "security":
 		err = runSecurity(ctx, e, command, rest)
+	case "entra":
+		err = runEntra(ctx, e, command, rest)
 	default:
 		err = errUsage
 	}

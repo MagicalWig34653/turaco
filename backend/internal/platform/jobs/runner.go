@@ -277,7 +277,7 @@ func (r *Runner) RunOnce(ctx context.Context) (processed bool, err error) {
 		log.Warn("job failed, attempts exhausted", "error", herr)
 		r.finish(ctx, log, job, outcomeFailed, herr.Error(), 0)
 	default:
-		delay := backoff(job.Attempts)
+		delay := max(backoff(job.Attempts), retryDelay(herr))
 		log.Warn("job failed, will retry", "error", herr, "retry_in", delay)
 		r.finish(ctx, log, job, outcomeRetry, herr.Error(), delay)
 	}

@@ -112,6 +112,8 @@ type loginFixture struct {
 	throttle ThrottleConfig
 	// localDir enables the local account endpoints of the fixture (see local_login_test.go).
 	localDir LocalAccountDirectory
+	// entra enables the Entra endpoints of the fixture (see entra_login_test.go).
+	entra *EntraLoginDeps
 }
 
 type fixtureOption func(*loginFixture)
@@ -180,6 +182,7 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 		f.deps.Kerberos = f.krb
 	}
 	f.deps.LocalAccounts = f.localDir
+	f.deps.Entra = f.entra
 	mux := http.NewServeMux()
 	RegisterLogin(mux, f.deps, f.cfg)
 	f.handler = httpx.Middleware(logger, mux)
@@ -907,11 +910,11 @@ func TestAuthMethodsAndKerberos(t *testing.T) {
 	}
 	f := newLoginFixture(t)
 	rec := get(f, "/api/v1/auth/methods")
-	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"emergency":false,"kerberos":false,"local":false,"password":true}` || rec.Header().Get("Cache-Control") != "no-store" {
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"emergency":false,"entra":false,"kerberos":false,"local":false,"password":true}` || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("methods = %d %s", rec.Code, rec.Body)
 	}
 	f2 := newLoginFixture(t, withoutPasswordLogin(), withEmergency())
-	if body := strings.TrimSpace(get(f2, "/api/v1/auth/methods").Body.String()); body != `{"emergency":true,"kerberos":false,"local":false,"password":false}` {
+	if body := strings.TrimSpace(get(f2, "/api/v1/auth/methods").Body.String()); body != `{"emergency":true,"entra":false,"kerberos":false,"local":false,"password":false}` {
 		t.Fatalf("methods = %s", body)
 	}
 	rec = get(f, "/api/v1/auth/kerberos")

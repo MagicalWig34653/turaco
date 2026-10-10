@@ -17,11 +17,11 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F2 Work Foundation | Done | Email bounce handling, digests, per-recipient language |
 | F3 Products, Catalog, Requests | Done (backend, OpenAPI, UI) | |
 | F4 Inventory, Procurement, Assets | Done (backend, OpenAPI, UI) | |
-| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client and webhook (fake), routing rules, SLA |
-| F6 Endpoint Intelligence | Done against the fake provider (devices, management model, assignment intelligence, UI) | Microsoft Graph client, `assignment_stale` |
+| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client verified against a live database (implemented per documentation, unverified), webhook, routing rules, SLA |
+| F6 Endpoint Intelligence | Done against the fake provider (devices, management model, assignment intelligence, UI) | Microsoft Graph client verified against a live tenant (implemented per documentation, unverified), `assignment_stale` |
 | F7 Infrastructure and Change | Done (F7a to F7d, OpenAPI, UI) | Runbook link, native IPAM (ADR-0030: integrate) |
 | F8 Security and IT Briefing | Done (advisories, findings, remediation, feed, UI) | OSV and MSRC feeds |
-| F9 Software Lifecycle | G1 to G4 done (backend, OpenAPI, UI) against fake adapters | Real IntuneGet client and Graph write client |
+| F9 Software Lifecycle | G1 to G4 done (backend, OpenAPI, UI) against fake adapters | Real IntuneGet client; Graph write client verified against a live tenant (implemented per documentation, unverified) |
 | F10 Remote Access | R-A and R-B done (attended, launch-link connectors) | Provider API connectors, unattended access, R-C threat models and lab test |
 | F11 Workforce Presence | P-A and the P-B UI done (manual entries, availability hints) | Change window and Briefing integration, coverage notifications, external sources (P-C) |
 | F12 Turaco AI | A-A (read-only backend) and A-B (UI) done | AI Proposals and write tools (A-C), MCP server (A-D), non-local providers |

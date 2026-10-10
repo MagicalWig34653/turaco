@@ -69,6 +69,17 @@ func locationHeight(ctx context.Context, tx pgx.Tx, id string) (int, error) {
 func (r *Repository) CreateLocation(ctx context.Context, c application.Caller, in application.NewLocationInput) (application.Location, error) {
 	var out application.Location
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.createLocationTx(ctx, tx, c, in)
+		return err
+	})
+	return finishPeople(out, err, "create location")
+}
+
+// createLocationTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) createLocationTx(ctx context.Context, tx pgx.Tx, c application.Caller, in application.NewLocationInput) (application.Location, error) {
+	var out application.Location
+	err := func() error {
 		if err := lockTree(ctx, tx, treeLockLocations); err != nil {
 			return err
 		}
@@ -99,8 +110,8 @@ func (r *Repository) CreateLocation(ctx context.Context, c application.Caller, i
 		}
 		return r.record(ctx, tx, c, "organization.location.created", "location", id, nil,
 			map[string]any{"kind": out.Kind, "parentId": out.ParentID, "active": out.Active}, nil)
-	})
-	return finishPeople(out, err, "create location")
+	}()
+	return out, err
 }
 
 // mapOr returns domain errors unchanged and wraps others.
@@ -114,6 +125,17 @@ func mapOr(err error, what string) error {
 func (r *Repository) UpdateLocation(ctx context.Context, c application.Caller, id string, in application.LocationChange) (application.Location, error) {
 	var out application.Location
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.updateLocationTx(ctx, tx, c, id, in)
+		return err
+	})
+	return finishPeople(out, err, "update location")
+}
+
+// updateLocationTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) updateLocationTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, in application.LocationChange) (application.Location, error) {
+	var out application.Location
+	err := func() error {
 		before, err := lockLocation(ctx, tx, id)
 		if err != nil {
 			return err
@@ -155,8 +177,8 @@ func (r *Repository) UpdateLocation(ctx context.Context, c application.Caller, i
 		}
 		return events.Publish(ctx, tx, events.Publication{Type: "LocationChanged", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
 			Payload: map[string]any{"locationId": id, "operation": "updated"}})
-	})
-	return finishPeople(out, err, "update location")
+	}()
+	return out, err
 }
 
 func (r *Repository) MoveLocation(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.Location, error) {
@@ -326,6 +348,17 @@ func reloadDepartment(ctx context.Context, tx pgx.Tx, id string) (application.De
 func (r *Repository) CreateDepartment(ctx context.Context, c application.Caller, in application.NewDepartmentInput) (application.Department, error) {
 	var out application.Department
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.createDepartmentTx(ctx, tx, c, in)
+		return err
+	})
+	return finishPeople(out, err, "create department")
+}
+
+// createDepartmentTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) createDepartmentTx(ctx context.Context, tx pgx.Tx, c application.Caller, in application.NewDepartmentInput) (application.Department, error) {
+	var out application.Department
+	err := func() error {
 		if in.ParentID != nil {
 			if err := lockTree(ctx, tx, treeLockDepartments); err != nil {
 				return err
@@ -348,13 +381,24 @@ func (r *Repository) CreateDepartment(ctx context.Context, c application.Caller,
 		}
 		return r.record(ctx, tx, c, "organization.department.created", "department", id, nil,
 			map[string]any{"parentId": out.ParentID, "active": out.Active}, nil)
-	})
-	return finishPeople(out, err, "create department")
+	}()
+	return out, err
 }
 
 func (r *Repository) UpdateDepartment(ctx context.Context, c application.Caller, id string, in application.DepartmentChange) (application.Department, error) {
 	var out application.Department
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.updateDepartmentTx(ctx, tx, c, id, in)
+		return err
+	})
+	return finishPeople(out, err, "update department")
+}
+
+// updateDepartmentTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) updateDepartmentTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, in application.DepartmentChange) (application.Department, error) {
+	var out application.Department
+	err := func() error {
 		before, err := lockDepartment(ctx, tx, id)
 		if err != nil {
 			return err
@@ -386,8 +430,8 @@ func (r *Repository) UpdateDepartment(ctx context.Context, c application.Caller,
 			return fmt.Errorf("reload department: %w", err)
 		}
 		return r.record(ctx, tx, c, "organization.department.renamed", "department", id, nil, map[string]any{"version": out.Version}, map[string]any{"changed": changed})
-	})
-	return finishPeople(out, err, "update department")
+	}()
+	return out, err
 }
 
 func (r *Repository) MoveDepartment(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.Department, error) {

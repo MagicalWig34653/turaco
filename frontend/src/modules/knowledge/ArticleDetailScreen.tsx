@@ -8,6 +8,7 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
+import { AttachmentsPanel } from '../../platform/attachments/AttachmentsPanel';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { knowledgeApi } from './api';
 
@@ -90,6 +91,12 @@ export function ArticleDetailScreen({ id }: { id: string }) {
       </p>
       {article.summary ? <p className="subtitle">{article.summary}</p> : null}
       <p className="preline">{article.body}</p>
+      <AttachmentsPanel
+        ownerType="knowledge_article"
+        ownerId={article.id}
+        canUpload={manage}
+        canDelete={manage}
+      />
     </>
   );
 }

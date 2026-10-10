@@ -280,6 +280,281 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /users/bulk-operations:
+    post:
+      operationId: bulkUserOperation
+      summary: Preview or apply a bulk operation on Users.
+      description: "Requires `organization.users.manage`, checked again for every row at apply. `dryRun: true` stores a preview (creator-bound, one hour, at most 500 distinct ids) and answers 201 with a `previewHash`; each row is `update` (would change), `unchanged` or `reject` with a reason code (not_found, directory_owned, emergency_account, last_administrator, self_operation, dominance_required, invalid_state, target_inactive, invalid_hierarchy). Rows run the same transactional operations as the single endpoints, so the dominance rule applies to every `deactivate` row. `dryRun: false` with `batchId`, `previewHash` and `expectedRejects` applies the accepted rows in one transaction (any drift answers 409 organization.import_stale and nothing is written); a second apply answers the stored result with `replayed: true`. Audited as organization.bulk.previewed|applied plus the per-User events, all with the correlation id `batch:{id}`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BulkOperationRequest'}
+      responses:
+        '200':
+          description: The applied batch with the per-row result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportBatchPreview'}
+        '201':
+          description: The stored preview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportBatchPreview'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/link-directory-identity:
+    post:
+      operationId: linkDirectoryIdentity
+      summary: Link a directory identity to a local account.
+      description: "Requires `platform.admin` (ADR-0034 R5). The identity is chosen from the `email_in_use` conflicts of a directory synchronization run (`runId`, `externalId`). In one transaction it deletes the local credential, ends every open credential token and session, attaches the identity and turns the User into a directory account (the profile attributes belong to the directory from the next run). Refused for directory and emergency accounts, external accounts, and while the User holds roles (409 organization.directory_link_refused_roles); 409 organization.directory_identity_in_use when the identity is attached already. `expectedVersion` is required. Audited as organization.user.directory_linked."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LinkDirectoryIdentityRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/entra-linking:
+    get:
+      operationId: getEntraLinkingInfo
+      summary: Tell the link dialog whether Microsoft Entra sign-in is configured and which tenant to preselect.
+      description: "Requires `platform.admin`. `tenantId` is ENTRA_TENANT_ID (empty in multi-tenant mode), `tenantIds` the tenants accepted for sign-in; `configured` is false when Entra sign-in is off, in which case linking answers 409 organization.entra_not_configured."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The linking settings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EntraLinkingInfo'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/external-identities/entra:
+    post:
+      operationId: linkEntraIdentity
+      summary: Link a Microsoft Entra identity (tenant id and object id) to a User.
+      description: "Requires `platform.admin` (takeover-capable, ADR-0035 and ADR-0034 R1/R5). Turaco never searches Entra: the administrator enters the tenant id and object id. Refused (409) for the administrator's own account (organization.self_operation), the emergency account, inactive or non-employee accounts (organization.invalid_state), a tenant that is not allowed for sign-in (organization.entra_tenant_not_allowed, including the consumer tenant) or when Entra sign-in is not configured (organization.entra_not_configured), an identity that is linked already (organization.entra_identity_in_use), a User that has an identity of this tenant (organization.entra_tenant_already_linked), a target whose permissions the caller does not dominate (403 access.dominance_required) and a User with a local credential who holds roles (organization.directory_link_refused_roles). A User with a local credential and no roles is linked and, in the same transaction, loses the credential, open credential tokens and all sessions (R5); open invitation tokens end for every target. `expectedVersion` is required and the version increases. Audited as organization.external_identity.linked (via administrator, subject recorded as its last four characters only). The target is told by email when a mail channel is configured (`noticeSent`)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LinkEntraIdentityRequest'}
+      responses:
+        '201':
+          description: The updated User and what happened.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EntraLinkResult'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/external-identities/{identityId}:
+    delete:
+      operationId: unlinkExternalIdentity
+      summary: Remove a Microsoft Entra identity from a User.
+      description: "Requires `platform.admin`; never on one's own account; dominance rule R1. Only Entra identities can be removed (a directory identity or an identity of another User answers 404). The User's Entra sessions are revoked in the same transaction, the version increases and the change is audited as organization.external_identity.unlinked. Removing is allowed for inactive Users. The target is told by email when a mail channel is configured."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - name: identityId
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: The updated User.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EntraLinkResult'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/extend-access:
+    post:
+      operationId: extendUserAccess
+      summary: Extend the access end of an external account.
+      description: "Requires `organization.external_parties.manage`. Only for external accounts that are not departed (409 organization.invalid_state otherwise). The new end must be later than the current one and at most 365 days from now; `reason` is a closed code (contract_renewed, project_extended, sponsor_request, correction). An account that the expiry job already deactivated stays inactive until it is reactivated. `expectedVersion` is required. Audited as organization.user.access_extended."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExtendAccessRequest'}
+      responses:
+        '200':
+          description: The record.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /import-batches:
+    post:
+      operationId: previewImportBatch
+      summary: Upload a CSV file and store a dry-run preview.
+      description: "Requires `organization.import` and the manage permission of the kind (`organization.users.manage`, `organization.locations.manage` or `organization.departments.manage`). multipart/form-data with `kind` (users, locations, departments), `matchKey` (users: primary_email or employee_number; others: code), `mode` (create_only, update_only, upsert) and the file. UTF-8 (BOM tolerated), comma or semicolon, header row, at most 2 MB, 5,000 rows and 20 columns (413 organization.import_too_large / organization.import_too_many_rows). Unknown columns are reported in `unknownColumns`, never applied. Every row runs the same transactional operations as the single endpoints inside a rolled-back transaction, so field ownership (directory-owned attributes reject the row), uniqueness, references by code and hierarchy rules are the same; an empty cell leaves the value unchanged. Nothing is written except the preview, which holds personal data, is visible to its creator only and expires after one hour. Audited as organization.import.previewed."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [kind, mode, file]
+              properties:
+                kind: {type: string, enum: [users, locations, departments]}
+                matchKey: {type: string, enum: [primary_email, employee_number, code]}
+                mode: {type: string, enum: [create_only, update_only, upsert]}
+                file: {type: string, format: binary}
+      responses:
+        '201':
+          description: The stored preview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportBatchPreview'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '413': {$ref: '#/components/responses/PeopleInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /import-batches/{id}:
+    get:
+      operationId: getImportBatch
+      summary: Read a stored preview or applied batch (creator only).
+      description: "Any signed-in User can call it, but only the creator with the manage permission of the batch kind sees the batch (404 otherwise). Expired previews are gone."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The batch.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportBatch'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /import-batches/{id}/rows:
+    get:
+      operationId: listImportBatchRows
+      summary: Page through the rows of a stored preview.
+      description: "Creator only. `action` filters (create, update, unchanged, reject); `cursor` is the last row number of the previous page. Applied batches keep counts only; their rows are gone."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: action, in: query, schema: {type: string, enum: [create, update, unchanged, reject]}}
+        - {name: cursor, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
+      responses:
+        '200':
+          description: A page of rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/ImportRow'}
+                  nextCursor: {type: string}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /import-batches/{id}/rejected.csv:
+    get:
+      operationId: exportRejectedImportRows
+      summary: Download the rejected rows as CSV.
+      description: "Creator only. Columns `row, key, field, reason` (reason codes, no row data besides the key). Written by the shared CSV writer: UTF-8 with BOM, formula prefixes neutralized."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The CSV file.
+          content:
+            text/csv:
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /import-batches/{id}/apply:
+    post:
+      operationId: applyImportBatch
+      summary: Apply a stored preview.
+      description: "Creator only. `previewHash` and `expectedRejects` must match the stored preview (409 organization.import_preview_mismatch). The permissions of the kind are checked again against the caller's current permissions (403 platform.forbidden). Rows are re-validated against the stored versions inside one transaction: any drift answers 409 organization.import_stale with `details.row` and `details.reason` and nothing is written. Rejected rows are never applied. Applying a batch again answers the stored result with `replayed: true` and writes nothing. Applied batches keep counts and the file hash only. Audited as organization.import.applied with the per-record events under the correlation id `batch:{id}`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [previewHash, expectedRejects]
+              properties:
+                previewHash: {type: string}
+                expectedRejects: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: The applied batch.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportBatchPreview'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /users/{id}/deactivate:
     post:
       operationId: deactivateUser
@@ -7729,6 +8004,48 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /auth/entra/start:
+    get:
+      operationId: entraLoginStart
+      summary: Start the sign-in with Microsoft Entra ID.
+      description: "404 auth.method_unavailable when Entra sign-in is not configured. Creates a server-side login transaction (state, nonce, PKCE S256 verifier; only hashes of state and browser binding are stored, ten minutes, single use), sets the browser-binding cookie (`__Host-turaco_oidc` in secure deployments; HttpOnly, SameSite=Lax) and redirects (302) to the Entra authorization endpoint. `returnTo` must be a relative in-app path; anything else is replaced by `/`. 503 when too many sign-ins are pending."
+      parameters:
+        - {name: returnTo, in: query, required: false, schema: {type: string, maxLength: 512}, description: Relative path to open after sign-in.}
+      responses:
+        '302':
+          description: Redirect to Microsoft.
+        '404':
+          description: Entra sign-in is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503':
+          description: Too many pending sign-ins (auth.temporarily_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /auth/entra/callback:
+    get:
+      operationId: entraLoginCallback
+      summary: Complete the sign-in with Microsoft Entra ID.
+      description: "Top-level GET navigation from Microsoft. The client attempt is reserved first (own budget `ip:entra/...`), the transaction is consumed (also on failure) and its browser binding is checked, the code is exchanged with the client credential, and the ID token is validated (RS256 only, issuer bound to the token's own tenant, tenant allow-list, audience, expiry and skew, nonce). The identity key is tenant id + object id. Resolution order: an existing link; the hybrid source-anchor match (only with ENTRA_LINK_DIRECTORY_PROVIDER_KEY, home tenant members only, audited `organization.external_identity.linked` via `source_anchor`); automatic provisioning of an employee without roles or teams when the setting `auth.entra_provisioning` is `auto_employee` (home tenant members only, `organization.user.provisioned`); otherwise `entra_not_linked`. An email address never links a User; a primary email that another User already has refuses provisioning (reason `email_conflict`, audited with `organization.user.provisioning_refused`). On success the session cookie is set (the session lasts at most ENTRA_SESSION_MAX_AGE and the setting `auth.session_absolute_timeout`) and the browser is redirected (302) to the stored `returnTo`. Every failure redirects to `/login?error=entra_failed|entra_not_linked|entra_unavailable` after the minimum response time and is audited (`auth.login.failed`, method `entra`, reason) without claims, codes or tokens."
+      parameters:
+        - {name: code, in: query, required: false, schema: {type: string, maxLength: 4096}}
+        - {name: state, in: query, required: false, schema: {type: string, maxLength: 128}}
+        - {name: error, in: query, required: false, schema: {type: string}, description: Error reported by Microsoft; ends the attempt.}
+      responses:
+        '302':
+          description: Redirect to the requested page, or to the login page with a generic error code.
+        '404':
+          description: Entra sign-in is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts from this client (auth.too_many_attempts).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /auth/kerberos:
     get:
       operationId: kerberosLogin
@@ -8551,7 +8868,7 @@ paths:
     get:
       operationId: listAdminIntegrations
       summary: Integration health.
-      description: "Requires `platform.health.view`. The integration checks (directory, mail, object storage, Intune, software provider, Autotask, advisory feeds, remote access, ...). `mode` says what is behind an integration (real, fake, not_configured); a provider whose client is not built reports `not_configured` with `errorCode: client_not_built`."
+      description: "Requires `platform.health.view`. The integration checks (directory, mail, object storage, Intune, software provider, Autotask, advisory feeds, remote access, ...). `mode` says what is behind an integration (real, fake, not_configured); a provider whose client is not built reports `not_configured` with `errorCode: client_not_built`, one whose client is not configured `not_configured` with `client_not_configured`, and a configured real client `unknown` with `errorCode: unverified` until a successful call was observed."
       security:
         - sessionAuth: []
       responses:
@@ -8636,6 +8953,143 @@ paths:
               schema: {$ref: '#/components/schemas/Error'}
         '409':
           description: health.version_conflict or health.not_confirmable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/settings:
+    get:
+      operationId: getAdminSettings
+      summary: Editable administration settings.
+      description: "Requires `platform.health.view`. Every code-defined setting with its effective value (the stored one, else the default), bounds, owning module and `notYetActive` flag (stored but not yet read by any behavior). Duration values are integer seconds. Responses are no-store."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/AdminSetting'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/settings/{key}:
+    put:
+      operationId: putAdminSetting
+      summary: Change one administration setting.
+      description: "Requires `platform.admin`. `expectedVersion` is required (0 for a setting that was never set); a mismatch returns 409 `settings.version_conflict`. The value must match the type, enum options and bounds (400 `settings.invalid_value`). Audited as platform.settings.changed in the same transaction. Other API instances may serve the previous value for up to ten seconds."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value, expectedVersion]
+              properties:
+                value: {description: "boolean, integer, duration in seconds or enum string, per the setting's type."}
+                expectedVersion: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: The setting after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminSetting'}
+        '400':
+          description: settings.invalid_request, settings.version_required or settings.invalid_value.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Unknown setting (settings.not_found).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: settings.version_conflict.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /integrations/teams/channel-routes:
+    get:
+      operationId: listTeamsChannelRoutes
+      summary: Teams channel routes and what can be routed.
+      description: "Requires `integrations.teams.manage`. Lists the routes of broadcastable notification categories to Teams channel destinations (ADR-0036, slice T-A), the adapter `mode` (real, fake, not_configured), the configured destination keys (never webhook URLs) and the broadcastable categories. Reachable while the optional module `teams` is off so routes can be prepared; posts are only created while it is on. Responses are no-store."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The routes and the options.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamsChannelRoutes'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTeamsChannelRoute
+      summary: Route a broadcastable category to a Teams channel destination.
+      description: "Requires `integrations.teams.manage`. The category must be broadcastable (marked by its owning module: `majorincident.update` for Major Incident declared and updated, `change.scheduled`) and the destination key must exist in the deployment's destinations file. Channel posts are always reference-only: category wording, the reference number and a link, never titles, descriptions or names. Audited as notifications.teams.route_created."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [category, destinationKey]
+              properties:
+                category: {type: string}
+                destinationKey: {type: string}
+      responses:
+        '201':
+          description: The route.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamsChannelRoute'}
+        '400':
+          description: notifications.invalid_request, notifications.category_not_broadcastable or notifications.unknown_destination.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: notifications.route_exists.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /integrations/teams/channel-routes/{id}:
+    delete:
+      operationId: deleteTeamsChannelRoute
+      summary: Remove a Teams channel route.
+      description: "Requires `integrations.teams.manage`. Posts that were already created for the route are cancelled (`route_removed`) when they would be sent. Audited as notifications.teams.route_deleted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Removed.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: notifications.route_not_found.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -13848,6 +14302,27 @@ paths:
               schema: {$ref: '#/components/schemas/ModulesStatus'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /search:
+    get:
+      operationId: searchRecords
+      summary: Global record search for the command palette (any signed-in User).
+      description: "Any signed-in User. Fans the text out to the search sources the modules register (tickets, problems, major incidents, changes, requests, knowledge articles, assets, devices, users) concurrently, each with a time limit of 300 ms. Every source applies its own authorization and returns only records the caller may read, with the same permission, Queue scope, audience and redaction rules as the module's list; a source the caller may not search is simply absent. A source that times out or fails is named in `unavailable` and does not fail the request. A reference or earlier ticket number the caller may know leads with `exact`. Sources of disabled modules are skipped. `q` has 2 to 100 characters (sources that use trigram indexes answer from 3 characters; shorter text only matches references); partial words match (Etikett finds Etikettendrucker). At most 5 hits per type (`limit` up to 10) and 25 in total. Searches are not audited, queries are not logged and results are not cached (`no-store`). Rate limited per User (429 `search.rate_limited`)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {name: types, in: query, required: false, description: "Comma-separated source types: ticket, problem, major_incident, change, request, knowledge, asset, device, user. Default all.", schema: {type: string}}
+        - {name: limit, in: query, required: false, description: "Hits per type, 1 to 10, default 5.", schema: {type: integer, minimum: 1, maximum: 10}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SearchResults'}
+        '400': {description: "Invalid text length, unknown type or limit (`search.invalid_request`).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '429': {description: "Rate limited (`search.rate_limited`).", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '500': {$ref: '#/components/responses/InternalError'}
   /admin/modules:
     get:
       operationId: listModules
@@ -14165,6 +14640,133 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /attachments/config:
+    get:
+      operationId: getAttachmentsConfig
+      summary: Attachment capability and limits.
+      description: "Any signed-in User. `enabled=false` (with `maxBytes` 0 and empty `allowedTypes`) when file storage is not configured; clients hide upload UI then. `allowedTypes` are MIME types, `maxPerOwner` the live attachments one owner can hold."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AttachmentConfig'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /attachments:
+    get:
+      operationId: listAttachments
+      summary: List the attachments of an owner.
+      description: "Authorization is delegated to the module owning `ownerType` (`ticket`, `knowledge_article`); unknown owners and owners the caller may not read answer 404 `attachments.not_found`. Attachments with audience `privileged` are listed only for privileged callers. 503 `attachments.not_configured` when storage is off."
+      parameters:
+        - {name: ownerType, in: query, required: true, schema: {type: string}}
+        - {name: ownerId, in: query, required: true, schema: {type: string, format: uuid}}
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Attachment'}}
+        '400': {$ref: '#/components/responses/AttachmentError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AttachmentError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/AttachmentError'}
+    post:
+      operationId: uploadAttachment
+      summary: Upload one attachment (multipart).
+      description: "multipart/form-data with exactly one part named `file`; the owner is named in the query so authorization happens before the body is read. The file is streamed, size-capped, checked against the content-type allow-list and its magic bytes, stored encrypted and queued for the virus scan (`scanStatus=pending`, not downloadable until `clean`). `audience` is `all` (default) or `privileged` (staff only). Codes: 400 `attachments.invalid_request`; 403 `platform.forbidden`; 404 `attachments.not_found`; 409 `attachments.limit`; 413 `attachments.too_large`; 415 `attachments.unsupported_type`; 503 `attachments.not_configured`. Audited."
+      parameters:
+        - {name: ownerType, in: query, required: true, schema: {type: string}}
+        - {name: ownerId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: audience, in: query, schema: {type: string, enum: [all, privileged], default: all}}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      security:
+        - sessionAuth: []
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Attachment'}
+        '400': {$ref: '#/components/responses/AttachmentError'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AttachmentError'}
+        '409': {$ref: '#/components/responses/AttachmentError'}
+        '413': {$ref: '#/components/responses/AttachmentError'}
+        '415': {$ref: '#/components/responses/AttachmentError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/AttachmentError'}
+  /attachments/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getAttachment
+      summary: Attachment metadata.
+      description: "404 `attachments.not_found` hides missing attachments and owners the caller may not read."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Attachment'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/AttachmentError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/AttachmentError'}
+    delete:
+      operationId: deleteAttachment
+      summary: Delete an attachment.
+      description: "Allowed for callers the owning module lets manage the attachment. Audited. The stored object is removed by a background job."
+      security:
+        - sessionAuth: []
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AttachmentError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/AttachmentError'}
+  /attachments/{id}/content:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: downloadAttachment
+      summary: Download the attachment content.
+      description: "Only `clean` attachments. Always `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: no-store`. Otherwise 409 `attachments.scan_pending`, `attachments.quarantined` or `attachments.scan_failed` with `error.details.scanStatus`. Audited."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The file bytes with the stored content type.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/AttachmentError'}
+        '409': {$ref: '#/components/responses/AttachmentError'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/AttachmentError'}
 components:
   securitySchemes:
     sessionAuth:
@@ -14255,6 +14857,11 @@ components:
             properties:
               expectedVersion: {type: integer, minimum: 1}
   responses:
+    AttachmentError:
+      description: Attachment error; codes include attachments.invalid_request, attachments.not_found, attachments.limit, attachments.too_large, attachments.unsupported_type, attachments.scan_pending, attachments.quarantined, attachments.scan_failed (with error.details.scanStatus) and attachments.not_configured.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     QueryInvalid:
       description: Query error; codes include query.invalid_filter, query.too_complex, query.field_unavailable, query.invalid_cursor, query.unindexed_sort, query.rate_limited, query.timeout and query.query_too_short (a search text under 3 characters; error.details.minLength says how many are needed, so a client can show a hint instead of a service error).
       content:
@@ -14812,6 +15419,31 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    AttachmentConfig:
+      type: object
+      required: [enabled, maxBytes, allowedTypes]
+      properties:
+        enabled: {type: boolean}
+        maxBytes: {type: integer, format: int64}
+        allowedTypes: {type: array, items: {type: string}}
+        maxPerOwner: {type: integer}
+    Attachment:
+      type: object
+      required: [id, ownerType, ownerId, fileName, contentType, sizeBytes, sha256, scanStatus, audience, uploadedBy, createdAt, scannedAt, downloadable]
+      properties:
+        id: {type: string, format: uuid}
+        ownerType: {type: string}
+        ownerId: {type: string, format: uuid}
+        fileName: {type: string}
+        contentType: {type: string}
+        sizeBytes: {type: integer, format: int64}
+        sha256: {type: string}
+        scanStatus: {type: string, enum: [pending, clean, infected, failed]}
+        audience: {type: string, enum: [all, privileged]}
+        uploadedBy: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+        scannedAt: {type: string, format: date-time, nullable: true}
+        downloadable: {type: boolean, description: True only when scanStatus is clean.}
     QueryCondition:
       type: object
       required: [type, field, op]
@@ -15998,6 +16630,116 @@ components:
         reason:
           type: string
           description: "Closed reason code. deactivate: left_organization, extended_leave, security_concern, duplicate_account, no_longer_needed. mark-departed: left_organization, contract_ended, retired. reactivate: returned, mistake, contract_renewed."
+    BulkOperationRequest:
+      type: object
+      additionalProperties: false
+      required: [dryRun]
+      properties:
+        dryRun: {type: boolean}
+        operation: {type: string, enum: [set_department, set_primary_location, set_manager, deactivate], description: Required when dryRun is true.}
+        userIds: {type: array, minItems: 1, maxItems: 500, items: {type: string, format: uuid}}
+        departmentId: {type: [string, 'null'], format: uuid, description: "set_department; null clears."}
+        locationId: {type: [string, 'null'], format: uuid, description: "set_primary_location; null clears."}
+        managerUserId: {type: [string, 'null'], format: uuid, description: "set_manager; null clears."}
+        reason: {type: string, description: "deactivate: closed reason code of the deactivate operation."}
+        batchId: {type: string, format: uuid, description: Required when dryRun is false.}
+        previewHash: {type: string}
+        expectedRejects: {type: integer, minimum: 0}
+    LinkDirectoryIdentityRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, runId, externalId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        runId: {type: string, format: uuid, description: The directory synchronization run whose conflict list holds the identity.}
+        externalId: {type: string, description: The external id of an email_in_use conflict of that run.}
+    LinkEntraIdentityRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, tenantId, objectId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        tenantId: {type: string, format: uuid, description: Tenant (directory) id copied from the Entra portal; must be a tenant allowed for sign-in.}
+        objectId: {type: string, format: uuid, description: Object id of the user in Entra (not the email address or user principal name).}
+    EntraLinkResult:
+      type: object
+      additionalProperties: false
+      required: [user, credentialDeleted, noticeSent]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        credentialDeleted: {type: boolean, description: True when linking replaced a local credential.}
+        noticeSent: {type: boolean, description: True when the target was told about the change by email.}
+    EntraLinkingInfo:
+      type: object
+      additionalProperties: false
+      required: [configured, tenantId, tenantIds]
+      properties:
+        configured: {type: boolean}
+        tenantId: {type: string}
+        tenantIds: {type: array, items: {type: string}}
+    ExtendAccessRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, accessExpiresAt, reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        accessExpiresAt: {type: string, format: date-time}
+        reason: {type: string, enum: [contract_renewed, project_extended, sponsor_request, correction]}
+    ImportDiffValue:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from: {type: [string, 'null']}
+        to: {type: [string, 'null']}
+    ImportRowIssue:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        field: {type: string}
+        code: {type: string, description: "Machine-readable finding the UI translates, for example missing_key, invalid_value, control_characters, formula_prefix, duplicate_key_in_file, column_count, cell_too_long, display_name_required, already_exists, not_found, reference_not_found, directory_owned, emergency_account, last_administrator, self_operation, dominance_required, invalid_state, target_inactive, invalid_hierarchy, conflict, parent_change_not_supported, kind_change_not_supported, ambiguous_key."}
+    ImportRow:
+      type: object
+      additionalProperties: false
+      required: [row, action, key, diff, errors, warnings]
+      properties:
+        row: {type: integer, minimum: 1}
+        action: {type: string, enum: [create, update, unchanged, reject], description: "Bulk previews use update for would change."}
+        key: {type: string, description: The match key of an import row or the User id of a bulk row.}
+        label: {type: string, description: Display name of a bulk row.}
+        userId: {type: string, format: uuid, description: Bulk rows only.}
+        diff: {type: object, additionalProperties: {$ref: '#/components/schemas/ImportDiffValue'}}
+        errors: {type: array, items: {$ref: '#/components/schemas/ImportRowIssue'}}
+        warnings: {type: array, items: {$ref: '#/components/schemas/ImportRowIssue'}}
+    ImportBatch:
+      type: object
+      additionalProperties: false
+      required: [id, kind, status, previewHash, rowCount, counts, unknownColumns, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [users, locations, departments, bulk_users]}
+        matchKey: {type: string}
+        mode: {type: string}
+        operation: {type: string}
+        status: {type: string, enum: [previewed, applied]}
+        fileHash: {type: string}
+        previewHash: {type: string}
+        rowCount: {type: integer}
+        counts: {type: object, additionalProperties: {type: integer}}
+        unknownColumns: {type: array, items: {type: string}}
+        expiresAt: {type: string, format: date-time}
+        appliedAt: {type: string, format: date-time}
+        appliedCounts: {type: object, additionalProperties: {type: integer}}
+    ImportBatchPreview:
+      allOf:
+        - $ref: '#/components/schemas/ImportBatch'
+        - type: object
+          required: [rows]
+          properties:
+            rows: {type: array, items: {$ref: '#/components/schemas/ImportRow'}}
+            nextCursor: {type: string}
+            replayed: {type: boolean, description: The batch had been applied before; nothing was written now.}
     CredentialLink:
       type: object
       additionalProperties: false
@@ -19725,10 +20467,24 @@ components:
     ExternalIdentity:
       type: object
       additionalProperties: false
-      required: [providerKey, username, enabled, lastSeenAt, deletedObservedAt]
+      required: [id, providerKey, subjectSuffix, linkedAt, via, username, enabled, lastSeenAt, deletedObservedAt]
       properties:
+        id:
+          type: string
+          format: uuid
         providerKey:
           type: string
+          description: The directory provider key, or `entra:<tenant id>` for a Microsoft Entra identity.
+        subjectSuffix:
+          type: string
+          description: The last four characters of the identity's subject (directory GUID or Entra object id). The whole value is never returned.
+        linkedAt:
+          type: string
+          format: date-time
+        via:
+          type: string
+          enum: ['', administrator, source_anchor, provisioning, cli]
+          description: How an Entra identity was linked (administrator API, hybrid source-anchor match at sign-in, provisioning at first sign-in, command line tool); empty for directory identities.
         username:
           type: [string, "null"]
         enabled:
@@ -19919,8 +20675,9 @@ components:
     AuthMethods:
       type: object
       additionalProperties: false
-      required: [password, kerberos, emergency, local]
+      required: [password, kerberos, emergency, local, entra]
       properties:
+        entra: {type: boolean, description: "Sign-in with Microsoft Entra ID is configured (AUTH_ENTRA_LOGIN_ENABLED)."}
         local: {type: boolean, description: Local accounts are enabled (AUTH_LOCAL_LOGIN_ENABLED).}
         password: {type: boolean, description: Directory password login is configured.}
         kerberos: {type: boolean, description: Kerberos/SPNEGO is configured.}
@@ -20141,6 +20898,50 @@ components:
         reason: {type: string}
         version: {type: integer}
         updatedAt: {type: string, format: date-time}
+    TeamsChannelRoute:
+      type: object
+      required: [id, category, destinationKey, createdBy, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        category: {type: string}
+        destinationKey: {type: string}
+        createdBy: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+    TeamsChannelRoutes:
+      type: object
+      required: [items, mode, destinations, categories]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TeamsChannelRoute'}
+        mode: {type: string, enum: [real, fake, not_configured]}
+        destinations:
+          type: array
+          description: Configured destination keys; webhook URLs are never returned.
+          items: {type: string}
+        categories:
+          type: array
+          description: Broadcastable notification categories.
+          items: {type: string}
+    AdminSetting:
+      type: object
+      required: [key, type, default, description, module, notYetActive, value, stored, version]
+      properties:
+        key: {type: string}
+        type: {type: string, enum: [bool, int, duration, enum]}
+        default: {description: "Default in the JSON form of the type; duration in seconds."}
+        min: {type: integer, format: int64}
+        max: {type: integer, format: int64}
+        options: {type: array, items: {type: string}}
+        description: {type: string}
+        module: {type: string}
+        notYetActive: {type: boolean}
+        sensitive: {type: boolean}
+        value: {description: "Effective value."}
+        stored: {type: boolean}
+        version: {type: integer, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+        updatedBy: {type: string, format: uuid}
     SetupChecklist:
       type: object
       additionalProperties: false
@@ -20937,6 +21738,26 @@ components:
         requestsHourRemaining: {type: integer}
         tokensTodayRemaining: {type: integer, format: int64}
         installationTokensRemaining: {type: integer, format: int64}
+    SearchResults:
+      type: object
+      required: [items, unavailable]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [type, id, title]
+            properties:
+              type: {type: string, enum: [ticket, problem, major_incident, change, request, knowledge, asset, device, user]}
+              id: {type: string}
+              reference: {type: string}
+              title: {type: string}
+              subtitle: {type: string}
+              exact: {type: boolean, description: "The reference (or an earlier ticket number) equals the query."}
+        unavailable:
+          type: array
+          description: "Types whose source timed out or failed."
+          items: {type: string}
     ModulesStatus:
       type: object
       additionalProperties: false

@@ -19,12 +19,14 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/teams"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
 	assetsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/repository"
 	changesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
 	endpointsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
@@ -38,6 +40,7 @@ import (
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	aiplatform "github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/attachments"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
@@ -93,7 +96,18 @@ func main() {
 	}
 	lockTimeout := runnerLockTimeout(ldapCfg.Enabled(), ldapCfg.SyncTimeout)
 	// Module switches (ADR-0032): jobs of a switched-off module are skipped; retention jobs still run.
-	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	teamsCfg, err := config.LoadTeams()
+	if err != nil {
+		logger.Error("load Teams configuration", "error", err)
+		os.Exit(1)
+	}
+	teamsSender, err := wiring.TeamsSender(teamsCfg)
+	if err != nil {
+		logger.Error("set up Teams channel", "error", err)
+		os.Exit(1)
+	}
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders,
+		TeamsConfigured: teamsCfg.Configured()})
 	opts := jobs.RunnerOptions{LockTimeout: lockTimeout, Gate: moduleSvc.JobGate}
 	runner := jobs.NewRunner(pool, opts, logger)
 
@@ -110,12 +124,44 @@ func main() {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
 	}
+	storageCfg, err := config.LoadStorage()
+	if err != nil {
+		logger.Error("load storage configuration", "error", err)
+		os.Exit(1)
+	}
+	attachmentSvc, err := wiring.Attachments(pool, cfg, storageCfg, logger, false)
+	if err != nil {
+		logger.Error("set up attachment storage", "error", err)
+		os.Exit(1)
+	}
+	autotaskCfg, err := config.LoadAutotask()
+	if err != nil {
+		logger.Error("load Autotask configuration", "error", err)
+		os.Exit(1)
+	}
+	autotaskGateway, _, err := wiring.AutotaskGateway(autotaskCfg)
+	if err != nil {
+		logger.Error("configure Autotask gateway", "error", err)
+		os.Exit(1)
+	}
+	graphWrite, err := config.LoadGraphWrite()
+	if err != nil {
+		logger.Error("load Microsoft Graph write configuration", "error", err)
+		os.Exit(1)
+	}
+	intuneWriter, _, err := wiring.IntuneWriter(graphWrite)
+	if err != nil {
+		logger.Error("configure Intune assignment writer", "error", err)
+		os.Exit(1)
+	}
 	deps := jobDeps{
+		AutotaskGateway: autotaskGateway, IntuneWriter: intuneWriter,
 		LDAP: ldapCfg, SMTP: smtpCfg, Categories: categories, Logger: logger,
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
 		Presence: presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter},
 		Modules:  moduleSvc, ConsumerGate: consumerGate, AuditRetentionDays: cfg.AuditRetentionDays,
+		Attachments: attachmentSvc, Teams: teamsSender,
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -126,7 +172,8 @@ func main() {
 		logger.Error("enqueue service link backfill", "error", err)
 		os.Exit(1)
 	}
-	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
+	channelOptions := wiring.TeamsChannelOptions(teamsSender, moduleSvc)
+	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled(), &channelOptions); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
 	}
@@ -167,6 +214,10 @@ type jobDeps struct {
 	SoftwareProviderSync bool
 	SoftwareDeployWrite  bool
 	AutotaskSync         bool
+	// AutotaskGateway and IntuneWriter are the real provider clients when configured (docs/integrations); nil means
+	// the "not configured" placeholder.
+	AutotaskGateway autotask.Gateway
+	IntuneWriter    intune.AssignmentWriter
 	// RemoteAccessProviders and RemoteAccessApprovalOwnership are REMOTE_ACCESS_PROVIDERS and
 	// REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP; the jobs are registered either way and do nothing without providers.
 	RemoteAccessProviders         []string
@@ -180,6 +231,11 @@ type jobDeps struct {
 	ConsumerGate *modules.ConsumerGate
 	// AuditRetentionDays is AUDIT_RETENTION_DAYS; the purge job is registered either way and scheduled only when > 0.
 	AuditRetentionDays int
+	// Attachments (optional, nil without STORAGE_DRIVER) runs the virus scan and object purge jobs (ADR-0037).
+	Attachments *attachments.Service
+	// Teams is the Teams channel adapter (teams.NotConfigured without TEAMS_CHANNEL_DESTINATIONS_FILE); nil is the
+	// same as not configured. The send job is registered either way and cancels posts while the module is off.
+	Teams teams.Sender
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -214,6 +270,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			d.Logger.Info("email notifications enabled", "host", d.SMTP.Host, "port", d.SMTP.Port, "security", d.SMTP.Security)
 			return nil
 		}},
+		{"teams channel posts", func() error { return registerTeamsChannel(runner, pool, d) }},
 		{"recurring tasks", func() error { return registerRecurrence(runner, pool) }},
 		{"service link backfill", func() error { return registerServicesBackfill(runner, pool) }},
 		{"change reminders", func() error {
@@ -227,7 +284,9 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"software package synchronization", func() error {
 			return registerSoftwarePackageSync(runner, pool, d.SoftwareProviderSync)
 		}},
-		{"deployment engine", func() error { return registerDeploymentEngine(runner, pool, d.SoftwareDeployWrite, d.Modules) }},
+		{"deployment engine", func() error {
+			return registerDeploymentEngineWith(runner, pool, d.SoftwareDeployWrite, d.Modules, d.IntuneWriter)
+		}},
 		{"deferred module events", func() error {
 			if d.ConsumerGate == nil {
 				return nil
@@ -238,10 +297,12 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
 		}},
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
+		{"organization import previews", func() error { return registerOrgImportPurge(runner, pool) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
 		{"saved views retention", func() error { return registerViewsPurge(runner, pool) }},
 		{"audit retention", func() error { return registerAuditPurge(runner, pool, d.AuditRetentionDays) }},
 		{"role assignment expiry", func() error { return registerAccessExpiry(runner, pool) }},
+		{"attachment scan and purge", func() error { return registerAttachments(runner, d.Attachments) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
 		}},
@@ -249,10 +310,14 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			if !d.AutotaskSync {
 				return nil
 			}
-			if err := registerExternalSync(runner, dispatcher, pool); err != nil {
+			if err := registerExternalSync(runner, dispatcher, pool, d.AutotaskGateway); err != nil {
 				return err
 			}
-			d.Logger.Warn("Autotask synchronization is on, but the REST client is not implemented: pushes fail with a visible \"not configured\" state")
+			if _, placeholder := d.AutotaskGateway.(autotask.NotConfigured); placeholder || d.AutotaskGateway == nil {
+				d.Logger.Warn("Autotask synchronization is on, but the Autotask API user is not configured (AUTOTASK_*): pushes fail with a visible \"not configured\" state")
+			} else {
+				d.Logger.Warn("Autotask synchronization is on; the REST client is implemented from the documentation and unverified against a live service")
+			}
 			return nil
 		}},
 	}
@@ -288,17 +353,31 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 	})
 }
 
-func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, channels *notifications.ChannelOptions) error {
 	orgReader := orgrepository.New(pool)
-	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)), channels)
+}
+
+// registerTeamsChannel registers the job that sends Teams channel posts (ADR-0036 T-A).
+func registerTeamsChannel(runner *jobs.Runner, pool *pgxpool.Pool, d jobDeps) error {
+	sender := d.Teams
+	if sender == nil {
+		sender = teams.NotConfigured{}
+	}
+	h := notifications.NewChannelSender(pool, wiring.TeamsChannelPoster{Sender: sender}, d.Categories, d.SMTP.BaseURL, d.SMTP.DefaultLocale)
+	return runner.Register(notifications.ChannelPostJobType, notifications.ChannelPostJobTimeout, h.Handle)
 }
 
 // registerConsumersWith registers the outbox consumers; perms decides which
-// Users hold task permissions and may therefore be notified about tasks.
-func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver) error {
+// Users hold task permissions and may therefore be notified about tasks. channels (optional) enables the Teams
+// channel posts of Major Incidents and scheduled Changes.
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver, channels *notifications.ChannelOptions) error {
 	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
+	}
+	if channels != nil {
+		notifier = notifier.WithChannelPosts(*channels)
 	}
 	taskConsumers := tasksapp.NewConsumers(
 		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier, perms)
@@ -315,11 +394,15 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	sdStore := servicedeskrepository.New(pool)
 	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier).WithReferences(wiring.ServiceDesk(pool).ReferenceFor)
 	majorConsumers := servicedeskapp.NewMajorConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	if channels != nil {
+		majorConsumers = majorConsumers.WithChannelPosts(notifier)
+	}
 	for _, r := range []struct {
 		event, name string
 		fn          events.Consumer
 	}{
 		{"MajorIncidentUpdated", "servicedesk.notify-major", majorConsumers.OnMajorIncidentUpdated},
+		{"MajorIncidentDeclared", "servicedesk.post-major-declared", majorConsumers.OnMajorIncidentDeclared},
 		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
 		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
@@ -352,6 +435,11 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	}
 	for _, event := range []string{"ChangeScheduled", changesapp.FanOutEventType} {
 		if err := d.Register(event, "changes.notify-scheduled", changeNotes.OnChangeScheduled); err != nil {
+			return err
+		}
+	}
+	if channels != nil {
+		if err := d.Register("ChangeScheduled", "changes.post-scheduled", changeNotes.WithChannelPosts(notifier).PostChangeScheduled); err != nil {
 			return err
 		}
 	}
@@ -499,10 +587,18 @@ func registerSoftwarePackageSync(runner *jobs.Runner, pool *pgxpool.Pool, enable
 }
 
 // registerDeploymentEngine registers the Deployment execution job and schedules it every minute. With
-// SOFTWARE_DEPLOY_WRITE off the job only runs the kill-switch sweep. The writer is a placeholder until the Graph write client exists, so a ring that is
-// started with the capability on halts with assignment_failed.
+// SOFTWARE_DEPLOY_WRITE off the job only runs the kill-switch sweep. The writer is the Graph write client when the write registration is configured
+// (MICROSOFT_GRAPH_WRITE_*), otherwise a placeholder, so a ring that is started with the capability on halts with assignment_failed.
 func registerDeploymentEngine(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool, mods *modules.Service) error {
-	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).WithDeployWrite(enabled, intune.NotConfiguredWriter{})
+	return registerDeploymentEngineWith(runner, pool, enabled, mods, nil)
+}
+
+// registerDeploymentEngineWith is registerDeploymentEngine with the Management Assignment Writer (nil: the placeholder).
+func registerDeploymentEngineWith(runner *jobs.Runner, pool *pgxpool.Pool, enabled bool, mods *modules.Service, writer intune.AssignmentWriter) error {
+	if writer == nil {
+		writer = intune.NotConfiguredWriter{}
+	}
+	svc := wiring.Endpoints(pool, intune.NotConfigured{}, false, softwaremgmt.NotConfigured{}, false).WithDeployWrite(enabled, writer)
 	tick := svc.HandleDeploymentTick
 	if mods != nil {
 		// The tick is a safety path and always runs. While Endpoints is switched off it does only the kill-switch sweep
@@ -568,6 +664,20 @@ func registerRemoteAccess(runner *jobs.Runner, pool *pgxpool.Pool, providerKeys,
 	return nil
 }
 
+// registerOrgImportPurge registers the job that deletes expired CSV import and bulk previews (they hold personal data
+// and live for one hour; core, always on).
+func registerOrgImportPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	repo := orgrepository.New(pool)
+	handler := func(ctx context.Context, _ jobs.Job) error {
+		_, err := repo.PurgeExpiredBatches(ctx)
+		return err
+	}
+	if err := runner.Register(orgapp.ImportPurgeJobType, orgapp.ImportPurgeJobTimeout, handler); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: orgapp.ImportPurgeJobType, DedupeKey: orgapp.ImportPurgeJobType, Interval: orgapp.ImportPurgeInterval, MaxAttempts: 2})
+}
+
 // registerPresence registers the daily Workforce Presence retention job (idempotent; counts-only audit summary).
 func registerPresence(runner *jobs.Runner, pool *pgxpool.Pool, cfg presenceapp.Config) error {
 	svc := wiring.Presence(pool, cfg)
@@ -588,6 +698,24 @@ func registerAuditPurge(runner *jobs.Runner, pool *pgxpool.Pool, retentionDays i
 		return nil
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: audit.PurgeJobType, DedupeKey: audit.PurgeJobType, Interval: audit.PurgeInterval, MaxAttempts: 2})
+}
+
+// registerAttachments registers the attachment scan job (scheduled every minute and enqueued by every upload) and the
+// purge job for deleted attachments. Without storage configured nothing is registered.
+func registerAttachments(runner *jobs.Runner, svc *attachments.Service) error {
+	if svc == nil {
+		return nil
+	}
+	if err := runner.Register(attachments.ScanJobType, attachments.ScanJobTimeout, svc.ScanHandler); err != nil {
+		return err
+	}
+	if err := runner.Register(attachments.PurgeJobType, attachments.PurgeJobTimeout, svc.PurgeHandler); err != nil {
+		return err
+	}
+	if err := runner.AddSchedule(jobs.Schedule{JobType: attachments.ScanJobType, DedupeKey: attachments.ScanJobType + ".scheduled", Interval: attachments.ScanInterval, MaxAttempts: 3}); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: attachments.PurgeJobType, DedupeKey: attachments.PurgeJobType, Interval: attachments.PurgeInterval, MaxAttempts: 2})
 }
 
 func registerViewsPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
@@ -697,9 +825,12 @@ func registerRequestConsumers(d *events.Dispatcher, svc *requestsapp.Service, no
 }
 
 // registerExternalSync wires the ticket synchronization with Autotask: the outbox consumers that
-// request a push and the job that performs it. The gateway is the placeholder until a REST client exists.
-func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpool.Pool) error {
-	sync := wiring.ExternalSync(pool, autotask.NotConfigured{}, true)
+// request a push and the job that performs it. The gateway is the Autotask REST client when configured, otherwise the placeholder.
+func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpool.Pool, gateway autotask.Gateway) error {
+	if gateway == nil {
+		gateway = autotask.NotConfigured{}
+	}
+	sync := wiring.ExternalSync(pool, gateway, true)
 	for _, event := range []string{"TicketCreated", "TicketAssigned", "TicketResolved", "TicketStatusChanged"} {
 		if err := d.Register(event, "servicedesk.external-sync", sync.OnTicketChange); err != nil {
 			return err

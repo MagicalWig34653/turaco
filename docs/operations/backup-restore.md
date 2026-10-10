@@ -5,7 +5,8 @@ A successful backup job is not enough; restore testing is a product/operations r
 ## Backup set
 
 - PostgreSQL base backup/dump strategy and WAL as appropriate;
-- S3/object data;
+- attachment storage (`STORAGE_PATH` directory or the S3 bucket, [ADR-0037](../decisions/ADR-0037-file-storage-and-attachments.md)), taken together with the PostgreSQL backup because the database holds the attachment metadata;
+- the attachment master key (`STORAGE_MASTER_KEY_FILE`), stored separately from the data: without it attachments cannot be decrypted;
 - encrypted key metadata and recoverable tenant KEKs via separate protected procedure;
 - deployment/configuration required to reconstruct the environment.
 

@@ -103,6 +103,10 @@ func TestArticleLifecycleVisibilityAndSearch(t *testing.T) {
 	if hits(user, "guest network") != 1 || hits(user, "bitlocker") != 0 || hits(view, "BitLocker") != 1 {
 		t.Error("full-text search must respect case and visibility")
 	}
+	// Partial words: "wifi" is a word, "gues" and "netw" are only parts of words; wildcards are literal text.
+	if hits(user, "gues") != 1 || hits(user, "NETW") != 1 || hits(user, "gue%") != 0 || hits(user, "_uest") != 0 || hits(user, "bitlock") != 0 {
+		t.Error("partial words must match as substrings, only within the caller's visibility, and LIKE wildcards must be literal")
+	}
 	if _, err := svc.List(ctx, user, "", "draft", application.Page{}); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("employee filters drafts: %v", err)
 	}

@@ -13,6 +13,7 @@ import { isFieldLocked, ownerOf, profileChanges, looksLikeEmail } from './adminM
 import type { FieldOwner, PersonDetail, PersonRow } from './adminTypes';
 import { PersonPicker, type PickedPerson } from './PersonPicker';
 import { PersonStatusBadge } from './PersonBadges';
+import { isEntraIdentity } from './entraModel';
 import type { useOrgLookups } from './orgLookups';
 
 type Lookups = ReturnType<typeof useOrgLookups>;
@@ -161,25 +162,27 @@ export function SignInCard({ person }: { person: PersonDetail }) {
             person.statusSource === 'directory' ? 'people.owner.directory' : 'people.owner.turaco',
           )}
         />
-        {person.externalIdentities.map((identity) => (
-          <Row
-            key={`${identity.providerKey}:${identity.username ?? ''}`}
-            label={t('people.signin.identity', { provider: identity.providerKey })}
-            value={
-              <>
-                {identity.username ?? '–'}{' '}
-                {!identity.enabled ? (
-                  <span className="adm-chip">{t('people.signin.disabledInDirectory')}</span>
-                ) : null}
-                {identity.lastSeenAt ? (
-                  <span className="adm-sub">
-                    {t('people.owner.seen')} <TableDate value={identity.lastSeenAt} />
-                  </span>
-                ) : null}
-              </>
-            }
-          />
-        ))}
+        {person.externalIdentities
+          .filter((identity) => !isEntraIdentity(identity))
+          .map((identity) => (
+            <Row
+              key={`${identity.providerKey}:${identity.username ?? ''}`}
+              label={t('people.signin.identity', { provider: identity.providerKey })}
+              value={
+                <>
+                  {identity.username ?? '–'}{' '}
+                  {!identity.enabled ? (
+                    <span className="adm-chip">{t('people.signin.disabledInDirectory')}</span>
+                  ) : null}
+                  {identity.lastSeenAt ? (
+                    <span className="adm-sub">
+                      {t('people.owner.seen')} <TableDate value={identity.lastSeenAt} />
+                    </span>
+                  ) : null}
+                </>
+              }
+            />
+          ))}
       </dl>
       {person.source === 'local' ? (
         <p className="field-hint">{t('people.signin.localHint')}</p>

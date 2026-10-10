@@ -30,6 +30,7 @@ var goldenJobTypes = []string{
 	"endpoints.software_package_sync",
 	"notifications.email.send",
 	"organization.directory_sync",
+	"organization.import.purge",
 	"platform.audit.purge",
 	"presence.purge",
 	"remoteaccess.expire_sessions",
@@ -41,6 +42,7 @@ var goldenJobTypes = []string{
 	"servicedesk.external.push",
 	"services.vm_link_backfill",
 	"tasks.recurrence.generate",
+	"teams.channel_post",
 	"views.purge_archived",
 }
 

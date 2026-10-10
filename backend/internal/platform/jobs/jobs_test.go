@@ -131,11 +131,22 @@ func TestRunOnceOutcomes(t *testing.T) {
 		wantStatus  string
 		wantErr     string
 		wantRetry   bool
+		// wantDelay, when set, is the expected retry delay in seconds (instead of the 30s back-off).
+		wantDelay float64
 	}{
 		{name: "success", handler: func(context.Context, jobs.Job) error { return nil }, wantStatus: "completed"},
 		{name: "retryable", handler: func(context.Context, jobs.Job) error { return errors.New("boom") }, wantStatus: "pending", wantErr: "boom", wantRetry: true},
 		{name: "permanent", handler: func(context.Context, jobs.Job) error { return jobs.Permanent(errors.New("bad input")) }, wantStatus: "failed", wantErr: "bad input"},
 		{name: "attempts exhausted", maxAttempts: 1, handler: func(context.Context, jobs.Job) error { return errors.New("last try") }, wantStatus: "failed", wantErr: "last try"},
+		{name: "retry after longer than back-off", handler: func(context.Context, jobs.Job) error {
+			return jobs.RetryAfter(errors.New("rate limited"), 5*time.Minute)
+		}, wantStatus: "pending", wantErr: "rate limited", wantRetry: true, wantDelay: 300},
+		{name: "retry after shorter than back-off", handler: func(context.Context, jobs.Job) error {
+			return jobs.RetryAfter(errors.New("rate limited"), time.Second)
+		}, wantStatus: "pending", wantErr: "rate limited", wantRetry: true},
+		{name: "retry after is capped", handler: func(context.Context, jobs.Job) error {
+			return jobs.RetryAfter(errors.New("rate limited"), 48*time.Hour)
+		}, wantStatus: "pending", wantErr: "rate limited", wantRetry: true, wantDelay: 3600},
 		{name: "panic", handler: func(context.Context, jobs.Job) error { panic("kaboom secret") }, wantStatus: "pending", wantErr: "handler panicked", wantRetry: true},
 		{name: "long error is truncated", handler: func(context.Context, jobs.Job) error { return errors.New(strings.Repeat("ä", 2000)) }, wantStatus: "pending", wantRetry: true},
 	}
@@ -170,7 +181,11 @@ func TestRunOnceOutcomes(t *testing.T) {
 			if row.LastError != nil && (len(*row.LastError) > 1000 || !utf8.ValidString(*row.LastError)) {
 				t.Errorf("last_error not truncated to 1000 valid bytes: %d", len(*row.LastError))
 			}
-			if tt.wantRetry && (row.FutureSecs < 20 || row.FutureSecs > 40) {
+			if want := tt.wantDelay; want > 0 {
+				if row.FutureSecs < want-10 || row.FutureSecs > want+10 {
+					t.Errorf("available_at in %.1fs, want about %.0fs", row.FutureSecs, want)
+				}
+			} else if tt.wantRetry && (row.FutureSecs < 20 || row.FutureSecs > 40) {
 				t.Errorf("available_at in %.1fs, want about 30s backoff", row.FutureSecs)
 			}
 			// A job with a future available_at is not picked up again.

@@ -7,11 +7,14 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/microsoft"
 	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepo "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 	deskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/attachments"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/externalrefs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
@@ -19,13 +22,32 @@ import (
 // HealthConfig is the configuration the checks look at. Booleans and key names only: values never reach the
 // health pages.
 type HealthConfig struct {
-	Environment, Version                                 string
-	LDAPConfigured, KerberosConfigured                   bool
-	SMTPConfigured, EmailBaseURLSet                      bool
-	S3Configured                                         bool
-	EmergencyLogin, LocalLogin                           bool
+	Environment, Version               string
+	LDAPConfigured, KerberosConfigured bool
+	SMTPConfigured, EmailBaseURLSet    bool
+	S3Configured                       bool
+	// Attachments is the attachment service (nil when STORAGE_DRIVER is empty); it feeds the object_storage and
+	// attachment_scanner checks.
+	Attachments                *attachments.Service
+	EmergencyLogin, LocalLogin bool
+	// EntraEnabled, EntraCredentialKind and EntraCredentialExpiresAt describe the Entra sign-in configuration; the
+	// expiry is the certificate's NotAfter or the operator-set secret expiry (nil when unknown).
+	EntraEnabled                                         bool
+	EntraCredentialKind                                  string
+	EntraCredentialExpires                               *time.Time
 	IntuneSync, SoftwareSync, AutotaskSync, AdvisorySync bool
 	RemoteAccessProviders                                []string
+	// Teams describes the Teams channel adapter (ADR-0036); its facts come from stored deliveries, written by the worker.
+	Teams TeamsHealth
+	// Providers describes the real provider clients by check key (intune, autotask). A missing entry means that no
+	// real client exists for the provider (software_provider).
+	Providers map[string]ProviderHealth
+}
+
+// TeamsHealth is what the teams check knows from configuration.
+type TeamsHealth struct {
+	Mode         health.Mode
+	Destinations int
 }
 
 // Health builds the health registry: the platform checks plus the integration and module checks below. Every check
@@ -64,6 +86,23 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 			}
 			return health.Result{Status: health.StatusUnknown, Mode: health.ModeReal, ErrorCode: "no_observation"}
 		}},
+		{Key: "entra_login", Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
+			if !cfg.EntraEnabled {
+				return notConfigured("AUTH_ENTRA_LOGIN_ENABLED", "ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_REDIRECT_URL")
+			}
+			next := &health.NextStep{Kind: "config", ConfigKeys: []string{"ENTRA_CLIENT_SECRET_FILE", "ENTRA_CLIENT_CERTIFICATE_FILE"}}
+			if cfg.EntraCredentialExpires == nil {
+				// A secret without ENTRA_CLIENT_SECRET_EXPIRES_AT: the expiry cannot be monitored.
+				return health.Result{Status: health.StatusUnknown, Mode: health.ModeReal, ErrorCode: "credential_expiry_unknown", NextStep: &health.NextStep{Kind: "config", ConfigKeys: []string{"ENTRA_CLIENT_SECRET_EXPIRES_AT"}}}
+			}
+			switch _, state := microsoft.ExpiryStatus(*cfg.EntraCredentialExpires, time.Now()); state {
+			case "expired":
+				return health.Result{Status: health.StatusFailing, Mode: health.ModeReal, ErrorCode: "credential_expired", NextStep: next}
+			case "attention":
+				return health.Result{Status: health.StatusStale, Mode: health.ModeReal, ErrorCode: "credential_expires_soon", NextStep: next}
+			}
+			return health.Result{Status: health.StatusOK, Mode: health.ModeReal}
+		}},
 		{Key: "smtp", Category: health.CategoryIntegration, Run: func(ctx context.Context) health.Result {
 			if !cfg.SMTPConfigured {
 				return notConfigured("SMTP_HOST", "SMTP_PORT", "SMTP_FROM")
@@ -89,12 +128,9 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 			}
 			return res
 		}},
-		{Key: "object_storage", Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
-			if !cfg.S3Configured {
-				return notConfigured("S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY")
-			}
-			return health.Result{Status: health.StatusUnknown, Mode: health.ModeReal, ErrorCode: "no_observation"}
-		}},
+		{Key: "teams", Category: health.CategoryIntegration, Run: teamsCheck(pool, mods, cfg.Teams)},
+		{Key: "object_storage", Category: health.CategoryIntegration, Run: storageCheck(cfg.Attachments)},
+		{Key: "attachment_scanner", Category: health.CategoryIntegration, Run: scannerCheck(cfg.Attachments)},
 		{Key: "emergency_login", Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
 			if cfg.EmergencyLogin {
 				// Enabled break-glass login is an operating risk outside development.
@@ -106,9 +142,12 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 			}
 			return health.Result{Status: health.StatusDisabled}
 		}},
-		providerCheck("intune", cfg.IntuneSync, "INTUNE_SYNC", "docs/integrations/intune.md"),
-		providerCheck("software_provider", cfg.SoftwareSync, "SOFTWARE_PROVIDER_SYNC", "docs/integrations/intuneget.md"),
-		providerCheck("autotask", cfg.AutotaskSync, "AUTOTASK_SYNC", "docs/integrations/autotask.md"),
+		providerCheck("intune", cfg.IntuneSync, "INTUNE_SYNC", "docs/integrations/intune.md", cfg.Providers["intune"], nil),
+		providerCheck("software_provider", cfg.SoftwareSync, "SOFTWARE_PROVIDER_SYNC", "docs/integrations/intuneget.md", cfg.Providers["software_provider"], nil),
+		// Autotask pushes run in the worker, so the stored synchronization state of the references is the shared fact.
+		providerCheck("autotask", cfg.AutotaskSync, "AUTOTASK_SYNC", "docs/integrations/autotask.md", cfg.Providers["autotask"], func(ctx context.Context) (*time.Time, *time.Time, error) {
+			return externalrefs.LastActivity(ctx, pool, "autotask", "ticket")
+		}),
 		{Key: "advisory_feeds", Category: health.CategoryIntegration, Run: func(ctx context.Context) health.Result {
 			if !cfg.AdvisorySync {
 				return health.Result{Status: health.StatusDisabled, Mode: health.ModeReal, NextStep: &health.NextStep{Kind: "config", ConfigKeys: []string{"ADVISORY_SYNC"}, DocsPath: "docs/integrations/advisory-feeds.md"}}
@@ -180,15 +219,57 @@ func notConfigured(keys ...string) health.Result {
 	return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, NextStep: &health.NextStep{Kind: "config", ConfigKeys: keys}}
 }
 
-// providerCheck reports a provider integration. No real client exists for these providers yet (the ports have
-// fake and "not configured" adapters only), so an enabled sync is still reported as not configured with the reason.
-func providerCheck(key string, syncOn bool, flag, docs string) health.Check {
-	return health.Check{Key: key, Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
+// providerCheck reports a provider integration. A real client that is configured is reported as "unknown" with the
+// error code "unverified" until a successful call was observed (in this process or, through observed, in stored
+// facts): the clients are written from the vendor documentation and have not been exercised against a live service.
+// Without a real client (software_provider) an enabled sync is "not_configured" with "client_not_built".
+func providerCheck(key string, syncOn bool, flag, docs string, p ProviderHealth, observed func(context.Context) (*time.Time, *time.Time, error)) health.Check {
+	return health.Check{Key: key, Category: health.CategoryIntegration, Run: func(ctx context.Context) health.Result {
 		step := &health.NextStep{Kind: "config", ConfigKeys: []string{flag}, DocsPath: docs}
 		if !syncOn {
 			return health.Result{Status: health.StatusDisabled, Mode: health.ModeNotConfigured, NextStep: step}
 		}
-		return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_built", NextStep: step}
+		if !p.Built {
+			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_built", NextStep: step}
+		}
+		if !p.Configured {
+			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_configured",
+				NextStep: &health.NextStep{Kind: "config", ConfigKeys: p.MissingKeys, DocsPath: docs}}
+		}
+		if p.CredentialExpires != nil {
+			switch _, state := microsoft.ExpiryStatus(*p.CredentialExpires, time.Now()); state {
+			case "expired":
+				return health.Result{Status: health.StatusFailing, Mode: health.ModeReal, ErrorCode: "credential_expired", NextStep: step}
+			}
+		}
+		var success, failure *time.Time
+		code := ""
+		if p.Reporter != nil {
+			snap := p.Reporter.Status()
+			success, failure, code = snap.LastSuccessAt, snap.LastFailureAt, snap.LastErrorCode
+		}
+		if observed != nil && success == nil && failure == nil {
+			if s, f, err := observed(ctx); err == nil {
+				success, failure = s, f
+				if f != nil && (s == nil || f.After(*s)) {
+					code = "last_attempt_failed"
+				}
+			}
+		}
+		res := health.Result{Mode: health.ModeReal, LastSuccessAt: success, LastAttemptAt: failure, NextStep: step}
+		switch {
+		case failure != nil && (success == nil || failure.After(*success)):
+			res.Status = health.StatusFailing
+			res.ErrorCode = code
+			if res.ErrorCode == "" {
+				res.ErrorCode = "last_attempt_failed"
+			}
+		case success != nil:
+			res.Status = health.StatusOK
+		default:
+			res.Status, res.ErrorCode = health.StatusUnknown, "unverified"
+		}
+		return res
 	}}
 }
 
@@ -214,7 +295,7 @@ func moduleResult(ctx context.Context, mods *modules.Service, key string) health
 	return health.Result{Status: health.StatusUnknown, ErrorCode: "module_unknown"}
 }
 
-// HealthSetup builds the setup checklist (F14): ten items derived from stored facts through public count
+// HealthSetup builds the setup checklist (F14): eleven items derived from stored facts through public count
 // contracts and the health registry; an administrator may skip an item or confirm the module defaults.
 func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry) *health.Setup {
 	orgCounts := orgpublic.NewSetupCounts(pool)
@@ -295,9 +376,53 @@ func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry
 		{Key: "catalog", Order: 8, Route: "/catalog", Module: "catalog", Derive: atLeast(catalogCounts.ActiveItems, 1)},
 		{Key: "integrations", Order: 9, Route: "/admin/integrations", Derive: checkOK("intune", "software_provider", "autotask", "advisory_feeds", "remote_access")},
 		{Key: "modules", Order: 10, Route: "/admin/modules", Confirmable: true},
+		{Key: "attachments", Order: 11, Route: "/admin/health", Derive: checkOK("object_storage", "attachment_scanner")},
 	}
 	return health.NewSetup(pool, items, func(ctx context.Context, key string) bool {
 		ok, err := mods.Enabled(ctx, key)
 		return err == nil && ok
 	})
+}
+
+// teamsCheck reports the Teams channel (ADR-0036 T-A): module state, adapter mode, configured destinations and routes,
+// and the stored channel deliveries (failed in 24 hours, open, oldest open age). It never calls Microsoft.
+func teamsCheck(pool *pgxpool.Pool, mods *modules.Service, t TeamsHealth) func(context.Context) health.Result {
+	return func(ctx context.Context) health.Result {
+		step := &health.NextStep{Kind: "route", Route: "/admin/teams-channels"}
+		cfgStep := &health.NextStep{Kind: "config", ConfigKeys: []string{"TEAMS_CHANNEL_DESTINATIONS_FILE"}, DocsPath: "docs/integrations/teams-email.md"}
+		if t.Mode == health.ModeNotConfigured || t.Destinations == 0 {
+			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_configured", NextStep: cfgStep}
+		}
+		mod := moduleResult(ctx, mods, "teams")
+		if mod.Status != health.StatusOK {
+			mod.Mode, mod.NextStep = t.Mode, step
+			return mod
+		}
+		var ok, failed, oldest *time.Time
+		var failed24, open, routes int
+		if err := pool.QueryRow(ctx, `
+			SELECT max(delivered_at), max(updated_at) FILTER (WHERE status = 'failed'),
+			       count(*) FILTER (WHERE status = 'failed' AND updated_at > now() - interval '24 hours'),
+			       count(*) FILTER (WHERE status IN ('pending','sending')),
+			       min(created_at) FILTER (WHERE status IN ('pending','sending'))
+			FROM platform.notification_deliveries WHERE channel = 'teams_channel'`).Scan(&ok, &failed, &failed24, &open, &oldest); err != nil {
+			return health.Result{Status: health.StatusFailing, ErrorCode: "deliveries_unreadable"}
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.notification_channel_routes WHERE channel = 'teams_channel'`).Scan(&routes); err != nil {
+			return health.Result{Status: health.StatusFailing, ErrorCode: "deliveries_unreadable"}
+		}
+		res := health.Result{Status: health.FreshStatus(time.Now(), 24*time.Hour, ok, failed), Mode: t.Mode, LastSuccessAt: ok, LastAttemptAt: failed, NextStep: step,
+			Counts: map[string]int{"destinations": t.Destinations, "routes": routes, "open": open, "failed24h": failed24}}
+		if res.Status == health.StatusStale {
+			// Posts are event driven: no recent delivery is not a fault by itself.
+			res.Status = health.StatusUnknown
+		}
+		if res.Status == health.StatusFailing {
+			res.ErrorCode = "last_delivery_failed"
+		}
+		if oldest != nil && time.Since(*oldest) > time.Hour && res.Status != health.StatusFailing {
+			res.Status, res.ErrorCode = health.StatusStale, "deliveries_waiting"
+		}
+		return res
+	}
 }

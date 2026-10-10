@@ -1,10 +1,10 @@
 // Package intune is the adapter boundary to Microsoft Intune (docs/integrations/intune.md).
 //
-// Only the internal side exists so far: the normalized record types and the Provider contract the
-// Endpoints module ingests from, an in-memory Fake for tests and local development, and a placeholder
-// that reports "not configured". The Microsoft Graph client (authentication, paging, delta, throttling)
-// needs a tenant and an app registration to be built and verified against, which this repository does
-// not have. Graph DTOs never cross this boundary: providers return the normalized records below.
+// It holds the normalized record types and the Provider contract the Endpoints module ingests from, an in-memory
+// Fake for tests and local development, the "not configured" placeholder, and the Microsoft Graph clients: the read
+// provider (graph_provider.go) and the assignment writer (graph_writer.go). Both are written strictly from the
+// vendor documentation and unverified against a live tenant. Graph DTOs never cross this boundary: providers
+// return the normalized records below.
 package intune
 
 import (
@@ -17,8 +17,8 @@ import (
 // ProviderKey is the name under which Intune devices are stored.
 const ProviderKey = "intune"
 
-// ErrNotConfigured is returned while no Graph client exists or is configured.
-var ErrNotConfigured = errors.New("intune: the Graph client is not configured (not implemented yet)")
+// ErrNotConfigured is returned while the Graph read registration is not configured (MICROSOFT_GRAPH_*).
+var ErrNotConfigured = errors.New("intune: the Graph client is not configured")
 
 // DeviceRecord is one managed device as reported by the provider, already normalized: OSPlatform is
 // one of windows, macos, ios, android, linux, other; Ownership one of corporate, personal, unknown;
