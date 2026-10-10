@@ -13,7 +13,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | Phase | State | Open gaps |
 | --- | --- | --- |
 | F0 Repository foundation | Done | |
-| F1 Identity and Organization | Done for on-prem with one directory | Real Active Directory and Windows client verification, OIDC/Entra |
+| F1 Identity and Organization | Done for on-prem with one directory | Real Active Directory and Windows client verification; Entra sign-in moved to F15 |
 | F2 Work Foundation | Done | Email bounce handling, digests, per-recipient language |
 | F3 Products, Catalog, Requests | Done (backend, OpenAPI, UI) | |
 | F4 Inventory, Procurement, Assets | Done (backend, OpenAPI, UI) | |
@@ -28,6 +28,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F13 Workbench Views | Q-A to Q-D done (query engine, Saved Views, Queues, System Views, My Work sources, Boards; backend and UI) | Q-E catalogs of further resources, routing rules, archived-View restore screen |
 | F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
+| F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
 
 The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
 
@@ -57,7 +58,7 @@ Vertical slices:
 5. role/permission/scope evaluation,
 6. audit of privileged identity/config changes.
 
-Do not implement Entra by changing the User model; add an identity provider adapter later.
+Do not implement Entra by changing the User model; add an identity provider adapter later. Entra sign-in is planned in F15 ([ADR-0035](../decisions/ADR-0035-entra-oidc-login.md)).
 
 ## F2 — Work Foundation
 
@@ -198,6 +199,10 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 ## F14 — Administration
 
 [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md). Feature design: [F14 design](f14-administration-design.md). Slices: A-A People and Locations backend (with A-A2 local accounts), A-B roles and effective permissions backend, A-C platform health, setup checklist, audit and search backend, A-D People UI, A-E roles UI, A-F health, audit and search UI, A-G External Parties. A-A, A-A2, A-B, A-D and A-E are implemented; A-C, A-F and A-G are open. Operator walkthrough: [Getting started as an administrator](../operations/administrator-getting-started.md).
+
+## F15 — Microsoft integration (planned)
+
+[ADR-0035](../decisions/ADR-0035-entra-oidc-login.md) (Entra sign-in for every deployment variant) and [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md) (Teams), both Proposed. Feature design: [F15 design](f15-microsoft-integration-design.md). Slices: M-0 shared Microsoft HTTP client and credentials; E-A sign-in core, E-B identity linking, E-C Graph reconciliation and cloud-only group sync, E-D MFA assurance and step-up, E-E restricted multi-tenant and guests (after F14 A-G); T-A channel posts, T-B personal cards, T-C approval actions, T-D meeting and channel links, T-E Microsoft 365 presence (F11 P-C). Nothing is implemented; the open product decisions are listed in the design.
 
 ## Later / optional
 

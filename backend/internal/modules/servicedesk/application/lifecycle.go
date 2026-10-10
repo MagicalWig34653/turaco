@@ -72,6 +72,12 @@ type Abilities struct {
 	MarkDuplicate bool
 }
 
+// movableStatus reports whether a Ticket in the status can still change Queue (the move operation and its ability
+// share it): resolved, closed and cancelled Tickets stay where they are.
+func movableStatus(status string) bool {
+	return !slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, status)
+}
+
 // AbilitiesOf computes the Abilities of the caller (with their authority ep over the Ticket's Queue) for a Ticket.
 // canMove says whether the deployment has Queues, which a move needs.
 func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
@@ -83,7 +89,7 @@ func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
 		Assign:          ep.Manage && !slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, t.Status),
 		SetPriority:     ep.Manage,
 		Transition:      len(AllowedOperations(t, ep)) > 0,
-		MoveQueue:       ep.Manage && canMove,
+		MoveQueue:       ep.Manage && canMove && movableStatus(t.Status),
 		MarkDuplicate:   ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
 	}
 }

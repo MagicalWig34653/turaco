@@ -349,6 +349,9 @@ func (s *Service) shape(ctx context.Context, a access, ts ...*Ticket) error {
 			continue
 		}
 		t.Queue = nil
+		// Staff-only fields of the ticket catalog (assignee, location, patient impact) are routing detail of a
+		// Queue the caller may not know, so they are withheld like the Queue itself.
+		t.AssigneeID, t.AffectedLocationID, t.PatientImpact = nil, nil, false
 		if known {
 			t.QueueLabel = r.Queue.Label()
 		}

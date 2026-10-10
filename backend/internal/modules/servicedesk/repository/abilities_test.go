@@ -80,3 +80,15 @@ func TestTicketAbilitiesMatchTheOperationsTheBackendAllows(t *testing.T) {
 		t.Errorf("a closed ticket offers no comment, assignment or duplicate: %+v", d.Abilities)
 	}
 }
+
+// MoveQueue is offered exactly while the move operation accepts the status.
+func TestMoveQueueAbilityFollowsTheMoveStatusGuard(t *testing.T) {
+	staff := application.Principal{UserID: "u", View: true, Manage: true}
+	for _, st := range application.Statuses {
+		got := application.AbilitiesOf(application.Ticket{Status: st}, staff, true).MoveQueue
+		want := st != application.StatusResolved && st != application.StatusClosed && st != application.StatusCancelled
+		if got != want {
+			t.Errorf("status %s: MoveQueue = %v, want %v", st, got, want)
+		}
+	}
+}

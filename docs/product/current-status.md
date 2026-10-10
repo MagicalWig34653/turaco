@@ -115,7 +115,7 @@ This file distinguishes implemented repository/runtime foundation from planned p
 
 - Connector Agent transport and LDAP/AD operations.
 - Endpoint Agent enrollment/transport/inventory/deployment operations beyond capability placeholder.
-- OIDC/Entra login (hosted environments).
+- Microsoft Entra ID sign-in (OIDC): planned for every deployment variant, SaaS and on-prem (F15, [ADR-0035](../decisions/ADR-0035-entra-oidc-login.md), Proposed); not built.
 - Session cleanup job for expired/revoked sessions (needs an index on `absolute_expires_at`) and session listing/administration.
 - Scoped role assignments (only `global` exists until the first scoped module).
 - Real object-store client and envelope encryption implementation.
@@ -143,7 +143,7 @@ Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Know
 - IntuneGet (Software Management Provider): only the Fake exists; `SOFTWARE_PROVIDER_SYNC` with the switch on reports that the provider is not configured.
 - Remote Access: the providers `rustdesk`, `anydesk` and `hoptodesk` are launch-link connectors for attended sessions; no provider API is called. Unattended access, terminal and file transfer are not offered (permissions stay reserved), threat models and the lab test (R-C) are not done.
 - Turaco AI: the `fake` provider is for tests and demos; `openai_compatible` (for example a local Ollama) is the only real adapter. Anthropic, OpenAI and Azure adapters do not exist.
-- Teams notifications do not exist; the SMTP email channel does.
+- Microsoft Teams: no Teams channel, adapter, app or bot exists; notifications go in-app and by SMTP email only. A Teams integration is planned (F15 T-A to T-E, [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md), Proposed; [design](f15-microsoft-integration-design.md#microsoft-teams)).
 - Directory, Kerberos and S3 object storage: LDAP/AD sync and login are tested against fakes and lab services only; there is no real object-store client or envelope encryption yet.
 - Development-only tooling that is not a product capability: `turaco-admin demo seed` and `demo seed-hospital`, the emergency (break-glass) login used by the simulation, `make dev-setup` and the load generator.
 
@@ -154,5 +154,7 @@ Catalog, Requests, Approvals, Inventory, Procurement, Assets, Service Desk, Know
 - **PARTLY PLANNED - Remote Access** (F10, [ADR-0026](../decisions/ADR-0026-remote-access-providers.md)): R-A (backend) and R-B (UI and OpenAPI, [notes](f10-remote-access-design.md#r-b-implementation-notes)) are implemented; threat models, observation import against real provider APIs and the lab test (R-C) are not.
 - **PARTLY PLANNED - Workforce Presence** (F11, [ADR-0028](../decisions/ADR-0028-workforce-presence.md)): P-A (backend) and the P-B UI with availability hints are implemented. Not implemented: availability in Change windows and IT Briefing items, coverage notifications (`presence.coverage_below_minimum`, `presence.coverage_check`) and external sources (P-C: `presence.source_*`, source configuration, Microsoft 365 and HR adapters).
 - **PARTLY PLANNED - Turaco AI** (F12, [ADR-0029](../decisions/ADR-0029-turaco-ai.md)): A-A (backend, read-only) and A-B (UI) are implemented. Not implemented: AI Proposals and write tools (A-C), the Turaco MCP server (A-D) and the Anthropic, OpenAI and Azure adapters.
+- Service Desk security review fixes (F14): a Ticket in a Queue the caller may not know withholds assignee, affected Location and patient impact (list, query, detail and resolved names); the ticket person search checks the text length, takes the rate-limit token and uses a 3 s timeout before the Organization lookup; the `MoveQueue` ability follows the move status guard.
+- **PLANNED - Microsoft integration** (F15, [design](f15-microsoft-integration-design.md)): Entra sign-in for SaaS and on-prem (ADR-0035) and Teams (ADR-0036); design only, nothing built.
 - **PARTLY PLANNED - Administration** (F14, [design](f14-administration-design.md)): A-A, A-A2, A-B, A-D and A-E are implemented. Backend implemented (A-C): platform health, worker heartbeat, setup checklist, audit names, export and retention. Their screens (A-F) are implemented; not implemented: connectivity probes, global search records, CSV import and bulk edit, External Parties (A-G).
 - Endpoint Agent management (later/optional; the agent binary is a capability placeholder).
