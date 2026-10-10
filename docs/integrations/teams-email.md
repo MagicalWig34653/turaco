@@ -5,7 +5,7 @@ Domain modules never send SMTP/Teams messages directly. They emit events/notific
 ## Channels
 - In-app (implemented, F2)
 - HTML email (implemented, F2; below)
-- Teams (workflow/app/bot adapter as chosen by an ADR/integration design; not implemented)
+- Teams (planned, not implemented: channel posts through Workflows webhooks and personal cards through a Teams app and bot, [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md), [F15 design](../product/f15-microsoft-integration-design.md#microsoft-teams))
 - Webhook (not implemented)
 
 Templates are tenant-brandable and localized. Delivery state/retries are separate from Ticket/Request state.

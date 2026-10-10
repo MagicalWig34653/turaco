@@ -72,7 +72,7 @@ The shared GoLand run configurations live in `.idea/runConfigurations/`:
 | Turaco Web Tests | frontend unit tests |
 | Turaco Quality Gate (make check) | the full local gate |
 
-Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` and `EMAIL_BASE_URL=http://localhost:5173` on the worker at a local test relay; the optional [lab services](lab-services.md) (`make lab-up`) provide Mailpit, a Samba AD directory and Keycloak with ready-made values.
+Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` (and `EMAIL_BASE_URL` unless you rely on the development default `http://localhost:5173`) on the worker at a local test relay; the optional [lab services](lab-services.md) (`make lab-up`) provide Mailpit, a Samba AD directory and Keycloak with ready-made values.
 
 ## Configuration switches you need locally
 
@@ -81,7 +81,7 @@ The complete list is the generated [configuration reference](../reference/config
 | Variable | Local use |
 |---|---|
 | `AUTH_EMERGENCY_LOGIN_ENABLED=true` | Sign in as `devadmin` and as the simulation personas (they are emergency-style accounts). Never enable it on a shared environment without alerting on its audit trail. |
-| `AUTH_LOCAL_LOGIN_ENABLED=true` and `EMAIL_BASE_URL=http://localhost:5173` | Try invitations and password resets of local accounts (People administration). Without a mail relay (`SMTP_*`, for example Mailpit from the [lab services](lab-services.md)) the invitation link of a never-activated account is shown once on screen; resets and later invitations need mail. |
+| `AUTH_LOCAL_LOGIN_ENABLED=true` (`EMAIL_BASE_URL` defaults to `http://localhost:5173` when `APP_ENV=development`; other environments must set it) | Try invitations and password resets of local accounts (People administration). Without a mail relay (`SMTP_*`, for example Mailpit from the [lab services](lab-services.md)) the invitation link of a never-activated account is shown once on screen; resets and later invitations need mail. |
 | `PEOPLE_LOOKUP_ENABLED` (default `true`) | Colleague search when raising a ticket or request for someone else. |
 | `PRESENCE_ENABLED=true`, `PRESENCE_RETENTION_DAYS` | Workforce Presence module (API and worker need the same value); then enable the runtime setting in Administration > Presence (it records the data protection dates) and the module in Administration > Modules. |
 | `AI_ENABLED=true`, `AI_SECRET_DIR` | Turaco AI. Add an AI Provider in Administration > AI: the `fake` provider needs nothing, `openai_compatible` points at a local runtime such as Ollama and may name a secret file below `AI_SECRET_DIR`. |

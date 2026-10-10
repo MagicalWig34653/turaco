@@ -40,7 +40,7 @@ REST/JSON under `/api/v1`. Explicit domain transitions may use action endpoints 
 
 ## Authentication
 
-Identity is abstracted from platform User. Initial AD environments use LDAP/AD directory sync, directory password login and transparent Kerberos/SPNEGO (implemented); future/hosted environments may use OIDC/Entra (not implemented). Two local credential kinds exist next to the directory: the break-glass emergency account (CLI-managed, `AUTH_EMERGENCY_LOGIN_ENABLED`) and, for people without a directory account, local accounts whose passwords are set only through single-use invitation or reset tokens (`AUTH_LOCAL_LOGIN_ENABLED`, [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); local accounts never hold high-risk permissions. Restricted external accounts are designed but not implemented. Browser identity and device identity are separate.
+Identity is abstracted from platform User. Initial AD environments use LDAP/AD directory sync, directory password login and transparent Kerberos/SPNEGO (implemented); Microsoft Entra ID sign-in through OIDC is planned for every deployment variant, SaaS and on-prem ([ADR-0035](../decisions/ADR-0035-entra-oidc-login.md), not implemented). Two local credential kinds exist next to the directory: the break-glass emergency account (CLI-managed, `AUTH_EMERGENCY_LOGIN_ENABLED`) and, for people without a directory account, local accounts whose passwords are set only through single-use invitation or reset tokens (`AUTH_LOCAL_LOGIN_ENABLED`, [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); local accounts never hold high-risk permissions. Restricted external accounts are designed but not implemented. Browser identity and device identity are separate.
 
 ## Device recognition
 

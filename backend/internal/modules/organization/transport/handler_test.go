@@ -67,6 +67,10 @@ func (f *fakeReader) ListTeamMembers(_ context.Context, id string, p application
 	f.id, f.page = id, p
 	return application.Result[application.TeamMember]{}, f.err
 }
+func (f *fakeReader) ListUserTeams(_ context.Context, id string, p application.Page) (application.Result[application.UserTeam], error) {
+	f.id, f.page = id, p
+	return application.Result[application.UserTeam]{}, f.err
+}
 func (f *fakeReader) ListTeamLeads(context.Context, string) ([]application.TeamMember, error) {
 	return nil, f.err
 }
@@ -142,7 +146,7 @@ func serveSync(t *testing.T, r application.Reader, s application.DirectorySyncRe
 	return rec, logs
 }
 
-var orgRoutes = []string{"/api/v1/users", "/api/v1/users/x", "/api/v1/teams", "/api/v1/teams/x", "/api/v1/teams/x/members", "/api/v1/locations", "/api/v1/locations/x"}
+var orgRoutes = []string{"/api/v1/users", "/api/v1/users/x", "/api/v1/users/x/teams", "/api/v1/teams", "/api/v1/teams/x", "/api/v1/teams/x/members", "/api/v1/locations", "/api/v1/locations/x"}
 var dirRoutes = []string{"/api/v1/directory-groups", "/api/v1/directory-groups/x", "/api/v1/directory-groups/x/members"}
 
 func TestAuthorization(t *testing.T) {

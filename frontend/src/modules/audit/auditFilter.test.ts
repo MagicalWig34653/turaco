@@ -17,3 +17,25 @@ describe('toAuditFilter', () => {
     expect(filter.to).toBeUndefined();
   });
 });
+
+describe('toAuditFilter new filters', () => {
+  it('keeps module, actor kind, system actor and via, and drops invalid values', () => {
+    expect(
+      toAuditFilter({
+        ...emptyForm,
+        module: 'platform',
+        actorKind: 'system',
+        systemActor: 'cli',
+        via: 'ai',
+      }),
+    ).toEqual({ module: 'platform', actorKind: 'system', systemActor: 'cli', via: 'ai' });
+    expect(toAuditFilter({ ...emptyForm, actorKind: 'robot', via: 'x' })).toEqual({});
+  });
+  it('lets an explicit action prefix win over module', () => {
+    expect(
+      toAuditFilter({ ...emptyForm, module: 'platform', actionPrefix: 'platform.setup.' }),
+    ).toEqual({
+      actionPrefix: 'platform.setup.',
+    });
+  });
+});

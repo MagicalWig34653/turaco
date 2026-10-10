@@ -16,7 +16,7 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0010](ADR-0010-local-dev-colima.md) | Native macOS Toolchain + Colima Infrastructure | Accepted |
 | [ADR-0011](ADR-0011-explicit-sql-pgx.md) | Explicit SQL with pgx | Accepted |
 | [ADR-0012](ADR-0012-uuidv7.md) | UUIDv7 Internal Identifiers | Accepted |
-| [ADR-0013](ADR-0013-authentication-abstraction.md) | Authentication Provider Abstraction | Accepted |
+| [ADR-0013](ADR-0013-authentication-abstraction.md) | Authentication Provider Abstraction | Accepted; follow-up note: Entra for every deployment variant (ADR-0035) |
 | [ADR-0014](ADR-0014-application-level-secret-and-file-encryption.md) | Application-Level Secret and File Encryption | Accepted |
 | [ADR-0015](ADR-0015-github-actions-ghcr.md) | GitHub Actions and GHCR | Accepted |
 | [ADR-0016](ADR-0016-adobe-s3mock-local-development.md) | Adobe S3Mock for Local Development | Accepted |
@@ -38,3 +38,5 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0032](ADR-0032-module-switches.md) | Optional Modules Are Switched at Runtime Through a Platform Module Registry | Accepted; implemented (backend and `/admin/modules`) |
 | [ADR-0033](ADR-0033-workbench-views-query-engine.md) | Lists Are Queried Through a Platform Query Engine With Module-Declared Field Catalogs; Saved Views Are a Platform Concept | Accepted; implemented for Tickets, Devices and Tasks (Q-A to Q-D, backend and UI); further catalogs (Q-E) not started |
 | [ADR-0034](ADR-0034-local-accounts-and-external-parties.md) | Local Accounts With Invitation Tokens and Restricted External Accounts | Accepted; local accounts implemented (backend and People UI); external accounts (A-G) not implemented |
+| [ADR-0035](ADR-0035-entra-oidc-login.md) | Microsoft Entra ID Sign-in Through OpenID Connect for Every Deployment Variant | Proposed; not implemented |
+| [ADR-0036](ADR-0036-microsoft-teams-integration.md) | Microsoft Teams as a Notification and Interaction Channel | Proposed; not implemented |

@@ -778,7 +778,7 @@ func (s *Service) MoveToQueue(ctx context.Context, c Caller, p Principal, id str
 		if cur.QueueID == target {
 			return ErrQueueSame
 		}
-		if slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, cur.Status) {
+		if !movableStatus(cur.Status) {
 			return &InvalidTransitionError{Operation: "move", From: cur.Status}
 		}
 		tq, known := a.queues[target]
@@ -894,8 +894,8 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	for _, c := range comments {
 		ids = append(ids, c.AuthorID)
 	}
-	if t.AssigneeID != nil {
-		ids = append(ids, *t.AssigneeID)
+	if d.Ticket.AssigneeID != nil { // the shaped ticket only: a hidden Queue's assignee is not looked up
+		ids = append(ids, *d.Ticket.AssigneeID)
 	}
 	d.Names, err = s.dir.UserNames(ctx, ids)
 	if err != nil {

@@ -58,8 +58,7 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if used >= audit.ExportsPerHour {
-		w.Header().Set("Retry-After", "600")
-		httpx.WriteErrorDetails(w, http.StatusTooManyRequests, "audit.export_rate_limited", "At most 5 exports per hour are allowed.", map[string]any{"perHour": audit.ExportsPerHour})
+		h.exportLimited(w)
 		return
 	}
 	n, err := h.reader.Count(r.Context(), f, audit.ExportMaxRows+1)
@@ -74,6 +73,10 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request) {
 	}
 	// The export is recorded before anything streams: an interrupted download is still accounted for.
 	if err := h.reader.RecordExport(r.Context(), p.UserID, httpx.RequestID(w), f, n, details); err != nil {
+		if errors.Is(err, audit.ErrExportRateLimited) {
+			h.exportLimited(w)
+			return
+		}
 		h.fail(w, r, err)
 		return
 	}
@@ -107,6 +110,11 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = cw.Flush()
+}
+
+func (h *handler) exportLimited(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "600")
+	httpx.WriteErrorDetails(w, http.StatusTooManyRequests, "audit.export_rate_limited", "At most 5 exports per hour are allowed.", map[string]any{"perHour": audit.ExportsPerHour})
 }
 
 func actorText(d eventDTO) string {
@@ -176,6 +184,11 @@ func (h *handler) filterFromQuery(w http.ResponseWriter, q map[string][]string) 
 			}
 			*dst = &t
 		}
+	}
+	// The system actor lives in event metadata and has no index: it needs a bounded time range.
+	if f.SystemActor != "" && (f.From == nil || f.To == nil || f.To.Sub(*f.From) > audit.ExportMaxRange) {
+		httpx.WriteErrorDetails(w, http.StatusBadRequest, "audit.range_required", "A system actor filter needs a time range (from and to) of at most 92 days.", map[string]any{"maxDays": 92})
+		return f, false
 	}
 	return f, true
 }

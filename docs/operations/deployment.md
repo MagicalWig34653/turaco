@@ -1,5 +1,7 @@
 # Deployment
 
+Install first: [Installation](installation.md) is the step-by-step guide (build, database, configuration, migrations, start, TLS proxy, upgrade). This page covers deployment shapes, proxies, Kerberos, email and emergency access.
+
 ## Supported target shapes
 
 Primary: Linux containers. Docker Swarm is a supported/preferred orchestrator for the initial on-prem design. Docker Compose is supported for small/single-node environments. Native Windows services may be provided for components where customers require Windows Server support; Windows containers are not a baseline requirement.

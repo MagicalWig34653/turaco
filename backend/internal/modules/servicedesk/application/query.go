@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
@@ -229,7 +231,7 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	req.Filter = query.And(req.Filter, compat...)
 	opts := query.Options{}
 	if a.anyView() {
-		opts.SearchExtra, err = s.personSearch(ctx, req)
+		opts.SearchExtra, opts.RateLimited, err = s.personSearch(ctx, a.subject(p), req)
 		if err != nil {
 			return query.Page[Ticket]{}, err
 		}
@@ -288,12 +290,19 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 // number or device matches, and the people listed first by name.
 const maxSearchPeople = 100
 
+// personSearchTimeout bounds the person lookup.
+const personSearchTimeout = 3 * time.Second
+
 // personSearch lets the ticket search also match the reporter and the affected person by name or e-mail, for callers
 // who see Tickets of Queues (staff). The text is resolved through the Organization public contract (no join into
 // its tables): at most maxSearchPeople matching Users, then an indexed lookup of the Tickets they reported or are
 // affected by (btree on both columns). The visibility predicate still applies to the result, so a name never
 // reveals a Ticket of a Queue the caller may not view.
-func (s *Service) personSearch(ctx context.Context, req query.Request) (*query.SearchExtra, error) {
+//
+// The lookup runs before Prepare, so it is guarded first: an over-long text never reaches it (Prepare rejects the
+// request), the per-user rate-limit token is taken before it (rateLimited tells Prepare not to take a second one) and
+// it runs under personSearchTimeout.
+func (s *Service) personSearch(ctx context.Context, subj query.Subject, req query.Request) (extra *query.SearchExtra, rateLimited bool, err error) {
 	ps, ok := s.dir.(interface {
 		SearchUserIDs(ctx context.Context, text string, limit int) ([]string, error)
 	})
@@ -301,20 +310,25 @@ func (s *Service) personSearch(ctx context.Context, req query.Request) (*query.S
 	if text == "" && req.Filter != nil {
 		text = strings.TrimSpace(req.Filter.Search)
 	}
-	if !ok || text == "" {
-		return nil, nil
+	if !ok || text == "" || utf8.RuneCountInString(text) > query.MaxSearchLength {
+		return nil, false, nil
 	}
+	if err := s.engine.Take(subj); err != nil {
+		return nil, false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, personSearchTimeout)
+	defer cancel()
 	ids, err := ps.SearchUserIDs(ctx, text, maxSearchPeople)
 	if err != nil {
-		return nil, fmt.Errorf("search people: %w", err)
+		return nil, true, fmt.Errorf("search people: %w", err)
 	}
 	if len(ids) == 0 {
-		return nil, nil
+		return nil, true, nil
 	}
 	return &query.SearchExtra{
 		SQL:  "t.reporter_user_id = ANY(?::text[]::uuid[]) OR t.affected_user_id = ANY(?::text[]::uuid[])",
 		Args: []any{ids, ids}, Cost: 2, Uses: []string{"reporter", "affected_user"},
-	}, nil
+	}, true, nil
 }
 
 func nonNil(s []string) []string {

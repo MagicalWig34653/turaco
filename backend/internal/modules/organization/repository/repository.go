@@ -239,9 +239,92 @@ func (r *Repository) ListTeams(ctx context.Context, f application.NameFilter) (a
 	if err != nil {
 		return application.Result[application.Team]{}, fmt.Errorf("list teams: %w", err)
 	}
-	return collect(rows, p.Limit, func(rows pgx.Rows) (application.Team, string, error) {
+	res, err := collect(rows, p.Limit, func(rows pgx.Rows) (application.Team, string, error) {
 		t, err := scanTeam(rows)
 		return t, t.ID, err
+	})
+	if err != nil {
+		return res, err
+	}
+	if err := r.attachMemberCounts(ctx, res.Items); err != nil {
+		return application.Result[application.Team]{}, err
+	}
+	return res, nil
+}
+
+// attachMemberCounts sets MemberCount of every Team with one grouped query (no per-Team lookup). A Team without
+// current members gets 0.
+func (r *Repository) attachMemberCounts(ctx context.Context, teams []application.Team) error {
+	if len(teams) == 0 {
+		return nil
+	}
+	ids := make([]string, len(teams))
+	for i := range teams {
+		ids[i] = teams[i].ID
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT team_id::text, count(DISTINCT user_id)
+		FROM organization.team_memberships
+		WHERE team_id = ANY($1::uuid[]) AND valid_from <= now() AND (valid_until IS NULL OR valid_until > now())
+		GROUP BY team_id`, ids)
+	if err != nil {
+		return fmt.Errorf("count team members: %w", err)
+	}
+	defer rows.Close()
+	counts := make(map[string]int, len(teams))
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return fmt.Errorf("count team members: scan: %w", err)
+		}
+		counts[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("count team members: %w", err)
+	}
+	for i := range teams {
+		n := counts[teams[i].ID]
+		teams[i].MemberCount = &n
+	}
+	return nil
+}
+
+// ListUserTeams returns the current Teams of a User, one row per Team, paginated by Team id. An unknown User
+// yields ErrNotFound.
+func (r *Repository) ListUserTeams(ctx context.Context, userID string, p application.Page) (application.Result[application.UserTeam], error) {
+	p = p.Normalize()
+	if err := r.exists(ctx, `SELECT 1 FROM organization.users WHERE id = $1`, userID); err != nil {
+		return application.Result[application.UserTeam]{}, err
+	}
+	cur, err := parseCursor(p.Cursor)
+	if err != nil {
+		return application.Result[application.UserTeam]{}, err
+	}
+	user, _ := parseID(userID)
+	args := []any{user}
+	cursorCond := ""
+	if cur.Valid {
+		args = append(args, cur)
+		cursorCond = " AND tm.team_id > $2"
+	}
+	args = append(args, p.Limit+1)
+	rows, err := r.pool.Query(ctx, `SELECT tm.team_id::text, t.name, t.active, tm.role, tm.source, tm.valid_from
+FROM (
+	SELECT DISTINCT ON (team_id) team_id, role, source, valid_from
+	FROM organization.team_memberships
+	WHERE user_id = $1 AND valid_from <= now() AND (valid_until IS NULL OR valid_until > now())
+	ORDER BY team_id, valid_from DESC
+) tm
+JOIN organization.teams t ON t.id = tm.team_id
+WHERE true`+cursorCond+fmt.Sprintf(` ORDER BY tm.team_id LIMIT $%d`, len(args)), args...)
+	if err != nil {
+		return application.Result[application.UserTeam]{}, fmt.Errorf("list user teams: %w", err)
+	}
+	return collect(rows, p.Limit, func(rows pgx.Rows) (application.UserTeam, string, error) {
+		var m application.UserTeam
+		err := rows.Scan(&m.TeamID, &m.TeamName, &m.Active, &m.Role, &m.Source, &m.ValidFrom)
+		return m, m.TeamID, err
 	})
 }
 

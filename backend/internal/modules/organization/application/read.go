@@ -71,6 +71,18 @@ type Team struct {
 	UpdatedAt   time.Time
 	Description string
 	Version     int
+	// MemberCount is the number of current members. It is filled by the list and query reads only (nil elsewhere).
+	MemberCount *int
+}
+
+// UserTeam is one current Team membership of a User (valid_from <= now < valid_until).
+type UserTeam struct {
+	TeamID    string
+	TeamName  string
+	Active    bool
+	Role      *string
+	Source    string
+	ValidFrom time.Time
 }
 
 // TeamMember is a current membership (valid_from <= now < valid_until).
@@ -201,6 +213,8 @@ type Reader interface {
 	ListTeams(ctx context.Context, f NameFilter) (Result[Team], error)
 	GetTeam(ctx context.Context, id string) (Team, error)
 	ListTeamMembers(ctx context.Context, teamID string, p Page) (Result[TeamMember], error)
+	// ListUserTeams pages the current Teams of a User by Team id. An unknown User yields ErrNotFound.
+	ListUserTeams(ctx context.Context, userID string, p Page) (Result[UserTeam], error)
 	// ListTeamLeads returns the current leads of a Team (at most 50).
 	ListTeamLeads(ctx context.Context, teamID string) ([]TeamMember, error)
 	ListLocations(ctx context.Context, f NameFilter) (Result[Location], error)

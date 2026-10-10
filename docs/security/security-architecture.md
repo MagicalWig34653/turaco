@@ -16,6 +16,8 @@ Planned boundaries (not implemented):
 7. Software Management Provider (IntuneGet) and Turaco's separate Intune write credential, which together can run software on every managed device ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
 8. AI Providers receiving data selected by AI Tools; data sent to an external provider leaves the customer's data plane ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)). The read-only backend (F12 A-A) is implemented; see the AI threat addendum below.
 9. Presence sources (Microsoft 365, HR) supplying personal availability data ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)).
+10. Microsoft Entra ID as an OIDC identity provider for every deployment variant ([ADR-0035](../decisions/ADR-0035-entra-oidc-login.md)).
+11. Microsoft Teams: outbound card delivery and an inbound Bot Framework endpoint authenticated by JWT ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)). Threat models for 10 and 11: [F15 design](../product/f15-microsoft-integration-design.md).
 
 ## Authorization
 
@@ -31,7 +33,7 @@ Password login binds to the directory as the synced account's DN over LDAPS/Star
 
 ## Identity
 
-Platform User is separate from External Identity. Initial AD/LDAP and transparent Windows auth can coexist with future OIDC/Entra without re-keying business history.
+Platform User is separate from External Identity. Initial AD/LDAP and transparent Windows auth can coexist with planned Entra sign-in (OIDC, every deployment variant, [ADR-0035](../decisions/ADR-0035-entra-oidc-login.md)) without re-keying business history; Entra identities are keyed by tenant id and object id, never by email or UPN.
 
 Directory synchronization matches accounts only by immutable directory IDs and never links a directory account to an existing User by email (account-takeover prevention). It binds with a read-only service account whose password is read from a deployment secret file, requires LDAPS/StartTLS with certificate verification, requests an explicit attribute allowlist, resolves DN references exactly (ambiguous references stay unresolved), bounds resources a hostile directory could exhaust, degrades malformed entries individually instead of stopping deactivations, and withholds the "not observed" sweep when an unexpectedly large share of users or groups is missing. See [LDAP/AD integration](../integrations/ldap-ad.md).
 

@@ -78,7 +78,7 @@ make frontend
 
 Open <http://localhost:5173>. The frontend proxies `/api` to `turaco-api` on port 8080.
 
-For the full setup, see `docs/development/local-development.md`.
+For the full setup, see `docs/development/local-development.md`. To install Turaco for a trial or a real deployment, see `docs/operations/installation.md`.
 
 ## Claude Code
 

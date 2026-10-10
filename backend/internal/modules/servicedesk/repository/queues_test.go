@@ -1313,3 +1313,108 @@ func TestTicketSearchMatchesPeopleAndDeviceRespectingVisibility(t *testing.T) {
 		}
 	}
 }
+
+// A requester whose ticket moved to a Queue they cannot know gets none of the staff-only fields (assignee,
+// location, patient impact) in the list, the query, the detail or the names; in a visible Queue they stay.
+func TestHiddenQueueWithholdsStaffOnlyFieldsFromTheRequester(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	pub, internal := e.queue(application.QueuePublic), e.queue(application.QueueInternal)
+	e.grant(pub, user(e.u1, "work"))
+	e.grant(internal, user(e.u1, "work"))
+	alice := e.employee(e.alice)
+	tk, err := e.svc.Create(ctx, e.c(e.alice), alice, application.CreateInput{Title: "Printer jams", QueueID: &pub.ID, PatientImpact: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Assign(ctx, e.c(e.global.UserID), e.global, tk.ID, nil, &e.u1, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE servicedesk.tickets SET affected_location_id = uuidv7() WHERE id = $1::uuid`, tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Visible Queue: the requester keeps seeing the assignee and the name.
+	d, err := e.svc.Get(ctx, alice, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Ticket.AssigneeID == nil {
+		t.Fatalf("visible queue must keep the assignee: %+v", d.Ticket)
+	}
+	cur, _ := e.svc.Get(ctx, e.global, tk.ID)
+	if _, err := e.svc.MoveToQueue(ctx, e.c(e.global.UserID), e.global, tk.ID, &cur.Ticket.Version, internal.ID, "misrouted"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := e.svc.Get(ctx, e.global, tk.ID); got.Ticket.AssigneeID == nil || got.Ticket.AffectedLocationID == nil || !got.Ticket.PatientImpact {
+		t.Fatalf("staff view changed: %+v", got.Ticket)
+	}
+	hidden := func(where string, it application.Ticket) {
+		if it.AssigneeID != nil || it.AffectedLocationID != nil || it.PatientImpact {
+			t.Errorf("%s leaks staff-only fields: %+v", where, it)
+		}
+	}
+	d, err = e.svc.Get(ctx, alice, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden("detail", d.Ticket)
+	if _, ok := d.Names[e.u1]; ok {
+		t.Errorf("the assignee name was resolved: %+v", d.Names)
+	}
+	mine, err := e.svc.List(ctx, alice, false, application.Filter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range mine.Items {
+		if it.ID == tk.ID {
+			hidden("list", it)
+		}
+	}
+	page, err := e.svc.Query(ctx, alice, query.Request{Limit: 100}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range page.Items {
+		if it.ID == tk.ID {
+			hidden("query", it)
+		}
+	}
+}
+
+type countingDir struct {
+	dir
+	calls *int
+}
+
+func (d countingDir) SearchUserIDs(context.Context, string, int) ([]string, error) {
+	*d.calls++
+	return nil, nil
+}
+
+// The person lookup runs only for a request that passed the length check and holds a rate-limit token, and takes
+// exactly one token with the query itself.
+func TestPersonSearchIsGuardedBeforeTheLookup(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	calls := 0
+	active := map[string]bool{e.global.UserID: true}
+	mk := func(burst int) *application.Service {
+		eng := query.NewEngine(secret).WithLimiter(query.NewLimiter(0.0001, burst))
+		return application.NewService(repository.New(e.pool), countingDir{dir: dir{active: active}, calls: &calls}, device{}).WithMemberships(e.mem).WithQueryEngine(eng)
+	}
+	run := func(svc *application.Service, search string) error {
+		_, err := svc.QueryScoped(ctx, e.global, query.Request{Limit: 5, Search: search}, application.ScopeAll, nil, "")
+		return err
+	}
+	if err := run(mk(5), strings.Repeat("a", query.MaxSearchLength+1)); err == nil || calls != 0 {
+		t.Errorf("over-long search: err=%v lookups=%d", err, calls)
+	}
+	svc := mk(1)
+	if err := run(svc, "brandt"); err != nil || calls != 1 {
+		t.Fatalf("first request: err=%v lookups=%d (one token must serve lookup and query)", err, calls)
+	}
+	if err := run(svc, "brandt"); err == nil || calls != 1 {
+		t.Errorf("rate-limited request: err=%v lookups=%d", err, calls)
+	}
+}

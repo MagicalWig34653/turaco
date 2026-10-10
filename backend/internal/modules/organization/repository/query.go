@@ -24,12 +24,19 @@ func (r *Repository) QueryUsers(ctx context.Context, plan *query.Plan) (query.Pa
 }
 
 func (r *Repository) QueryTeams(ctx context.Context, plan *query.Plan) (query.Page[application.Team], error) {
-	return query.Run(ctx, r.pool, plan, query.Select{Columns: prefixed("t", teamColumns)},
+	page, err := query.Run(ctx, r.pool, plan, query.Select{Columns: prefixed("t", teamColumns)},
 		func(rows pgx.Rows, extra []any) (application.Team, error) {
 			var t application.Team
 			err := rows.Scan(append([]any{&t.ID, &t.Name, &t.Active, &t.UpdatedAt, &t.Description, &t.Version}, extra...)...)
 			return t, err
 		})
+	if err != nil {
+		return page, err
+	}
+	if err := r.attachMemberCounts(ctx, page.Items); err != nil {
+		return query.Page[application.Team]{}, err
+	}
+	return page, nil
 }
 
 func (r *Repository) QueryLocations(ctx context.Context, plan *query.Plan) (query.Page[application.Location], error) {

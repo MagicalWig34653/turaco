@@ -171,6 +171,7 @@ func TestPeopleRoutesAuthorizationMatrix(t *testing.T) {
 		{"POST", "/api/v1/locations/query", `{}`, "organization.view"},
 		{"POST", "/api/v1/departments/query", `{}`, "organization.view"},
 		{"GET", "/api/v1/departments", ``, "organization.view"},
+		{"GET", "/api/v1/users/" + id + "/teams", ``, "organization.view"},
 	}
 	others := []string{"organization.view", "organization.users.manage", "organization.locations.manage", "organization.departments.manage", "organization.teams.manage", "tasks.manage", "platform.roles.manage"}
 	for _, rt := range routes {
@@ -272,6 +273,7 @@ func TestInvitationLinkIsShownOnceAndNeverForResets(t *testing.T) {
 	h.actor = setup
 	id := h.createUser("Erin")
 	h.actor = setup
+	h.perms["platform.admin"] = struct{}{} // only an administrator is shown an unmailed link
 	code, body, hdr := h.do("POST", "/api/v1/users/"+id+"/send-invitation", ``)
 	link, _ := body["link"].(string)
 	if code != 200 || !strings.HasPrefix(link, "https://turaco.example.test/set-password#token=") || hdr.Get("Cache-Control") != "no-store" || hdr.Get("Referrer-Policy") != "no-referrer" {
@@ -280,6 +282,13 @@ func TestInvitationLinkIsShownOnceAndNeverForResets(t *testing.T) {
 	if strings.Contains(link, "?") || strings.Contains(strings.SplitN(link, "#", 2)[0], "token") {
 		t.Errorf("the token must travel in the fragment only: %s", link)
 	}
+	// Without a mail channel a caller that is no platform administrator gets no link, and no token is issued.
+	other := h.createUser("Frank")
+	delete(h.perms, "platform.admin")
+	if code, body, _ := h.do("POST", "/api/v1/users/"+other+"/send-invitation", ``); code != 409 || errCodeOf(body) != "auth.mail_not_configured" {
+		t.Errorf("invitation by a non-administrator without mail: %d %v", code, body)
+	}
+	h.perms["platform.admin"] = struct{}{}
 	// A reset needs mail and is never returned in the response.
 	if code, body, _ := h.do("POST", "/api/v1/users/"+id+"/reset-password", ``); code != 409 || errCodeOf(body) != "auth.mail_not_configured" {
 		t.Errorf("reset without mail: %d %v", code, body)

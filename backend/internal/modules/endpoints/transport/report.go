@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"encoding/csv"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/csvsafe"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 )
 
@@ -93,24 +93,6 @@ func (h *handler) deploymentReport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// csvCell neutralizes a cell that a spreadsheet would read as a formula: a leading =, +, -, @, tab or carriage return
-// (also behind leading spaces) gets a single quote in front. Control characters other than the tab are replaced.
-func csvCell(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if r < 0x20 && r != '\t' || r == 0x7f {
-			return ' '
-		}
-		return r
-	}, s)
-	if t := strings.TrimLeft(s, " "); t != "" {
-		switch t[0] {
-		case '=', '+', '-', '@', '\t':
-			return "'" + s
-		}
-	}
-	return s
-}
-
 func csvTime(t *time.Time) string {
 	if t == nil {
 		return ""
@@ -132,7 +114,7 @@ type reportExporter func(begin func(application.Deployment), emit func(applicati
 // An error after the response began cannot change the 200 any more: the connection is aborted, so the client sees a
 // failed download and never a complete-looking, silently partial file.
 func (h *handler) streamReportCSV(w http.ResponseWriter, r *http.Request, export reportExporter) {
-	var cw *csv.Writer
+	var cw *csvsafe.Writer
 	begin := func(d application.Deployment) {
 		name := "deployment-" + strings.Map(func(r rune) rune {
 			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
@@ -144,7 +126,7 @@ func (h *handler) streamReportCSV(w http.ResponseWriter, r *http.Request, export
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
-		cw = csv.NewWriter(w)
+		cw = csvsafe.NewWriter(w)
 		_ = cw.Write([]string{"ring_position", "ring", "device_id", "device_name", "state", "state_reason", "error_code", "resolved_at", "assignment_requested_at", "decided_at"})
 	}
 	truncated, err := export(begin, func(x application.ReportRow) error {
@@ -152,8 +134,8 @@ func (h *handler) streamReportCSV(w http.ResponseWriter, r *http.Request, export
 		if x.StateReason != nil {
 			reason = *x.StateReason
 		}
-		return cw.Write([]string{strconv.Itoa(x.RingPosition), csvCell(x.RingName), x.DeviceID, csvCell(x.DeviceName), x.State, csvCell(reason),
-			csvCell(x.ErrorCode), ts(x.ResolvedAt), csvTime(x.AssignmentRequestedAt), csvTime(x.DecidedAt)})
+		return cw.Write([]string{strconv.Itoa(x.RingPosition), x.RingName, x.DeviceID, x.DeviceName, x.State, reason,
+			x.ErrorCode, ts(x.ResolvedAt), csvTime(x.AssignmentRequestedAt), csvTime(x.DecidedAt)})
 	})
 	if cw == nil {
 		// Nothing was written: the Deployment is unknown to the caller, too many exports run, or the store failed.
@@ -161,13 +143,13 @@ func (h *handler) streamReportCSV(w http.ResponseWriter, r *http.Request, export
 		return
 	}
 	if err != nil {
-		cw.Flush()
+		_ = cw.Flush()
 		panic(http.ErrAbortHandler)
 	}
 	if truncated {
 		_ = cw.Write([]string{"truncated", "export cut at " + strconv.Itoa(application.MaxCSVRows) + " rows"})
 	}
-	cw.Flush()
+	_ = cw.Flush()
 }
 
 type rolloutDTO struct {

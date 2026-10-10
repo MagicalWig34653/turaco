@@ -153,6 +153,29 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /users/{id}/teams:
+    get:
+      operationId: listUserTeams
+      summary: List the current teams of a user with the membership role.
+      description: "Requires authentication and the `organization.view` permission (the same disclosure as `GET /teams/{id}/members`). One row per current membership, keyset-paged by team id. Unknown or malformed user id answers 404. Responses are `Cache-Control: no-store`."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserTeamList'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /users/{id}/profile:
     patch:
       operationId: updateUserProfile
@@ -7507,7 +7530,7 @@ paths:
         the caller views) instead of the paged list; run one with GET /views/{id}/results using its id.
       security: [{sessionAuth: []}]
       parameters:
-        - {name: resource, in: query, schema: {type: string, enum: [tickets, devices, tasks]}}
+        - {name: resource, in: query, schema: {type: string, enum: [tickets, devices, tasks, users]}}
         - {name: scope, in: query, schema: {type: string, enum: [all, mine, shared, admin, system], default: all}}
         - {name: archived, in: query, schema: {type: boolean}}
         - {$ref: '#/components/parameters/Cursor'}
@@ -14624,7 +14647,7 @@ components:
       required: [id, resource, name, description, ownerId, definition, visibility, version, access, moduleEnabled, pinned, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
-        resource: {type: string, enum: [tickets, devices, tasks]}
+        resource: {type: string, enum: [tickets, devices, tasks, users]}
         name: {type: string, minLength: 1, maxLength: 80}
         description: {type: string, maxLength: 500}
         ownerId: {type: string}
@@ -14645,7 +14668,7 @@ components:
       required: [resource, name]
       additionalProperties: false
       properties:
-        resource: {type: string, enum: [tickets, devices, tasks]}
+        resource: {type: string, enum: [tickets, devices, tasks, users]}
         name: {type: string, minLength: 1, maxLength: 80, description: Unique per owner and resource, case-insensitive; no control or bidirectional characters.}
         description: {type: string, maxLength: 500}
         definition: {$ref: '#/components/schemas/ViewDefinition'}
@@ -16025,6 +16048,7 @@ components:
         description: {type: string}
         version: {type: integer}
         leads: {type: array, items: {$ref: '#/components/schemas/TeamMember'}, description: "Only on GET /teams/{id}."}
+        memberCount: {type: integer, minimum: 0, description: "Current members. Only on GET /teams and POST /teams/query (one grouped query per page); absent elsewhere."}
         id:
           type: string
           format: uuid
@@ -19462,6 +19486,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Team'
+        nextCursor:
+          type: string
+          description: Opaque cursor for the next page; omitted on the last page.
+    UserTeam:
+      type: object
+      additionalProperties: false
+      required: [teamId, teamName, active, role, source, validFrom]
+      properties:
+        teamId: {type: string, format: uuid}
+        teamName: {type: string}
+        active: {type: boolean, description: Whether the team itself is active.}
+        role: {type: [string, "null"], enum: [lead, member, null]}
+        source: {type: string}
+        validFrom: {type: string, format: date-time}
+    UserTeamList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserTeam'
         nextCursor:
           type: string
           description: Opaque cursor for the next page; omitted on the last page.

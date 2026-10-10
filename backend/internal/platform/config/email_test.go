@@ -102,3 +102,19 @@ func TestSMTPPasswordFileIsASecretSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestEmailBaseURLDefaultsOnlyInDevelopment(t *testing.T) {
+	t.Setenv("EMAIL_BASE_URL", "")
+	if got, err := LoadEmailBaseURL("development"); err != nil || got != "http://localhost:5173" {
+		t.Fatalf("development = %q, %v", got, err)
+	}
+	for _, env := range []string{"production", "local-compose", ""} {
+		if got, err := LoadEmailBaseURL(env); err != nil || got != "" {
+			t.Fatalf("%q = %q, %v; want unset", env, got, err)
+		}
+	}
+	t.Setenv("EMAIL_BASE_URL", "https://turaco.example.org/")
+	if got, _ := LoadEmailBaseURL("development"); got != "https://turaco.example.org" {
+		t.Fatalf("explicit value overridden: %q", got)
+	}
+}

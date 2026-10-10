@@ -121,6 +121,10 @@ export type RouteId =
   | 'directorySync'
   | 'directorySyncRun'
   | 'audit'
+  | 'setupAdmin'
+  | 'healthAdmin'
+  | 'integrationsAdmin'
+  | 'systemAdmin'
   | 'securityAdvisories'
   | 'securityOverview'
   | 'securityAdvisoryNew'
@@ -883,6 +887,34 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/audit',
     titleKey: 'nav.audit',
     requires: ['platform.audit.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'setupAdmin',
+    pattern: '/admin/setup',
+    titleKey: 'setup.title',
+    requires: ['platform.health.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'healthAdmin',
+    pattern: '/admin/health',
+    titleKey: 'health.title',
+    requires: ['platform.health.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'integrationsAdmin',
+    pattern: '/admin/integrations',
+    titleKey: 'integrations.title',
+    requires: ['platform.health.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'systemAdmin',
+    pattern: '/admin/system',
+    titleKey: 'system.title',
+    requires: ['platform.health.view'],
     nav: 'admin',
   },
 ];

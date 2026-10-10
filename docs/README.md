@@ -29,6 +29,7 @@ Target designs with implementation notes; [current status](product/current-statu
 - [F12 Turaco AI](product/f12-turaco-ai-design.md)
 - [F13 Workbench Views](product/f13-workbench-views-design.md)
 - [F14 Administration](product/f14-administration-design.md)
+- [F15 Microsoft integration (Entra sign-in, Teams; planned)](product/f15-microsoft-integration-design.md)
 
 ## Architecture
 - [Constitution](architecture/constitution.md)
@@ -73,6 +74,7 @@ Target designs with implementation notes; [current status](product/current-statu
 - [Remote Access threat models](security/remote-access-threat-models.md)
 
 ## Operations
+- [Installation](operations/installation.md)
 - [Getting started as an administrator](operations/administrator-getting-started.md)
 - [Deployment](operations/deployment.md)
 - [Backup and Restore](operations/backup-restore.md)
