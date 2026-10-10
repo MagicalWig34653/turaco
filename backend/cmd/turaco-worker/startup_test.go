@@ -42,6 +42,7 @@ var goldenJobTypes = []string{
 	"servicedesk.external.push",
 	"services.vm_link_backfill",
 	"tasks.recurrence.generate",
+	"teams.channel_post",
 	"views.purge_archived",
 }
 

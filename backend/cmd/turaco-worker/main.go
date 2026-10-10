@@ -19,6 +19,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/softwaremgmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/teams"
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalsrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/repository"
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
@@ -95,7 +96,18 @@ func main() {
 	}
 	lockTimeout := runnerLockTimeout(ldapCfg.Enabled(), ldapCfg.SyncTimeout)
 	// Module switches (ADR-0032): jobs of a switched-off module are skipped; retention jobs still run.
-	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	teamsCfg, err := config.LoadTeams()
+	if err != nil {
+		logger.Error("load Teams configuration", "error", err)
+		os.Exit(1)
+	}
+	teamsSender, err := wiring.TeamsSender(teamsCfg)
+	if err != nil {
+		logger.Error("set up Teams channel", "error", err)
+		os.Exit(1)
+	}
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders,
+		TeamsConfigured: teamsCfg.Configured()})
 	opts := jobs.RunnerOptions{LockTimeout: lockTimeout, Gate: moduleSvc.JobGate}
 	runner := jobs.NewRunner(pool, opts, logger)
 
@@ -149,7 +161,7 @@ func main() {
 		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
 		Presence: presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter},
 		Modules:  moduleSvc, ConsumerGate: consumerGate, AuditRetentionDays: cfg.AuditRetentionDays,
-		Attachments: attachmentSvc,
+		Attachments: attachmentSvc, Teams: teamsSender,
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -160,7 +172,8 @@ func main() {
 		logger.Error("enqueue service link backfill", "error", err)
 		os.Exit(1)
 	}
-	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled()); err != nil {
+	channelOptions := wiring.TeamsChannelOptions(teamsSender, moduleSvc)
+	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled(), &channelOptions); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
 	}
@@ -220,6 +233,9 @@ type jobDeps struct {
 	AuditRetentionDays int
 	// Attachments (optional, nil without STORAGE_DRIVER) runs the virus scan and object purge jobs (ADR-0037).
 	Attachments *attachments.Service
+	// Teams is the Teams channel adapter (teams.NotConfigured without TEAMS_CHANNEL_DESTINATIONS_FILE); nil is the
+	// same as not configured. The send job is registered either way and cancels posts while the module is off.
+	Teams teams.Sender
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -254,6 +270,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			d.Logger.Info("email notifications enabled", "host", d.SMTP.Host, "port", d.SMTP.Port, "security", d.SMTP.Security)
 			return nil
 		}},
+		{"teams channel posts", func() error { return registerTeamsChannel(runner, pool, d) }},
 		{"recurring tasks", func() error { return registerRecurrence(runner, pool) }},
 		{"service link backfill", func() error { return registerServicesBackfill(runner, pool) }},
 		{"change reminders", func() error {
@@ -336,17 +353,31 @@ func registerDirectorySync(runner *jobs.Runner, pool *pgxpool.Pool, cfg config.L
 	})
 }
 
-func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+func registerConsumers(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, channels *notifications.ChannelOptions) error {
 	orgReader := orgrepository.New(pool)
-	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)))
+	return registerConsumersWith(d, pool, categories, email, roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(orgReader)), channels)
+}
+
+// registerTeamsChannel registers the job that sends Teams channel posts (ADR-0036 T-A).
+func registerTeamsChannel(runner *jobs.Runner, pool *pgxpool.Pool, d jobDeps) error {
+	sender := d.Teams
+	if sender == nil {
+		sender = teams.NotConfigured{}
+	}
+	h := notifications.NewChannelSender(pool, wiring.TeamsChannelPoster{Sender: sender}, d.Categories, d.SMTP.BaseURL, d.SMTP.DefaultLocale)
+	return runner.Register(notifications.ChannelPostJobType, notifications.ChannelPostJobTimeout, h.Handle)
 }
 
 // registerConsumersWith registers the outbox consumers; perms decides which
-// Users hold task permissions and may therefore be notified about tasks.
-func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver) error {
+// Users hold task permissions and may therefore be notified about tasks. channels (optional) enables the Teams
+// channel posts of Major Incidents and scheduled Changes.
+func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories *notifications.Registry, email bool, perms tasksapp.PermissionResolver, channels *notifications.ChannelOptions) error {
 	notifier := notifications.NewService(pool, categories)
 	if email {
 		notifier = notifier.WithEmail()
+	}
+	if channels != nil {
+		notifier = notifier.WithChannelPosts(*channels)
 	}
 	taskConsumers := tasksapp.NewConsumers(
 		tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier, perms)
@@ -363,11 +394,15 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	sdStore := servicedeskrepository.New(pool)
 	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier).WithReferences(wiring.ServiceDesk(pool).ReferenceFor)
 	majorConsumers := servicedeskapp.NewMajorConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
+	if channels != nil {
+		majorConsumers = majorConsumers.WithChannelPosts(notifier)
+	}
 	for _, r := range []struct {
 		event, name string
 		fn          events.Consumer
 	}{
 		{"MajorIncidentUpdated", "servicedesk.notify-major", majorConsumers.OnMajorIncidentUpdated},
+		{"MajorIncidentDeclared", "servicedesk.post-major-declared", majorConsumers.OnMajorIncidentDeclared},
 		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
 		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
@@ -400,6 +435,11 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	}
 	for _, event := range []string{"ChangeScheduled", changesapp.FanOutEventType} {
 		if err := d.Register(event, "changes.notify-scheduled", changeNotes.OnChangeScheduled); err != nil {
+			return err
+		}
+	}
+	if channels != nil {
+		if err := d.Register("ChangeScheduled", "changes.post-scheduled", changeNotes.WithChannelPosts(notifier).PostChangeScheduled); err != nil {
 			return err
 		}
 	}

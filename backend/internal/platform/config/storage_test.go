@@ -7,7 +7,7 @@ import (
 
 func setStorageEnv(t *testing.T, kv map[string]string) {
 	t.Helper()
-	for _, k := range []string{"STORAGE_DRIVER", "STORAGE_PATH", "STORAGE_MASTER_KEY_FILE", "CLAMAV_ADDRESS", "ATTACHMENT_MAX_BYTES", "ATTACHMENT_ALLOWED_TYPES"} {
+	for _, k := range []string{"STORAGE_DRIVER", "STORAGE_PATH", "STORAGE_MASTER_KEY_FILE", "CLAMAV_ADDRESS", "ATTACHMENT_MAX_BYTES", "ATTACHMENT_ALLOWED_TYPES", "ATTACHMENT_UPLOADS_PER_HOUR", "ATTACHMENT_USER_QUOTA_BYTES", "ATTACHMENT_INSTALLATION_QUOTA_BYTES"} {
 		t.Setenv(k, "")
 	}
 	for k, v := range kv {
@@ -34,6 +34,9 @@ func TestLoadStorage(t *testing.T) {
 	}{
 		{"disabled ignores the rest", map[string]string{"STORAGE_PATH": "relative", "ATTACHMENT_MAX_BYTES": "x"}, ""},
 		{"filesystem", base, ""},
+		{"bad rate", with(map[string]string{"ATTACHMENT_UPLOADS_PER_HOUR": "0"}), "ATTACHMENT_UPLOADS_PER_HOUR"},
+		{"user quota below file cap", with(map[string]string{"ATTACHMENT_USER_QUOTA_BYTES": "2048"}), "ATTACHMENT_USER_QUOTA_BYTES"},
+		{"installation quota below user quota", with(map[string]string{"ATTACHMENT_INSTALLATION_QUOTA_BYTES": "1048576"}), "ATTACHMENT_INSTALLATION_QUOTA_BYTES"},
 		{"s3", with(map[string]string{"STORAGE_DRIVER": "s3", "STORAGE_PATH": ""}), ""},
 		{"unknown driver", with(map[string]string{"STORAGE_DRIVER": "ftp"}), "STORAGE_DRIVER"},
 		{"relative path", with(map[string]string{"STORAGE_PATH": "data"}), "STORAGE_PATH"},

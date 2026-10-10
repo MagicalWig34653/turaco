@@ -86,6 +86,13 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "attachments.invalid_request", inv.Message)
 	case errors.As(err, &mbe), errors.Is(err, attachments.ErrTooLarge):
 		httpx.WriteError(w, http.StatusRequestEntityTooLarge, "attachments.too_large", "The file is larger than the allowed size.")
+	case errors.Is(err, attachments.ErrRateLimited):
+		w.Header().Set("Retry-After", "600")
+		httpx.WriteError(w, http.StatusTooManyRequests, "attachments.rate_limited", "Too many uploads. Try again later.")
+	case errors.Is(err, attachments.ErrUserQuota):
+		httpx.WriteError(w, http.StatusRequestEntityTooLarge, "attachments.user_quota", "Your attachment storage quota is used up. Delete attachments to free space.")
+	case errors.Is(err, attachments.ErrInstallationQuota):
+		httpx.WriteError(w, http.StatusInsufficientStorage, "attachments.installation_quota", "The attachment storage of this installation is full.")
 	case errors.Is(err, attachments.ErrUnsupportedType):
 		httpx.WriteError(w, http.StatusUnsupportedMediaType, "attachments.unsupported_type", "This file type is not allowed or the content does not match the type.")
 	case errors.Is(err, attachments.ErrLimit):

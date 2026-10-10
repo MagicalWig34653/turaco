@@ -218,7 +218,7 @@ Transient server-held state (F12 A-A, `platform/ai`, table `ai.sessions`): creat
 `active ↔ paused`, plus deletion. `pause` clears the next run; `resume` schedules the first run after now (runs missed while paused are not generated). Changing the rule of an active definition reschedules it from now. The generation job creates at most one Task per definition per pass, for the oldest due run, and moves the schedule to the first run after now.
 
 ## Notification / Agent command
-NotificationDelivery: `pending → sending → delivered | failed | cancelled`.
+NotificationDelivery: `pending → sending → delivered | failed | cancelled`. Teams channel posts use the same states; they are cancelled when the route was removed or the post is older than six hours.
 
 AgentCommand: `created → queued → delivered → acknowledged → running → successful | failed | expired | cancelled`. Expired commands never execute; duplicate delivery never causes duplicate effect.
 

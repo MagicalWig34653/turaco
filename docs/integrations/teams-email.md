@@ -5,7 +5,7 @@ Domain modules never send SMTP/Teams messages directly. They emit events/notific
 ## Channels
 - In-app (implemented, F2)
 - HTML email (implemented, F2; below)
-- Teams (planned, not implemented: channel posts through Workflows webhooks and personal cards through a Teams app and bot, [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md), [F15 design](../product/f15-microsoft-integration-design.md#microsoft-teams))
+- Teams channel posts (implemented, F15 slice T-A; [below](#teams-channel-posts-t-a)). Personal cards through a Teams app and bot are planned, not implemented ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md), [F15 design](../product/f15-microsoft-integration-design.md#microsoft-teams))
 - Webhook (not implemented)
 
 Templates are tenant-brandable and localized. Delivery state/retries are separate from Ticket/Request state.
@@ -37,3 +37,19 @@ Guarantees and limits:
 - **Retention.** Notifications keep the title they were created with; they are not pruned yet, so a User who later loses access to a task still sees the old title in their list (the link then gives 404). A retention job is a later obligation.
 - **Preferences.** Users opt out per category (`/api/v1/notifications/preferences`); email is on by default.
 - Not implemented: bounce handling, unsubscribe headers, digest emails, per-recipient language, tenant branding, delivery status UI or retention of old deliveries.
+
+## Teams channel posts (T-A)
+
+Optional module `teams` (default off). It posts announcements to Microsoft Teams channels through Power Automate Workflows webhooks ("Post to a channel when a webhook request is received"). Teams is a channel, never the record: the post names the category, the reference number and a link back to Turaco.
+
+Setup:
+
+1. In Teams create a workflow per channel with the webhook trigger and copy its URL. The URL is a bearer secret.
+2. Write a secret file `{"infrastructure": "https://prod-12.westeurope.logic.azure.com:443/workflows/..."}` (key to URL; keys `[a-z0-9_-]`, hosts `*.logic.azure.com` or `*.api.powerplatform.com`) and set `TEAMS_CHANNEL_DESTINATIONS_FILE`, read-only in `turaco-worker` and `turaco-api` (the API reads only the keys). Outbound HTTPS is needed (`MICROSOFT_HTTP_PROXY`, `MICROSOFT_CA_FILE` apply).
+3. Switch on the module Microsoft Teams (Administration > Modules; blocked until the file is set).
+4. Add routes under Administration > Teams channels (`integrations.teams.manage`).
+
+Flow: a Major Incident declared or updated (not an exercise) or a Change scheduled is an outbox event. A consumer of the producing module calls `PostToChannels` in the dispatcher's transaction, which creates one `NotificationDelivery` (`channel=teams_channel`, unique per destination and event id) and one `teams.channel_post` job per route, only while the module is on. The job claims the delivery, re-checks that the route still exists, renders the card (English or German by `EMAIL_DEFAULT_LOCALE`) and posts it. Statuses are the email ones plus `cancelled` reasons `route_removed` and `stale` (older than six hours); `last_error` holds a machine code (`rate_limited`, `http_503`, `http_404`, `network`), never provider text or a URL.
+
+Content: category wording, reference number, link. Never titles, descriptions, names of people, devices or locations, because channel members need no Turaco access. The link needs a Turaco sign-in. Delivery is at-least-once. Health: check `teams` on `/admin/health` and `/admin/integrations` (module state, adapter mode, destinations, routes, failed and waiting deliveries). The adapter is verified against a fake HTTP transport only.
+

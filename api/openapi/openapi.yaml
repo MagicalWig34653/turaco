@@ -9023,6 +9023,77 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /integrations/teams/channel-routes:
+    get:
+      operationId: listTeamsChannelRoutes
+      summary: Teams channel routes and what can be routed.
+      description: "Requires `integrations.teams.manage`. Lists the routes of broadcastable notification categories to Teams channel destinations (ADR-0036, slice T-A), the adapter `mode` (real, fake, not_configured), the configured destination keys (never webhook URLs) and the broadcastable categories. Reachable while the optional module `teams` is off so routes can be prepared; posts are only created while it is on. Responses are no-store."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The routes and the options.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamsChannelRoutes'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTeamsChannelRoute
+      summary: Route a broadcastable category to a Teams channel destination.
+      description: "Requires `integrations.teams.manage`. The category must be broadcastable (marked by its owning module: `majorincident.update` for Major Incident declared and updated, `change.scheduled`) and the destination key must exist in the deployment's destinations file. Channel posts are always reference-only: category wording, the reference number and a link, never titles, descriptions or names. Audited as notifications.teams.route_created."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [category, destinationKey]
+              properties:
+                category: {type: string}
+                destinationKey: {type: string}
+      responses:
+        '201':
+          description: The route.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TeamsChannelRoute'}
+        '400':
+          description: notifications.invalid_request, notifications.category_not_broadcastable or notifications.unknown_destination.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: notifications.route_exists.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /integrations/teams/channel-routes/{id}:
+    delete:
+      operationId: deleteTeamsChannelRoute
+      summary: Remove a Teams channel route.
+      description: "Requires `integrations.teams.manage`. Posts that were already created for the route are cancelled (`route_removed`) when they would be sent. Audited as notifications.teams.route_deleted."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Removed.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: notifications.route_not_found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /infrastructure/tree:
     get:
       operationId: getInfrastructureTree
@@ -20827,6 +20898,31 @@ components:
         reason: {type: string}
         version: {type: integer}
         updatedAt: {type: string, format: date-time}
+    TeamsChannelRoute:
+      type: object
+      required: [id, category, destinationKey, createdBy, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        category: {type: string}
+        destinationKey: {type: string}
+        createdBy: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+    TeamsChannelRoutes:
+      type: object
+      required: [items, mode, destinations, categories]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TeamsChannelRoute'}
+        mode: {type: string, enum: [real, fake, not_configured]}
+        destinations:
+          type: array
+          description: Configured destination keys; webhook URLs are never returned.
+          items: {type: string}
+        categories:
+          type: array
+          description: Broadcastable notification categories.
+          items: {type: string}
     AdminSetting:
       type: object
       required: [key, type, default, description, module, notYetActive, value, stored, version]

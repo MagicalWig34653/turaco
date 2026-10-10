@@ -534,3 +534,23 @@ func TestGraphIsNotCalledWithoutTheHybridConfiguration(t *testing.T) {
 		t.Fatalf("anchor %q err %v graph calls %d", id.SourceAnchor, err, f.meHits.Load())
 	}
 }
+
+// Membership is affirmative: the optional acct claim must be 0. A token without any guest signal is indeterminate.
+func TestMemberConfirmedNeedsTheAcctClaim(t *testing.T) {
+	f := newIdP(t)
+	p, now := newProvider(t, f, config.EntraTenantSingle, tenantA)
+	for name, tc := range map[string]struct {
+		mutate func(map[string]any)
+		member bool
+	}{
+		"acct zero":             {func(c map[string]any) { c["acct"] = 0 }, true},
+		"no guest signal":       {nil, false},
+		"acct zero foreign idp": {func(c map[string]any) { c["acct"] = 0; c["idp"] = "https://sts.windows.net/" + tenantB + "/" }, false},
+	} {
+		f.serve(f.mint(t, *now, tc.mutate))
+		id, err := exchange(p)
+		if err != nil || id.MemberConfirmed != tc.member {
+			t.Errorf("%s: %+v %v", name, id, err)
+		}
+	}
+}

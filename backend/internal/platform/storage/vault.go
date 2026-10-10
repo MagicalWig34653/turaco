@@ -60,9 +60,12 @@ func NewVault(b Backend, masterKey []byte) (*Vault, error) {
 	return v, nil
 }
 
-// LoadMasterKey reads a master key file: 64 hexadecimal characters (surrounding whitespace is ignored). Raw 32
+// LoadMasterKey reads a master key file (refused on unix when group or others can access it, so mode 0600 or 0400): 64 hexadecimal characters (surrounding whitespace is ignored). Raw 32
 // byte files are accepted too.
 func LoadMasterKey(path string) ([]byte, error) {
+	if err := checkKeyFileMode(path); err != nil {
+		return nil, err
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read master key file: %w", err)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,8 +26,10 @@ import (
 const (
 	ActionUploaded   = "platform.attachment.uploaded"
 	ActionDownloaded = "platform.attachment.downloaded"
-	ActionDeleted    = "platform.attachment.deleted"
-	ActionScanned    = "platform.attachment.scanned"
+	// ActionDownloadFailed records a download whose stored object could not be opened.
+	ActionDownloadFailed = "platform.attachment.download_failed"
+	ActionDeleted        = "platform.attachment.deleted"
+	ActionScanned        = "platform.attachment.scanned"
 )
 
 // Job types handled by the worker (see scan.go).
@@ -44,11 +47,14 @@ type Service struct {
 	policy  Policy
 	owners  map[string]Owner
 	logger  *slog.Logger
+
+	rateMu  sync.Mutex
+	started map[string][]time.Time // upload starts per user within the last hour (per process)
 }
 
 // New builds the service. The scanner is required: attachments are only released after a scan.
 func New(pool *pgxpool.Pool, objects Objects, scanner Scanner, policy Policy, logger *slog.Logger) *Service {
-	return &Service{pool: pool, objects: objects, scanner: scanner, policy: policy, owners: map[string]Owner{}, logger: logger}
+	return &Service{pool: pool, objects: objects, scanner: scanner, policy: policy, owners: map[string]Owner{}, logger: logger, started: map[string][]time.Time{}}
 }
 
 // RegisterOwner registers the authorization source of an owner type.
@@ -80,6 +86,57 @@ func (s *Service) access(ctx context.Context, p authorization.Principal, ownerTy
 		return Access{}, ErrNotFound
 	}
 	return a, err
+}
+
+// allowStart records an upload start for the user and reports whether the per-hour limit still allows it.
+func (s *Service) allowStart(userID string) bool {
+	if s.policy.UploadsPerHour <= 0 {
+		return true
+	}
+	now := time.Now()
+	s.rateMu.Lock()
+	defer s.rateMu.Unlock()
+	kept := s.started[userID][:0]
+	for _, t := range s.started[userID] {
+		if now.Sub(t) < time.Hour {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= s.policy.UploadsPerHour {
+		s.started[userID] = kept
+		return false
+	}
+	s.started[userID] = append(kept, now)
+	return true
+}
+
+// quotaUsed returns the live bytes of the user and of the installation.
+func quotaUsed(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, userID string) (user, total int64, err error) {
+	err = q.QueryRow(ctx, `SELECT COALESCE(sum(size_bytes) FILTER (WHERE uploaded_by = $1::uuid), 0)::bigint, COALESCE(sum(size_bytes), 0)::bigint
+		FROM platform.attachments WHERE deleted_at IS NULL`, userID).Scan(&user, &total)
+	return user, total, err
+}
+
+// checkQuota refuses an upload when the quotas are exhausted by the bytes already stored plus add.
+func (s *Service) checkQuota(ctx context.Context, q interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}, userID string, add int64) error {
+	if s.policy.UserQuotaBytes <= 0 && s.policy.InstallationQuotaBytes <= 0 {
+		return nil
+	}
+	user, total, err := quotaUsed(ctx, q, userID)
+	if err != nil {
+		return fmt.Errorf("attachment quota: %w", err)
+	}
+	if s.policy.UserQuotaBytes > 0 && user+add > s.policy.UserQuotaBytes {
+		return ErrUserQuota
+	}
+	if s.policy.InstallationQuotaBytes > 0 && total+add > s.policy.InstallationQuotaBytes {
+		return ErrInstallationQuota
+	}
+	return nil
 }
 
 // UploadInput is one upload. Content is read once, streaming.
@@ -123,6 +180,13 @@ func (s *Service) Upload(ctx context.Context, p authorization.Principal, correla
 	default:
 		return Attachment{}, &InvalidError{Message: "audience must be all or privileged"}
 	}
+	if !s.allowStart(p.UserID) {
+		return Attachment{}, ErrRateLimited
+	}
+	// Quotas are checked before the stream is accepted (at least one byte must fit) and again at commit.
+	if err := s.checkQuota(ctx, s.pool, p.UserID, 1); err != nil {
+		return Attachment{}, err
+	}
 	var n int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM platform.attachments WHERE owner_type = $1 AND owner_id = $2::uuid AND deleted_at IS NULL`, in.OwnerType, in.OwnerID).Scan(&n); err != nil {
 		return Attachment{}, fmt.Errorf("count attachments: %w", err)
@@ -161,6 +225,21 @@ func (s *Service) Upload(ctx context.Context, p authorization.Principal, correla
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('platform.attachments:' || $1::text, 0))`, in.OwnerID); err != nil {
 			return err
 		}
+		// Rights and lifecycle are revalidated right before the commit: a slow upload must not outlive revoked
+		// rights or a closed owner. The owner module answers from its own connection, after the lock.
+		fresh, err := s.access(ctx, p, in.OwnerType, in.OwnerID)
+		if err != nil {
+			return err
+		}
+		if !fresh.Attach || (in.Audience == AudiencePrivileged && !fresh.Privileged) {
+			return ErrForbidden
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('platform.attachments.quota', 0))`); err != nil {
+			return err
+		}
+		if err := s.checkQuota(ctx, tx, p.UserID, size); err != nil {
+			return err
+		}
 		var live int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM platform.attachments WHERE owner_type = $1 AND owner_id = $2::uuid AND deleted_at IS NULL`, in.OwnerType, in.OwnerID).Scan(&live); err != nil {
 			return err
@@ -178,7 +257,7 @@ func (s *Service) Upload(ctx context.Context, p authorization.Principal, correla
 			Metadata: map[string]any{"ownerType": out.OwnerType, "ownerId": out.OwnerID, "sizeBytes": out.SizeBytes, "contentType": out.ContentType, "audience": out.Audience}}); err != nil {
 			return err
 		}
-		_, _, err := jobs.Enqueue(ctx, tx, jobs.EnqueueRequest{Type: ScanJobType, DedupeKey: scanNowKey, MaxAttempts: 5})
+		_, _, err = jobs.Enqueue(ctx, tx, jobs.EnqueueRequest{Type: ScanJobType, DedupeKey: scanNowKey, MaxAttempts: 5})
 		return err
 	})
 	if err != nil {
@@ -250,8 +329,9 @@ func (s *Service) Get(ctx context.Context, p authorization.Principal, id string)
 	return a, err
 }
 
-// Download returns the decrypted content of a clean attachment. The download is audited before any byte is
-// returned. Pending, infected and failed attachments are NotAvailableError.
+// Download returns the decrypted content of a clean attachment. The object is opened first; the download is
+// audited as ActionDownloaded only after that succeeded and before any byte is returned, a failed open is audited
+// as ActionDownloadFailed. Pending, infected and failed attachments are NotAvailableError.
 func (s *Service) Download(ctx context.Context, p authorization.Principal, correlationID, id string) (Attachment, io.ReadCloser, error) {
 	a, _, err := s.load(ctx, s.pool, p, id, false)
 	if err != nil {
@@ -264,15 +344,22 @@ func (s *Service) Download(ctx context.Context, p authorization.Principal, corre
 	if err := s.pool.QueryRow(ctx, `SELECT object_id FROM platform.attachments WHERE id = $1::uuid`, id).Scan(&objectID); err != nil {
 		return Attachment{}, nil, err
 	}
-	if err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		return audit.Record(ctx, tx, audit.Change{Action: ActionDownloaded, TargetType: "attachment", TargetID: a.ID, Actor: audit.UserActor(p.UserID), CorrelationID: correlationID,
-			Metadata: map[string]any{"ownerType": a.OwnerType, "ownerId": a.OwnerID, "sizeBytes": a.SizeBytes}})
-	}); err != nil {
-		return Attachment{}, nil, err
-	}
+	meta := map[string]any{"ownerType": a.OwnerType, "ownerId": a.OwnerID, "sizeBytes": a.SizeBytes}
 	rc, err := s.objects.Open(ctx, objectID)
 	if err != nil {
+		failMeta := map[string]any{"ownerType": a.OwnerType, "ownerId": a.OwnerID, "sizeBytes": a.SizeBytes, "outcome": "failure"}
+		if aerr := pgx.BeginFunc(context.WithoutCancel(ctx), s.pool, func(tx pgx.Tx) error {
+			return audit.Record(ctx, tx, audit.Change{Action: ActionDownloadFailed, TargetType: "attachment", TargetID: a.ID, Actor: audit.UserActor(p.UserID), CorrelationID: correlationID, Metadata: failMeta})
+		}); aerr != nil {
+			s.logger.Warn("audit failed attachment download", "attachmentId", a.ID, "error", aerr)
+		}
 		return Attachment{}, nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	if err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return audit.Record(ctx, tx, audit.Change{Action: ActionDownloaded, TargetType: "attachment", TargetID: a.ID, Actor: audit.UserActor(p.UserID), CorrelationID: correlationID, Metadata: meta})
+	}); err != nil {
+		_ = rc.Close()
+		return Attachment{}, nil, err
 	}
 	return a, rc, nil
 }

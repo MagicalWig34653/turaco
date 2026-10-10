@@ -127,6 +127,7 @@ export type RouteId =
   | 'integrationsAdmin'
   | 'systemAdmin'
   | 'settingsAdmin'
+  | 'teamsChannelAdmin'
   | 'securityAdvisories'
   | 'securityOverview'
   | 'securityAdvisoryNew'
@@ -930,6 +931,13 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/settings',
     titleKey: 'settings.title',
     requires: ['platform.health.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'teamsChannelAdmin',
+    pattern: '/admin/teams-channels',
+    titleKey: 'teamsChannel.title',
+    requires: ['integrations.teams.manage'],
     nav: 'admin',
   },
 ];

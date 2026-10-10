@@ -232,6 +232,18 @@ func (r *Repository) MajorTitle(ctx context.Context, tx pgx.Tx, id string) (stri
 	return title, nil
 }
 
+func (r *Repository) MajorReference(ctx context.Context, tx pgx.Tx, id string) (string, error) {
+	var reference string
+	err := tx.QueryRow(ctx, `SELECT reference FROM servicedesk.major_incidents WHERE id = $1::uuid`, id).Scan(&reference)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", application.ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("major incident reference: %w", err)
+	}
+	return reference, nil
+}
+
 func (r *Repository) UnlinkTicketTx(ctx context.Context, tx pgx.Tx, majorID, ticketID string) (bool, error) {
 	if !validUUID(ticketID) {
 		return false, application.ErrNotFound

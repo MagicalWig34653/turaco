@@ -42,6 +42,12 @@ var (
 	ErrUnsupportedType = errors.New("attachments: unsupported content type")
 	// ErrLimit means the owner holds the maximum number of attachments.
 	ErrLimit = errors.New("attachments: attachment limit reached")
+	// ErrRateLimited means the user started too many uploads within the last hour.
+	ErrRateLimited = errors.New("attachments: upload rate limit reached")
+	// ErrUserQuota means the user's attachment quota is exhausted.
+	ErrUserQuota = errors.New("attachments: user storage quota exceeded")
+	// ErrInstallationQuota means the installation's attachment quota is exhausted.
+	ErrInstallationQuota = errors.New("attachments: installation storage quota exceeded")
 	// ErrNotAvailable means the content is not downloadable (see NotAvailableError for the scan status).
 	ErrNotAvailable = errors.New("attachments: content not available")
 	// ErrUnavailable means the content could not be read from storage.

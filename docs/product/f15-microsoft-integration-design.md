@@ -171,7 +171,7 @@ SCIM provisioning from Entra is deferred: it needs an inbound endpoint reachable
 
 ## Microsoft Teams
 
-Planned, not implemented ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)). Teams is a delivery and interaction channel; Turaco records stay authoritative.
+Slice T-A (channel posts) is implemented, see the [implementation record](#slice-t-a-2026-10-10); T-B to T-E are planned ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)). Teams is a delivery and interaction channel; Turaco records stay authoritative.
 
 ### Phases
 
@@ -395,3 +395,17 @@ The fifteen open questions are answered. They bind the implementation; the numbe
 13. Which categories may be routed to channels (proposed: Major Incident declared/updated, change scheduled)?
 14. Should Teams links be attachable to Turaco Teams for the daily and weekly meetings, or only to Major Incidents?
 15. Who publishes the Teams app package: the customer's Teams administrator from a Turaco-provided package (proposed) or a store listing?
+
+### Slice T-A (2026-10-10)
+
+Built: `integrations/teams` (the `Sender` port with `Mode()`, `DestinationKeys()` and `PostToChannel`; the `Workflows` adapter over the shared `integrations/microsoft` client with an exact-host allow-list derived from the destinations file; `Fake` and `NotConfigured` adapters; a contract test suite that runs all three), migration `000080` (`platform.notification_channel_routes`; `notification_deliveries` gains nullable `notification_id`, `destination_key`, `dedupe_key`, `payload` and the channel `teams_channel`, unique per channel, destination and dedupe key), `platform/notifications` (`Category.Broadcast` marks a category broadcastable and carries the English and German reference-only wording; `Service.PostToChannels` creates one delivery and one job per route inside the producer's outbox transaction; `ChannelSender` is the job handler `teams.channel_post`; route management with audit), the producers' consumers (`servicedesk.post-major-declared`, `servicedesk.notify-major` for updates, `changes.post-scheduled`), the optional module `teams` (route prefix `integrations`, administration routes open while it is off), the health check `teams`, the screen `/admin/teams-channels` and the permission `integrations.teams.manage`.
+
+Decisions taken in the slice:
+
+- Broadcastable categories are `majorincident.update` (kinds declared and updated) and `change.scheduled` (kind scheduled). Major Incident exercises are never posted. The continuation events of the notification fan-out never post, so one declaration or update is one post per destination; the outbox event id is the dedupe key.
+- A post carries the category wording, the reference number (validated to a title-free pattern) and a link built from `EMAIL_BASE_URL`; the card type has no field for a title, description or name. Content tests assert this at the Card, the delivery payload and the worker flow.
+- Webhook URLs come only from `TEAMS_CHANNEL_DESTINATIONS_FILE` (JSON object of destination key to URL; hosts `*.logic.azure.com` and `*.api.powerplatform.com`, https, port 443). Both processes read it: `turaco-worker` to post and `turaco-api` only for the key list. The API, UI, logs, audit and stored errors carry keys and short machine codes, never URLs or response bodies.
+- Module off: no delivery is created and the send job stays pending (durable job gate); a post that is still unsent after six hours is cancelled as `stale`, so enabling the module later does not announce old incidents. A deleted route cancels its waiting posts (`route_removed`).
+- 429 and 5xx are transient (the job is retried no earlier than `Retry-After`, at most one hour, with the normal back-off; every attempt counts, at most eight); other 4xx and redirects are permanent. The runner gained `jobs.RetryAfter` for this.
+- Not built in T-A: a per-destination token bucket (a Major Incident produces few posts), test send, per-user Teams preferences, `with_titles`, the personal channel and the bot (T-B onward). The Workflows request format and host names are from documentation and must be verified in a lab tenant before production use.
+

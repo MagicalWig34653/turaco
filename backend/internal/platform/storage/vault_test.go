@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -194,5 +195,32 @@ func TestLoadMasterKey(t *testing.T) {
 	}
 	if _, err := NewVault(newMem(), []byte("short")); err == nil {
 		t.Error("short key accepted")
+	}
+}
+
+func TestLoadMasterKeyRefusesGroupOrOtherAccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits")
+	}
+	p := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(p, []byte(strings.Repeat("ab", 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadMasterKey(p); err != nil {
+		t.Fatalf("0600: %v", err)
+	}
+	if err := os.Chmod(p, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadMasterKey(p); err != nil {
+		t.Fatalf("0400: %v", err)
+	}
+	for _, mode := range []os.FileMode{0o640, 0o604, 0o644, 0o660, 0o777} {
+		if err := os.Chmod(p, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadMasterKey(p); err == nil {
+			t.Fatalf("mode %04o accepted", mode)
+		}
 	}
 }

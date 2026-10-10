@@ -101,7 +101,7 @@ func (w *world) dispatchWith(email bool, perms grants) {
 	d := events.NewDispatcher(w.pool, events.DispatcherOptions{
 		PollInterval: 10 * time.Millisecond, MaxAttempts: 2, EventTypes: allTestEventTypes,
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := registerConsumersWith(d, w.pool, testCategories(w.t), email, perms); err != nil {
+	if err := registerConsumersWith(d, w.pool, testCategories(w.t), email, perms, nil); err != nil {
 		w.t.Fatal(err)
 	}
 	for i := 0; i < 1000; i++ {

@@ -29,6 +29,10 @@ type StorageConfig struct {
 	// ClamAVAddress is host:port of clamd (INSTREAM over TCP).
 	ClamAVAddress string
 	MaxBytes      int64
+	// UploadsPerHour, UserQuotaBytes and InstallationQuotaBytes bound upload exhaustion (see ADR-0037).
+	UploadsPerHour         int
+	UserQuotaBytes         int64
+	InstallationQuotaBytes int64
 	// AllowedTypes overrides the default content-type allow-list when non-empty.
 	AllowedTypes []string
 }
@@ -42,6 +46,9 @@ var storageDescriptors = []Descriptor{
 	{Name: "STORAGE_MASTER_KEY_FILE", Type: "string", Secret: true, Description: "Path to a file with the 32-byte master key as 64 hexadecimal characters (for example `openssl rand -hex 32`; a Docker secret). Wraps the per-object data keys of attachments; mounted into turaco-api and turaco-worker. Losing it makes every stored attachment unreadable, so keep a copy separate from the data backups. Required when STORAGE_DRIVER is set."},
 	{Name: "CLAMAV_ADDRESS", Type: "string", Description: "host:port of the ClamAV daemon (clamd, TCP, INSTREAM protocol) in its own container. New attachments stay `pending` and are not downloadable until the worker scanned them clean; an unreachable scanner leaves them pending and platform health reports it. Required when STORAGE_DRIVER is set. clamd StreamMaxLength must be at least ATTACHMENT_MAX_BYTES."},
 	{Name: "ATTACHMENT_MAX_BYTES", Type: "int", Default: "26214400", Description: "Maximum size of one attachment in bytes (1024 to 104857600), enforced while streaming the upload."},
+	{Name: "ATTACHMENT_UPLOADS_PER_HOUR", Type: "int", Default: "120", Description: "Maximum number of attachment uploads one user can start per rolling hour (1 to 100000). Checked before the upload stream is accepted; the next upload is answered with HTTP 429."},
+	{Name: "ATTACHMENT_USER_QUOTA_BYTES", Type: "int", Default: "1073741824", Description: "Maximum total size of the live attachments one user has uploaded (at least ATTACHMENT_MAX_BYTES). Deleted attachments free the quota. Checked before the stream is accepted and again at commit; exceeding it is answered with HTTP 413."},
+	{Name: "ATTACHMENT_INSTALLATION_QUOTA_BYTES", Type: "int", Default: "107374182400", Description: "Maximum total size of all live attachments of the installation (at least ATTACHMENT_USER_QUOTA_BYTES). Checked before the stream is accepted and again at commit; exceeding it is answered with HTTP 507."},
 	{Name: "ATTACHMENT_ALLOWED_TYPES", Type: "string", Description: "Comma-separated content types accepted for attachments, replacing the default list (`application/pdf`, `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `text/plain`, `text/csv`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `...spreadsheetml.sheet`, `...presentationml.presentation`, `application/zip`). Unsupported types stop startup. The first bytes of every upload must match the type."},
 }
 
@@ -50,12 +57,15 @@ func init() { Registry = append(Registry, storageDescriptors...) }
 // LoadStorage reads and validates the storage configuration. With STORAGE_DRIVER empty everything else is ignored.
 func LoadStorage() (StorageConfig, error) {
 	c := StorageConfig{
-		Driver:        strings.TrimSpace(os.Getenv("STORAGE_DRIVER")),
-		Path:          os.Getenv("STORAGE_PATH"),
-		MasterKeyFile: os.Getenv("STORAGE_MASTER_KEY_FILE"),
-		ClamAVAddress: strings.TrimSpace(os.Getenv("CLAMAV_ADDRESS")),
-		MaxBytes:      DefaultAttachmentMaxBytes,
-		AllowedTypes:  splitList(os.Getenv("ATTACHMENT_ALLOWED_TYPES")),
+		Driver:                 strings.TrimSpace(os.Getenv("STORAGE_DRIVER")),
+		Path:                   os.Getenv("STORAGE_PATH"),
+		MasterKeyFile:          os.Getenv("STORAGE_MASTER_KEY_FILE"),
+		ClamAVAddress:          strings.TrimSpace(os.Getenv("CLAMAV_ADDRESS")),
+		MaxBytes:               DefaultAttachmentMaxBytes,
+		UploadsPerHour:         120,
+		UserQuotaBytes:         1 << 30,
+		InstallationQuotaBytes: 100 << 30,
+		AllowedTypes:           splitList(os.Getenv("ATTACHMENT_ALLOWED_TYPES")),
 	}
 	if c.Driver == "" {
 		return StorageConfig{}, nil
@@ -82,5 +92,29 @@ func LoadStorage() (StorageConfig, error) {
 		}
 		c.MaxBytes = n
 	}
+	var err error
+	if _, err = envInt("ATTACHMENT_UPLOADS_PER_HOUR", int64(c.UploadsPerHour), 1, 100000, func(n int64) { c.UploadsPerHour = int(n) }); err != nil {
+		return StorageConfig{}, err
+	}
+	if _, err = envInt("ATTACHMENT_USER_QUOTA_BYTES", c.UserQuotaBytes, c.MaxBytes, 1<<50, func(n int64) { c.UserQuotaBytes = n }); err != nil {
+		return StorageConfig{}, err
+	}
+	if _, err = envInt("ATTACHMENT_INSTALLATION_QUOTA_BYTES", c.InstallationQuotaBytes, c.UserQuotaBytes, 1<<60, func(n int64) { c.InstallationQuotaBytes = n }); err != nil {
+		return StorageConfig{}, err
+	}
 	return c, nil
+}
+
+// envInt applies an optional integer environment override within [min, max].
+func envInt(name string, def, min, max int64, set func(int64)) (int64, error) {
+	v := os.Getenv(name)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("%s must be an integer from %d to %d", name, min, max)
+	}
+	set(n)
+	return n, nil
 }

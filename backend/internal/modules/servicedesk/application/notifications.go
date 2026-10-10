@@ -188,14 +188,77 @@ func majorCategory() notifications.Category {
 			"en": {Subject: "Incident update: %s", Intro: "There is news on an incident you follow:", Action: "Open incident"},
 			"de": {Subject: "Störungsmeldung aktualisiert: %s", Intro: "Es gibt Neuigkeiten zu einer Störung, der du folgst:", Action: "Störung öffnen"},
 		},
+		// Incident progress may be posted to a Teams channel: generic wording and the reference number only.
+		Broadcast: &notifications.Broadcast{Texts: map[string]map[string]notifications.ChannelText{
+			notifications.PostKindDeclared: {
+				"en": {Headline: "A major incident was declared", Action: "Open in Turaco"},
+				"de": {Headline: "Eine Großstörung wurde ausgerufen", Action: "In Turaco öffnen"},
+			},
+			notifications.PostKindUpdated: {
+				"en": {Headline: "A major incident was updated", Action: "Open in Turaco"},
+				"de": {Headline: "Eine Großstörung wurde aktualisiert", Action: "In Turaco öffnen"},
+			},
+		}},
 	}
 }
 
-// MajorConsumers notify the subscribers of a Major Incident about its progress.
+// ChannelPoster posts about a record to the routed channel destinations (the Notification service). It is separate
+// from Notifier because only some installations route channels.
+type ChannelPoster interface {
+	PostToChannels(ctx context.Context, tx pgx.Tx, in notifications.ChannelPost) (int, error)
+}
+
+// MajorConsumers notify the subscribers of a Major Incident about its progress and, when a ChannelPoster is set,
+// post the declaration and every update to the routed channels.
 type MajorConsumers struct {
 	store    MajorStore
 	dir      Directory
 	notifier Notifier
+	channels ChannelPoster
+}
+
+// WithChannelPosts enables channel posts for declared and updated Major Incidents.
+func (c *MajorConsumers) WithChannelPosts(p ChannelPoster) *MajorConsumers {
+	c.channels = p
+	return c
+}
+
+// postToChannels posts the incident reference-only: the reference number and a link, never the title or the
+// messages. Exercises (drills) are never posted. The event id is the idempotency key per destination.
+func (c *MajorConsumers) postToChannels(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent, kind, id string, exercise bool) error {
+	if c.channels == nil || exercise {
+		return nil
+	}
+	reference, err := c.store.MajorReference(ctx, tx, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load incident reference: %w", err)
+	}
+	if _, err := c.channels.PostToChannels(ctx, tx, notifications.ChannelPost{
+		Category: "majorincident.update", Kind: kind, Reference: reference,
+		LinkType: "major_incident", LinkID: id, DedupeKey: ev.ID,
+	}); err != nil {
+		return fmt.Errorf("post to channels: %w", err)
+	}
+	return nil
+}
+
+// OnMajorIncidentDeclared posts the declaration to the routed channels. It notifies nobody else: subscribers
+// follow an incident only after it exists.
+func (c *MajorConsumers) OnMajorIncidentDeclared(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
+	var p struct {
+		ID         string `json:"majorIncidentId"`
+		IsExercise bool   `json:"isExercise"`
+	}
+	if err := decodePayload(ev, &p); err != nil {
+		return err
+	}
+	if !validEventID(p.ID) {
+		return events.Permanent(fmt.Errorf("invalid incident id in %s", ev.EventType))
+	}
+	return c.postToChannels(ctx, tx, ev, notifications.PostKindDeclared, p.ID, p.IsExercise)
 }
 
 func NewMajorConsumers(store MajorStore, dir Directory, notifier Notifier) *MajorConsumers {
@@ -206,15 +269,22 @@ func NewMajorConsumers(store MajorStore, dir Directory, notifier Notifier) *Majo
 // incident's current title; the latest message is read in the app.
 func (c *MajorConsumers) OnMajorIncidentUpdated(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
-		ID     string `json:"majorIncidentId"`
-		Status string `json:"status"`
-		After  string `json:"after"`
+		ID         string `json:"majorIncidentId"`
+		Status     string `json:"status"`
+		After      string `json:"after"`
+		IsExercise bool   `json:"isExercise"`
 	}
 	if err := decodePayload(ev, &p); err != nil {
 		return err
 	}
 	if !validEventID(p.ID) {
 		return events.Permanent(fmt.Errorf("invalid incident id in %s", ev.EventType))
+	}
+	// The channel post belongs to the update itself, not to a fan-out continuation (After is set there).
+	if p.After == "" {
+		if err := c.postToChannels(ctx, tx, ev, notifications.PostKindUpdated, p.ID, p.IsExercise); err != nil {
+			return err
+		}
 	}
 	subs, err := c.store.Subscribers(ctx, tx, p.ID, p.After, majorChunk+1)
 	if err != nil || len(subs) == 0 {

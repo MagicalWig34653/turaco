@@ -285,7 +285,8 @@ func (p *Provider) checkClaims(c claims, nonce string) (authentication.VerifiedI
 	if email == "" && strings.Contains(c.Username, "@") {
 		email = c.Username
 	}
-	return authentication.VerifiedIdentity{TenantID: tid, ObjectID: oid, Guest: guest, DisplayName: c.Name, Email: email}, nil
+	member := c.Acct != nil && *c.Acct == 0 && (c.Idp == "" || c.Idp == c.Issuer)
+	return authentication.VerifiedIdentity{TenantID: tid, ObjectID: oid, Guest: guest, MemberConfirmed: member, DisplayName: c.Name, Email: email}, nil
 }
 
 func allowed(list []string, tid string) bool {

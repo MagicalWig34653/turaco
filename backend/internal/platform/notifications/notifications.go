@@ -86,6 +86,7 @@ type Service struct {
 	pool       *pgxpool.Pool
 	categories *Registry
 	email      bool
+	channel    ChannelOptions
 }
 
 // NewService creates a Service without the email channel (turaco-api).
@@ -97,7 +98,9 @@ func NewService(pool *pgxpool.Pool, categories *Registry) *Service {
 // job) for every new notification whose recipient has not opted out of email
 // for the category. Only turaco-worker, which sends the mail, enables it.
 func (s *Service) WithEmail() *Service {
-	return &Service{pool: s.pool, categories: s.categories, email: true}
+	cp := *s
+	cp.email = true
+	return &cp
 }
 
 // Create stores the notification inside the caller's transaction (typically

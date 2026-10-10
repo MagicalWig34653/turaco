@@ -124,7 +124,18 @@ func main() {
 	})
 
 	// Module switches (ADR-0032): the registry decides which optional modules are reachable (see the gate below).
-	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders})
+	teamsCfg, err := config.LoadTeams()
+	if err != nil {
+		logger.Error("load Teams configuration", "error", err)
+		os.Exit(1)
+	}
+	teamsSender, err := wiring.TeamsSender(teamsCfg)
+	if err != nil {
+		logger.Error("set up Teams channel", "error", err)
+		os.Exit(1)
+	}
+	moduleSvc := wiring.Modules(pool, wiring.ModuleGates{PresenceEnabled: cfg.PresenceEnabled, AIEnabled: cfg.AIEnabled, RemoteAccessProviders: cfg.RemoteAccessProviders,
+		TeamsConfigured: teamsCfg.Configured()})
 
 	// Browser sessions authenticate requests; their permissions come from
 	// role assignments to the User and its (transitive) Directory Groups.
@@ -336,6 +347,7 @@ func main() {
 		os.Exit(1)
 	}
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
+	notificationstransport.RegisterChannelRoutes(mux, notifications.NewService(pool, categories).WithChannelPosts(wiring.TeamsChannelOptions(teamsSender, moduleSvc)), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger,
 		audittransport.WithResolvers(wiring.AuditResolvers(pool)), audittransport.WithRetentionDays(cfg.AuditRetentionDays))
@@ -352,6 +364,7 @@ func main() {
 		EmergencyLogin: cfg.AuthEmergencyLoginEnabled, LocalLogin: cfg.AuthLocalLoginEnabled,
 		IntuneSync: cfg.IntuneSync, SoftwareSync: cfg.SoftwareProviderSync, AutotaskSync: cfg.AutotaskSync, AdvisorySync: advisoryCfg.Enabled,
 		RemoteAccessProviders: cfg.RemoteAccessProviders,
+		Teams:                 wiring.TeamsHealth{Mode: teamsSender.Mode(), Destinations: len(teamsSender.DestinationKeys())},
 		Providers:             map[string]wiring.ProviderHealth{"intune": intuneHealth, "autotask": autotaskHealth, "software_provider": {}},
 		EntraEnabled:          entraCfg.Enabled, EntraCredentialKind: entraCredentialKind(entraCredential), EntraCredentialExpires: entraCredentialExpiry(entraCredential),
 	})

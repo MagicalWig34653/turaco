@@ -161,6 +161,8 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Notification Delivery** — the state of sending one Notification through one channel (for example email), separate from the Notification and from the state of the record it is about.
 - **Attachment** — a file attached to a record of another module (ticket, knowledge article), stored encrypted outside the database and addressed by a generated object id. Its original file name is data only. It has a scan status (`pending`, `clean`, `infected`, `failed`) and is downloadable only when `clean`; the owning module decides who may read, attach and remove ([ADR-0037](../decisions/ADR-0037-file-storage-and-attachments.md)).
 - **Notification Preference** — a User's opt-out of a channel for a Notification category.
+- **Teams Channel Destination** — a named, administrator-prepared Microsoft Teams channel endpoint (a Workflows webhook) that channel posts are sent to. Referred to by its key; the webhook URL is a secret in a deployment file and never in the database, API or UI.
+- **Channel Route** — administrator-managed mapping of a broadcastable notification category to a Teams Channel Destination. Only categories marked broadcastable by their owning module can be routed; a channel post carries only category wording, the reference number and a link.
 - **Rule** — small deterministic condition/action automation.
 - **Workflow** — multi-step business process with state.
 - **Scheduled Job** — technical/operational timed execution.

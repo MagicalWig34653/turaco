@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // fakeOIDC is an identity provider that returns what the test configures.
@@ -40,6 +42,11 @@ func (p *fakeOIDC) Exchange(_ context.Context, code, verifier, nonce string) (Ve
 
 type fakeEntraDirectory struct {
 	users map[string]string // tenant/object -> user id
+}
+
+// LockEntraLink makes the fake an EntraLinkLocker; gone simulates an unlink that committed after the lookup.
+func (d fakeEntraDirectory) LockEntraLink(context.Context, pgx.Tx, string, string, string) (bool, error) {
+	return true, nil
 }
 
 func (d fakeEntraDirectory) FindEntraUser(_ context.Context, tenantID, objectID string) (string, bool, error) {
@@ -386,7 +393,7 @@ func (p *fakeProvisioner) ProvisionEmployee(_ context.Context, tenantID, objectI
 const entraAnchor = "aabbccdd-0011-2233-4455-66778899aabb"
 
 func newIdentity() VerifiedIdentity {
-	return VerifiedIdentity{TenantID: entraTenant, ObjectID: "ffffffff-0000-1111-2222-333333333333", DisplayName: "Anna Beispiel", Email: "anna@example.org", SourceAnchor: entraAnchor}
+	return VerifiedIdentity{TenantID: entraTenant, ObjectID: "ffffffff-0000-1111-2222-333333333333", DisplayName: "Anna Beispiel", Email: "anna@example.org", SourceAnchor: entraAnchor, MemberConfirmed: true}
 }
 
 // signInUnlinked runs a sign-in of an identity that has no link and returns the response and the audit rows.
@@ -501,6 +508,8 @@ func TestEntraProvisioningRules(t *testing.T) {
 		"link_only is the default": {linkOnly, nil},
 		"setting unavailable":      {nil, nil},
 		"other tenant":             {auto, func(v *VerifiedIdentity) { v.TenantID = "99999999-2222-3333-4444-555555555555" }},
+		// A token without the affirmative member claim (acct = 0) is indeterminate: it may be a guest.
+		"membership not confirmed": {auto, func(v *VerifiedIdentity) { v.MemberConfirmed = false }},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -536,4 +545,49 @@ func TestEntraProvisioningRules(t *testing.T) {
 			t.Fatalf("provisioner calls %v", prov.calls)
 		}
 	})
+}
+
+// An identity link removed between the lookup and the session creation must not produce a session.
+func TestEntraUnlinkDuringSignInCreatesNoSession(t *testing.T) {
+	p := &fakeOIDC{identity: VerifiedIdentity{TenantID: entraTenant, ObjectID: entraObject}}
+	f := newEntraFixture(t, p)
+	dir := f.entra.Identities.(fakeEntraDirectory)
+	f.entra.Identities = &racingDirectory{inner: dir}
+	state, _, binding := f.startEntra("")
+	rec := f.callback(state, "c", binding)
+	if loginErrorCode(rec) != "entra_not_linked" || f.sessionCount() != 0 || rec.cookieToken(false) != "" {
+		t.Fatalf("%s sessions %d", loginErrorCode(rec), f.sessionCount())
+	}
+	if rows := f.failureAudits(); len(rows) == 0 || !strings.Contains(rows[len(rows)-1], "link_removed") {
+		t.Fatalf("audit %v", rows)
+	}
+}
+
+// racingDirectory finds the link, but the link is gone when the session transaction locks it.
+type racingDirectory struct{ inner fakeEntraDirectory }
+
+func (d *racingDirectory) FindEntraUser(ctx context.Context, tenantID, objectID string) (string, bool, error) {
+	return d.inner.FindEntraUser(ctx, tenantID, objectID)
+}
+
+func (d *racingDirectory) LockEntraLink(context.Context, pgx.Tx, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func TestEntraStartIsThrottledPerClient(t *testing.T) {
+	f := newLoginFixture(t, withEntra(&fakeOIDC{}, fakeEntraDirectory{users: map[string]string{}}, time.Hour), withClientLimit(3))
+	f.trackKey("ip:entra-start/" + f.ip)
+	t.Cleanup(func() { _, _ = f.pool.Exec(context.Background(), `DELETE FROM platform.oidc_login_transactions`) })
+	codes := make([]int, 0, 6)
+	for i := 0; i < 6; i++ {
+		codes = append(codes, f.get("/api/v1/auth/entra/start").Code)
+	}
+	if codes[0] != http.StatusFound || codes[5] != http.StatusTooManyRequests {
+		t.Fatalf("start must be limited per client: %v", codes)
+	}
+	var pending int
+	_ = f.pool.QueryRow(context.Background(), `SELECT count(*) FROM platform.oidc_login_transactions`).Scan(&pending)
+	if pending > 3 {
+		t.Fatalf("throttled starts must not write transactions: %d", pending)
+	}
 }

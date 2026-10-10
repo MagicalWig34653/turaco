@@ -37,9 +37,17 @@ type HealthConfig struct {
 	EntraCredentialExpires                               *time.Time
 	IntuneSync, SoftwareSync, AutotaskSync, AdvisorySync bool
 	RemoteAccessProviders                                []string
+	// Teams describes the Teams channel adapter (ADR-0036); its facts come from stored deliveries, written by the worker.
+	Teams TeamsHealth
 	// Providers describes the real provider clients by check key (intune, autotask). A missing entry means that no
 	// real client exists for the provider (software_provider).
 	Providers map[string]ProviderHealth
+}
+
+// TeamsHealth is what the teams check knows from configuration.
+type TeamsHealth struct {
+	Mode         health.Mode
+	Destinations int
 }
 
 // Health builds the health registry: the platform checks plus the integration and module checks below. Every check
@@ -120,6 +128,7 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 			}
 			return res
 		}},
+		{Key: "teams", Category: health.CategoryIntegration, Run: teamsCheck(pool, mods, cfg.Teams)},
 		{Key: "object_storage", Category: health.CategoryIntegration, Run: storageCheck(cfg.Attachments)},
 		{Key: "attachment_scanner", Category: health.CategoryIntegration, Run: scannerCheck(cfg.Attachments)},
 		{Key: "emergency_login", Category: health.CategoryIntegration, Run: func(context.Context) health.Result {
@@ -373,4 +382,47 @@ func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry
 		ok, err := mods.Enabled(ctx, key)
 		return err == nil && ok
 	})
+}
+
+// teamsCheck reports the Teams channel (ADR-0036 T-A): module state, adapter mode, configured destinations and routes,
+// and the stored channel deliveries (failed in 24 hours, open, oldest open age). It never calls Microsoft.
+func teamsCheck(pool *pgxpool.Pool, mods *modules.Service, t TeamsHealth) func(context.Context) health.Result {
+	return func(ctx context.Context) health.Result {
+		step := &health.NextStep{Kind: "route", Route: "/admin/teams-channels"}
+		cfgStep := &health.NextStep{Kind: "config", ConfigKeys: []string{"TEAMS_CHANNEL_DESTINATIONS_FILE"}, DocsPath: "docs/integrations/teams-email.md"}
+		if t.Mode == health.ModeNotConfigured || t.Destinations == 0 {
+			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_configured", NextStep: cfgStep}
+		}
+		mod := moduleResult(ctx, mods, "teams")
+		if mod.Status != health.StatusOK {
+			mod.Mode, mod.NextStep = t.Mode, step
+			return mod
+		}
+		var ok, failed, oldest *time.Time
+		var failed24, open, routes int
+		if err := pool.QueryRow(ctx, `
+			SELECT max(delivered_at), max(updated_at) FILTER (WHERE status = 'failed'),
+			       count(*) FILTER (WHERE status = 'failed' AND updated_at > now() - interval '24 hours'),
+			       count(*) FILTER (WHERE status IN ('pending','sending')),
+			       min(created_at) FILTER (WHERE status IN ('pending','sending'))
+			FROM platform.notification_deliveries WHERE channel = 'teams_channel'`).Scan(&ok, &failed, &failed24, &open, &oldest); err != nil {
+			return health.Result{Status: health.StatusFailing, ErrorCode: "deliveries_unreadable"}
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.notification_channel_routes WHERE channel = 'teams_channel'`).Scan(&routes); err != nil {
+			return health.Result{Status: health.StatusFailing, ErrorCode: "deliveries_unreadable"}
+		}
+		res := health.Result{Status: health.FreshStatus(time.Now(), 24*time.Hour, ok, failed), Mode: t.Mode, LastSuccessAt: ok, LastAttemptAt: failed, NextStep: step,
+			Counts: map[string]int{"destinations": t.Destinations, "routes": routes, "open": open, "failed24h": failed24}}
+		if res.Status == health.StatusStale {
+			// Posts are event driven: no recent delivery is not a fault by itself.
+			res.Status = health.StatusUnknown
+		}
+		if res.Status == health.StatusFailing {
+			res.ErrorCode = "last_delivery_failed"
+		}
+		if oldest != nil && time.Since(*oldest) > time.Hour && res.Status != health.StatusFailing {
+			res.Status, res.ErrorCode = health.StatusStale, "deliveries_waiting"
+		}
+		return res
+	}
 }

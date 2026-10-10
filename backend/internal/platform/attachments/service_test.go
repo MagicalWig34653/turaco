@@ -65,13 +65,16 @@ type env struct {
 	scanner *fakeScanner
 	base    string
 	ownerID string
+	owner   *fakeOwner
 	staff   authorization.Principal // read, attach, privileged
 	author  authorization.Principal // read, attach
 	reader  authorization.Principal // read only
 	other   authorization.Principal // no rights
 }
 
-func newEnv(t *testing.T, maxBytes int64) *env {
+func newEnv(t *testing.T, maxBytes int64) *env { t.Helper(); return newEnvWith(t, maxBytes, nil) }
+
+func newEnvWith(t *testing.T, maxBytes int64, tune func(*attachments.Policy)) *env {
 	t.Helper()
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
@@ -95,6 +98,9 @@ func newEnv(t *testing.T, maxBytes int64) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if tune != nil {
+		tune(&policy)
+	}
 	sc := &fakeScanner{verdict: attachments.Verdict{Clean: true}}
 	svc := attachments.New(pool, vault, sc, policy, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	owner := &fakeOwner{known: ownerID, rights: map[string]attachments.Access{
@@ -112,7 +118,7 @@ func newEnv(t *testing.T, maxBytes int64) *env {
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE target_type = 'attachment' AND metadata->>'ownerId' = $1`, ownerID)
 	})
 	pr := func(id string) authorization.Principal { return authorization.Principal{UserID: id} }
-	return &env{svc: svc, pool: pool, scanner: sc, base: base, ownerID: ownerID, staff: pr(staffID), author: pr(authorID), reader: pr(readerID), other: pr(otherID)}
+	return &env{owner: owner, svc: svc, pool: pool, scanner: sc, base: base, ownerID: ownerID, staff: pr(staffID), author: pr(authorID), reader: pr(readerID), other: pr(otherID)}
 }
 
 var pdf = []byte("%PDF-1.7\nhello attachment\n%%EOF")
@@ -392,5 +398,144 @@ func TestPerOwnerLimit(t *testing.T) {
 	}
 	if _, err := e.upload(t, e.author, "", pdf); !errors.Is(err, attachments.ErrLimit) {
 		t.Fatalf("limit: %v", err)
+	}
+}
+
+// onEOF runs a hook when the reader is exhausted, simulating a change that happens during a slow upload.
+type onEOF struct {
+	r    io.Reader
+	hook func()
+	done bool
+}
+
+func (o *onEOF) Read(b []byte) (int, error) {
+	n, err := o.r.Read(b)
+	if errors.Is(err, io.EOF) && !o.done {
+		o.done = true
+		o.hook()
+	}
+	return n, err
+}
+
+func (e *env) objectFiles() []string {
+	entries, _ := filepath.Glob(filepath.Join(e.base, "*", "*", "*"))
+	return entries
+}
+
+func TestUploadRateLimit(t *testing.T) {
+	e := newEnvWith(t, 1<<20, func(p *attachments.Policy) { p.UploadsPerHour = 2 })
+	for i := 0; i < 2; i++ {
+		if _, err := e.upload(t, e.author, "", pdf); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.upload(t, e.author, "", pdf); !errors.Is(err, attachments.ErrRateLimited) {
+		t.Fatalf("third upload: %v", err)
+	}
+	if len(e.objectFiles()) != 2 {
+		t.Fatal("a rate-limited upload stored an object")
+	}
+	// The limit is per user.
+	if _, err := e.upload(t, e.staff, "", pdf); err != nil {
+		t.Fatalf("other user: %v", err)
+	}
+}
+
+func TestUserQuota(t *testing.T) {
+	size := int64(len(pdf))
+	e := newEnvWith(t, 1<<20, func(p *attachments.Policy) { p.UserQuotaBytes = 2 * size })
+	a, err := e.upload(t, e.author, "", pdf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.upload(t, e.author, "", pdf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.upload(t, e.author, "", pdf); !errors.Is(err, attachments.ErrUserQuota) {
+		t.Fatalf("over quota: %v", err)
+	}
+	if _, err := e.upload(t, e.staff, "", pdf); err != nil {
+		t.Fatalf("other user has own quota: %v", err)
+	}
+	if err := e.svc.Delete(context.Background(), e.author, "c", a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.upload(t, e.author, "", pdf); err != nil {
+		t.Fatalf("quota freed by delete: %v", err)
+	}
+}
+
+func TestInstallationQuotaAndCommitCheck(t *testing.T) {
+	size := int64(len(pdf))
+	var before int64
+	_ = dbtest.Pool(t).QueryRow(context.Background(), `SELECT COALESCE(sum(size_bytes),0)::bigint FROM platform.attachments WHERE deleted_at IS NULL`).Scan(&before)
+	e := newEnvWith(t, 1<<20, func(p *attachments.Policy) { p.InstallationQuotaBytes = before + size })
+	if _, err := e.upload(t, e.author, "", pdf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.upload(t, e.staff, "", pdf); !errors.Is(err, attachments.ErrInstallationQuota) {
+		t.Fatalf("installation quota: %v", err)
+	}
+	if len(e.objectFiles()) != 1 {
+		t.Fatalf("object left behind: %v", e.objectFiles())
+	}
+}
+
+func TestQuotaIsCheckedAgainAtCommit(t *testing.T) {
+	size := int64(len(pdf))
+	e := newEnvWith(t, 1<<20, func(p *attachments.Policy) { p.UserQuotaBytes = size + size/2 })
+	// The pre-check passes (nothing stored yet); a concurrent upload fills the quota while this one streams.
+	in := &onEOF{r: bytes.NewReader(pdf), hook: func() {
+		if _, err := e.upload(t, e.author, "", pdf); err != nil {
+			t.Error(err)
+		}
+	}}
+	_, err := e.svc.Upload(context.Background(), e.author, "c", attachments.UploadInput{OwnerType: "testdoc", OwnerID: e.ownerID, FileName: "a.pdf", DeclaredType: "application/pdf", Content: in})
+	if !errors.Is(err, attachments.ErrUserQuota) {
+		t.Fatalf("commit quota: %v", err)
+	}
+	if len(e.objectFiles()) != 1 {
+		t.Fatalf("object of the refused upload remains: %v", e.objectFiles())
+	}
+}
+
+func TestRevokedRightsDuringUploadAreHonoured(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	in := &onEOF{r: bytes.NewReader(pdf), hook: func() {
+		e.owner.mu.Lock()
+		e.owner.rights[e.author.UserID] = attachments.Access{Read: true} // e.g. the ticket was closed
+		e.owner.mu.Unlock()
+	}}
+	_, err := e.svc.Upload(context.Background(), e.author, "c", attachments.UploadInput{OwnerType: "testdoc", OwnerID: e.ownerID, FileName: "a.pdf", DeclaredType: "application/pdf", Content: in})
+	if !errors.Is(err, attachments.ErrForbidden) {
+		t.Fatalf("want forbidden, got %v", err)
+	}
+	var n int
+	_ = e.pool.QueryRow(context.Background(), `SELECT count(*) FROM platform.attachments WHERE owner_id = $1::uuid`, e.ownerID).Scan(&n)
+	if n != 0 || len(e.objectFiles()) != 0 || e.auditCount(t, attachments.ActionUploaded) != 0 {
+		t.Fatalf("refused upload left row=%d objects=%v", n, e.objectFiles())
+	}
+}
+
+func TestDownloadAuditedOnlyAfterOpen(t *testing.T) {
+	e := newEnv(t, 1<<20)
+	ctx := context.Background()
+	a, _ := e.upload(t, e.author, "", pdf)
+	if _, err := e.svc.ScanPending(ctx, 50); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range e.objectFiles() {
+		if err := os.Remove(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := e.svc.Download(ctx, e.author, "c", a.ID); !errors.Is(err, attachments.ErrUnavailable) {
+		t.Fatalf("download of a missing object: %v", err)
+	}
+	if n := e.auditCount(t, attachments.ActionDownloaded); n != 0 {
+		t.Fatalf("success audit recorded for a failed download: %d", n)
+	}
+	if n := e.auditCount(t, attachments.ActionDownloadFailed); n != 1 {
+		t.Fatalf("failure audits = %d", n)
 	}
 }

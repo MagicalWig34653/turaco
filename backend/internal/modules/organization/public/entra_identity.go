@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 )
@@ -30,6 +32,18 @@ func NewEntraIdentities(store ExternalIdentityStore) *EntraIdentities {
 // FindEntraUser implements authentication.EntraIdentityDirectory.
 func (e *EntraIdentities) FindEntraUser(ctx context.Context, tenantID, objectID string) (string, bool, error) {
 	return e.store.FindUserByExternalIdentity(ctx, EntraProviderKey(tenantID), strings.ToLower(objectID))
+}
+
+// LockEntraLink implements authentication.EntraLinkLocker: it locks the identity link of userID inside tx.
+func (e *EntraIdentities) LockEntraLink(ctx context.Context, tx pgx.Tx, userID, tenantID, objectID string) (bool, error) {
+	var one int
+	err := tx.QueryRow(ctx, `SELECT 1 FROM organization.external_identities
+		WHERE provider_key = $1 AND external_subject = $2 AND user_id = $3::uuid AND enabled FOR SHARE`,
+		EntraProviderKey(tenantID), strings.ToLower(objectID), userID).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // EntraSignInStore is the part of the Organization repository the hybrid match and the provisioning need.

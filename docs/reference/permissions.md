@@ -28,6 +28,7 @@
 | `infrastructure.manage` | elevated | Manage Buildings, Rooms and Racks; place, move and remove Assets in Racks; create, change, assign a hypervisor to and decommission Virtual Machines. |
 | `infrastructure.view` | normal | View Buildings, Rooms, Racks, rack placements (rack elevation), Virtual Machines and the infrastructure site tree; with assets.view also where an Asset is placed. |
 | `integrations.intune.manage` | high | Administer Intune integration configuration, credentials and synchronization controls. |
+| `integrations.teams.manage` | high | Manage the Microsoft Teams channel routes: which broadcastable notification categories (Major Incident declared and updated, Change scheduled) are posted to which configured Teams channel destination. Channel members need no Turaco access, so posts carry only the category wording, the reference number and a link. |
 | `inventory.manage` | elevated | Manage warehouses and storage locations; issue, return, transfer, correct and dispose stock; reserve, release and fulfill reservations; post goods receipts. |
 | `inventory.view` | normal | View warehouses, stock balances, the inventory ledger and reservations. |
 | `knowledge.manage` | elevated | Write, publish and retire knowledge articles and read drafts and retired articles. |

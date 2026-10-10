@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { HealthScreen, IntegrationsScreen, SystemScreen } from '../modules/health/HealthScreens';
 import { SetupScreen } from '../modules/health/SetupScreen';
 import { SettingsScreen } from '../modules/settings/SettingsScreen';
+import { TeamsChannelScreen } from '../modules/teams-channel/TeamsChannelScreen';
 import { AuditScreen } from '../modules/audit/AuditScreen';
 import { LoginScreen } from '../modules/auth/LoginScreen';
 import { MeScreen } from '../modules/access/MeScreen';
@@ -414,6 +415,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <SystemScreen />;
     case 'settingsAdmin':
       return <SettingsScreen />;
+    case 'teamsChannelAdmin':
+      return <TeamsChannelScreen />;
   }
 }
 

@@ -74,6 +74,10 @@ type VerifiedIdentity struct {
 	// only for a non-guest member of the home tenant with onPremisesSyncEnabled=true and only when the hybrid match is
 	// configured; otherwise it is empty.
 	SourceAnchor string
+	// MemberConfirmed is true only when the token affirmatively identifies a member of the tenant (optional claim
+	// acct = 0 and no foreign idp). Provisioning requires it, because the guest claims are optional and a guest
+	// token without them is indistinguishable from a member token.
+	MemberConfirmed bool
 }
 
 // OIDCProvider is the identity provider side of the flow.
@@ -89,6 +93,17 @@ type OIDCProvider interface {
 type EntraIdentityDirectory interface {
 	FindEntraUser(ctx context.Context, tenantID, objectID string) (userID string, found bool, err error)
 }
+
+// EntraLinkLocker is an optional capability of the identity directory: it locks the exact identity link inside
+// the session-creation transaction (FOR SHARE), so an administrator unlinking at the same moment either waits for
+// the new session, which the unlink then revokes, or the sign-in sees the link gone. Without it a link removed
+// between the lookup and the session creation could still produce a session.
+type EntraLinkLocker interface {
+	LockEntraLink(ctx context.Context, tx pgx.Tx, userID, tenantID, objectID string) (bool, error)
+}
+
+// errEntraLinkGone aborts session creation when the identity link no longer exists.
+var errEntraLinkGone = errors.New("authentication: entra identity link removed during sign-in")
 
 // EntraAnchorLinker links an Entra identity to the User that directory synchronization created for the same
 // objectGUID (hybrid match, ADR-0035 point 3). It links in one transaction and audits `via: source_anchor`; it
@@ -168,6 +183,12 @@ func safeReturnTo(raw string) string {
 func (h *loginHandler) entraStart(w http.ResponseWriter, r *http.Request) {
 	if !h.entraEnabled() {
 		httpx.WriteError(w, http.StatusNotFound, "auth.method_unavailable", "This login method is not available.")
+		return
+	}
+	// Starts have their own client budget, taken before any database work: an anonymous caller must not be able
+	// to fill the table of pending transactions and lock everyone out.
+	a := h.begin(r)
+	if !h.reserve(w, r, a, "ip:entra-start/"+strings.TrimPrefix(a.ipKey, "ip:"), true) {
 		return
 	}
 	state, err1 := randomURLToken()
@@ -278,10 +299,24 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 			lifetime = c
 		}
 	}
-	sessionToken, sess, err := h.createSession(r, LoginSession{
-		UserID: userID, AuthMethod: methodEntra, CorrelationID: httpx.RequestID(w), Locker: h.users, MaxLifetime: lifetime,
-	})
+	session := LoginSession{UserID: userID, AuthMethod: methodEntra, CorrelationID: httpx.RequestID(w), Locker: h.users, MaxLifetime: lifetime}
+	if locker, ok := h.entra.Identities.(EntraLinkLocker); ok {
+		session.AfterCreate = func(ctx context.Context, tx pgx.Tx, _ Session) error {
+			held, err := locker.LockEntraLink(ctx, tx, userID, ident.TenantID, ident.ObjectID)
+			if err != nil {
+				return err
+			}
+			if !held {
+				return errEntraLinkGone
+			}
+			return nil
+		}
+	}
+	sessionToken, sess, err := h.createSession(r, session)
 	switch {
+	case errors.Is(err, errEntraLinkGone):
+		h.entraFailure(w, r, a, userID, "link_removed", entraNotLinkedCode)
+		return
 	case errors.Is(err, ErrUserInactive):
 		h.entraFailure(w, r, a, userID, "user_inactive", entraFailedCode)
 		return
@@ -325,7 +360,7 @@ func (h *loginHandler) resolveUnlinkedEntra(ctx context.Context, ident VerifiedI
 			return "", "", err
 		}
 	}
-	if !home || d.Provisioner == nil || d.Provisioning == nil || d.Provisioning(ctx) != EntraProvisioningAuto {
+	if !home || !ident.MemberConfirmed || d.Provisioner == nil || d.Provisioning == nil || d.Provisioning(ctx) != EntraProvisioningAuto {
 		return "", "not_linked", nil
 	}
 	id, err := d.Provisioner.ProvisionEmployee(ctx, ident.TenantID, ident.ObjectID, ident.DisplayName, ident.Email, correlationID)

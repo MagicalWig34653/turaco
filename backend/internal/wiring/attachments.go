@@ -50,6 +50,7 @@ func Attachments(pool *pgxpool.Pool, cfg config.Config, sc config.StorageConfig,
 	if err != nil {
 		return nil, err
 	}
+	policy.UploadsPerHour, policy.UserQuotaBytes, policy.InstallationQuotaBytes = sc.UploadsPerHour, sc.UserQuotaBytes, sc.InstallationQuotaBytes
 	scanner, err := clamav.New(clamav.Config{Address: sc.ClamAVAddress, MaxBytes: sc.MaxBytes})
 	if err != nil {
 		return nil, err

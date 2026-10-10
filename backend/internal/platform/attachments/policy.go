@@ -68,7 +68,11 @@ func plainText(h []byte) bool {
 // Policy is the content-type allow-list and the size cap.
 type Policy struct {
 	MaxBytes int64
-	allowed  []string
+	// UploadsPerHour, UserQuotaBytes and InstallationQuotaBytes bound upload exhaustion; zero disables a limit.
+	UploadsPerHour         int
+	UserQuotaBytes         int64
+	InstallationQuotaBytes int64
+	allowed                []string
 }
 
 // NewPolicy builds the policy from the configured list; an empty list selects the defaults. Unknown types are an
