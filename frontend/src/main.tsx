@@ -23,6 +23,7 @@ import './modules/remoteaccess/remoteaccess.css';
 import './platform/ui/themes.css';
 import './platform/ui/polish.css';
 import './platform/ui/touch.css';
+import './modules/organization/admin.css';
 import './platform/ui/cyberpunk.css';
 
 registerModuleNotifications();

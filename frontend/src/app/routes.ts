@@ -106,6 +106,14 @@ export type RouteId =
   | 'recurrence'
   | 'recurrenceNew'
   | 'recurrenceDetail'
+  | 'users'
+  | 'userNew'
+  | 'userDetail'
+  | 'teams'
+  | 'teamDetail'
+  | 'locations'
+  | 'departments'
+  | 'holders'
   | 'roles'
   | 'roleNew'
   | 'roleDetail'
@@ -779,6 +787,52 @@ export const appRoutes: readonly AppRoute[] = [
     nav: 'admin',
   },
   {
+    id: 'users',
+    pattern: '/admin/users',
+    titleKey: 'nav.users',
+    requires: ['organization.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'userNew',
+    pattern: '/admin/users/new',
+    titleKey: 'people.create.title',
+    requires: ['organization.users.manage', 'organization.view'],
+  },
+  {
+    id: 'userDetail',
+    pattern: '/admin/users/:id',
+    titleKey: 'people.detail.title',
+    requires: ['organization.view'],
+  },
+  {
+    id: 'teams',
+    pattern: '/admin/teams',
+    titleKey: 'nav.teams',
+    requires: ['organization.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'teamDetail',
+    pattern: '/admin/teams/:id',
+    titleKey: 'teams.detail.title',
+    requires: ['organization.view'],
+  },
+  {
+    id: 'locations',
+    pattern: '/admin/locations',
+    titleKey: 'nav.locations',
+    requires: ['organization.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'departments',
+    pattern: '/admin/departments',
+    titleKey: 'nav.departments',
+    requires: ['organization.view'],
+    nav: 'admin',
+  },
+  {
     id: 'roles',
     pattern: '/admin/roles',
     titleKey: 'nav.roles',
@@ -802,6 +856,13 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/role-assignments',
     titleKey: 'nav.roleAssignments',
     requires: ['platform.roles.view'],
+    nav: 'admin',
+  },
+  {
+    id: 'holders',
+    pattern: '/admin/holders',
+    titleKey: 'nav.holders',
+    requires: ['platform.roles.view', 'organization.users.view_details'],
     nav: 'admin',
   },
   {

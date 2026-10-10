@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Query } from '../../api/client';
 import { asApiError, useAsync, usePagedList, type PagedState } from '../../api/useAsync';
 import { navigate, useLocation } from '../../router/Router';
-import { viewsApi, type SavedView, type ViewWarning } from '../views/api';
+import { viewsApi, type SavedView, type ViewResource, type ViewWarning } from '../views/api';
 import { definitionToState, isSystemKey, sameQuery, systemSavedView } from '../views/model';
 import {
   deserialize,
@@ -14,8 +14,13 @@ import {
   type QueryState,
 } from './filterModel';
 
+/** Server-side query lists. Saved Views exist for the first three; `users` has no View support yet. */
+export type QueryResource = ViewResource | 'users';
+
 export type QueryList<T> = {
-  resource: 'tickets' | 'devices' | 'tasks';
+  resource: QueryResource;
+  /** False when the backend offers no Saved Views for this resource (the View bar is hidden). */
+  viewsEnabled: boolean;
   list: PagedState<T>;
   state: QueryState;
   setState: (state: QueryState) => void;
@@ -40,7 +45,7 @@ export type QueryList<T> = {
   refreshView: (view: SavedView) => void;
 };
 export function useQueryList<T>(
-  resource: 'tickets' | 'devices' | 'tasks',
+  resource: QueryResource,
   quick: Query = {},
   extraFilter?: Node,
 ): QueryList<T> {
@@ -54,9 +59,10 @@ export function useQueryList<T>(
   });
   const [state, update] = useState(initial.state);
   const [urlError, setUrlError] = useState(initial.error);
+  const viewsEnabled = resource !== 'users';
   const [initialView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return { id: params.get('view'), hasQuery: params.has('query') };
+    return { id: viewsEnabled ? params.get('view') : null, hasQuery: params.has('query') };
   });
   const [view, setView] = useState<SavedView>();
   const [viewPending, setViewPending] = useState(initialView.id !== null);
@@ -89,7 +95,7 @@ export function useQueryList<T>(
   // System Views are code, not rows: they resolve from the caller's system list, not GET /views/{id}.
   const fetchView = (id: string, signal: AbortSignal): Promise<SavedView> =>
     isSystemKey(id)
-      ? viewsApi.system(resource, signal).then((page) => {
+      ? viewsApi.system(resource as ViewResource, signal).then((page) => {
           const found = page.items.find((entry) => entry.id === id);
           const loaded = found ? systemSavedView(found) : undefined;
           if (!loaded) throw new ApiError({ status: 404, code: 'views.not_found', message: '' });
@@ -147,7 +153,7 @@ export function useQueryList<T>(
     // The URL is read once at mount.
   }, []);
   const { search } = useLocation();
-  const urlViewId = new URLSearchParams(search).get('view');
+  const urlViewId = viewsEnabled ? new URLSearchParams(search).get('view') : null;
   useEffect(() => {
     if (urlViewId === handledView.current) return;
     handledView.current = urlViewId;
@@ -286,6 +292,7 @@ export function useQueryList<T>(
   );
   return {
     resource,
+    viewsEnabled,
     list,
     state,
     setState,

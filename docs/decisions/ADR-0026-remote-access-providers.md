@@ -1,6 +1,6 @@
 # ADR-0026: Remote Access Through Remote Access Providers
 
-- Status: Accepted (2026-10-03). Implemented in part: F10 slice R-A (attended sessions through launch-link connectors, backend only; see [current status](../product/current-status.md)). Unattended mode, terminal, file transfer and provider API connectors are not implemented.
+- Status: Accepted (2026-10-03). Implemented in part: F10 slices R-A (backend) and R-B (UI and OpenAPI): attended sessions through launch-link connectors; see [current status](../product/current-status.md). Unattended mode, terminal, file transfer and provider API connectors are not implemented.
 - Related: [ADR-0008](ADR-0008-separate-agents.md) (separate agents, still valid), [agent boundaries](../security/agent-boundaries.md), [security architecture](../security/security-architecture.md).
 
 ## Context

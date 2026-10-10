@@ -50,6 +50,9 @@ type Config struct {
 	PresenceEnabled bool
 	// PresenceRetentionDays is PRESENCE_RETENTION_DAYS (1 to 30), the upper bound of the runtime retention.
 	PresenceRetentionDays int
+	// AuditRetentionDays is AUDIT_RETENTION_DAYS: 0 keeps every audit event, otherwise events older than that many
+	// days are purged by the worker (at least 365; the database function enforces the floor again).
+	AuditRetentionDays int
 	// PresenceSourceStaleAfter is PRESENCE_SOURCE_STALE_AFTER: older external signals count as unknown.
 	PresenceSourceStaleAfter time.Duration
 
@@ -194,6 +197,7 @@ var Registry = []Descriptor{
 	{Name: "REMOTE_ACCESS_PROVIDERS", Type: "string", Description: "Comma-separated Remote Access Provider keys to enable (`rustdesk`, `anydesk`, `hoptodesk`; launch-link connectors, attended sessions only). Empty switches Remote Access off: no session can be requested. Unknown keys stop turaco-api and turaco-worker at startup. API and worker must use the same value."},
 	{Name: "REMOTE_ACCESS_APPROVAL_REQUIRED_OWNERSHIP", Type: "string", Description: "Comma-separated Device ownerships (`corporate`, `personal`, `unknown`) whose Remote Access Sessions need a second approver holding remote_access.admin before they can be launched. Empty requires no approval."},
 	{Name: "PRESENCE_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Workforce Presence (ADR-0028): routes, the retention job and the public availability contract. Off by default; enabling needs the customer's data protection impact assessment and works-council confirmation, recorded afterwards in the audited runtime setting presence.settings.enabled. API and worker must use the same value."},
+	{Name: "AUDIT_RETENTION_DAYS", Type: "int", Default: "0", Description: "Audit log retention in days. 0 keeps every event. A value of 365 or more makes the worker purge older events in batches (job platform.audit.purge, itself audited as platform.audit.purged); smaller values are refused at startup and the database function never deletes events younger than 365 days. Legal retention is the operator's decision. API and worker should use the same value so the Audit page states the policy correctly."},
 	{Name: "PRESENCE_RETENTION_DAYS", Type: "int", Default: "30", Description: "Upper bound of the Workforce Presence retention: past entries are deleted this many days after they ended; 1 to 30, never longer. The runtime setting can only shorten it."},
 	{Name: "PRESENCE_SOURCE_STALE_AFTER", Type: "duration", Default: "24h", Description: "An externally sourced Workforce Presence signal older than this is shown as unknown instead of being trusted; at least 1m."},
 	{Name: "AI_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Turaco AI (ADR-0029, F12): the assistant API, tools and provider calls. Off by default; when off only GET /api/v1/ai/status and the permission-protected configuration routes (settings, providers, usage) are mounted and no provider is called by users. Enabling also needs the audited runtime setting ai.settings.enabled and an enabled AI Provider. API and worker may differ (the worker only runs the cleanup jobs)."},
@@ -257,6 +261,13 @@ func Load() (Config, error) {
 		}
 	}
 	cfg.PresenceEnabled = getenv("PRESENCE_ENABLED", "false") == "true"
+	if v := os.Getenv("AUDIT_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || (n != 0 && n < 365) || n > 36500 {
+			return Config{}, fmt.Errorf("AUDIT_RETENTION_DAYS must be 0 (keep everything) or an integer from 365 to 36500")
+		}
+		cfg.AuditRetentionDays = n
+	}
 	cfg.PresenceRetentionDays = 30
 	if v := os.Getenv("PRESENCE_RETENTION_DAYS"); v != "" {
 		n, err := strconv.Atoi(v)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 
-export type ReferenceKind = 'users' | 'teams' | 'assets' | 'queues';
+export type ReferenceKind = 'users' | 'teams' | 'assets' | 'queues' | 'departments' | 'locations';
 
 /** API collection path of a reference kind. Ticket Queues live under the Service Desk. */
 export const referencePath = (kind: ReferenceKind): string =>
@@ -26,7 +26,9 @@ export function referenceKind(resource: string | undefined): ReferenceKind | und
   return resource === 'users' ||
     resource === 'teams' ||
     resource === 'assets' ||
-    resource === 'queues'
+    resource === 'queues' ||
+    resource === 'departments' ||
+    resource === 'locations'
     ? resource
     : undefined;
 }

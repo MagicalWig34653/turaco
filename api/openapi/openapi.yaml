@@ -8156,13 +8156,17 @@ paths:
         - {name: actionPrefix, in: query, schema: {type: string, maxLength: 200}}
         - {name: actorId, in: query, schema: {type: string}}
         - {name: correlationId, in: query, schema: {type: string, maxLength: 200}}
+        - {name: module, in: query, description: Module key; the same as `actionPrefix=<module>.` (not combinable with actionPrefix)., schema: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}}
+        - {name: actorKind, in: query, schema: {type: string, enum: [user, system]}}
+        - {name: systemActor, in: query, description: 'Name of a non-human actor, for example cli or directory-sync.', schema: {type: string, maxLength: 64}}
+        - {name: via, in: query, description: AI-assisted actions only., schema: {type: string, enum: [ai, mcp]}}
         - {name: from, in: query, schema: {type: string, format: date-time}}
         - {name: to, in: query, schema: {type: string, format: date-time}}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
-          description: One page of audit events.
+          description: One page of audit events. Actors and targets of known types carry resolved display names (`actor`, `target`); `unresolvedTypes` lists target types whose resolver was unavailable.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AuditEventList'}
@@ -8173,6 +8177,172 @@ paths:
               schema: {$ref: '#/components/schemas/Error'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /audit-events/retention:
+    get:
+      operationId: getAuditRetention
+      summary: Audit retention policy.
+      description: "Requires `platform.audit.view`. The configured retention (`AUDIT_RETENTION_DAYS`, 0 keeps everything), the safe minimum (365 days; the database enforces it too) and the oldest stored event."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The policy.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditRetention'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /audit-events/export.csv:
+    get:
+      operationId: exportAuditEvents
+      summary: Export audit events as CSV.
+      description: "Requires `platform.audit.view` and `platform.audit.export` (high risk). `from` and `to` are required and cover at most 92 days; at most 10000 events (more answers 413 `audit.export_too_large`); at most 5 exports per hour and user (429 `audit.export_rate_limited`). UTF-8 with BOM; cells that a spreadsheet could read as formulas are neutralized. Columns: time, actor, actor_id, action, target_type, target, target_id, correlation_id, via; `includeDetails=true` adds before, after, metadata. The export is recorded in the audit log (`platform.audit.exported`) before it streams. All filters of the list apply."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: includeDetails, in: query, schema: {type: boolean}}
+        - {name: actionPrefix, in: query, schema: {type: string, maxLength: 200}}
+        - {name: module, in: query, schema: {type: string}}
+        - {name: actorId, in: query, schema: {type: string}}
+        - {name: actorKind, in: query, schema: {type: string, enum: [user, system]}}
+        - {name: targetType, in: query, schema: {type: string}}
+        - {name: targetId, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: The CSV file.
+          content:
+            text/csv:
+              schema: {type: string}
+        '400':
+          description: Invalid or missing range (audit.range_required, audit.range_too_long, audit.invalid_filter).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413':
+          description: More than 10000 matching events (audit.export_too_large).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Export limit reached (audit.export_rate_limited); `Retry-After` is set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/health:
+    get:
+      operationId: getAdminHealth
+      summary: All health checks.
+      description: "Requires `platform.health.view`. Checks read stored facts and configuration key names, never values and never the outside world. Results are cached for 5 seconds."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Every check with its result and a summary.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthReport'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/integrations:
+    get:
+      operationId: listAdminIntegrations
+      summary: Integration health.
+      description: "Requires `platform.health.view`. The integration checks (directory, mail, object storage, Intune, software provider, Autotask, advisory feeds, remote access, ...). `mode` says what is behind an integration (real, fake, not_configured); a provider whose client is not built reports `not_configured` with `errorCode: client_not_built`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Integration checks.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthReport'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/system:
+    get:
+      operationId: getAdminSystem
+      summary: System information.
+      description: "Requires `platform.health.view`. Application version, environment, process start, database version and the latest applied migration (the binary does not embed the migration files, so an out-of-date schema is not detected here)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: System information.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/setup:
+    get:
+      operationId: getAdminSetup
+      summary: Setup checklist.
+      description: "Requires `platform.health.view`. Ten items derived from stored facts; items of switched-off modules are omitted. `open` counts the todo items."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The checklist.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupChecklist'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/setup/items/{key}:
+    put:
+      operationId: putAdminSetupItem
+      summary: Skip, confirm or clear a setup item.
+      description: "Requires `platform.health.view` and `platform.admin`. `skipped` needs a reason (at most 500 characters); `confirmed` is only for items that cannot be derived (the module defaults); `cleared` removes the mark. An existing mark needs `expectedVersion` (409 `health.version_conflict` otherwise). Audited as platform.setup.item_skipped|confirmed|cleared (the reason stays in the item, not in the audit event)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [state]
+              properties:
+                state: {type: string, enum: [skipped, confirmed, cleared]}
+                reason: {type: string, maxLength: 500}
+                expectedVersion: {type: integer, minimum: 0}
+      responses:
+        '200':
+          description: The item after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupItem'}
+        '400':
+          description: Invalid state or reason (health.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Unknown item (health.not_found).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: health.version_conflict or health.not_confirmable.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '500': {$ref: '#/components/responses/InternalError'}
   /infrastructure/tree:
     get:
@@ -19499,6 +19669,83 @@ components:
         before: {description: State before the change, when recorded.}
         after: {description: State after the change, when recorded.}
         metadata: {type: object}
+        actor: {$ref: '#/components/schemas/AuditLabel'}
+        systemActor: {type: string, description: Name of a non-human actor (cli, directory-sync, ...).}
+        target: {$ref: '#/components/schemas/AuditLabel'}
+        via: {type: string, enum: [ai, mcp]}
+    AuditLabel:
+      type: object
+      additionalProperties: false
+      description: Resolved display name. `gone` marks an id the owning module no longer knows (the UI shows the id suffix).
+      properties:
+        text: {type: string}
+        gone: {type: boolean}
+    AuditRetention:
+      type: object
+      additionalProperties: false
+      required: [retentionDays, minimumDays, policy]
+      properties:
+        retentionDays: {type: integer, description: 0 keeps every event.}
+        minimumDays: {type: integer}
+        policy: {type: string, enum: [keep, purge]}
+        oldestEventAt: {type: string, format: date-time}
+    HealthResult:
+      type: object
+      additionalProperties: false
+      required: [key, category, status, observedAt]
+      properties:
+        key: {type: string}
+        category: {type: string, enum: [system, integration, module]}
+        status: {type: string, enum: [ok, stale, fake, not_configured, disabled, failing, unknown]}
+        mode: {type: string, enum: [real, fake, not_configured]}
+        observedAt: {type: string, format: date-time}
+        lastSuccessAt: {type: string, format: date-time}
+        lastAttemptAt: {type: string, format: date-time}
+        errorCode: {type: string, description: Short machine code, never raw error text.}
+        counts: {type: object, additionalProperties: {type: integer}}
+        detail: {type: object, additionalProperties: true}
+        nextStep:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, enum: [route, config, docs]}
+            route: {type: string}
+            configKeys: {type: array, items: {type: string}, description: Names of configuration keys, never values.}
+            docsPath: {type: string}
+    HealthReport:
+      type: object
+      additionalProperties: false
+      required: [items, summary]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/HealthResult'}}
+        summary:
+          type: object
+          additionalProperties: false
+          properties:
+            attention: {type: integer, description: Checks that are failing, stale or not configured.}
+            total: {type: integer}
+    SetupItem:
+      type: object
+      additionalProperties: false
+      required: [key, order, route, state]
+      properties:
+        key: {type: string}
+        order: {type: integer}
+        route: {type: string}
+        state: {type: string, enum: [done, todo, skipped, confirmed]}
+        attention: {type: boolean}
+        reason: {type: string}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    SetupChecklist:
+      type: object
+      additionalProperties: false
+      required: [items, open, total]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SetupItem'}}
+        open: {type: integer}
+        total: {type: integer}
     AuditEventList:
       type: object
       additionalProperties: false
@@ -19508,6 +19755,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/AuditEvent'}
         nextCursor: {type: string}
+        unresolvedTypes: {type: array, items: {type: string}}
     Error:
       type: object
       additionalProperties: false

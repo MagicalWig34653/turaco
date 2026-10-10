@@ -27,7 +27,8 @@ const label = (item: Item) => item.displayName ?? item.name ?? item.reference ??
 /** Permission needed to search each reference list; the server still authorizes every call. */
 function useCanSearch(kind: ReferenceKind | undefined): boolean {
   const { can } = useSession();
-  if (kind === 'users' || kind === 'teams') return can('organization.view');
+  if (kind === 'users' || kind === 'teams' || kind === 'departments' || kind === 'locations')
+    return can('organization.view');
   if (kind === 'assets') return can('assets.view') || can('assets.manage');
   // The Queue list is limited by the server to the Queues the caller may know.
   return kind === 'queues';

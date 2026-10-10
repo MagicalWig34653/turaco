@@ -38,10 +38,12 @@ import (
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	aiplatform "github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
@@ -113,7 +115,7 @@ func main() {
 		SoftwareProviderSync: cfg.SoftwareProviderSync, SoftwareDeployWrite: cfg.SoftwareDeployWrite, AutotaskSync: cfg.AutotaskSync,
 		RemoteAccessProviders: cfg.RemoteAccessProviders, RemoteAccessApprovalOwnership: cfg.RemoteAccessApprovalOwnership,
 		Presence: presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter},
-		Modules:  moduleSvc, ConsumerGate: consumerGate,
+		Modules:  moduleSvc, ConsumerGate: consumerGate, AuditRetentionDays: cfg.AuditRetentionDays,
 	}
 	if err := registerJobsFn(runner, dispatcher, pool, deps); err != nil {
 		logger.Error("register worker jobs", "error", err)
@@ -136,10 +138,19 @@ func main() {
 		}
 	}()
 
+	// The heartbeat lets the administration health page tell whether a worker is running at all.
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		host, _ := os.Hostname()
+		health.RunHeartbeat(ctx, pool, fmt.Sprintf("%s-%d", host, os.Getpid()), version, logger)
+	}()
+
 	logger.Info("turaco-worker started", "version", version)
 	err = runner.Run(ctx)
 	stop()
 	<-dispatcherDone
+	<-heartbeatDone
 	if err != nil {
 		logger.Error("job runner stopped", "error", err)
 		os.Exit(1)
@@ -167,6 +178,8 @@ type jobDeps struct {
 	// registers the deferred-event jobs.
 	Modules      *modules.Service
 	ConsumerGate *modules.ConsumerGate
+	// AuditRetentionDays is AUDIT_RETENTION_DAYS; the purge job is registered either way and scheduled only when > 0.
+	AuditRetentionDays int
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -227,6 +240,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
 		{"saved views retention", func() error { return registerViewsPurge(runner, pool) }},
+		{"audit retention", func() error { return registerAuditPurge(runner, pool, d.AuditRetentionDays) }},
 		{"role assignment expiry", func() error { return registerAccessExpiry(runner, pool) }},
 		{"remote access", func() error {
 			return registerRemoteAccess(runner, pool, d.RemoteAccessProviders, d.RemoteAccessApprovalOwnership)
@@ -565,6 +579,17 @@ func registerPresence(runner *jobs.Runner, pool *pgxpool.Pool, cfg presenceapp.C
 
 // registerAdvisorySync registers the advisory feed synchronization job (NVD, CISA KEV); it is scheduled only
 // when ADVISORY_SYNC is on. The dedupe key keeps several workers from queueing the same run.
+// registerAuditPurge registers the audit retention job; it is scheduled only when AUDIT_RETENTION_DAYS is set.
+func registerAuditPurge(runner *jobs.Runner, pool *pgxpool.Pool, retentionDays int) error {
+	if err := runner.Register(audit.PurgeJobType, audit.PurgeJobTimeout, audit.NewPurgeHandler(pool, retentionDays)); err != nil {
+		return err
+	}
+	if retentionDays <= 0 {
+		return nil
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: audit.PurgeJobType, DedupeKey: audit.PurgeJobType, Interval: audit.PurgeInterval, MaxAttempts: 2})
+}
+
 func registerViewsPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	if err := runner.Register(views.PurgeJobType, views.PurgeJobTimeout, views.NewPurgeHandler(pool)); err != nil {
 		return err

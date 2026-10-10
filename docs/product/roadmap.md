@@ -52,6 +52,11 @@ Revised 2026-10-03: Turaco integrates specialist providers instead of building a
 - Workforce Presence: operational availability and team coverage, not HR ([ADR-0028](../decisions/ADR-0028-workforce-presence.md))
 - Turaco AI: provider-independent, tool-based, acting with the requesting user's permissions ([ADR-0029](../decisions/ADR-0029-turaco-ai.md))
 
+## Phase 7 — Workbench and administration
+- platform query engine, Saved Views, Ticket Queues, Task Boards ([ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md)); further resource catalogs follow module by module
+- People and access administration: local accounts, role templates, effective permissions ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); health, setup checklist, audit UX and External Parties follow
+- runtime module switches ([ADR-0032](../decisions/ADR-0032-module-switches.md))
+
 ## Later / optional
 - Endpoint Agent inventory and typed operations
 - native WinGet or remote-access providers, each only with its own ADR

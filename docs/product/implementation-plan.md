@@ -6,9 +6,30 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 
 **Plan revision 2026-10-03 (after F6 slice 1):** F9 and F10 were re-scoped to integrate specialist providers instead of building a patch engine and a remote-desktop transport ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md), [ADR-0027](../decisions/ADR-0027-software-management-providers.md)); F11 Workforce Presence ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)) and F12 Turaco AI ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)) were added; Endpoint Agent management moved to "Later / optional". F0–F8 are unchanged. Earlier sessions planned F9 as "Endpoint Management" (Endpoint Agent command transport and a native WinGet provider) and F10 as a Turaco-built "Remote Support" subsystem; that plan is superseded. The F-number order is not a commitment; F9–F12 sequencing is an open product decision.
 
-## Delivery status (2026-10-06)
+## Delivery status (2026-10-10)
 
-F0–F12 are implemented with documented gaps (F9/F10 run against fake provider adapters; F11 has manual entries only, external sources are open); [current status](current-status.md) is authoritative. Remaining gaps inside those phases: Autotask REST client and webhook (F5), live Microsoft Graph client (F6), live advisory feeds beyond NVD and CISA KEV, which are implemented (OSV and MSRC remain) (F8), real AD verification (F1). The UI design pass (themes, shell, workbench screens) runs between F8 and F9. F12 is read-only so far (writes via AI Proposals and the MCP server are planned).
+[Current status](current-status.md) is authoritative; this table only orders the phases. "Fake" means the internal side is complete behind a domain port and runs against a fake or placeholder adapter because no real vendor client exists.
+
+| Phase | State | Open gaps |
+| --- | --- | --- |
+| F0 Repository foundation | Done | |
+| F1 Identity and Organization | Done for on-prem with one directory | Real Active Directory and Windows client verification, OIDC/Entra |
+| F2 Work Foundation | Done | Email bounce handling, digests, per-recipient language |
+| F3 Products, Catalog, Requests | Done (backend, OpenAPI, UI) | |
+| F4 Inventory, Procurement, Assets | Done (backend, OpenAPI, UI) | |
+| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client and webhook (fake), routing rules, SLA |
+| F6 Endpoint Intelligence | Done against the fake provider (devices, management model, assignment intelligence, UI) | Microsoft Graph client, `assignment_stale` |
+| F7 Infrastructure and Change | Done (F7a to F7d, OpenAPI, UI) | Runbook link, native IPAM (ADR-0030: integrate) |
+| F8 Security and IT Briefing | Done (advisories, findings, remediation, feed, UI) | OSV and MSRC feeds |
+| F9 Software Lifecycle | G1 to G4 done (backend, OpenAPI, UI) against fake adapters | Real IntuneGet client and Graph write client |
+| F10 Remote Access | R-A and R-B done (attended, launch-link connectors) | Provider API connectors, unattended access, R-C threat models and lab test |
+| F11 Workforce Presence | P-A and the P-B UI done (manual entries, availability hints) | Change window and Briefing integration, coverage notifications, external sources (P-C) |
+| F12 Turaco AI | A-A (read-only backend) and A-B (UI) done | AI Proposals and write tools (A-C), MCP server (A-D), non-local providers |
+| F13 Workbench Views | Q-A to Q-D done (query engine, Saved Views, Queues, System Views, My Work sources, Boards; backend and UI) | Q-E catalogs of further resources, routing rules, archived-View restore screen |
+| F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties |
+| Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
+
+The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
 
 ## F0 — Repository Foundation
 
@@ -169,6 +190,14 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 3. AI Proposals with confirmed writes,
 4. drafts/requests into existing approval workflows for high-impact intents,
 5. read-only Turaco MCP server.
+
+## F13 — Workbench Views
+
+[ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md). Feature design: [F13 design](f13-workbench-views-design.md). Implemented: Q-A query engine and first catalogs, Q-B Saved Views, shares and pins, Q-C Ticket Queues with numbering, System Views, counts and My Work sources, Q-D Task Boards, and the UI of all four. Not started: Q-E catalogs for further resources (assets, software, requests, changes, approvals, knowledge, procurement, security findings), one pull request per module family.
+
+## F14 — Administration
+
+[ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md). Feature design: [F14 design](f14-administration-design.md). Slices: A-A People and Locations backend (with A-A2 local accounts), A-B roles and effective permissions backend, A-C platform health, setup checklist, audit and search backend, A-D People UI, A-E roles UI, A-F health, audit and search UI, A-G External Parties. A-A, A-A2, A-B, A-D and A-E are implemented; A-C, A-F and A-G are open. Operator walkthrough: [Getting started as an administrator](../operations/administrator-getting-started.md).
 
 ## Later / optional
 

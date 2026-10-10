@@ -58,6 +58,15 @@ const paths: Partial<Record<RouteId, string>> = {
   products: 'M3 7l9-4 9 4v12l-9 3-9-3zM3 7l9 4 9-4m-9 4v11',
   catalogAdmin: 'M4 4h16v16H4zM8 8h8M8 12h8m-8 4h5M17 15v4m-2-2h4',
   allRequests: 'M5 3h12l3 3v15H5zM16 3v4h4M9 11h7m-7 4h7',
+  users:
+    'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-2a6 6 0 0 1 12 0v2M16 3.5a4 4 0 0 1 0 7.5M22 21v-2a6 6 0 0 0-4-5.6',
+  userNew: 'M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM3 21v-2a7 7 0 0 1 14 0v2M19 8v6m-3-3h6',
+  teams:
+    'M3 21v-3a5 5 0 0 1 10 0v3M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M15 21v-2a4 4 0 0 1 6 0v2M18 14a3 3 0 1 0 0-6',
+  locations:
+    'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11ZM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+  departments: 'M12 3v5M6 8h12M6 8v4m12-4v4M3 12h6v5H3zm12 0h6v5h-6zM9 17v3h6v-3',
+  holders: 'M4 4h16v16H4zM9 9a2.5 2.5 0 1 0 0 .01M6 17a3.5 3.5 0 0 1 6 0M14 9h3m-3 3h3m-3 3h3',
   roles: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0M16 6h5m-2-2v4',
   roleAssignments: 'M4 4h16v16H4zM8 9h8m-8 4h5m-5 4h4M15 15l2 2 3-4',
   directorySync: 'M4 10a8 8 0 0 1 14-4l2 2M20 5v4h-4M20 14a8 8 0 0 1-14 4l-2-2M4 19v-4h4',

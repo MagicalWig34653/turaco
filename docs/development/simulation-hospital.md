@@ -16,7 +16,7 @@ make dev-setup                                   # once: infrastructure, migrati
 - For load and concurrency tests with the same logins see [Load testing](load-testing.md).
 - To return to the baseline after testing, recreate the development database (stop the infrastructure, remove the PostgreSQL volume defined in `deploy/compose/dev.yaml`, run `make dev-setup`, then `demo seed-hospital`).
 - Local logins are emergency-style accounts. The API must run with `AUTH_EMERGENCY_LOGIN_ENABLED=true` (the **Turaco API** run configuration does). Sessions of these accounts end after one hour at the latest, and every login is logged at error level; both are expected.
-- Everything the seed writes is audited with the CLI actor and the correlation id `demo-seed-hospital`. Locations, departments and the profile attributes of users (name, email, department, primary location, manager) have no write operation in Organization yet; the seed writes them directly and audits them as `demo.hospital.*` actions.
+- Everything the seed writes is audited with the CLI actor and the correlation id `demo-seed-hospital`. Locations, departments, Teams, roles and role assignments are created through the audited People and role operations; only the profile attributes of the emergency-account personas are written directly (see [How the seed writes organization data](#how-the-seed-writes-organization-data)).
 
 **Password of every simulation login: `turaco-sim-password`** (development only; public). `devadmin` / `turaco-dev-password` remains the platform administrator for setup and for observing as an admin.
 
@@ -147,8 +147,6 @@ Testers must write these down as **gaps**, not as defects, when they look for th
 | Expectation | State |
 |---|---|
 | Ticket **routing rules** (automatic assignment by category or keyword) | Not implemented; desks (queues) exist, tickets are routed by the person who raises or moves them ([F13 design](../product/f13-workbench-views-design.md)) |
-| **User and team administration UI** (create users, edit teams and members, set manager or location) | Not implemented. Teams are managed through the API; users come from directory sync (the simulation writes them with the CLI) |
-| Location **hierarchy** and a location admin | Not implemented; Locations are flat and have no write API |
 | **Meetings and calendar** for recurring team meetings, agendas, minutes | Not implemented. The maintenance calendar shows change windows only |
 | **Per-site scoping** of permissions (an IT lead sees only his site) | Not implemented; roles are global |
 | **Vendor / external portal** with a dedicated restricted view | Not implemented. The vendor gets a minimal role instead (tasks only) |
@@ -156,6 +154,8 @@ Testers must write these down as **gaps**, not as defects, when they look for th
 | Provider-observed **devices** (Intune sync) | Not seeded; assets exist, the device list stays empty or shows only synced data |
 | Remote access sessions, deployments | Need configured providers; not part of the dataset |
 | Workforce Presence, Turaco AI | Optional modules, default off (`/admin/modules`); test only after an admin enables them and meets their preconditions |
+| Organization CSV import and bulk edit, External Parties with expiry and sponsor, health and setup screens, audit names and export | Not implemented (F14 A-C, A-F, A-G); the vendor persona uses the `vendor-restricted` role and an emergency-style login instead |
+| Per-user passwords by invitation in the simulation | The personas are emergency accounts with one public password. The invitation flow (`AUTH_LOCAL_LOGIN_ENABLED`, [administrator guide](../operations/administrator-getting-started.md)) exists but is not part of the dataset |
 
 ## How testers work
 
@@ -164,7 +164,7 @@ Testers must write these down as **gaps**, not as defects, when they look for th
 3. Record each result as **Pass**, **Defect** (behaviour contradicts the permission or the script), **Gap** (listed above or clearly missing capability) or **Usability** (works, but confusing or slow). Note login, page, what you expected, what happened, and the time.
 4. Never fix data by SQL during a test; use the UI or ask the facilitator. Denied actions must be denied by the **backend**, not only hidden in the UI: also try the direct URL of a hidden page.
 
-Useful pages: Overview `/`, My Work `/my-work`, My tickets `/support`, Service Desk `/service-desk`, Problems `/problems`, Major Incidents `/incidents`, Knowledge `/knowledge`, Catalog `/catalog`, Requests `/requests`, Assets `/assets`, Tasks `/tasks`, Briefing `/briefing`, Security `/security/overview`, Infrastructure `/infrastructure`, Changes `/changes`, Roles `/admin/roles`, Audit `/admin/audit`.
+Useful pages: Overview `/`, My Work `/my-work`, My tickets `/support`, Service Desk `/service-desk`, Problems `/problems`, Major Incidents `/incidents`, Knowledge `/knowledge`, Catalog `/catalog`, Requests `/requests`, Assets `/assets`, Tasks `/tasks`, Briefing `/briefing`, Security `/security/overview`, Infrastructure `/infrastructure`, Changes `/changes`, Task boards `/tasks/boards`, Ticket queues administration `/service-desk/queues`, Users `/admin/users`, Teams `/admin/teams`, Roles `/admin/roles`, Modules `/admin/modules`, Audit `/admin/audit`.
 
 ## Test script catalog
 

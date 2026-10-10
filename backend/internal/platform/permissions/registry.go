@@ -15,6 +15,8 @@ var Registry = []Permission{
 	{Name: "platform.roles.manage", Description: "Create, change and delete roles and assign or revoke them; equivalent to administrator access.", Risk: "high"},
 	{Name: "modules.manage", Description: "See the module overview and switch optional modules on and off at runtime (ADR-0032). A switched-off module disappears from the API and UI and its background jobs pause; no data is deleted. Module preconditions such as privacy records or providers are never bypassed.", Risk: "elevated"},
 	{Name: "platform.audit.view", Description: "Query the audit log.", Risk: "elevated"},
+	{Name: "platform.audit.export", Description: "Export audit events as CSV (at most 92 days and 10000 events per export, 5 exports per hour; every export is itself audited). Also needs platform.audit.view; the detail columns (before, after, metadata) are included on request.", Risk: "high"},
+	{Name: "platform.health.view", Description: "See the setup checklist, the integration and system health pages including error codes and the names of configuration keys (never values). Skipping or confirming setup items needs platform.admin.", Risk: "elevated"},
 	{Name: "organization.view", Description: "View organization users, teams and locations.", Risk: "normal"},
 	{Name: "organization.directory.view", Description: "View observed Directory Groups and their memberships.", Risk: "normal"},
 	{Name: "organization.directory.sync", Description: "Request an immediate directory synchronization run.", Risk: "elevated"},

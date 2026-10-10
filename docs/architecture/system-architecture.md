@@ -40,7 +40,7 @@ REST/JSON under `/api/v1`. Explicit domain transitions may use action endpoints 
 
 ## Authentication
 
-Identity is abstracted from platform User. Initial AD environments may use LDAP/AD directory sync and transparent Kerberos/SPNEGO where appropriate; future/hosted environments may use OIDC/Entra. Browser identity and device identity are separate.
+Identity is abstracted from platform User. Initial AD environments use LDAP/AD directory sync, directory password login and transparent Kerberos/SPNEGO (implemented); future/hosted environments may use OIDC/Entra (not implemented). Two local credential kinds exist next to the directory: the break-glass emergency account (CLI-managed, `AUTH_EMERGENCY_LOGIN_ENABLED`) and, for people without a directory account, local accounts whose passwords are set only through single-use invitation or reset tokens (`AUTH_LOCAL_LOGIN_ENABLED`, [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); local accounts never hold high-risk permissions. Restricted external accounts are designed but not implemented. Browser identity and device identity are separate.
 
 ## Device recognition
 
@@ -66,15 +66,19 @@ SSE is the default server-to-browser realtime mechanism for notifications/status
 
 ## Search
 
-PostgreSQL full text/trigram/indexed normalized fields initially. Search is a read model and respects authorization. OpenSearch is not a baseline dependency.
+PostgreSQL full text/trigram/indexed normalized fields initially. Search is a read model and respects authorization. OpenSearch is not a baseline dependency. List search goes through the platform query engine (below); the frontend command palette (`app/objectSearch.ts`) searches tickets, problems, major incidents, knowledge, devices and people through the owning modules' own authorized endpoints. A platform-wide search provider registry is designed (F14 A-C) and not implemented.
+
+## Lists, Saved Views and module switches
+
+Lists are queried through `platform/query` ([ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md)): a module declares a field catalog, the engine validates a versioned Filter AST, compiles bind-only SQL, signs keyset cursors, caps counts and enforces a statement timeout; the module's own repository applies its permission and row scope. `platform/views` stores Saved Views, Shares, Pins and Pin Rules and executes a View in process through the owning module's query endpoint as the viewer, so a share never widens data access. `platform/workitems` merges My Work sources. Ticket Queues (Service Desk) and Task Boards (Tasks) are module concepts built on these platform parts. `platform/modules` ([ADR-0032](../decisions/ADR-0032-module-switches.md)) holds the catalog of core and optional modules and the audited runtime switch; a switched-off module answers 404 `platform.module_disabled` on its routes, its optional worker jobs are dropped or deferred, and the Views, My Work, Briefing and AI integrations skip it. Data is never deleted by a switch.
 
 ## Management-provider intelligence
 
 Intune and future endpoint-management providers synchronize assignable artifacts, assignments, filters and observations into local normalized state. Interactive Device/User/Group views read that local model rather than blocking on live provider calls. Turaco separates configured assignment, derived expected applicability and provider-observed result. Explainability (`AssignmentPath`), reverse lookup and comparison are read models; vendor DTOs and provider-specific semantics remain at the integration boundary. See ADR-0020 and `docs/integrations/intune-assignment-intelligence.md`.
 
-## Provider-based capabilities (planned)
+## Provider-based capabilities (partly implemented)
 
-Turaco integrates specialist providers where it owns the decision, context and audit but not the mechanics. Each provider kind has its own domain-specific port; there is no generic plugin framework.
+Turaco integrates specialist providers where it owns the decision, context and audit but not the mechanics. Each provider kind has its own domain-specific port; there is no generic plugin framework. The internal sides (ports, lifecycles, UI) are implemented against fakes or launch-link connectors; the real vendor clients are not (see [current status](../product/current-status.md#planned-capabilities-not-implemented)).
 
 - Software lifecycle: Turaco approves software and orchestrates Deployment Rings; a Software Management Provider (IntuneGet) packages and publishes into Intune; Intune assigns and reports ([ADR-0027](../decisions/ADR-0027-software-management-providers.md)).
 - Remote access: Turaco authorizes, audits and records sessions; a Remote Access Provider (HopToDesk, RustDesk or AnyDesk) carries the session ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md)).

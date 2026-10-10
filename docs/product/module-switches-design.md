@@ -1,6 +1,6 @@
 # Module Switches (design and implementation notes)
 
-Status: backend implemented (2026-10-08); the administration UI follows. Decision: [ADR-0032](../decisions/ADR-0032-module-switches.md).
+Status: backend implemented (2026-10-08); the administration UI (`/admin/modules`) is implemented too. Decision: [ADR-0032](../decisions/ADR-0032-module-switches.md).
 
 ## Goal
 

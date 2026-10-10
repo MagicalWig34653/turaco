@@ -136,6 +136,10 @@ describe('visibleNavItems', () => {
   it('requires both directory permissions for directory sync', () => {
     expect(ids(['organization.directory.view'], 'admin')).toEqual([]);
     expect(ids(['organization.directory.view', 'organization.view'], 'admin')).toEqual([
+      'users',
+      'teams',
+      'locations',
+      'departments',
       'directorySync',
     ]);
   });
@@ -501,5 +505,51 @@ describe('remote access', () => {
     expect(matchRoute(appRoutes, '/remote-access/sessions/7')?.route.id).toBe(
       'remoteAccessSessionDetail',
     );
+  });
+});
+
+describe('Administration routes (F14)', () => {
+  it('hides every People entry without the organization permission', () => {
+    expect(ids([], 'admin')).toEqual([]);
+    expect(ids(['organization.users.manage'], 'admin')).toEqual([]);
+  });
+
+  it('shows People, Teams, Locations and Departments with organization.view', () => {
+    expect(ids(['organization.view'], 'admin')).toEqual([
+      'users',
+      'teams',
+      'locations',
+      'departments',
+    ]);
+  });
+
+  it('shows "Who has access" only with both role and detail permissions', () => {
+    expect(ids(['platform.roles.view'], 'admin')).toEqual(['roles', 'roleAssignments']);
+    expect(ids(['platform.roles.view', 'organization.users.view_details'], 'admin')).toEqual([
+      'roles',
+      'roleAssignments',
+      'holders',
+    ]);
+  });
+
+  it('resolves static before parameterised paths', () => {
+    expect(matchRoute(appRoutes, '/admin/users/new')?.route.id).toBe('userNew');
+    expect(matchRoute(appRoutes, '/admin/users/abc')?.route.id).toBe('userDetail');
+    expect(matchRoute(appRoutes, '/admin/teams/abc')?.params.id).toBe('abc');
+    expect(matchRoute(appRoutes, '/admin/roles/new')?.route.id).toBe('roleNew');
+  });
+
+  it('needs the manage permission for the create wizard', () => {
+    const route = appRoutes.find((entry) => entry.id === 'userNew');
+    expect(route && canViewRoute(createCan({ permissions: ['organization.view'] }), route)).toBe(
+      false,
+    );
+    expect(
+      route &&
+        canViewRoute(
+          createCan({ permissions: ['organization.view', 'organization.users.manage'] }),
+          route,
+        ),
+    ).toBe(true);
   });
 });

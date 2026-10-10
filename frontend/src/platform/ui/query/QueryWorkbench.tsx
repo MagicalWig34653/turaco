@@ -179,11 +179,13 @@ export function QueryWorkbench<T>({ query, columns, listKey, onColumnsChange }: 
         </span>
       </div>
 
-      <ViewBar
-        query={query}
-        visibleColumns={visibleColumns}
-        offeredColumns={columns.map((column) => column.key)}
-      />
+      {query.viewsEnabled ? (
+        <ViewBar
+          query={query}
+          visibleColumns={visibleColumns}
+          offeredColumns={columns.map((column) => column.key)}
+        />
+      ) : null}
 
       {query.urlError ? (
         <Alert kind="warning">
