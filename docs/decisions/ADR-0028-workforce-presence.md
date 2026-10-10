@@ -1,6 +1,6 @@
 # ADR-0028: Workforce Presence for Operational Availability
 
-- Status: Accepted (2026-10-03). Planned capability; nothing is implemented.
+- Status: Accepted (2026-10-03). P-A (backend) and the P-B UI with availability hints are implemented; external sources (P-C) are not ([current status](../product/current-status.md)).
 
 ## Context
 

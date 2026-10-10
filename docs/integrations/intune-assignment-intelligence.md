@@ -328,7 +328,7 @@ Devices where:
   Intune.last_check_in < now - 7 days
 ```
 
-> Implemented (slice 4): device list filters `managementState` (`failed|conflict|pending`), `hasFinding`, `osVersion` prefix and `lastCheckinOlderThanDays`. Per-artifact query terms such as `ManagementArtifact("BitLocker Baseline").expected_applicable` are not implemented. There is no platform Saved View mechanism yet, so the filters are plain list parameters.
+> Implemented (slice 4): device list filters `managementState` (`failed|conflict|pending`), `hasFinding`, `osVersion` prefix and `lastCheckinOlderThanDays`. Per-artifact query terms such as `ManagementArtifact("BitLocker Baseline").expected_applicable` are not implemented. Device list filters can be saved as platform Saved Views through the Device field catalog ([ADR-0033](../decisions/ADR-0033-workbench-views-query-engine.md)); the per-artifact terms above are not catalog fields.
 
 This query model can power Saved Views, Dynamic Groups, reporting and Security/IT Briefing correlation without allowing arbitrary SQL.
 

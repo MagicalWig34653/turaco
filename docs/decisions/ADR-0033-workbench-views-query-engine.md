@@ -1,6 +1,6 @@
 # ADR-0033: Lists are queried through a platform query engine with module-declared field catalogs, and Saved Views are a platform concept
 
-- Status: Accepted (2026-10-08). Q-A backend query engine, Tickets, Devices and Tasks catalogs and the Q-B backend for Saved Views, Shares, Pins and Pin Rules and the Q-C backend for Ticket Queues, System Views, sidebar counts and the My Work source contract are implemented; the Q-D backend for Task Boards is implemented; the Board UI remains planned. See the [F13 design](../product/f13-workbench-views-design.md).
+- Status: Accepted (2026-10-08). Q-A backend query engine, Tickets, Devices and Tasks catalogs and the Q-B backend for Saved Views, Shares, Pins and Pin Rules and the Q-C backend for Ticket Queues, System Views, sidebar counts and the My Work source contract are implemented; the Q-D backend for Task Boards is implemented; the UI (filter builder, view bar, sharing and pins, sidebar with counts and System Views, Queue administration, Board screen) is implemented. Catalogs for further resources (Q-E) are not. See the [F13 design](../product/f13-workbench-views-design.md).
 
 ## Context
 

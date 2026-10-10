@@ -5,8 +5,9 @@ is a frontend aggregate of the status settings/usage flags, not a new backend
 permission. Per-action status flags control settings reads, writes and usage.
 Administration remains reachable with the runtime setting off when the always-mounted
 status endpoint grants settings/usage permissions. Runtime use additionally requires
-`/modules/status` to report AI enabled. The current backend module gate still blocks
-settings reads/writes while the module is off; see [module switches](../../platform/modules/README.md).
+`/modules/status` to report AI enabled. The backend module gate exempts the settings,
+providers and usage routes while the module is off, so the first configuration can be completed from this screen;
+see [module switches](../../platform/modules/README.md).
 
 The authenticated provider refreshes status on focus and every minute. Conversation
 state stays in memory across panel closes and is discarded on logout or status

@@ -1,6 +1,6 @@
 # ADR-0032: Optional modules are switched at runtime through a platform module registry
 
-- Status: Accepted (2026-10-08). Backend implemented; the administration UI follows.
+- Status: Accepted (2026-10-08). Backend and administration UI (`/admin/modules`) implemented.
 
 ## Context
 

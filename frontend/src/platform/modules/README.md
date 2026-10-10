@@ -12,10 +12,10 @@ modules, refreshes on focus/every 30 seconds, and refreshes after local configur
 Shell navigation, direct routes, commands, create shortcuts, dashboard cards and embedded feature
 cards consume this state. Permissions still apply independently; the backend remains authoritative.
 
-Known backend constraint: the registry currently exempts only `/presence/status` and `/ai/status`
-from the API module gate. Settings reads/writes can therefore answer `platform.module_disabled`
-when a runtime setting is off. The frontend preserves admin-route access and displays a localized
-unavailable view, but cannot bypass this backend restriction to complete initial configuration.
+Settings routes of Presence and AI (`/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`) are exempt
+from the API module gate as well (OpenPaths in `backend/internal/platform/modules/catalog.go`), so initial
+configuration can be completed while the module is off. Their own admin permissions still apply, and the
+functional routes answer `platform.module_disabled`.
 
 The screen uses shared tables, badges, dialogs, menus and semantic tokens for all three themes;
 it introduces no motion. Model tests cover visibility, version zero, blocked switch positions,

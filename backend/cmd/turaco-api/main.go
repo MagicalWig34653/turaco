@@ -67,6 +67,7 @@ import (
 	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
+	healthtransport "github.com/MagicalWig34653/turaco/backend/internal/platform/health/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
@@ -238,6 +239,26 @@ func main() {
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger,
 		audittransport.WithResolvers(wiring.AuditResolvers(pool)), audittransport.WithRetentionDays(cfg.AuditRetentionDays))
+	// Administration health (F14 A-C): integration and system checks read stored facts and configuration key names,
+	// never values; the setup checklist derives its items from public count contracts and these checks.
+	advisoryCfg, err := config.LoadAdvisoryFeeds()
+	if err != nil {
+		logger.Error("load advisory feed configuration", "error", err)
+		os.Exit(1)
+	}
+	healthRegistry, err := wiring.Health(pool, moduleSvc, wiring.HealthConfig{
+		Environment: cfg.Environment, Version: version, LDAPConfigured: ldapConn.Enabled(), KerberosConfigured: cfg.Kerberos.Enabled(),
+		SMTPConfigured: smtpCfg.Enabled(), EmailBaseURLSet: cfg.EmailBaseURL != "", S3Configured: cfg.S3Endpoint != "" || cfg.S3Bucket != "",
+		EmergencyLogin: cfg.AuthEmergencyLoginEnabled, LocalLogin: cfg.AuthLocalLoginEnabled,
+		IntuneSync: cfg.IntuneSync, SoftwareSync: cfg.SoftwareProviderSync, AutotaskSync: cfg.AutotaskSync, AdvisorySync: advisoryCfg.Enabled,
+		RemoteAccessProviders: cfg.RemoteAccessProviders,
+	})
+	if err != nil {
+		logger.Error("register health checks", "error", err)
+		os.Exit(1)
+	}
+	healthtransport.Register(mux, healthRegistry, wiring.HealthSetup(pool, moduleSvc, healthRegistry),
+		healthtransport.SystemInfo{Version: version, Environment: cfg.Environment, StartedAt: time.Now()}, sessionAuth, logger)
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)

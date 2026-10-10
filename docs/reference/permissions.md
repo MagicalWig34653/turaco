@@ -46,7 +46,9 @@
 | `planning.manage` | elevated | Create and change Initiatives, their milestones and included records, and drive their lifecycle (start planning, propose for approval, activate, hold, resume, complete, cancel). Proposing chooses the approver; the owner, creator, proposer and editors can never approve. |
 | `planning.view` | normal | View all Initiatives (goal, owner, status, target date, milestones, included Changes, Tasks, Procurement Requests and Services, progress, approvals, history) and the maintenance calendar. Owners see their own Initiatives without it; included records appear by name only with the matching view permission of their module. |
 | `platform.admin` | high | Administer platform-wide configuration. |
+| `platform.audit.export` | high | Export audit events as CSV (at most 92 days and 10000 events per export, 5 exports per hour; every export is itself audited). Also needs platform.audit.view; the detail columns (before, after, metadata) are included on request. |
 | `platform.audit.view` | elevated | Query the audit log. |
+| `platform.health.view` | elevated | See the setup checklist, the integration and system health pages including error codes and the names of configuration keys (never values). Skipping or confirming setup items needs platform.admin. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |
 | `presence.admin` | high | Administer Workforce Presence: the runtime switch, the recorded data protection impact assessment and works-council dates, retention, and immediate purge of all entries. |

@@ -1,6 +1,6 @@
 # F7 Infrastructure and Change — Feature Design
 
-**Status:** Draft 2026-10-03, slice 1 (F7a backend), slice 2 (F7b backend) and slice 3 (F7c backend) implemented; decisions I1–I5 adopted by default (the user asked for autonomous progress through F8). Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [infrastructure change workflow](../workflows/infrastructure-change.md), [module boundaries](../architecture/module-boundaries.md), [core data model](../domain/core-data-model.md), [ADR-0030](../decisions/ADR-0030-network-ipam-integrate-not-rebuild.md), [F4 design](f4-inventory-design.md).
+**Status:** Draft 2026-10-03, slices 1 to 4 (F7a to F7d: infrastructure, services, changes, planning and maintenance calendar) implemented with OpenAPI and frontend; decisions I1–I5 adopted by default (the user asked for autonomous progress through F8). Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [infrastructure change workflow](../workflows/infrastructure-change.md), [module boundaries](../architecture/module-boundaries.md), [core data model](../domain/core-data-model.md), [ADR-0030](../decisions/ADR-0030-network-ipam-integrate-not-rebuild.md), [F4 design](f4-inventory-design.md).
 
 ## Decisions
 

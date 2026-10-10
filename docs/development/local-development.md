@@ -74,6 +74,28 @@ The shared GoLand run configurations live in `.idea/runConfigurations/`:
 
 Email is off unless `SMTP_HOST` is set; to try it locally point `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true`, `SMTP_FROM` and `EMAIL_BASE_URL=http://localhost:5173` on the worker at a local test relay; the optional [lab services](lab-services.md) (`make lab-up`) provide Mailpit, a Samba AD directory and Keycloak with ready-made values.
 
+## Configuration switches you need locally
+
+The complete list is the generated [configuration reference](../reference/configuration.md); `.env.example` holds only the non-secret development defaults. The GoLand **Turaco API** run configuration sets `AUTH_EMERGENCY_LOGIN_ENABLED=true`; when you start the API with `make api` from a terminal, add it to `.env` (or the shell) yourself, otherwise the `devadmin` login of `make dev-setup` and every simulation persona answers 404.
+
+| Variable | Local use |
+|---|---|
+| `AUTH_EMERGENCY_LOGIN_ENABLED=true` | Sign in as `devadmin` and as the simulation personas (they are emergency-style accounts). Never enable it on a shared environment without alerting on its audit trail. |
+| `AUTH_LOCAL_LOGIN_ENABLED=true` and `EMAIL_BASE_URL=http://localhost:5173` | Try invitations and password resets of local accounts (People administration). Without a mail relay (`SMTP_*`, for example Mailpit from the [lab services](lab-services.md)) the invitation link of a never-activated account is shown once on screen; resets and later invitations need mail. |
+| `PEOPLE_LOOKUP_ENABLED` (default `true`) | Colleague search when raising a ticket or request for someone else. |
+| `PRESENCE_ENABLED=true`, `PRESENCE_RETENTION_DAYS` | Workforce Presence module (API and worker need the same value); then enable the runtime setting in Administration > Presence (it records the data protection dates) and the module in Administration > Modules. |
+| `AI_ENABLED=true`, `AI_SECRET_DIR` | Turaco AI. Add an AI Provider in Administration > AI: the `fake` provider needs nothing, `openai_compatible` points at a local runtime such as Ollama and may name a secret file below `AI_SECRET_DIR`. |
+| `REMOTE_ACCESS_PROVIDERS=rustdesk,anydesk,hoptodesk` | Launch-link connectors for attended Remote Access sessions (API and worker need the same value). |
+| `SOFTWARE_PROVIDER_SYNC`, `SOFTWARE_DEPLOY_WRITE`, `INTUNE_SYNC`, `AUTOTASK_SYNC`, `ADVISORY_SYNC` | Integration switches; the Intune, IntuneGet and Autotask clients are not implemented, so these run against fakes or report "not configured" (see [current status](../product/current-status.md)). |
+
+Optional modules can also be switched at runtime in Administration > Modules (`modules.manage`); a startup gate such as `PRESENCE_ENABLED` must be on before the switch can take effect.
+
+## Simulation, load test and first-administrator walkthrough
+
+- **Hospital simulation:** `make dev-setup`, then `./scripts/with-env.sh go run ./backend/cmd/turaco-admin demo seed-hospital` (idempotent, `APP_ENV=development` only). Personas, passwords and test scripts: [Hospital IT simulation](simulation-hospital.md).
+- **Load test:** with the API running (`AUTH_EMERGENCY_LOGIN_ENABLED=true`) and the hospital seeded, `make load-test` runs the smoke profile; `make load-test LOADTEST_ARGS="--profile ramp --rate-scale 0.1"` ramps up. It only talks to a local development API. Details and safety rules: [Load testing](load-testing.md).
+- **Administration walkthrough:** the steps an administrator takes after installation (first administrator, modules, people, roles from templates, Queues, Views) are in [Getting started as an administrator](../operations/administrator-getting-started.md); try them against a fresh `make dev-setup` database.
+
 ## Development processes
 
 Use separate terminals:

@@ -39,7 +39,7 @@ Security notes:
 
 ## Email notifications
 
-Only `turaco-worker` sends email; `turaco-api` needs no mail settings. Set `SMTP_HOST`, `SMTP_FROM`, `EMAIL_BASE_URL` (the public https address of the web application, used in links) and, with authentication, `SMTP_USERNAME` plus `SMTP_PASSWORD_FILE` on the worker only; mount the password as a deployment secret. The default `SMTP_SECURITY=starttls` refuses relays that do not offer STARTTLS; `tls` uses implicit TLS. Clear-text relays need `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true` and `APP_ENV=development`, so a production stack cannot send mail in clear text by accident. Use `SMTP_CA_FILE` for a private CA. Without `SMTP_HOST` email is off and in-app notifications continue. Behavior and limits: [Teams and email notifications](../integrations/teams-email.md).
+`turaco-worker` sends notification email. `turaco-api` sends only the invitation and password-reset links of local accounts ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)), directly and not through the outbox, so when `AUTH_LOCAL_LOGIN_ENABLED=true` the API needs `EMAIL_BASE_URL` (it refuses to start without it) and, to mail those links, the same `SMTP_*` settings as the worker; without a mail channel an administrator is shown the invitation link of a never-activated account once, and a reset answers 409 `auth.mail_not_configured`. Set `SMTP_HOST`, `SMTP_FROM`, `EMAIL_BASE_URL` (the public https address of the web application, used in links) and, with authentication, `SMTP_USERNAME` plus `SMTP_PASSWORD_FILE` on the worker (and on the API for local accounts); mount the password as a deployment secret. The default `SMTP_SECURITY=starttls` refuses relays that do not offer STARTTLS; `tls` uses implicit TLS. Clear-text relays need `SMTP_SECURITY=none`, `SMTP_ALLOW_PLAINTEXT=true` and `APP_ENV=development`, so a production stack cannot send mail in clear text by accident. Use `SMTP_CA_FILE` for a private CA. Without `SMTP_HOST` email is off and in-app notifications continue. Behavior and limits: [Teams and email notifications](../integrations/teams-email.md).
 
 ## First administrator and emergency access
 
@@ -49,7 +49,7 @@ After the first directory sync, grant the first administrator from the worker co
 docker exec <worker> turaco-admin role grant --role platform-administrator --user <username>
 ```
 
-Further roles are managed in the web UI. For directory outages, create an emergency account once, store its password in the organization's vault, and enable it only when needed:
+Further roles are managed in the web UI; the first steps after the first sign-in are in [Getting started as an administrator](administrator-getting-started.md). A local account can never be a platform administrator. For directory outages, create an emergency account once, store its password in the organization's vault, and enable it only when needed:
 
 ```bash
 docker exec -i <worker> turaco-admin emergency create --login breakglass --display-name "Emergency administrator"

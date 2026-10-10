@@ -43,6 +43,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
@@ -137,10 +138,19 @@ func main() {
 		}
 	}()
 
+	// The heartbeat lets the administration health page tell whether a worker is running at all.
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		host, _ := os.Hostname()
+		health.RunHeartbeat(ctx, pool, fmt.Sprintf("%s-%d", host, os.Getpid()), version, logger)
+	}()
+
 	logger.Info("turaco-worker started", "version", version)
 	err = runner.Run(ctx)
 	stop()
 	<-dispatcherDone
+	<-heartbeatDone
 	if err != nil {
 		logger.Error("job runner stopped", "error", err)
 		os.Exit(1)
