@@ -34,6 +34,8 @@ import { IncidentBadge } from '../incidents/IncidentsScreen';
 import { notifySidebarChanged } from '../../platform/ui/views/api';
 import { ticketQueuesApi, ticketsApi } from './api';
 import { aliasList, canOfferMove, ticketQueueName } from './queueModel';
+import { reportedImpactKey } from './impactModel';
+import { organizationApi } from '../organization/api';
 import { TicketMoveDialog } from './TicketMoveDialog';
 import { DuplicateDialog, LinkToDialog } from './LinkDialogs';
 import { describeHistory, isAssignmentEntry, mergeTimeline, viaKey } from './historyModel';
@@ -225,6 +227,18 @@ function TicketWorkspace({ id }: { id: string }) {
     async (signal) => (staffReader ? (await ticketQueuesApi.list(false, signal)).items : []),
     [staffReader],
   );
+  const locationId = loaded.data?.affectedLocationId ?? null;
+  const location = useAsync(
+    async (signal) => {
+      if (!staffReader || !locationId) return null;
+      try {
+        return (await organizationApi.location(locationId, signal)).name;
+      } catch {
+        return null; // The name is a convenience; the ticket stays usable without it.
+      }
+    },
+    [locationId, staffReader],
+  );
   const [retrying, setRetrying] = useState(false);
   const [dialog, setDialog] = useState<{
     kind: 'text' | 'wait' | 'assign' | 'move' | 'linkProblem' | 'linkIncident' | 'duplicate';
@@ -271,6 +285,7 @@ function TicketWorkspace({ id }: { id: string }) {
   };
   const queueName = ticketQueueName(ticket);
   const aliases = aliasList(ticket);
+  const impactKey = reportedImpactKey(ticket.impact, ticket.patientImpact);
   const queueLevel = queues.data?.find((queue) => queue.id === ticket.queueId)?.level;
   const isOwner =
     session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
@@ -362,6 +377,9 @@ function TicketWorkspace({ id }: { id: string }) {
         >
           {t(`tickets.priority.${ticket.priority}`)}
         </StatusBadge>
+        {ticket.patientImpact ? (
+          <StatusBadge tone="warning">{t('tickets.patientImpact')}</StatusBadge>
+        ) : null}
       </div>
       <PageHeader title={ticket.title} actions={<AskTuraco context={{ type: 'ticket', id }} />} />
       <div className="incident-identities">
@@ -691,6 +709,18 @@ function TicketWorkspace({ id }: { id: string }) {
                 <small>{t('tickets.fact.affected')}</small>
               </div>
             </div>
+            {impactKey ? (
+              <p>
+                <span className="incident-event-label">{t('tickets.fact.reportedImpact')}</span>{' '}
+                <strong>{t(impactKey)}</strong>
+              </p>
+            ) : null}
+            {ticket.affectedLocationId ? (
+              <p>
+                <span className="incident-event-label">{t('tickets.col.location')}</span>{' '}
+                <strong>{location.data ?? t('tickets.personUnknown')}</strong>
+              </p>
+            ) : null}
             {ticket.deviceSnapshot ? (
               <div className="incident-device">
                 <span className="incident-event-label">{t('tickets.field.device')}</span>

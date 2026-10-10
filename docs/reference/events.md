@@ -56,7 +56,7 @@
 | `SecurityAdvisoryPublished` | 1 | security | A Security Advisory became applicable. Payload: advisoryId, severity. |
 | `SecurityAdvisoryPublishedFanOut` | 1 | security (internal) | Continuation of security.advisory notification fan-out. Payload: advisoryId, after, sourceEventId. |
 | `ServiceCreated` | 1 | services | A Service was created. Payload: serviceId, criticality, status. |
-| `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId. |
+| `ServiceRequestApproved` | 1 | requests | A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId, approvalFree (true when the request had no approval step). |
 | `ServiceRequestCancelled` | 1 | requests | A service request was cancelled. Payload: requestId. |
 | `ServiceRequestCompleted` | 1 | requests | A service request was completed. Payload: requestId. |
 | `ServiceRequestRejected` | 1 | requests | A service request was rejected by an approver. Payload: requestId. |

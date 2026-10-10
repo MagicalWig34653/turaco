@@ -20,7 +20,10 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
-type dir struct{ active map[string]bool }
+type dir struct {
+	active  map[string]bool
+	primary map[string]string
+}
 
 func (d dir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
 	return d.pick(ids), nil
@@ -39,6 +42,15 @@ func (d dir) TeamNames(_ context.Context, ids []string) (map[string]string, erro
 }
 func (d dir) LocationNames(_ context.Context, ids []string) (map[string]string, error) {
 	return map[string]string{}, nil
+}
+func (d dir) PrimaryLocationIDs(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		if loc, ok := d.primary[id]; ok {
+			out[id] = loc
+		}
+	}
+	return out, nil
 }
 func (d dir) pick(ids []string) map[string]bool {
 	out := map[string]bool{}
@@ -106,7 +118,7 @@ func newEnv(t *testing.T) *env {
 			t.Fatal(err)
 		}
 	}
-	d := dir{active: map[string]bool{e.holder: true, e.other: true, e.manager: true, e.loc: true}}
+	d := dir{active: map[string]bool{e.holder: true, e.other: true, e.manager: true, e.loc: true}, primary: map[string]string{e.holder: e.loc}}
 	pr := products{
 		e.laptop: {ID: e.laptop, Name: "Laptop", Active: true, AssetManaged: true, Serialized: true},
 		e.mouse:  {ID: e.mouse, Name: "Mouse", Active: true, AssetManaged: true},
@@ -600,5 +612,29 @@ func TestAssetSearchMatchesTagsProductsHostnamesAndTokens(t *testing.T) {
 	hits, err := e.svc.Search(ctx, "kis-ws-"+e.corr, 5)
 	if err != nil || len(hits) != 1 || hits[0].Asset.ID != ws.ID || hits[0].ProductName != "Laptop" {
 		t.Errorf("Search = %+v %v", hits, err)
+	}
+}
+
+func TestSnapshotAcceptsOwnAndPrimaryLocationAssetsOnly(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	mk := func(serial string, assignee application.Assignee) application.Asset {
+		a := e.create(application.CreateInput{ProductID: e.laptop, SerialNumber: serial + e.corr, Status: "available"})
+		return e.mustOp(a, application.OpAssign, application.Params{Assignee: assignee})
+	}
+	own := mk("OWN-", application.Assignee{Type: "user", ID: e.holder})
+	shared := mk("SHARED-", application.Assignee{Type: "location", ID: e.loc})
+	foreignUser := mk("FOREIGN-", application.Assignee{Type: "user", ID: e.other})
+	for _, id := range []string{own.ID, shared.ID} {
+		if _, err := e.svc.SnapshotFor(ctx, id, e.holder); err != nil {
+			t.Errorf("snapshot %s: %v", id, err)
+		}
+	}
+	if _, err := e.svc.SnapshotFor(ctx, foreignUser.ID, e.holder); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("another user's asset = %v, want ErrNotFound", err)
+	}
+	// A user whose primary Location differs cannot attach the shared device.
+	if _, err := e.svc.SnapshotFor(ctx, shared.ID, e.other); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("shared device of a foreign location = %v, want ErrNotFound", err)
 	}
 }

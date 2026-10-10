@@ -655,7 +655,7 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, erro
 	if f.Status != "" && !slices.Contains(Statuses, f.Status) {
 		return Result{}, invalid("unknown status")
 	}
-	f.AssignedToUser = ""
+	f.AssignedToUser, f.AssignedToLocation = "", ""
 	f.Query = strings.TrimSpace(f.Query)
 	f.Page = f.Page.Normalize()
 	var err error
@@ -818,8 +818,9 @@ type DeviceSnapshot struct {
 }
 
 // SnapshotFor returns a snapshot of an asset for another module. With a holder
-// the asset must currently be assigned to that User (ErrNotFound otherwise, so
-// nobody learns about foreign assets). It performs no permission check.
+// the asset must currently be assigned to that User or to the holder's primary
+// Location (a shared device); ErrNotFound otherwise, so nobody learns about
+// foreign assets. It performs no permission check.
 func (s *Service) SnapshotFor(ctx context.Context, assetID, holderUserID string) (DeviceSnapshot, error) {
 	a, err := s.store.Get(ctx, assetID)
 	if err != nil {
@@ -830,11 +831,24 @@ func (s *Service) SnapshotFor(ctx context.Context, assetID, holderUserID string)
 		if err != nil {
 			return DeviceSnapshot{}, err
 		}
+		var loc string
 		held := false
 		for _, as := range assignments {
-			held = held || (as.ReturnedAt == nil && as.AssigneeType == AssigneeUser && as.AssigneeID == holderUserID)
+			if as.ReturnedAt != nil {
+				continue
+			}
+			held = held || (as.AssigneeType == AssigneeUser && as.AssigneeID == holderUserID)
+			if as.AssigneeType == AssigneeLocation && !held && loc == "" {
+				locs, err := s.dir.PrimaryLocationIDs(ctx, []string{holderUserID})
+				if err != nil {
+					return DeviceSnapshot{}, err
+				}
+				if locs[holderUserID] == as.AssigneeID {
+					loc = as.AssigneeID
+				}
+			}
 		}
-		if !held {
+		if !held && loc == "" {
 			return DeviceSnapshot{}, ErrNotFound
 		}
 	}
@@ -851,6 +865,32 @@ func (s *Service) Mine(ctx context.Context, p Principal, page Page) (Result, err
 		return Result{}, ErrForbidden
 	}
 	res, err := s.store.List(ctx, Filter{AssignedToUser: p.UserID, Page: page.Normalize()})
+	if err != nil {
+		return Result{}, err
+	}
+	for i := range res.Items {
+		res.Items[i] = holderView(res.Items[i])
+	}
+	return res, nil
+}
+
+// SharedForMe returns the assets currently assigned to the caller's primary
+// Location (carts, printers, monitors), in the redacted holder view. It needs no
+// permission: it exposes only assets of the caller's own Location, never notes,
+// supplier or status reasons, and nothing for a caller without a primary Location.
+func (s *Service) SharedForMe(ctx context.Context, p Principal, page Page) (Result, error) {
+	if p.UserID == "" {
+		return Result{}, ErrForbidden
+	}
+	locs, err := s.dir.PrimaryLocationIDs(ctx, []string{p.UserID})
+	if err != nil {
+		return Result{}, fmt.Errorf("load primary location: %w", err)
+	}
+	loc := locs[p.UserID]
+	if loc == "" {
+		return Result{Items: []Asset{}}, nil
+	}
+	res, err := s.store.List(ctx, Filter{AssignedToLocation: loc, Page: page.Normalize()})
 	if err != nil {
 		return Result{}, err
 	}

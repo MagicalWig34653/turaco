@@ -140,6 +140,8 @@ type Overview struct {
 	Source                   string         `json:"source"`
 	ApplicableBySeverity     map[string]int `json:"applicableBySeverity"`
 	OpenFindingsByConfidence map[string]int `json:"openFindingsByConfidence"`
+	// UntriagedBySeverity counts advisories still in status new (nobody decided applicability yet); they are not in ApplicableBySeverity.
+	UntriagedBySeverity map[string]int `json:"untriagedBySeverity"`
 	// KnownExploitedApplicable counts live advisories listed in the CISA KEV catalog; they are the first to handle.
 	KnownExploitedApplicable       int `json:"knownExploitedApplicable"`
 	OverdueTasks                   int `json:"overdueTasks"`

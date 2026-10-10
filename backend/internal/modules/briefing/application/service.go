@@ -11,8 +11,9 @@ import (
 // .deleted. Audit states carry status, severity, validity and version; titles
 // and bodies are never copied into the audit log.
 type Service struct {
-	store Store
-	now   func() time.Time
+	store     Store
+	now       func() time.Time
+	incidents IncidentAnnouncements
 }
 
 // NewService creates a Service. now may be nil.
@@ -65,6 +66,7 @@ type CreateInput struct {
 	Title      string
 	Body       string
 	Severity   string // empty means info
+	Audience   string // empty means it
 	ValidUntil *time.Time
 }
 
@@ -91,11 +93,18 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	if err := validSeverity(severity); err != nil {
 		return Item{}, err
 	}
+	audience := in.Audience
+	if audience == "" {
+		audience = AudienceIT
+	}
+	if err := validAudience(audience); err != nil {
+		return Item{}, err
+	}
 	var author *string
 	if c.Actor.UserID != "" {
 		author = &c.Actor.UserID
 	}
-	return s.store.Insert(ctx, c, NewItem{Title: title, Body: body, Severity: severity, ValidUntil: utcPtr(in.ValidUntil), Author: author})
+	return s.store.Insert(ctx, c, NewItem{Title: title, Body: body, Severity: severity, Audience: audience, ValidUntil: utcPtr(in.ValidUntil), Author: author})
 }
 
 // UpdateInput changes a draft; nil fields stay unchanged.
@@ -103,12 +112,13 @@ type UpdateInput struct {
 	Title           *string
 	Body            *string
 	Severity        *string
+	Audience        *string
 	ValidUntil      *time.Time
 	ClearValidUntil bool
 }
 
 func (in UpdateInput) empty() bool {
-	return in.Title == nil && in.Body == nil && in.Severity == nil && in.ValidUntil == nil && !in.ClearValidUntil
+	return in.Title == nil && in.Body == nil && in.Severity == nil && in.Audience == nil && in.ValidUntil == nil && !in.ClearValidUntil
 }
 
 // Update changes a draft. Published and withdrawn items are immutable: to
@@ -147,6 +157,11 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 			return Item{}, err
 		}
 	}
+	if in.Audience != nil {
+		if err := validAudience(*in.Audience); err != nil {
+			return Item{}, err
+		}
+	}
 	return s.store.Change(ctx, c, id, func(cur Item) (Change, error) {
 		if expected != nil && *expected != cur.Version {
 			return Change{}, ErrVersionConflict
@@ -167,6 +182,10 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 		if in.Severity != nil && *in.Severity != cur.Severity {
 			next.Severity = *in.Severity
 			changed = append(changed, "severity")
+		}
+		if in.Audience != nil && *in.Audience != cur.Audience {
+			next.Audience = *in.Audience
+			changed = append(changed, "audience")
 		}
 		if in.ClearValidUntil && cur.ValidUntil != nil {
 			next.ValidUntil = nil

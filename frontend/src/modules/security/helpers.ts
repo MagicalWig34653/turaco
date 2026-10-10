@@ -64,6 +64,8 @@ export function validReviewDate(value: string, today: Date): boolean {
 export const overviewLinks = {
   severity: (severity: string) =>
     `/security/advisories?applicable=true&severity=${encodeURIComponent(severity)}`,
+  untriaged: (severity: string) =>
+    `/security/advisories?status=new&severity=${encodeURIComponent(severity)}`,
   confidence: (confidence: string) =>
     `/security/findings?open=true&confidence=${encodeURIComponent(confidence)}`,
   overdueTasks: '/tasks?overdue=true',

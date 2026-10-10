@@ -38,6 +38,25 @@ type MajorIncident struct {
 	Version    int
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// IsExercise marks a drill: it never reaches the incident banner, the briefing or Overview counts. Set when declared.
+	IsExercise bool
+	// OwnerUserID is the staff member accountable for the incident (staff-facing; employees do not see it).
+	OwnerUserID *string
+	// NextUpdateDue is when the next public update is promised; it is cleared when the incident is resolved.
+	NextUpdateDue *time.Time
+	// LocationIDs are the affected Organization Locations (loaded for the detail only).
+	LocationIDs []string
+}
+
+// NamedRef is an Organization record with its display name.
+type NamedRef struct{ ID, Name string }
+
+// MajorDirectory is the Organization public contract Major Incidents use for owners and affected Locations.
+type MajorDirectory interface {
+	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
+	UserNames(ctx context.Context, ids []string) (map[string]string, error)
+	ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
+	LocationNames(ctx context.Context, ids []string) (map[string]string, error)
 }
 
 // Active reports whether the incident is still going on.
@@ -61,7 +80,13 @@ type MajorStore interface {
 	AddUpdateTx(ctx context.Context, tx pgx.Tx, id string, u MajorUpdate) (MajorUpdate, error)
 	// GetMajor returns the incident with the viewer's subscription flag and the number of linked tickets.
 	GetMajor(ctx context.Context, id, viewer string) (MajorIncident, error)
-	ListMajor(ctx context.Context, viewer string, activeOnly bool, page Page) (MajorResult, error)
+	// ListMajor lists incidents newest first; includeExercises false hides drills.
+	ListMajor(ctx context.Context, viewer string, activeOnly, includeExercises bool, page Page) (MajorResult, error)
+	// LocationIDs returns the affected Location ids of one incident, in id order.
+	LocationIDs(ctx context.Context, id string) ([]string, error)
+	LocationIDsTx(ctx context.Context, tx pgx.Tx, id string) ([]string, error)
+	// ReplaceLocationsTx replaces the affected Location set.
+	ReplaceLocationsTx(ctx context.Context, tx pgx.Tx, id string, locationIDs []string) error
 	Updates(ctx context.Context, id string) ([]MajorUpdate, error)
 	SubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
 	UnsubscribeTx(ctx context.Context, tx pgx.Tx, id, userID string) error
@@ -87,11 +112,19 @@ type MajorResult struct {
 
 // MajorService performs Major Incident operations. Audit actions:
 // servicedesk.major_incident.declared, .investigating, .mitigating, .monitoring,
-// .resolved, .closed, .update_posted and .ticket_linked. Messages are public and
-// are not copied into audit.
+// .resolved, .closed, .update_posted, .ticket_linked, .owner_set, .next_update_set
+// and .locations_set. Messages are public and are not copied into audit.
 type MajorService struct {
 	store  MajorStore
 	access TicketAccess
+	dir    MajorDirectory
+}
+
+// WithDirectory sets the Organization contract that validates owners and affected Locations and names them.
+// Without it owner and Location changes are refused.
+func (s *MajorService) WithDirectory(d MajorDirectory) *MajorService {
+	s.dir = d
+	return s
 }
 
 func NewMajorService(store MajorStore) *MajorService { return &MajorService{store: store} }
@@ -138,7 +171,7 @@ func majorState(m *MajorIncident) any {
 	if m == nil {
 		return nil
 	}
-	return map[string]any{"status": m.Status, "version": m.Version}
+	return map[string]any{"status": m.Status, "version": m.Version, "isExercise": m.IsExercise, "ownerUserId": m.OwnerUserID, "nextUpdateDue": m.NextUpdateDue}
 }
 
 func majorRecord(ctx context.Context, tx pgx.Tx, c Caller, action string, before, after *MajorIncident, meta map[string]any) error {
@@ -162,11 +195,12 @@ func majorPublish(ctx context.Context, tx pgx.Tx, c Caller, typ string, m MajorI
 		actor = &u
 	}
 	return events.Publish(ctx, tx, events.Publication{Type: typ, ActorID: actor, CorrelationID: c.CorrelationID,
-		Payload: map[string]any{"majorIncidentId": m.ID, "status": m.Status}})
+		Payload: map[string]any{"majorIncidentId": m.ID, "status": m.Status, "isExercise": m.IsExercise}})
 }
 
 // Declare opens a Major Incident with its first public message. Requires majorincidents.manage.
-func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title, summary string) (MajorIncident, error) {
+// An exercise is a drill that stays out of the banner, the briefing and Overview counts.
+func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title, summary string, isExercise bool) (MajorIncident, error) {
 	if err := c.validate(); err != nil {
 		return MajorIncident{}, err
 	}
@@ -181,7 +215,7 @@ func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title
 	if err != nil {
 		return MajorIncident{}, err
 	}
-	m := MajorIncident{Title: title, Summary: summary, Status: MIIdentified}
+	m := MajorIncident{Title: title, Summary: summary, Status: MIIdentified, IsExercise: isExercise}
 	if c.Actor.UserID != "" {
 		u := c.Actor.UserID
 		m.DeclaredBy = &u
@@ -242,6 +276,7 @@ func (s *MajorService) Transition(ctx context.Context, c Caller, manage bool, id
 		switch r.to {
 		case MIResolved:
 			next.ResolvedAt = &now
+			next.NextUpdateDue = nil
 		case MIClosed:
 			next.ClosedAt = &now
 		}
@@ -438,6 +473,12 @@ type MajorDetail struct {
 	// others are neither listed nor counted: Incident.Tickets counts the visible ones only.
 	Tickets    []Ticket
 	Operations []string
+	// HiddenTickets counts linked Tickets the reader may not view; only filled for majorincidents.manage.
+	HiddenTickets int
+	// Owner is set for majorincidents.manage only (employees do not see who owns an incident).
+	Owner *NamedRef
+	// Locations are the affected Locations that still exist.
+	Locations []NamedRef
 }
 
 // Get returns an incident (every signed-in User may read incidents).
@@ -470,19 +511,26 @@ func (s *MajorService) Get(ctx context.Context, user string, manage bool, id str
 			return MajorDetail{}, err
 		}
 		d.Incident.Tickets = counts[id]
+		if manage {
+			d.HiddenTickets = max(m.Tickets-d.Incident.Tickets, 0)
+		}
 	}
 	if manage {
 		d.Operations = MajorOperations(m.Status)
+	}
+	if err := s.decorate(ctx, &d, manage); err != nil {
+		return MajorDetail{}, err
 	}
 	return d, nil
 }
 
 // List returns incidents, newest first (every signed-in User).
-func (s *MajorService) List(ctx context.Context, user string, activeOnly bool, page Page) (MajorResult, error) {
+// includeExercises false hides drills (the banner passes false).
+func (s *MajorService) List(ctx context.Context, user string, activeOnly, includeExercises bool, page Page) (MajorResult, error) {
 	if user == "" {
 		return MajorResult{}, ErrForbidden
 	}
-	res, err := s.store.ListMajor(ctx, user, activeOnly, page.Normalize())
+	res, err := s.store.ListMajor(ctx, user, activeOnly, includeExercises, page.Normalize())
 	if err != nil {
 		return MajorResult{}, err
 	}
@@ -509,4 +557,185 @@ func (s *MajorService) visibleCounts(ctx context.Context, user string, ids []str
 		return nil, err
 	}
 	return s.store.VisibleMajorCounts(ctx, ids, scope)
+}
+
+// decorate adds the affected Locations and, for managers, the owner name. A name that cannot be resolved is left out.
+func (s *MajorService) decorate(ctx context.Context, d *MajorDetail, manage bool) error {
+	ids, err := s.store.LocationIDs(ctx, d.Incident.ID)
+	if err != nil {
+		return err
+	}
+	d.Incident.LocationIDs = ids
+	d.Locations = []NamedRef{}
+	if s.dir == nil {
+		return nil
+	}
+	if len(ids) > 0 {
+		names, err := s.dir.LocationNames(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if n, ok := names[id]; ok {
+				d.Locations = append(d.Locations, NamedRef{ID: id, Name: n})
+			}
+		}
+	}
+	if manage && d.Incident.OwnerUserID != nil {
+		names, err := s.dir.UserNames(ctx, []string{*d.Incident.OwnerUserID})
+		if err != nil {
+			return err
+		}
+		if n, ok := names[*d.Incident.OwnerUserID]; ok {
+			d.Owner = &NamedRef{ID: *d.Incident.OwnerUserID, Name: n}
+		}
+	}
+	return nil
+}
+
+const maxMajorLocations = 20
+
+// majorChange locks the incident, checks the expected version, applies fn and saves the result with one audit event.
+// Closed incidents are immutable. No event is published: owner, due time and Locations are staff information and
+// do not change what subscribers were told.
+func (s *MajorService) majorChange(ctx context.Context, c Caller, manage bool, id string, expected *int, op string, activeOnly bool,
+	fn func(tx pgx.Tx, cur MajorIncident, next *MajorIncident) (map[string]any, error)) (MajorIncident, error) {
+	if err := c.validate(); err != nil {
+		return MajorIncident{}, err
+	}
+	if !manage {
+		return MajorIncident{}, ErrForbidden
+	}
+	var out MajorIncident
+	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.store.LockMajorTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if expected != nil && *expected != cur.Version {
+			return ErrVersionConflict
+		}
+		if cur.Status == MIClosed || (activeOnly && !cur.Active()) {
+			return &InvalidTransitionError{Operation: op, From: cur.Status}
+		}
+		next := cur
+		meta, err := fn(tx, cur, &next)
+		if err != nil {
+			return err
+		}
+		if meta == nil { // nothing changed
+			out = cur
+			return nil
+		}
+		if out, err = s.store.UpdateMajorTx(ctx, tx, next); err != nil {
+			return err
+		}
+		return majorRecord(ctx, tx, c, "servicedesk.major_incident."+op+"_set", &cur, &out, meta)
+	})
+	return out, err
+}
+
+// SetOwner names the staff member accountable for the incident, or clears the owner with nil. The owner must be an
+// active User. Requires majorincidents.manage; not for closed incidents.
+func (s *MajorService) SetOwner(ctx context.Context, c Caller, manage bool, id string, expected *int, owner *string) (MajorIncident, error) {
+	if owner != nil {
+		o := strings.ToLower(strings.TrimSpace(*owner))
+		if o == "" {
+			owner = nil
+		} else {
+			owner = &o
+			if s.dir == nil {
+				return MajorIncident{}, invalid("owner cannot be validated")
+			}
+			ok, err := s.dir.ActiveUsers(ctx, []string{o})
+			if err != nil {
+				return MajorIncident{}, err
+			}
+			if !ok[o] {
+				return MajorIncident{}, invalid("owner must be an active user")
+			}
+		}
+	}
+	return s.majorChange(ctx, c, manage, id, expected, "owner", false, func(_ pgx.Tx, cur MajorIncident, next *MajorIncident) (map[string]any, error) {
+		if equalStrPtr(cur.OwnerUserID, owner) {
+			return nil, nil
+		}
+		next.OwnerUserID = owner
+		return map[string]any{}, nil
+	})
+}
+
+// SetNextUpdate promises when the next public update follows (a future time), or clears it with nil. Requires
+// majorincidents.manage; only for incidents that are still active.
+func (s *MajorService) SetNextUpdate(ctx context.Context, c Caller, manage bool, id string, expected *int, due *time.Time) (MajorIncident, error) {
+	if due != nil {
+		u := due.UTC().Truncate(time.Microsecond)
+		if !u.After(time.Now()) {
+			return MajorIncident{}, invalid("the next update must be due in the future")
+		}
+		if u.After(time.Now().Add(30 * 24 * time.Hour)) {
+			return MajorIncident{}, invalid("the next update must be due within 30 days")
+		}
+		due = &u
+	}
+	return s.majorChange(ctx, c, manage, id, expected, "next_update", true, func(_ pgx.Tx, cur MajorIncident, next *MajorIncident) (map[string]any, error) {
+		if cur.NextUpdateDue == nil && due == nil || cur.NextUpdateDue != nil && due != nil && cur.NextUpdateDue.Equal(*due) {
+			return nil, nil
+		}
+		next.NextUpdateDue = due
+		return map[string]any{}, nil
+	})
+}
+
+// SetLocations replaces the affected Locations (at most 20 active Organization Locations). Requires
+// majorincidents.manage; not for closed incidents.
+func (s *MajorService) SetLocations(ctx context.Context, c Caller, manage bool, id string, expected *int, locationIDs []string) (MajorIncident, error) {
+	want := make([]string, 0, len(locationIDs))
+	for _, l := range locationIDs {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" {
+			return MajorIncident{}, invalid("location ids must not be empty")
+		}
+		if !slices.Contains(want, l) {
+			want = append(want, l)
+		}
+	}
+	if len(want) > maxMajorLocations {
+		return MajorIncident{}, invalid("at most %d locations can be affected", maxMajorLocations)
+	}
+	slices.Sort(want)
+	if len(want) > 0 {
+		if s.dir == nil {
+			return MajorIncident{}, invalid("locations cannot be validated")
+		}
+		ok, err := s.dir.ActiveLocations(ctx, want)
+		if err != nil {
+			return MajorIncident{}, err
+		}
+		for _, l := range want {
+			if !ok[l] {
+				return MajorIncident{}, invalid("every location must be an active location")
+			}
+		}
+	}
+	return s.majorChange(ctx, c, manage, id, expected, "locations", false, func(tx pgx.Tx, cur MajorIncident, _ *MajorIncident) (map[string]any, error) {
+		have, err := s.store.LocationIDsTx(ctx, tx, cur.ID)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Equal(have, want) {
+			return nil, nil
+		}
+		if err := s.store.ReplaceLocationsTx(ctx, tx, cur.ID, want); err != nil {
+			return nil, err
+		}
+		return map[string]any{"from": have, "to": want}, nil
+	})
+}
+
+func equalStrPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }

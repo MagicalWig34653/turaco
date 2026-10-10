@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	deskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
@@ -23,7 +24,7 @@ func (m *memStore) Insert(_ context.Context, _ Caller, n NewItem) (Item, error) 
 	m.seq++
 	it := Item{
 		ID: "00000000-0000-7000-8000-00000000000" + string(rune('0'+m.seq)), Title: n.Title, Body: n.Body, Severity: n.Severity,
-		Status: StatusDraft, ValidUntil: n.ValidUntil, AuthorUserID: n.Author, Version: 1,
+		Status: StatusDraft, Audience: n.Audience, ValidUntil: n.ValidUntil, AuthorUserID: n.Author, Version: 1,
 	}
 	m.items[it.ID] = it
 	return it, nil
@@ -71,6 +72,9 @@ func (m *memStore) List(_ context.Context, q ListQuery) (Result, error) {
 	var out []Item
 	for _, it := range m.items {
 		if q.PublishedOnly && it.Status != StatusPublished {
+			continue
+		}
+		if q.Audience != "" && it.Audience != q.Audience {
 			continue
 		}
 		if q.Status != "" && it.Status != q.Status {
@@ -336,3 +340,47 @@ func TestVisibility(t *testing.T) {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+type incidentSrc struct{}
+
+func (incidentSrc) PublicOpenIncidents(context.Context) ([]deskpublic.PublicIncident, error) {
+	return []deskpublic.PublicIncident{{ID: "i1", Reference: "MI-000001", Title: "Mail", Summary: "Down", Status: "identified", UpdatedAt: noon}}, nil
+}
+
+func TestAudienceDefaultsToITAndOnlyAllIsAnnounced(t *testing.T) {
+	s, _ := newSvc()
+	s = s.WithIncidents(incidentSrc{})
+	ctx := context.Background()
+	c := caller(pManager)
+	var inv *InvalidInputError
+	if _, err := s.Create(ctx, c, pManager, CreateInput{Title: "x", Audience: "everyone"}); !errors.As(err, &inv) {
+		t.Errorf("bad audience: %v", err)
+	}
+	internal := mustCreate(t, s, CreateInput{Title: "IT only"})
+	if internal.Audience != AudienceIT {
+		t.Errorf("default audience = %q", internal.Audience)
+	}
+	public := mustCreate(t, s, CreateInput{Title: "Printers offline", Audience: AudienceAll})
+	other := mustCreate(t, s, CreateInput{Title: "Draft for all", Audience: AudienceAll})
+	if _, err := s.Update(ctx, c, pManager, internal.ID, nil, UpdateInput{Audience: ptr(AudienceAll)}); err != nil {
+		t.Fatalf("a draft's audience can change: %v", err)
+	}
+	if _, err := s.Update(ctx, c, pManager, internal.ID, nil, UpdateInput{Audience: ptr(AudienceIT)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{internal.ID, public.ID} {
+		if _, err := s.Publish(ctx, c, pManager, id, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Update(ctx, c, pManager, public.ID, nil, UpdateInput{Audience: ptr(AudienceIT)}); err == nil {
+		t.Error("a published item is immutable, including its audience")
+	}
+	if _, err := s.Announcements(ctx, ""); !errors.Is(err, ErrForbidden) {
+		t.Errorf("anonymous: %v", err)
+	}
+	a, err := s.Announcements(ctx, pNobody.UserID) // no briefing permission needed
+	if err != nil || len(a.Items) != 1 || a.Items[0].ID != public.ID || len(a.Incidents) != 1 || a.Incidents[0].Reference != "MI-000001" {
+		t.Fatalf("announcements = %+v %v (draft %s)", a, err, other.ID)
+	}
+}

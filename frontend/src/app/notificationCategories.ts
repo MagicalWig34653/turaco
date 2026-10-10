@@ -81,6 +81,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.request.approved',
       labelKey: 'notifications.category.request.approved',
     },
+    'request.started': {
+      textKey: 'notifications.request.started',
+      labelKey: 'notifications.category.request.started',
+    },
     'request.rejected': {
       textKey: 'notifications.request.rejected',
       labelKey: 'notifications.category.request.rejected',

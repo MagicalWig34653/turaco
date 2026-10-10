@@ -17,6 +17,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// incidentAnnouncements reads the public Major Incident status unless Service Desk is switched off (ADR-0032); a module
+// whose state cannot be read counts as off.
+type incidentAnnouncements struct {
+	desk *deskpublic.Briefing
+	mods *modules.Service
+}
+
+func (i incidentAnnouncements) PublicOpenIncidents(ctx context.Context) ([]deskpublic.PublicIncident, error) {
+	if i.mods != nil {
+		if ok, err := i.mods.Enabled(ctx, "servicedesk"); err != nil || !ok {
+			return nil, err
+		}
+	}
+	return i.desk.PublicOpenIncidents(ctx)
+}
+
+// BriefingAnnouncements builds the employee-facing announcements service.
+func BriefingAnnouncements(pool *pgxpool.Pool, manual *briefingapp.Service, mods *modules.Service) *briefingapp.Service {
+	return manual.WithIncidents(incidentAnnouncements{desk: deskpublic.NewBriefing(pool), mods: mods})
+}
+
 func BriefingFeed(pool *pgxpool.Pool, manual *briefingapp.Service, mods *modules.Service) *briefingapp.FeedService {
 	dir := orgpublic.NewWorkDirectory(orgrepo.New(pool))
 	approvals := approvalspublic.New(approvalsapp.NewService(approvalsrepo.New(pool), dir, nil))

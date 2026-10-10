@@ -37,6 +37,9 @@ export const assetsApi = {
   ) => api.get<AssetList>('/assets', { signal, query: { ...filter, limit: 50, cursor } }),
   mine: (cursor?: string, signal?: Signal) =>
     api.get<AssetList>('/my-assets', { signal, query: { limit: 50, cursor } }),
+  /** Devices assigned to the caller's primary Location, in the redacted holder view. */
+  sharedMine: (cursor?: string, signal?: Signal) =>
+    api.get<AssetList>('/my-assets/shared', { signal, query: { limit: 50, cursor } }),
   get: (id: string, signal?: Signal) => api.get<AssetDetail>(`/assets/${enc(id)}`, { signal }),
   lookup: (code: string, signal?: Signal) =>
     api.get<Asset>('/assets/lookup', { signal, query: { code } }),

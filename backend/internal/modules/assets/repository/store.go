@@ -294,6 +294,12 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		}
 		add("EXISTS (SELECT 1 FROM assets.asset_assignments s WHERE s.asset_id = a.id AND s.returned_at IS NULL AND s.assignee_type = 'user' AND s.assignee_id = $%d::uuid)", f.AssignedToUser)
 	}
+	if f.AssignedToLocation != "" {
+		if !validUUID(f.AssignedToLocation) {
+			return application.Result{Items: []application.Asset{}}, nil
+		}
+		add("EXISTS (SELECT 1 FROM assets.asset_assignments s WHERE s.asset_id = a.id AND s.returned_at IS NULL AND s.assignee_type = 'location' AND s.assignee_id = $%d::uuid)", f.AssignedToLocation)
+	}
 	terms := f.Terms
 	if len(terms) == 0 && f.Query != "" {
 		for _, w := range strings.Fields(f.Query) {

@@ -170,6 +170,7 @@ export type Progress = {
 export type Overview = {
   source: 'turaco_derived';
   applicableBySeverity: Record<string, number>;
+  untriagedBySeverity: Record<string, number>;
   openFindingsByConfidence: Record<string, number>;
   overdueTasks: number;
   riskAcceptancesDueWithin30Days: number;

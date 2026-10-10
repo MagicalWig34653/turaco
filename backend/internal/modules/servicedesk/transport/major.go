@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -32,6 +33,9 @@ func RegisterMajor(mux *http.ServeMux, svc *application.MajorService, auth autho
 	route("DELETE /api/v1/major-incidents/{id}/tickets/{ticketId}", h.unlink)
 	route("POST /api/v1/major-incidents/{id}/subscribe", h.subscribe(true))
 	route("POST /api/v1/major-incidents/{id}/unsubscribe", h.subscribe(false))
+	route("POST /api/v1/major-incidents/{id}/owner", h.setOwner)
+	route("POST /api/v1/major-incidents/{id}/next-update", h.setNextUpdate)
+	route("POST /api/v1/major-incidents/{id}/locations", h.setLocations)
 	for _, op := range []string{application.MOInvestigate, application.MOMitigate, application.MOMonitor, application.MOResolve, application.MOClose} {
 		route("POST /api/v1/major-incidents/{id}/"+op, h.transition(op))
 	}
@@ -90,10 +94,22 @@ type majorDTO struct {
 	Version    int     `json:"version"`
 	CreatedAt  string  `json:"createdAt"`
 	UpdatedAt  string  `json:"updatedAt"`
+	IsExercise bool    `json:"isExercise"`
+	// NextUpdateDue is public; the owner is staff information and only sent to majorincidents.manage holders.
+	NextUpdateDue *string `json:"nextUpdateDue"`
+	OwnerUserID   *string `json:"ownerUserId,omitempty"`
 }
 
-func toMajor(m application.MajorIncident) majorDTO {
-	return majorDTO{ID: m.ID, Reference: m.Reference, Title: m.Title, Summary: m.Summary, Status: m.Status, ResolvedAt: tsPtr(m.ResolvedAt), ClosedAt: tsPtr(m.ClosedAt),
+func toMajor(m application.MajorIncident, manage bool) majorDTO {
+	d := toMajorPublic(m)
+	if manage {
+		d.OwnerUserID = m.OwnerUserID
+	}
+	return d
+}
+
+func toMajorPublic(m application.MajorIncident) majorDTO {
+	return majorDTO{IsExercise: m.IsExercise, NextUpdateDue: tsPtr(m.NextUpdateDue), ID: m.ID, Reference: m.Reference, Title: m.Title, Summary: m.Summary, Status: m.Status, ResolvedAt: tsPtr(m.ResolvedAt), ClosedAt: tsPtr(m.ClosedAt),
 		Subscribed: m.Subscribed, Tickets: m.Tickets, Version: m.Version, CreatedAt: ts(m.CreatedAt), UpdatedAt: ts(m.UpdatedAt)}
 }
 
@@ -104,7 +120,8 @@ func (h *majorHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := me(r)
-	res, err := h.svc.List(r.Context(), user, r.URL.Query().Get("active") == "true", application.Page{Limit: limit, Cursor: r.URL.Query().Get("cursor")})
+	q := r.URL.Query()
+	res, err := h.svc.List(r.Context(), user, q.Get("active") == "true", q.Get("exercises") != "false", application.Page{Limit: limit, Cursor: r.URL.Query().Get("cursor")})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -114,7 +131,7 @@ func (h *majorHandler) list(w http.ResponseWriter, r *http.Request) {
 		NextCursor string     `json:"nextCursor,omitempty"`
 	}{Items: make([]majorDTO, 0, len(res.Items)), NextCursor: res.NextCursor}
 	for _, m := range res.Items {
-		out.Items = append(out.Items, toMajor(m))
+		out.Items = append(out.Items, toMajorPublic(m))
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -132,6 +149,10 @@ func (h *majorHandler) get(w http.ResponseWriter, r *http.Request) {
 		Body      string `json:"body"`
 		CreatedAt string `json:"createdAt"`
 	}
+	type ref struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
 	type tk struct {
 		ID        string `json:"id"`
 		Reference string `json:"reference"`
@@ -144,7 +165,18 @@ func (h *majorHandler) get(w http.ResponseWriter, r *http.Request) {
 		Updates           []upd    `json:"updates"`
 		Tickets_          []tk     `json:"tickets"`
 		AllowedOperations []string `json:"allowedOperations"`
-	}{majorDTO: toMajor(d.Incident), Updates: make([]upd, 0, len(d.Updates)), Tickets_: make([]tk, 0, len(d.Tickets)), AllowedOperations: d.Operations}
+		Locations         []ref    `json:"locations"`
+		// HiddenTickets and OwnerName are staff information (majorincidents.manage only).
+		HiddenTickets int    `json:"hiddenLinkedTickets,omitempty"`
+		OwnerName     string `json:"ownerName,omitempty"`
+	}{majorDTO: toMajor(d.Incident, manage), Updates: make([]upd, 0, len(d.Updates)), Tickets_: make([]tk, 0, len(d.Tickets)), AllowedOperations: d.Operations,
+		Locations: make([]ref, 0, len(d.Locations)), HiddenTickets: d.HiddenTickets}
+	if d.Owner != nil {
+		out.OwnerName = d.Owner.Name
+	}
+	for _, l := range d.Locations {
+		out.Locations = append(out.Locations, ref{ID: l.ID, Name: l.Name})
+	}
 	for _, t := range d.Tickets {
 		out.Tickets_ = append(out.Tickets_, tk{ID: t.ID, Reference: t.Reference, Title: t.Title, Status: t.Status, Priority: t.Priority})
 	}
@@ -161,9 +193,10 @@ const maxDeclareTickets = 50
 // incident exists either way.
 func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Title     string   `json:"title"`
-		Message   string   `json:"message"`
-		TicketIDs []string `json:"ticketIds"`
+		Title      string   `json:"title"`
+		Message    string   `json:"message"`
+		TicketIDs  []string `json:"ticketIds"`
+		IsExercise bool     `json:"isExercise"`
 	}
 	if !mdecode(w, r, &b) {
 		return
@@ -174,7 +207,7 @@ func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	}
 	_, manage := me(r)
 	c := mcaller(w, r)
-	m, err := h.svc.Declare(r.Context(), c, manage, b.Title, b.Message)
+	m, err := h.svc.Declare(r.Context(), c, manage, b.Title, b.Message, b.IsExercise)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -193,7 +226,7 @@ func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, struct {
 		majorDTO
 		NotLinked []string `json:"notLinkedTicketIds"`
-	}{toMajor(m), notLinked})
+	}{toMajor(m, manage), notLinked})
 }
 
 func (h *majorHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +242,7 @@ func (h *majorHandler) update(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toMajor(m))
+	httpx.JSON(w, http.StatusOK, toMajor(m, manage))
 }
 
 func (h *majorHandler) link(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +295,57 @@ func (h *majorHandler) transition(op string) http.HandlerFunc {
 			h.fail(w, r, err)
 			return
 		}
-		httpx.JSON(w, http.StatusOK, toMajor(m))
+		httpx.JSON(w, http.StatusOK, toMajor(m, manage))
 	}
+}
+
+func (h *majorHandler) setOwner(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int    `json:"expectedVersion"`
+		OwnerUserID     *string `json:"ownerUserId"`
+	}
+	if !mdecode(w, r, &b) {
+		return
+	}
+	_, manage := me(r)
+	m, err := h.svc.SetOwner(r.Context(), mcaller(w, r), manage, r.PathValue("id"), b.ExpectedVersion, b.OwnerUserID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toMajor(m, manage))
+}
+
+func (h *majorHandler) setNextUpdate(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int       `json:"expectedVersion"`
+		DueAt           *time.Time `json:"dueAt"`
+	}
+	if !mdecode(w, r, &b) {
+		return
+	}
+	_, manage := me(r)
+	m, err := h.svc.SetNextUpdate(r.Context(), mcaller(w, r), manage, r.PathValue("id"), b.ExpectedVersion, b.DueAt)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toMajor(m, manage))
+}
+
+func (h *majorHandler) setLocations(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int     `json:"expectedVersion"`
+		LocationIDs     []string `json:"locationIds"`
+	}
+	if !mdecode(w, r, &b) {
+		return
+	}
+	_, manage := me(r)
+	m, err := h.svc.SetLocations(r.Context(), mcaller(w, r), manage, r.PathValue("id"), b.ExpectedVersion, b.LocationIDs)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toMajor(m, manage))
 }

@@ -23,7 +23,7 @@ var Registry = []Definition{
 	{Name: "TaskBoardArchived", Version: 1, Owner: "tasks", Description: "A Task Board was archived by its owner; its shares stop working. Payload: boardId, viewId."},
 	{Name: "ApprovalRequested", Version: 1, Owner: "approvals", Description: "An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex."},
 	{Name: "ApprovalDecided", Version: 1, Owner: "approvals", Description: "An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision."},
-	{Name: "ServiceRequestApproved", Version: 1, Owner: "requests", Description: "A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId."},
+	{Name: "ServiceRequestApproved", Version: 1, Owner: "requests", Description: "A service request was approved (or needed no approval) and entered fulfillment. Payload: requestId, approvalFree (true when the request had no approval step)."},
 	{Name: "ServiceRequestRejected", Version: 1, Owner: "requests", Description: "A service request was rejected by an approver. Payload: requestId."},
 	{Name: "ServiceRequestCompleted", Version: 1, Owner: "requests", Description: "A service request was completed. Payload: requestId."},
 	{Name: "ServiceRequestCancelled", Version: 1, Owner: "requests", Description: "A service request was cancelled. Payload: requestId."},

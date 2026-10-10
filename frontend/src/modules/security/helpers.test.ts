@@ -38,6 +38,7 @@ describe('security view helpers', () => {
     expect(overviewLinks.severity('high')).toBe(
       '/security/advisories?applicable=true&severity=high',
     );
+    expect(overviewLinks.untriaged('high')).toBe('/security/advisories?status=new&severity=high');
     expect(overviewLinks.confidence('probable')).toBe(
       '/security/findings?open=true&confidence=probable',
     );

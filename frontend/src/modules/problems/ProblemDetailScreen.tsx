@@ -9,7 +9,12 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { Dialog } from '../../platform/ui/Dialog';
+import { GuardedActionDialog } from '../../platform/ui/GuardedActionDialog';
 import { ReasonDialog } from '../../platform/ui/ReasonDialog';
+import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
+import { PersonLookup } from '../organization/PersonLookup';
+import { OwnerName } from './OwnerName';
 import { problemsApi } from './api';
 import { ProblemBadge } from './ProblemsScreen';
 import { TicketPicker } from '../tickets/TicketPicker';
@@ -27,6 +32,8 @@ export function ProblemDetailScreen({ id }: { id: string }) {
   const loaded = useAsync((signal) => problemsApi.get(id, signal), [id]);
   const [op, setOp] = useState<string | null>(null);
   const [picked, setPicked] = useState<TicketHit[]>([]);
+  const [unlinking, setUnlinking] = useState<{ id: string; label: string } | null>(null);
+  const [ownerOpen, setOwnerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   if (loaded.error) return <ApiErrorAlert error={loaded.error} onRetry={loaded.reload} />;
@@ -90,6 +97,15 @@ export function ProblemDetailScreen({ id }: { id: string }) {
       </p>
       {problem.description ? <p className="preline">{problem.description}</p> : null}
       <dl className="facts">
+        <dt>{t('problems.owner')}</dt>
+        <dd>
+          <OwnerName ownerId={problem.ownerId} />{' '}
+          {manage && problem.status !== 'closed' ? (
+            <Button onClick={() => setOwnerOpen(true)}>
+              {t(problem.ownerId ? 'problems.owner.change' : 'problems.owner.set')}
+            </Button>
+          ) : null}
+        </dd>
         {problem.cause ? (
           <>
             <dt>{t('problems.field.cause')}</dt>
@@ -121,7 +137,11 @@ export function ProblemDetailScreen({ id }: { id: string }) {
                 {tk.reference} · {tk.title}
               </Link>{' '}
               {manage ? (
-                <Button onClick={() => void run(() => problemsApi.unlinkTicket(problem.id, tk.id))}>
+                <Button
+                  onClick={() =>
+                    setUnlinking({ id: tk.id, label: `${tk.reference} · ${tk.title}` })
+                  }
+                >
                   {t('problems.unlink')}
                 </Button>
               ) : null}
@@ -145,6 +165,32 @@ export function ProblemDetailScreen({ id }: { id: string }) {
           </form>
         ) : null}
       </section>
+      {unlinking ? (
+        <GuardedActionDialog
+          title={t('problems.unlink.title')}
+          confirmLabel={t('problems.unlink')}
+          danger
+          run={() => problemsApi.unlinkTicket(problem.id, unlinking.id)}
+          onDone={() => {
+            setUnlinking(null);
+            loaded.reload();
+          }}
+          onClose={() => setUnlinking(null)}
+        >
+          <p>{t('problems.unlink.confirm', { ticket: unlinking.label })}</p>
+        </GuardedActionDialog>
+      ) : null}
+      {ownerOpen ? (
+        <OwnerDialog
+          problemId={problem.id}
+          version={problem.version}
+          onClose={() => setOwnerOpen(false)}
+          onDone={() => {
+            setOwnerOpen(false);
+            loaded.reload();
+          }}
+        />
+      ) : null}
       {op && op in needsText ? (
         <ReasonDialog
           title={t(`problems.action.${op}` as MessageKey)}
@@ -159,5 +205,59 @@ export function ProblemDetailScreen({ id }: { id: string }) {
         />
       ) : null}
     </>
+  );
+}
+
+function OwnerDialog({
+  problemId,
+  version,
+  onClose,
+  onDone,
+}: {
+  problemId: string;
+  version: number;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useI18n();
+  const { can } = useSession();
+  const [owner, setOwner] = useState<Assignee | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | undefined>(undefined);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!owner) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await problemsApi.setOwner(problemId, owner.id, version);
+      onDone();
+    } catch (cause) {
+      setError(asApiError(cause));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title={t('problems.owner.set')} onClose={onClose} wide>
+      <form className="form" onSubmit={(event) => void submit(event)}>
+        {error ? <ApiErrorAlert error={error} /> : null}
+        {can('organization.view') ? (
+          <AssigneePicker
+            type="user"
+            label={t('problems.owner')}
+            value={owner}
+            onChange={setOwner}
+          />
+        ) : (
+          <PersonLookup label={t('problems.owner')} value={owner} onChange={setOwner} />
+        )}
+        <div className="dialog-actions">
+          <Button onClick={onClose}>{t('action.cancel')}</Button>
+          <Button type="submit" variant="primary" busy={busy} disabled={!owner}>
+            {t('problems.owner.save')}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

@@ -38,6 +38,23 @@ describe('duplicate hint', () => {
   it('finds identical open tickets ignoring case and spacing', () => {
     expect(duplicateCandidates('  drucker  GEHT nicht ', mine).map((t) => t.id)).toEqual(['1']);
   });
+  it('finds open tickets sharing two significant words', () => {
+    const list = [
+      ...mine,
+      {
+        id: '4',
+        reference: 'TKT-4',
+        title: 'Der Drucker im Stationszimmer geht nicht',
+        status: 'open',
+      },
+    ];
+    expect(duplicateCandidates('Drucker defekt, geht nicht mehr', list).map((t) => t.id)).toEqual([
+      '1',
+      '4',
+    ]);
+    expect(duplicateCandidates('Drucker Stationszimmer', list).map((t) => t.id)).toEqual(['4']);
+    expect(duplicateCandidates('Drucker kaputt', list)).toEqual([]);
+  });
   it('ignores short titles and finished tickets', () => {
     expect(duplicateCandidates('abc', mine)).toEqual([]);
     expect(duplicateCandidates('Anderes', mine).map((t) => t.id)).toEqual(['3']);

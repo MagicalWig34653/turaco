@@ -14,6 +14,7 @@ import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Dialog } from '../../platform/ui/Dialog';
 import { Select, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
+import { OwnerName } from './OwnerName';
 import { problemsApi, problemStatuses, type Problem, type ProblemStatus } from './api';
 
 export function ProblemBadge({ status }: { status: ProblemStatus }) {
@@ -99,6 +100,11 @@ export function ProblemsScreen() {
       sortValue: (p) => p.status,
       header: t('problems.col.status'),
       render: (p) => <ProblemBadge status={p.status} />,
+    },
+    {
+      key: 'owner',
+      header: t('problems.col.owner'),
+      render: (p) => <OwnerName ownerId={p.ownerId} />,
     },
     {
       key: 'tickets',

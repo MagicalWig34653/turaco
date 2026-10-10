@@ -36,6 +36,12 @@ export type Ticket = {
   priority: Priority;
   reporterId: string;
   affectedUserId: string;
+  /** The reporter's impact choice (report.impact.*); null for tickets raised without one. */
+  impact?: string | null;
+  /** True when the reporter said patient care is affected. */
+  patientImpact?: boolean;
+  /** The affected person's primary Location when the ticket was raised; null when none. */
+  affectedLocationId?: string | null;
   /** The routing Team hint inside the desk; only for people who can view the Ticket's Queue. */
   queueTeamId: string | null;
   /** The Ticket's Queue; present only when the caller may know the Queue. */

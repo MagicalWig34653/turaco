@@ -120,12 +120,16 @@ export function TicketCreateScreen() {
         : null,
     [affectedId, canReadUsers],
   );
+  // Shared devices (carts, printers) are assigned to a Location. For myself the server answers from my
+  // own primary Location, needing no permission; for another person it takes asset access.
   const sharedDevices = useAsync(
-    async (signal) =>
-      canListAssets && location.data
+    async (signal) => {
+      if (!onBehalf) return assetsApi.sharedMine(undefined, signal);
+      return canListAssets && location.data
         ? await assetsApi.list({ assigneeId: location.data }, undefined, signal)
-        : null,
-    [location.data, canListAssets],
+        : null;
+    },
+    [onBehalf?.id, location.data, canListAssets],
   );
   const mine = useAsync(
     async (signal) => (await ticketsApi.list('mine', { open: true }, undefined, signal)).items,
@@ -458,7 +462,6 @@ export function TicketCreateScreen() {
                 </span>
                 <span>
                   <strong>{t('tickets.field.device.none')}</strong>
-                  <small>{t('reportPolish.noDeviceHint')}</small>
                 </span>
               </label>
               {offered.own.map((a) => (
