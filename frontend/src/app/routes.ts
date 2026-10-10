@@ -932,9 +932,42 @@ export function canViewRoute(
   return !route.requiresAny || route.requiresAny.some((permission) => can(permission));
 }
 
+const directoryRouteIds: readonly RouteId[] = ['users', 'teams', 'locations', 'departments'];
+const directoryAdminPermissions = [
+  'organization.users.manage',
+  'organization.users.view_details',
+  'organization.users.managers',
+  'organization.teams.manage',
+  'organization.locations.manage',
+  'organization.departments.manage',
+  'organization.directory.view',
+  'organization.directory.sync',
+  'organization.external_parties.manage',
+] as const;
+
+/**
+ * Holders of only `organization.view` need it for the assignee picker, not to browse the people
+ * directory; the directory screens stay reachable by link but are not offered in the navigation.
+ */
+export function isLookupOnlyDirectoryEntry(can: CanFn, route: AppRoute): boolean {
+  return (
+    directoryRouteIds.includes(route.id) &&
+    !directoryAdminPermissions.some((permission) => can(permission))
+  );
+}
+
+/** Whether the navigation lists the route: it is viewable and not a lookup-only directory entry. */
+export function canShowInNav(
+  can: CanFn,
+  route: AppRoute,
+  enabled: ModuleEnabled = () => true,
+): boolean {
+  return canViewRoute(can, route, enabled) && !isLookupOnlyDirectoryEntry(can, route);
+}
+
 /** Navigation entries the current user may see, in declaration order. */
 export function visibleNavItems(can: CanFn, group: NavGroup): AppRoute[] {
-  return appRoutes.filter((route) => route.nav === group && canViewRoute(can, route));
+  return appRoutes.filter((route) => route.nav === group && canShowInNav(can, route));
 }
 
 /** A nav entry is active for its own path and every sub-path (detail screens). */

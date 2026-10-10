@@ -1,5 +1,5 @@
 import type { MessageKey } from '../../platform/i18n/i18n';
-import type { TicketComment, TicketHistoryEntry } from './types';
+import { waitingReasons, type TicketComment, type TicketHistoryEntry } from './types';
 
 /** Pure timeline logic: comments and history entries in one chronological list. */
 
@@ -89,6 +89,17 @@ export function describeHistory(
       };
     case 'queue_moved':
       return { key: 'ticketHistory.queueMoved', params: {} };
+    case 'location_changed': {
+      const toLocation = entry.toLocationId ? name(entry.toLocationId) : '';
+      const fromLocation = entry.fromLocationId ? name(entry.fromLocationId) : '';
+      if (!toLocation)
+        return { key: 'ticketHistory.locationCleared', params: { from: fromLocation } };
+      if (!fromLocation) return { key: 'ticketHistory.locationSet', params: { to: toLocation } };
+      return {
+        key: 'ticketHistory.locationChanged',
+        params: { from: fromLocation, to: toLocation },
+      };
+    }
     default:
       return { key: 'ticketHistory.other', params: {} };
   }
@@ -113,4 +124,26 @@ export function viaKey(via: string | null | undefined): MessageKey | undefined {
     default:
       return undefined;
   }
+}
+
+const moveReasons: readonly string[] = ['misrouted', 'different_skill', 'reorganization', 'other'];
+
+export type HistoryReason =
+  | { kind: 'waiting'; key: MessageKey }
+  | { kind: 'move'; key: MessageKey }
+  | { kind: 'text'; text: string };
+
+/** Known reason codes map to their localized label; any other value is free text and shown as is. */
+export function historyReason(
+  entry: Pick<TicketHistoryEntry, 'reason' | 'kind' | 'toStatus'>,
+): HistoryReason | undefined {
+  const reason = entry.reason?.trim();
+  if (!reason) return undefined;
+  if ((waitingReasons as readonly string[]).includes(reason)) {
+    return { kind: 'waiting', key: `tickets.waiting.${reason}` as MessageKey };
+  }
+  if (moveReasons.includes(reason) && entry.kind !== 'status_changed') {
+    return { kind: 'move', key: `tickets.move.reason.${reason}` as MessageKey };
+  }
+  return { kind: 'text', text: reason };
 }

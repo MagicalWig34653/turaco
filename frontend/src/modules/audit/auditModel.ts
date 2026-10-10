@@ -6,11 +6,20 @@ import type { AuditEvent, AuditFilter, AuditLabel } from './types';
 
 export const MAX_EXPORT_DAYS = 92;
 const DAY = 86_400_000;
+const HOUR = 3_600_000;
 
 /** The default range is the last 7 days; `to` is exclusive, so it is "now". */
 export function rangeForm(days: number, now: Date = new Date()): Pick<FormState, 'from' | 'to'> {
+  return rangeFormHours(days * 24, now);
+}
+
+/** Quick ranges shorter than a day, e.g. "last hour". */
+export function rangeFormHours(
+  hours: number,
+  now: Date = new Date(),
+): Pick<FormState, 'from' | 'to'> {
   return {
-    from: isoToLocalInput(new Date(now.getTime() - days * DAY).toISOString()),
+    from: isoToLocalInput(new Date(now.getTime() - hours * HOUR).toISOString()),
     to: isoToLocalInput(now.toISOString()),
   };
 }
@@ -143,4 +152,20 @@ export function diffRows(before: unknown, after: unknown): DiffRow[] {
 
 export function hasChanges(rows: readonly DiffRow[]): boolean {
   return rows.some((row) => row.kind !== 'same');
+}
+
+/** The OS user of a CLI event is operator-identifying; only audit exporters may see it. */
+export function visibleMetadata(
+  metadata: Record<string, unknown>,
+  canSeeOsUser: boolean,
+): Record<string, unknown> {
+  if (canSeeOsUser || !('osUser' in metadata)) return metadata;
+  const rest = { ...metadata };
+  delete rest.osUser;
+  return rest;
+}
+
+export function osUserOf(metadata: Record<string, unknown>): string | undefined {
+  const value = metadata.osUser;
+  return typeof value === 'string' && value ? value : undefined;
 }

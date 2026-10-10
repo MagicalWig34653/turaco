@@ -3,11 +3,17 @@ import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
+import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Dialog } from '../../platform/ui/Dialog';
-import { Select, TextArea } from '../../platform/ui/Field';
-import { normalizeResultNote, resultNoteMaxLength } from './actions';
+import { Checkbox, Select, TextArea } from '../../platform/ui/Field';
+import {
+  internalReferences,
+  normalizeResultNote,
+  resultNoteMaxLength,
+  shareWithRequester,
+} from './actions';
 import { tasksApi } from './api';
 import { AssigneePicker, type Assignee, type AssigneeType } from './AssigneePicker';
 import { TaskForm, type TaskFormValues } from './TaskForm';
@@ -97,10 +103,18 @@ export function CompleteDialog({
 }) {
   const { t } = useI18n();
   const [note, setNote] = useState('');
+  const [forRequester, setForRequester] = useState(false);
   const { busy, error, run } = useSubmit(onDone);
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void run(() => tasksApi.complete(task.id, task.version, normalizeResultNote(note)));
+    void run(() =>
+      tasksApi.complete(
+        task.id,
+        task.version,
+        normalizeResultNote(note),
+        shareWithRequester(note, forRequester),
+      ),
+    );
   };
   return (
     <Dialog
@@ -122,6 +136,13 @@ export function CompleteDialog({
         <p className="field-hint" aria-live="polite">
           {t('tasks.complete.noteCount', { count: note.length, max: resultNoteMaxLength })}
         </p>
+        <Checkbox
+          label={t('tasks.complete.forRequester')}
+          description={t('tasks.complete.forRequesterHint')}
+          checked={forRequester}
+          disabled={normalizeResultNote(note) === undefined}
+          onChange={(event) => setForRequester(event.target.checked)}
+        />
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button type="submit" variant="primary" busy={busy}>
@@ -182,6 +203,7 @@ export function AssignDialog({
   const [assignee, setAssignee] = useState<Assignee | null>(null);
   const { busy, error, run } = useSubmit(onDone);
   const hasAssignment = task.assignedUserId !== null || task.assignedTeamId !== null;
+  const refs = internalReferences(task.title, task.description);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -212,6 +234,9 @@ export function AssignDialog({
           ]}
         />
         <AssigneePicker key={type} type={type} value={assignee} onChange={setAssignee} />
+        {assignee?.external && refs.length > 0 ? (
+          <Alert kind="warning">{t('assignee.internalRefs', { refs: refs.join(', ') })}</Alert>
+        ) : null}
         <div className="dialog-actions">
           {hasAssignment ? (
             <Button

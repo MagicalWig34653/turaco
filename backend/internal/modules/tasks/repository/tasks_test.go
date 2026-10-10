@@ -359,12 +359,23 @@ func TestResultNoteIsStoredWithCompletionAndBoundedByTheDatabase(t *testing.T) {
 	if err != nil || done.ResultNote == nil || *done.ResultNote != note {
 		t.Fatalf("complete with note = %+v %v", done, err)
 	}
+	if _, err := f.pool.Exec(ctx, `UPDATE platform.tasks SET result_note_for_requester = true WHERE id = $1`, f.insert("no note", "normal", nil).ID); err == nil {
+		t.Error("database accepted the requester flag without a note")
+	}
+	shared, err := f.repo.Change(ctx, f.caller(), tk.ID, func(cur application.Task) (application.Change, error) {
+		n := cur
+		n.ResultNoteForRequester = true
+		return application.Change{Next: n, Action: "tasks.task.completed"}, nil
+	})
+	if err != nil || !shared.ResultNoteForRequester {
+		t.Fatalf("flag = %+v %v", shared, err)
+	}
 	reopened, err := f.repo.Change(ctx, f.caller(), tk.ID, func(cur application.Task) (application.Change, error) {
 		n := cur
-		n.Status, n.CompletedAt, n.ResultNote = application.StatusOpen, nil, nil
+		n.Status, n.CompletedAt, n.ResultNote, n.ResultNoteForRequester = application.StatusOpen, nil, nil, false
 		return application.Change{Next: n, Action: "tasks.task.reopened"}, nil
 	})
-	if err != nil || reopened.ResultNote != nil {
+	if err != nil || reopened.ResultNote != nil || reopened.ResultNoteForRequester {
 		t.Errorf("reopen keeps the note: %+v %v", reopened, err)
 	}
 }

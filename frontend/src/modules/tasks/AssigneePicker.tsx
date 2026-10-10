@@ -54,7 +54,7 @@ export function AssigneePicker({
           .map((user) => ({
             id: user.id,
             label: user.displayName,
-            detail: user.primaryEmail ?? undefined,
+            detail: undefined,
             external: user.accountKind === 'external',
           }));
       }

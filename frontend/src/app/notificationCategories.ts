@@ -25,6 +25,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.ticket.comment',
       labelKey: 'notifications.category.ticket.comment',
     },
+    'ticket.mention': {
+      textKey: 'notifications.ticket.mention',
+      labelKey: 'notifications.category.ticket.mention',
+    },
     'ticket.resolved': {
       textKey: 'notifications.ticket.resolved',
       labelKey: 'notifications.category.ticket.resolved',

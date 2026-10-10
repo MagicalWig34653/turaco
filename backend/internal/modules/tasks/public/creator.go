@@ -45,6 +45,8 @@ type Task struct {
 	DueAt          *time.Time
 	AssignedUserID *string
 	AssignedTeamID *string
+	// ResultNote is the closing note of a completed task; only set when it was marked for the requester.
+	ResultNote *string
 }
 
 // Status values of a task.
@@ -156,7 +158,7 @@ func (c *Creator) byContext(ctx context.Context, tx pgx.Tx, typ, contextID strin
 	}
 	out := make([]Task, 0, len(ts))
 	for _, t := range ts {
-		out = append(out, Task{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DueAt: t.DueAt, AssignedUserID: t.AssignedUserID, AssignedTeamID: t.AssignedTeamID})
+		out = append(out, Task{ID: t.ID, Title: t.Title, Status: t.Status, Priority: t.Priority, DueAt: t.DueAt, AssignedUserID: t.AssignedUserID, AssignedTeamID: t.AssignedTeamID, ResultNote: requesterNote(t)})
 	}
 	return out, nil
 }
@@ -254,4 +256,12 @@ func (c *Creator) OverdueByTwoTypes(ctx context.Context, typeA string, idsA []st
 		return 0, errors.New("tasks: overdue reader unavailable")
 	}
 	return reader.OverdueByTwoTypes(ctx, typeA, idsA, typeB, idsB)
+}
+
+// requesterNote is the result note only when the completer marked it for the requester.
+func requesterNote(t application.Task) *string {
+	if t.ResultNoteForRequester {
+		return t.ResultNote
+	}
+	return nil
 }

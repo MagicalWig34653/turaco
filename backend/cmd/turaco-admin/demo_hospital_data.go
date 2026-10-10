@@ -266,6 +266,9 @@ var simProducts = []simProduct{
 	{"Befundmonitor DM-21", "MD-DM21", "DM-21", "Meditron IT", "Medizin-IT"},
 	{"Access Point AP-310", "AL-AP310", "AP-310", "AirLink Networks", "Netzwerk"},
 	{"Access-Switch SW-48", "AL-SW48", "SW-48", "AirLink Networks", "Netzwerk"},
+	{"DECT-Telefon DP-60", "AL-DP60", "DP-60", "AirLink Networks", "Telefonie"},
+	{"Mobiler Röntgenwagen XR-3", "MD-XR3", "XR-3", "Meditron IT", "Medizin-IT"},
+	{"Backup-Server BK-500", "NT-BK500", "BK-500", "Nordtech Systems", "Server"},
 }
 
 // simLegacyNames are the English names of earlier seed runs; the seed renames those products and categories in place
@@ -284,7 +287,7 @@ type simAsset struct {
 	Part, Serial, Tag, Area, Holder, Repair string
 }
 
-// hospitalAssets builds the 60 simulated assets with stable serial numbers and tags.
+// hospitalAssets builds the 69 simulated assets with stable serial numbers and tags.
 func hospitalAssets() []simAsset {
 	var out []simAsset
 	counters := map[string]int{}
@@ -345,6 +348,13 @@ func hospitalAssets() []simAsset {
 	// 2 switches, owned by Infrastruktur.
 	add("SW-48", "nord-serverraum", "team:"+teamInfra, "")
 	add("SW-48", "sued-technik", "team:"+teamInfra, "")
+	// 6 DECT phones on the wards (the telephony team hands them out), 1 mobile X-ray cart and 2 backup servers.
+	for _, a := range []string{"nord-station3b", "nord-station3b", "nord-notaufnahme", "nord-notaufnahme", "nord-pflege", "sued-pflege"} {
+		add("DP-60", a, "location:"+a, "")
+	}
+	add("XR-3", "nord-radiologie", "location:nord-radiologie", "")
+	add("BK-500", "nord-serverraum", "team:"+teamInfra, "")
+	add("BK-500", "zentrale-rz", "team:"+teamInfra, "")
 	return out
 }
 
@@ -472,6 +482,7 @@ var simTasks = []simTask{
 	{Title: "Telefonie & WLAN: Firmware-Update der Access Points Klinik Süd vorbereiten", Description: "Wartungsfenster abstimmen und Rollback-Plan schreiben.", Priority: "normal", Team: teamWLAN, DueInDays: 10},
 	{Title: "Security: Quartalsweise Berechtigungsprüfung ORBIS", Description: "Berechtigungen der Rolle 'Arzt' mit dem Fachbereich abgleichen.", Priority: "normal", Team: teamSec, DueInDays: 14},
 	{Title: "First Level: Ersatz-Etikettendrucker für das Labor bereitstellen", Description: "Ersatzdrucker vorkonfigurieren und zur Laborleitung bringen.", Priority: "high", Team: teamFLS, User: "lena.bauer", DueInDays: 1},
+	{Title: "KIS-Hersteller: Rückmeldung zur Anzeige im Medikationsmodul liefern", Description: "Bitte die Anzeige der Dosierungshinweise im Testsystem prüfen und das Ergebnis mit der Versionsnummer zurückmelden.", Priority: "normal", Team: teamVendor, DueInDays: 5},
 	{Title: "Infrastruktur: USV-Test Serverraum Nord durchführen", Description: "Halbjährlicher Test, Ergebnis dokumentieren.", Priority: "normal", Team: teamInfra, DueInDays: 7},
 }
 

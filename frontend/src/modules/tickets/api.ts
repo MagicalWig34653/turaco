@@ -9,6 +9,7 @@ import type {
   QueueVisibility,
   Priority,
   Ticket,
+  TicketChangeLink,
   TicketComment,
   TicketDetail,
   TicketHistoryEntry,
@@ -76,8 +77,26 @@ export const ticketsApi = {
       signal,
       query: { reference },
     }),
-  comment: (id: string, body: string, internal: boolean) =>
-    api.post<TicketComment>(`/tickets/${enc(id)}/comments`, { body, internal }),
+  comment: (
+    id: string,
+    body: string,
+    internal: boolean,
+    mentionedUserIds: readonly string[] = [],
+  ) =>
+    api.post<TicketComment>(`/tickets/${enc(id)}/comments`, {
+      body,
+      internal,
+      ...(internal && mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
+    }),
+  /** Corrects the affected person's location; null clears it. */
+  setLocation: (id: string, expectedVersion: number, locationId: string | null) =>
+    api.post<Ticket>(`/tickets/${enc(id)}/location`, { expectedVersion, locationId }),
+  changes: (id: string, signal?: Signal) =>
+    api.get<{ items: TicketChangeLink[] }>(`/tickets/${enc(id)}/changes`, { signal }),
+  linkChange: (id: string, changeId: string) =>
+    api.post<unknown>(`/tickets/${enc(id)}/changes`, { changeId }),
+  unlinkChange: (id: string, changeId: string) =>
+    api.delete<void>(`/tickets/${enc(id)}/changes/${enc(changeId)}`),
   assign: (
     id: string,
     expectedVersion: number,

@@ -91,3 +91,19 @@ export function normalizeResultNote(note: string): string | undefined {
   const trimmed = note.trim();
   return trimmed === '' ? undefined : trimmed.slice(0, resultNoteMaxLength);
 }
+
+/** The requester can only see a note that exists, so the flag is dropped for a blank note. */
+export function shareWithRequester(note: string, share: boolean): boolean {
+  return share && normalizeResultNote(note) !== undefined;
+}
+
+const internalReference = /\b[A-Z]{2,5}-\d{1,}\b/g;
+
+/** Reference-like tokens (PRB-000001, TKT-12) in task text; at most five distinct ones. */
+export function internalReferences(...texts: readonly (string | null | undefined)[]): string[] {
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const match of text?.matchAll(internalReference) ?? []) found.add(match[0]);
+  }
+  return [...found].slice(0, 5);
+}

@@ -66,6 +66,22 @@ export type PagedState<T> = {
 
 type PageResult<T> = { items: T[]; nextCursor?: string };
 
+/** Appends a page; rows whose string `id` is already present are dropped (a repeated page adds nothing). */
+export function appendUnique<T>(previous: readonly T[], page: readonly T[]): T[] {
+  const idOf = (item: T) => (item as { id?: unknown } | null)?.id;
+  const seen = new Set(previous.map(idOf).filter((id) => typeof id === 'string'));
+  return [
+    ...previous,
+    ...page.filter((item) => {
+      const id = idOf(item);
+      if (typeof id !== 'string') return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    }),
+  ];
+}
+
 /** Cursor pagination ("load more") on top of the API's nextCursor contract. */
 export function usePagedList<T>(
   fetchPage: (cursor: string | undefined, signal: AbortSignal) => Promise<PageResult<T>>,
@@ -81,10 +97,12 @@ export function usePagedList<T>(
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<ApiError | undefined>(undefined);
   const moreController = useRef<AbortController | null>(null);
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
     moreController.current?.abort();
+    loadingMoreRef.current = false;
     setLoading(true);
     setError(undefined);
     setLoadMoreError(undefined);
@@ -108,21 +126,24 @@ export function usePagedList<T>(
   }, [...deps, token]);
 
   const loadMore = useCallback(() => {
-    if (cursor === undefined) return;
+    if (cursor === undefined || loadingMoreRef.current) return;
     const controller = new AbortController();
     moreController.current = controller;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(undefined);
     fetchRef.current(cursor, controller.signal).then(
       (page) => {
         if (controller.signal.aborted) return;
-        setItems((previous) => [...previous, ...page.items]);
+        setItems((previous) => appendUnique(previous, page.items));
         setCursor(page.nextCursor);
+        loadingMoreRef.current = false;
         setLoadingMore(false);
       },
       (cause: unknown) => {
         if (controller.signal.aborted || isAbortError(cause)) return;
         setLoadMoreError(asApiError(cause));
+        loadingMoreRef.current = false;
         setLoadingMore(false);
       },
     );

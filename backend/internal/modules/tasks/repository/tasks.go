@@ -35,7 +35,7 @@ const taskTarget = "task"
 const columns = `id::text, title, description, status, status_reason, priority,
 	assigned_user_id::text, assigned_team_id::text, context_type, context_id::text,
 	due_at, completed_at, created_by_user_id::text, completed_by_user_id::text,
-	recurrence_definition_id::text, scheduled_for, result_note, version, created_at, updated_at`
+	recurrence_definition_id::text, scheduled_for, result_note, result_note_for_requester, version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Task, error) { return scanWith(row) }
 
@@ -45,7 +45,7 @@ func scanWith(row pgx.Row, extra ...any) (application.Task, error) {
 	dest := append([]any{&t.ID, &t.Title, &t.Description, &t.Status, &t.StatusReason, &t.Priority,
 		&t.AssignedUserID, &t.AssignedTeamID, &t.ContextType, &t.ContextID,
 		&t.DueAt, &t.CompletedAt, &t.CreatedByUserID, &t.CompletedByUserID,
-		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.ResultNote, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
+		&t.RecurrenceDefinitionID, &t.ScheduledFor, &t.ResultNote, &t.ResultNoteForRequester, &t.Version, &t.CreatedAt, &t.UpdatedAt}, extra...)
 	err := row.Scan(dest...)
 	return t, err
 }
@@ -54,7 +54,7 @@ func scanWith(row pgx.Row, extra ...any) (application.Task, error) {
 const queryColumns = `t.id::text, t.title, t.description, t.status, t.status_reason, t.priority,
 	t.assigned_user_id::text, t.assigned_team_id::text, t.context_type, t.context_id::text,
 	t.due_at, t.completed_at, t.created_by_user_id::text, t.completed_by_user_id::text,
-	t.recurrence_definition_id::text, t.scheduled_for, t.result_note, t.version, t.created_at, t.updated_at`
+	t.recurrence_definition_id::text, t.scheduled_for, t.result_note, t.result_note_for_requester, t.version, t.created_at, t.updated_at`
 
 // QueryTasks runs a compiled query plan (ADR-0033) in a read-only transaction.
 func (r *Repository) QueryTasks(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Task], error) {
@@ -317,12 +317,12 @@ func (r *Repository) Change(ctx context.Context, c application.Caller, id string
 			UPDATE platform.tasks SET
 				title = $2, description = $3, status = $4, status_reason = $5, priority = $6,
 				assigned_user_id = $7::uuid, assigned_team_id = $8::uuid, due_at = $9,
-				completed_at = $10, completed_by_user_id = $11::uuid, result_note = $12,
+				completed_at = $10, completed_by_user_id = $11::uuid, result_note = $12, result_note_for_requester = $13,
 				version = version + 1, updated_at = now()
 			WHERE id = $1::uuid
 			RETURNING `+columns,
 			id, n.Title, n.Description, n.Status, n.StatusReason, n.Priority,
-			n.AssignedUserID, n.AssignedTeamID, n.DueAt, n.CompletedAt, n.CompletedByUserID, n.ResultNote))
+			n.AssignedUserID, n.AssignedTeamID, n.DueAt, n.CompletedAt, n.CompletedByUserID, n.ResultNote, n.ResultNoteForRequester))
 		if err != nil {
 			return fmt.Errorf("update task: %w", err)
 		}

@@ -223,7 +223,7 @@ func (s *Service) Unassign(ctx context.Context, c Caller, p Principal, id string
 // need tasks.manage or tasks.work on a task assigned to the caller or its
 // Teams; cancel and reopen need tasks.manage.
 func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op Operation, reason string) (TaskView, error) {
-	return s.transition(ctx, c, p, id, expected, op, reason, "")
+	return s.transition(ctx, c, p, id, expected, op, reason, "", false)
 }
 
 // Complete finishes a task like Transition with OpComplete and stores the optional result note (at most 1000
@@ -231,10 +231,16 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 // is shown with the task and kept only while the task is completed; it is not copied into audit events or
 // notifications (they carry only whether a note exists).
 func (s *Service) Complete(ctx context.Context, c Caller, p Principal, id string, expected *int, resultNote string) (TaskView, error) {
-	return s.transition(ctx, c, p, id, expected, OpComplete, "", resultNote)
+	return s.transition(ctx, c, p, id, expected, OpComplete, "", resultNote, false)
 }
 
-func (s *Service) transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op Operation, reason, resultNote string) (TaskView, error) {
+// CompleteWithVisibility is Complete with the choice to show the result note to the requester of the request the
+// task belongs to (it needs a note). The default (Complete) keeps the note internal.
+func (s *Service) CompleteWithVisibility(ctx context.Context, c Caller, p Principal, id string, expected *int, resultNote string, forRequester bool) (TaskView, error) {
+	return s.transition(ctx, c, p, id, expected, OpComplete, "", resultNote, forRequester)
+}
+
+func (s *Service) transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op Operation, reason, resultNote string, forRequester bool) (TaskView, error) {
 	if err := c.validate(); err != nil {
 		return TaskView{}, err
 	}
@@ -248,6 +254,9 @@ func (s *Service) transition(ctx context.Context, c Caller, p Principal, id stri
 			return TaskView{}, err
 		}
 		note = &n
+	}
+	if forRequester && note == nil {
+		return TaskView{}, invalid("a result note is required to show it to the requester")
 	}
 	tr, ok := transitions[op]
 	if !ok {
@@ -275,7 +284,7 @@ func (s *Service) transition(ctx context.Context, c Caller, p Principal, id stri
 		}
 		nx := cur
 		nx.Status = to
-		nx.StatusReason, nx.CompletedAt, nx.CompletedByUserID, nx.ResultNote = nil, nil, nil, nil
+		nx.StatusReason, nx.CompletedAt, nx.CompletedByUserID, nx.ResultNote, nx.ResultNoteForRequester = nil, nil, nil, nil, false
 		meta := map[string]any{}
 		var events []Event
 		switch op {
@@ -291,8 +300,9 @@ func (s *Service) transition(ctx context.Context, c Caller, p Principal, id stri
 			if by != "" {
 				nx.CompletedByUserID = &by
 			}
-			nx.ResultNote = note
+			nx.ResultNote, nx.ResultNoteForRequester = note, forRequester && note != nil
 			meta["hasResultNote"] = note != nil
+			meta["noteForRequester"] = nx.ResultNoteForRequester
 			events = append(events, Event{Type: "TaskCompleted", Payload: map[string]any{
 				"taskId": cur.ID, "completedByUserId": nx.CompletedByUserID,
 			}})

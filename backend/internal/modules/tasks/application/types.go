@@ -70,6 +70,9 @@ type Task struct {
 	ScheduledFor           *time.Time
 	// ResultNote is the closing comment left when the task was completed; nil otherwise.
 	ResultNote *string
+	// ResultNoteForRequester marks the note as meant for the person who asked for the work (the request's requester
+	// sees it); otherwise it stays internal. False when there is no note.
+	ResultNoteForRequester bool
 	// Version starts at 1 and increases with every change.
 	Version   int
 	CreatedAt time.Time

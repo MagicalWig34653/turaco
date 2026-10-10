@@ -26,6 +26,7 @@ const (
 	HistoryPriorityChanged = "priority_changed"
 	HistoryQueueMoved      = "queue_moved"
 	HistoryMarkedDuplicate = "marked_duplicate"
+	HistoryLocationChanged = "location_changed"
 )
 
 // HistoryEntry is one change. From/To fields are set only for the kinds they apply to. Via names the operation
@@ -47,6 +48,9 @@ type HistoryEntry struct {
 	ToPrio     string
 	// DuplicateOfID is set on HistoryMarkedDuplicate.
 	DuplicateOfID string
+	// FromLocationID and ToLocationID are set on HistoryLocationChanged (empty: no location).
+	FromLocationID string
+	ToLocationID   string
 }
 
 // HistoryStore reads the audit events of a Ticket, oldest first. The repository implements it.
@@ -90,6 +94,8 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			ReasonCode  string `json:"reasonCode"`
 			Operation   string `json:"operation"`
 			DuplicateOf string `json:"duplicateOfId"`
+			FromLoc     string `json:"fromLocationId"`
+			ToLoc       string `json:"toLocationId"`
 		}
 		if len(ev.Metadata) > 0 {
 			_ = json.Unmarshal(ev.Metadata, &meta)
@@ -100,11 +106,20 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 		}
 		via := strings.TrimPrefix(ev.Action, "servicedesk.ticket.")
 		base := HistoryEntry{ID: ev.ID, At: ev.OccurredAt, ActorID: deref(ev.ActorID), Via: via, Reason: reason}
+		n := 0
 		add := func(kind string, f func(*HistoryEntry)) {
 			e := base
 			e.Kind = kind
+			// One audit event can yield several entries; every entry gets a unique id (first keeps the event id).
+			if n++; n > 1 {
+				e.ID = fmt.Sprintf("%s:%d", ev.ID, n)
+			}
 			f(&e)
 			out = append(out, e)
+		}
+		if ev.Action == "servicedesk.ticket.location_changed" {
+			add(HistoryLocationChanged, func(e *HistoryEntry) { e.FromLocationID, e.ToLocationID = meta.FromLoc, meta.ToLoc })
+			continue
 		}
 		if !hasBefore {
 			add(HistoryCreated, func(e *HistoryEntry) {

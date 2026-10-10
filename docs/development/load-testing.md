@@ -94,6 +94,23 @@ Staff write operations are read-modify-write like a real client: `GET` the ticke
 
 A failing invariant fails the run. A skipped check says why (for example no Queues listed by an older build).
 
+## Reference result (2026-10-10, development laptop)
+
+One run of the `ramp` profile at `--rate-scale 1` (stages 50, 500, 2000 and 4000 operations/s) against a single development stack: API, worker, PostgreSQL 18 and the generator shared one Colima VM (6 CPUs, 16 GiB). The build was `main` with migration `000072`.
+
+| Stage | Offered ops/s | Completed ops/s | p99 latency | Dropped | 5xx |
+|---|---|---|---|---|---|
+| hold 50 | 51 | 51 | 73 ms | 0 | 0 |
+| hold 500 | 502 | 502 | 137 ms | 0 | 0 |
+| ramp 2000 | 1,240 | 1,240 | 9.5 s (saturated) | 0 | 0 |
+| hold 2000 | 1,987 | 1,397 | 27.6 s | 17,697 | 0 |
+| hold 4000 | 4,030 | 1,360 | 18.2 s | 80,112 | 0 |
+
+- The dev host saturates at roughly 1,300 to 1,500 operations/s (about 1,500 HTTP requests/s). Beyond that the generator queue fills and arrivals are dropped; latency from the scheduled start then reflects queueing, while the service time of a request that was sent stayed below one second (`svc p99`).
+- The system degrades by limiting, not by failing: per-principal rate limits answered 10,274 requests with 429, and there were no 5xx answers, no timeouts and no deadlocks.
+- All 13 invariants held: 6,660 tickets created with distinct references, 8,118 conditional writes without lost updates, 790 denied-access probes without an authorization leak.
+- PostgreSQL peaked at 19 of 100 connections and about 17,600 commits/s. These numbers are a development reference, not a capacity statement for production.
+
 ## Rate limits and expected limits on a laptop
 
 - The query engine limits **each principal** to 5 requests per second sustained with a burst of 30 (`backend/internal/platform/query/plan.go`). At most 16 simulation principals reach `POST /tickets/query`, so at most roughly 80 queries per second can pass in steady state however high the target rate is; the rest answers `429`. This is correct behavior: the 429s are counted in their own class and column and do not fail the run. Login also throttles per account and client; the tool honors `Retry-After`.

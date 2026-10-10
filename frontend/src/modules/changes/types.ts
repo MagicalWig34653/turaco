@@ -137,3 +137,10 @@ export type AffectedCandidate = {
   reference?: string;
   detail?: string;
 };
+
+export type ChangeTicketLink = {
+  ticketId: string;
+  reference: string;
+  title: string;
+  status: string;
+};

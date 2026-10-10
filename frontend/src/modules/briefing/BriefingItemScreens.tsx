@@ -156,7 +156,9 @@ export function BriefingDetailScreen({ id }: { id: string }) {
           <SeverityBadge severity={item.severity} />
         </dd>
         <dt>{t('briefing.audience')}</dt>
-        <dd>{t(`briefing.audience.${item.audience}`)}</dd>
+        <dd>
+          {item.audience ? t(`briefing.audience.${item.audience}`) : t('briefing.audience.unset')}
+        </dd>
         {can('briefing.manage') ? (
           <>
             <dt>{t('tasks.col.status')}</dt>

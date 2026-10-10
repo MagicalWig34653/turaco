@@ -51,6 +51,7 @@ The vendor is modelled as a **Team**, because Organization Directory Groups are 
 ### Recurring meetings (real-life, not tool features)
 
 - **Daily 08:00 stand-up** of the three site leads (`christian.hoffmann` hosts; `silke.brandl`, `martin.kessler`). No vendor. Material: the Overview page (briefing feed), the Service Desk queue, open Major Incidents, Problems and Known Errors.
+- **Duties of the site leads.** Public Major Incident status posts (`majorincidents.manage`) and raising or approving Changes such as a maintenance window (`changes.manage`) belong to the three site leads, not to the infrastructure engineers or the specialists. Specialists and engineers hand such items to a lead in the stand-up.
 - **Weekly all-IT meeting** with all five technical teams and the leads. No vendor. Material: Problems, Changes and the maintenance calendar, Security overview, tasks per team.
 - **Vendor** takes part in neither. The vendor works only through what the restricted role allows (see [Vendor persona](#vendor-kis-hersteller)).
 
@@ -62,18 +63,18 @@ Meetings or a calendar do not exist in Turaco (see the gap list); testers run th
 |---|---|---|
 | Users | 31 | 15 IT (incl. 3 leads), 2 vendor, 14 clinical and administrative staff; each with name, email (`*.example`), department, primary location, manager |
 | Roles | 6 custom | see [Roles](#roles); employees need no role |
-| Assets | 60 | workstations, notebooks, thin clients, bedside terminals, visit carts, diagnostic monitors, laser and wristband printers, WLAN access points (team-held), switches (team-held); person-, location- or team-assigned; one spare workstation, two devices in repair |
+| Assets | 69 | workstations, notebooks, thin clients, bedside terminals, visit carts, diagnostic monitors, laser and wristband printers, WLAN access points (team-held), switches (team-held), DECT phones (ward-held), a mobile X-ray cart (Radiologie) and two backup servers (Infrastruktur-held); person-, location- or team-assigned; one spare workstation, two devices in repair |
 | Queues | 5 | the platform's default desk `it` (prefix `TKT`, renamed "Allgemein (First Level)", intake desk of First Level Support, site leads and vendor tickets) plus `telefonie-wlan` (`TEL`), `orbis-kis` (`KIS`), `infrastruktur` (`INF`) and `security` (`SEC`); each specialist desk is internal, routes to its Team, grants the owning Team and the site-lead Team the work level and First Level Support the create level (people with the global `tickets.manage` or `tickets.view` see every desk anyway). A re-run moves tickets of earlier runs that still sit in the intake desk into the desk of their routing Team (new number, old number kept as an alias); finished tickets stay where they are |
 | Tickets | 27 | all states, four priorities, routing Teams of all five teams, each in the desk of its Team; comments (public and internal), some with the reporter's device attached |
 | Problems | 3 | two Known Errors with workaround (ORBIS medication timeout, WLAN roaming), one under investigation |
 | Major incident | 1 | "ORBIS: Anmeldung am Standort Nord gestört" with two linked tickets |
 | Knowledge | 14 articles | ORBIS, WLAN, printing, phishing, triage guide, vendor rules (employee and internal audiences) |
-| Tasks | 5 | one for the vendor team and one each for First Level Support, Telefonie & WLAN, Infrastruktur and Security (all assigned to the team) |
+| Tasks | 6 | two for the vendor team (the hotfix task and an open feedback task without internal references) and one each for First Level Support, Telefonie & WLAN, Infrastruktur and Security (all assigned to the team) |
 | Briefing | 3 published items | ORBIS maintenance window, phishing wave, new WLAN profile |
 | Catalog items | 4 | ORBIS access, medical device network, DECT phone, printer setup (team-routed fulfillment tasks; one with Security as approver team) |
 | Infrastructure | 4 buildings, 9 rooms, 2 racks | Nord, Süd, Zentrale |
 
-Asset serial numbers are `SIM-<part>-<nnn>` (for example `SIM-WS-100-001`), tags `SIM-0001` to `SIM-0060`. A workstation belongs to each desk user (`katharina.brandt` has `SIM-WS-100-001`).
+Asset serial numbers are `SIM-<part>-<nnn>` (for example `SIM-WS-100-001`), tags `SIM-0001` to `SIM-0069`. A workstation belongs to each desk user (`katharina.brandt` has `SIM-WS-100-001`).
 
 ## Roles
 
@@ -82,10 +83,10 @@ The seed creates these roles through the audited role service (visible under Adm
 | Role key | Intended for | Key permissions |
 |---|---|---|
 | `first-level-support` | First level | `tickets.manage`, read knowledge/assets/devices, `requests.view`, tasks of own team, attended remote-access start |
-| `it-specialist` | WLAN and ORBIS technicians | first level plus `assets.manage`, `knowledge.manage`, `problems.manage`, `tasks.manage`, read changes/infrastructure/security |
+| `it-specialist` | WLAN and ORBIS technicians | first level plus `assets.manage`, `knowledge.manage`, `problems.manage`, `tasks.manage`, read changes/infrastructure/security. No `changes.manage` (a specialist cannot raise a Change; the site leads do) |
 | `it-site-lead` | Standort-IT-Leiter | specialist plus `briefing.manage`, `majorincidents.manage`, `changes.manage`/`approve`, `requests.manage`, `organization.teams.manage`, presence availability/entries of the team |
-| `security-analyst` | Security | `security.manage`, `security.accept_risk`, read tickets (`tickets.view`, cannot work them), audit log, directory groups |
-| `infrastructure-engineer` | Infrastruktur | `infrastructure.manage`, `changes.manage`/`execute`, `services.manage`, `assets.manage`; tickets read-only (`tickets.view`) |
+| `security-analyst` | Security | `security.manage`, `security.accept_risk`, read tickets (`tickets.view` globally; work only on the Security desk through the Team's Queue work grant), audit log, directory groups |
+| `infrastructure-engineer` | Infrastruktur | `infrastructure.manage`, `changes.manage`/`execute`, `services.manage`, `assets.manage`; tickets read-only (`tickets.view` globally; work only on the Infrastruktur desk through the Team's Queue work grant). No `majorincidents.manage` |
 | `vendor-restricted` | KIS vendor | only `tasks.work` (tasks assigned to the vendor team or the person) plus the employee baseline |
 
 ## Personas and logins
@@ -213,14 +214,14 @@ Must be denied: security finding actions, role administration, infrastructure ma
 
 Do:
 1. Start at Infrastructure: open Nord > Haus A > Serverraum > "Rack 1". Check the site tree for all three sites.
-2. Open the read-only ticket "Serverraum Nord: Temperaturwarnung Rack 3" (queue Infrastruktur): **can you comment or change it?**
+2. Open the ticket "Serverraum Nord: Temperaturwarnung Rack 3" (queue Infrastruktur): the Infrastruktur Team holds the work level in that Queue, so you can work it. Open a KIS ticket: there the role only reads. **Does the UI make the difference clear?**
 3. Create a Change for a backup window, link affected assets, and submit it. Open the maintenance calendar.
 4. Open your task "USV-Test Serverraum Nord durchführen".
 5. Look at Services and the impact view.
 
 Should see: infrastructure, changes, services, assets (manage), tickets (read), tasks.
 
-Must be denied: working tickets (comment, assign, resolve) — this is `tickets.view` only; security finding management; role administration.
+Must be denied: working tickets of other desks (comment, assign, resolve) — outside the Infrastruktur desk the role is `tickets.view` only; posting Major Incident status (`majorincidents.manage`); security finding management; role administration.
 
 Findings to watch: how this persona reaches the 3 tickets that concern them without a ticket-centric workflow (no saved views or queue counts; My Work has no tickets).
 
@@ -228,14 +229,14 @@ Findings to watch: how this persona reaches the 3 tickets that concern them with
 
 Do:
 1. Open the Security overview, advisories and findings.
-2. Read the tickets "Verdacht auf Phishing-Mail an Verwaltung" and "USB-Stick mit Patientendaten auf Station gefunden" (queue Security). Try to comment: this role only has `tickets.view`.
+2. Read the tickets "Verdacht auf Phishing-Mail an Verwaltung" and "USB-Stick mit Patientendaten auf Station gefunden" (queue Security). Commenting works on this desk because the Security Team holds the work level in that Queue; try the same on a KIS ticket, where the role only reads (`tickets.view`).
 3. Open the audit log, filter for the actions of the last hour, and find the role changes made by the seed.
 4. Create a security advisory by hand or accept a risk with reason code and review date.
 5. Read the briefing item about the phishing wave.
 
 Should see: security, tickets (read, internal comments), audit log, directory groups, assets and endpoint data, knowledge.
 
-Must be denied: ticket assignment and resolve, role administration, changing assets.
+Must be denied: ticket assignment and resolve outside the Security desk, role administration, changing assets.
 
 ### Vendor (KIS-Hersteller)
 
@@ -243,7 +244,7 @@ Logins `vendor.mueller` and `vendor.schmidt`.
 
 Do:
 1. Sign in and look for work: Tasks (the hotfix task for the vendor team) and My tickets.
-2. Start and complete the task assigned to the vendor team with a result note.
+2. Start and complete a task assigned to the vendor team with a result note (the "Rückmeldung zur Anzeige im Medikationsmodul" task stays open for this). Mark the note as visible for the requester where the dialog offers it.
 3. Try to open the Service Desk queue, Assets, Knowledge internal articles, Problems, Briefing and the Overview.
 4. Try to open the URL of a ticket that is not yours (copy it from an IT persona).
 

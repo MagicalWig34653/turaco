@@ -9,10 +9,10 @@ import { useI18n } from '../../platform/i18n/I18nProvider';
 import type { MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
-import { Badge } from '../../platform/ui/Alert';
+import { Alert, Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
-import { Select, TextArea } from '../../platform/ui/Field';
+import { Checkbox, Select, TextArea } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Avatar, Card, Skeleton, StatusBadge, Tabs } from '../../platform/ui/Workspace';
 import { useContextMenu } from '../../platform/ui/ContextMenu';
@@ -37,8 +37,23 @@ import { aliasList, canOfferMove, ticketQueueName } from './queueModel';
 import { reportedImpactKey } from './impactModel';
 import { organizationApi } from '../organization/api';
 import { TicketMoveDialog } from './TicketMoveDialog';
+import { TicketLocationDialog } from './TicketLocationDialog';
+import { TicketChangesCard } from './TicketChangesCard';
+import { MentionPicker } from './MentionPicker';
+import {
+  historyLocationIds,
+  locationFromProfile,
+  mentionIds,
+  type Mentioned,
+} from './ticketExtrasModel';
 import { DuplicateDialog, LinkToDialog } from './LinkDialogs';
-import { describeHistory, isAssignmentEntry, mergeTimeline, viaKey } from './historyModel';
+import {
+  describeHistory,
+  historyReason,
+  isAssignmentEntry,
+  mergeTimeline,
+  viaKey,
+} from './historyModel';
 import { TicketStatusBadge } from './TicketsScreen';
 import { priorities, waitingReasons, type TicketDetail, type TicketOperation } from './types';
 
@@ -54,6 +69,7 @@ function AssignDialog({
   onDone: () => void;
 }) {
   const { t } = useI18n();
+  const { session } = useSession();
   const [mode, setMode] = useState<'user' | 'team'>('user');
   const [assignee, setAssignee] = useState<Assignee | null>(null);
   const [queue, setQueue] = useState<Assignee | null>(null);
@@ -103,7 +119,21 @@ function AssignDialog({
           </label>
         </fieldset>
         {mode === 'user' ? (
-          <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+          <>
+            {session?.userId ? (
+              <Button
+                onClick={() =>
+                  setAssignee({ id: session.userId, label: session.displayName ?? session.userId })
+                }
+              >
+                {t('tickets.assign.toMe')}
+              </Button>
+            ) : null}
+            {ticket.assigneeId && ticket.assigneeId !== session?.userId ? (
+              <Alert kind="warning">{t('tickets.assign.heldByOther')}</Alert>
+            ) : null}
+            <AssigneePicker presenceHints type="user" value={assignee} onChange={setAssignee} />
+          </>
         ) : (
           <AssigneePicker
             type="team"
@@ -164,6 +194,8 @@ function WaitDialog({
 }) {
   const { t } = useI18n();
   const [reason, setReason] = useState<string>('customer');
+  const [note, setNote] = useState('');
+  const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const submit = async (event: FormEvent) => {
@@ -172,6 +204,14 @@ function WaitDialog({
     setError(undefined);
     try {
       await ticketsApi.operate(ticket.id, 'wait', ticket.version, reason);
+      // The note is a second call; the hold itself has already succeeded, so a failure must not undo it.
+      if (note.trim()) {
+        try {
+          await ticketsApi.comment(ticket.id, note.trim(), !visible);
+        } catch {
+          /* the hold is recorded; the note can be added from the conversation */
+        }
+      }
       onDone();
     } catch (cause) {
       setError(asApiError(cause));
@@ -188,6 +228,21 @@ function WaitDialog({
           onChange={(event) => setReason(event.target.value)}
           options={waitingReasons.map((value) => ({ value, label: t(`tickets.waiting.${value}`) }))}
         />
+        <TextArea
+          label={t('tickets.wait.note')}
+          hint={t('tickets.wait.note.hint')}
+          value={note}
+          rows={3}
+          maxLength={5000}
+          onChange={(event) => setNote(event.target.value)}
+        />
+        {note.trim() ? (
+          <Checkbox
+            label={t('tickets.wait.note.visible')}
+            checked={visible}
+            onChange={(event) => setVisible(event.target.checked)}
+          />
+        ) : null}
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button type="submit" variant="primary" busy={busy}>
@@ -239,15 +294,42 @@ function TicketWorkspace({ id }: { id: string }) {
     },
     [locationId, staffReader],
   );
+  const historyLocations = historyLocationIds(history.data?.items);
+  const historyLocationNames = useAsync(
+    async (signal) => {
+      const names: Record<string, string> = {};
+      await Promise.all(
+        historyLocations.map(async (locationId) => {
+          try {
+            names[locationId] = (await organizationApi.location(locationId, signal)).name;
+          } catch {
+            // The name is a convenience; the entry falls back to a neutral label.
+          }
+        }),
+      );
+      return names;
+    },
+    [historyLocations.join(',')],
+  );
   const [retrying, setRetrying] = useState(false);
+  const [mentions, setMentions] = useState<Mentioned[]>([]);
   const [dialog, setDialog] = useState<{
-    kind: 'text' | 'wait' | 'assign' | 'move' | 'linkProblem' | 'linkIncident' | 'duplicate';
+    kind:
+      | 'text'
+      | 'wait'
+      | 'assign'
+      | 'move'
+      | 'location'
+      | 'linkProblem'
+      | 'linkIncident'
+      | 'duplicate';
     op?: TicketOperation;
   } | null>(null);
   const [busyOp, setBusyOp] = useState<string | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
   const [drafts, setDrafts] = useState({ reply: '', internal: '' });
   const [view, setView] = useState('conversation');
+  const [workaroundInserted, setWorkaroundInserted] = useState(false);
   const paneId = useId();
   const composer = useRef<HTMLFormElement>(null);
   const commentPending = useRef(false);
@@ -329,8 +411,10 @@ function TicketWorkspace({ id }: { id: string }) {
     setCommenting(true);
     setCommentError(undefined);
     try {
-      await ticketsApi.comment(ticket.id, comment.trim(), internal);
+      await ticketsApi.comment(ticket.id, comment.trim(), internal, mentionIds(mentions, internal));
       setDrafts((current) => clearSubmittedDraft(current, submittedMode, submitted));
+      if (internal) setMentions([]);
+      setWorkaroundInserted(false);
       loaded.reload();
     } catch (cause) {
       setCommentError(asApiError(cause));
@@ -448,7 +532,11 @@ function TicketWorkspace({ id }: { id: string }) {
                   const entry = item.entry;
                   const historyName = (key: string | null | undefined) =>
                     key
-                      ? (history.data?.names?.[key] ??
+                      ? (historyLocationNames.data?.[key] ??
+                        (historyLocations.includes(key)
+                          ? t('ticketLocation.unknown')
+                          : undefined) ??
+                        history.data?.names?.[key] ??
                         ticket.names[key] ??
                         t('ticketWorkspace.unknownPerson'))
                       : '';
@@ -460,9 +548,10 @@ function TicketWorkspace({ id }: { id: string }) {
                     ),
                   );
                   const via = viaKey(entry.via);
+                  const reason = historyReason(entry);
                   return (
                     <li
-                      key={`h-${entry.id}`}
+                      key={`h-${entry.id}-${entry.kind}`}
                       className={`incident-event ticket-history ${isAssignmentEntry(entry) ? 'ticket-history-assignment' : ''}`}
                     >
                       <Avatar name={entry.actorId ? historyName(entry.actorId) : null} />
@@ -475,12 +564,16 @@ function TicketWorkspace({ id }: { id: string }) {
                         </header>
                         <p>{t(text.key, text.params)}</p>
                         {via ? <small className="incident-muted">{t(via)}</small> : null}
-                        {entry.reason ? (
+                        {reason ? (
                           <p className="preline ticket-history-reason">
                             <span className="incident-event-label">
-                              {t('ticketHistory.reason')}
+                              {t(
+                                reason.kind === 'waiting'
+                                  ? 'ticketHistory.waitingFor'
+                                  : 'ticketHistory.reason',
+                              )}
                             </span>{' '}
-                            {entry.reason}
+                            {reason.kind === 'text' ? reason.text : t(reason.key)}
                           </p>
                         ) : null}
                       </div>
@@ -507,6 +600,18 @@ function TicketWorkspace({ id }: { id: string }) {
                         )}
                       </span>
                       <p className="preline">{c.body}</p>
+                      {c.mentionedUserIds && c.mentionedUserIds.length > 0 ? (
+                        <p className="field-hint ticket-mentions">
+                          {t('ticketMention.mentioned', {
+                            names: c.mentionedUserIds
+                              .map(
+                                (userId) =>
+                                  `@${ticket.names[userId] ?? t('ticketWorkspace.unknownPerson')}`,
+                              )
+                              .join(', '),
+                          })}
+                        </p>
+                      ) : null}
                     </div>
                   </li>
                 );
@@ -554,6 +659,18 @@ function TicketWorkspace({ id }: { id: string }) {
                   </div>
                 ) : null}
                 {commentError ? <ApiErrorAlert error={commentError} /> : null}
+                {workaroundInserted && comment.trim() ? (
+                  <Alert kind="info">
+                    {t(
+                      internal
+                        ? 'ticketWorkspace.workaroundInsertedInternal'
+                        : 'ticketWorkspace.workaroundInsertedPublic',
+                    )}
+                  </Alert>
+                ) : null}
+                {internal && staffReader ? (
+                  <MentionPicker value={mentions} onChange={setMentions} disabled={commenting} />
+                ) : null}
                 <TextArea
                   label={t(internal ? 'ticketWorkspace.internalNote' : 'tickets.comment.label')}
                   hint={t(
@@ -715,10 +832,25 @@ function TicketWorkspace({ id }: { id: string }) {
                 <strong>{t(impactKey)}</strong>
               </p>
             ) : null}
-            {ticket.affectedLocationId ? (
+            {ticket.affectedLocationId || abilities.setLocation ? (
               <p>
-                <span className="incident-event-label">{t('tickets.col.location')}</span>{' '}
-                <strong>{location.data ?? t('tickets.personUnknown')}</strong>
+                <span className="incident-event-label">{t('ticketLocation.label')}</span>{' '}
+                <strong>
+                  {ticket.affectedLocationId
+                    ? (location.data ?? t('tickets.personUnknown'))
+                    : t('ticketLocation.none')}
+                </strong>
+                {ticket.affectedLocationId && locationFromProfile(history.data?.items) ? (
+                  <small className="ticket-location-source">
+                    {' '}
+                    ({t('ticketLocation.fromProfile')})
+                  </small>
+                ) : null}{' '}
+                {abilities.setLocation ? (
+                  <Button onClick={() => setDialog({ kind: 'location' })}>
+                    {t('ticketLocation.edit')}
+                  </Button>
+                ) : null}
               </p>
             ) : null}
             {ticket.deviceSnapshot ? (
@@ -755,6 +887,9 @@ function TicketWorkspace({ id }: { id: string }) {
               </div>
             </Card>
           ) : null}
+          {staffReader ? (
+            <TicketChangesCard ticketId={ticket.id} canEdit={manage} onChanged={history.reload} />
+          ) : null}
           {can('remote_access.view') ? (
             <RemoteSupportGate>
               <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
@@ -780,8 +915,13 @@ function TicketWorkspace({ id }: { id: string }) {
                           onClick={() => {
                             setDrafts((current) => ({
                               ...current,
-                              [mode]: appendWorkaround(current[mode], k.workaround ?? ''),
+                              [mode]: appendWorkaround(
+                                current[mode],
+                                k.workaround ?? '',
+                                t('ticketWorkspace.workaroundSource', { reference: k.reference }),
+                              ),
                             }));
+                            setWorkaroundInserted(true);
                             focusComposer();
                           }}
                         >
@@ -884,6 +1024,14 @@ function TicketWorkspace({ id }: { id: string }) {
             notifySidebarChanged();
             done();
           }}
+        />
+      ) : null}
+      {dialog?.kind === 'location' ? (
+        <TicketLocationDialog
+          ticket={ticket}
+          currentName={ticket.affectedLocationId ? (location.data ?? null) : null}
+          onClose={() => setDialog(null)}
+          onDone={done}
         />
       ) : null}
       {dialog?.kind === 'linkProblem' || dialog?.kind === 'linkIncident' ? (

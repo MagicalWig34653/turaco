@@ -3,11 +3,13 @@ import { createCan } from '../../platform/session/permissions';
 import {
   availableActions,
   canEditTask,
+  internalReferences,
   isOverdue,
   isTerminal,
   needsCompleteConfirmation,
   normalizeResultNote,
   resultNoteMaxLength,
+  shareWithRequester,
 } from './actions';
 import { taskStatuses, type TaskStatus } from './types';
 
@@ -83,5 +85,27 @@ describe('task completion', () => {
     expect(normalizeResultNote('x'.repeat(resultNoteMaxLength + 50))).toHaveLength(
       resultNoteMaxLength,
     );
+  });
+});
+
+describe('internalReferences', () => {
+  it('finds distinct reference-like tokens in title and description', () => {
+    expect(internalReferences('Check PRB-000001', 'see TKT-12 and PRB-000001, ok')).toEqual([
+      'PRB-000001',
+      'TKT-12',
+    ]);
+  });
+
+  it('ignores plain text and missing values', () => {
+    expect(internalReferences('Replace the printer', undefined, null)).toEqual([]);
+    expect(internalReferences('Wi-Fi 6E-2 and x-1')).toEqual([]);
+  });
+});
+
+describe('shareWithRequester', () => {
+  it('only shares a note that exists', () => {
+    expect(shareWithRequester('Done', true)).toBe(true);
+    expect(shareWithRequester('Done', false)).toBe(false);
+    expect(shareWithRequester('   ', true)).toBe(false);
   });
 });

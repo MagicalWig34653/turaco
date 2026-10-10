@@ -248,6 +248,11 @@ export function RequestDetail({
               )}{' '}
               <Badge>{t(`tasks.status.${task.status as 'open'}`)}</Badge>{' '}
               <span className="field-hint">{t(taskHintKey(task.mandatory, taskLinks))}</span>
+              {task.resultNote ? (
+                <p className="preline">
+                  <strong>{t('requests.task.result')}</strong> {task.resultNote}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>

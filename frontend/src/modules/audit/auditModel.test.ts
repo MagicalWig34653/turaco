@@ -5,8 +5,11 @@ import {
   diffRows,
   exportErrorKey,
   nameOf,
+  osUserOf,
+  rangeFormHours,
   rangeProblem,
   tooLargeCount,
+  visibleMetadata,
 } from './auditModel';
 import type { AuditEvent } from './types';
 
@@ -97,5 +100,25 @@ describe('export range and errors', () => {
     const form = defaultForm(new Date('2026-03-10T12:00:00Z'));
     expect(form.from).not.toBe('');
     expect(form.to).not.toBe('');
+  });
+});
+
+describe('quick ranges and osUser', () => {
+  it('builds an hour based range', () => {
+    const now = new Date('2026-10-10T12:00:00Z');
+    const one = rangeFormHours(1, now);
+    const day = rangeFormHours(24, now);
+    expect(
+      Date.parse(new Date(one.to).toISOString()) - Date.parse(new Date(one.from).toISOString()),
+    ).toBe(3_600_000);
+    expect(day.from < one.from).toBe(true);
+  });
+
+  it('hides osUser from metadata unless the viewer may export', () => {
+    const meta = { actor: 'cli', osUser: 'root' };
+    expect(visibleMetadata(meta, false)).toEqual({ actor: 'cli' });
+    expect(visibleMetadata(meta, true)).toEqual(meta);
+    expect(osUserOf(meta)).toBe('root');
+    expect(osUserOf({})).toBeUndefined();
   });
 });

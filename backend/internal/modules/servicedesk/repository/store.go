@@ -111,6 +111,16 @@ func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, t application.Tick
 	return out, nil
 }
 
+func (r *Repository) UpdateLocationTx(ctx context.Context, tx pgx.Tx, id string, locationID *string) (application.Ticket, error) {
+	out, err := scan(tx.QueryRow(ctx, `
+		UPDATE servicedesk.tickets SET affected_location_id = $2::uuid, version = version + 1, updated_at = now()
+		WHERE id = $1::uuid RETURNING `+columns, id, locationID))
+	if err != nil {
+		return application.Ticket{}, fmt.Errorf("update ticket location: %w", err)
+	}
+	return out, nil
+}
+
 func (r *Repository) Get(ctx context.Context, id string) (application.Ticket, error) {
 	if !validUUID(id) {
 		return application.Ticket{}, application.ErrNotFound
@@ -211,10 +221,10 @@ func (r *Repository) QueryTickets(ctx context.Context, plan *query.Plan, visibil
 
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {
 	err := tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal)
-		SELECT $1::uuid, $2::uuid, $3, $4
+		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal, mentioned_user_ids)
+		SELECT $1::uuid, $2::uuid, $3, $4, $6::text[]::uuid[]
 		WHERE (SELECT count(*) FROM servicedesk.ticket_comments WHERE ticket_id = $1::uuid) < $5
-		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal, application.MaxComments).Scan(&c.ID, &c.CreatedAt)
+		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal, application.MaxComments, nonNil(c.MentionedUserIDs)).Scan(&c.ID, &c.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Comment{}, application.ErrCommentLimit
 	}
@@ -230,7 +240,7 @@ func (r *Repository) Comments(ctx context.Context, ticketID string, includeInter
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT * FROM (
-			SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at FROM servicedesk.ticket_comments
+			SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at, mentioned_user_ids::text[] FROM servicedesk.ticket_comments
 			WHERE ticket_id = $1::uuid AND ($2 OR NOT internal) ORDER BY id DESC LIMIT 500
 		) newest ORDER BY created_at, id`, ticketID, includeInternal)
 	if err != nil {
@@ -240,7 +250,7 @@ func (r *Repository) Comments(ctx context.Context, ticketID string, includeInter
 	out := []application.Comment{}
 	for rows.Next() {
 		var c application.Comment
-		if err := rows.Scan(&c.ID, &c.TicketID, &c.AuthorID, &c.Body, &c.Internal, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.TicketID, &c.AuthorID, &c.Body, &c.Internal, &c.CreatedAt, &c.MentionedUserIDs); err != nil {
 			return nil, fmt.Errorf("list comments: scan: %w", err)
 		}
 		out = append(out, c)

@@ -143,6 +143,7 @@ export function TaskDetailScreen({ id }: { id: string }) {
           <>
             <dt>{t('tasks.fact.resultNote')}</dt>
             <dd className="preline">{task.resultNote}</dd>
+            {task.resultNoteForRequester ? <dd>{t('tasks.fact.resultForRequester')}</dd> : null}
           </>
         ) : null}
         {task.contextType === 'deployment' && task.contextId ? (

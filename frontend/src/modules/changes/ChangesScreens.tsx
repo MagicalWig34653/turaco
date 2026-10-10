@@ -18,6 +18,7 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { DateTimeField } from '../../platform/ui/DateTimeField';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { AffectedPicker } from './AffectedPicker';
+import { ChangeTicketsCard } from './ChangeTicketsCard';
 import { changesApi, type ChangeFields } from './api';
 import {
   allowedActions,
@@ -1377,6 +1378,9 @@ export function ChangeDetailScreen({ id }: { id: string }) {
                   </Button>
                 )}
               </section>
+              {can('tickets.view') || can('tickets.manage') ? (
+                <ChangeTicketsCard changeId={c.id} />
+              ) : null}
               <section className="change-card change-approval-card">
                 <h2>{t('changes.approvals')}</h2>
                 {!c.approvals.length && (

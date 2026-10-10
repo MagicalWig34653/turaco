@@ -81,20 +81,23 @@ type Ticket struct {
 	PatientImpact bool
 	// ReportedImpact is the impact the reporter chose (patient_care, blocked, impaired, request); empty when none.
 	ReportedImpact string
-	// AffectedLocationID is the affected person's primary Location when the ticket was raised (a snapshot).
+	// AffectedLocationID is the affected person's primary Location when the ticket was raised (a snapshot) until
+	// staff correct it with SetLocation.
 	AffectedLocationID *string
 	// DuplicateOfID is the ticket that carries the work when this one was marked as its duplicate.
 	DuplicateOfID *string
 }
 
-// Comment is a note on a ticket.
+// Comment is a note on a ticket. MentionedUserIDs are the people an internal note mentions and who may view the
+// ticket's Queue (empty for public comments).
 type Comment struct {
-	ID        string
-	TicketID  string
-	AuthorID  string
-	Body      string
-	Internal  bool
-	CreatedAt time.Time
+	MentionedUserIDs []string
+	ID               string
+	TicketID         string
+	AuthorID         string
+	Body             string
+	Internal         bool
+	CreatedAt        time.Time
 }
 
 // Principal is the caller's authority. Every signed-in User may raise tickets
@@ -106,6 +109,8 @@ type Principal struct {
 	Manage bool
 	// QueuesManage (servicedesk.queues.manage) administers Queues and may move Tickets into any Queue.
 	QueuesManage bool
+	// ChangesView (changes.view, manage or execute) lets the caller read Change titles linked to a Ticket.
+	ChangesView bool
 }
 
 func (p Principal) staff() bool { return p.View || p.Manage }
@@ -216,6 +221,8 @@ type Store interface {
 	InsertTx(ctx context.Context, tx pgx.Tx, t Ticket) (Ticket, error)
 	LockTx(ctx context.Context, tx pgx.Tx, id string) (Ticket, error)
 	UpdateTx(ctx context.Context, tx pgx.Tx, t Ticket) (Ticket, error)
+	// UpdateLocationTx sets the affected Location (nil clears it) and bumps the version.
+	UpdateLocationTx(ctx context.Context, tx pgx.Tx, id string, locationID *string) (Ticket, error)
 	Get(ctx context.Context, id string) (Ticket, error)
 	List(ctx context.Context, f Filter) (Result, error)
 	InsertCommentTx(ctx context.Context, tx pgx.Tx, c Comment) (Comment, error)

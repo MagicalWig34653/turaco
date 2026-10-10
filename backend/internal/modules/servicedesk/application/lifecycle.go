@@ -68,6 +68,8 @@ type Abilities struct {
 	Transition bool
 	// MoveQueue moves the Ticket to another Queue.
 	MoveQueue bool
+	// SetLocation corrects the affected location of the Ticket.
+	SetLocation bool
 	// MarkDuplicate cancels the Ticket as a duplicate of another one.
 	MarkDuplicate bool
 }
@@ -90,6 +92,7 @@ func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
 		SetPriority:     ep.Manage,
 		Transition:      len(AllowedOperations(t, ep)) > 0,
 		MoveQueue:       ep.Manage && canMove && movableStatus(t.Status),
+		SetLocation:     ep.Manage && open,
 		MarkDuplicate:   ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
 	}
 }

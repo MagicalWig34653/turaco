@@ -28,11 +28,13 @@ func TestAuditResolversNameTicketsQueuesAssetsAndRoles(t *testing.T) {
 	taggedAsset := one(`INSERT INTO assets.assets(product_id,asset_tag,status) VALUES (uuidv7(),'TAG-'||$1,'available') RETURNING id::text`, suffix)
 	plainAsset := one(`INSERT INTO assets.assets(product_id,status) VALUES (uuidv7(),'available') RETURNING id::text`)
 	plainRef := one(`SELECT reference FROM assets.assets WHERE id=$1::uuid`, plainAsset)
+	advisory := one(`INSERT INTO security.advisories(source, external_id, title, severity) VALUES ('manual', 'CVE-2099-'||$1, 'Secret advisory title '||$1, 'high') RETURNING id::text`, suffix)
 	role := one(`INSERT INTO platform.roles(key,name) VALUES ('aud-'||$1,'Audit role '||$1) RETURNING id::text`, suffix)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE id=$1::uuid`, ticket)
 		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.queues WHERE id=$1::uuid`, queue)
 		_, _ = pool.Exec(ctx, `DELETE FROM assets.assets WHERE id = ANY($1::uuid[])`, []string{taggedAsset, plainAsset})
+		_, _ = pool.Exec(ctx, `DELETE FROM security.advisories WHERE id=$1::uuid`, advisory)
 		_, _ = pool.Exec(ctx, `DELETE FROM platform.roles WHERE id=$1::uuid`, role)
 	})
 
@@ -45,22 +47,27 @@ func TestAuditResolversNameTicketsQueuesAssetsAndRoles(t *testing.T) {
 		{TargetType: "asset", TargetID: taggedAsset},
 		{TargetType: "asset", TargetID: plainAsset},
 		{TargetType: "role", TargetID: role},
+		{TargetType: "security_advisory", TargetID: advisory},
 	}
 	res := AuditResolvers(pool).Resolve(ctx, events)
 	if len(res.Unavailable) != 0 {
 		t.Fatalf("unavailable = %v", res.Unavailable)
 	}
 	want := map[string]string{
-		audit.TargetKey("ticket", ticket):      number,
-		audit.TargetKey("ticket_queue", queue): "Audit queue " + suffix,
-		audit.TargetKey("asset", taggedAsset):  "TAG-" + suffix,
-		audit.TargetKey("asset", plainAsset):   plainRef,
-		audit.TargetKey("role", role):          "Audit role " + suffix,
+		audit.TargetKey("ticket", ticket):              number,
+		audit.TargetKey("ticket_queue", queue):         "Audit queue " + suffix,
+		audit.TargetKey("asset", taggedAsset):          "TAG-" + suffix,
+		audit.TargetKey("asset", plainAsset):           plainRef,
+		audit.TargetKey("role", role):                  "Audit role " + suffix,
+		audit.TargetKey("security_advisory", advisory): "CVE-2099-" + suffix,
 	}
 	for k, v := range want {
 		if got := res.Targets[k]; got.Text != v || got.Gone {
 			t.Errorf("%s = %+v, want %q", k, got, v)
 		}
+	}
+	if strings.Contains(res.Targets[audit.TargetKey("security_advisory", advisory)].Text, "Secret") {
+		t.Error("advisory label leaks the title")
 	}
 	if strings.Contains(res.Targets[audit.TargetKey("ticket", ticket)].Text, "Secret") {
 		t.Error("ticket label leaks the title")

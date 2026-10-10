@@ -520,8 +520,8 @@ describe('Administration routes (F14)', () => {
     expect(ids(['organization.users.manage'], 'admin')).toEqual([]);
   });
 
-  it('shows People, Teams, Locations and Departments with organization.view', () => {
-    expect(ids(['organization.view'], 'admin')).toEqual([
+  it('shows People, Teams, Locations and Departments with organization.view plus a directory permission', () => {
+    expect(ids(['organization.view', 'organization.teams.manage'], 'admin')).toEqual([
       'users',
       'teams',
       'locations',
@@ -569,5 +569,20 @@ describe('administration health routes', () => {
       expect(canViewRoute(createCan({ permissions: ['platform.audit.view'] }), route!)).toBe(false);
       expect(canViewRoute(createCan({ permissions: ['platform.health.view'] }), route!)).toBe(true);
     }
+  });
+});
+
+describe('directory navigation for lookup-only holders', () => {
+  it('hides people directory entries from holders of only organization.view', () => {
+    expect(ids(['organization.view'], 'admin')).not.toContain('users');
+    expect(ids(['organization.view'], 'admin')).not.toContain('teams');
+  });
+
+  it('keeps them for directory administrators and keeps the route reachable', () => {
+    expect(ids(['organization.view', 'organization.users.manage'], 'admin')).toContain('users');
+    const users = appRoutes.find((route) => route.id === 'users');
+    expect(users && canViewRoute(createCan({ permissions: ['organization.view'] }), users)).toBe(
+      true,
+    );
   });
 });

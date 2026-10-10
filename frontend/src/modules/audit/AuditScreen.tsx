@@ -32,9 +32,11 @@ import {
   diffRows,
   exportErrorKey,
   nameOf,
-  rangeForm,
+  osUserOf,
+  rangeFormHours,
   rangeProblem,
   tooLargeCount,
+  visibleMetadata,
   type Named,
 } from './auditModel';
 import type { AuditEvent, AuditFilter } from './types';
@@ -135,6 +137,9 @@ function EventDetail({
   onCorrelation: (id: string) => void;
 }) {
   const { t, locale } = useI18n();
+  const { can } = useSession();
+  const canSeeOsUser = can('platform.audit.export');
+  const osUser = canSeeOsUser ? osUserOf(event.metadata) : undefined;
   const actor = actorView(event);
   const actorId = actor.kind === 'user' ? actor.named.id : '';
   return (
@@ -164,6 +169,14 @@ function EventDetail({
             </>
           ) : null}
         </dd>
+        {osUser ? (
+          <>
+            <dt>{t('audit.detail.osUser')}</dt>
+            <dd>
+              <code>{osUser}</code>
+            </dd>
+          </>
+        ) : null}
         <dt>{t('audit.col.correlation')}</dt>
         <dd>
           <code>{event.correlationId}</code>{' '}
@@ -183,7 +196,7 @@ function EventDetail({
       <section>
         <h3>{t('audit.detail.metadata')}</h3>
         <pre className="json" tabIndex={0}>
-          {formatJson(event.metadata)}
+          {formatJson(visibleMetadata(event.metadata, canSeeOsUser))}
         </pre>
       </section>
       <div className="dialog-actions">
@@ -323,8 +336,8 @@ export function AuditScreen() {
     setForm(next);
     setApplied(toAuditFilter(next));
   };
-  const quickRange = (days: number) => {
-    const next = { ...form, ...rangeForm(days) };
+  const quickRange = (hours: number) => {
+    const next = { ...form, ...rangeFormHours(hours) };
     setForm(next);
     setApplied(toAuditFilter(next));
   };
@@ -411,9 +424,10 @@ export function AuditScreen() {
             value={form.to}
             onChange={(value) => setForm((previous) => ({ ...previous, to: value }))}
           />
-          <Button onClick={() => quickRange(1)}>{t('audit.range.day')}</Button>
-          <Button onClick={() => quickRange(7)}>{t('audit.range.week')}</Button>
-          <Button onClick={() => quickRange(30)}>{t('audit.range.month')}</Button>
+          <Button onClick={() => quickRange(1)}>{t('audit.range.hour')}</Button>
+          <Button onClick={() => quickRange(24)}>{t('audit.range.day')}</Button>
+          <Button onClick={() => quickRange(7 * 24)}>{t('audit.range.week')}</Button>
+          <Button onClick={() => quickRange(30 * 24)}>{t('audit.range.month')}</Button>
         </div>
         <div className="audit-chips">
           <Select
