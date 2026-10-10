@@ -38,10 +38,10 @@ export function IncidentManagePanel({
     async (signal) =>
       canSearch && search !== ''
         ? (await organizationApi.searchLocations(search, signal)).items.filter(
-            (item) => item.active && !incident.locations.some((l) => l.id === item.id),
+            (item) => item.active && !(incident.locations ?? []).some((l) => l.id === item.id),
           )
         : [],
-    [search, canSearch, incident.locations.map((l) => l.id).join(',')],
+    [search, canSearch, (incident.locations ?? []).map((l) => l.id).join(',')],
   );
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -55,7 +55,7 @@ export function IncidentManagePanel({
       setBusy(false);
     }
   };
-  const ids = incident.locations.map((l) => l.id);
+  const ids = (incident.locations ?? []).map((l) => l.id);
   const dueIso = localInputToIso(due);
   return (
     <section className="link-panel" aria-label={t('incidents.manage.title')}>
@@ -121,11 +121,11 @@ export function IncidentManagePanel({
         </>
       ) : null}
       <h3>{t('incidents.locations')}</h3>
-      {incident.locations.length === 0 ? (
+      {(incident.locations ?? []).length === 0 ? (
         <p className="empty">{t('incidents.locations.none')}</p>
       ) : (
         <ul className="plain-list">
-          {incident.locations.map((l) => (
+          {(incident.locations ?? []).map((l) => (
             <li key={l.id}>
               {l.name}{' '}
               <button
