@@ -136,9 +136,9 @@ export function IncidentDetailScreen({ id }: { id: string }) {
           )}
         </Alert>
       ) : null}
-      {incident.locations.length > 0 ? (
+      {(incident.locations?.length ?? 0) > 0 ? (
         <p>
-          {t('incidents.locations')}: {incident.locations.map((l) => l.name).join(', ')}
+          {t('incidents.locations')}: {(incident.locations ?? []).map((l) => l.name).join(', ')}
         </p>
       ) : null}
       <p className="preline">{incident.summary}</p>

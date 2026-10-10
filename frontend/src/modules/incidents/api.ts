@@ -40,7 +40,7 @@ export type MajorIncidentDetail = MajorIncident & {
   /** Linked tickets the caller may see; absent on servers that do not return them yet. */
   tickets?: Array<{ id: string; reference: string; title: string; status: string }>;
   allowedOperations: string[];
-  locations: Array<{ id: string; name: string }>;
+  locations?: Array<{ id: string; name: string }>;
   /** Linked tickets the caller cannot see; only for majorincidents.manage holders, omitted at zero. */
   hiddenLinkedTickets?: number;
   ownerName?: string;
