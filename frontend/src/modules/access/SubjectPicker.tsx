@@ -5,6 +5,7 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { TextField } from '../../platform/ui/Field';
 import { useDebouncedValue } from '../../platform/ui/hooks';
+import { Avatar } from '../../platform/ui/Workspace';
 import { organizationApi } from '../organization/api';
 import type { SubjectType } from './types';
 
@@ -85,14 +86,18 @@ export function SubjectPicker({ subjectType, value, onChange }: Props) {
               disabled={candidate.disabled}
               onChange={() => onChange({ id: candidate.id, label: candidate.label })}
             />
-            <span>
-              {candidate.label}
+            <Avatar name={candidate.label} />
+            <span className="picker-text">
+              <span>{candidate.label}</span>
               {candidate.detail ? (
-                <span className="picker-detail"> · {candidate.detail}</span>
+                <small className="picker-detail">{candidate.detail}</small>
               ) : null}
               {candidate.disabled ? (
-                <span className="picker-detail"> · {t('assign.group.deleted')}</span>
+                <small className="picker-detail">{t('assign.group.deleted')}</small>
               ) : null}
+            </span>
+            <span className="picker-check" aria-hidden="true">
+              ✓
             </span>
           </label>
         ))}

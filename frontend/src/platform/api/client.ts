@@ -51,6 +51,8 @@ export class ApiError extends Error {
   readonly blockers: readonly string[];
   /** Field-level issues of a 400 response with `error.details.fields`; empty otherwise. */
   readonly issues: readonly FieldIssue[];
+  /** Raw `error.details` of the response (conflict `counts`, `rules`, `fields`); parse with `parseConflict`. */
+  readonly details: unknown;
 
   constructor(init: {
     status: number;
@@ -61,6 +63,7 @@ export class ApiError extends Error {
     fields?: Record<string, string> | undefined;
     blockers?: string[] | undefined;
     issues?: FieldIssue[] | undefined;
+    details?: unknown;
   }) {
     super(init.message);
     this.name = 'ApiError';
@@ -71,6 +74,7 @@ export class ApiError extends Error {
     this.fields = init.fields ?? {};
     this.blockers = init.blockers ?? [];
     this.issues = init.issues ?? [];
+    this.details = init.details;
   }
 }
 
@@ -216,6 +220,7 @@ export async function toApiError(response: Response): Promise<ApiError> {
       ? envelope.blockers.filter((key): key is string => typeof key === 'string')
       : [],
     issues: parseIssues(envelope?.details),
+    details: envelope?.details,
   });
 }
 

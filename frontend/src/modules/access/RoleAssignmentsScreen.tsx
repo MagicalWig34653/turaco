@@ -1,4 +1,5 @@
 import { TableDate } from '../../platform/ui/TableDate';
+import { expiryState } from './accessModel';
 import { useFilterQuery } from '../../platform/ui/useFilterQuery';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
@@ -19,6 +20,19 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { AssignDialog } from './AssignDialog';
 import { accessApi } from './api';
 import type { RoleAssignment, SubjectType } from './types';
+
+export function ExpiryCell({ expiresAt }: { expiresAt: string | undefined }) {
+  const { t, locale } = useI18n();
+  if (!expiresAt) return <span>{t('assignments.noExpiry')}</span>;
+  const state = expiryState(expiresAt, Date.now());
+  return (
+    <span>
+      <time dateTime={expiresAt}>{formatDateTime(locale, expiresAt)}</time>{' '}
+      {state === 'soon' ? <Badge tone="warning">{t('assignments.expiresSoon')}</Badge> : null}
+      {state === 'expired' ? <Badge tone="warning">{t('assignments.expired')}</Badge> : null}
+    </span>
+  );
+}
 
 export function RoleAssignmentsScreen() {
   const { t, locale } = useI18n();
@@ -76,11 +90,18 @@ export function RoleAssignmentsScreen() {
       render: (a) => <TableDate value={a.createdAt} />,
     },
     {
+      key: 'expires',
+      header: t('assignments.col.expires'),
+      render: (a) => <ExpiryCell expiresAt={a.expiresAt} />,
+    },
+    {
       key: 'status',
       header: t('assignments.col.status'),
       render: (a) =>
         a.revokedAt ? (
           <Badge>{t('assignments.revokedAt', { date: formatDateTime(locale, a.revokedAt) })}</Badge>
+        ) : expiryState(a.expiresAt, Date.now()) === 'expired' ? (
+          <Badge tone="warning">{t('assignments.expired')}</Badge>
         ) : (
           <Badge tone="info">{t('assignments.active')}</Badge>
         ),
@@ -151,6 +172,7 @@ export function RoleAssignmentsScreen() {
     <>
       <PageHeader
         title={t('nav.roleAssignments')}
+        eyebrow={t('sidebar.section.admin')}
         intro={t('assignments.intro')}
         actions={
           canManage && roles.data ? (

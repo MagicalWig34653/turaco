@@ -12,7 +12,7 @@ import { ConfirmDialog } from '../Dialog';
 import { listConditions } from '../query/filterModel';
 import { useQueryLabels } from '../query/queryLabels';
 import type { QueryList } from '../query/useQueryList';
-import { notifySidebarChanged, viewsApi, type SavedView } from './api';
+import { notifySidebarChanged, viewsApi, type SavedView, type ViewResource } from './api';
 import {
   abilities,
   addPin,
@@ -252,7 +252,7 @@ export function ViewBar<T>({
           </Button>
           {open ? (
             <ViewsMenu
-              resource={query.resource}
+              resource={query.resource as ViewResource}
               currentId={view?.id}
               reloadToken={reloadToken}
               onOpen={open_}
@@ -372,7 +372,7 @@ export function ViewBar<T>({
           onClose={() => setDialog(null)}
           onSubmit={async (name, description) => {
             const created = await viewsApi.create({
-              resource: query.resource,
+              resource: query.resource as ViewResource,
               name,
               ...(description ? { description } : {}),
               definition: currentDefinition(),

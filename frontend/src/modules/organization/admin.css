@@ -1,0 +1,472 @@
+/*
+ * Administration screens (F14): People, Teams, Locations, Departments, Roles, Role Templates, access.
+ * Semantic tokens only; no literal colors. Motion uses tokens and stops with the Motion setting.
+ */
+
+.adm-sub {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--type-xs);
+}
+.adm-row .adm-sub,
+.adm-list .adm-sub,
+.adm-tree-row .adm-sub {
+  display: inline;
+}
+
+.adm-person-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.adm-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.adm-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.adm-chip {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted-token);
+  color: var(--text-secondary);
+  font-size: var(--type-xs);
+  white-space: nowrap;
+}
+.adm-chip-directory {
+  border-color: var(--state-info);
+  background: var(--state-info-bg);
+  color: var(--state-info);
+}
+
+/* Cards and key/value rows */
+.adm-card {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.adm-card h2,
+.adm-card h3 {
+  margin-top: 0;
+}
+.adm-two-col {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+.adm-panel {
+  margin-top: var(--space-4);
+}
+.adm-rows {
+  margin: 0;
+}
+.adm-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-token);
+}
+.adm-row:last-child {
+  border-bottom: 0;
+}
+.adm-row dt {
+  color: var(--text-secondary);
+}
+.adm-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.adm-value {
+  min-width: 0;
+}
+
+.adm-list {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+}
+.adm-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-token);
+}
+.adm-row-actions {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+.adm-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.adm-inline-form .field {
+  margin-bottom: 0;
+}
+.adm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.adm-wide-form {
+  max-width: 980px;
+}
+.adm-manager {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+}
+.adm-impact-list {
+  margin: var(--space-2) 0 0;
+  padding-inline-start: var(--space-5);
+}
+
+/* One-time credential link */
+.adm-credential .field {
+  margin-top: var(--space-3);
+}
+.adm-copy-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.adm-copy-row input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+}
+
+/* Wizard steps */
+.adm-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.adm-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+.adm-steps li.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.adm-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--border-strong-token);
+  border-radius: 50%;
+  font-size: var(--type-xs);
+}
+.adm-steps li.is-current .adm-step-number {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.adm-steps li.is-done .adm-step-number {
+  border-color: var(--state-success);
+  color: var(--state-success);
+}
+
+/* Set-password hints */
+.adm-hints {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.adm-hints li.is-met {
+  color: var(--state-success);
+}
+
+/* Permission picker */
+.adm-picker-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+.adm-picker-bar .field {
+  margin-bottom: 0;
+  min-width: 14rem;
+}
+.adm-picker-summary {
+  color: var(--text-secondary);
+  margin: var(--space-2) 0 var(--space-3);
+}
+.adm-module {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.adm-module > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+.adm-module-name {
+  font-weight: 600;
+}
+.adm-module-count {
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.adm-module-off {
+  background: var(--surface-muted-token);
+}
+.adm-module-off > summary .adm-module-name {
+  color: var(--text-secondary);
+}
+.adm-group {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-2);
+  border: 0;
+  border-top: 1px solid var(--border-token);
+}
+.adm-group legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+  font-weight: 600;
+  text-transform: none;
+}
+.adm-permission {
+  padding: var(--space-1) 0;
+}
+.adm-needs {
+  color: var(--state-warning);
+}
+
+/* Role templates */
+.adm-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-template-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-card);
+}
+.adm-template-card h3,
+.adm-template-card p {
+  margin: 0;
+}
+.adm-template-audience,
+.adm-template-facts {
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+.adm-template-uses ul {
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-5);
+}
+.adm-template-card > .btn {
+  align-self: flex-start;
+  margin-top: auto;
+}
+
+/* Create role: mode cards */
+.adm-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+}
+.adm-mode legend {
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+.adm-radio-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+.adm-radio-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--surface-selected);
+}
+.adm-radio-card:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.adm-radio-card strong {
+  display: block;
+}
+
+.adm-diff-list,
+.adm-holder-list,
+.adm-effective-roles,
+.adm-why {
+  margin: var(--space-2) 0 var(--space-3);
+  padding-inline-start: var(--space-5);
+}
+.adm-effective-table td {
+  vertical-align: top;
+}
+.adm-why {
+  margin-bottom: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-sm);
+}
+
+/* Trees */
+.adm-tree-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.adm-tree-bar .checkbox,
+.adm-tree-bar .field-hint {
+  margin: 0;
+}
+.adm-tree-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+.adm-tree {
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  border: 1px solid var(--border-token);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.adm-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding-block: var(--space-1);
+  padding-inline-end: var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.adm-tree-row:hover {
+  background: var(--surface-hover);
+}
+.adm-tree-row.is-selected {
+  background: var(--surface-selected);
+}
+.adm-tree-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.adm-tree-row.is-archived .adm-tree-name {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.adm-tree-toggle {
+  width: 1.2rem;
+  color: var(--text-secondary);
+  text-align: center;
+  user-select: none;
+}
+.adm-tree-name {
+  font-weight: 500;
+}
+.adm-tree-menu {
+  margin-inline-start: auto;
+}
+.adm-tree-detail {
+  position: sticky;
+  top: var(--space-4);
+}
+
+@media (max-width: 900px) {
+  .adm-two-col,
+  .adm-tree-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-tree-detail {
+    position: static;
+  }
+}
+
+.data-table + .adm-card {
+  margin-top: var(--space-5);
+}
+.adm-card .picker-results {
+  max-height: 260px;
+}
+.adm-card h3 + .field-hint {
+  margin-top: 0;
+}
+.adm-wide-form .field-hint {
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.adm-permission .checkbox {
+  margin: 0;
+}
+.adm-permission .checkbox .field-hint {
+  margin-block: 0 var(--space-1);
+}
+.adm-group legend .adm-group-toggle {
+  min-height: 0;
+}

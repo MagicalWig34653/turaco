@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { AuditScreen } from '../modules/audit/AuditScreen';
 import { LoginScreen } from '../modules/auth/LoginScreen';
 import { MeScreen } from '../modules/access/MeScreen';
+import { HoldersScreen } from '../modules/access/HoldersScreen';
 import { RoleAssignmentsScreen } from '../modules/access/RoleAssignmentsScreen';
 import { RoleCreateScreen } from '../modules/access/RoleCreateScreen';
 import { RoleDetailScreen } from '../modules/access/RoleDetailScreen';
@@ -128,6 +129,13 @@ import { BoardsScreen } from '../modules/tasks/boards/BoardsScreen';
 import { TaskCreateScreen } from '../modules/tasks/TaskCreateScreen';
 import { TaskDetailScreen } from '../modules/tasks/TaskDetailScreen';
 import { TasksScreen } from '../modules/tasks/TasksScreen';
+import { OrgTreeScreen } from '../modules/organization/OrgTreeScreen';
+import { TeamDetailScreen } from '../modules/organization/TeamDetailScreen';
+import { TeamsScreen } from '../modules/organization/TeamsScreen';
+import { UserCreateScreen } from '../modules/organization/UserCreateScreen';
+import { UserDetailScreen } from '../modules/organization/UserDetailScreen';
+import { UsersScreen } from '../modules/organization/UsersScreen';
+import { SetPasswordScreen } from '../modules/auth/SetPasswordScreen';
 import { DirectorySyncRunScreen } from '../modules/directory/DirectorySyncRunScreen';
 import { DirectorySyncScreen } from '../modules/directory/DirectorySyncScreen';
 import { I18nProvider, useI18n } from '../platform/i18n/I18nProvider';
@@ -360,6 +368,22 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <DefinitionCreateScreen />;
     case 'recurrenceDetail':
       return <DefinitionDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'users':
+      return <UsersScreen />;
+    case 'userNew':
+      return <UserCreateScreen />;
+    case 'userDetail':
+      return <UserDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'teams':
+      return <TeamsScreen />;
+    case 'teamDetail':
+      return <TeamDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'locations':
+      return <OrgTreeScreen key="locations" kind="locations" />;
+    case 'departments':
+      return <OrgTreeScreen key="departments" kind="departments" />;
+    case 'holders':
+      return <HoldersScreen />;
     case 'roles':
       return <RolesScreen />;
     case 'roleNew':
@@ -441,12 +465,18 @@ function Gate() {
   );
 }
 
+/** The link of an invitation or reset mail works without a session and outside the app shell. */
+function Entry() {
+  const { pathname } = useLocation();
+  return pathname.replace(/\/+$/, '') === '/set-password' ? <SetPasswordScreen /> : <Gate />;
+}
+
 export function App() {
   return (
     <ThemeProvider>
       <I18nProvider>
         <SessionProvider>
-          <Gate />
+          <Entry />
         </SessionProvider>
       </I18nProvider>
     </ThemeProvider>
