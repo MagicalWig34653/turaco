@@ -13,6 +13,7 @@ import { Alert, Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextArea } from '../../platform/ui/Field';
+import { AttachmentsPanel } from '../../platform/attachments/AttachmentsPanel';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Avatar, Card, Skeleton, StatusBadge, Tabs } from '../../platform/ui/Workspace';
 import { useContextMenu } from '../../platform/ui/ContextMenu';
@@ -986,6 +987,13 @@ function TicketWorkspace({ id }: { id: string }) {
               ) : null}
             </Card>
           ) : null}
+          <AttachmentsPanel
+            ownerType="ticket"
+            ownerId={ticket.id}
+            canUpload={canComment}
+            canDelete={staffReader}
+            staff={staffReader}
+          />
           <Card title={t('ticketWorkspace.activity')}>
             <h2>{t('ticketWorkspace.activity')}</h2>
             <ol className="incident-history">

@@ -317,3 +317,17 @@ func TestRevokeUserSessionsValidation(t *testing.T) {
 		return nil
 	})
 }
+
+func TestAbsoluteTimeoutOverride(t *testing.T) {
+	s, clk, _ := newTestService(t)
+	s.cfg.AbsoluteTimeoutOverride = func(context.Context) (time.Duration, bool) { return 2 * time.Hour, true }
+	_, sess := mustCreate(t, s)
+	if want := clk.now().Add(2 * time.Hour); !sess.AbsoluteExpiresAt.Equal(want) {
+		t.Fatalf("absolute %v, want %v", sess.AbsoluteExpiresAt, want)
+	}
+	s.cfg.AbsoluteTimeoutOverride = func(context.Context) (time.Duration, bool) { return 0, false }
+	_, sess = mustCreate(t, s)
+	if want := clk.now().Add(time.Hour); !sess.AbsoluteExpiresAt.Equal(want) {
+		t.Fatalf("fallback absolute %v, want %v", sess.AbsoluteExpiresAt, want)
+	}
+}

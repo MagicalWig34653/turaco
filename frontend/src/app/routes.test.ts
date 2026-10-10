@@ -44,6 +44,7 @@ describe('visibleNavItems', () => {
       'healthAdmin',
       'integrationsAdmin',
       'systemAdmin',
+      'settingsAdmin',
     ]);
   });
 
@@ -540,6 +541,7 @@ describe('Administration routes (F14)', () => {
 
   it('resolves static before parameterised paths', () => {
     expect(matchRoute(appRoutes, '/admin/users/new')?.route.id).toBe('userNew');
+    expect(matchRoute(appRoutes, '/admin/users/import')?.route.id).toBe('userImport');
     expect(matchRoute(appRoutes, '/admin/users/abc')?.route.id).toBe('userDetail');
     expect(matchRoute(appRoutes, '/admin/teams/abc')?.params.id).toBe('abc');
     expect(matchRoute(appRoutes, '/admin/roles/new')?.route.id).toBe('roleNew');
@@ -560,9 +562,33 @@ describe('Administration routes (F14)', () => {
   });
 });
 
+describe('CSV import route', () => {
+  it('needs organization.import in addition to viewing the directory', () => {
+    const route = appRoutes.find((entry) => entry.id === 'userImport');
+    for (const permissions of [
+      ['organization.view', 'organization.users.manage'],
+      ['organization.import'],
+    ])
+      expect(route && canViewRoute(createCan({ permissions }), route)).toBe(false);
+    expect(
+      route &&
+        canViewRoute(
+          createCan({ permissions: ['organization.view', 'organization.import'] }),
+          route,
+        ),
+    ).toBe(true);
+  });
+});
+
 describe('administration health routes', () => {
   it('need platform.health.view and are denied without it', () => {
-    for (const path of ['/admin/setup', '/admin/health', '/admin/integrations', '/admin/system']) {
+    for (const path of [
+      '/admin/setup',
+      '/admin/health',
+      '/admin/integrations',
+      '/admin/system',
+      '/admin/settings',
+    ]) {
       const route = matchRoute(appRoutes, path)?.route;
       expect(route, path).toBeDefined();
       expect(canViewRoute(createCan({ permissions: [] }), route!)).toBe(false);

@@ -14,6 +14,7 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { HealthScreen, IntegrationsScreen, SystemScreen } from '../modules/health/HealthScreens';
 import { SetupScreen } from '../modules/health/SetupScreen';
+import { SettingsScreen } from '../modules/settings/SettingsScreen';
 import { AuditScreen } from '../modules/audit/AuditScreen';
 import { LoginScreen } from '../modules/auth/LoginScreen';
 import { MeScreen } from '../modules/access/MeScreen';
@@ -134,6 +135,7 @@ import { TasksScreen } from '../modules/tasks/TasksScreen';
 import { OrgTreeScreen } from '../modules/organization/OrgTreeScreen';
 import { TeamDetailScreen } from '../modules/organization/TeamDetailScreen';
 import { TeamsScreen } from '../modules/organization/TeamsScreen';
+import { ImportScreen } from '../modules/organization/ImportScreen';
 import { UserCreateScreen } from '../modules/organization/UserCreateScreen';
 import { UserDetailScreen } from '../modules/organization/UserDetailScreen';
 import { UsersScreen } from '../modules/organization/UsersScreen';
@@ -374,6 +376,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UsersScreen />;
     case 'userNew':
       return <UserCreateScreen />;
+    case 'userImport':
+      return <ImportScreen />;
     case 'userDetail':
       return <UserDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'teams':
@@ -408,6 +412,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <IntegrationsScreen />;
     case 'systemAdmin':
       return <SystemScreen />;
+    case 'settingsAdmin':
+      return <SettingsScreen />;
   }
 }
 

@@ -96,6 +96,12 @@ var (
 	ErrNoEmail = errors.New("organization: the user has no primary email address")
 )
 
+// LocalCredentialRemover deletes the local credential of a User inside the caller's transaction (review rule R5:
+// linking a directory identity removes the password). Implemented in the composition root over platform tables.
+type LocalCredentialRemover interface {
+	DeleteLocalCredential(ctx context.Context, tx pgx.Tx, userID string) (int, error)
+}
+
 // CredentialPurpose values.
 const (
 	CredentialInvitation = "invitation"

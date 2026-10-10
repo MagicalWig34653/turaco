@@ -12,6 +12,8 @@ import { Avatar } from '../../platform/ui/Workspace';
 import { QueryWorkbench } from '../../platform/ui/query/QueryWorkbench';
 import { useQueryList } from '../../platform/ui/query/useQueryList';
 import { lifecycleActions, type LifecycleAction } from './adminModel';
+import { BulkDialog } from './BulkDialog';
+import { importKinds, selectablePerson } from './importModel';
 import type { PersonRow } from './adminTypes';
 import { AccountBadges, PersonStatusBadge } from './PersonBadges';
 import { useOrgLookups } from './orgLookups';
@@ -34,8 +36,16 @@ export function UsersScreen() {
   const query = useQueryList<PersonRow>('users');
   const lookups = useOrgLookups();
   const [visibleKeys, setVisibleKeys] = useState<string[]>();
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const canImport = importKinds(can).length > 0;
   const lifecycle = useLifecycle(() => query.list.reload());
   const { list } = query;
+  // Emergency accounts have a command-line lifecycle: they never enter a bulk operation.
+  const blocked = new Set(
+    list.items.filter((person) => !selectablePerson(person)).map((p) => p.id),
+  );
+  const bulkIds = [...selected].filter((id) => !blocked.has(id));
 
   const columns: Column<PersonRow>[] = [
     {
@@ -120,11 +130,18 @@ export function UsersScreen() {
         eyebrow={t('sidebar.section.admin')}
         intro={t('people.intro')}
         actions={
-          canManage ? (
-            <Link to="/admin/users/new" className="btn btn-primary">
-              {t('people.create.action')}
-            </Link>
-          ) : null
+          <>
+            {canImport ? (
+              <Link to="/admin/users/import" className="btn btn-secondary">
+                {t('people.import.action')}
+              </Link>
+            ) : null}
+            {canManage ? (
+              <Link to="/admin/users/new" className="btn btn-primary">
+                {t('people.create.action')}
+              </Link>
+            ) : null}
+          </>
         }
       />
       <div className="adm-presets" role="group" aria-label={t('people.presets.label')}>
@@ -153,6 +170,20 @@ export function UsersScreen() {
         rows={list.items}
         rowKey={(person) => person.id}
         rowActions={rowActions}
+        {...(canManage
+          ? {
+              selection: {
+                keys: selected,
+                onChange: setSelected,
+                label: (person: PersonRow) => t('people.bulk.select', { name: person.displayName }),
+                actions: (
+                  <Button onClick={() => setBulkOpen(true)} disabled={bulkIds.length === 0}>
+                    {t('people.bulk.action')}
+                  </Button>
+                ),
+              },
+            }
+          : {})}
         loading={list.loading}
         error={list.error}
         onRetry={list.reload}
@@ -163,6 +194,17 @@ export function UsersScreen() {
         onLoadMore={list.loadMore}
       />
       {lifecycle.dialog}
+      {bulkOpen ? (
+        <BulkDialog
+          userIds={bulkIds}
+          lookups={lookups}
+          onClose={() => setBulkOpen(false)}
+          onApplied={() => {
+            setSelected(new Set());
+            list.reload();
+          }}
+        />
+      ) : null}
     </>
   );
 }

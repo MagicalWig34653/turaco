@@ -50,6 +50,17 @@ describe('ApiClient', () => {
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
   });
 
+  it('sends multipart bodies without a JSON content type so the browser sets the boundary', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(json(201, { id: 'b1' }));
+    const client = new ApiClient(fetchImpl);
+    const form = new FormData();
+    form.set('kind', 'users');
+    await expect(client.post('/import-batches', form)).resolves.toEqual({ id: 'b1' });
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(form);
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
   it('returns undefined for 204', async () => {
     const client = new ApiClient(() => Promise.resolve(new Response(null, { status: 204 })));
     await expect(client.post('/auth/logout')).resolves.toBeUndefined();

@@ -140,7 +140,10 @@ export class ApiClient {
   async request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     const init: RequestInit = { method, credentials: 'same-origin', headers };
-    if (options.body !== undefined) {
+    if (options.body instanceof FormData) {
+      // The browser sets the multipart boundary itself.
+      init.body = options.body;
+    } else if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(options.body);
     }

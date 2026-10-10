@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -99,7 +100,10 @@ func (r *Repository) List(ctx context.Context, q application.Query) (application
 		if q.Any {
 			tsq = fmt.Sprintf("replace(websearch_to_tsquery('simple', $%d)::text, '&', '|')::tsquery", n)
 		}
-		conds = append(conds, "search @@ "+tsq)
+		// Partial words (Etikett finds Etikettendrucker): full-text search matches whole words only, so a word of
+		// three or more characters also matches as a substring of title, summary, body or reference (trigram
+		// indexes, migration 000079).
+		conds = append(conds, "(search @@ "+tsq+substringMatch(q.Text, q.Any, &args)+")")
 		order = fmt.Sprintf("ts_rank(search, %s) DESC, id DESC", tsq)
 	} else if page.Cursor != "" {
 		if !validUUID(page.Cursor) {
@@ -133,6 +137,33 @@ func (r *Repository) List(ctx context.Context, q application.Query) (application
 		}
 	}
 	return res, nil
+}
+
+// substringMatch returns " OR (...)" matching the words of text as substrings, or "" when no word has three
+// characters. Every word must match unless any is set. Wildcards of the user's text are escaped.
+func substringMatch(text string, any bool, args *[]any) string {
+	const maxWords = 8
+	var parts []string
+	for _, w := range strings.Fields(text) {
+		if utf8.RuneCountInString(w) < 3 || len(parts) == maxWords {
+			continue
+		}
+		*args = append(*args, "%"+likeEscape(w)+"%")
+		n := len(*args)
+		parts = append(parts, fmt.Sprintf(`(title ILIKE $%[1]d ESCAPE '\' OR summary ILIKE $%[1]d ESCAPE '\' OR body ILIKE $%[1]d ESCAPE '\' OR reference ILIKE $%[1]d ESCAPE '\')`, n))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	glue := " AND "
+	if any {
+		glue = " OR "
+	}
+	return " OR (" + strings.Join(parts, glue) + ")"
+}
+
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 func validUUID(s string) bool {

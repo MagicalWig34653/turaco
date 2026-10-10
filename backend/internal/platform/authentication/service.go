@@ -41,6 +41,10 @@ type Session struct {
 type Config struct {
 	IdleTimeout     time.Duration
 	AbsoluteTimeout time.Duration
+	// AbsoluteTimeoutOverride, when set, is asked for every new session; (d, true) with d > 0 replaces
+	// AbsoluteTimeout (the administration setting auth.session_absolute_timeout). The environment value stays the
+	// fallback when it reports false.
+	AbsoluteTimeoutOverride func(ctx context.Context) (time.Duration, bool)
 	// TouchInterval throttles last-seen writes; defaults to one minute.
 	TouchInterval time.Duration
 }
@@ -114,6 +118,11 @@ func (s *Service) create(ctx context.Context, p LoginSession) (string, Session, 
 	}
 	now := s.clock()
 	lifetime := s.cfg.AbsoluteTimeout
+	if s.cfg.AbsoluteTimeoutOverride != nil {
+		if d, ok := s.cfg.AbsoluteTimeoutOverride(ctx); ok && d > 0 {
+			lifetime = d
+		}
+	}
 	if p.MaxLifetime > 0 && p.MaxLifetime < lifetime {
 		lifetime = p.MaxLifetime
 	}

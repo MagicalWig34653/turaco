@@ -153,7 +153,13 @@ func toDirectoryGroupMember(m application.DirectoryGroupMember) directoryGroupMe
 }
 
 type externalIdentityDTO struct {
-	ProviderKey       string  `json:"providerKey"`
+	ID          string `json:"id"`
+	ProviderKey string `json:"providerKey"`
+	// SubjectSuffix is the last four characters of the subject (directory GUID or Entra object id); never the whole value.
+	SubjectSuffix string `json:"subjectSuffix"`
+	LinkedAt      string `json:"linkedAt"`
+	// Via is how an Entra identity was linked: administrator, source_anchor, provisioning or cli. Empty for directory identities.
+	Via               string  `json:"via"`
 	Username          *string `json:"username"`
 	Enabled           bool    `json:"enabled"`
 	LastSeenAt        *string `json:"lastSeenAt"`
@@ -186,7 +192,7 @@ func toUserDetail(u application.User, identities []application.ExternalIdentity,
 	var seen *time.Time
 	provider := ""
 	for _, e := range identities {
-		out.ExternalIdentities = append(out.ExternalIdentities, externalIdentityDTO{e.ProviderKey, e.Username, e.Enabled, tsPtr(e.LastSeenAt), tsPtr(e.DeletedObservedAt)})
+		out.ExternalIdentities = append(out.ExternalIdentities, externalIdentityDTO{e.ID, e.ProviderKey, e.SubjectSuffix, ts(e.CreatedAt), e.LinkedVia, e.Username, e.Enabled, tsPtr(e.LastSeenAt), tsPtr(e.DeletedObservedAt)})
 		if e.LastSeenAt != nil && (seen == nil || e.LastSeenAt.After(*seen)) {
 			seen, provider = e.LastSeenAt, e.ProviderKey
 		}

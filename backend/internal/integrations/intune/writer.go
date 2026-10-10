@@ -15,8 +15,8 @@ import (
 // ring assignment; it never reads, edits other assignments or runs commands on Devices. A write counts as
 // Assigned in Turaco only after the normal management synchronization reads it back.
 //
-// The real Microsoft Graph writer needs a tenant, an app registration with write permission and a separate secret;
-// it is a documented stub (docs/integrations/intune.md): NotConfiguredWriter is the production wiring until then.
+// The real Microsoft Graph writer (graph_writer.go) needs its own app registration with write permissions and a
+// separate secret (MICROSOFT_GRAPH_WRITE_*); NotConfiguredWriter is the wiring without it.
 // Every call is idempotent per OperationID: a retry returns the result of the first call and writes nothing twice.
 
 // MaxRingDevices bounds the Devices of one ring assignment.
@@ -24,7 +24,7 @@ const MaxRingDevices = 5000
 
 // Errors a writer returns. ErrTransient may be retried with a new attempt; ErrPermanent must not.
 var (
-	ErrWriterNotConfigured = errors.New("intune: the assignment writer is not configured (not implemented yet)")
+	ErrWriterNotConfigured = errors.New("intune: the assignment writer is not configured")
 	ErrTransient           = errors.New("intune: transient write error")
 	ErrPermanent           = errors.New("intune: permanent write error")
 	ErrArtifactUnknown     = fmt.Errorf("%w: the management artifact is not known to the provider", ErrPermanent)

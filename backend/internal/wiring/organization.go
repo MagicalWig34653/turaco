@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/smtp"
@@ -42,7 +43,70 @@ func Organization(pool *pgxpool.Pool, cfg OrganizationConfig) (*orgrepository.Re
 	}
 	return base.
 		WithGuards(roles.NewGuards(pool, subjects), authentication.SessionRevoker{}).
-		WithCredentials(authentication.NewLocalCredentials(nil), mailer), nil
+		WithCredentials(authentication.NewLocalCredentials(nil), mailer).
+		WithCredentialRemover(localCredentialRemover{}), nil
+}
+
+// localCredentialRemover implements orgapp.LocalCredentialRemover: linking a directory identity deletes the password
+// of the local account in the same transaction (ADR-0034 review rule R5). Only credentials of kind "local" are
+// touched; the emergency account has its own CLI-only lifecycle.
+type localCredentialRemover struct{}
+
+func (localCredentialRemover) DeleteLocalCredential(ctx context.Context, tx pgx.Tx, userID string) (int, error) {
+	tag, err := tx.Exec(ctx, `DELETE FROM platform.local_credentials WHERE user_id = $1::uuid AND kind = 'local'`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("delete local credential: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// EntraLinking returns the administrator operations on Entra identities (slice E-B). tenants are the tenants accepted
+// for Entra sign-in (empty when Entra sign-in is not configured, which makes linking answer 409). The target is told
+// about a link or unlink by email when the mail channel is configured; the notice carries no link.
+func EntraLinking(repo *orgrepository.Repository, cfg OrganizationConfig, tenants []string) (*orgapp.EntraLinking, error) {
+	m, err := newCredentialMailer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var notifier orgapp.IdentityNotifier
+	if m.MailConfigured() {
+		notifier = m
+	}
+	return orgapp.NewEntraLinking(repo, tenants, notifier), nil
+}
+
+// identityNoticeTexts are the notice texts (subject, body) per event and locale.
+var identityNoticeTexts = map[string]map[string][2]string{
+	"en": {
+		"linked":   {"A Microsoft sign-in was linked to your Turaco account", "An administrator linked a Microsoft Entra sign-in to your Turaco account. You can now sign in with Microsoft. If you did not expect this, tell your administrator."},
+		"unlinked": {"A Microsoft sign-in was removed from your Turaco account", "An administrator removed the Microsoft Entra sign-in from your Turaco account. If you did not expect this, tell your administrator."},
+	},
+	"de": {
+		"linked":   {"Eine Microsoft-Anmeldung wurde mit deinem Turaco-Konto verknüpft", "Eine Administratorin oder ein Administrator hat eine Microsoft-Entra-Anmeldung mit deinem Turaco-Konto verknüpft. Du kannst dich jetzt mit Microsoft anmelden. Falls du das nicht erwartet hast, informiere deine Administration."},
+		"unlinked": {"Die Microsoft-Anmeldung wurde von deinem Turaco-Konto entfernt", "Eine Administratorin oder ein Administrator hat die Microsoft-Entra-Anmeldung von deinem Turaco-Konto entfernt. Falls du das nicht erwartet hast, informiere deine Administration."},
+	},
+}
+
+// NotifyIdentityChange implements orgapp.IdentityNotifier. The address is parsed again here (no CR or LF reaches a
+// header) and always comes from the stored profile, never from a request.
+func (m *credentialMailer) NotifyIdentityChange(ctx context.Context, to, _ /* displayName */, event string) error {
+	if m.mailer == nil {
+		return orgapp.ErrMailNotConfigured
+	}
+	a, err := mail.ParseAddress(to)
+	if err != nil || a.Address != to || strings.ContainsAny(to, "\r\n") {
+		return orgapp.ErrNoEmail
+	}
+	texts, ok := identityNoticeTexts[m.locale]
+	if !ok {
+		texts = identityNoticeTexts["en"]
+	}
+	t, ok := texts[event]
+	if !ok {
+		return fmt.Errorf("unknown identity notice event %q", event)
+	}
+	return m.mailer.Send(ctx, smtp.Message{To: to, Subject: t[0], Text: t[1] + "\n",
+		HTML: `<!doctype html><html><body style="font-family:sans-serif"><p>` + html.EscapeString(t[1]) + `</p></body></html>`})
 }
 
 // credentialMailer implements orgapp.CredentialMailer.

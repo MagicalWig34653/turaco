@@ -1,6 +1,6 @@
 # ADR-0027: Software Lifecycle and Patch Orchestration Through Software Management Providers
 
-- Status: Accepted (2026-10-03). Slices G1 (software approvals and packages), G2 (Target Sets and Deployment planning), G3 (Deployment execution) and G4 (failure correlation and rollout reporting) are implemented with OpenAPI and UI, against fake provider adapters; the real IntuneGet client and the Graph write client are not ([current status](../product/current-status.md)).
+- Status: Accepted (2026-10-03). Slices G1 (software approvals and packages), G2 (Target Sets and Deployment planning), G3 (Deployment execution) and G4 (failure correlation and rollout reporting) are implemented with OpenAPI and UI, against fake provider adapters; the real IntuneGet client is not built and the Graph write client is implemented per documentation and unverified against a live tenant ([current status](../product/current-status.md)).
 - Related: [ADR-0020](ADR-0020-management-assignment-intelligence.md) (Assigned / Expected Applicable / Observed, still valid), [Intune](../integrations/intune.md), [Intune Assignment Intelligence](../integrations/intune-assignment-intelligence.md).
 
 ## Context

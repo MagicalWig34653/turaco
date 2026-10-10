@@ -470,3 +470,15 @@
 .adm-group legend .adm-group-toggle {
   min-height: 0;
 }
+
+/* CSV import and bulk edit previews (F14 section 1.6) */
+.adm-issues {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.adm-issues code {
+  font-size: 0.85em;
+}

@@ -48,7 +48,12 @@ type Caller struct {
 	// PlatformAdmin says the actor holds platform.admin. Only an administrator may be shown an invitation link
 	// when no mail channel exists (ADR-0034); the transport fills it from the principal.
 	PlatformAdmin bool
+	// Has reports whether the actor holds a permission. Operations that check a permission of their own (batch
+	// previews and applies re-authorize per batch kind) fail closed when it is nil.
+	Has func(permission string) bool
 }
+
+func (c Caller) can(permission string) bool { return c.Has != nil && c.Has(permission) }
 
 func (c Caller) validate() error {
 	if err := c.Actor.Validate(); err != nil {

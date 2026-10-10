@@ -38,5 +38,6 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0032](ADR-0032-module-switches.md) | Optional Modules Are Switched at Runtime Through a Platform Module Registry | Accepted; implemented (backend and `/admin/modules`) |
 | [ADR-0033](ADR-0033-workbench-views-query-engine.md) | Lists Are Queried Through a Platform Query Engine With Module-Declared Field Catalogs; Saved Views Are a Platform Concept | Accepted; implemented for Tickets, Devices and Tasks (Q-A to Q-D, backend and UI); further catalogs (Q-E) not started |
 | [ADR-0034](ADR-0034-local-accounts-and-external-parties.md) | Local Accounts With Invitation Tokens and Restricted External Accounts | Accepted; local accounts implemented (backend and People UI); external accounts (A-G) not implemented |
-| [ADR-0035](ADR-0035-entra-oidc-login.md) | Microsoft Entra ID Sign-in Through OpenID Connect for Every Deployment Variant | Proposed; not implemented |
-| [ADR-0036](ADR-0036-microsoft-teams-integration.md) | Microsoft Teams as a Notification and Interaction Channel | Proposed; not implemented |
+| [ADR-0035](ADR-0035-entra-oidc-login.md) | Microsoft Entra ID Sign-in Through OpenID Connect for Every Deployment Variant | Accepted; implementation in progress |
+| [ADR-0036](ADR-0036-microsoft-teams-integration.md) | Microsoft Teams as a Notification and Interaction Channel | Accepted; not implemented |
+| [ADR-0037](ADR-0037-file-storage-and-attachments.md) | File Storage, Envelope Encryption, Virus Scanning and Attachments | Accepted; implemented (backend, no UI yet) |

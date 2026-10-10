@@ -81,6 +81,7 @@ func failPeople(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 	var inv *application.InvalidInputError
 	var owned *application.FieldDirectoryOwnedError
 	var impact *application.ImpactError
+	var rowErr *application.ImportRowError
 	switch {
 	case query.WriteError(w, err):
 	case errors.As(err, &inv):
@@ -129,6 +130,37 @@ func failPeople(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		httpx.WriteError(w, http.StatusConflict, "auth.base_url_not_configured", "The application address (EMAIL_BASE_URL) is not configured.")
 	case errors.Is(err, application.ErrNoEmail):
 		httpx.WriteError(w, http.StatusConflict, "organization.no_email", "The user has no email address.")
+	case errors.Is(err, application.ErrForbidden):
+		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
+	case errors.Is(err, application.ErrAdminRequired):
+		httpx.WriteError(w, http.StatusForbidden, "access.admin_required", "Only a platform administrator can do this.")
+	case errors.Is(err, application.ErrDirectoryLinkRoles):
+		httpx.WriteError(w, http.StatusConflict, "organization.directory_link_refused_roles", "The account holds roles; remove them before linking a directory or Entra identity.")
+	case errors.Is(err, application.ErrDirectoryIdentityInUse):
+		httpx.WriteError(w, http.StatusConflict, "organization.directory_identity_in_use", "This directory identity is already linked to an account.")
+	case errors.Is(err, application.ErrEntraNotConfigured):
+		httpx.WriteError(w, http.StatusConflict, "organization.entra_not_configured", "Microsoft Entra sign-in is not configured on this installation.")
+	case errors.Is(err, application.ErrEntraTenantNotAllowed):
+		httpx.WriteError(w, http.StatusConflict, "organization.entra_tenant_not_allowed", "This tenant is not allowed for Microsoft Entra sign-in.")
+	case errors.Is(err, application.ErrEntraIdentityTaken):
+		httpx.WriteError(w, http.StatusConflict, "organization.entra_identity_in_use", "This Microsoft Entra identity is already linked to an account.")
+	case errors.Is(err, application.ErrEntraTenantAlreadyUsed):
+		httpx.WriteError(w, http.StatusConflict, "organization.entra_tenant_already_linked", "The account already has a Microsoft Entra identity of this tenant; remove it first.")
+	case errors.Is(err, application.ErrImportTooLarge):
+		httpx.WriteError(w, http.StatusRequestEntityTooLarge, "organization.import_too_large", "The file is larger than 2 MB.")
+	case errors.Is(err, application.ErrImportTooManyRows):
+		httpx.WriteError(w, http.StatusRequestEntityTooLarge, "organization.import_too_many_rows", "The file has more than 5,000 rows.")
+	case errors.Is(err, application.ErrImportHashMismatch):
+		httpx.WriteError(w, http.StatusConflict, "organization.import_preview_mismatch", "The preview hash or the number of rejected rows does not match the stored preview.")
+	case errors.As(err, &rowErr):
+		code := "stale"
+		if is, ok := rowIssueCode(rowErr.Cause); ok {
+			code = is
+		}
+		httpx.WriteErrorDetails(w, http.StatusConflict, "organization.import_stale", "The data changed since the preview; repeat the preview.",
+			map[string]any{"row": rowErr.Row, "reason": code})
+	case errors.Is(err, application.ErrImportStale):
+		httpx.WriteError(w, http.StatusConflict, "organization.import_stale", "The data changed since the preview; repeat the preview.")
 	case errors.Is(err, application.ErrMailFailed):
 		httpx.WriteError(w, http.StatusBadGateway, "auth.mail_failed", "The email could not be sent.")
 	default:

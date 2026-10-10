@@ -81,7 +81,7 @@ func Catalog() []Module {
 	return []Module{
 		core("platform", "meta"),
 		core("access", "auth", "roles", "role-assignments", "role-templates", "permissions", "modules", "access"),
-		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs"),
+		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs", "import-batches"),
 		core("audit", "audit-events"),
 		core("tasks", "tasks", "recurring-task-definitions", "my-work"),
 		core("approvals", "approvals"),

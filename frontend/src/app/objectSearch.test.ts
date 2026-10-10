@@ -1,53 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { matchRows, searchSources } from './objectSearch';
+import { searchCommands } from './objectSearch';
 
-const all = () => true;
-const none = () => false;
-
-describe('searchSources', () => {
-  it('offers only what the modules and permissions allow', () => {
-    expect(searchSources(none, all)).toMatchObject({
-      tickets: true,
-      incidents: true,
-      knowledge: true,
-      problems: false,
-      devices: false,
-      people: false,
+describe('searchCommands', () => {
+  it('maps hits to grouped palette entries with detail routes', () => {
+    const items = searchCommands({
+      items: [
+        { type: 'user', id: 'u1', title: 'Anna Etikett', subtitle: 'anna@example.org' },
+        { type: 'ticket', id: 't/1', reference: 'TKT-1', title: 'Etikettendrucker' },
+        { type: 'knowledge', id: 'k1', reference: 'KB-7', title: 'Etiketten drucken' },
+      ],
+      unavailable: [],
     });
-    expect(searchSources(all, all)).toEqual({
-      tickets: true,
-      problems: true,
-      incidents: true,
-      knowledge: true,
-      devices: true,
-      people: true,
+    expect(items.map((item) => item.group)).toEqual(['tickets', 'knowledge', 'people']);
+    expect(items[0]).toMatchObject({
+      label: 'TKT-1 · Etikettendrucker',
+      path: '/support/t%2F1',
+    });
+    expect(items[2]).toMatchObject({
+      label: 'Anna Etikett · anna@example.org',
+      path: '/endpoints/users/u1',
     });
   });
-  it('drops sources of switched-off modules', () => {
-    const only = (key: string) => key === 'knowledge';
-    expect(searchSources(all, only)).toMatchObject({
-      tickets: false,
-      problems: false,
-      devices: false,
-      people: false,
-      knowledge: true,
+  it('marks an exact reference hit as leading and ignores unknown types', () => {
+    const items = searchCommands({
+      items: [
+        { type: 'ticket', id: 't1', reference: 'TKT-1', title: 'x', exact: true },
+        { type: 'future_thing', id: 'f1', title: 'y' },
+      ],
+      unavailable: [],
     });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.top).toBe(true);
   });
-  it('needs directory and endpoint management access for people', () => {
-    const can = (p: string) => p === 'organization.view';
-    expect(searchSources(can, all).people).toBe(false);
-  });
-});
-
-describe('matchRows', () => {
-  const rows = [
-    { reference: 'PRB-000004', title: 'ORBIS hängt' },
-    { reference: 'PRB-000005', title: 'Drucker' },
-  ];
-  it('matches reference or title case-insensitively and limits the result', () => {
-    expect(matchRows(rows, 'orbis')).toHaveLength(1);
-    expect(matchRows(rows, 'prb-00000')).toHaveLength(2);
-    expect(matchRows(rows, 'prb-00000', 1)).toHaveLength(1);
-    expect(matchRows(rows, '  ')).toEqual([]);
+  it('gives every source its own group and route', () => {
+    const types = [
+      'ticket',
+      'problem',
+      'major_incident',
+      'change',
+      'request',
+      'knowledge',
+      'asset',
+      'device',
+      'user',
+    ];
+    const items = searchCommands({
+      items: types.map((type) => ({ type, id: type, title: type })),
+      unavailable: [],
+    });
+    expect(new Set(items.map((item) => item.group)).size).toBe(types.length);
+    expect(new Set(items.map((item) => item.path)).size).toBe(types.length);
   });
 });

@@ -1,6 +1,12 @@
 // Types mirror api/openapi/openapi.yaml. Keep them in sync with the contract.
 
-export type AuthMethods = { password: boolean; kerberos: boolean; emergency: boolean };
+export type AuthMethods = {
+  password: boolean;
+  kerberos: boolean;
+  emergency: boolean;
+  /** Sign-in with Microsoft Entra ID is configured; absent on servers that do not report it. */
+  entra?: boolean;
+};
 
 export type AuthSession = {
   userId: string;

@@ -186,3 +186,30 @@ func mustPrepare(t *testing.T, e *env, req query.Request) *query.Plan {
 	}
 	return plan
 }
+
+// Partial words: the platform search uses the ticket text search, which matches substrings of the title (trigram
+// index), so "Etikett" finds "Etikettendrucker"; another person's ticket stays hidden whatever the text matches.
+func TestTicketSearchFindsPartialWordsWithinScope(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	mine, err := e.svc.Create(ctx, e.c(e.alice), application.Principal{UserID: e.alice}, application.CreateInput{Title: "Etikettendrucker druckt nicht"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := e.svc.Create(ctx, e.c(e.bob), application.Principal{UserID: e.bob}, application.CreateInput{Title: "Etikettendrucker im Lager"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"Etikett", "ETIKETTEN", "kettendru"} {
+		page, err := e.svc.Query(ctx, e.user(), query.Request{Limit: 10, Search: text}, false, nil)
+		if err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		if got := qIDs(page); !got[mine.ID] || got[theirs.ID] {
+			t.Errorf("%q found %v; want only the caller's own ticket", text, got)
+		}
+	}
+	if page, err := e.svc.Query(ctx, e.user(), query.Request{Limit: 10, Search: "Etikett%"}, false, nil); err != nil || len(page.Items) != 0 {
+		t.Errorf("a LIKE wildcard must be literal: %d items, %v", len(page.Items), err)
+	}
+}

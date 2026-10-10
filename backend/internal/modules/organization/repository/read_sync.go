@@ -18,7 +18,7 @@ func (r *Repository) ListUserExternalIdentities(ctx context.Context, userID stri
 	}
 	u, _ := parseID(userID)
 	rows, err := r.pool.Query(ctx, `
-		SELECT provider_key, username, enabled, last_seen_at, deleted_observed_at
+		SELECT id::text, provider_key, right(external_subject, 4), created_at, coalesce(linked_via, ''), username, enabled, last_seen_at, deleted_observed_at
 		FROM organization.external_identities WHERE user_id = $1
 		ORDER BY provider_key, created_at, id`, u)
 	if err != nil {
@@ -28,7 +28,7 @@ func (r *Repository) ListUserExternalIdentities(ctx context.Context, userID stri
 	out := []application.ExternalIdentity{}
 	for rows.Next() {
 		var e application.ExternalIdentity
-		if err := rows.Scan(&e.ProviderKey, &e.Username, &e.Enabled, &e.LastSeenAt, &e.DeletedObservedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ProviderKey, &e.SubjectSuffix, &e.CreatedAt, &e.LinkedVia, &e.Username, &e.Enabled, &e.LastSeenAt, &e.DeletedObservedAt); err != nil {
 			return nil, fmt.Errorf("scan external identity: %w", err)
 		}
 		out = append(out, e)

@@ -1,6 +1,6 @@
 # ADR-0036: Microsoft Teams as a Notification and Interaction Channel
 
-- Status: Proposed (2026-10-10). Nothing in this ADR is implemented; [current status](../product/current-status.md) is authoritative. Design, phases and threat model: [F15 Microsoft integration, Microsoft Teams](../product/f15-microsoft-integration-design.md#microsoft-teams).
+- Status: Accepted (2026-10-10, product owner decisions in the design). Nothing in this ADR is implemented; [current status](../product/current-status.md) is authoritative. Design, phases and threat model: [F15 Microsoft integration, Microsoft Teams](../product/f15-microsoft-integration-design.md#microsoft-teams).
 
 ## Context
 

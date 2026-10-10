@@ -15,6 +15,9 @@ import { peopleAdminApi } from './adminApi';
 import { lifecycleActions, type LifecycleAction } from './adminModel';
 import { AccountBadges, PersonStatusBadge } from './PersonBadges';
 import { useOrgLookups } from './orgLookups';
+import { accessActions, type AccessAction } from './importModel';
+import { useAccessDialogs } from './AccessDialogs';
+import { EntraSection } from './EntraSection';
 import { EditProfileDialog, ProfileCard, SignInCard } from './UserProfile';
 import { UserRolesTab, UserTeamsTab } from './UserTabs';
 import { useLifecycle } from './UserLifecycle';
@@ -27,6 +30,11 @@ const actionLabel: Record<LifecycleAction, MessageKey> = {
   deactivate: 'lifecycle.action.deactivate',
   reactivate: 'lifecycle.action.reactivate',
   markDeparted: 'lifecycle.action.markDeparted',
+};
+
+const accessLabel: Record<AccessAction, MessageKey> = {
+  linkDirectory: 'people.link.action',
+  extendAccess: 'people.extend.action',
 };
 
 export function UserDetailScreen({ id }: { id: string }) {
@@ -46,6 +54,7 @@ export function UserDetailScreen({ id }: { id: string }) {
   });
   const [editing, setEditing] = useState(false);
   const lifecycle = useLifecycle(() => person.reload());
+  const access = useAccessDialogs(() => person.reload());
 
   const select = (next: TabId) => {
     setTab(next);
@@ -89,6 +98,14 @@ export function UserDetailScreen({ id }: { id: string }) {
     danger: action === 'deactivate' || action === 'markDeparted',
     onSelect: () => lifecycle.start(action, data),
   }));
+  items.push(
+    ...accessActions(data, can).map((action): MenuItem => ({
+      id: action,
+      label: t(accessLabel[action]),
+      danger: action === 'linkDirectory',
+      onSelect: () => access.start(action, data),
+    })),
+  );
   const tabs: { id: TabId; label: string }[] = [
     { id: 'profile', label: t('people.tab.profile') },
     { id: 'teams', label: t('people.tab.teams') },
@@ -151,7 +168,10 @@ export function UserDetailScreen({ id }: { id: string }) {
         {activeTab === 'profile' ? (
           <div className="adm-two-col">
             <ProfileCard person={data} lookups={lookups} />
-            <SignInCard person={data} />
+            <div>
+              <SignInCard person={data} />
+              <EntraSection person={data} onChanged={person.reload} />
+            </div>
           </div>
         ) : null}
         {activeTab === 'teams' ? <UserTeamsTab person={data} /> : null}
@@ -160,6 +180,7 @@ export function UserDetailScreen({ id }: { id: string }) {
       </div>
       {menu.menu}
       {lifecycle.dialog}
+      {access.dialog}
       {editing ? (
         <EditProfileDialog
           person={data}

@@ -550,7 +550,7 @@ export const de: Record<MessageKey, string> = {
   'changes.polish.windowInvalid':
     'Wählen Sie ein Ende nach dem Beginn und füllen Sie beide Zeitangaben aus.',
   'shell.search': 'Suche',
-  'shell.searchPlaceholder': 'Seiten, Tickets, Probleme, Wissen, Geräte und Personen suchen',
+  'shell.searchPlaceholder': 'Seiten, Tickets, Changes, Wissen, Assets, Geräte und Personen suchen',
   'shell.commandTitle': 'Springen zu…',
   'shell.commandHint': 'Seite oder Ticket suchen und mit den Pfeiltasten auswählen.',
   'shell.noCommands': 'Keine passenden Ziele',
@@ -948,6 +948,13 @@ export const de: Record<MessageKey, string> = {
   'login.password': 'Passwort',
   'login.submit': 'Anmelden',
   'login.submitting': 'Anmeldung läuft…',
+  'login.entra.button': 'Mit Microsoft Entra anmelden',
+  'login.entra.failed':
+    'Die Anmeldung mit Microsoft ist fehlgeschlagen. Versuchen Sie es erneut oder wenden Sie sich an Ihre Administration.',
+  'login.entra.notLinked':
+    'Ihr Microsoft-Konto ist noch keinem Turaco-Konto zugeordnet. Bitten Sie Ihre Administration, es zu verknüpfen.',
+  'login.entra.unavailable':
+    'Die Anmeldung mit Microsoft ist vorübergehend nicht verfügbar. Versuchen Sie es später erneut oder nutzen Sie eine andere Anmeldeart.',
   'login.kerberos.trying': 'Windows-Anmeldung wird versucht…',
   'login.sessionExpired': 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
   'login.noMethods':
@@ -2035,6 +2042,42 @@ export const de: Record<MessageKey, string> = {
   'knowledge.detail.title': 'Artikel',
   'knowledge.search': 'Artikel suchen',
   'knowledge.empty': 'Keine Artikel gefunden.',
+  'attachments.title': 'Anhänge',
+  'attachments.empty': 'Noch keine Anhänge.',
+  'attachments.drop': 'Dateien hierher ziehen oder auswählen.',
+  'attachments.choose': 'Dateien auswählen',
+  'attachments.limits':
+    'Bis zu {max} pro Datei. Dateien werden vor dem Download auf Schadsoftware geprüft.',
+  'attachments.download': 'Herunterladen',
+  'attachments.delete': 'Löschen',
+  'attachments.delete.title': 'Anhang löschen',
+  'attachments.delete.message': '„{name}“ löschen? Das kann nicht rückgängig gemacht werden.',
+  'attachments.audience.label': 'Sichtbar für',
+  'attachments.audience.all': 'Alle, die dies sehen können',
+  'attachments.audience.privileged': 'Nur Mitarbeitende der IT',
+  'attachments.scan.pending': 'Prüfung läuft',
+  'attachments.scan.clean': 'Geprüft, unbedenklich',
+  'attachments.scan.infected': 'Gesperrt: Schadsoftware',
+  'attachments.scan.failed': 'Prüfung fehlgeschlagen',
+  'attachments.unavailable.pending': 'Erst nach Abschluss der Prüfung verfügbar.',
+  'attachments.unavailable.clean': 'Nicht verfügbar.',
+  'attachments.unavailable.infected': 'Gesperrt, da sie Schadsoftware enthält.',
+  'attachments.unavailable.failed': 'Nicht verfügbar: Die Datei konnte nicht geprüft werden.',
+  'attachments.check.tooLarge': '„{name}“ ist größer als die erlaubten {max}.',
+  'attachments.check.unsupportedType': '„{name}“ hat einen nicht erlaubten Dateityp.',
+  'attachments.check.empty': '„{name}“ ist leer.',
+  'attachments.check.limit': 'Die maximale Anzahl an Anhängen ist erreicht.',
+  'attachments.error.invalid':
+    'Der Upload wurde nicht verstanden. Wählen Sie eine Datei und versuchen Sie es erneut.',
+  'attachments.error.notFound': 'Der Anhang oder das zugehörige Objekt existiert nicht mehr.',
+  'attachments.error.limit': 'Die maximale Anzahl an Anhängen ist erreicht.',
+  'attachments.error.tooLarge': 'Die Datei ist größer als erlaubt.',
+  'attachments.error.unsupportedType':
+    'Dieser Dateityp ist nicht erlaubt oder der Inhalt passt nicht zum Typ.',
+  'attachments.error.scanPending': 'Die Datei wird noch auf Schadsoftware geprüft.',
+  'attachments.error.quarantined': 'Die Datei wurde gesperrt, weil sie Schadsoftware enthält.',
+  'attachments.error.scanFailed': 'Die Datei konnte nicht geprüft werden und ist nicht verfügbar.',
+  'attachments.error.notConfigured': 'Dateianhänge sind auf diesem Server nicht eingerichtet.',
   'knowledge.back': 'Zurück zu den Artikeln',
   'knowledge.new': 'Neuer Artikel',
   'knowledge.edit': 'Artikel bearbeiten',
@@ -4600,7 +4643,6 @@ export const de: Record<MessageKey, string> = {
   'shell.searching': 'Suche läuft …',
   'shell.searchUnavailable':
     'Einige Suchen sind gerade nicht verfügbar. Seiten und die übrigen Ergebnisse werden weiterhin angezeigt.',
-  'shell.ticketAlias': '{old} (frühere Nummer von {current})',
   'myWork.source.all': 'Alle Arbeit',
   'myWork.source.tickets': 'Ihre Tickets',
   'myWork.source.team_tickets': 'Zu übernehmen',
@@ -4844,7 +4886,10 @@ export const de: Record<MessageKey, string> = {
   'overview.metric.takeOverCaption': 'Nicht zugewiesene Tickets Ihrer Teams',
   'overview.metric.takeOverZero': 'Nichts wartet auf Sie',
   'shell.searchTooShort':
-    'Geben Sie mindestens 3 Zeichen ein, um Tickets, Probleme, Wissen, Geräte und Personen zu suchen. Seiten werden bereits gefiltert.',
+    'Geben Sie mindestens 2 Zeichen ein, um Datensätze zu suchen. Seiten werden bereits gefiltert.',
+  'shell.group.changes': 'Changes',
+  'shell.group.requests': 'Anfragen',
+  'shell.group.assets': 'Assets',
   'shell.group.problems': 'Probleme',
   'shell.group.incidents': 'Großstörungen',
   'shell.group.knowledge': 'Wissen',
@@ -5248,6 +5293,244 @@ export const de: Record<MessageKey, string> = {
   'people.roles.localHint':
     'Lokale Konten können keine Rollen mit Hochrisiko-Berechtigungen halten.',
   'people.roles.allAssignments': 'Alle Rollenzuweisungen',
+  'people.import.action': 'CSV importieren',
+  'people.import.title': 'Personen und Organisationsdaten importieren',
+  'people.import.intro':
+    'Laden Sie eine CSV-Datei hoch, prüfen Sie zeilenweise, was sich ändern würde, und wenden Sie sie dann an. Vor Ihrer Bestätigung wird nichts geschrieben.',
+  'people.import.noPermission':
+    'Sie benötigen die Berechtigung zum Importieren von CSV-Dateien und zur Verwaltung der jeweiligen Datenart.',
+  'people.import.step.upload': 'Hochladen',
+  'people.import.step.preview': 'Prüfen',
+  'people.import.step.done': 'Fertig',
+  'people.import.kind': 'Daten',
+  'people.import.kind.users': 'Benutzer',
+  'people.import.kind.locations': 'Standorte',
+  'people.import.kind.departments': 'Abteilungen',
+  'people.import.matchKey': 'Vorhandene Datensätze erkennen anhand von',
+  'people.import.matchKeyHint':
+    'Dieselbe Datei erneut zu importieren ändert nichts: Datensätze werden über diesen Schlüssel zugeordnet.',
+  'people.import.matchKey.primary_email': 'E-Mail-Adresse',
+  'people.import.matchKey.employee_number': 'Personalnummer',
+  'people.import.matchKey.code': 'Kürzel',
+  'people.import.mode': 'Vorgehen',
+  'people.import.mode.create_only': 'Nur neue Datensätze anlegen',
+  'people.import.mode.update_only': 'Nur vorhandene Datensätze aktualisieren',
+  'people.import.mode.upsert': 'Neue anlegen und vorhandene aktualisieren',
+  'people.import.file': 'CSV-Datei',
+  'people.import.fileHint':
+    'UTF-8, Komma oder Semikolon, erste Zeile mit Spaltennamen, höchstens {size} MB und {rows} Zeilen.',
+  'people.import.fileError.missing': 'Wählen Sie eine Datei.',
+  'people.import.fileError.empty': 'Die Datei ist leer.',
+  'people.import.fileError.tooLarge': 'Die Datei ist größer als 2 MB.',
+  'people.import.fileError.notCsv': 'Wählen Sie eine .csv-Datei.',
+  'people.import.columns':
+    'Bekannte Spalten: {columns}. Andere Spalten werden gemeldet und ignoriert.',
+  'people.import.rules':
+    'Eine leere Zelle lässt den Wert unverändert. Vom Verzeichnis verwaltete Attribute werden bei Verzeichnisbenutzern abgelehnt. Rollen werden nie durch einen Import vergeben.',
+  'people.import.previewAction': 'Vorschau erstellen',
+  'people.import.previewTitle': 'Import prüfen',
+  'people.import.counts': 'Ergebnis der Prüfung',
+  'people.import.count.create': '{count} anzulegen',
+  'people.import.count.update': '{count} zu aktualisieren',
+  'people.import.count.unchanged': '{count} unverändert',
+  'people.import.count.reject': '{count} abgelehnt',
+  'people.import.count.skipped': '{count} übersprungen',
+  'people.import.unknownColumns': 'Diese Spalten sind unbekannt und werden ignoriert: {columns}',
+  'people.import.expires':
+    'Diese Vorschau wird bis {time} gespeichert und ist nur für Sie sichtbar.',
+  'people.import.downloadRejected': 'Abgelehnte Zeilen herunterladen (CSV)',
+  'people.import.filter': 'Zeilen anzeigen',
+  'people.import.filter.all': 'Alle Zeilen',
+  'people.import.rows': 'Zeilen der Prüfung',
+  'people.import.noRows': 'Keine passenden Zeilen.',
+  'people.import.col.row': 'Zeile',
+  'people.import.col.key': 'Schlüssel',
+  'people.import.col.person': 'Person',
+  'people.import.col.result': 'Ergebnis',
+  'people.import.col.changes': 'Änderungen',
+  'people.import.col.notes': 'Hinweise',
+  'people.import.action.create': 'Anlegen',
+  'people.import.action.update': 'Aktualisieren',
+  'people.import.action.unchanged': 'Unverändert',
+  'people.import.action.reject': 'Abgelehnt',
+  'people.import.action.skipped': 'Übersprungen',
+  'people.import.nothingToApply': 'Es würde nichts geschrieben.',
+  'people.import.reviewed':
+    'Ich habe die {count} abgelehnten Zeilen geprüft. Sie werden nicht angewendet.',
+  'people.import.applyAction': '{count} Änderungen anwenden',
+  'people.import.startOver': 'Neu beginnen',
+  'people.import.doneTitle': 'Import abgeschlossen',
+  'people.import.doneText':
+    'Die akzeptierten Zeilen wurden in einem Schritt angewendet und im Auditprotokoll festgehalten.',
+  'people.import.doneReplayed':
+    'Diese Prüfung war bereits angewendet; es wurde nichts erneut geschrieben.',
+  'people.import.another': 'Weitere Datei importieren',
+  'people.import.open.users': 'Benutzer öffnen',
+  'people.import.open.locations': 'Standorte öffnen',
+  'people.import.open.departments': 'Abteilungen öffnen',
+  'people.import.error.tooLarge': 'Die Datei ist größer als 2 MB.',
+  'people.import.error.tooManyRows':
+    'Die Datei hat mehr als 5.000 Zeilen. Teilen Sie sie in mehrere Dateien auf.',
+  'people.import.error.stale':
+    'Die Daten haben sich seit der Prüfung geändert, daher wurde nichts geschrieben. Wiederholen Sie die Prüfung.',
+  'people.import.error.mismatch': 'Die Prüfung stimmt nicht mehr überein. Wiederholen Sie sie.',
+  'people.import.issue.missing_key': 'Die Schlüsselspalte ist leer.',
+  'people.import.issue.invalid_value': 'Der Wert ist nicht gültig.',
+  'people.import.issue.control_characters': 'Der Wert enthält Steuerzeichen.',
+  'people.import.issue.formula_prefix':
+    'Beginnt mit = + - oder @; bleibt Text und wird in Exporten entschärft.',
+  'people.import.issue.duplicate_key_in_file': 'Der Schlüssel kommt mehrfach in der Datei vor.',
+  'people.import.issue.column_count': 'Die Zeile hat eine andere Zellenzahl als die Kopfzeile.',
+  'people.import.issue.cell_too_long': 'Der Wert ist zu lang.',
+  'people.import.issue.display_name_required': 'Ein neuer Benutzer braucht einen Anzeigenamen.',
+  'people.import.issue.name_required': 'Ein neuer Datensatz braucht einen Namen.',
+  'people.import.issue.already_exists': 'Der Datensatz existiert bereits.',
+  'people.import.issue.not_found': 'Der Datensatz wurde nicht gefunden.',
+  'people.import.issue.reference_not_found':
+    'Der referenzierte Datensatz existiert nicht oder ist nicht aktiv.',
+  'people.import.issue.directory_owned':
+    'Das Verzeichnis verwaltet dieses Attribut bei Verzeichnisbenutzern.',
+  'people.import.issue.emergency_account':
+    'Notfallkonten werden mit dem Kommandozeilenwerkzeug verwaltet.',
+  'people.import.issue.last_administrator': 'Dadurch gäbe es keinen aktiven Administrator mehr.',
+  'people.import.issue.self_operation': 'Das ist für Ihr eigenes Konto nicht möglich.',
+  'people.import.issue.dominance_required':
+    'Das Konto hat Berechtigungen, die Sie nicht besitzen; bitten Sie einen Administrator.',
+  'people.import.issue.invalid_state': 'Im aktuellen Zustand nicht möglich.',
+  'people.import.issue.target_inactive': 'Der referenzierte Datensatz ist nicht aktiv.',
+  'people.import.issue.invalid_hierarchy':
+    'Dadurch entstünde ein Zyklus oder die maximale Tiefe würde überschritten.',
+  'people.import.issue.conflict': 'Der Wert wird bereits von einem anderen Datensatz verwendet.',
+  'people.import.issue.version_conflict': 'Der Datensatz hat sich zwischenzeitlich geändert.',
+  'people.import.issue.parent_change_not_supported':
+    'Verschieben gehört nicht zum Import; verwenden Sie „Verschieben nach …“.',
+  'people.import.issue.kind_change_not_supported':
+    'Die Art eines Standorts kann nicht geändert werden.',
+  'people.import.issue.ambiguous_key': 'Mehr als ein Datensatz hat diesen Schlüssel.',
+  'people.import.issue.directory_user': 'Dieser Benutzer meldet sich über das Verzeichnis an.',
+  'people.import.issue.directory_identity_disabled': 'Das Verzeichniskonto ist deaktiviert.',
+  'people.import.issue.unknown': 'Die Zeile kann nicht angewendet werden.',
+  'people.bulk.select': '{name} auswählen',
+  'people.bulk.action': 'Mehrfachbearbeitung …',
+  'people.bulk.title': 'Mehrfachbearbeitung von {count} Benutzern',
+  'people.bulk.previewTitle': 'Änderung für {count} Benutzer prüfen',
+  'people.bulk.previewIntro':
+    'Jeder Benutzer wird mit denselben Regeln wie bei einer Einzeländerung geprüft, auch Verzeichnishoheit und die Regel, dass Sie alle Berechtigungen eines Kontos besitzen müssen, das Sie deaktivieren. Es wird noch nichts geschrieben.',
+  'people.bulk.operation': 'Vorgang',
+  'people.bulk.op.set_department': 'Abteilung setzen',
+  'people.bulk.op.set_primary_location': 'Hauptstandort setzen',
+  'people.bulk.op.set_manager': 'Vorgesetzte Person setzen',
+  'people.bulk.op.deactivate': 'Deaktivieren',
+  'people.bulk.clearHint': 'Wählen Sie „Keine“, um den Wert zu entfernen.',
+  'people.bulk.deactivateWarning':
+    'Deaktivierte Benutzer werden sofort abgemeldet. Konten mit mehr Berechtigungen als Sie, Ihr eigenes Konto und der letzte Administrator werden übersprungen.',
+  'people.bulk.tooMany': 'Es können höchstens {max} Benutzer gleichzeitig geändert werden.',
+  'people.bulk.previewAction': 'Prüfen',
+  'people.bulk.reviewed':
+    'Ich habe die {count} übersprungenen Benutzer geprüft. Sie werden nicht geändert.',
+  'people.bulk.applyAction': 'Auf {count} Benutzer anwenden',
+  'people.bulk.doneTitle': 'Mehrfachbearbeitung abgeschlossen',
+  'people.bulk.doneText':
+    'Die akzeptierten Änderungen wurden in einem Schritt angewendet. Übersprungene Benutzer wurden nicht geändert.',
+  'people.link.action': 'Verzeichnisidentität verknüpfen …',
+  'people.link.title': '{name} mit einer Verzeichnisidentität verknüpfen',
+  'people.link.confirm': 'Identität verknüpfen',
+  'people.link.intro':
+    'Das Verzeichnis konnte diese Identität nicht anlegen, weil ihre E-Mail-Adresse zu diesem lokalen Konto gehört. Durch die Verknüpfung wird das lokale Konto zu einem Verzeichniskonto.',
+  'people.link.localAccount': 'Lokales Konto',
+  'people.link.directoryIdentity': 'Verzeichnisidentität',
+  'people.link.chooseIdentity': 'Identität wählen',
+  'people.link.noConflicts':
+    'Kein Synchronisationslauf meldete eine Identität mit bereits verwendeter E-Mail-Adresse. Starten Sie zuerst eine Verzeichnissynchronisation.',
+  'people.link.identity': 'Identität aus den letzten Läufen',
+  'people.link.identityHint':
+    'Nur als „E-Mail bereits verwendet“ gemeldete Identitäten können verknüpft werden. Prüfen Sie, dass es dieselbe Person ist.',
+  'people.link.effect.password':
+    'Das lokale Passwort und alle offenen Einladungs- und Zurücksetzen-Links werden gelöscht.',
+  'people.link.effect.sessions': 'Alle Sitzungen dieser Person werden beendet.',
+  'people.link.effect.attributes':
+    'Namen, E-Mail-Adresse und Vorgesetzte gehören ab der nächsten Synchronisation dem Verzeichnis.',
+  'people.link.effect.roles': 'Das Konto darf keine Rolle besitzen; entfernen Sie Rollen zuerst.',
+  'people.link.effect.irreversible': 'Das lässt sich nicht rückgängig machen.',
+  'people.link.understood': 'Ich habe verstanden und möchte diese Identität verknüpfen.',
+  'people.link.error.roles':
+    'Das Konto besitzt Rollen. Entfernen Sie sie zuerst und verknüpfen Sie dann die Identität.',
+  'people.link.error.inUse': 'Diese Verzeichnisidentität ist bereits mit einem Konto verknüpft.',
+  'people.link.error.adminRequired': 'Das kann nur ein Plattform-Administrator.',
+  'entra.title': 'Microsoft Entra',
+  'entra.empty':
+    'Es ist keine Microsoft-Entra-Identität verknüpft. Diese Person kann sich nicht mit Microsoft anmelden.',
+  'entra.identity.tenant': 'Mandant {tenant}',
+  'entra.identity.object': 'Objekt-ID endet auf {suffix}',
+  'entra.identity.linkedAt': 'Verknüpft',
+  'entra.via.administrator': 'Von einer Administration verknüpft',
+  'entra.via.sourceAnchor': 'Mit dem Firmenverzeichnis abgeglichen',
+  'entra.via.provisioning': 'Bei der ersten Anmeldung angelegt',
+  'entra.via.cli': 'Mit dem Kommandozeilenwerkzeug verknüpft',
+  'entra.notice.sent': 'Erledigt. Die Person wurde per E-Mail informiert.',
+  'entra.notice.notSent':
+    'Erledigt. Es wurde keine E-Mail gesendet (kein Mailkanal oder keine Adresse).',
+  'entra.link.action': 'Microsoft-Entra-Identität verknüpfen…',
+  'entra.link.title': '{name} mit Microsoft Entra verknüpfen',
+  'entra.link.confirm': 'Identität verknüpfen',
+  'entra.link.intro':
+    'Kopieren Sie die Mandanten-ID und die Objekt-ID der Person aus dem Microsoft-Entra-Admin-Center (Benutzer, Übersicht). Turaco sucht Personen nie nach Name oder E-Mail-Adresse.',
+  'entra.link.tenant': 'Mandanten-ID',
+  'entra.link.tenantHint':
+    'Das Verzeichnis, in dem sich die Person anmeldet. Es werden nur für die Anmeldung zugelassene Mandanten akzeptiert.',
+  'entra.link.tenantInvalid':
+    'Geben Sie die Mandanten-ID als GUID ein (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',
+  'entra.link.object': 'Objekt-ID',
+  'entra.link.objectHint':
+    'Die Objekt-ID des Benutzers in Entra, nicht die E-Mail-Adresse oder der Benutzerprinzipalname.',
+  'entra.link.objectInvalid':
+    'Geben Sie die Objekt-ID als GUID ein (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',
+  'entra.link.required': 'Dieses Feld ist erforderlich.',
+  'entra.link.notConfigured':
+    'Die Microsoft-Entra-Anmeldung ist auf dieser Installation nicht eingerichtet, daher kann keine Identität verknüpft werden.',
+  'entra.link.takeover':
+    'Wer dieses Entra-Konto kontrolliert, kann sich als diese Person anmelden.',
+  'entra.link.effect.signin':
+    'Die Person erhält bei der nächsten Microsoft-Anmeldung alle Zugriffe dieses Kontos, einschließlich aller Rollen.',
+  'entra.link.effect.password':
+    'Ein lokales Passwort des Kontos wird gelöscht; alle Sitzungen und offenen Einladungslinks enden.',
+  'entra.link.effect.roles':
+    'Das Konto darf keine Rollen haben, solange es noch ein lokales Passwort hat.',
+  'entra.link.effect.notice':
+    'Die Person wird per E-Mail informiert, wenn ein Mailkanal eingerichtet ist.',
+  'entra.link.understood': 'Ich habe geprüft, dass dieses Entra-Konto zu {name} gehört.',
+  'entra.unlink.action': 'Entfernen',
+  'entra.unlink.title': 'Microsoft-Entra-Identität von {name} entfernen',
+  'entra.unlink.confirm': 'Identität entfernen',
+  'entra.unlink.body':
+    'Die Identität des Mandanten {tenant} (Objekt-ID endet auf {suffix}) entfernen?',
+  'entra.unlink.effect':
+    'Die Person kann sich nicht mehr mit Microsoft anmelden und ihre Microsoft-Sitzungen enden sofort. Die Person wird per E-Mail informiert, wenn ein Mailkanal eingerichtet ist.',
+  'entra.error.notConfigured':
+    'Die Microsoft-Entra-Anmeldung ist auf dieser Installation nicht eingerichtet.',
+  'entra.error.tenantNotAllowed':
+    'Dieser Mandant ist für die Microsoft-Entra-Anmeldung nicht zugelassen.',
+  'entra.error.inUse':
+    'Diese Microsoft-Entra-Identität ist bereits mit einem anderen Konto verknüpft.',
+  'entra.error.tenantAlreadyLinked':
+    'Das Konto hat bereits eine Microsoft-Entra-Identität dieses Mandanten. Entfernen Sie diese zuerst.',
+  'people.extend.action': 'Zugang verlängern …',
+  'people.extend.title': 'Zugang von {name} verlängern',
+  'people.extend.confirm': 'Zugang verlängern',
+  'people.extend.intro':
+    'Externe Konten enden an einem festen Datum. Die Verlängerung wird mit dem Grund im Auditprotokoll festgehalten.',
+  'people.extend.current': 'Aktuelles Zugangsende: {time}',
+  'people.extend.inactive':
+    'Das Konto ist inaktiv. Die Verlängerung aktiviert es nicht; aktivieren Sie es separat.',
+  'people.extend.until': 'Neuer letzter Zugangstag',
+  'people.extend.untilHint': 'Nach dem aktuellen Ende und höchstens 365 Tage ab heute.',
+  'people.extend.untilInvalid':
+    'Wählen Sie einen Tag nach dem aktuellen Ende und innerhalb von 365 Tagen.',
+  'people.extend.reason': 'Grund',
+  'people.extend.reason.contract_renewed': 'Vertrag verlängert',
+  'people.extend.reason.project_extended': 'Projekt verlängert',
+  'people.extend.reason.sponsor_request': 'Auf Wunsch der verantwortlichen Person',
+  'people.extend.reason.correction': 'Korrektur',
   'people.create.action': 'Neuer Benutzer',
   'people.create.title': 'Neuer lokaler Benutzer',
   'people.create.intro':
@@ -5722,8 +6005,11 @@ export const de: Record<MessageKey, string> = {
   'health.check.jobs.about': 'Wartende und fehlgeschlagene Jobs sowie geplante Jobs ohne Erfolg.',
   'health.check.outbox': 'Ereignis-Outbox',
   'health.check.outbox.about': 'Ereignisse, die auf Zustellung warten.',
-  'health.check.object_storage': 'Objektspeicher',
-  'health.check.object_storage.about': 'Speichert Anhänge und Dateien.',
+  'health.check.object_storage': 'Anhangspeicher',
+  'health.check.object_storage.about': 'Speichert verschlüsselte Anhänge und Dateien.',
+  'health.check.attachment_scanner': 'Virenprüfung der Anhänge',
+  'health.check.attachment_scanner.about':
+    'Prüft hochgeladene Dateien; sie bleiben bis zur sauberen Prüfung gesperrt.',
   'health.check.smtp': 'E-Mail-Versand',
   'health.check.smtp.about': 'Versendet Einladungen, Benachrichtigungen und Rücksetzlinks.',
   'health.check.directory': 'Verzeichnissynchronisation',
@@ -5757,8 +6043,20 @@ export const de: Record<MessageKey, string> = {
   'health.error.no_heartbeat': 'Der Worker hat sich noch nicht gemeldet.',
   'health.error.client_not_built':
     'Für diesen Anbieter gibt es in dieser Installation noch keinen Client, daher wird nichts ausgetauscht.',
+  'health.error.unverified':
+    'Der Client ist nach der Anbieterdokumentation umgesetzt und hat noch keinen erfolgreichen Aufruf gegen den echten Dienst abgeschlossen.',
+  'health.error.client_not_configured':
+    'Der Anbieter-Client ist nicht konfiguriert; die genannten Konfigurationsschlüssel setzen.',
+  'health.error.credential_expired': 'Die Zugangsdaten für diesen Anbieter sind abgelaufen.',
+  'health.error.last_attempt_failed': 'Der letzte Versuch beim Anbieter ist fehlgeschlagen.',
   'health.error.base_url_missing': 'Die öffentliche Basis-URL ist nicht gesetzt.',
   'health.error.database_unreachable': 'Die Datenbank ist nicht erreichbar.',
+  'health.error.storage_unreachable':
+    'Der Anhangspeicher ist nicht erreichbar oder nicht beschreibbar.',
+  'health.error.scanner_unreachable':
+    'Der Virenscanner ist nicht erreichbar; neue Anhänge warten ungeprüft und bleiben gesperrt.',
+  'health.error.scan_backlog': 'Anhänge warten seit langer Zeit auf die Virenprüfung.',
+  'health.error.scan_status_unreadable': 'Der Prüfstatus konnte nicht gelesen werden.',
   'health.error.no_observation': 'Es wurde noch nichts beobachtet.',
   'health.error.no_run_yet': 'Es gab noch keinen Lauf.',
   'health.error.check_panic': 'Die Prüfung selbst ist unerwartet fehlgeschlagen.',
@@ -5825,6 +6123,9 @@ export const de: Record<MessageKey, string> = {
   'setup.item.integrations': 'Integrationen',
   'setup.item.integrations.hint':
     'Jede Integration ist in Ordnung, deaktiviert oder übersprungen; ein Testadapter im Produktivbetrieb braucht Aufmerksamkeit.',
+  'setup.item.attachments': 'Anhänge',
+  'setup.item.attachments.hint':
+    'Dateispeicher und Virenscanner sind eingerichtet und gesund (optional).',
   'setup.item.modules': 'Module',
   'setup.item.modules.hint':
     'Bestätigen Sie einmal, dass die Modulvorgaben zu Ihrer Organisation passen.',
@@ -5903,4 +6204,51 @@ export const de: Record<MessageKey, string> = {
     'Namen dieser Zieltypen konnten nicht aufgelöst werden und werden als IDs angezeigt: {types}',
   'health.count.unknown': '{name}',
   // END F14 Administration UI
+  // BEGIN Administration settings
+  'settings.title': 'Einstellungen',
+  'settings.intro':
+    'Laufzeiteinstellungen, die Administratoren ohne Neustart ändern können. Änderungen werden protokolliert. Andere Serverinstanzen übernehmen eine Änderung nach bis zu zehn Sekunden.',
+  'settings.readOnly':
+    'Sie können diese Einstellungen einsehen, aber nicht ändern. Dafür ist die Administratorberechtigung nötig.',
+  'settings.notYetActive': 'Noch nicht wirksam',
+  'settings.default': 'Standard',
+  'settings.changedAt': 'Geändert',
+  'settings.reset': 'Zurücksetzen',
+  'settings.unit.minutes': 'Minuten',
+  'settings.unit.count': 'Zahl',
+  'settings.sensitiveWarning':
+    'Ticket-Titel können Patientendaten enthalten. Aktivieren Sie dies nur, wenn die Datenschutzprüfung es freigegeben hat.',
+  'settings.error.versionConflict':
+    'Die Einstellung wurde von jemand anderem geändert. Die aktuellen Werte wurden neu geladen; prüfen Sie sie und versuchen Sie es erneut.',
+  'settings.error.invalidValue': 'Der Wert ist für diese Einstellung nicht zulässig.',
+  'settings.error.outOfRange': 'Geben Sie eine ganze Zahl im zulässigen Bereich ein.',
+  'settings.error.notFound': 'Die Einstellung existiert nicht.',
+  'settings.module.auth': 'Anmeldung und Sitzungen',
+  'settings.module.teams': 'Microsoft Teams',
+  'settings.module.unknown': '{module}',
+  'settings.key.unknown': '{key}',
+  'settings.option.unknown': '{value}',
+  'settings.key.auth.session_absolute_timeout': 'Maximale Sitzungsdauer',
+  'settings.key.auth.session_absolute_timeout.hint':
+    'Zwischen 60 und 1440 Minuten. Gilt für Sitzungen, die nach der Änderung erstellt werden. Solange nichts gesetzt ist, gilt der Umgebungswert SESSION_ABSOLUTE_TIMEOUT.',
+  'settings.key.auth.entra_signout_mode': 'Abmeldung bei Microsoft Entra',
+  'settings.key.auth.entra_signout_mode.hint':
+    'Legt fest, ob die Abmeldung von Turaco auch die Microsoft-Entra-Sitzung beendet.',
+  'settings.option.auth.entra_signout_mode.never': 'Nie',
+  'settings.option.auth.entra_signout_mode.shared_only': 'Nur an gemeinsam genutzten Rechnern',
+  'settings.option.auth.entra_signout_mode.always': 'Immer',
+  'settings.key.auth.entra_provisioning': 'Kontoerstellung über Entra',
+  'settings.key.auth.entra_provisioning.hint':
+    'Legt fest, ob eine Anmeldung über Microsoft Entra ein Mitarbeiterkonto anlegen darf oder nur ein vorhandenes Konto verknüpft.',
+  'settings.option.auth.entra_provisioning.link_only': 'Nur vorhandene Konten verknüpfen',
+  'settings.option.auth.entra_provisioning.auto_employee': 'Mitarbeiterkonten automatisch anlegen',
+  'settings.key.teams.personal_enabled': 'Persönliche Teams-Benachrichtigungen verfügbar',
+  'settings.key.teams.personal_enabled.hint': 'Ausschalten, um den Kanal für alle zu deaktivieren.',
+  'settings.key.teams.personal_default': 'Persönliche Teams-Benachrichtigungen standardmäßig an',
+  'settings.key.teams.personal_default.hint':
+    'Gilt für Benutzer, die noch keine eigene Wahl getroffen haben.',
+  'settings.key.teams.cards_with_titles': 'Ticket-Titel in persönlichen Teams-Karten',
+  'settings.key.teams.cards_with_titles.hint':
+    'Standardmäßig aus. Titel können Patientendaten enthalten; erst nach der Datenschutzprüfung aktivieren.',
+  // END Administration settings
 };

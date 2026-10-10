@@ -12,6 +12,7 @@ import './modules/software/software.css';
 import './modules/deployments/deployments.css';
 import './modules/tickets/report-problem.css';
 import './modules/tickets/linking.css';
+import './platform/attachments/attachments.css';
 import './modules/catalog/catalog.css';
 // Screen refinements follow the shared foundation so equal-specificity rules are predictable.
 import './platform/ui/shell/shell.css';

@@ -84,8 +84,10 @@ type LoginDeps struct {
 	Kerberos KerberosValidator
 	// LocalAccounts resolves local accounts; required when LoginConfig.LocalEnabled.
 	LocalAccounts LocalAccountDirectory
-	Users         UserLocker
-	Logger        *slog.Logger
+	// Entra enables sign-in with Microsoft Entra ID (GET /auth/entra/start and /callback); nil disables it.
+	Entra  *EntraLoginDeps
+	Users  UserLocker
+	Logger *slog.Logger
 	// Now and Sleep are injectable for tests; defaults are time.Now and a
 	// context-aware sleep.
 	Now   func() time.Time
@@ -105,6 +107,7 @@ type loginHandler struct {
 	verifier  PasswordVerifier
 	krb       KerberosValidator
 	localDir  LocalAccountDirectory
+	entra     *EntraLoginDeps
 	users     UserLocker
 	cfg       LoginConfig
 	logger    *slog.Logger
@@ -125,7 +128,7 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	}
 	h := &loginHandler{
 		pool: d.Pool, sessions: d.Sessions, throttle: d.Throttle,
-		directory: d.Directory, verifier: d.Verifier, krb: d.Kerberos, users: d.Users, localDir: d.LocalAccounts,
+		directory: d.Directory, verifier: d.Verifier, krb: d.Kerberos, users: d.Users, localDir: d.LocalAccounts, entra: d.Entra,
 		cfg: cfg, logger: d.Logger, now: d.Now, sleep: d.Sleep,
 	}
 	if h.logger == nil {
@@ -150,6 +153,8 @@ func RegisterLogin(mux *http.ServeMux, d LoginDeps, cfg LoginConfig) {
 	mux.Handle("POST /api/v1/auth/login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.login))))
 	mux.Handle("POST /api/v1/auth/emergency-login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.emergencyLogin))))
 	mux.Handle("GET /api/v1/auth/kerberos", httpx.NoStore(http.HandlerFunc(h.kerberos)))
+	mux.Handle("GET /api/v1/auth/entra/start", httpx.NoStore(http.HandlerFunc(h.entraStart)))
+	mux.Handle("GET /api/v1/auth/entra/callback", httpx.NoStore(http.HandlerFunc(h.entraCallback)))
 	mux.Handle("POST /api/v1/auth/local-login", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.localLogin))))
 	mux.Handle("POST /api/v1/auth/credential-tokens/redeem", httpx.NoStore(RequireSameOrigin(http.HandlerFunc(h.redeem))))
 }
@@ -173,6 +178,7 @@ func (h *loginHandler) methods(w http.ResponseWriter, _ *http.Request) {
 		"kerberos":  h.kerberosEnabled(),
 		"emergency": h.cfg.EmergencyEnabled,
 		"local":     h.localEnabled(),
+		"entra":     h.entraEnabled(),
 	})
 }
 

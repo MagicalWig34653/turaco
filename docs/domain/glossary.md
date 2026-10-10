@@ -159,6 +159,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Module Switch** — the runtime on/off state of one optional Module (versioned, audited, with a reason code). Off hides the module's API and pauses its jobs but keeps its data. It never bypasses the module's own preconditions (startup gate, privacy record, provider); a switch that is on while a precondition is unmet is shown as `blocked`.
 - **Recurring Task Definition** — a template plus schedule rule that generates real Tasks; neither a Scheduled Job (technical timed execution) nor a Workflow (multi-step process). Generated Tasks keep a reference to their definition and the run they stand for.
 - **Notification Delivery** — the state of sending one Notification through one channel (for example email), separate from the Notification and from the state of the record it is about.
+- **Attachment** — a file attached to a record of another module (ticket, knowledge article), stored encrypted outside the database and addressed by a generated object id. Its original file name is data only. It has a scan status (`pending`, `clean`, `infected`, `failed`) and is downloadable only when `clean`; the owning module decides who may read, attach and remove ([ADR-0037](../decisions/ADR-0037-file-storage-and-attachments.md)).
 - **Notification Preference** — a User's opt-out of a channel for a Notification category.
 - **Rule** — small deterministic condition/action automation.
 - **Workflow** — multi-step business process with state.

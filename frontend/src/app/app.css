@@ -1197,3 +1197,14 @@ html[data-theme='cyberpunk'] .badge {
 .table-detail td:has(button) {
   white-space: nowrap;
 }
+
+.login-entra {
+  margin: 0 0 var(--space-3, 0.75rem);
+}
+
+.login-entra .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

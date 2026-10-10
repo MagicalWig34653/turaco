@@ -28,8 +28,8 @@ export type PaletteSearch = (
   tooShort?: boolean;
 }>;
 
-/** Object search starts here; shorter text only filters pages (the server refuses shorter search text). */
-export const minObjectQuery = 3;
+/** Record search starts here; shorter text only filters pages (the server refuses shorter search text). */
+export const minObjectQuery = 2;
 
 /** Navigation results first, object results after them; exact object hits lead everything. */
 export function arrangeResults(

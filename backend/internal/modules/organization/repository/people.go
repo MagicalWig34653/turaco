@@ -91,7 +91,11 @@ func finishPeople[T any](v T, err error, what string) (T, error) {
 		errors.Is(err, application.ErrTargetInactive), errors.Is(err, application.ErrExternalNeedsPermission), errors.Is(err, application.ErrNoGuards),
 		errors.Is(err, application.ErrUserNotActive), errors.Is(err, application.ErrTeamInactive),
 		errors.Is(err, application.ErrMailNotConfigured), errors.Is(err, application.ErrBaseURLNotConfigured), errors.Is(err, application.ErrMailFailed),
-		errors.Is(err, application.ErrNoEmail):
+		errors.Is(err, application.ErrNoEmail),
+		errors.Is(err, application.ErrAdminRequired), errors.Is(err, application.ErrDirectoryLinkRoles), errors.Is(err, application.ErrDirectoryIdentityInUse),
+		errors.Is(err, application.ErrImportStale), errors.Is(err, application.ErrForbidden),
+		errors.Is(err, application.ErrEntraNotConfigured), errors.Is(err, application.ErrEntraTenantNotAllowed),
+		errors.Is(err, application.ErrEntraIdentityTaken), errors.Is(err, application.ErrEntraTenantAlreadyUsed):
 		return zero, err
 	default:
 		return zero, fmt.Errorf("%s: %w", what, err)
@@ -117,6 +121,17 @@ func (r *Repository) dominance(ctx context.Context, tx pgx.Tx, c application.Cal
 func (r *Repository) CreateLocalUser(ctx context.Context, c application.Caller, in application.NewUserInput) (application.User, error) {
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.createLocalUserTx(ctx, tx, c, in)
+		return err
+	})
+	return finishPeople(out, err, "create local user")
+}
+
+// createLocalUserTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) createLocalUserTx(ctx context.Context, tx pgx.Tx, c application.Caller, in application.NewUserInput) (application.User, error) {
+	var out application.User
+	err := func() error {
 		if in.DepartmentID != nil {
 			if err := requireActive(ctx, tx, "departments", *in.DepartmentID); err != nil {
 				return err
@@ -145,8 +160,8 @@ func (r *Repository) CreateLocalUser(ctx context.Context, c application.Caller, 
 		return r.record(ctx, tx, c, "organization.user.created_local", "user", id, nil,
 			map[string]any{"status": out.Status, "statusSource": out.StatusSource, "origin": out.Origin, "accountKind": out.AccountKind,
 				"departmentId": out.DepartmentID, "primaryLocationId": out.PrimaryLocationID}, nil)
-	})
-	return finishPeople(out, err, "create local user")
+	}()
+	return out, err
 }
 
 // requireActive checks that the referenced department or location exists and is active (table is a constant).
@@ -172,6 +187,17 @@ func requireActive(ctx context.Context, tx pgx.Tx, table, id string) error {
 func (r *Repository) UpdateProfile(ctx context.Context, c application.Caller, id string, in application.ProfileChange) (application.User, error) {
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.updateProfileTx(ctx, tx, c, id, in)
+		return err
+	})
+	return finishPeople(out, err, "update profile")
+}
+
+// updateProfileTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) updateProfileTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, in application.ProfileChange) (application.User, error) {
+	var out application.User
+	err := func() error {
 		before, err := lockUser(ctx, tx, id)
 		if err != nil {
 			return err
@@ -243,8 +269,8 @@ func (r *Repository) UpdateProfile(ctx context.Context, c application.Caller, id
 			return fmt.Errorf("reload user: %w", err)
 		}
 		return r.record(ctx, tx, c, "organization.user.profile_changed", "user", id, nil, map[string]any{"version": out.Version}, meta)
-	})
-	return finishPeople(out, err, "update profile")
+	}()
+	return out, err
 }
 
 func profileFields(in application.ProfileChange) []string {
@@ -286,6 +312,17 @@ func (r *Repository) setUserLink(ctx context.Context, c application.Caller, id s
 	check func(ctx context.Context, tx pgx.Tx, before application.User, target string) error, current func(application.User) *string) (application.User, error) {
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.setUserLinkTx(ctx, tx, c, id, version, column, action, target, check, current)
+		return err
+	})
+	return finishPeople(out, err, "set "+column)
+}
+
+// setUserLinkTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) setUserLinkTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, column, action string, target *string, check func(ctx context.Context, tx pgx.Tx, before application.User, target string) error, current func(application.User) *string) (application.User, error) {
+	var out application.User
+	err := func() error {
 		before, err := lockUser(ctx, tx, id)
 		if err != nil {
 			return err
@@ -312,8 +349,8 @@ func (r *Repository) setUserLink(ctx context.Context, c application.Caller, id s
 			return fmt.Errorf("reload user: %w", err)
 		}
 		return r.record(ctx, tx, c, action, "user", id, map[string]any{column: current(before)}, map[string]any{column: target, "version": out.Version}, nil)
-	})
-	return finishPeople(out, err, "set "+column)
+	}()
+	return out, err
 }
 
 func (r *Repository) SetDepartment(ctx context.Context, c application.Caller, id string, version int, departmentID *string) (application.User, error) {
@@ -341,6 +378,17 @@ func (r *Repository) SetManager(ctx context.Context, c application.Caller, id st
 	}
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.setManagerTx(ctx, tx, c, id, version, managerID)
+		return err
+	})
+	return finishPeople(out, err, "set manager")
+}
+
+// setManagerTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) setManagerTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, managerID *string) (application.User, error) {
+	var out application.User
+	err := func() error {
 		if err := lockTree(ctx, tx, treeLockManagers); err != nil {
 			return err
 		}
@@ -398,13 +446,24 @@ func (r *Repository) SetManager(ctx context.Context, c application.Caller, id st
 		}
 		return r.record(ctx, tx, c, "organization.user.manager_set", "user", id,
 			map[string]any{"managerUserId": before.ManagerUserID}, map[string]any{"managerUserId": managerID, "version": out.Version}, nil)
-	})
-	return finishPeople(out, err, "set manager")
+	}()
+	return out, err
 }
 
 func (r *Repository) ChangeStatus(ctx context.Context, c application.Caller, id string, version int, op, reason string) (application.User, error) {
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = r.changeStatusTx(ctx, tx, c, id, version, op, reason)
+		return err
+	})
+	return finishPeople(out, err, "change user status")
+}
+
+// changeStatusTx runs the operation inside the caller's transaction (single operations, imports and bulk operations share it).
+func (r *Repository) changeStatusTx(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, op, reason string) (application.User, error) {
+	var out application.User
+	err := func() error {
 		if err := r.requireGuards(); err != nil {
 			return err
 		}
@@ -494,8 +553,8 @@ func (r *Repository) ChangeStatus(ctx context.Context, c application.Caller, id 
 				Payload: map[string]any{"userId": id, "reasonCode": reason}})
 		}
 		return nil
-	})
-	return finishPeople(out, err, "change user status")
+	}()
+	return out, err
 }
 
 // IssueCredentialLink issues an invitation (never-activated local account) or reset (activated local account).
@@ -534,6 +593,15 @@ func (r *Repository) IssueCredentialLink(ctx context.Context, c application.Call
 		}
 		if u.Status != application.StatusActive {
 			return application.ErrWrongState
+		}
+		// A User with an Entra identity signs in through Entra: a new password would reopen the pre-provisioning path
+		// of review rule R5. Unlink the Entra identity first.
+		var entraLinked bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organization.external_identities WHERE user_id = $1::uuid AND provider_key LIKE 'entra:%')`, id).Scan(&entraLinked); err != nil {
+			return fmt.Errorf("check entra identity: %w", err)
+		}
+		if entraLinked {
+			return application.ErrDirectoryUser
 		}
 		if r.mailer.MailConfigured() && (u.PrimaryEmail == nil || *u.PrimaryEmail == "") {
 			return application.ErrNoEmail
