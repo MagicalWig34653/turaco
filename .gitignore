@@ -28,3 +28,10 @@ tmp/
 
 # Public website build output
 site/dist/
+
+# Stray build outputs of go build in backend/
+/backend/turaco-api
+/backend/turaco-worker
+/backend/turaco-admin
+/backend/turaco-migrate
+/backend/turaco-docgen
