@@ -32,7 +32,7 @@
 - `platform/authentication` gains an OIDC login port and a short-lived login-transaction table; `integrations/entra` holds the Entra adapter, a Fake IdP for tests and `NotConfigured`; organization gains admin link/unlink operations for Entra identities; sessions gain an assurance attribute.
 - The evaluator gains one rule (high-risk permissions need MFA assurance in Entra sessions); `review-security` reviews login, linking and the evaluator change before merge.
 - New health checks and deployment configuration keys; operators must monitor credential expiry and egress.
-- Open product decisions are listed in the [F15 design](../product/f15-microsoft-integration-design.md#open-questions-for-the-product-owner).
+- Open product decisions are listed in the [F15 design](../product/f15-microsoft-integration-design.md#decisions-of-the-product-owner-2026-10-10).
 
 
 ## Implementation note (2026-10-10)
