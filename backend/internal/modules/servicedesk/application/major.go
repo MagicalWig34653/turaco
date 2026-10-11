@@ -120,6 +120,19 @@ type MajorService struct {
 	store  MajorStore
 	access TicketAccess
 	dir    MajorDirectory
+	perms  OwnerPermissions
+}
+
+// OwnerPermissions answers what a User may do, so an owner is someone who can actually act on the incident.
+type OwnerPermissions interface {
+	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
+}
+
+// WithOwnerPermissions makes SetOwner require that the owner holds majorincidents.manage: an owner without it
+// could not post an update, set the next update time or change the incident they are responsible for.
+func (s *MajorService) WithOwnerPermissions(p OwnerPermissions) *MajorService {
+	s.perms = p
+	return s
 }
 
 // WithDirectory sets the Organization contract that validates owners and affected Locations and names them.
@@ -655,6 +668,15 @@ func (s *MajorService) SetOwner(ctx context.Context, c Caller, manage bool, id s
 			}
 			if !ok[o] {
 				return MajorIncident{}, invalid("owner must be an active user")
+			}
+			if s.perms != nil {
+				held, err := s.perms.Permissions(ctx, o)
+				if err != nil {
+					return MajorIncident{}, err
+				}
+				if _, can := held["majorincidents.manage"]; !can {
+					return MajorIncident{}, invalid("the owner must hold the permission to manage major incidents")
+				}
 			}
 		}
 	}

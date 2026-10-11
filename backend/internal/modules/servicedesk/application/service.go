@@ -37,6 +37,8 @@ type Service struct {
 	// participants and externals share Tickets with external accounts (WithExternalAccounts); nil without them.
 	participants ParticipantStore
 	externals    ExternalDirectory
+	// callbacks creates the Tasks of scheduled callbacks (WithCallbackTasks); nil without it.
+	callbacks CallbackTasks
 }
 
 // NewService builds the service. A store that also implements QueueStore enables Queues; without it every Ticket

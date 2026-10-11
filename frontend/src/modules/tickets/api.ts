@@ -105,6 +105,12 @@ export const ticketsApi = {
       `/tickets/${enc(id)}/participant-candidates`,
       { signal, query: { q } },
     ),
+  /** Schedules a callback: a Task for the ticket, due at `dueAt` (ISO), assigned to `assigneeId` (default: me). */
+  scheduleCallback: (id: string, input: { dueAt: string; assigneeId?: string }) =>
+    api.post<{ taskId: string; dueAt: string; assigneeId: string }>(
+      `/tickets/${enc(id)}/callback`,
+      input,
+    ),
   /** Corrects the affected person's location; null clears it. */
   setLocation: (id: string, expectedVersion: number, locationId: string | null) =>
     api.post<Ticket>(`/tickets/${enc(id)}/location`, { expectedVersion, locationId }),

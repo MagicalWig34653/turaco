@@ -38,6 +38,7 @@ import { aliasList, canOfferMove, ticketQueueName } from './queueModel';
 import { reportedImpactKey } from './impactModel';
 import { organizationApi } from '../organization/api';
 import { TicketMoveDialog } from './TicketMoveDialog';
+import { TicketCallbackDialog } from './TicketCallbackDialog';
 import { TicketLocationDialog } from './TicketLocationDialog';
 import { TicketChangesCard } from './TicketChangesCard';
 import { TicketParticipantsCard } from './TicketParticipantsCard';
@@ -322,6 +323,7 @@ function TicketWorkspace({ id }: { id: string }) {
       | 'assign'
       | 'move'
       | 'location'
+      | 'callback'
       | 'linkProblem'
       | 'linkIncident'
       | 'duplicate';
@@ -434,6 +436,8 @@ function TicketWorkspace({ id }: { id: string }) {
   const ops = abilities.transition ? (ticket.allowedOperations as TicketOperation[]) : [];
   const textKey = (op: TicketOperation) => `tickets.action.${op}` as MessageKey;
   const primaryOp = primaryTicketOperation(ops);
+  // Waiting is an everyday action of the person working the ticket: a button of its own, not hidden under More.
+  const showWaitButton = ops.includes('wait') && primaryOp !== 'wait';
   const focusComposer = () => {
     setView('conversation');
     window.requestAnimationFrame(() => composer.current?.querySelector('textarea')?.focus());
@@ -547,12 +551,16 @@ function TicketWorkspace({ id }: { id: string }) {
                         ticket.names[key] ??
                         t('ticketWorkspace.unknownPerson'))
                       : '';
-                  const text = describeHistory(entry, historyName, (kind, value) =>
-                    t(
-                      (kind === 'status'
-                        ? `tickets.status.${value}`
-                        : `tickets.priority.${value}`) as MessageKey,
-                    ),
+                  const text = describeHistory(
+                    entry,
+                    historyName,
+                    (kind, value) =>
+                      t(
+                        (kind === 'status'
+                          ? `tickets.status.${value}`
+                          : `tickets.priority.${value}`) as MessageKey,
+                      ),
+                    (iso) => formatDateTime(locale, iso),
                   );
                   const via = viaKey(entry.via);
                   const reason = historyReason(entry);
@@ -724,9 +732,22 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t(textKey(primaryOp))}
                   </Button>
                 ) : null}
+                {showWaitButton ? (
+                  <Button disabled={busyOp !== null} onClick={() => start('wait')}>
+                    {t(textKey('wait'))}
+                  </Button>
+                ) : null}
                 {abilities.assign ? (
                   <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'assign' })}>
                     {t('tickets.action.assign')}
+                  </Button>
+                ) : null}
+                {abilities.scheduleCallback ? (
+                  <Button
+                    disabled={busyOp !== null}
+                    onClick={() => setDialog({ kind: 'callback' })}
+                  >
+                    {t('ticketCallback.action')}
                   </Button>
                 ) : null}
                 {canMove ? (
@@ -738,14 +759,14 @@ function TicketWorkspace({ id }: { id: string }) {
                   <Button onClick={focusComposer}>{t('ticketWorkspace.reply')}</Button>
                 ) : null}
               </div>
-              {ops.some((op) => op !== primaryOp) ? (
+              {ops.some((op) => op !== primaryOp && !(showWaitButton && op === 'wait')) ? (
                 <Button
                   disabled={busyOp !== null}
                   aria-haspopup="menu"
                   onClick={(event) =>
                     menu.openAtElement(
                       ops
-                        .filter((op) => op !== primaryOp)
+                        .filter((op) => op !== primaryOp && !(showWaitButton && op === 'wait'))
                         .map((op) => ({
                           id: op,
                           label: t(textKey(op)),
@@ -895,7 +916,11 @@ function TicketWorkspace({ id }: { id: string }) {
             </Card>
           ) : null}
           {staffReader ? (
-            <TicketChangesCard ticketId={ticket.id} canEdit={manage} onChanged={history.reload} />
+            <TicketChangesCard
+              ticketId={ticket.id}
+              canEdit={abilities.internalComment}
+              onChanged={history.reload}
+            />
           ) : null}
           {ticket.abilities?.internalComment ? (
             <TicketParticipantsCard ticketId={ticket.id} />
@@ -1042,6 +1067,9 @@ function TicketWorkspace({ id }: { id: string }) {
             done();
           }}
         />
+      ) : null}
+      {dialog?.kind === 'callback' ? (
+        <TicketCallbackDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
       ) : null}
       {dialog?.kind === 'location' ? (
         <TicketLocationDialog

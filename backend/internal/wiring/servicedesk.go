@@ -13,6 +13,7 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	servicedeskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 )
@@ -32,7 +33,9 @@ func (d deviceAdapter) Snapshot(ctx context.Context, assetID, holder string) (ma
 
 // MajorIncidents builds the Major Incident service.
 func MajorIncidents(pool *pgxpool.Pool) *servicedeskapp.MajorService {
-	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool)).WithDirectory(orgpublic.NewWorkDirectory(orgrepository.New(pool)))
+	org := orgrepository.New(pool)
+	return servicedeskapp.NewMajorService(servicedeskrepository.New(pool)).WithTicketAccess(ServiceDesk(pool)).WithDirectory(orgpublic.NewWorkDirectory(org)).
+		WithOwnerPermissions(roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org)))
 }
 
 // Problems builds the Problem service.
@@ -98,7 +101,8 @@ func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	members := queueMemberships{teams: dir, eval: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org))}
 	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).
 		WithQueryEngine(QueryEngine(pool)).WithMemberships(members).WithChanges(changespublic.NewChanges(Changes(pool)), Relationships(), pool).
-		WithExternalAccounts(servicedeskrepository.New(pool), externalAccounts{dir})
+		WithExternalAccounts(servicedeskrepository.New(pool), externalAccounts{dir}).
+		WithCallbackTasks(servicedeskpublic.NewCallbackTasks(taskspublicCreator(pool, dir, servicedeskapp.TaskContextType)))
 }
 
 // gatewayAdapter adapts the Autotask adapter to the Service Desk port.

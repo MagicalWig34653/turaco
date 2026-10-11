@@ -3113,6 +3113,7 @@ export const de: Record<MessageKey, string> = {
   'nav.softwareRollouts': 'Laufende Verteilungen',
   'tasks.fact.context': 'Gehört zu',
   'tasks.context.deployment': 'Verteilung öffnen',
+  'tasks.context.ticket': 'Ticket öffnen',
   'deployments.field.createTasks': 'Folgeaufgaben erstellen',
   'deployments.field.createTasksHint':
     'Turaco legt eine Aufgabe an, wenn sich Fehler häufen oder ein Ring angehalten wird, solange diese Verteilung läuft.',
@@ -4835,6 +4836,15 @@ export const de: Record<MessageKey, string> = {
   'ticketLocation.results': 'Standorte',
   'ticketLocation.empty': 'Kein Standort gefunden.',
   'ticketLocation.clear': 'Standort entfernen',
+  'ticketHistory.callbackScheduled': 'Rückruf für {assignee} geplant, fällig {due}.',
+  'ticketCallback.action': 'Rückruf planen',
+  'ticketCallback.title': 'Rückruf planen',
+  'ticketCallback.hint':
+    'Legt eine Aufgabe zu diesem Ticket an. Sie erscheint mit der Ticketnummer in Meine Arbeit der zugewiesenen Person.',
+  'ticketCallback.due': 'Fälligkeit (Datum und Uhrzeit)',
+  'ticketCallback.dueHint': 'Muss in der Zukunft liegen.',
+  'ticketCallback.assignee': 'Zugewiesen an',
+  'ticketCallback.submit': 'Planen',
   'ticketMention.label': 'Kolleginnen und Kollegen erwähnen',
   'ticketMention.hint': 'Suche nach Namen (mindestens 3 Zeichen).',
   'ticketMention.limit': 'Sie können höchstens {max} Personen erwähnen.',
