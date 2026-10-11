@@ -18,7 +18,7 @@ describe('toAuditFilter', () => {
   });
   it('excludes login events when selected', () => {
     expect(toAuditFilter({ ...emptyForm, excludeLoginEvents: true })).toEqual({
-      excludeActionPrefix: 'auth.',
+      excludeActionPrefix: 'auth.session.',
     });
   });
 });

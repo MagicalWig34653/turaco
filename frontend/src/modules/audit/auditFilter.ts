@@ -57,7 +57,7 @@ export function toAuditFilter(form: FormState): AuditFilter {
   if (form.actionPrefix.trim()) filter.actionPrefix = form.actionPrefix.trim();
   // The server refuses `module` together with `actionPrefix`; the explicit prefix wins.
   else if (form.module) filter.module = form.module;
-  if (form.excludeLoginEvents) filter.excludeActionPrefix = 'auth.';
+  if (form.excludeLoginEvents) filter.excludeActionPrefix = 'auth.session.'; // routine session noise only; break-glass and failed logins stay visible
   if (form.targetType.trim()) filter.targetType = form.targetType.trim();
   if (form.targetId.trim()) filter.targetId = form.targetId.trim();
   if (form.actorId.trim()) filter.actorId = form.actorId.trim();
