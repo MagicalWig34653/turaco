@@ -7,6 +7,35 @@ import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { incidentsApi } from './api';
+import { incidentFreshness } from './incidentModel';
+
+function FreshnessLine({
+  incident,
+}: {
+  incident: { nextUpdateDue: string | null; updatedAt: string };
+}) {
+  const { t, locale } = useI18n();
+  const f = incidentFreshness(incident);
+  const time = (iso: string) =>
+    new Date(iso).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
+  if (f.kind === 'overdue') {
+    return (
+      <p className="incident-freshness is-overdue">
+        {t('incidents.fresh.overdue', { time: time(f.since) })}
+      </p>
+    );
+  }
+  if (f.kind === 'planned') {
+    return (
+      <p className="incident-freshness">{t('incidents.fresh.planned', { time: time(f.due) })}</p>
+    );
+  }
+  return (
+    <p className="incident-freshness is-overdue">
+      {t('incidents.fresh.none', { hours: f.ageHours })}
+    </p>
+  );
+}
 
 /**
  * Known outages shown before a ticket is raised, so people can follow an incident instead of
@@ -45,6 +74,7 @@ export function IncidentBanner({ compact = false }: { compact?: boolean }) {
               · {t(`incidents.status.${m.status}`)}
             </p>
             <p>{m.summary}</p>
+            <FreshnessLine incident={m} />
           </div>
           <Button onClick={() => void follow(m.id, !m.subscribed)}>
             {t(m.subscribed ? 'incidents.unfollow' : 'incidents.follow')}

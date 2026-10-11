@@ -249,6 +249,22 @@ func (s *Service) UnreadCountOnly(ctx context.Context, userID string, prefixes [
 	return n, nil
 }
 
+// MarkReadByLink marks every unread notification of the given categories that links to the object read, for all
+// recipients: the object was dealt with, so its notifications no longer ask for attention (an approval that was
+// decided stays unread for the other approvers otherwise). It returns the number of notifications changed.
+func (s *Service) MarkReadByLink(ctx context.Context, linkType, linkID string, categories []string) (int, error) {
+	if linkType == "" || !validUUID(linkID) || len(categories) == 0 {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE platform.notifications SET read_at = now()
+		WHERE link_type = $1 AND link_id = $2::uuid AND read_at IS NULL AND category = ANY($3::text[])`, linkType, linkID, categories)
+	if err != nil {
+		return 0, fmt.Errorf("mark notifications read by link: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // MarkRead marks one of the recipient's notifications read (idempotent).
 // Another User's or an unknown id is ErrNotFound.
 func (s *Service) MarkRead(ctx context.Context, userID, id string) error {

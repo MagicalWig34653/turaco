@@ -283,7 +283,7 @@ func main() {
 	orgtransport.RegisterLookup(mux, orgapp.NewPeopleLookup(orgReader), cfg.PeopleLookupEnabled, sessionAuth, logger)
 	tasksSvc := tasksapp.NewService(tasksrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil).WithQueryEngine(wiring.QueryEngine(pool))
 	taskstransport.Register(mux, tasksSvc, sessionAuth, logger)
-	approvalstransport.Register(mux, approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
+	approvalsService := approvalsapp.NewService(approvalsrepository.New(pool), orgpublic.NewWorkDirectory(orgReader), nil)
 	productsRepo := productsrepository.New(pool)
 	requeststransport.Register(mux, wiring.Requests(pool), sessionAuth, logger)
 	assetstransport.Register(mux, wiring.Assets(pool), sessionAuth, logger)
@@ -354,6 +354,8 @@ func main() {
 		logger.Error("register notification categories", "error", err)
 		os.Exit(1)
 	}
+	// A decided approval stops asking for attention in every approver's notifications.
+	approvalstransport.Register(mux, approvalsService, sessionAuth, logger, approvalstransport.WithResolver(notifications.NewService(pool, categories)))
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
 	notificationstransport.RegisterChannelRoutes(mux, notifications.NewService(pool, categories).WithChannelPosts(wiring.TeamsChannelOptions(teamsSender, moduleSvc)), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)

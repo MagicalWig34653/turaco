@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -140,17 +141,21 @@ func (r *Repository) List(ctx context.Context, q application.Query) (application
 }
 
 // substringMatch returns " OR (...)" matching the words of text as substrings, or "" when no word has three
-// characters. Every word must match unless any is set. Wildcards of the user's text are escaped.
+// characters. Words are split at spaces, hyphens and slashes ("Gast-WLAN" is two words), and German umlauts and
+// the sharp s are folded on both sides ("Gast" finds "Gäste"). Every word must match unless any is set.
+// Wildcards of the user's text are escaped. The folded comparison does not use the trigram indexes; the
+// article corpus is small, and the full-text part of the search stays indexed.
 func substringMatch(text string, any bool, args *[]any) string {
 	const maxWords = 8
 	var parts []string
-	for _, w := range strings.Fields(text) {
+	words := strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || r == '-' || r == '/' })
+	for _, w := range words {
 		if utf8.RuneCountInString(w) < 3 || len(parts) == maxWords {
 			continue
 		}
-		*args = append(*args, "%"+likeEscape(w)+"%")
+		*args = append(*args, "%"+likeEscape(foldGerman(w))+"%")
 		n := len(*args)
-		parts = append(parts, fmt.Sprintf(`(title ILIKE $%[1]d ESCAPE '\' OR summary ILIKE $%[1]d ESCAPE '\' OR body ILIKE $%[1]d ESCAPE '\' OR reference ILIKE $%[1]d ESCAPE '\')`, n))
+		parts = append(parts, fmt.Sprintf(`(%[2]s(title) ILIKE $%[1]d ESCAPE '\' OR %[2]s(summary) ILIKE $%[1]d ESCAPE '\' OR %[2]s(body) ILIKE $%[1]d ESCAPE '\' OR %[2]s(reference) ILIKE $%[1]d ESCAPE '\')`, n, foldSQL))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -160,6 +165,14 @@ func substringMatch(text string, any bool, args *[]any) string {
 		glue = " OR "
 	}
 	return " OR (" + strings.Join(parts, glue) + ")"
+}
+
+// foldSQL is the SQL function that folds a column the way foldGerman folds the search word.
+const foldSQL = "knowledge.fold_de"
+
+// foldGerman lower-cases a word and replaces German umlauts and the sharp s by their base letters.
+func foldGerman(w string) string {
+	return strings.NewReplacer("ä", "a", "ö", "o", "ü", "u", "ß", "ss").Replace(strings.ToLower(w))
 }
 
 func likeEscape(s string) string {

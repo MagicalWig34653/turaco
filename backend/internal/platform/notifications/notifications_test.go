@@ -294,3 +294,31 @@ func TestCategoryRestrictionForExternalAccounts(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkReadByLinkClearsTheObjectsNotificationsForEveryRecipient(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.create(f.intent(f.a, "l1"))
+	f.create(f.intent(f.b, "l1"))
+	other := f.intent(f.a, "l2")
+	other.Category, other.LinkID = "task.completed", f.a // another category and another object
+	f.create(other)
+	if n, err := f.svc.MarkReadByLink(ctx, "task", f.b, []string{"task.assigned"}); err != nil || n != 2 {
+		t.Fatalf("marked %d %v, want 2 (both recipients of the object)", n, err)
+	}
+	if n, _ := f.svc.UnreadCount(ctx, f.a); n != 1 {
+		t.Errorf("an unrelated notification must stay unread: %d", n)
+	}
+	if n, _ := f.svc.UnreadCount(ctx, f.b); n != 0 {
+		t.Errorf("the object's notification must be read: %d", n)
+	}
+	// Idempotent, and degenerate input changes nothing.
+	for _, tc := range []struct {
+		typ, id string
+		cats    []string
+	}{{"task", f.b, []string{"task.assigned"}}, {"", f.b, []string{"task.assigned"}}, {"task", "not-a-uuid", []string{"task.assigned"}}, {"task", f.b, nil}} {
+		if n, err := f.svc.MarkReadByLink(ctx, tc.typ, tc.id, tc.cats); err != nil || n != 0 {
+			t.Errorf("%+v: %d %v", tc, n, err)
+		}
+	}
+}
