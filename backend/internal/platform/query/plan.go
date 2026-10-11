@@ -40,6 +40,10 @@ type Options struct {
 	// present (for example "the reporter is one of these Users", resolved from the text through another module's
 	// public contract). SQL uses ? placeholders bound to Args.
 	SearchExtra *SearchExtra
+	// SearchSkip names searchable catalog fields the search text must not match for this request (a module uses it
+	// where matching a field would reveal what the caller may not know, for example a stored number). An explicit
+	// filter or sort on the field is unaffected.
+	SearchSkip []string
 }
 
 // SearchExtra is one extra disjunct of the search.
@@ -192,7 +196,7 @@ func (e *Engine) Prepare(cat *Catalog, subj Subject, req Request, scope string, 
 		}
 		f.Sort = req.Sort
 	}
-	c := &compiler{cat: cat, subj: subj, extra: opts.SearchExtra, lenient: opts.Lenient, now: subj.now(), loc: subj.loc(), used: map[string]bool{}}
+	c := &compiler{cat: cat, subj: subj, extra: opts.SearchExtra, searchSkip: opts.SearchSkip, lenient: opts.Lenient, now: subj.now(), loc: subj.loc(), used: map[string]bool{}}
 	var where []string
 	if f.Root != nil {
 		r, err := c.node(*f.Root, 1, "root")

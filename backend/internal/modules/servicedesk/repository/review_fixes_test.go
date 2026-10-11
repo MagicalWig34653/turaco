@@ -350,3 +350,31 @@ func (e *env) ticketAccess() *application.Service {
 	}}
 	return application.NewService(repository.New(e.pool), dir{active: map[string]bool{e.alice: true, e.bob: true, e.agent: true, e.viewer: true}}, device{}).WithMemberships(mem)
 }
+
+// A requester finds their own Ticket by its title after it moved to an internal desk (the text search must not
+// depend on the stored number of that desk), without the internal number ever matching.
+func TestRequesterFindsOwnMovedTicketByTitleButNotByHiddenNumber(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	pub, internal := e.queue(application.QueuePublic), e.queue(application.QueueInternal)
+	alice := e.employee(e.alice)
+	own := e.raise(alice, pub)
+	moved, err := e.svc.MoveToQueue(ctx, e.c(e.global.UserID), e.global, own.ID, &own.Version, internal.ID, "misrouted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(text string) bool {
+		t.Helper()
+		page, err := e.svc.Query(ctx, alice, query.Request{Search: text, Limit: 50}, false, nil)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		return ids(page.Items)[own.ID]
+	}
+	if !find(own.Title) {
+		t.Error("the requester must find their moved Ticket by its title")
+	}
+	if find(moved.Reference) || find(internal.Prefix) {
+		t.Error("the internal number must not match for the requester")
+	}
+}

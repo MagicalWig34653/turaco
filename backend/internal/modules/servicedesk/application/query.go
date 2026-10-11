@@ -230,6 +230,12 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	}
 	req.Filter = query.And(req.Filter, compat...)
 	opts := query.Options{}
+	if !a.anyView() {
+		// A pure requester reads only their own Tickets. The stored number of a Ticket in a Queue they may not know
+		// must neither match their search text nor narrow it away (the Ticket is theirs and listed under an older
+		// number); an exact number they know is found by FindByReference.
+		opts.SearchSkip = []string{"reference"}
+	}
 	if a.anyView() {
 		opts.SearchExtra, opts.RateLimited, err = s.personSearch(ctx, a.subject(p), req)
 		if err != nil {
