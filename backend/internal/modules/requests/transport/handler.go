@@ -237,6 +237,26 @@ type taskDTO struct {
 	ResultNote *string `json:"resultNote"`
 }
 
+type fulfillmentStepDTO struct {
+	ID         *string `json:"id,omitempty"`
+	Title      string  `json:"title"`
+	State      string  `json:"state"`
+	TeamName   *string `json:"teamName"`
+	Mandatory  bool    `json:"mandatory"`
+	ResultNote *string `json:"resultNote"`
+}
+
+func fulfillmentState(status string) string {
+	switch status {
+	case "completed", "cancelled":
+		return "done"
+	case "in_progress", "blocked":
+		return "in_progress"
+	default:
+		return "open"
+	}
+}
+
 type referenceDTO struct {
 	FieldKey string `json:"fieldKey"`
 	Type     string `json:"type"`
@@ -245,14 +265,15 @@ type referenceDTO struct {
 
 type detailDTO struct {
 	requestDTO
-	AllowRequestedFor bool              `json:"allowRequestedFor"`
-	Fields            []json.RawMessage `json:"fields"`
-	Answers           map[string]any    `json:"answers"`
-	References        []referenceDTO    `json:"references"`
-	Approvals         []approvalDTO     `json:"approvals"`
-	Tasks             []taskDTO         `json:"tasks"`
-	Names             map[string]string `json:"names"`
-	Actions           []string          `json:"actions"`
+	AllowRequestedFor bool                 `json:"allowRequestedFor"`
+	Fields            []json.RawMessage    `json:"fields"`
+	Answers           map[string]any       `json:"answers"`
+	References        []referenceDTO       `json:"references"`
+	Approvals         []approvalDTO        `json:"approvals"`
+	Tasks             []taskDTO            `json:"tasks"`
+	FulfillmentSteps  []fulfillmentStepDTO `json:"fulfillmentSteps"`
+	Names             map[string]string    `json:"names"`
+	Actions           []string             `json:"actions"`
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +285,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	dto := detailDTO{
 		requestDTO: toRequest(d.Request), AllowRequestedFor: d.Request.Definition.AllowRequestedFor,
 		Answers: d.Request.Answers, Names: d.Names, Actions: d.Actions,
-		Fields: []json.RawMessage{}, References: []referenceDTO{}, Approvals: []approvalDTO{}, Tasks: []taskDTO{},
+		Fields: []json.RawMessage{}, References: []referenceDTO{}, Approvals: []approvalDTO{}, Tasks: []taskDTO{}, FulfillmentSteps: []fulfillmentStepDTO{},
 	}
 	if dto.Actions == nil {
 		dto.Actions = []string{}
@@ -290,12 +311,25 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 			DecidedByUserID: a.DecidedByUserID, DecidedAt: tsPtr(a.DecidedAt), DecisionComment: a.DecisionComment,
 		})
 	}
+	viewer, _ := authorization.PrincipalFrom(r.Context())
+	canOpenTasks := viewer.Has("tasks.view") || viewer.Has("tasks.manage") || viewer.Has("tasks.work")
 	for _, t := range d.Tasks {
-		dto.Tasks = append(dto.Tasks, taskDTO{
-			ID: t.Task.ID, Title: t.Task.Title, Status: t.Task.Status, Priority: t.Task.Priority, Mandatory: t.Mandatory,
-			DueAt: tsPtr(t.Task.DueAt), AssignedUserID: t.Task.AssignedUserID, AssignedTeamID: t.Task.AssignedTeamID,
-			ResultNote: t.Task.ResultNote,
-		})
+		step := fulfillmentStepDTO{Title: t.Task.Title, State: fulfillmentState(t.Task.Status), Mandatory: t.Mandatory, ResultNote: t.Task.ResultNote}
+		if t.Task.AssignedTeamID != nil {
+			if name := d.Names[*t.Task.AssignedTeamID]; name != "" {
+				step.TeamName = &name
+			}
+		}
+		if canOpenTasks {
+			id := t.Task.ID
+			step.ID = &id
+			dto.Tasks = append(dto.Tasks, taskDTO{
+				ID: t.Task.ID, Title: t.Task.Title, Status: t.Task.Status, Priority: t.Task.Priority, Mandatory: t.Mandatory,
+				DueAt: tsPtr(t.Task.DueAt), AssignedUserID: t.Task.AssignedUserID, AssignedTeamID: t.Task.AssignedTeamID,
+				ResultNote: t.Task.ResultNote,
+			})
+		}
+		dto.FulfillmentSteps = append(dto.FulfillmentSteps, step)
 	}
 	httpx.JSON(w, http.StatusOK, dto)
 }

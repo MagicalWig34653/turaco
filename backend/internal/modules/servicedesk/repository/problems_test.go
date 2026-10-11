@@ -73,6 +73,16 @@ func TestProblemLifecycleKnownErrorAndTickets(t *testing.T) {
 	if _, err := svc.KnownErrorsOfTicket(ctx, employee, tk.ID); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("an employee reads known errors: %v", err)
 	}
+	all, err := svc.ProblemsOfTicket(ctx, staff, tk.ID)
+	if err != nil || len(all) != 1 || all[0].ID != p.ID {
+		t.Fatalf("linked problems = %+v %v", all, err)
+	}
+	if _, err := svc.ProblemsOfTicket(ctx, employee, tk.ID); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("requester reads problems: %v", err)
+	}
+	if _, err := svc.ProblemsOfTicket(ctx, staff, "00000000-0000-7000-8000-000000000009"); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("missing ticket: %v", err)
+	}
 	if _, err := svc.Get(ctx, employee, p.ID); !errors.Is(err, application.ErrNotFound) {
 		t.Errorf("an employee reads a problem: %v", err)
 	}
@@ -98,6 +108,22 @@ func TestProblemLifecycleKnownErrorAndTickets(t *testing.T) {
 	}
 	if known, _ := svc.KnownErrorsOfTicket(ctx, staff, tk.ID); len(known) != 0 {
 		t.Error("a resolved problem is no longer a known error")
+	}
+	if all, err := svc.ProblemsOfTicket(ctx, staff, tk.ID); err != nil || len(all) != 1 || all[0].Status != application.PRResolved {
+		t.Errorf("resolved problem remains linked = %+v %v", all, err)
+	}
+	newProblem, err := svc.CreateProblem(ctx, e.c(e.agent), manage, "Intermittent network issue", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.LinkTicket(ctx, e.c(e.agent), manage, newProblem.ID, tk.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if all, err := svc.ProblemsOfTicket(ctx, staff, tk.ID); err != nil || len(all) != 2 || all[0].ID != newProblem.ID || all[0].Status != application.PRNew {
+		t.Errorf("new problem is visible before known error = %+v %v", all, err)
+	}
+	if known, err := svc.KnownErrorsOfTicket(ctx, staff, tk.ID); err != nil || len(known) != 0 {
+		t.Errorf("new problem is not a known error = %+v %v", known, err)
 	}
 	if p, err = op("close", ""); err != nil || p.ClosedAt == nil {
 		t.Fatalf("close = %+v %v", p, err)

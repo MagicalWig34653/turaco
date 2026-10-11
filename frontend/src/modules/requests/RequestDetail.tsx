@@ -237,17 +237,26 @@ export function RequestDetail({
 
       <section>
         <h2>{t('requests.section.tasks')}</h2>
-        {request.tasks.length === 0 ? <p className="empty">{t('requests.tasks.none')}</p> : null}
+        {request.fulfillmentSteps.length === 0 ? (
+          <p className="empty">{t('requests.tasks.none')}</p>
+        ) : null}
         <ul className="plain-list">
-          {request.tasks.map((task) => (
-            <li key={task.id}>
-              {taskLinks ? (
+          {request.fulfillmentSteps.map((task, index) => (
+            <li key={task.id ?? index}>
+              {taskLinks && task.id ? (
                 <Link to={`/tasks/${encodeURIComponent(task.id)}`}>{task.title}</Link>
               ) : (
                 task.title
               )}{' '}
-              <Badge>{t(`tasks.status.${task.status as 'open'}`)}</Badge>{' '}
+              <Badge>{t(`requests.step.state.${task.state}`)}</Badge>{' '}
               <span className="field-hint">{t(taskHintKey(task.mandatory, taskLinks))}</span>
+              <span className="field-hint">
+                {' '}
+                ·{' '}
+                {task.teamName
+                  ? t('requests.step.team', { team: task.teamName })
+                  : t('requests.step.noTeam')}
+              </span>
               {task.resultNote ? (
                 <p className="preline">
                   <strong>{t('requests.task.result')}</strong> {task.resultNote}

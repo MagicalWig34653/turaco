@@ -460,6 +460,7 @@ export const en = {
   'ticketWorkspace.handling': 'Handling',
   'ticketWorkspace.insertWorkaround': 'Insert workaround',
   'ticketWorkspace.noKnownErrors': 'No known errors are linked to this ticket.',
+  'ticketWorkspace.noProblems': 'No problems are linked to this ticket.',
   'ticketWorkspace.workaroundSource': 'Workaround from {reference}:',
   'ticketWorkspace.workaroundInsertedPublic':
     'A workaround was inserted into the public reply. The requester sees it once you send the reply; check it first.',
@@ -1490,6 +1491,11 @@ export const en = {
   'requests.approval.by': 'Decided by {name}',
   'requests.approval.none': 'No approval is required.',
   'requests.tasks.none': 'There are no fulfillment tasks.',
+  'requests.step.state.open': 'Open',
+  'requests.step.state.in_progress': 'In progress',
+  'requests.step.state.done': 'Done',
+  'requests.step.team': 'Team: {team}',
+  'requests.step.noTeam': 'No team assigned',
   'requests.task.mandatory': 'Required',
   'requests.task.mandatoryPlain': 'Mandatory step',
   'requests.task.optional': 'Optional',
@@ -1616,6 +1622,9 @@ export const en = {
   'products.picker.noPermission': 'Choosing a product needs the permission to view products.',
   'approvals.openOrder': 'Open the purchase order',
   'approvals.orderNoAccess': 'The purchase order is only visible with procurement permissions.',
+  'notifications.organization.access_expiring': 'The access of {title} ends soon.',
+  'notifications.category.organization.access_expiring':
+    'Access of an external person I sponsor ends soon',
   'notifications.asset.assigned': 'Equipment was assigned to you: {title}',
   'notifications.category.asset.assigned': 'Equipment is assigned to me',
   'assets.intro':
@@ -2167,6 +2176,7 @@ export const en = {
   'problems.action.resolve': 'Resolve',
   'problems.action.close': 'Close',
   'tickets.section.knownErrors': 'Known errors',
+  'tickets.section.problems': 'Problems',
   'tickets.section.externalSync': 'External service desk',
   'tickets.sync.none': 'Not synchronized yet',
   'tickets.sync.pending': 'Waiting for transfer',

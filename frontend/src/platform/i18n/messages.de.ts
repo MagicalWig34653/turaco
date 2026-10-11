@@ -478,6 +478,7 @@ export const de: Record<MessageKey, string> = {
   'ticketWorkspace.handling': 'Bearbeitung',
   'ticketWorkspace.insertWorkaround': 'Workaround einfügen',
   'ticketWorkspace.noKnownErrors': 'Mit diesem Ticket sind keine bekannten Fehler verknüpft.',
+  'ticketWorkspace.noProblems': 'Mit diesem Ticket sind keine Probleme verknüpft.',
   'ticketWorkspace.workaroundSource': 'Workaround aus {reference}:',
   'ticketWorkspace.workaroundInsertedPublic':
     'Ein Workaround wurde in die öffentliche Antwort eingefügt. Die meldende Person sieht ihn, sobald Sie die Antwort senden; prüfen Sie ihn vorher.',
@@ -1530,6 +1531,11 @@ export const de: Record<MessageKey, string> = {
   'requests.approval.by': 'Entschieden von {name}',
   'requests.approval.none': 'Es ist keine Freigabe erforderlich.',
   'requests.tasks.none': 'Es gibt keine Umsetzungsaufgaben.',
+  'requests.step.state.open': 'Offen',
+  'requests.step.state.in_progress': 'In Bearbeitung',
+  'requests.step.state.done': 'Erledigt',
+  'requests.step.team': 'Team: {team}',
+  'requests.step.noTeam': 'Kein Team zugewiesen',
   'requests.task.mandatory': 'Erforderlich',
   'requests.task.mandatoryPlain': 'Pflichtschritt',
   'requests.task.optional': 'Optional',
@@ -1659,6 +1665,9 @@ export const de: Record<MessageKey, string> = {
     'Zum Auswählen eines Produkts ist die Berechtigung zum Ansehen von Produkten nötig.',
   'approvals.openOrder': 'Bestellung öffnen',
   'approvals.orderNoAccess': 'Die Bestellung ist nur mit Beschaffungsberechtigung sichtbar.',
+  'notifications.organization.access_expiring': 'Der Zugang von {title} endet bald.',
+  'notifications.category.organization.access_expiring':
+    'Der Zugang einer externen Person, für die ich bürge, endet bald',
   'notifications.asset.assigned': 'Ihnen wurde Ausstattung zugewiesen: {title}',
   'notifications.category.asset.assigned': 'Mir wird Ausstattung zugewiesen',
   'assets.intro':
@@ -2231,6 +2240,7 @@ export const de: Record<MessageKey, string> = {
   'problems.action.resolve': 'Lösen',
   'problems.action.close': 'Abschließen',
   'tickets.section.knownErrors': 'Bekannte Fehler',
+  'tickets.section.problems': 'Probleme',
   'tickets.section.externalSync': 'Externer Service Desk',
   'tickets.sync.none': 'Noch nicht synchronisiert',
   'tickets.sync.pending': 'Wartet auf Übertragung',

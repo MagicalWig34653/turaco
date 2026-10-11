@@ -269,9 +269,14 @@ function TicketWorkspace({ id }: { id: string }) {
   const { can, session } = useSession();
   const loaded = useAsync((signal) => ticketsApi.get(id, signal), [id]);
   const staffReader = can('tickets.view') || can('tickets.manage');
+  const problemReader = staffReader || can('problems.manage');
   const known = useAsync(
-    async (signal) => (staffReader ? (await problemsApi.knownErrors(id, signal)).items : []),
-    [id, staffReader],
+    async (signal) => (problemReader ? (await problemsApi.knownErrors(id, signal)).items : []),
+    [id, problemReader],
+  );
+  const linkedProblems = useAsync(
+    async (signal) => (problemReader ? (await problemsApi.ofTicket(id, signal)).items : []),
+    [id, problemReader],
   );
   const sync = useAsync(
     async (signal) => (staffReader ? await ticketsApi.externalSync(id, signal) : null),
@@ -952,7 +957,31 @@ function TicketWorkspace({ id }: { id: string }) {
               <TicketRemoteSupport ticketId={ticket.id} deviceSnapshot={ticket.deviceSnapshot} />
             </RemoteSupportGate>
           ) : null}
-          {staffReader ? (
+          {problemReader ? (
+            <Card title={t('tickets.section.problems')}>
+              <h2>{t('tickets.section.problems')}</h2>
+              {linkedProblems.error ? (
+                <ApiErrorAlert error={linkedProblems.error} onRetry={linkedProblems.reload} />
+              ) : !linkedProblems.data ? (
+                <Skeleton lines={2} />
+              ) : linkedProblems.data.length ? (
+                <ul className="incident-known">
+                  {linkedProblems.data.map((problem) => (
+                    <li key={problem.id}>
+                      <span className="incident-reference">{problem.reference}</span>{' '}
+                      <Link to={`/problems/${encodeURIComponent(problem.id)}`}>
+                        {problem.title}
+                      </Link>{' '}
+                      <Badge>{t(`problems.status.${problem.status}`)}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="incident-muted">{t('ticketWorkspace.noProblems')}</p>
+              )}
+            </Card>
+          ) : null}
+          {problemReader ? (
             <Card title={t('tickets.section.knownErrors')}>
               <h2>{t('tickets.section.knownErrors')}</h2>
               {known.error ? (

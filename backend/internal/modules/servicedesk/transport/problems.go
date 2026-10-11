@@ -31,6 +31,7 @@ func RegisterProblems(mux *http.ServeMux, svc *application.ProblemService, auth 
 	route("POST /api/v1/problems/{id}/tickets", h.link(true))
 	route("DELETE /api/v1/problems/{id}/tickets/{ticketId}", h.unlink)
 	route("GET /api/v1/tickets/{id}/known-errors", h.knownErrors)
+	route("GET /api/v1/tickets/{id}/problems", h.ticketProblems)
 	for _, op := range []string{application.POInvestigate, application.POIdentifyCause, application.POMarkKnownError, application.POPlanResolution, application.POResolve, application.POClose} {
 		route("POST /api/v1/problems/{id}/"+opPath(op), h.transition(op))
 	}
@@ -215,6 +216,15 @@ func (h *problemHandler) unlink(w http.ResponseWriter, r *http.Request) {
 
 func (h *problemHandler) knownErrors(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.KnownErrorsOfTicket(r.Context(), pp(r), r.PathValue("id"))
+	h.writeTicketProblems(w, r, list, err)
+}
+
+func (h *problemHandler) ticketProblems(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.ProblemsOfTicket(r.Context(), pp(r), r.PathValue("id"))
+	h.writeTicketProblems(w, r, list, err)
+}
+
+func (h *problemHandler) writeTicketProblems(w http.ResponseWriter, r *http.Request, list []application.Problem, err error) {
 	if err != nil {
 		h.fail(w, r, err)
 		return

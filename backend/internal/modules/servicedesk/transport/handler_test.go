@@ -166,7 +166,7 @@ func TestProblemsOverHTTP(t *testing.T) {
 		t.Errorf("staff write = %d", rec.Code)
 	}
 	employee := serve(t, as(alice))
-	for _, path := range []string{"/api/v1/problems", "/api/v1/problems/" + p.ID, "/api/v1/tickets/" + p.ID + "/known-errors"} {
+	for _, path := range []string{"/api/v1/problems", "/api/v1/problems/" + p.ID, "/api/v1/tickets/" + p.ID + "/known-errors", "/api/v1/tickets/" + p.ID + "/problems"} {
 		if rec := do(employee, "GET", path, ""); rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound {
 			t.Errorf("employee GET %s = %d", path, rec.Code)
 		}

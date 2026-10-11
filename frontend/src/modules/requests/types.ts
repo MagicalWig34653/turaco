@@ -58,6 +58,15 @@ export type RequestTaskView = {
   resultNote?: string | null;
 };
 
+export type FulfillmentStep = {
+  id?: string;
+  title: string;
+  state: 'open' | 'in_progress' | 'done';
+  teamName: string | null;
+  mandatory: boolean;
+  resultNote: string | null;
+};
+
 export type RequestField = {
   key: string;
   type: string;
@@ -72,6 +81,7 @@ export type ServiceRequestDetail = ServiceRequest & {
   references: Array<{ fieldKey: string; type: 'user' | 'product'; id: string }>;
   approvals: RequestApproval[];
   tasks: RequestTaskView[];
+  fulfillmentSteps: FulfillmentStep[];
   names: Record<string, string>;
   actions: RequestAction[];
 };

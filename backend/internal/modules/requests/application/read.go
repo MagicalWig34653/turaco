@@ -133,7 +133,6 @@ func (s *Service) resolveNames(ctx context.Context, d *Detail) error {
 		addU(a.DecidedByUserID)
 	}
 	for _, t := range d.Tasks {
-		addU(t.Task.AssignedUserID)
 		addT(t.Task.AssignedTeamID)
 	}
 	for _, ref := range d.References {

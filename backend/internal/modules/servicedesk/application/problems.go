@@ -62,6 +62,7 @@ type ProblemStore interface {
 	VisibleProblemCounts(ctx context.Context, problemIDs []string, scope TicketScope) (map[string]int, error)
 	// KnownErrorsOfTicket lists the known errors (with workaround) a ticket is linked to.
 	KnownErrorsOfTicket(ctx context.Context, ticketID string) ([]Problem, error)
+	ProblemsOfTicket(ctx context.Context, ticketID string) ([]Problem, error)
 }
 
 // ProblemResult is one page of problems.
@@ -417,8 +418,33 @@ func (s *ProblemService) visibleCounts(ctx context.Context, user string, ids []s
 // KnownErrorsOfTicket returns the known errors a ticket is linked to, so staff see the
 // workaround while working the ticket (staff only; others get nothing).
 func (s *ProblemService) KnownErrorsOfTicket(ctx context.Context, p ProblemPrincipal, ticketID string) ([]Problem, error) {
-	if !p.canRead() {
-		return nil, ErrForbidden
+	if err := s.canReadTicketProblems(ctx, p, ticketID); err != nil {
+		return nil, err
 	}
 	return s.store.KnownErrorsOfTicket(ctx, ticketID)
+}
+
+// ProblemsOfTicket returns at most 20 linked problems to staff who can view this ticket.
+func (s *ProblemService) ProblemsOfTicket(ctx context.Context, p ProblemPrincipal, ticketID string) ([]Problem, error) {
+	if err := s.canReadTicketProblems(ctx, p, ticketID); err != nil {
+		return nil, err
+	}
+	return s.store.ProblemsOfTicket(ctx, ticketID)
+}
+
+func (s *ProblemService) canReadTicketProblems(ctx context.Context, p ProblemPrincipal, ticketID string) error {
+	if !p.canRead() {
+		return ErrForbidden
+	}
+	if s.access == nil {
+		return ErrNotFound
+	}
+	ok, err := s.access.CanViewTicket(ctx, p.UserID, ticketID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
 }
