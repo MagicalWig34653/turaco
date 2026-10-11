@@ -98,7 +98,7 @@ func TestListFilters(t *testing.T) {
 	if n := len(list(Filter{ActionPrefix: s.pfx + ".b."}, Page{}).Items); n != 3 {
 		t.Fatalf("prefix = %d", n)
 	}
-	if n := len(list(Filter{ExcludeActionPrefix: s.pfx + ".b."}, Page{}).Items); n != 2 {
+	if n := len(list(Filter{ActionPrefix: s.pfx + ".", ExcludeActionPrefix: s.pfx + ".b."}, Page{}).Items); n != 2 {
 		t.Fatalf("excluded prefix = %d", n)
 	}
 	if n := len(list(Filter{ActionPrefix: s.pfx + "_b."}, Page{}).Items); n != 0 { // _ is literal

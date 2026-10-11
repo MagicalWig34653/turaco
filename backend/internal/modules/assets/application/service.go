@@ -910,6 +910,12 @@ func (s *Service) SharedForMe(ctx context.Context, p Principal, page Page) (Resu
 	}
 	for i := range res.Items {
 		res.Items[i] = holderView(res.Items[i])
+		// The device is shared at the caller's own primary location (its holder): show that place so identical
+		// devices of other locations are never confused with it.
+		if res.Items[i].LocationID == nil {
+			here := loc
+			res.Items[i].LocationID = &here
+		}
 	}
 	return res, nil
 }
