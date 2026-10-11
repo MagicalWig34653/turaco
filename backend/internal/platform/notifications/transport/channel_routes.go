@@ -31,6 +31,7 @@ func RegisterChannelRoutes(mux *http.ServeMux, svc *notifications.Service, auth 
 	route("GET /api/v1/integrations/teams/channel-routes", h.list)
 	route("POST /api/v1/integrations/teams/channel-routes", h.create)
 	route("DELETE /api/v1/integrations/teams/channel-routes/{id}", h.delete)
+	route("POST /api/v1/integrations/teams/destinations/{key}/test-send", h.testSend)
 }
 
 type routeDTO struct {
@@ -90,6 +91,18 @@ func (h *routesHandler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// testSend posts a test card to one destination: explicit, audited and rate limited per destination. A failed post
+// answers 200 with delivered=false and a machine code (the request itself worked); the webhook URL never appears.
+func (h *routesHandler) testSend(w http.ResponseWriter, r *http.Request) {
+	p, _ := authorization.PrincipalFrom(r.Context())
+	res, err := h.svc.TestSendChannel(r.Context(), p.UserID, p.Has(PermTeamsManage), r.PathValue("key"), httpx.RequestID(w))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"delivered": res.Delivered, "errorCode": res.ErrorCode})
+}
+
 func (h *routesHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, notifications.ErrForbidden):
@@ -98,6 +111,10 @@ func (h *routesHandler) fail(w http.ResponseWriter, r *http.Request, err error) 
 		httpx.WriteError(w, http.StatusBadRequest, "notifications.category_not_broadcastable", "The category cannot be posted to a channel.")
 	case errors.Is(err, notifications.ErrUnknownDestination):
 		httpx.WriteError(w, http.StatusBadRequest, "notifications.unknown_destination", "The channel destination is not configured.")
+	case errors.Is(err, notifications.ErrTestSendRateLimited):
+		httpx.WriteError(w, http.StatusTooManyRequests, "notifications.test_send_rate_limited", "This destination received test messages recently. Try again later.")
+	case errors.Is(err, notifications.ErrTestSendUnavailable):
+		httpx.WriteError(w, http.StatusConflict, "notifications.test_send_unavailable", "A test message needs the Teams channel and EMAIL_BASE_URL to be configured.")
 	case errors.Is(err, notifications.ErrRouteExists):
 		httpx.WriteError(w, http.StatusConflict, "notifications.route_exists", "This route already exists.")
 	case errors.Is(err, notifications.ErrRouteNotFound):

@@ -17,4 +17,4 @@ Screens for the platform health contract (`GET /admin/health`, `/admin/integrati
   has; the contract's `/admin/people` and `/admin/directory` map to Users and Directory Sync), the configuration key
   names (never values) and a `docs/` guide link. Other docs paths are not linked.
 - `SetupTile` is rendered on the Overview for health viewers while `open > 0`.
-- The configured Intune Graph read adapter supports an explicit, rate-limited probe; GET pages show the stored result without running it. Directory, SMTP, storage and ClamAV do not have a suitable cheap read-only probe yet. Per-check history and a worker/jobs tab are not built.
+- The configured Intune Graph read adapter, the mail relay (connect and EHLO, no mail), the object storage (one bounded read) and ClamAV (PING) support an explicit, rate-limited probe; GET pages show the stored result without running it. The directory has no suitable cheap read-only probe yet. Per-check history and a worker/jobs tab are not built.

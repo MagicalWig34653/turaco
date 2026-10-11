@@ -6222,6 +6222,17 @@ export const en = {
   'teamsChannel.error.notBroadcastable': 'This announcement cannot be posted to a channel.',
   'teamsChannel.error.unknownDestination': 'This channel destination is not configured.',
   'teamsChannel.error.routeExists': 'This route already exists.',
+  'teamsChannel.test.title': 'Test a destination',
+  'teamsChannel.test.intro':
+    'Posts one clearly marked test message (no record content) to the channel behind a destination, so you can check the connection before routing announcements to it. At most five test messages per destination every ten minutes.',
+  'teamsChannel.test.action': 'Send test message',
+  'teamsChannel.test.delivered': 'The test message to {destination} was accepted by Teams.',
+  'teamsChannel.test.failed':
+    'The test message to {destination} was not delivered (code {code}). Check the destination in the destinations file and the Teams flow.',
+  'teamsChannel.error.testRateLimited':
+    'This destination received test messages recently. Try again in a few minutes.',
+  'teamsChannel.error.testUnavailable':
+    'A test message needs the Teams destinations file and EMAIL_BASE_URL to be configured.',
   'settings.module.unknown': '{module}',
   'settings.key.unknown': '{key}',
   'settings.option.unknown': '{value}',

@@ -184,6 +184,44 @@ func (c *client) Send(ctx context.Context, m Message) error {
 	return nil
 }
 
+// Probe is the read-only reachability check of the administration health page: it connects (with TLS from the
+// start for ImplicitTLS), reads the greeting, sends EHLO, verifies that STARTTLS is offered when it is required
+// and quits. It authenticates nothing and sends no mail, so no credential leaves the process and no recipient
+// is addressed. The caller bounds it with ctx (the configured timeout applies as well).
+func Probe(ctx context.Context, m Mailer) error {
+	c, ok := m.(*client)
+	if !ok {
+		return errors.New("smtp: mailer cannot be probed")
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.cfg.Timeout)
+	defer cancel()
+	conn, err := c.dial(ctx)
+	if err != nil {
+		return fmt.Errorf("smtp: connect: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	sc, err := smtp.NewClient(conn, c.cfg.Host)
+	if err != nil {
+		return fmt.Errorf("smtp: greeting: %w", err)
+	}
+	defer func() { _ = sc.Close() }()
+	if err := sc.Hello("turaco"); err != nil {
+		return fmt.Errorf("smtp: ehlo: %w", err)
+	}
+	if c.cfg.Security == StartTLS {
+		if ok, _ := sc.Extension("STARTTLS"); !ok {
+			return errors.New("smtp: relay does not offer STARTTLS")
+		}
+	}
+	_ = sc.Quit()
+	return nil
+}
+
 func (c *client) tlsConfig() *tls.Config {
 	return &tls.Config{ServerName: c.cfg.Host, MinVersion: tls.VersionTLS12, RootCAs: c.cfg.RootCAs}
 }

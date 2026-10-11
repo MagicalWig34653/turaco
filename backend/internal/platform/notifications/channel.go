@@ -56,6 +56,10 @@ type ChannelOptions struct {
 	DestinationKeys func() []string
 	// Mode is the adapter mode shown to administrators: real, fake or not_configured.
 	Mode string
+	// Poster, BaseURL and Locale serve the explicit test send (turaco-api); the worker's sender has its own.
+	Poster  ChannelPoster
+	BaseURL string
+	Locale  string
 }
 
 // WithChannelPosts returns a Service that creates channel post deliveries (turaco-worker) and validates routes

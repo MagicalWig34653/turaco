@@ -57,6 +57,30 @@ export function TeamsChannelScreen() {
     }
   };
 
+  const [testing, setTesting] = useState<string | undefined>(undefined);
+  const [testResult, setTestResult] = useState<
+    { destination: string; delivered: boolean; code: string } | undefined
+  >(undefined);
+  const [testError, setTestError] = useState<ApiError | undefined>(undefined);
+
+  const sendTest = async (destinationKey: string) => {
+    setTesting(destinationKey);
+    setTestResult(undefined);
+    setTestError(undefined);
+    try {
+      const result = await teamsChannelApi.testSend(destinationKey);
+      setTestResult({
+        destination: destinationKey,
+        delivered: result.delivered,
+        code: result.errorCode,
+      });
+    } catch (cause) {
+      setTestError(cause instanceof ApiError ? cause : undefined);
+    } finally {
+      setTesting(undefined);
+    }
+  };
+
   const free = data && category ? freeDestinations(data, category) : [];
 
   return (
@@ -119,6 +143,37 @@ export function TeamsChannelScreen() {
               )}
             </section>
           ))}
+          {data.destinations.length > 0 ? (
+            <section aria-labelledby="teams-route-test">
+              <h2 id="teams-route-test">{t('teamsChannel.test.title')}</h2>
+              <p>{t('teamsChannel.test.intro')}</p>
+              <ul className="teams-channel-test">
+                {data.destinations.map((key) => (
+                  <li key={key}>
+                    <code>{key}</code>
+                    <Button
+                      busy={testing === key}
+                      disabled={testing !== undefined}
+                      onClick={() => void sendTest(key)}
+                    >
+                      {t('teamsChannel.test.action')}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              {testResult ? (
+                <Alert kind={testResult.delivered ? 'success' : 'error'}>
+                  {testResult.delivered
+                    ? t('teamsChannel.test.delivered', { destination: testResult.destination })
+                    : t('teamsChannel.test.failed', {
+                        destination: testResult.destination,
+                        code: testResult.code,
+                      })}
+                </Alert>
+              ) : null}
+              {testError ? <ApiErrorAlert error={testError} /> : null}
+            </section>
+          ) : null}
           <section aria-labelledby="teams-route-add" className="teams-channel-add">
             <h2 id="teams-route-add">{t('teamsChannel.add')}</h2>
             <Select

@@ -262,12 +262,16 @@ func (r *Runner) RunOnce(ctx context.Context) (processed bool, err error) {
 	r.mu.RUnlock()
 
 	herr := r.execute(ctx, log, reg, *job)
+	deferFor, deferred := deferDelay(herr)
 	switch {
 	case herr == nil:
 		r.finish(ctx, log, job, outcomeCompleted, "", 0)
 	case IsPermanent(herr):
 		log.Warn("job failed permanently", "error", herr)
 		r.finish(ctx, log, job, outcomeFailed, herr.Error(), 0)
+	case deferred && ctx.Err() == nil:
+		log.Info("job deferred by its handler", "reason", herr, "retry_in", deferFor)
+		r.finish(ctx, log, job, outcomeDeferred, herr.Error(), deferFor)
 	case ctx.Err() != nil:
 		// Worker shutdown interrupted the handler. Return the job for
 		// immediate retry and refund the attempt: it was not the job's fault.
