@@ -68,6 +68,23 @@ export function OrgTreeScreen({ kind }: { kind: TreeKind }) {
   const seeded = useRef(false);
   const treeRef = useRef<HTMLUListElement>(null);
 
+  useEffect(() => {
+    if (kind !== 'locations' || !data.data) return;
+    const id = new URLSearchParams(window.location.search).get('selected');
+    if (!id || !data.data.some((item) => item.id === id)) return;
+    if (data.data.some((item) => item.id === id && !item.active)) setIncludeInactive(true);
+    const byId = new Map(data.data.map((item) => [item.id, item]));
+    const open = new Set<string>();
+    let node = byId.get(id);
+    while (node) {
+      open.add(node.id);
+      node = node.parentId ? byId.get(node.parentId) : undefined;
+    }
+    setExpanded((current) => new Set([...current, ...open]));
+    setSelectedId(id);
+    setFocusId(id);
+  }, [kind, data.data]);
+
   const items = data.data ?? [];
   const forest = useMemo(() => buildTree(items, includeInactive), [items, includeInactive]);
   const visible = useMemo(() => flattenTree(forest, expanded), [forest, expanded]);
@@ -86,7 +103,7 @@ export function OrgTreeScreen({ kind }: { kind: TreeKind }) {
         visit(node.children);
       });
     visit(buildTree(items, false));
-    setExpanded(open);
+    setExpanded((current) => new Set([...current, ...open]));
   }, [items]);
 
   const toggle = (id: string, open?: boolean) =>

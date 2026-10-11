@@ -12,6 +12,12 @@ import (
 // Users, without exposing Organization storage.
 type WorkDirectory struct{ app *application.WorkDirectory }
 
+type LocationChoice = application.LocationChoice
+
+func (w *WorkDirectory) SearchActiveLocations(ctx context.Context, query string, limit int) ([]LocationChoice, error) {
+	return w.app.SearchActiveLocations(ctx, query, limit)
+}
+
 // NewWorkDirectory wraps the Organization repository (or any store).
 func NewWorkDirectory(store application.WorkDirectoryStore) *WorkDirectory {
 	return &WorkDirectory{app: application.NewWorkDirectory(store)}

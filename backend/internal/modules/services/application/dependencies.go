@@ -468,6 +468,57 @@ func (s *App) Impact(ctx context.Context, p Principal, in ImpactInput) (ImpactRe
 	return res, nil
 }
 
+// ImpactServicesBatch returns visible Services reached from the starts by the
+// same downstream dependency relationships as Impact. The whole batch has a
+// shared 1000-node cap and six-level depth limit.
+func (s *App) ImpactServicesBatch(ctx context.Context, p Principal, starts []relationships.Node) (map[relationships.Node][]string, bool, error) {
+	if err := p.require(false); err != nil {
+		return nil, false, err
+	}
+	if len(starts) > relationships.MaxBatchIDs {
+		return nil, false, invalid("too many impact starts")
+	}
+	if !s.acquireImpact(p.UserID) {
+		return nil, false, ErrImpactBusy
+	}
+	defer s.releaseImpact(p.UserID)
+	visible := make([]relationships.Node, 0, len(starts))
+	for _, n := range starts {
+		if oneOf(n.Type, DependencyTargets) && !p.hides(n.Type) {
+			visible = append(visible, n)
+		}
+	}
+	if len(visible) == 0 {
+		return map[relationships.Node][]string{}, false, nil
+	}
+	info, err := s.describe(ctx, p, visible)
+	if err != nil {
+		return nil, false, err
+	}
+	valid := visible[:0]
+	for _, n := range visible {
+		if !info[n].Missing {
+			valid = append(valid, n)
+		}
+	}
+	if len(valid) == 0 {
+		return map[relationships.Node][]string{}, false, nil
+	}
+	walk, truncated, err := s.graph.TraverseManyNodes(ctx, s.store.Q(), valid, relationships.TraverseInput{Direction: relationships.Reverse, MaxDepth: relationships.MaxDepth, Types: ImpactRelationshipTypes, NodeTypes: DependencyTargets}, 1000)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make(map[relationships.Node][]string, len(walk))
+	for start, nodes := range walk {
+		for _, node := range nodes {
+			if node.Type == NodeService {
+				out[start] = append(out[start], node.ID)
+			}
+		}
+	}
+	return out, truncated, nil
+}
+
 func (s *App) acquireImpact(user string) bool {
 	s.impactMu.Lock()
 	defer s.impactMu.Unlock()

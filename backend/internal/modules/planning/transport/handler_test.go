@@ -114,6 +114,10 @@ func (services) Lookup(context.Context, []string) (map[string]application.Servic
 	return nil, nil
 }
 
+func (services) ImpactServicesBatch(context.Context, application.Principal, []application.Node) (map[application.Node][]string, bool, error) {
+	return nil, false, nil
+}
+
 type approvals struct{}
 
 func (approvals) RequestInTx(ctx context.Context, tx pgx.Tx, _ audit.Actor, _ string, _ application.ApprovalRequest) (string, error) {

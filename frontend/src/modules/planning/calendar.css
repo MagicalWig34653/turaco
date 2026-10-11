@@ -59,3 +59,9 @@
     var(--state-info-bg) 4px 6px
   );
 }
+.calendar-indirect {
+  color: var(--color-text-muted, #596579);
+  font-style: italic;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}

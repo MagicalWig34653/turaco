@@ -5,6 +5,7 @@ package public
 
 import (
 	"context"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
 	infrapublic "github.com/MagicalWig34653/turaco/backend/internal/modules/infrastructure/public"
@@ -107,6 +108,10 @@ func (s *Services) Lookup(ctx context.Context, ids []string) (map[string]Service
 // shown, so the redaction rules are those of the Services impact view.
 func (s *Services) Impact(ctx context.Context, p ImpactCaller, in ImpactInput) (ImpactResult, error) {
 	return s.app.Impact(ctx, p, in)
+}
+
+func (s *Services) ImpactServicesBatch(ctx context.Context, p ImpactCaller, starts []relationships.Node) (map[relationships.Node][]string, bool, error) {
+	return s.app.ImpactServicesBatch(ctx, p, starts)
 }
 
 // Search finds active Services by name or reference (at most limit, 50 at most). It performs no permission check.

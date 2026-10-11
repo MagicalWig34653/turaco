@@ -38,6 +38,33 @@ function ItemDialog({
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
+  const insertReferenceField = (type: 'location' | 'asset') => {
+    try {
+      const parsed = JSON.parse(definition) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+      const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
+      const used = new Set(fields.map((field) => (field as { key?: string }).key));
+      let key: string = type;
+      for (let index = 2; used.has(key); index += 1) key = `${type}${index}`;
+      setDefinition(
+        JSON.stringify(
+          {
+            ...parsed,
+            fields: [
+              ...fields,
+              { key, type, label: t(`catalogAdmin.type.${type}`), required: false },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
+      setJsonError(false);
+    } catch {
+      setJsonError(true);
+    }
+  };
+
   // The full definition is only loaded for editing; creating starts from an empty template.
   const [loadError, setLoadError] = useState<ApiError | undefined>(undefined);
   const itemId = item?.id;
@@ -111,6 +138,19 @@ function ItemDialog({
           onChange={(event) => setDescription(event.target.value)}
           maxLength={2000}
           rows={2}
+        />
+        <Select
+          label={t('catalogAdmin.field.addReference')}
+          value=""
+          onChange={(event) => {
+            if (event.target.value === 'location' || event.target.value === 'asset')
+              insertReferenceField(event.target.value);
+          }}
+          options={[
+            { value: '', label: t('catalogAdmin.field.addReference.choose') },
+            { value: 'location', label: t('catalogAdmin.type.location') },
+            { value: 'asset', label: t('catalogAdmin.type.asset') },
+          ]}
         />
         <TextArea
           label={t('catalogAdmin.field.definition')}

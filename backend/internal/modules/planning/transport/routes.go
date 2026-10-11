@@ -453,6 +453,7 @@ type calendarAffectedDTO struct {
 	Reference *string `json:"reference"`
 	Missing   bool    `json:"missing,omitempty"`
 	Hidden    bool    `json:"hidden,omitempty"`
+	Indirect  bool    `json:"indirect,omitempty"`
 }
 
 type initiativeRefDTO struct {
@@ -496,7 +497,7 @@ func (h *handler) calendar(w http.ResponseWriter, r *http.Request) {
 			WindowStart: ts(it.WindowStart), WindowEnd: ts(it.WindowEnd), Affected: make([]calendarAffectedDTO, 0, len(it.Affected)),
 			Initiatives: make([]initiativeRefDTO, 0, len(it.Initiatives))}
 		for _, a := range it.Affected {
-			d.Affected = append(d.Affected, calendarAffectedDTO{Type: a.Type, ID: a.ID, Name: a.Name, Reference: a.Reference, Missing: a.Missing, Hidden: a.Hidden})
+			d.Affected = append(d.Affected, calendarAffectedDTO{Type: a.Type, ID: a.ID, Name: a.Name, Reference: a.Reference, Missing: a.Missing, Hidden: a.Hidden, Indirect: a.Indirect})
 		}
 		for _, i := range it.Initiatives {
 			d.Initiatives = append(d.Initiatives, initiativeRefDTO{ID: i.ID, Reference: i.Reference, Title: i.Title})

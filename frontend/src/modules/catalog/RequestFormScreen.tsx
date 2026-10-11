@@ -13,6 +13,9 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { requestsApi } from '../requests/api';
 import type { Assignee } from '../tasks/AssigneePicker';
 import { PersonLookup } from '../organization/PersonLookup';
+import { LocationPicker, SearchPicker } from '../deployments/components';
+import { assetsApi } from '../assets/api';
+import { useSession } from '../../platform/session/SessionProvider';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { previewState, stepText } from './approvalModel';
@@ -131,6 +134,8 @@ function FieldInput({
   onChange: (value: string | boolean) => void;
 }) {
   const { t } = useI18n();
+  const { can } = useSession();
+  const [selectedLabel, setSelectedLabel] = useState('');
   const label = field.required ? `${field.label} *` : field.label;
   const common = { label, hint: field.help, error };
   const text = typeof value === 'string' ? value : '';
@@ -189,6 +194,67 @@ function FieldInput({
     }
     case 'user':
       return <UserField field={field} error={error} onChange={onChange} />;
+    case 'location':
+      return (
+        <div className="field">
+          <span>{label}</span>
+          <LocationPicker
+            available
+            search={async (q, signal) =>
+              (await catalogApi.locations(q, signal)).items.map((item) => ({
+                id: item.id,
+                label: item.name,
+              }))
+            }
+            onPick={(item) => {
+              setSelectedLabel(item.label);
+              onChange(item.id);
+            }}
+          />
+          {text ? <p>{t('catalog.form.selected', { name: selectedLabel || text })}</p> : null}
+          {error ? <p className="field-error">{error}</p> : null}
+        </div>
+      );
+    case 'asset':
+      return (
+        <div className="field">
+          <SearchPicker
+            label={label}
+            allowed
+            search={async (q, signal) => {
+              const page =
+                can('assets.view') || can('assets.manage')
+                  ? await assetsApi.list({ q }, undefined, signal)
+                  : await assetsApi.mine(undefined, signal);
+              const shared =
+                can('assets.view') || can('assets.manage')
+                  ? null
+                  : await assetsApi.sharedMine(undefined, signal);
+              return [...page.items, ...(shared?.items ?? [])]
+                .filter((a, i, all) => all.findIndex((v) => v.id === a.id) === i)
+                .filter(
+                  (a) =>
+                    !q ||
+                    `${a.reference} ${a.serialNumber ?? ''} ${page.productNames[a.productId] ?? shared?.productNames[a.productId] ?? ''}`
+                      .toLowerCase()
+                      .includes(q.toLowerCase()),
+                )
+                .slice(0, 10)
+                .map((a) => ({
+                  id: a.id,
+                  label: a.reference,
+                  detail: page.productNames[a.productId] ?? shared?.productNames[a.productId] ?? '',
+                }));
+            }}
+            onPick={(item) => {
+              setSelectedLabel(item.label);
+              onChange(item.id);
+            }}
+          />
+          {text ? <p>{t('catalog.form.selected', { name: selectedLabel || text })}</p> : null}
+          {error ? <p className="field-error">{error}</p> : null}
+        </div>
+      );
     default:
       return (
         <TextField

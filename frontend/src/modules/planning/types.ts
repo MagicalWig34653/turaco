@@ -122,6 +122,7 @@ export type CalendarAffected = {
   reference: string | null;
   missing?: boolean;
   hidden?: boolean;
+  indirect?: boolean;
   criticality?: string | null;
 };
 export type CalendarEntry = {

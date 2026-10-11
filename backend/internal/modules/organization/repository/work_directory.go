@@ -12,6 +12,23 @@ import (
 
 var _ application.WorkDirectoryStore = (*Repository)(nil)
 
+func (r *Repository) SearchActiveLocations(ctx context.Context, query string, limit int) ([]application.LocationChoice, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, name FROM organization.locations WHERE active AND lower(name) LIKE lower($1) || '%' ORDER BY name, id LIMIT $2`, prefixPattern(query), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search active locations: %w", err)
+	}
+	defer rows.Close()
+	out := []application.LocationChoice{}
+	for rows.Next() {
+		var item application.LocationChoice
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) idNameMap(ctx context.Context, sql, what string, ids []string) (map[string]string, error) {
 	rows, err := r.pool.Query(ctx, sql, ids)
 	if err != nil {

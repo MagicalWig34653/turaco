@@ -1492,8 +1492,13 @@ export const de: Record<MessageKey, string> = {
   'catalogAdmin.field.title': 'Titel',
   'catalogAdmin.field.description': 'Beschreibung',
   'catalogAdmin.field.definition': 'Definition (JSON)',
+  'catalogAdmin.field.addReference': 'Referenzfeld hinzufügen',
+  'catalogAdmin.field.addReference.choose': 'Feldtyp auswählen',
+  'catalogAdmin.type.location': 'Standort',
+  'catalogAdmin.type.asset': 'Asset',
   'catalogAdmin.field.definition.hint':
-    'Formularfelder, Freigabeschritte und Umsetzungsaufgaben gemäß ADR-0025.',
+    'Formularfelder (auch Standort und Asset), Freigabeschritte und Umsetzungsaufgaben gemäß ADR-0025.',
+  'catalog.form.selected': 'Ausgewählt: {name}',
   'catalogAdmin.error.json': 'Die Definition ist kein gültiges JSON.',
   'catalogAdmin.save': 'Speichern',
   'catalogAdmin.empty': 'Es gibt noch keine Katalogeinträge.',
@@ -5091,6 +5096,9 @@ export const de: Record<MessageKey, string> = {
   'changes.pick.remove': '{name} aus der Auswahl entfernen',
   'changes.pick.add': '{count} Ressource(n) hinzufügen',
   'planning.calendar.proposed': 'vorgeschlagen',
+  'planning.calendar.indirect': 'indirekt',
+  'planning.calendar.indirectHint':
+    'Über eine Dienstabhängigkeit einer anderen aufgeführten Ressource betroffen.',
   'planning.calendar.legend': 'Legende',
   'planning.calendar.legend.firm': 'Genehmigtes, geplantes oder laufendes Fenster',
   'planning.calendar.legend.proposed':

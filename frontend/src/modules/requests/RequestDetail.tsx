@@ -28,6 +28,10 @@ export function answerText(
 ): string {
   if (value === undefined || value === null || value === '') return '–';
   if (typeof value === 'boolean') return value ? yes : no;
+  if ((field.type === 'location' || field.type === 'asset') && typeof value === 'object') {
+    const snapshot = value as { id?: string; name?: string; reference?: string };
+    return [snapshot.name, snapshot.reference].filter(Boolean).join(' · ') || snapshot.id || '–';
+  }
   if (field.type === 'select') {
     return field.options?.find((o) => o.value === value)?.label ?? String(value);
   }
@@ -189,12 +193,33 @@ export function RequestDetail({
             <div key={field.key} className="fact-row">
               <dt>{field.label}</dt>
               <dd className="preline">
-                {answerText(
-                  field,
-                  request.answers[field.key],
-                  request.names,
-                  t('requests.answer.yes'),
-                  t('requests.answer.no'),
+                {((field.type === 'location' && can('organization.view')) ||
+                  field.type === 'asset') &&
+                typeof request.answers[field.key] === 'object' &&
+                request.answers[field.key] !== null ? (
+                  <Link
+                    to={
+                      field.type === 'asset'
+                        ? `/assets/${encodeURIComponent((request.answers[field.key] as { id: string }).id)}`
+                        : `/admin/locations?selected=${encodeURIComponent((request.answers[field.key] as { id: string }).id)}`
+                    }
+                  >
+                    {answerText(
+                      field,
+                      request.answers[field.key],
+                      request.names,
+                      t('requests.answer.yes'),
+                      t('requests.answer.no'),
+                    )}
+                  </Link>
+                ) : (
+                  answerText(
+                    field,
+                    request.answers[field.key],
+                    request.names,
+                    t('requests.answer.yes'),
+                    t('requests.answer.no'),
+                  )
                 )}
               </dd>
             </div>

@@ -35,11 +35,21 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/catalog-items", authed, h.list)
+	route("GET /api/v1/catalog-locations", authed, h.locations)
 	route("GET /api/v1/catalog-items/{id}", authed, h.get)
 	route("POST /api/v1/catalog-items", manage, h.create)
 	route("PATCH /api/v1/catalog-items/{id}", manage, h.update)
 	route("POST /api/v1/catalog-items/{id}/activate", manage, h.activate(true))
 	route("POST /api/v1/catalog-items/{id}/deactivate", manage, h.activate(false))
+}
+
+func (h *handler) locations(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.SearchLocations(r.Context(), r.URL.Query().Get("q"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {

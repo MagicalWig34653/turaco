@@ -2434,6 +2434,31 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /catalog-locations:
+    get:
+      operationId: searchCatalogLocations
+      summary: Search active Organization Locations for a catalog request.
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string, maxLength: 100}
+      responses:
+        '200':
+          description: At most 50 active Locations with id and name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        name: {type: string}
   /catalog-items:
     get:
       operationId: listCatalogItems
@@ -16350,6 +16375,7 @@ components:
         reference: {type: string, nullable: true}
         missing: {type: boolean}
         hidden: {type: boolean}
+        indirect: {type: boolean, description: "True when this Service is reached through the dependency graph from a Change's affected resource."}
     MaintenanceCalendarEntry:
       type: object
       properties:
@@ -18053,7 +18079,7 @@ components:
       required: [key, type, label, required]
       properties:
         key: {type: string}
-        type: {type: string, enum: [text, longtext, number, boolean, date, select, user, product]}
+        type: {type: string, enum: [text, longtext, number, boolean, date, select, user, product, location, asset]}
         label: {type: string}
         help: {type: string}
         required: {type: boolean}
@@ -18112,7 +18138,7 @@ components:
         description: {type: string, maxLength: 2000}
         definition:
           type: object
-          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager; a manager step may add `fallbackTeamId`, the Team that approves when the requested-for person has no manager or the manager is excluded by separation of duties), fulfillment (at most 20 task templates)."
+          description: "fields (at most 30; types text, longtext, number, boolean, date, select, user, product, location, asset), allowRequestedFor, approvals (at most 5 steps; approverUserId, approverTeamId or approver=manager; a manager step may add `fallbackTeamId`, the Team that approves when the requested-for person has no manager or the manager is excluded by separation of duties), fulfillment (at most 20 task templates)."
     CatalogItemUpdate:
       type: object
       additionalProperties: false
@@ -18157,7 +18183,7 @@ components:
       properties:
         catalogItemId: {type: string, format: uuid}
         requestedForId: {type: [string, "null"], format: uuid, description: "Only when the item allows requesting for others; defaults to the requester."}
-        answers: {type: object, additionalProperties: true, description: "Answers keyed by field key."}
+        answers: {type: object, additionalProperties: true, description: "Answers keyed by field key; Location and Asset inputs are UUIDs."}
     ServiceRequestReason:
       type: object
       additionalProperties: false
@@ -18188,7 +18214,7 @@ components:
           type: array
           description: "The form fields as submitted (key, type, label, select options)."
           items: {type: object, additionalProperties: true}
-        answers: {type: object, additionalProperties: true}
+        answers: {type: object, additionalProperties: true, description: "Location and Asset answers are objects with id, name and (for Assets) reference display snapshots."}
         references:
           type: array
           items:
@@ -18197,7 +18223,7 @@ components:
             required: [fieldKey, type, id]
             properties:
               fieldKey: {type: string}
-              type: {type: string, enum: [user, product]}
+              type: {type: string, enum: [user, product, location, asset]}
               id: {type: string, format: uuid}
         approvals:
           type: array

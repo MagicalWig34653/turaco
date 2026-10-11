@@ -66,6 +66,23 @@ const MaxTeamMembers = 500
 // ids are "not found/inactive", never errors.
 type WorkDirectory struct{ store WorkDirectoryStore }
 
+// LocationChoice exposes only the identity and name of an active Location.
+type LocationChoice struct{ ID, Name string }
+
+func (w *WorkDirectory) SearchActiveLocations(ctx context.Context, query string, limit int) ([]LocationChoice, error) {
+	reader, ok := w.store.(interface {
+		SearchActiveLocations(context.Context, string, int) ([]LocationChoice, error)
+	})
+	if !ok {
+		return nil, errors.New("organization: location search unavailable")
+	}
+	query = strings.TrimSpace(query)
+	if len([]rune(query)) > 100 {
+		return nil, errors.New("organization: location query too long")
+	}
+	return reader.SearchActiveLocations(ctx, query, min(max(limit, 1), 50))
+}
+
 func NewWorkDirectory(store WorkDirectoryStore) *WorkDirectory { return &WorkDirectory{store: store} }
 
 func validIDs(in []string) []string {

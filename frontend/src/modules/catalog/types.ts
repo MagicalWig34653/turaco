@@ -1,7 +1,16 @@
 // Types mirror api/openapi/openapi.yaml. Keep them in sync with the contract.
 
 export type FieldType =
-  'text' | 'longtext' | 'number' | 'boolean' | 'date' | 'select' | 'user' | 'product';
+  | 'text'
+  | 'longtext'
+  | 'number'
+  | 'boolean'
+  | 'date'
+  | 'select'
+  | 'user'
+  | 'product'
+  | 'location'
+  | 'asset';
 
 export type CatalogItem = {
   id: string;

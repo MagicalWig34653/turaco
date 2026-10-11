@@ -16,7 +16,7 @@ import (
 // the answers so relationships stay queryable (ADR-0025).
 type Reference struct {
 	FieldKey string
-	// Type is "user" or "product".
+	// Type is user, product, location or asset.
 	Type string
 	ID   string
 }
@@ -30,6 +30,20 @@ type ProductLookup interface {
 // UserLookup is what answer validation needs from Organization.
 type UserLookup interface {
 	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
+}
+
+// LocationLookup resolves active Organization Locations for request answers.
+type LocationLookup interface {
+	ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
+	LocationNames(ctx context.Context, ids []string) (map[string]string, error)
+}
+
+// AssetChoice is the display snapshot kept with an asset answer.
+type AssetChoice struct{ Name, Reference string }
+
+// AssetLookup authorizes each asset for the requester and returns its display snapshot.
+type AssetLookup interface {
+	RequestAsset(ctx context.Context, id, requesterID string, viewAll bool) (AssetChoice, bool, error)
 }
 
 // FieldErrors collects one message per invalid field key, so a form can show
@@ -148,6 +162,74 @@ func ValidateAnswers(ctx context.Context, d Definition, answers map[string]any, 
 	return out, refs, nil
 }
 
+// ValidateRequestAnswers adds location and asset validation to the original
+// closed-field validator. The stored answer retains the id and a display
+// snapshot; the separate typed reference remains queryable.
+func ValidateRequestAnswers(ctx context.Context, d Definition, answers map[string]any, users UserLookup, products ProductLookup, locations LocationLookup, assets AssetLookup, requesterID string, viewAssets bool) (map[string]any, []Reference, error) {
+	out, refs, err := ValidateAnswers(ctx, d, answers, users, products)
+	if err != nil {
+		return nil, nil, err
+	}
+	errs := map[string]string{}
+	var locationIDs []string
+	for _, f := range d.Fields {
+		if f.Type == FieldLocation {
+			if id, ok := out[f.Key].(string); ok {
+				locationIDs = append(locationIDs, id)
+			}
+		}
+	}
+	if len(locationIDs) > 0 {
+		active, err := locations.ActiveLocations(ctx, locationIDs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("check locations: %w", err)
+		}
+		names, err := locations.LocationNames(ctx, locationIDs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve locations: %w", err)
+		}
+		for _, f := range d.Fields {
+			if f.Type != FieldLocation {
+				continue
+			}
+			id, ok := out[f.Key].(string)
+			if !ok {
+				continue
+			}
+			if !active[id] || names[id] == "" {
+				errs[f.Key] = CodeNotActive
+				continue
+			}
+			out[f.Key] = map[string]string{"id": id, "name": names[id]}
+			refs = append(refs, Reference{FieldKey: f.Key, Type: FieldLocation, ID: id})
+		}
+	}
+	for _, f := range d.Fields {
+		if f.Type != FieldAsset {
+			continue
+		}
+		id, ok := out[f.Key].(string)
+		if !ok {
+			continue
+		}
+		choice, allowed, err := assets.RequestAsset(ctx, id, requesterID, viewAssets)
+		if err != nil {
+			return nil, nil, fmt.Errorf("check asset: %w", err)
+		}
+		if !allowed {
+			errs[f.Key] = CodeNotAllowed
+			continue
+		}
+		out[f.Key] = map[string]string{"id": id, "name": choice.Name, "reference": choice.Reference}
+		refs = append(refs, Reference{FieldKey: f.Key, Type: FieldAsset, ID: id})
+	}
+	if len(errs) > 0 {
+		return nil, nil, &FieldErrors{Errors: errs}
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].FieldKey < refs[j].FieldKey })
+	return out, refs, nil
+}
+
 func productAllowed(f Field, id, category string) bool {
 	if f.CategoryID != "" {
 		return strings.EqualFold(f.CategoryID, category)
@@ -215,7 +297,7 @@ func normalizeAnswer(f Field, raw any) (any, string) {
 			}
 		}
 		return nil, CodeChoice
-	case FieldUser, FieldProduct:
+	case FieldUser, FieldProduct, FieldLocation, FieldAsset:
 		s, ok := raw.(string)
 		if !ok || !uuidRegexp.MatchString(s) {
 			return nil, CodeType

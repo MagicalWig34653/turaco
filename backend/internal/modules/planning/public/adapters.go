@@ -18,6 +18,7 @@ import (
 	servicespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/services/public"
 	taskspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
 )
 
 // ChangesAdapter adapts the Changes contract.
@@ -120,6 +121,22 @@ func (x *Services) Lookup(ctx context.Context, ids []string) (map[string]applica
 		out[id] = application.ServiceInfo{ID: v.ID, Reference: v.Reference, Name: v.Name, Status: v.Status, Criticality: v.Criticality}
 	}
 	return out, nil
+}
+
+func (x *Services) ImpactServicesBatch(ctx context.Context, p application.Principal, starts []application.Node) (map[application.Node][]string, bool, error) {
+	nodes := make([]relationships.Node, 0, len(starts))
+	for _, n := range starts {
+		nodes = append(nodes, relationships.Node{Type: n.Type, ID: n.ID})
+	}
+	got, truncated, err := x.s.ImpactServicesBatch(ctx, servicespublic.ImpactCaller{UserID: p.UserID, View: p.ServicesView, InfraView: p.InfraView, AssetsView: p.AssetsView}, nodes)
+	if err != nil {
+		return nil, false, err
+	}
+	out := make(map[application.Node][]string, len(got))
+	for n, ids := range got {
+		out[application.Node{Type: n.Type, ID: n.ID}] = ids
+	}
+	return out, truncated, nil
 }
 
 // Approvals adapts the Approvals contract.
