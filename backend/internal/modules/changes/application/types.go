@@ -347,6 +347,8 @@ type Filter struct {
 	WindowFrom *time.Time
 	WindowTo   *time.Time
 	OnlyUserID string
+	// Search matches every word as a substring of reference or title (umlauts folded); see platform/search.
+	Search string
 	// AffectedChangeIDs are the Changes linked to the affected resource (set by
 	// the service from the relationships; used when AffectedType is set).
 	AffectedChangeIDs []string
