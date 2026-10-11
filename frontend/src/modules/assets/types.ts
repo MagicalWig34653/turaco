@@ -65,6 +65,7 @@ export type AssetList = {
   items: Asset[];
   nextCursor?: string;
   productNames: Record<string, string>;
+  locationNames: Record<string, string>;
 };
 
 /** Lifecycle operations of the API, as the URL segment (kebab-case) the server uses. */

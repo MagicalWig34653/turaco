@@ -335,6 +335,28 @@ func (r *Repository) LocationIDs(ctx context.Context, id string) ([]string, erro
 	return queryIDs(ctx, r.pool, id)
 }
 
+func (r *Repository) MajorLocationIDs(ctx context.Context, ids []string) (map[string][]string, error) {
+	out := make(map[string][]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT major_incident_id::text, location_id::text
+		FROM servicedesk.major_incident_locations WHERE major_incident_id = ANY($1::text[]::uuid[])
+		ORDER BY major_incident_id, location_id`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list major incident page locations: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var incidentID, locationID string
+		if err := rows.Scan(&incidentID, &locationID); err != nil {
+			return nil, fmt.Errorf("scan major incident page locations: %w", err)
+		}
+		out[incidentID] = append(out[incidentID], locationID)
+	}
+	return out, rows.Err()
+}
+
 // LocationIDsTx implements application.MajorStore.
 func (r *Repository) LocationIDsTx(ctx context.Context, tx pgx.Tx, id string) ([]string, error) {
 	return queryIDs(ctx, tx, id)

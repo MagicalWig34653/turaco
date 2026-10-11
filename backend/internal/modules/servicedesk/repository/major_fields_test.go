@@ -166,6 +166,33 @@ func TestMajorIncidentExerciseOwnerDueLocationsAndHiddenTickets(t *testing.T) {
 	if _, err := svc.SetLocations(ctx, e.c(e.agent), true, live.ID, nil, []string{loc2, loc1, loc1}); err != nil {
 		t.Fatal(err)
 	}
+	page, err := svc.List(ctx, e.bob, true, false, application.Page{Limit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range page.Items {
+		if item.ID == live.ID && (item.AffectedLocationCount != 2 || len(item.Locations) != 2 || item.Locations[0].Name == "" || item.Locations[1].Name == "") {
+			t.Errorf("list must expose both affected location names: %+v", item.Locations)
+		}
+	}
+	partialDirectory := majorDir{locations: map[string]string{loc1: "Main Campus"}}
+	partialPage, err := application.NewMajorService(repository.New(e.pool)).WithDirectory(partialDirectory).List(ctx, e.bob, true, false, application.Page{Limit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range partialPage.Items {
+		if item.ID == live.ID && (item.AffectedLocationCount != 2 || len(item.Locations) != 1) {
+			t.Errorf("unresolved name must not hide an affected location: count=%d locations=%+v", item.AffectedLocationCount, item.Locations)
+		}
+	}
+	declaredWithLocations, err := svc.Declare(ctx, e.c(e.agent), true, "Network down", "Network unavailable", false, loc1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdLocations, err := svc.Get(ctx, e.bob, false, declaredWithLocations.ID)
+	if err != nil || len(createdLocations.Locations) != 1 || createdLocations.Locations[0].Name != "Main Campus" {
+		t.Errorf("declaration must persist locations: %+v %v", createdLocations.Locations, err)
+	}
 
 	// Hidden ticket count: one linked ticket the employee cannot see.
 	tk := e.raise() // reported by alice

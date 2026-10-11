@@ -108,6 +108,10 @@ func TestAuditEventsList(t *testing.T) {
 	if len(body.Items) != 2 || body.NextCursor == "" {
 		t.Fatalf("body = %s", rec.Body.String())
 	}
+	excluded := get(mux, "/api/v1/audit-events?actionPrefix="+pfx+"&excludeActionPrefix="+pfx+".x")
+	if excluded.Code != 200 || !strings.Contains(excluded.Body.String(), `"items":[]`) {
+		t.Fatalf("excluded events = %d %s", excluded.Code, excluded.Body.String())
+	}
 	if _, ok := body.Items[0]["actorId"]; ok {
 		t.Fatalf("NULL actor must be omitted: %v", body.Items[0])
 	}

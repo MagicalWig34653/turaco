@@ -68,7 +68,14 @@ export const securityApi = {
       criteria,
     }),
   normalize: (id: string, expectedVersion: number) =>
-    api.post<AdvisoryDetail>(`/security/advisories/${enc(id)}/normalize`, { expectedVersion }),
+    api.post<AdvisoryDetail & { matched: number }>(`/security/advisories/${enc(id)}/normalize`, {
+      expectedVersion,
+    }),
+  registerSoftwareProduct: (body: { name: string; publisher: string; aliases: string[] }) =>
+    api.post<{ id: string; name: string; relinkedInstallations: number }>(
+      '/software/products',
+      body,
+    ),
   import: (records: unknown[]) =>
     api.post<Record<string, number>>('/security/advisories/import', { records }),
   advisoryAction: (id: string, action: string, expectedVersion: number, reason?: string) =>

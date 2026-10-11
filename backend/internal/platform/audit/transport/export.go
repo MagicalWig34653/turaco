@@ -166,7 +166,7 @@ func (h *handler) filterFromQuery(w http.ResponseWriter, q map[string][]string) 
 		}
 		return ""
 	}
-	f := audit.Filter{TargetType: get("targetType"), TargetID: get("targetId"), Action: get("action"), ActionPrefix: get("actionPrefix"),
+	f := audit.Filter{TargetType: get("targetType"), TargetID: get("targetId"), Action: get("action"), ActionPrefix: get("actionPrefix"), ExcludeActionPrefix: get("excludeActionPrefix"),
 		ActorID: get("actorId"), CorrelationID: get("correlationId"), Via: get("via"), ActorKind: get("actorKind"), SystemActor: get("systemActor")}
 	if m := get("module"); m != "" {
 		if f.ActionPrefix != "" || !modulePattern.MatchString(m) {

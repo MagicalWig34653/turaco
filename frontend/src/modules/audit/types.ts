@@ -39,6 +39,7 @@ export type AuditRetention = {
 
 export type AuditFilter = {
   actionPrefix?: string;
+  excludeActionPrefix?: string;
   module?: string;
   targetType?: string;
   targetId?: string;

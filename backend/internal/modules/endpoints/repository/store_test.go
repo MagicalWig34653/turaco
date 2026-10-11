@@ -492,6 +492,18 @@ func TestRegisterSoftwareProductRejectsDuplicatesAndNeedsManage(t *testing.T) {
 	}
 }
 
+func TestRegisterSoftwareProductAuditRecordsAliasKeys(t *testing.T) {
+	e := newEnv(t)
+	name := "Aud " + strings.TrimPrefix(e.corr, "endpoints-")
+	info, _, err := e.svc.RegisterSoftwareProduct(context.Background(), e.caller(), e.manage, name, "", []string{name + " Pro"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT count(*) FROM platform.audit_events WHERE target_id = $1 AND action = 'endpoints.software_product.registered' AND jsonb_array_length(metadata->'aliasKeys') = 2`, info.ID); n != 1 {
+		t.Errorf("registered audit events with 2 alias keys = %d, want 1", n)
+	}
+}
+
 func TestManualLinkAndUnlink(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

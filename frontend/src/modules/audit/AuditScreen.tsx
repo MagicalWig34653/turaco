@@ -307,6 +307,7 @@ function RetentionLine() {
 
 export function AuditScreen() {
   const { t } = useI18n();
+  const { locale } = useI18n();
   const { can } = useSession();
   const [form, setForm] = useState<FormState>(() => defaultForm());
   const [applied, setApplied] = useState<AuditFilter>(() => toAuditFilter(defaultForm()));
@@ -350,7 +351,8 @@ export function AuditScreen() {
 
   const filterLabel = (key: string, value: string) => {
     const base = t(keyOr(`audit.filter.${key}`, 'audit.filter.actionPrefix'));
-    if (key === 'from' || key === 'to') return `${base}: ${value}`;
+    if (key === 'excludeActionPrefix') return t('audit.filter.excludeLoginEvents');
+    if (key === 'from' || key === 'to') return `${base}: ${formatDateTime(locale, value)}`;
     return `${base}: ${value}`;
   };
 
@@ -404,7 +406,11 @@ export function AuditScreen() {
               delete next[key as keyof AuditFilter];
               return next;
             });
-            setForm((current) => ({ ...current, [key]: '' }));
+            setForm((current) =>
+              key === 'excludeActionPrefix'
+                ? { ...current, excludeLoginEvents: false }
+                : { ...current, [key]: '' },
+            );
           },
         }))}
         onClear={reset}
@@ -465,6 +471,13 @@ export function AuditScreen() {
           value={form.actionPrefix}
           onChange={set('actionPrefix')}
           maxLength={200}
+        />
+        <Checkbox
+          label={t('audit.filter.excludeLoginEvents')}
+          checked={form.excludeLoginEvents}
+          onChange={(event) =>
+            setForm((current) => ({ ...current, excludeLoginEvents: event.target.checked }))
+          }
         />
         <TextField
           label={t('audit.filter.targetType')}

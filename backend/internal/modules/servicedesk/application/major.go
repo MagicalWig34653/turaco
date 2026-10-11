@@ -44,8 +44,12 @@ type MajorIncident struct {
 	OwnerUserID *string
 	// NextUpdateDue is when the next public update is promised; it is cleared when the incident is resolved.
 	NextUpdateDue *time.Time
-	// LocationIDs are the affected Organization Locations (loaded for the detail only).
+	// LocationIDs are the affected Organization Locations.
 	LocationIDs []string
+	// Locations are public names resolved for list rows.
+	Locations []NamedRef
+	// AffectedLocationCount includes ids whose Organization name can no longer be resolved.
+	AffectedLocationCount int
 }
 
 // NamedRef is an Organization record with its display name.
@@ -84,6 +88,8 @@ type MajorStore interface {
 	ListMajor(ctx context.Context, viewer string, activeOnly, includeExercises bool, page Page) (MajorResult, error)
 	// LocationIDs returns the affected Location ids of one incident, in id order.
 	LocationIDs(ctx context.Context, id string) ([]string, error)
+	// MajorLocationIDs returns affected Location ids for one page in a single query.
+	MajorLocationIDs(ctx context.Context, ids []string) (map[string][]string, error)
 	LocationIDsTx(ctx context.Context, tx pgx.Tx, id string) ([]string, error)
 	// ReplaceLocationsTx replaces the affected Location set.
 	ReplaceLocationsTx(ctx context.Context, tx pgx.Tx, id string, locationIDs []string) error
@@ -215,14 +221,18 @@ func majorPublish(ctx context.Context, tx pgx.Tx, c Caller, typ string, m MajorI
 
 // Declare opens a Major Incident with its first public message. Requires majorincidents.manage.
 // An exercise is a drill that stays out of the banner, the briefing and Overview counts.
-func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title, summary string, isExercise bool) (MajorIncident, error) {
+func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title, summary string, isExercise bool, locationIDs ...string) (MajorIncident, error) {
 	if err := c.validate(); err != nil {
 		return MajorIncident{}, err
 	}
 	if !manage {
 		return MajorIncident{}, ErrForbidden
 	}
-	title, err := cleanText(title, maxTitle, true, "title")
+	locations, err := s.validatedLocations(ctx, locationIDs)
+	if err != nil {
+		return MajorIncident{}, err
+	}
+	title, err = cleanText(title, maxTitle, true, "title")
 	if err != nil {
 		return MajorIncident{}, err
 	}
@@ -241,10 +251,16 @@ func (s *MajorService) Declare(ctx context.Context, c Caller, manage bool, title
 		if err != nil {
 			return err
 		}
+		if len(locations) > 0 {
+			if err := s.store.ReplaceLocationsTx(ctx, tx, out.ID, locations); err != nil {
+				return err
+			}
+			out.LocationIDs = locations
+		}
 		if _, err := s.store.AddUpdateTx(ctx, tx, out.ID, MajorUpdate{AuthorID: m.DeclaredBy, Status: out.Status, Body: summary}); err != nil {
 			return err
 		}
-		if err := majorRecord(ctx, tx, c, "servicedesk.major_incident.declared", nil, &out, nil); err != nil {
+		if err := majorRecord(ctx, tx, c, "servicedesk.major_incident.declared", nil, &out, map[string]any{"locationIds": locations}); err != nil {
 			return err
 		}
 		return majorPublish(ctx, tx, c, "MajorIncidentDeclared", out)
@@ -562,6 +578,32 @@ func (s *MajorService) List(ctx context.Context, user string, activeOnly, includ
 	for i := range res.Items {
 		res.Items[i].Tickets = counts[res.Items[i].ID]
 	}
+	if len(ids) > 0 {
+		locationIDs, err := s.store.MajorLocationIDs(ctx, ids)
+		if err != nil {
+			return MajorResult{}, err
+		}
+		all := []string{}
+		for _, id := range ids {
+			all = append(all, locationIDs[id]...)
+		}
+		for i := range res.Items {
+			res.Items[i].AffectedLocationCount = len(locationIDs[res.Items[i].ID])
+		}
+		if len(all) > 0 && s.dir != nil {
+			names, err := s.dir.LocationNames(ctx, all)
+			if err != nil {
+				return MajorResult{}, err
+			}
+			for i := range res.Items {
+				for _, id := range locationIDs[res.Items[i].ID] {
+					if name, ok := names[id]; ok {
+						res.Items[i].Locations = append(res.Items[i].Locations, NamedRef{ID: id, Name: name})
+					}
+				}
+			}
+		}
+	}
 	return res, nil
 }
 
@@ -714,33 +756,9 @@ func (s *MajorService) SetNextUpdate(ctx context.Context, c Caller, manage bool,
 // SetLocations replaces the affected Locations (at most 20 active Organization Locations). Requires
 // majorincidents.manage; not for closed incidents.
 func (s *MajorService) SetLocations(ctx context.Context, c Caller, manage bool, id string, expected *int, locationIDs []string) (MajorIncident, error) {
-	want := make([]string, 0, len(locationIDs))
-	for _, l := range locationIDs {
-		l = strings.ToLower(strings.TrimSpace(l))
-		if l == "" {
-			return MajorIncident{}, invalid("location ids must not be empty")
-		}
-		if !slices.Contains(want, l) {
-			want = append(want, l)
-		}
-	}
-	if len(want) > maxMajorLocations {
-		return MajorIncident{}, invalid("at most %d locations can be affected", maxMajorLocations)
-	}
-	slices.Sort(want)
-	if len(want) > 0 {
-		if s.dir == nil {
-			return MajorIncident{}, invalid("locations cannot be validated")
-		}
-		ok, err := s.dir.ActiveLocations(ctx, want)
-		if err != nil {
-			return MajorIncident{}, err
-		}
-		for _, l := range want {
-			if !ok[l] {
-				return MajorIncident{}, invalid("every location must be an active location")
-			}
-		}
+	want, err := s.validatedLocations(ctx, locationIDs)
+	if err != nil {
+		return MajorIncident{}, err
 	}
 	return s.majorChange(ctx, c, manage, id, expected, "locations", false, func(tx pgx.Tx, cur MajorIncident, _ *MajorIncident) (map[string]any, error) {
 		have, err := s.store.LocationIDsTx(ctx, tx, cur.ID)
@@ -755,6 +773,38 @@ func (s *MajorService) SetLocations(ctx context.Context, c Caller, manage bool, 
 		}
 		return map[string]any{"from": have, "to": want}, nil
 	})
+}
+
+func (s *MajorService) validatedLocations(ctx context.Context, locationIDs []string) ([]string, error) {
+	want := make([]string, 0, len(locationIDs))
+	for _, l := range locationIDs {
+		l = strings.ToLower(strings.TrimSpace(l))
+		if l == "" {
+			return nil, invalid("location ids must not be empty")
+		}
+		if !slices.Contains(want, l) {
+			want = append(want, l)
+		}
+	}
+	if len(want) > maxMajorLocations {
+		return nil, invalid("at most %d locations can be affected", maxMajorLocations)
+	}
+	slices.Sort(want)
+	if len(want) > 0 {
+		if s.dir == nil {
+			return nil, invalid("locations cannot be validated")
+		}
+		ok, err := s.dir.ActiveLocations(ctx, want)
+		if err != nil {
+			return nil, err
+		}
+		for _, l := range want {
+			if !ok[l] {
+				return nil, invalid("every location must be an active location")
+			}
+		}
+	}
+	return want, nil
 }
 
 func equalStrPtr(a, b *string) bool {

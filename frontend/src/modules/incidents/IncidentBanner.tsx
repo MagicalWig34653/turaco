@@ -7,7 +7,7 @@ import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
 import { incidentsApi } from './api';
-import { incidentFreshness } from './incidentModel';
+import { incidentFreshness, incidentLocationNames } from './incidentModel';
 
 function FreshnessLine({
   incident,
@@ -74,6 +74,14 @@ export function IncidentBanner({ compact = false }: { compact?: boolean }) {
               · {t(`incidents.status.${m.status}`)}
             </p>
             <p>{m.summary}</p>
+            <p>
+              {t('incidents.locations')}:{' '}
+              {incidentLocationNames(
+                m.locations,
+                m.affectedLocationCount,
+                t('incidents.locations.unavailable'),
+              ) ?? t('incidents.locations.none')}
+            </p>
             <FreshnessLine incident={m} />
           </div>
           <Button onClick={() => void follow(m.id, !m.subscribed)}>
@@ -101,6 +109,13 @@ export function IncidentBanner({ compact = false }: { compact?: boolean }) {
             <Link to={`/incidents/${encodeURIComponent(m.id)}`}>
               {m.reference} · {m.title}
             </Link>
+            {' · '}
+            {t('incidents.locations')}:{' '}
+            {incidentLocationNames(
+              m.locations,
+              m.affectedLocationCount,
+              t('incidents.locations.unavailable'),
+            ) ?? t('incidents.locations.none')}
           </li>
         ))}
         <li>

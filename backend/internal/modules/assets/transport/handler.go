@@ -191,9 +191,10 @@ type detailDTO struct {
 }
 
 type listResponse struct {
-	Items        []assetDTO        `json:"items"`
-	NextCursor   string            `json:"nextCursor,omitempty"`
-	ProductNames map[string]string `json:"productNames"`
+	Items         []assetDTO        `json:"items"`
+	NextCursor    string            `json:"nextCursor,omitempty"`
+	ProductNames  map[string]string `json:"productNames"`
+	LocationNames map[string]string `json:"locationNames"`
 }
 
 func (h *handler) toList(r *http.Request, res application.Result) (listResponse, error) {
@@ -201,7 +202,11 @@ func (h *handler) toList(r *http.Request, res application.Result) (listResponse,
 	if err != nil {
 		return listResponse{}, err
 	}
-	out := listResponse{Items: make([]assetDTO, 0, len(res.Items)), NextCursor: res.NextCursor, ProductNames: names}
+	locations, err := h.svc.LocationNames(r.Context(), res.Items)
+	if err != nil {
+		return listResponse{}, err
+	}
+	out := listResponse{Items: make([]assetDTO, 0, len(res.Items)), NextCursor: res.NextCursor, ProductNames: names, LocationNames: locations}
 	for _, a := range res.Items {
 		out.Items = append(out.Items, toAsset(a))
 	}

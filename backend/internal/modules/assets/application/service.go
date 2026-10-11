@@ -647,6 +647,20 @@ func (s *Service) names(ctx context.Context, a Asset, as []Assignment) (map[stri
 	return out, nil
 }
 
+// LocationNames resolves only locations of assets already selected for a caller-visible page.
+func (s *Service) LocationNames(ctx context.Context, assets []Asset) (map[string]string, error) {
+	ids := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		if asset.LocationID != nil {
+			ids = append(ids, *asset.LocationID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	return s.dir.LocationNames(ctx, ids)
+}
+
 // List returns assets. Requires assets.view.
 func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, error) {
 	if !p.canView() {
@@ -896,6 +910,12 @@ func (s *Service) SharedForMe(ctx context.Context, p Principal, page Page) (Resu
 	}
 	for i := range res.Items {
 		res.Items[i] = holderView(res.Items[i])
+		// The device is shared at the caller's own primary location (its holder): show that place so identical
+		// devices of other locations are never confused with it.
+		if res.Items[i].LocationID == nil {
+			here := loc
+			res.Items[i].LocationID = &here
+		}
 	}
 	return res, nil
 }

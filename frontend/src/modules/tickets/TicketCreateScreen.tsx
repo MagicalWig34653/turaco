@@ -62,14 +62,16 @@ function ReportIcon({ kind }: { kind: 'device' | 'message' | 'book' | 'check' })
   );
 }
 
-function DeviceChoice({
+export function DeviceChoice({
   asset,
   name,
+  locationName,
   selected,
   onSelect,
 }: {
-  asset: { id: string; reference: string };
+  asset: { id: string; reference: string; serialNumber: string | null };
   name: string;
+  locationName: string | undefined;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -88,6 +90,8 @@ function DeviceChoice({
       <span>
         <strong>{name}</strong>
         <small className="report-reference">{asset.reference}</small>
+        {asset.serialNumber ? <small>{asset.serialNumber}</small> : null}
+        {locationName ? <small>{locationName}</small> : null}
       </span>
     </label>
   );
@@ -200,6 +204,7 @@ export function TicketCreateScreen() {
     (devices.data?.items ?? []).filter((device) => !onBehalf || device.status === 'assigned'),
     (sharedDevices.data?.items ?? []).filter((device) => device.status === 'assigned'),
   );
+  const deviceLocations = { ...sharedDevices.data?.locationNames, ...devices.data?.locationNames };
   if (created)
     return (
       <div className="report-workspace report-success">
@@ -469,6 +474,7 @@ export function TicketCreateScreen() {
                   key={a.id}
                   asset={a}
                   name={names[a.productId] ?? a.reference}
+                  locationName={a.locationId ? deviceLocations[a.locationId] : undefined}
                   selected={assetId === a.id}
                   onSelect={() => setAssetId(a.id)}
                 />
@@ -482,6 +488,7 @@ export function TicketCreateScreen() {
                     key={a.id}
                     asset={a}
                     name={names[a.productId] ?? a.reference}
+                    locationName={a.locationId ? deviceLocations[a.locationId] : undefined}
                     selected={assetId === a.id}
                     onSelect={() => setAssetId(a.id)}
                   />

@@ -486,7 +486,7 @@ func (s *Service) RegisterSoftwareProduct(ctx context.Context, c Caller, p Princ
 		out = prod
 		return audit.Record(ctx, tx, audit.Change{
 			Action: "endpoints.software_product.registered", TargetType: "software_product", TargetID: prod.ID, Actor: c.Actor,
-			CorrelationID: c.CorrelationID, Metadata: map[string]any{"aliasCount": len(keys), "relinkedInstallations": relinked, "affectedDevices": len(devices)},
+			CorrelationID: c.CorrelationID, Metadata: map[string]any{"aliasCount": len(keys), "aliasKeys": keys, "relinkedInstallations": relinked, "affectedDevices": len(devices)},
 		})
 	})
 	return out, relinked, err

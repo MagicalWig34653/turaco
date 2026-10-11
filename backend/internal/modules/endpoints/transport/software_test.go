@@ -1,12 +1,41 @@
 package transport_test
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
 
 const unknownID = "00000000-0000-7000-8000-0000000000e5"
+
+func TestRegisterSoftwareProduct(t *testing.T) {
+	name := "Transport alias product " + time.Now().UTC().Format("20060102150405.000000000")
+	h := serve(t, as(admin, "endpoints.manage"), nil, false)
+	input, _ := json.Marshal(map[string]any{"name": name, "publisher": "Example", "aliases": []string{name + " alias"}})
+	rec := do(h, "POST", "/api/v1/software/products", string(input))
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"relinkedInstallations":0`) {
+		t.Fatalf("register: %d %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil || result.ID == "" {
+		t.Fatalf("response: %+v %v", result, err)
+	}
+	pool := dbtest.Pool(t)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM endpoints.software_aliases WHERE software_product_id = $1::uuid`, result.ID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM endpoints.software_products WHERE id = $1::uuid`, result.ID)
+	})
+	if rec := do(h, "POST", "/api/v1/software/products", string(input)); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate: %d %s", rec.Code, rec.Body.String())
+	}
+}
 
 func TestSoftwareRoutesRequirePermissions(t *testing.T) {
 	cases := []struct {
@@ -18,6 +47,9 @@ func TestSoftwareRoutesRequirePermissions(t *testing.T) {
 		{"products with view", "GET", "/api/v1/software/products", "", []string{"software.view"}, http.StatusOK},
 		{"products with package", "GET", "/api/v1/software/products?status=approved", "", []string{"software.package"}, http.StatusOK},
 		{"products invalid status", "GET", "/api/v1/software/products?status=x", "", []string{"software.view"}, http.StatusBadRequest},
+		{"register product with software view", "POST", "/api/v1/software/products", `{"name":"Example"}`, []string{"software.view"}, http.StatusForbidden},
+		{"register product with security manage", "POST", "/api/v1/software/products", `{"name":"Example"}`, []string{"security.manage"}, http.StatusForbidden},
+		{"register product invalid with endpoints manage", "POST", "/api/v1/software/products", `{"name":""}`, []string{"endpoints.manage"}, http.StatusBadRequest},
 		{"versions with approve", "GET", "/api/v1/software/versions", "", []string{"software.approve"}, http.StatusOK},
 		{"packages with view", "GET", "/api/v1/software/packages", "", []string{"software.view"}, http.StatusOK},
 		{"unknown version", "GET", "/api/v1/software/versions/" + unknownID, "", []string{"software.view"}, http.StatusNotFound},

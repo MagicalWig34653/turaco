@@ -34,3 +34,14 @@ export function incidentFreshness(
   );
   return { kind: 'none', ageHours };
 }
+
+/** Public location names are the same on the banner, list and detail. */
+export function incidentLocationNames(
+  locations: Array<{ name: string }> | undefined,
+  affectedCount: number | undefined,
+  unavailable: string,
+): string | null {
+  const names = locations?.map((location) => location.name) ?? [];
+  if ((affectedCount ?? names.length) > names.length) names.push(unavailable);
+  return names.length ? names.join(', ') : null;
+}

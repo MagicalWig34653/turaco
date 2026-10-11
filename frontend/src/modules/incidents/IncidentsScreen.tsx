@@ -3,7 +3,7 @@ import { FilterBar } from '../../platform/ui/FilterBar';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
-import { asApiError, usePagedList } from '../../platform/api/useAsync';
+import { asApiError, useAsync, usePagedList } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
@@ -13,10 +13,14 @@ import { Button } from '../../platform/ui/Button';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
 import { Dialog } from '../../platform/ui/Dialog';
 import { Checkbox, TextArea, TextField } from '../../platform/ui/Field';
+import { Select } from '../../platform/ui/Field';
+import { useDebouncedValue } from '../../platform/ui/hooks';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { TicketPicker } from '../tickets/TicketPicker';
+import { organizationApi } from '../organization/api';
 import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi, type MajorIncident } from './api';
+import { incidentLocationNames } from './incidentModel';
 
 export function ExerciseBadge() {
   const { t } = useI18n();
@@ -40,6 +44,19 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
   const [message, setMessage] = useState('');
   const [exercise, setExercise] = useState(false);
   const [tickets, setTickets] = useState<TicketHit[]>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; name: string }>>([]);
+  const [locationQuery, setLocationQuery] = useState('');
+  const debouncedLocationQuery = useDebouncedValue(locationQuery.trim(), 250);
+  const locationResults = useAsync(
+    async (signal) =>
+      debouncedLocationQuery
+        ? (await organizationApi.searchLocations(debouncedLocationQuery, signal)).items.filter(
+            (location) =>
+              location.active && !locations.some((selected) => selected.id === location.id),
+          )
+        : [],
+    [debouncedLocationQuery, locations.map((location) => location.id).join(',')],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [unlinked, setUnlinked] = useState<TicketHit[]>([]);
@@ -48,7 +65,12 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
     setBusy(true);
     setError(undefined);
     try {
-      const incident = await incidentsApi.declare(title.trim(), message.trim(), exercise);
+      const incident = await incidentsApi.declare(
+        title.trim(),
+        message.trim(),
+        exercise,
+        locations.map((location) => location.id),
+      );
       // The declaration is committed; a ticket that cannot be linked is reported, not retried silently.
       const failed: TicketHit[] = [];
       for (const hit of tickets) {
@@ -118,6 +140,56 @@ function DeclareDialog({ onClose, onDone }: { onClose: () => void; onDone: () =>
           disabled={busy}
           onChange={setTickets}
         />
+        <TextField
+          label={t('incidents.locations.search')}
+          type="search"
+          value={locationQuery}
+          maxLength={100}
+          onChange={(event) => setLocationQuery(event.target.value)}
+        />
+        {locationResults.error ? (
+          <ApiErrorAlert error={locationResults.error} onRetry={locationResults.reload} />
+        ) : null}
+        {(locationResults.data ?? []).length > 0 ? (
+          <Select
+            label={t('incidents.locations.pick')}
+            value=""
+            onChange={(event) => {
+              const location = (locationResults.data ?? []).find(
+                (item) => item.id === event.target.value,
+              );
+              if (location) {
+                setLocations((current) => [...current, { id: location.id, name: location.name }]);
+                setLocationQuery('');
+              }
+            }}
+            options={[
+              { value: '', label: '-' },
+              ...(locationResults.data ?? []).map((location) => ({
+                value: location.id,
+                label: location.name,
+              })),
+            ]}
+          />
+        ) : null}
+        {locations.length > 0 ? (
+          <ul className="plain-list">
+            {locations.map((location) => (
+              <li key={location.id}>
+                {location.name}{' '}
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={() =>
+                    setLocations((current) => current.filter((item) => item.id !== location.id))
+                  }
+                >
+                  {t('incidents.locations.remove')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="dialog-actions">
           <Button onClick={onClose}>{t('action.cancel')}</Button>
           <Button
@@ -165,6 +237,16 @@ export function IncidentsScreen() {
       render: (m) => <IncidentBadge status={m.status} />,
     },
     { key: 'tickets', header: t('incidents.col.tickets'), render: (m) => m.linkedTickets },
+    {
+      key: 'locations',
+      header: t('incidents.locations'),
+      render: (m) =>
+        incidentLocationNames(
+          m.locations,
+          m.affectedLocationCount,
+          t('incidents.locations.unavailable'),
+        ) ?? t('incidents.locations.none'),
+    },
     {
       key: 'updated',
       header: t('incidents.col.updated'),

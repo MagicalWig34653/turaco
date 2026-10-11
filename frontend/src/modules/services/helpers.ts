@@ -1,4 +1,9 @@
 import type { ServiceNode, TargetType } from './types';
+import type { TeamRow } from '../organization/adminTypes';
+/** Resolve a service team through the organization directory without exposing its raw ID. */
+export function teamName(teams: TeamRow[] | undefined, id: string): string | undefined {
+  return teams?.find((team) => team.id === id)?.name;
+}
 /** Hidden IDs are response-local placeholders and must never be shown. */
 export function nodeLabel(node: ServiceNode): string {
   return node.name ?? node.reference ?? node.id;

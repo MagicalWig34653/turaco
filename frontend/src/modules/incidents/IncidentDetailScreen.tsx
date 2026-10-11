@@ -16,7 +16,7 @@ import { ReasonDialog } from '../../platform/ui/ReasonDialog';
 import { TicketPicker } from '../tickets/TicketPicker';
 import type { TicketHit } from '../tickets/ticketLookup';
 import { incidentsApi } from './api';
-import { nextUpdateState } from './incidentModel';
+import { incidentLocationNames, nextUpdateState } from './incidentModel';
 import { IncidentManagePanel } from './IncidentManagePanel';
 import { ExerciseBadge, IncidentBadge } from './IncidentsScreen';
 
@@ -136,11 +136,14 @@ export function IncidentDetailScreen({ id }: { id: string }) {
           )}
         </Alert>
       ) : null}
-      {(incident.locations?.length ?? 0) > 0 ? (
-        <p>
-          {t('incidents.locations')}: {(incident.locations ?? []).map((l) => l.name).join(', ')}
-        </p>
-      ) : null}
+      <p>
+        {t('incidents.locations')}:{' '}
+        {incidentLocationNames(
+          incident.locations,
+          incident.affectedLocationCount,
+          t('incidents.locations.unavailable'),
+        ) ?? t('incidents.locations.none')}
+      </p>
       <p className="preline">{incident.summary}</p>
       <section>
         <h2>{t('incidents.timeline')}</h2>

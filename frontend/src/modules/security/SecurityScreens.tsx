@@ -87,6 +87,70 @@ function CriteriaIncompleteBadge({
     </>
   );
 }
+function RegisterProductDialog({
+  criterion,
+  onClose,
+  onDone,
+}: {
+  criterion: Criterion;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useI18n();
+  const [name, setName] = useState('');
+  const [publisher, setPublisher] = useState(criterion.publisher ?? '');
+  const [aliases, setAliases] = useState(criterion.productName ?? '');
+  const [error, setError] = useState<ApiError>();
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(undefined);
+    try {
+      await securityApi.registerSoftwareProduct({
+        name,
+        publisher,
+        aliases: aliases
+          .split('\n')
+          .map((x) => x.trim())
+          .filter(Boolean),
+      });
+      onDone();
+    } catch (cause) {
+      setError(asApiError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog title={t('security.registerAlias')} onClose={onClose}>
+      <form className="form-stack" onSubmit={(e) => void submit(e)}>
+        <p>{t('security.registerAliasHint')}</p>
+        <TextField
+          label={t('security.productName')}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          maxLength={200}
+        />
+        <TextField
+          label={t('security.publisher')}
+          value={publisher}
+          onChange={(e) => setPublisher(e.target.value)}
+          maxLength={200}
+        />
+        <label>
+          {t('security.aliases')}
+          <textarea value={aliases} onChange={(e) => setAliases(e.target.value)} rows={3} />
+        </label>
+        {error && <ApiErrorAlert error={error} />}
+        <Button type="submit" disabled={busy}>
+          {t('security.registerProduct')}
+        </Button>
+      </form>
+    </Dialog>
+  );
+}
 function KnownExploitedBadge({
   advisory,
 }: {
@@ -605,6 +669,11 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
     [id, detail.data?.advisory.version],
   );
   const [edit, setEdit] = useState(false);
+  const [aliasCriterion, setAliasCriterion] = useState<Criterion>();
+  const [normalizationResult, setNormalizationResult] = useState<{
+    matched: number;
+    open: number;
+  }>();
   const [error, setError] = useState<ApiError>();
   const [warnings, setWarnings] = useState<string[]>([]);
   const [reasonAction, setReasonAction] = useState('');
@@ -625,7 +694,11 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
   async function normalize() {
     if (!a) return;
     try {
-      await securityApi.normalize(id, a.version);
+      const result = await securityApi.normalize(id, a.version);
+      setNormalizationResult({
+        matched: result.matched,
+        open: result.criteria.filter((c) => c.normalization === 'unmatched').length,
+      });
       detail.reload();
     } catch (cause) {
       setError(asApiError(cause));
@@ -684,6 +757,15 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
                 <Button type="submit" onClick={() => void normalize()}>
                   {t('security.normalize')}
                 </Button>
+                <p>{t('security.normalizeHint')}</p>
+                {normalizationResult && (
+                  <p role="status">
+                    {t('security.normalizeResult', {
+                      matched: normalizationResult.matched,
+                      open: normalizationResult.open,
+                    })}
+                  </p>
+                )}
               </>
             )}
             <Table>
@@ -711,7 +793,17 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
                         .map((r) => `${t(`security.rule.${r.kind}` as MessageKey)} ${r.version}`)
                         .join(', ')}
                     </td>
-                    <td>{t(`security.normalization.${c.normalization}` as MessageKey)}</td>
+                    <td>
+                      {t(`security.normalization.${c.normalization}` as MessageKey)}{' '}
+                      {c.normalization === 'unmatched' &&
+                        c.productName &&
+                        can('security.manage') &&
+                        can('endpoints.manage') && (
+                          <Button type="button" onClick={() => setAliasCriterion(c)}>
+                            {t('security.registerAlias')}
+                          </Button>
+                        )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -787,6 +879,17 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
           onClose={() => setEdit(false)}
           onDone={() => {
             setEdit(false);
+            detail.reload();
+          }}
+        />
+      )}
+      {aliasCriterion && (
+        <RegisterProductDialog
+          criterion={aliasCriterion}
+          onClose={() => setAliasCriterion(undefined)}
+          onDone={() => {
+            setAliasCriterion(undefined);
+            setNormalizationResult(undefined);
             detail.reload();
           }}
         />
