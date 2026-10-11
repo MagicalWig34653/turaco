@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,6 +40,7 @@ type Vault struct {
 	backend Backend
 	master  cipher.AEAD
 	keyID   [8]byte
+	keys    map[[8]byte]cipher.AEAD
 }
 
 // NewVault builds a Vault over a backend with a 32-byte master key.
@@ -57,12 +59,38 @@ func NewVault(b Backend, masterKey []byte) (*Vault, error) {
 	v := &Vault{backend: b, master: g}
 	sum := sha256.Sum256(append([]byte("turaco-storage-key-id\x00"), masterKey...))
 	copy(v.keyID[:], sum[:8])
+	v.keys = map[[8]byte]cipher.AEAD{v.keyID: g}
 	return v, nil
 }
 
-// LoadMasterKey reads a master key file (refused on unix when group or others can access it, so mode 0600 or 0400): 64 hexadecimal characters (surrounding whitespace is ignored). Raw 32
-// byte files are accepted too.
-func LoadMasterKey(path string) ([]byte, error) {
+// NewVaultWithKeys uses the first key for writes and retains the others for reads.
+func NewVaultWithKeys(b Backend, keys [][]byte) (*Vault, error) {
+	if len(keys) == 0 {
+		return nil, errors.New("storage: empty keyring")
+	}
+	v, err := NewVault(b, keys[0])
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range keys[1:] {
+		other, err := NewVault(b, key)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := v.keys[other.keyID]; exists {
+			return nil, errors.New("storage: duplicate master key id")
+		}
+		v.keys[other.keyID] = other.master
+	}
+	return v, nil
+}
+
+// ActiveKeyID is the on-object key identifier of new writes.
+func (v *Vault) ActiveKeyID() string { return hex.EncodeToString(v.keyID[:]) }
+
+// LoadKeyring accepts a legacy single key or a JSON object with active and keys.
+// Keys are indexed by their derived 16-character hexadecimal identifiers.
+func LoadKeyring(path string) ([][]byte, error) {
 	if err := checkKeyFileMode(path); err != nil {
 		return nil, err
 	}
@@ -71,13 +99,67 @@ func LoadMasterKey(path string) ([]byte, error) {
 		return nil, fmt.Errorf("read master key file: %w", err)
 	}
 	if len(raw) == MasterKeyLen {
-		return raw, nil
+		return [][]byte{raw}, nil
 	}
-	k, err := hex.DecodeString(strings.TrimSpace(string(raw)))
-	if err != nil || len(k) != MasterKeyLen {
-		return nil, errors.New("master key file must contain 64 hexadecimal characters (32 random bytes)")
+	trimmed := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(trimmed, "{") {
+		key, err := hex.DecodeString(trimmed)
+		if err != nil || len(key) != MasterKeyLen {
+			return nil, errors.New("master key file must contain 64 hexadecimal characters or a keyring")
+		}
+		return [][]byte{key}, nil
 	}
-	return k, nil
+	var ring struct {
+		Active string            `json:"active"`
+		Keys   map[string]string `json:"keys"`
+	}
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&ring); err != nil {
+		return nil, fmt.Errorf("invalid storage keyring: %w", err)
+	}
+	var extra any
+	if dec.Decode(&extra) != io.EOF {
+		return nil, errors.New("invalid storage keyring: trailing data")
+	}
+	if len(ring.Keys) == 0 || len(ring.Keys) > 16 {
+		return nil, errors.New("storage keyring must contain 1 to 16 keys")
+	}
+	keys := make([][]byte, 0, len(ring.Keys))
+	for id, value := range ring.Keys {
+		key, err := hex.DecodeString(value)
+		if err != nil || len(key) != MasterKeyLen {
+			return nil, errors.New("storage keyring contains an invalid key")
+		}
+		sum := sha256.Sum256(append([]byte("turaco-storage-key-id\x00"), key...))
+		if id != hex.EncodeToString(sum[:8]) {
+			return nil, errors.New("storage keyring key id does not match its key")
+		}
+		if id == ring.Active {
+			keys = append([][]byte{key}, keys...)
+		} else {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 || ring.Active != keyIDFor(keys[0]) {
+		return nil, errors.New("storage keyring active key is missing")
+	}
+	return keys, nil
+}
+
+func keyIDFor(key []byte) string {
+	sum := sha256.Sum256(append([]byte("turaco-storage-key-id\x00"), key...))
+	return hex.EncodeToString(sum[:8])
+}
+
+// LoadMasterKey reads a master key file (refused on unix when group or others can access it, so mode 0600 or 0400): 64 hexadecimal characters (surrounding whitespace is ignored). Raw 32
+// byte files are accepted too.
+func LoadMasterKey(path string) ([]byte, error) {
+	keys, err := LoadKeyring(path)
+	if err != nil {
+		return nil, err
+	}
+	return keys[0], nil
 }
 
 // Backend returns the underlying blob port (health checks and deletes).
@@ -147,11 +229,14 @@ func (v *Vault) Open(ctx context.Context, id string) (io.ReadCloser, error) {
 		_ = rc.Close()
 		return nil, ErrCorrupt
 	}
-	if !bytes.Equal(hdr[5:13], v.keyID[:]) {
+	var keyID [8]byte
+	copy(keyID[:], hdr[5:13])
+	master, ok := v.keys[keyID]
+	if !ok {
 		_ = rc.Close()
 		return nil, ErrWrongKey
 	}
-	dk, err := v.master.Open(nil, hdr[13:25], hdr[25:25+32+gcmOverhead], wrapAAD(id))
+	dk, err := master.Open(nil, hdr[13:25], hdr[25:25+32+gcmOverhead], wrapAAD(id))
 	if err != nil {
 		_ = rc.Close()
 		return nil, ErrCorrupt
@@ -167,6 +252,64 @@ func (v *Vault) Open(ctx context.Context, id string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return &decryptReader{rc: rc, aead: aead, id: id, prefix: hdr[headerSize-8:], in: make([]byte, chunkSize+gcmOverhead)}, nil
+}
+
+// KeyID reads the object header without changing the object.
+func (v *Vault) KeyID(ctx context.Context, id string) (string, error) {
+	if !ValidID(id) {
+		return "", ErrInvalidID
+	}
+	rc, err := v.backend.Open(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	hdr := make([]byte, headerSize)
+	if _, err := io.ReadFull(rc, hdr); err != nil || string(hdr[:4]) != magic || hdr[4] != formatV1 {
+		return "", ErrCorrupt
+	}
+	return hex.EncodeToString(hdr[5:13]), nil
+}
+
+// Rewrap replaces only the wrapped data key in an object's header. The encrypted
+// content is copied unchanged. It is safe to retry after an interrupted write.
+func (v *Vault) Rewrap(ctx context.Context, id string) (bool, error) {
+	if !ValidID(id) {
+		return false, ErrInvalidID
+	}
+	rc, err := v.backend.Open(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	defer rc.Close()
+	hdr := make([]byte, headerSize)
+	if _, err := io.ReadFull(rc, hdr); err != nil || string(hdr[:4]) != magic || hdr[4] != formatV1 {
+		return false, ErrCorrupt
+	}
+	var oldID [8]byte
+	copy(oldID[:], hdr[5:13])
+	if oldID == v.keyID {
+		return false, nil
+	}
+	master, ok := v.keys[oldID]
+	if !ok {
+		return false, ErrWrongKey
+	}
+	dk, err := master.Open(nil, hdr[13:25], hdr[25:25+32+gcmOverhead], wrapAAD(id))
+	if err != nil {
+		return false, ErrCorrupt
+	}
+	nonce := make([]byte, 12)
+	if _, err := rand.Read(nonce); err != nil {
+		return false, err
+	}
+	copy(hdr[5:13], v.keyID[:])
+	copy(hdr[13:25], nonce)
+	copy(hdr[25:25+32+gcmOverhead], v.master.Seal(nil, nonce, dk, wrapAAD(id)))
+	if err := v.backend.Put(ctx, id, io.MultiReader(bytes.NewReader(hdr), rc)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Check proves the backend is reachable and writable.

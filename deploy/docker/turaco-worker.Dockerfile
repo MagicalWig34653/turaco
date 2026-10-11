@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/turaco-
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/turaco-migrate ./backend/cmd/turaco-migrate
 
 FROM alpine:3.24
-RUN addgroup -S app && adduser -S -G app app
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 COPY --from=build /out/turaco-worker /usr/local/bin/turaco-worker
 COPY --from=build /out/turaco-admin /usr/local/bin/turaco-admin
 COPY --from=build /out/turaco-migrate /usr/local/bin/turaco-migrate

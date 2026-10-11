@@ -24,6 +24,36 @@ func newStore(t *testing.T) (*Store, string) {
 	return s, base
 }
 
+func TestVaultRewrapOnFilesystem(t *testing.T) {
+	s, _ := newStore(t)
+	old, err := storage.NewVault(s, bytes.Repeat([]byte{1}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := storage.NewID()
+	plain := strings.Repeat("attachment", 20000)
+	if _, err := old.Put(context.Background(), id, strings.NewReader(plain), 0); err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := storage.NewVaultWithKeys(s, [][]byte{bytes.Repeat([]byte{2}, 32), bytes.Repeat([]byte{1}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := rotated.Rewrap(context.Background(), id); err != nil || !changed {
+		t.Fatalf("rewrap: %v %v", changed, err)
+	}
+	newOnly, _ := storage.NewVault(s, bytes.Repeat([]byte{2}, 32))
+	rc, err := newOnly.Open(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	got, err := io.ReadAll(rc)
+	if err != nil || string(got) != plain {
+		t.Fatalf("rewrapped content: %v", err)
+	}
+}
+
 func TestPutOpenDelete(t *testing.T) {
 	s, base := newStore(t)
 	ctx := context.Background()

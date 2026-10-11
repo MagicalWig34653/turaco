@@ -59,6 +59,73 @@ func TestRoundTripAroundChunkBoundaries(t *testing.T) {
 	}
 }
 
+func TestKeyringRewrapChangesOnlyHeader(t *testing.T) {
+	ctx := context.Background()
+	mem := newMem()
+	old, err := NewVault(mem, testKey(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := roundTrip(t, old, bytes.Repeat([]byte("test data"), 20000))
+	before := append([]byte(nil), mem.m[id]...)
+	rotated, err := NewVaultWithKeys(mem, [][]byte{testKey(2), testKey(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := roundTrip(t, rotated, []byte("new")); got == id {
+		t.Fatal("id collision")
+	}
+	if _, err := rotated.Open(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := rotated.Rewrap(ctx, id)
+	if err != nil || !changed {
+		t.Fatalf("rewrap: changed=%v err=%v", changed, err)
+	}
+	if !bytes.Equal(before[headerSize:], mem.m[id][headerSize:]) {
+		t.Fatal("encrypted content changed")
+	}
+	if got, err := rotated.KeyID(ctx, id); err != nil || got != rotated.ActiveKeyID() {
+		t.Fatalf("key id %s: %v", got, err)
+	}
+	if changed, err := rotated.Rewrap(ctx, id); err != nil || changed {
+		t.Fatalf("retry: changed=%v err=%v", changed, err)
+	}
+	retired, _ := NewVault(mem, testKey(2))
+	rc, err := retired.Open(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	if _, err := io.ReadAll(rc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Open(ctx, id); !errors.Is(err, ErrWrongKey) {
+		t.Fatalf("retired key reads object: %v", err)
+	}
+}
+
+func TestLoadKeyring(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "keyring")
+	data := `{"active":"` + keyIDFor(testKey(2)) + `","keys":{"` + keyIDFor(testKey(1)) + `":"` + strings.Repeat("01", 32) + `","` + keyIDFor(testKey(2)) + `":"` + strings.Repeat("02", 32) + `"}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := LoadKeyring(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || !bytes.Equal(keys[0], testKey(2)) {
+		t.Fatal("wrong active key")
+	}
+	if err := os.WriteFile(path, []byte(strings.Replace(data, keyIDFor(testKey(1)), "0000000000000000", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadKeyring(path); err == nil {
+		t.Fatal("mismatched id accepted")
+	}
+}
+
 func TestPlaintextNeverStoredAndKeysDiffer(t *testing.T) {
 	v, mem := newVault(t)
 	p := []byte(strings.Repeat("patient record ", 100))

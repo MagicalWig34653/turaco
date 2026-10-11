@@ -12,6 +12,7 @@
 //	turaco-admin emergency enable|disable --login <name>
 //	turaco-admin security import < advisories.json
 //	turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]
+//	turaco-admin storage rewrap [--apply] [--batch-size N]
 //	turaco-admin demo seed   (APP_ENV=development only)
 //	turaco-admin demo seed-hospital   (APP_ENV=development only; hospital IT simulation)
 package main
@@ -61,6 +62,7 @@ const usage = `usage:
   turaco-admin entra unlink --tenant <guid> --object <guid>
   turaco-admin security import < advisories.json
   turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]
+  turaco-admin storage rewrap [--apply] [--batch-size N]
   turaco-admin demo seed   (development only)
   turaco-admin demo seed-hospital   (development only; hospital IT simulation)`
 
@@ -103,6 +105,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runEntra(ctx, e, command, rest)
 	case "admin":
 		err = runAdmin(ctx, e, command, rest)
+	case "storage":
+		err = runStorage(ctx, e, command, rest)
 	default:
 		err = errUsage
 	}

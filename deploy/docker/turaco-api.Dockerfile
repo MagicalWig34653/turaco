@@ -8,7 +8,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/turaco-api ./backend/cmd/turaco-api
 
 FROM alpine:3.24
-RUN addgroup -S app && adduser -S -G app app
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 COPY --from=build /out/turaco-api /usr/local/bin/turaco-api
 USER app
 EXPOSE 8080

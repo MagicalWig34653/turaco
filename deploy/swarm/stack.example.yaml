@@ -2,6 +2,24 @@
 # placement constraints, update policy, and monitoring are environment-specific.
 version: "3.9"
 services:
+  clamav:
+    image: clamav/clamav:1.4.6-debian
+    networks: [platform]
+    environment:
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+    volumes:
+      - clamav_signatures:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    deploy:
+      replicas: 1
+      # Pin this service to the node that holds the signature volume, or use shared storage.
+
   # One-shot job: applies migrations and exits. Redeploy the stack with a new image digest to run it again.
   # turaco-migrate takes a PostgreSQL advisory lock, so a second concurrent run waits instead of racing.
   # API and worker may start before it finishes; /health/ready stays failing until the schema is current.
@@ -22,6 +40,12 @@ services:
     networks: [platform]
     environment:
       APP_ENV: production
+      STORAGE_DRIVER: s3
+      STORAGE_MASTER_KEY_FILE: /run/secrets/storage_master_key
+      CLAMAV_ADDRESS: clamav:3310
+      S3_ENDPOINT: ${TURACO_S3_ENDPOINT:?Set object store endpoint}
+      S3_BUCKET: ${TURACO_S3_BUCKET:?Set object store bucket}
+      S3_REGION: ${TURACO_S3_REGION:-us-east-1}
       # Network of the reverse proxy in front of the API (turaco-web/ingress);
       # without it login throttling sees only the proxy's address.
       # HTTP_TRUSTED_PROXIES: 10.0.0.0/24
@@ -41,12 +65,22 @@ services:
         condition: on-failure
     secrets:
       - database_url
+      - source: storage_master_key
+        target: storage_master_key
+        uid: "10001"
+        mode: 0400
 
   turaco-worker:
     image: ghcr.io/OWNER/REPOSITORY/turaco-worker@sha256:REPLACE_ME
     networks: [platform]
     environment:
       APP_ENV: production
+      STORAGE_DRIVER: s3
+      STORAGE_MASTER_KEY_FILE: /run/secrets/storage_master_key
+      CLAMAV_ADDRESS: clamav:3310
+      S3_ENDPOINT: ${TURACO_S3_ENDPOINT:?Set object store endpoint}
+      S3_BUCKET: ${TURACO_S3_BUCKET:?Set object store bucket}
+      S3_REGION: ${TURACO_S3_REGION:-us-east-1}
       # LDAP_URL: ldaps://dc.example.internal:636
       # LDAP_PROVIDER_KEY: ad
       # LDAP_BIND_DN: CN=svc-turaco,OU=Service Accounts,DC=example,DC=internal
@@ -59,6 +93,10 @@ services:
         condition: on-failure
     secrets:
       - database_url
+      - source: storage_master_key
+        target: storage_master_key
+        uid: "10001"
+        mode: 0400
       # - ldap_bind_password
 
   turaco-web:
@@ -78,8 +116,13 @@ networks:
   platform:
     driver: overlay
 
+volumes:
+  clamav_signatures:
+
 secrets:
   database_url:
+    external: true
+  storage_master_key:
     external: true
   # ldap_bind_password:
   #   external: true
