@@ -346,7 +346,7 @@ func main() {
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
-		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))), sessionAuth, logger)
+		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))).WithLocations(catalogpublic.NewLocations(orgpublic.NewWorkDirectory(orgReader))), sessionAuth, logger)
 	briefingService := wiring.BriefingAnnouncements(pool, briefingapp.NewService(briefingrepository.New(pool), nil), moduleSvc)
 	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService, moduleSvc))
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)

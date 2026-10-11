@@ -37,8 +37,11 @@ type Service struct {
 	dir       Directory
 	users     catalogpublic.UserLookup
 	products  catalogpublic.ProductLookup
+	assets    catalogpublic.AssetLookup
 	now       func() time.Time
 }
+
+func (s *Service) WithAssets(assets catalogpublic.AssetLookup) *Service { s.assets = assets; return s }
 
 // NewService creates the service. users and products validate answers;
 // now may be nil.
@@ -97,6 +100,7 @@ type SubmitInput struct {
 	// RequestedForID is the User the request is for; nil means the requester.
 	RequestedForID *string
 	Answers        map[string]any
+	AssetsView     bool
 }
 
 // resolvedStep is an approval step reduced to a concrete approver.
@@ -203,7 +207,8 @@ func (s *Service) Submit(ctx context.Context, c Caller, in SubmitInput) (Request
 			}
 		}
 	}
-	answers, refs, err := catalogpublic.ValidateAnswers(ctx, sub.Definition, in.Answers, s.users, s.products)
+	locations, _ := s.dir.(catalogpublic.LocationLookup)
+	answers, refs, err := catalogpublic.ValidateRequestAnswers(ctx, sub.Definition, in.Answers, s.users, s.products, locations, s.assets, requester, in.AssetsView)
 	if err != nil {
 		return Request{}, err
 	}

@@ -227,6 +227,21 @@ func chain(e *env, n int) []relationships.Node {
 	return nodes
 }
 
+func TestTraverseManyNodesSharesWalkAndBoundsResults(t *testing.T) {
+	e := newEnv(t)
+	a, b, c := e.node("tnode"), e.node("tnode"), e.node("tnode")
+	e.link(b, a)
+	e.link(c, b)
+	got, cut, err := e.g.TraverseManyNodes(context.Background(), e.pool, []relationships.Node{a, b}, relationships.TraverseInput{Direction: relationships.Reverse, MaxDepth: 6, Types: []string{"TEST_DEPENDS_ON"}, NodeTypes: []string{"tnode"}}, 10)
+	if err != nil || cut || !slices.Contains(got[a], b) || !slices.Contains(got[a], c) || !slices.Contains(got[b], c) {
+		t.Fatalf("batch walk = %+v, cut=%v, err=%v", got, cut, err)
+	}
+	_, cut, err = e.g.TraverseManyNodes(context.Background(), e.pool, []relationships.Node{a, b}, relationships.TraverseInput{Direction: relationships.Reverse, Types: []string{"TEST_DEPENDS_ON"}, NodeTypes: []string{"tnode"}}, 1)
+	if err != nil || !cut {
+		t.Fatalf("bounded walk cut=%v err=%v", cut, err)
+	}
+}
+
 func TestTraverseDepthAndPath(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

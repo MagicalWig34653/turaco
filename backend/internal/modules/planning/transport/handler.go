@@ -95,7 +95,8 @@ func principal(r *http.Request) application.Principal {
 		TasksView:       p.Has("tasks.view") || p.Has("tasks.manage"),
 		ProcurementView: p.Has("procurement.view") || p.Has("procurement.manage"),
 		ServicesView:    p.Has("services.view") || p.Has("services.manage"),
-		InfraView:       p.Has("infrastructure.view") || p.Has("infrastructure.manage")}
+		InfraView:       p.Has("infrastructure.view") || p.Has("infrastructure.manage"),
+		AssetsView:      p.Has("assets.view") || p.Has("assets.manage")}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

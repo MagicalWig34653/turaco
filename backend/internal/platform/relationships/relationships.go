@@ -783,6 +783,105 @@ func (g *Graph) Traverse(ctx context.Context, q Querier, in TraverseInput) (Trav
 	return res, err
 }
 
+// TraverseManyNodes applies the same breadth-first traversal filters as Traverse
+// to several starts. It shares each depth's edge read across all starts and
+// bounds the total number of reached (start, node) pairs.
+func (g *Graph) TraverseManyNodes(ctx context.Context, q Querier, starts []Node, in TraverseInput, maxReached int) (map[Node][]Node, bool, error) {
+	if len(starts) > MaxBatchIDs || maxReached < 1 || maxReached > 1000 {
+		return nil, false, ErrInvalid
+	}
+	if in.MaxDepth <= 0 || in.MaxDepth > MaxDepth {
+		in.MaxDepth = MaxDepth
+	}
+	types, err := g.checkTypes(in.Types)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, t := range in.NodeTypes {
+		if !typePattern.MatchString(t) {
+			return nil, false, ErrInvalid
+		}
+	}
+	near, far := "source", "target"
+	if in.Direction == Reverse {
+		near, far = "target", "source"
+	}
+	type pair struct{ root, node Node }
+	frontier := []pair{}
+	visited := map[Node]map[Node]bool{}
+	out := map[Node][]Node{}
+	for _, raw := range starts {
+		start, err := checkNode(raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if visited[start] != nil {
+			continue
+		}
+		visited[start] = map[Node]bool{start: true}
+		out[start] = []Node{}
+		frontier = append(frontier, pair{start, start})
+	}
+	count := 0
+	truncated := false
+	for depth := 1; depth <= in.MaxDepth+1 && len(frontier) > 0; depth++ {
+		unique := map[Node]bool{}
+		var fTypes, fIDs []string
+		for _, item := range frontier {
+			if !unique[item.node] {
+				unique[item.node] = true
+				fTypes = append(fTypes, item.node.Type)
+				fIDs = append(fIDs, item.node.ID)
+			}
+		}
+		rows, err := q.Query(ctx, `SELECT `+cols+` FROM platform.relationships WHERE (`+near+`_type, `+near+`_id) IN (SELECT * FROM unnest($1::text[], $2::uuid[])) AND type = ANY($3::text[]) AND valid_until IS NULL AND (cardinality($5::text[]) = 0 OR `+far+`_type = ANY($5::text[])) ORDER BY id LIMIT $4`, fTypes, fIDs, types, edgeScanLimit+1, in.NodeTypes)
+		if err != nil {
+			return nil, false, fmt.Errorf("traverse relationships: %w", err)
+		}
+		adj := map[Node][]Node{}
+		edges := 0
+		for rows.Next() {
+			rel, scanErr := scan(rows)
+			if scanErr != nil {
+				rows.Close()
+				return nil, false, scanErr
+			}
+			edges++
+			if edges > edgeScanLimit {
+				truncated = true
+				continue
+			}
+			from, to := rel.Source, rel.Target
+			if in.Direction == Reverse {
+				from, to = rel.Target, rel.Source
+			}
+			adj[from] = append(adj[from], to)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, false, err
+		}
+		var next []pair
+		for _, item := range frontier {
+			for _, node := range adj[item.node] {
+				if visited[item.root][node] {
+					continue
+				}
+				if depth > in.MaxDepth || count >= maxReached {
+					truncated = true
+					continue
+				}
+				visited[item.root][node] = true
+				out[item.root] = append(out[item.root], node)
+				count++
+				next = append(next, pair{item.root, node})
+			}
+		}
+		frontier = next
+	}
+	return out, truncated, nil
+}
+
 // Reaches reports whether target is reachable from start in the direction,
 // searching deeper than Traverse and only through records of nodeTypes (empty:
 // all). ErrTooLarge when the search limit was hit without finding it.

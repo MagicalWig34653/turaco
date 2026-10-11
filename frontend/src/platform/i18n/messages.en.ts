@@ -1452,8 +1452,13 @@ export const en = {
   'catalogAdmin.field.title': 'Title',
   'catalogAdmin.field.description': 'Description',
   'catalogAdmin.field.definition': 'Definition (JSON)',
+  'catalogAdmin.field.addReference': 'Add reference field',
+  'catalogAdmin.field.addReference.choose': 'Choose a field type',
+  'catalogAdmin.type.location': 'Location',
+  'catalogAdmin.type.asset': 'Asset',
   'catalogAdmin.field.definition.hint':
-    'Form fields, approval steps and fulfillment task templates as described in ADR-0025.',
+    'Form fields (including location and asset), approval steps and fulfillment task templates as described in ADR-0025.',
+  'catalog.form.selected': 'Selected: {name}',
   'catalogAdmin.error.json': 'The definition is not valid JSON.',
   'catalogAdmin.save': 'Save',
   'catalogAdmin.empty': 'There are no catalog items yet.',
@@ -4930,6 +4935,9 @@ export const en = {
   'changes.pick.remove': 'Remove {name} from the selection',
   'changes.pick.add': 'Add {count} resource(s)',
   'planning.calendar.proposed': 'proposed',
+  'planning.calendar.indirect': 'indirect',
+  'planning.calendar.indirectHint':
+    'Affected through a service dependency of another listed resource.',
   'planning.calendar.legend': 'Legend',
   'planning.calendar.legend.firm': 'Approved, scheduled or running window',
   'planning.calendar.legend.proposed':

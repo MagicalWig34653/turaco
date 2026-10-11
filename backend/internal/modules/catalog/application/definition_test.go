@@ -18,6 +18,58 @@ const (
 	userOff = "00000000-0000-7000-8000-0000000000b9"
 )
 
+type testLocations map[string]string
+
+func (l testLocations) ActiveLocations(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = l[id] != ""
+	}
+	return out, nil
+}
+func (l testLocations) LocationNames(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		if l[id] != "" {
+			out[id] = l[id]
+		}
+	}
+	return out, nil
+}
+
+type testAssets struct{ allowed bool }
+
+func (a testAssets) RequestAsset(_ context.Context, _, _ string, viewAll bool) (AssetChoice, bool, error) {
+	return AssetChoice{Name: "Monitor", Reference: "AST-7"}, a.allowed || viewAll, nil
+}
+
+func TestLocationAndAssetAnswersKeepValidatedSnapshots(t *testing.T) {
+	loc := "00000000-0000-7000-8000-0000000000a2"
+	asset := "00000000-0000-7000-8000-0000000000a3"
+	d := mustParse(t, `{"fields":[{"key":"where","type":"location","label":"Where","required":true},{"key":"device","type":"asset","label":"Device","required":true}]}`)
+	out, refs, err := ValidateRequestAnswers(context.Background(), d, map[string]any{"where": loc, "device": asset}, activeUsers, activeProducts, testLocations{loc: "Ward 3"}, testAssets{true}, userA, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out["where"].(map[string]string)["name"]; got != "Ward 3" {
+		t.Errorf("location snapshot = %q", got)
+	}
+	if got := out["device"].(map[string]string)["reference"]; got != "AST-7" {
+		t.Errorf("asset snapshot = %q", got)
+	}
+	if len(refs) != 2 || refs[0].Type != "asset" || refs[1].Type != "location" {
+		t.Errorf("references = %+v", refs)
+	}
+	_, _, err = ValidateRequestAnswers(context.Background(), d, map[string]any{"where": loc, "device": asset}, activeUsers, activeProducts, testLocations{loc: "Ward 3"}, testAssets{}, userA, false)
+	if got := fieldErrors(t, err)["device"]; got != CodeNotAllowed {
+		t.Errorf("unheld asset = %q", got)
+	}
+	_, _, err = ValidateRequestAnswers(context.Background(), d, map[string]any{"where": loc, "device": asset}, activeUsers, activeProducts, testLocations{}, testAssets{true}, userA, false)
+	if got := fieldErrors(t, err)["where"]; got != CodeNotActive {
+		t.Errorf("inactive location = %q", got)
+	}
+}
+
 func parse(t *testing.T, raw string) (Definition, error) {
 	t.Helper()
 	return ParseDefinition([]byte(raw))

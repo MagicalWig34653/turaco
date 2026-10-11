@@ -26,6 +26,8 @@ const (
 	FieldSelect   = "select"
 	FieldUser     = "user"
 	FieldProduct  = "product"
+	FieldLocation = "location"
+	FieldAsset    = "asset"
 )
 
 // Limits keep a definition small and reviewable.
@@ -273,7 +275,7 @@ func (f *Field) validateType() error {
 		if f.Min != nil && f.Max != nil && *f.Min > *f.Max {
 			return invalid("field %q: min must not exceed max", f.Key)
 		}
-	case FieldBoolean, FieldDate, FieldUser:
+	case FieldBoolean, FieldDate, FieldUser, FieldLocation, FieldAsset:
 	case FieldSelect:
 		if len(f.Options) == 0 || len(f.Options) > MaxOptions {
 			return invalid("field %q: a select field needs 1 to %d options", f.Key, MaxOptions)
@@ -314,7 +316,7 @@ func (f *Field) validateType() error {
 			seen[id] = struct{}{}
 		}
 	default:
-		return invalid("field %q: type must be one of text, longtext, number, boolean, date, select, user, product", f.Key)
+		return invalid("field %q: type must be one of text, longtext, number, boolean, date, select, user, product, location, asset", f.Key)
 	}
 	return nil
 }

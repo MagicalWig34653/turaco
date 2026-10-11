@@ -270,18 +270,28 @@ export function IdChips({
   );
 }
 
-export function LocationPicker({ onPick }: { onPick: (item: PickItem) => void }) {
+export function LocationPicker({
+  onPick,
+  search,
+  available,
+}: {
+  onPick: (item: PickItem) => void;
+  search?: (q: string, signal: AbortSignal) => Promise<PickItem[]>;
+  available?: boolean;
+}) {
   const { t } = useI18n();
   const { can } = useSession();
   return (
     <SearchPicker
       label={t('deployments.def.location.search')}
-      allowed={can('organization.view')}
+      allowed={available ?? can('organization.view')}
       onPick={onPick}
-      search={async (q, signal) =>
-        (await organizationApi.searchLocations(q, signal)).items
-          .filter((location) => location.active)
-          .map((location) => ({ id: location.id, label: location.name }))
+      search={
+        search ??
+        (async (q, signal) =>
+          (await organizationApi.searchLocations(q, signal)).items
+            .filter((location) => location.active)
+            .map((location) => ({ id: location.id, label: location.name })))
       }
     />
   );

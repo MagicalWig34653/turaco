@@ -1,6 +1,8 @@
 # Current Implementation Status
 
-**Status date:** 2026-10-11 (migrations `000001` to `000082` are described below and are consecutive)
+**Status date:** 2026-10-11 (migrations `000001` to `000087` are consecutive)
+
+**Catalog references and calendar impact (2026-10-11, migration `000087`):** Catalog form definitions also accept `location` and `asset`. Active Locations have a requester-facing picker; Asset answers are checked against the requester or their primary Location, with `assets.view|manage` allowing staff to reference any Asset. Requests keep typed references and display snapshots in their answers and link them in detail. The maintenance calendar batches the downstream dependency walk of affected resources and adds visible reached Services as `indirect` lines, with the same visibility gates as the Services impact view and a bounded/truncated walk. See [F3](f3-requests-design.md#catalog-reference-fields-2026-10-11) and [F7](f7-infrastructure-change-design.md#maintenance-calendar-dependency-impact-2026-10-11).
 
 **F8c backend:** `GET /api/v1/briefing/feed` computes permission-filtered entries from published manual Items, applicable Security Advisories, risk reviews, upcoming maintenance, due Milestones, open Major Incidents, Endpoint/Autotask/Directory health, unassigned open Tickets and the caller's pending Approval count. Each source contributes at most 20 entries, with `truncated` and `unavailable` metadata. Titles require the owning module's read permission. Each source has a two-second deadline and failures report `source_timeout` or `source_error`; successful feeds use a bounded ten-second per-User/effective-permission cache. Major Incident counts are open linked Tickets. Migration `000049_briefing_health_indexes.up.sql` indexes health and the unassigned Ticket backlog. OpenAPI (`/briefing/feed`) and the frontend feed (`frontend/src/modules/briefing`) are implemented.
 

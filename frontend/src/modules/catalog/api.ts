@@ -24,6 +24,11 @@ registerErrorResolver((error) =>
 );
 
 export const catalogApi = {
+  locations: (q: string, signal?: AbortSignal) =>
+    api.get<{ items: Array<{ id: string; name: string }> }>('/catalog-items/locations', {
+      signal,
+      query: { q },
+    }),
   list: (status: 'active' | 'inactive' | '', cursor?: string, signal?: Signal) =>
     api.get<Page<CatalogItem>>('/catalog-items', { signal, query: { status, limit: 50, cursor } }),
   form: (id: string, signal?: Signal) =>

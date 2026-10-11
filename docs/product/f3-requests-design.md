@@ -1,5 +1,9 @@
 # F3 Products, Catalog and Requests — Feature Design
 
+## Catalog reference fields (2026-10-11)
+
+Catalog definitions accept `location` and `asset` fields in addition to the existing closed types. A Location answer must name an active Organization Location; the form offers a bounded active-Location search to signed-in requesters. An Asset answer must be an inventory Asset held by the requester or assigned to the requester's primary Location; a caller with `assets.view` or `assets.manage` may name any existing Asset. The same Asset snapshot authorization used by the ticket device picker enforces this at submission. The request stores each answer's ID and name/reference snapshot in the answers JSON and a typed queryable reference in `request_references`. The request detail links the referenced record. Migration `000087` widens the reference-type constraint; no new lifecycle, audit action or event is added.
+
 **Status:** Accepted 2026-10-02. Target design; [current status](current-status.md) is authoritative for what exists. Related: [ADR-0025](../decisions/ADR-0025-catalog-form-definitions.md), [F2 design](f2-work-foundation-design.md), workflows ([hardware](../workflows/hardware-request.md), [new workplace](../workflows/new-workplace.md), [software](../workflows/software-request.md), [access](../workflows/access-request.md)).
 
 ## Scope decisions

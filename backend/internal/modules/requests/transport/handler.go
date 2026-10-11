@@ -147,6 +147,10 @@ func (h *handler) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	req, err := h.svc.Submit(r.Context(), caller(w, r), application.SubmitInput{
 		CatalogItemID: b.CatalogItemID, RequestedForID: b.RequestedForID, Answers: b.Answers,
+		AssetsView: func() bool {
+			p, _ := authorization.PrincipalFrom(r.Context())
+			return p.Has("assets.view") || p.Has("assets.manage")
+		}(),
 	})
 	if err != nil {
 		h.fail(w, r, err)

@@ -123,8 +123,13 @@ func (f *fakeProcurement) Requests(_ context.Context, ids []string) (map[string]
 
 type fakeServices struct {
 	byID        map[string]application.ServiceInfo
+	impacted    map[application.Node][]string
 	maxBatch    int
 	afterLookup func()
+}
+
+func (f *fakeServices) ImpactServicesBatch(_ context.Context, _ application.Principal, _ []application.Node) (map[application.Node][]string, bool, error) {
+	return f.impacted, false, nil
 }
 
 func (f *fakeServices) Lookup(_ context.Context, ids []string) (map[string]application.ServiceInfo, error) {
@@ -1098,6 +1103,29 @@ func TestMaintenanceCalendar(t *testing.T) {
 	cal, _ = e.svc.MaintenanceCalendar(ctx, requesterOnly, from, to)
 	if cal.Items[1].Title == nil || cal.Items[0].Title != nil {
 		t.Errorf("requester titles = %v %v", cal.Items[0].Title, cal.Items[1].Title)
+	}
+}
+
+func TestMaintenanceCalendarIncludesIndirectServiceFromVM(t *testing.T) {
+	e := newEnv(t)
+	from := time.Date(2027, 5, 1, 0, 0, 0, 0, time.UTC)
+	to := from.Add(24 * time.Hour)
+	vm, serviceID := e.uuid(), e.uuid()
+	e.services.byID[serviceID] = application.ServiceInfo{ID: serviceID, Name: "ORBIS/KIS", Reference: "SVC-8"}
+	e.services.impacted = map[application.Node][]string{{Type: "vm", ID: vm}: {serviceID}}
+	e.changes.calendar = []application.ChangeCalendarEntry{{Change: application.ChangeInfo{ID: e.uuid(), Reference: "CHG-11", Status: "scheduled", RequesterID: e.mgr, WindowStart: &from, WindowEnd: &to}, Affected: []application.Node{{Type: "vm", ID: vm}}}}
+	cal, err := e.svc.MaintenanceCalendar(e.ctx(), e.view, from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Items) != 1 || len(cal.Items[0].Affected) != 1 || !cal.Items[0].Affected[0].Indirect || cal.Items[0].Affected[0].ID != serviceID {
+		t.Fatalf("indirect service = %+v", cal.Items)
+	}
+	withoutServices := e.view
+	withoutServices.ServicesView = false
+	cal, err = e.svc.MaintenanceCalendar(e.ctx(), withoutServices, from, to)
+	if err != nil || len(cal.Items[0].Affected) != 0 {
+		t.Fatalf("service leaked without permission: %+v, %v", cal.Items, err)
 	}
 }
 

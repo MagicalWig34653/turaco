@@ -17,6 +17,7 @@ type CalendarAffected struct {
 	Reference *string
 	Missing   bool
 	Hidden    bool
+	Indirect  bool
 }
 
 // InitiativeRef names an Initiative that includes a Change.
@@ -129,6 +130,41 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 	}
 	out := Calendar{From: from.UTC(), To: to.UTC(), Truncated: truncated, Items: make([]CalendarItem, 0, len(entries))}
 	var serviceIDs, locationIDs, initiativeIDs []string
+	indirectByChange := map[string]map[string]bool{}
+	if p.ServicesView {
+		starts := []Node{}
+		seen := map[Node]bool{}
+		for _, e := range entries {
+			for _, n := range e.Affected {
+				if !seen[n] {
+					seen[n] = true
+					if len(starts) < 500 {
+						starts = append(starts, n)
+					} else {
+						out.Truncated = true
+					}
+				}
+			}
+		}
+		if len(starts) > 0 {
+			impacted, cut, err := s.services.ImpactServicesBatch(ctx, p, starts)
+			if err != nil {
+				return Calendar{}, fmt.Errorf("load impact services: %w", err)
+			}
+			out.Truncated = out.Truncated || cut
+			for _, e := range entries {
+				for _, n := range e.Affected {
+					for _, id := range impacted[n] {
+						if indirectByChange[e.Change.ID] == nil {
+							indirectByChange[e.Change.ID] = map[string]bool{}
+						}
+						indirectByChange[e.Change.ID][id] = true
+						serviceIDs = append(serviceIDs, id)
+					}
+				}
+			}
+		}
+	}
 	for _, e := range entries {
 		for _, n := range e.Affected {
 			switch {
@@ -210,6 +246,30 @@ func (s *Service) MaintenanceCalendar(ctx context.Context, p Principal, from, to
 				}
 			}
 			item.Affected = append(item.Affected, a)
+		}
+		if p.ServicesView {
+			direct := map[string]bool{}
+			for _, n := range e.Affected {
+				if n.Type == NodeService {
+					direct[n.ID] = true
+				}
+			}
+			ids := make([]string, 0, len(indirectByChange[c.ID]))
+			for id := range indirectByChange[c.ID] {
+				if !direct[id] {
+					ids = append(ids, id)
+				}
+			}
+			slices.Sort(ids)
+			for _, id := range ids {
+				a := CalendarAffected{Type: NodeService, ID: id, Indirect: true}
+				if info, ok := services[id]; ok {
+					a.Name, a.Reference = &info.Name, &info.Reference
+				} else {
+					a.Missing = true
+				}
+				item.Affected = append(item.Affected, a)
+			}
 		}
 		for _, id := range byChange[c.ID] {
 			if i, ok := initiatives[id]; ok {

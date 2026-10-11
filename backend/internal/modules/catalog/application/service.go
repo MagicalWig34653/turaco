@@ -13,9 +13,34 @@ import (
 // .updated, .activated, .deactivated; titles and definitions are never copied
 // into the audit log (only the version and the names of changed parts).
 type Service struct {
-	store    Store
-	dir      Directory
-	products Products
+	store     Store
+	dir       Directory
+	products  Products
+	locations LocationSearcher
+}
+
+type LocationChoice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type LocationSearcher interface {
+	SearchActiveLocations(context.Context, string, int) ([]LocationChoice, error)
+}
+
+func (s *Service) WithLocations(locations LocationSearcher) *Service {
+	s.locations = locations
+	return s
+}
+
+func (s *Service) SearchLocations(ctx context.Context, query string) ([]LocationChoice, error) {
+	if s.locations == nil {
+		return nil, fmt.Errorf("location search unavailable")
+	}
+	if utf8.RuneCountInString(query) > 100 {
+		return nil, invalid("location query is too long")
+	}
+	return s.locations.SearchActiveLocations(ctx, query, 50)
 }
 
 func NewService(store Store, dir Directory, products Products) *Service {

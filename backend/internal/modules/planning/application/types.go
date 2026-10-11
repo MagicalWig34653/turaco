@@ -188,6 +188,7 @@ type Principal struct {
 	ProcurementView bool
 	ServicesView    bool
 	InfraView       bool
+	AssetsView      bool
 }
 
 // readsAll reports that the caller may read every Initiative.
@@ -421,6 +422,7 @@ type ServiceInfo struct {
 // Services is the Services contract (services/public).
 type Services interface {
 	Lookup(ctx context.Context, ids []string) (map[string]ServiceInfo, error)
+	ImpactServicesBatch(ctx context.Context, p Principal, starts []Node) (map[Node][]string, bool, error)
 }
 
 // ApprovalRequest describes the approval step requested for an Initiative.

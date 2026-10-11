@@ -78,7 +78,11 @@ export type ServiceRequestDetail = ServiceRequest & {
   allowRequestedFor: boolean;
   fields: RequestField[];
   answers: Record<string, unknown>;
-  references: Array<{ fieldKey: string; type: 'user' | 'product'; id: string }>;
+  references: Array<{
+    fieldKey: string;
+    type: 'user' | 'product' | 'location' | 'asset';
+    id: string;
+  }>;
   approvals: RequestApproval[];
   tasks: RequestTaskView[];
   fulfillmentSteps: FulfillmentStep[];

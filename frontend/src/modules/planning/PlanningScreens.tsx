@@ -1010,15 +1010,21 @@ export function MaintenanceCalendarScreen() {
                     }).format(new Date(x.windowEnd))}
                   </p>
                   <p>
-                    {x.affected
-                      .map((a) =>
-                        a.hidden
+                    {x.affected.map((a, index) => (
+                      <span
+                        key={`${a.type}-${a.id}-${index}`}
+                        className={a.indirect ? 'calendar-indirect' : undefined}
+                        title={a.indirect ? t('planning.calendar.indirectHint') : undefined}
+                      >
+                        {index > 0 ? ', ' : ''}
+                        {a.hidden
                           ? t('planning.restrictedType', {
                               type: t(`planning.type.${a.type}` as MessageKey),
                             })
-                          : `${a.name ?? a.reference ?? a.id}${criticality.data?.[a.id] ? ` (${t(`services.criticality.${criticality.data[a.id]}` as MessageKey)})` : ''}`,
-                      )
-                      .join(', ')}
+                          : `${a.name ?? a.reference ?? a.id}${criticality.data?.[a.id] ? ` (${t(`services.criticality.${criticality.data[a.id]}` as MessageKey)})` : ''}`}
+                        {a.indirect ? ` (${t('planning.calendar.indirect')})` : ''}
+                      </span>
+                    ))}
                   </p>
                   {x.initiatives.map((i) => (
                     <Link key={i.id} to={`/initiatives/${enc(i.id)}`}>
