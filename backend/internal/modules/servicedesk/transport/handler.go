@@ -37,6 +37,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(authed(fn))) }
 	route("GET /api/v1/tickets", h.list)
 	route("GET /api/v1/tickets/fields", h.fields)
+	route("GET /api/v1/tickets/overview", h.overview)
 	route("POST /api/v1/tickets/query", h.query)
 	route("POST /api/v1/tickets", h.create)
 	route("GET /api/v1/tickets/by-reference", h.byReference)

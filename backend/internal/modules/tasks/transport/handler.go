@@ -46,6 +46,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	}
 	route("GET /api/v1/tasks", anyTask, h.list)
 	route("GET /api/v1/tasks/fields", anyTask, h.fields)
+	route("GET /api/v1/tasks/overview", anyTask, h.overview)
 	route("POST /api/v1/tasks/query", anyTask, h.query)
 	route("POST /api/v1/tasks", manage, h.create)
 	route("GET /api/v1/tasks/{id}", anyTask, h.get)

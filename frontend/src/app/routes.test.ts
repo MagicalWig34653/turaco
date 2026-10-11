@@ -257,8 +257,16 @@ describe('support', () => {
   it('offers My tickets to everyone and the queue to ticket staff', () => {
     expect(ids([], 'main')).toContain('myTickets');
     expect(ids([], 'logistics')).toEqual([]);
-    expect(ids(['tickets.view'], 'logistics')).toEqual(['ticketQueue', 'problems']);
-    expect(ids(['tickets.manage'], 'logistics')).toEqual(['ticketQueue', 'problems']);
+    expect(ids(['tickets.view'], 'logistics')).toEqual([
+      'ticketQueue',
+      'managerOverview',
+      'problems',
+    ]);
+    expect(ids(['tickets.manage'], 'logistics')).toEqual([
+      'ticketQueue',
+      'managerOverview',
+      'problems',
+    ]);
   });
 
   it('keeps queue administration behind servicedesk.queues.manage', () => {

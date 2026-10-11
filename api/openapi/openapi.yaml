@@ -1142,6 +1142,24 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /tasks/overview:
+    get:
+      operationId: getTaskOverview
+      summary: Manager overview of open Tasks.
+      description: >-
+        Read-only breakdown for team leads: open, overdue, blocked and ownerless (no User and no Team) Tasks, the open and overdue count per assigned User and Team (busiest first, at most 50 each,
+        `usersTruncated` and `teamsTruncated` say when more exist) and the oldest overdue and oldest ownerless Tasks (at most 10 each). Needs `tasks.view` or `tasks.manage`; a caller who only holds
+        `tasks.work` sees only the own Tasks in My Work and gets 403 `platform.forbidden`. Every number maps to a filter over the tasks catalog (status, due_at, assigned_user, assigned_team).
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The overview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskOverview'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /tasks/query:
     post:
       operationId: queryTask
@@ -4581,6 +4599,25 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/QueryCatalog'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /tickets/overview:
+    get:
+      operationId: getTicketOverview
+      summary: Manager overview of open Tickets.
+      description: >-
+        Read-only breakdown for team leads over the Queues the caller may view (tickets.view and tickets.manage view every Queue; otherwise the Queues with a view, work or manage grant):
+        open, unassigned and waiting Tickets per Queue, open Tickets per assignee (busiest first, at most 50, `assigneesTruncated` says when more exist) and the oldest unassigned and longest
+        waiting Tickets (at most 10 each). Tickets the caller sees only as reporter or affected person are not counted, and nothing of a Queue the caller may not view appears. A caller who views
+        no Queue gets 403 `platform.forbidden`. Every number maps to a filter over the tickets catalog (open statuses, queue, assignee).
+      security: [{sessionAuth: []}]
+      responses:
+        '200':
+          description: The overview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketOverview'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -18989,6 +19026,110 @@ components:
                     assetTag: {type: string, maxLength: 50}
               assetLocationId: {type: string, format: uuid}
               warrantyUntil: {type: string, format: date}
+    TicketOverview:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, totals, queues, assignees, assigneesTruncated, oldestUnassigned, oldestWaiting]
+      properties:
+        generatedAt: {type: string, format: date-time}
+        totals:
+          type: object
+          additionalProperties: false
+          required: [open, unassigned, waiting]
+          description: Sum of the Queue rows (open = new, open, in_progress and waiting Tickets).
+          properties:
+            open: {type: integer}
+            unassigned: {type: integer}
+            waiting: {type: integer}
+        queues:
+          type: array
+          description: Viewable Queues with at least one open Ticket, by name.
+          items:
+            type: object
+            additionalProperties: false
+            required: [queue, level, open, unassigned, waiting, oldestOpenAt]
+            properties:
+              queue: {$ref: '#/components/schemas/TicketQueueRef'}
+              level: {type: string, enum: [view, work, manage], description: "The caller's grant level in the Queue."}
+              open: {type: integer}
+              unassigned: {type: integer}
+              waiting: {type: integer}
+              oldestOpenAt: {type: [string, "null"], format: date-time}
+        assignees:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [userId, name, open, waiting]
+            properties:
+              userId: {type: string, format: uuid}
+              name: {type: string}
+              open: {type: integer}
+              waiting: {type: integer}
+        assigneesTruncated: {type: boolean}
+        oldestUnassigned: {type: array, items: {$ref: '#/components/schemas/TicketOverviewItem'}}
+        oldestWaiting: {type: array, items: {$ref: '#/components/schemas/TicketOverviewItem'}}
+    TicketOverviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, reference, title, priority, status, queue, assigneeId, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        reference: {type: string}
+        title: {type: string}
+        priority: {type: string, enum: [urgent, high, normal, low]}
+        status: {type: string}
+        queue: {$ref: '#/components/schemas/TicketQueueRef'}
+        assigneeId: {type: [string, "null"], format: uuid}
+        assigneeName: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TaskOverview:
+      type: object
+      additionalProperties: false
+      required: [generatedAt, totals, users, usersTruncated, teams, teamsTruncated, oldestOverdue, oldestUnowned]
+      properties:
+        generatedAt: {type: string, format: date-time}
+        totals:
+          type: object
+          additionalProperties: false
+          required: [open, overdue, blocked, unowned]
+          description: Open means open, in_progress or blocked; unowned Tasks have neither a User nor a Team.
+          properties:
+            open: {type: integer}
+            overdue: {type: integer}
+            blocked: {type: integer}
+            unowned: {type: integer}
+        users: {type: array, items: {$ref: '#/components/schemas/TaskOverviewOwner'}}
+        usersTruncated: {type: boolean}
+        teams: {type: array, items: {$ref: '#/components/schemas/TaskOverviewOwner'}}
+        teamsTruncated: {type: boolean}
+        oldestOverdue: {type: array, items: {$ref: '#/components/schemas/TaskOverviewItem'}}
+        oldestUnowned: {type: array, items: {$ref: '#/components/schemas/TaskOverviewItem'}}
+    TaskOverviewOwner:
+      type: object
+      additionalProperties: false
+      required: [id, name, open, overdue]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        open: {type: integer}
+        overdue: {type: integer}
+    TaskOverviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, dueAt, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        status: {type: string}
+        priority: {type: string}
+        assignedUserId: {type: [string, "null"], format: uuid}
+        assignedUserName: {type: [string, "null"]}
+        assignedTeamId: {type: [string, "null"], format: uuid}
+        assignedTeamName: {type: [string, "null"]}
+        dueAt: {type: [string, "null"], format: date-time}
+        createdAt: {type: string, format: date-time}
     Ticket:
       type: object
       additionalProperties: false

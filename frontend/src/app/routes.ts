@@ -86,6 +86,7 @@ export type RouteId =
   | 'ticketDetail'
   | 'ticketQueue'
   | 'ticketQueues'
+  | 'managerOverview'
   | 'knowledge'
   | 'articleNew'
   | 'articleEdit'
@@ -660,6 +661,15 @@ export const appRoutes: readonly AppRoute[] = [
     id: 'ticketQueue',
     pattern: '/service-desk',
     titleKey: 'nav.ticketQueue',
+    requiresAny: ['tickets.view', 'tickets.manage'],
+    nav: 'logistics',
+  },
+  // The server also lets people who only hold a Queue view grant read the overview; the route follows the queue
+  // route, which these callers do not reach by navigation either.
+  {
+    id: 'managerOverview',
+    pattern: '/service-desk/overview',
+    titleKey: 'nav.managerOverview',
     requiresAny: ['tickets.view', 'tickets.manage'],
     nav: 'logistics',
   },

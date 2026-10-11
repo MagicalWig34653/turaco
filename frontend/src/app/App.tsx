@@ -116,6 +116,7 @@ import { SuppliersScreen } from '../modules/procurement/SuppliersScreen';
 import { TicketCreateScreen } from '../modules/tickets/TicketCreateScreen';
 import { TicketDetailScreen } from '../modules/tickets/TicketDetailScreen';
 import { QueuesAdminScreen } from '../modules/tickets/QueuesAdminScreen';
+import { ManagerOverviewScreen } from './ManagerOverviewScreen';
 import { TicketsScreen } from '../modules/tickets/TicketsScreen';
 import { ArticleDetailScreen } from '../modules/knowledge/ArticleDetailScreen';
 import { ArticleEditScreen } from '../modules/knowledge/ArticleEditScreen';
@@ -336,6 +337,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <TicketsScreen scope="all" />;
     case 'ticketQueues':
       return <QueuesAdminScreen />;
+    case 'managerOverview':
+      return <ManagerOverviewScreen />;
     case 'knowledge':
       return <ArticlesScreen />;
     case 'articleNew':
