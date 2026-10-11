@@ -54,12 +54,31 @@ type ChannelSender struct {
 	baseURL string
 	locale  string
 	now     func() time.Time
+	// perMinute is the per-destination admission limit (ChannelPostsPerMinute unless changed).
+	perMinute int
+}
+
+// ChannelPostsPerMinute is how many channel posts one destination may receive per minute before further posts wait.
+// Teams Workflows throttles a webhook itself; this keeps a burst (many Major Incident updates, a bulk Change
+// schedule) below that and below a size where a human channel would drown. Waiting posts are deferred, not failed.
+const ChannelPostsPerMinute = 20
+
+// channelDeferDelay is how long a post that exceeded the destination limit waits before the next admission check.
+const channelDeferDelay = 30 * time.Second
+
+// WithRateLimit sets the per-destination posts per minute (values below one restore the default).
+func (c *ChannelSender) WithRateLimit(perMinute int) *ChannelSender {
+	if perMinute < 1 {
+		perMinute = ChannelPostsPerMinute
+	}
+	c.perMinute = perMinute
+	return c
 }
 
 // NewChannelSender creates the handler of ChannelPostJobType. baseURL is the web application's address used for
 // links; locale is "en" or "de".
 func NewChannelSender(pool *pgxpool.Pool, poster ChannelPoster, categories *Registry, baseURL, locale string) *ChannelSender {
-	return &ChannelSender{pool: pool, poster: poster, cats: categories, baseURL: strings.TrimRight(baseURL, "/"), locale: locale, now: time.Now}
+	return &ChannelSender{pool: pool, poster: poster, cats: categories, baseURL: strings.TrimRight(baseURL, "/"), locale: locale, now: time.Now, perMinute: ChannelPostsPerMinute}
 }
 
 type channelDelivery struct {
@@ -68,6 +87,7 @@ type channelDelivery struct {
 	key      string
 	payload  postPayload
 	created  time.Time
+	claimed  time.Time
 }
 
 // Handle sends one delivery. It is idempotent: a delivery that is already delivered, failed or cancelled is left
@@ -108,6 +128,9 @@ func (c *ChannelSender) Handle(ctx context.Context, job jobs.Job) error {
 	case c.baseURL == "" || path == "":
 		return c.release(ctx, d, errors.New("no link can be built"), "base_url_missing", true)
 	}
+	if err := c.admit(ctx, d); err != nil {
+		return err
+	}
 	locale := c.locale
 	if locale != "de" {
 		locale = "en"
@@ -135,6 +158,36 @@ func (c *ChannelSender) Handle(ctx context.Context, job jobs.Job) error {
 	}
 }
 
+// admit applies the per-destination limit. The posts of the destination that were claimed earlier in the last
+// minute (sending or delivered) count; this post is admitted when fewer than the limit precede it in the order
+// (claim time, id). The order makes concurrent workers agree without a lock: of a burst exactly the first posts
+// pass and the others wait. A waiting post is returned to pending with its attempt refunded and the job is
+// deferred (an expired wait ends as stale through ChannelPostMaxAge, never as a failure).
+func (c *ChannelSender) admit(ctx context.Context, d channelDelivery) error {
+	var ahead int
+	err := c.pool.QueryRow(ctx, `
+		SELECT count(*) FROM platform.notification_deliveries
+		WHERE channel = $1 AND destination_key = $2 AND id <> $3::uuid AND status IN ('sending', 'delivered')
+		  AND updated_at > $4::timestamptz - interval '1 minute'
+		  AND (updated_at, id) < ($4::timestamptz, $3::uuid)`,
+		ChannelTeams, d.key, d.id, d.claimed).Scan(&ahead)
+	if err != nil {
+		return c.release(ctx, d, fmt.Errorf("check destination rate limit: %w", err), "database", false)
+	}
+	if ahead < c.perMinute {
+		return nil
+	}
+	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if _, err := c.pool.Exec(fctx, `
+		UPDATE platform.notification_deliveries
+		SET status = 'pending', attempts = greatest(attempts - 1, 0), updated_at = now()
+		WHERE id = $1::uuid AND status = 'sending'`, d.id); err != nil {
+		return fmt.Errorf("defer channel delivery: %w", err)
+	}
+	return jobs.Deferred(errors.New("channel post: destination rate limit"), channelDeferDelay)
+}
+
 func (c *ChannelSender) claim(ctx context.Context, id string) (channelDelivery, error) {
 	var d channelDelivery
 	var raw []byte
@@ -142,7 +195,7 @@ func (c *ChannelSender) claim(ctx context.Context, id string) (channelDelivery, 
 		UPDATE platform.notification_deliveries
 		SET status = 'sending', attempts = attempts + 1, updated_at = now()
 		WHERE id = $1::uuid AND channel = $2 AND status IN ('pending', 'sending')
-		RETURNING id::text, attempts, destination_key, payload, created_at`, id, ChannelTeams).Scan(&d.id, &d.attempts, &d.key, &raw, &d.created)
+		RETURNING id::text, attempts, destination_key, payload, created_at, updated_at`, id, ChannelTeams).Scan(&d.id, &d.attempts, &d.key, &raw, &d.created, &d.claimed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return channelDelivery{}, errNothingToDo
 	}

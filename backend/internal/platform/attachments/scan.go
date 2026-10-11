@@ -240,6 +240,39 @@ func (s *Service) CheckStorage(ctx context.Context) error {
 	return c.Check(ctx)
 }
 
+// ProbeStorage is the read-only reachability probe of the administration health page: it opens (and immediately
+// closes) the newest stored object, which reads only the encryption header and proves the backend answers and
+// the keyring still opens existing content. Without any stored object it asks for an id that cannot exist and
+// accepts "not found". It writes nothing, unlike CheckStorage.
+func (s *Service) ProbeStorage(ctx context.Context) error {
+	id, existing := "", true
+	err := s.pool.QueryRow(ctx, `SELECT object_id FROM platform.attachments
+		WHERE deleted_at IS NULL AND object_purged_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1`).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		id, existing = "00000000000000000000000000000000", false
+	} else if err != nil {
+		return fmt.Errorf("find probe object: %w", err)
+	}
+	rc, err := s.objects.Open(ctx, id)
+	if err != nil {
+		if !existing && errors.Is(err, storage.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("open probe object: %w", err)
+	}
+	return rc.Close()
+}
+
+// PingScanner asks the virus scanner daemon whether it is alive (clamd PING, no content). It returns nil when the
+// configured scanner has no ping.
+func (s *Service) PingScanner(ctx context.Context) error {
+	p, ok := s.scanner.(interface{ Ping(context.Context) error })
+	if !ok {
+		return nil
+	}
+	return p.Ping(ctx)
+}
+
 // StorageDriver names the storage adapter ("filesystem" or "s3").
 func (s *Service) StorageDriver() string {
 	if d, ok := s.objects.(interface{ Driver() string }); ok {

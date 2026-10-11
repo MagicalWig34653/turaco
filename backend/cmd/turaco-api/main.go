@@ -358,7 +358,10 @@ func main() {
 	// A decided approval stops asking for attention in every approver's notifications.
 	approvalstransport.Register(mux, approvalsService, sessionAuth, logger, approvalstransport.WithResolver(notifications.NewService(pool, categories)))
 	notificationstransport.Register(mux, notifications.NewService(pool, categories), sessionAuth, logger)
-	notificationstransport.RegisterChannelRoutes(mux, notifications.NewService(pool, categories).WithChannelPosts(wiring.TeamsChannelOptions(teamsSender, moduleSvc)), sessionAuth, logger)
+	// The test send posts through the same adapter as the worker; the API holds no job handler for channel posts.
+	teamsChannel := wiring.TeamsChannelOptions(teamsSender, moduleSvc)
+	teamsChannel.Poster, teamsChannel.BaseURL, teamsChannel.Locale = wiring.TeamsChannelPoster{Sender: teamsSender}, smtpCfg.BaseURL, smtpCfg.DefaultLocale
+	notificationstransport.RegisterChannelRoutes(mux, notifications.NewService(pool, categories).WithChannelPosts(teamsChannel), sessionAuth, logger)
 	rolestransport.Register(mux, roles.NewService(pool, subjects), sessionAuth, logger)
 	audittransport.Register(mux, audit.NewReader(pool), sessionAuth, logger,
 		audittransport.WithResolvers(wiring.AuditResolvers(pool)), audittransport.WithRetentionDays(cfg.AuditRetentionDays))
@@ -387,6 +390,17 @@ func main() {
 	}
 	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
 	probeChecks := map[string]func(context.Context) error{}
+	smtpProbe, err := wiring.SMTPProbe(smtpCfg)
+	if err != nil {
+		logger.Error("configure mail probe", "error", err)
+		os.Exit(1)
+	}
+	if smtpProbe != nil {
+		probeChecks["smtp"] = smtpProbe
+	}
+	for key, probe := range wiring.AttachmentProbes(attachmentSvc) {
+		probeChecks[key] = probe
+	}
 	if p, ok := intuneProvider.(interface{ Probe(context.Context) error }); ok {
 		probeChecks["intune"] = p.Probe
 	}

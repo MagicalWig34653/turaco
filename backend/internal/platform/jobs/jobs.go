@@ -78,6 +78,36 @@ func RetryAfter(err error, delay time.Duration) error {
 	return retryAfterError{err: err, delay: delay}
 }
 
+type deferredError struct {
+	err   error
+	delay time.Duration
+}
+
+func (e deferredError) Error() string { return e.err.Error() }
+func (e deferredError) Unwrap() error { return e.err }
+
+// Deferred marks err as "not now, through no fault of the job": the job returns to pending no earlier than delay
+// (capped at MaxRetryAfter) and the attempt is refunded, like a job whose module is switched off. A handler uses it
+// for its own admission control (a local rate limit) so that waiting does not exhaust the attempts.
+func Deferred(err error, delay time.Duration) error {
+	if err == nil {
+		return nil
+	}
+	return deferredError{err: err, delay: delay}
+}
+
+// IsDeferred reports whether err was marked with Deferred.
+func IsDeferred(err error) bool { _, ok := deferDelay(err); return ok }
+
+// deferDelay reports whether err was marked with Deferred and the delay it asks for.
+func deferDelay(err error) (time.Duration, bool) {
+	var d deferredError
+	if !errors.As(err, &d) {
+		return 0, false
+	}
+	return min(max(d.delay, time.Second), MaxRetryAfter), true
+}
+
 // retryDelay is the delay a handler error asks for; zero when it asks for none.
 func retryDelay(err error) time.Duration {
 	var r retryAfterError

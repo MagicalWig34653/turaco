@@ -6441,6 +6441,17 @@ export const de: Record<MessageKey, string> = {
   'teamsChannel.error.notBroadcastable': 'Diese Meldung kann nicht in einen Kanal gepostet werden.',
   'teamsChannel.error.unknownDestination': 'Dieses Kanalziel ist nicht konfiguriert.',
   'teamsChannel.error.routeExists': 'Diese Route gibt es bereits.',
+  'teamsChannel.test.title': 'Kanalziel testen',
+  'teamsChannel.test.intro':
+    'Sendet eine eindeutig gekennzeichnete Testnachricht (ohne Inhalte aus Datensätzen) an den Kanal hinter einem Kanalziel, damit die Verbindung geprüft werden kann, bevor Meldungen dorthin geleitet werden. Höchstens fünf Testnachrichten je Kanalziel in zehn Minuten.',
+  'teamsChannel.test.action': 'Testnachricht senden',
+  'teamsChannel.test.delivered': 'Die Testnachricht an {destination} wurde von Teams angenommen.',
+  'teamsChannel.test.failed':
+    'Die Testnachricht an {destination} wurde nicht zugestellt (Code {code}). Prüfe das Kanalziel in der Zieldatei und den Teams-Flow.',
+  'teamsChannel.error.testRateLimited':
+    'Dieses Kanalziel hat vor Kurzem Testnachrichten erhalten. Versuche es in einigen Minuten erneut.',
+  'teamsChannel.error.testUnavailable':
+    'Für eine Testnachricht müssen die Teams-Zieldatei und EMAIL_BASE_URL konfiguriert sein.',
   'settings.module.unknown': '{module}',
   'settings.key.unknown': '{key}',
   'settings.option.unknown': '{value}',

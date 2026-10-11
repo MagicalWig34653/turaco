@@ -9285,7 +9285,7 @@ paths:
     post:
       operationId: probeAdminHealth
       summary: Run one explicit connection probe.
-      description: "Requires elevated `platform.health.probe`. Body names one supported check. At most one attempt per check per minute across API processes; the read-only provider call is bounded to 5 seconds. The sanitized outcome is stored and audited as `platform.health.probe_run`. Page views never probe. Currently supported: configured Intune Graph read provider only."
+      description: "Requires elevated `platform.health.probe`. Body names one supported check. At most one attempt per check per minute across API processes; the read-only provider call is bounded to 5 seconds. The sanitized outcome is stored and audited as `platform.health.probe_run`. Page views never probe. Supported checks: the configured Intune Graph read provider (`intune`), the mail relay (`smtp`: connect, EHLO and STARTTLS offer; no authentication and no mail), the attachment object storage (`object_storage`: one bounded read of a stored object or of an id that cannot exist; nothing is written) and the virus scanner (`attachment_scanner`: clamd PING). A check that is not configured is not supported."
       security:
         - sessionAuth: []
       requestBody:
@@ -9297,7 +9297,7 @@ paths:
               additionalProperties: false
               required: [check]
               properties:
-                check: {type: string, enum: [intune]}
+                check: {type: string, enum: [intune, smtp, object_storage, attachment_scanner]}
       responses:
         '200':
           description: Sanitized probe result.
@@ -9553,6 +9553,44 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404':
           description: notifications.route_not_found.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /integrations/teams/destinations/{key}/test-send:
+    post:
+      operationId: testSendTeamsChannelDestination
+      summary: Post a test message to a Teams channel destination.
+      description: "Requires `integrations.teams.manage`. Posts one reference-only test card (category `teams.test`, reference `TURACO-TEST`, a link to the administration screen) to the configured destination and answers with the outcome; a failed post is a 200 with `delivered: false` and a short machine `errorCode`, never provider text or the webhook URL. Works while the optional module `teams` is off. At most 5 test sends per destination within 10 minutes, counted across API processes from the audit events (a failed attempt counts). Audited as `notifications.teams.test_sent` with destination key, outcome and code. Responses are no-store."
+      security:
+        - sessionAuth: []
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The outcome of the test send.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [delivered, errorCode]
+                properties:
+                  delivered: {type: boolean}
+                  errorCode: {type: string}
+        '400':
+          description: notifications.unknown_destination.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: notifications.test_send_unavailable (no Teams destinations file or no EMAIL_BASE_URL).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: notifications.test_send_rate_limited.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}

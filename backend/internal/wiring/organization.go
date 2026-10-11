@@ -123,34 +123,43 @@ func newCredentialMailer(cfg OrganizationConfig) (*credentialMailer, error) {
 	if !cfg.SMTP.Enabled() {
 		return m, nil
 	}
-	mc := smtp.Config{Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Security: smtp.Security(cfg.SMTP.Security), Username: cfg.SMTP.Username,
-		From: cfg.SMTP.From, Timeout: cfg.SMTP.Timeout}
-	if cfg.SMTP.PasswordFile != "" {
-		password, err := config.ReadSecretFile(cfg.SMTP.PasswordFile)
+	mc, err := SMTPClientConfig(cfg.SMTP)
+	if err != nil {
+		return nil, err
+	}
+	if m.mailer, err = smtp.New(mc); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// SMTPClientConfig builds the relay client configuration from the loaded email configuration: the password and
+// the additional CA are read from their files. The same configuration serves mail sending and the health probe.
+func SMTPClientConfig(c config.SMTPConfig) (smtp.Config, error) {
+	mc := smtp.Config{Host: c.Host, Port: c.Port, Security: smtp.Security(c.Security), Username: c.Username,
+		From: c.From, Timeout: c.Timeout}
+	if c.PasswordFile != "" {
+		password, err := config.ReadSecretFile(c.PasswordFile)
 		if err != nil {
-			return nil, fmt.Errorf("read SMTP password file: %w", err)
+			return smtp.Config{}, fmt.Errorf("read SMTP password file: %w", err)
 		}
 		mc.Password = password
 	}
-	if cfg.SMTP.CAFile != "" {
-		pem, err := os.ReadFile(cfg.SMTP.CAFile)
+	if c.CAFile != "" {
+		pem, err := os.ReadFile(c.CAFile)
 		if err != nil {
-			return nil, fmt.Errorf("read SMTP CA file: %w", err)
+			return smtp.Config{}, fmt.Errorf("read SMTP CA file: %w", err)
 		}
 		pool, err := x509.SystemCertPool()
 		if err != nil || pool == nil {
 			pool = x509.NewCertPool()
 		}
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, errors.New("SMTP_CA_FILE contains no PEM certificate")
+			return smtp.Config{}, errors.New("SMTP_CA_FILE contains no PEM certificate")
 		}
 		mc.RootCAs = pool
 	}
-	var err error
-	if m.mailer, err = smtp.New(mc); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return mc, nil
 }
 
 func (m *credentialMailer) BaseURLConfigured() bool { return m.baseURL != "" }
