@@ -107,4 +107,29 @@ func TestExternalPartiesAndAccountsOverHTTP(t *testing.T) {
 	if code, b, _ := h.do("GET", "/api/v1/external-parties", ""); code != 403 {
 		t.Errorf("sponsor without the permission lists parties = %d %v", code, b)
 	}
+
+	// The sponsor's own page: no permission needed, exactly the sponsored parties, with versions to extend against.
+	h.as(sponsor)
+	code, own, _ := h.do("GET", "/api/v1/external-parties/sponsored", "")
+	items, _ := own["items"].([]any)
+	if code != 200 || len(items) != 1 || own["extendReasons"] == nil {
+		t.Fatalf("sponsored = %d %v", code, own)
+	}
+	first := items[0].(map[string]any)
+	accts, _ := first["accounts"].([]any)
+	if first["id"] != partyID || len(accts) != 1 || accts[0].(map[string]any)["userId"] != userID || accts[0].(map[string]any)["version"].(float64) != 2 {
+		t.Errorf("sponsored party = %v", first)
+	}
+	if _, leaked := accts[0].(map[string]any)["primaryEmail"]; leaked {
+		t.Error("the sponsor's view must not carry the email address")
+	}
+	// Somebody who sponsors nothing sees an empty list, even with every administration permission; no session is 401.
+	h.as(actor, "organization.external_parties.manage", "organization.users.manage", "organization.view", "platform.admin")
+	if code, own, _ := h.do("GET", "/api/v1/external-parties/sponsored", ""); code != 200 || len(own["items"].([]any)) != 0 {
+		t.Errorf("non-sponsor = %d %v", code, own)
+	}
+	h.as("")
+	if code, _, _ := h.do("GET", "/api/v1/external-parties/sponsored", ""); code != 401 {
+		t.Errorf("unauthenticated sponsored = %d", code)
+	}
 }

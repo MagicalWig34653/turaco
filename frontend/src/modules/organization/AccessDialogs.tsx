@@ -135,13 +135,18 @@ function LinkDirectoryDialog({
   );
 }
 
+/** The part of an external account the extend dialog needs (a User row or a sponsor's account). */
+export type ExtendTarget = Pick<PersonRow, 'id' | 'displayName' | 'status' | 'version'> & {
+  accessExpiresAt?: string | null;
+};
+
 /** Extends the access end of an external account with a closed reason; the server bounds the date. */
-function ExtendAccessDialog({
+export function ExtendAccessDialog({
   person,
   onChanged,
   onClose,
 }: {
-  person: PersonRow;
+  person: ExtendTarget;
   onChanged: (updated?: PersonRow) => void;
   onClose: () => void;
 }) {

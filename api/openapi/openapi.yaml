@@ -470,6 +470,26 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/AccessRefused'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /external-parties/sponsored:
+    get:
+      operationId: listSponsoredExternalParties
+      summary: The External Parties the signed-in User sponsors, with their accounts.
+      description: "The sponsor's own page. Needs a signed-in internal User and no permission: being the sponsor is the authority, and the server filters by the caller's id, so a User who sponsors nothing gets an empty list and nobody sees another sponsor's parties. Accounts carry display name, status, end of access and the `version` that `POST /users/{id}/extend-access` expects (the sponsor may extend without a permission; ending access is not a sponsor operation). No email address or other personal data. At most 100 parties and 500 accounts per party. External accounts answer 404 (allow-list)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The sponsored parties.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, extendReasons]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/SponsoredExternalParty'}}
+                  extendReasons: {type: array, items: {type: string}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /external-parties/{id}:
     get:
       operationId: getExternalParty
@@ -17321,6 +17341,27 @@ components:
                   displayName: {type: string}
                   status: {type: string}
                   accessExpiresAt: {type: string, format: date-time}
+    SponsoredExternalParty:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, active, accounts]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [vendor, contractor, partner]}
+        name: {type: string}
+        active: {type: boolean, description: "An inactive party takes no extension (409 organization.party_inactive)."}
+        accounts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [userId, displayName, status, accessExpiresAt, version]
+            properties:
+              userId: {type: string, format: uuid}
+              displayName: {type: string}
+              status: {type: string}
+              accessExpiresAt: {type: string, format: date-time}
+              version: {type: integer, description: "The expectedVersion of extend-access."}
     ExternalPartyCreate:
       type: object
       additionalProperties: false

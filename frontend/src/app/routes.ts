@@ -113,6 +113,7 @@ export type RouteId =
   | 'userDetail'
   | 'externalParties'
   | 'externalPartyDetail'
+  | 'sponsoredParties'
   | 'teams'
   | 'teamDetail'
   | 'locations'
@@ -842,6 +843,13 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/external-parties/:id',
     titleKey: 'external.detail.title',
     requires: ['organization.external_parties.manage'],
+  },
+  // The sponsor's own page: no permission (being the sponsor is the authority, the server filters by the session)
+  // and no navigation entry; people reach it from the notifications about their parties.
+  {
+    id: 'sponsoredParties',
+    pattern: '/sponsored-parties',
+    titleKey: 'sponsored.title',
   },
   {
     id: 'teams',

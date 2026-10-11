@@ -30,6 +30,9 @@
 | `DeviceLinked` | 1 | endpoints | A provider-observed Device was linked to an Asset by serial number match or by hand. Payload: deviceId, assetId, method. |
 | `DeviceUnlinked` | 1 | endpoints | A Device lost its Asset link: by hand, or because the serial number changed, the serial number is shared by several devices, the device was tombstoned or its manual link collided on revival. Payload: deviceId, assetId, method. |
 | `EndpointFindingRaised` | 1 | endpoints | An endpoint finding was raised. Payload: findingId, kind and deviceId, softwarePackageId for the package findings package_hash_mismatch and package_published_after_revoke, or deploymentId for deployment_failure_cluster. |
+| `ExternalAccessExtended` | 1 | organization | The end of access of an external account was extended (by an administrator or by the sponsor); the sponsor is notified unless they did it. Payload: userId, externalPartyId, accessExpiresAt. |
+| `ExternalPartyDeactivated` | 1 | organization | An External Party was deactivated (no new accounts or extensions); the sponsor is notified unless they did it. Payload: partyId. |
+| `ExternalPartySponsorChanged` | 1 | organization | The sponsor of an External Party changed; the new and the previous sponsor are notified. Payload: partyId, sponsorUserId, previousSponsorUserId. |
 | `GoodsReceived` | 1 | inventory | A goods receipt was posted. |
 | `InitiativeStatusChanged` | 1 | planning | An Initiative changed status (planning started, proposed, approved, approval rejected, activated, held, resumed, completed, cancelled). Payload: initiativeId, operation, status, previousStatus; hold, cancel and rejection also reason. |
 | `KnowledgeArticlePublished` | 1 | knowledge | A knowledge article was published. Payload: articleId, audience. |

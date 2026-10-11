@@ -141,6 +141,7 @@ import { ImportScreen } from '../modules/organization/ImportScreen';
 import { UserCreateScreen } from '../modules/organization/UserCreateScreen';
 import { UserDetailScreen } from '../modules/organization/UserDetailScreen';
 import { ExternalPartiesScreen } from '../modules/organization/ExternalPartiesScreen';
+import { SponsoredPartiesScreen } from '../modules/organization/SponsoredPartiesScreen';
 import { ExternalPartyDetailScreen } from '../modules/organization/ExternalPartyDetailScreen';
 import { UsersScreen } from '../modules/organization/UsersScreen';
 import { SetPasswordScreen } from '../modules/auth/SetPasswordScreen';
@@ -389,6 +390,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <UserDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'externalParties':
       return <ExternalPartiesScreen />;
+    case 'sponsoredParties':
+      return <SponsoredPartiesScreen />;
     case 'externalPartyDetail':
       return <ExternalPartyDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'teams':

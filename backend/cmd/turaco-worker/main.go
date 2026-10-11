@@ -399,6 +399,7 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 	if channels != nil {
 		majorConsumers = majorConsumers.WithChannelPosts(notifier)
 	}
+	partyConsumers := orgapp.NewPartyConsumers(orgrepository.New(pool), notifier)
 	for _, r := range []struct {
 		event, name string
 		fn          events.Consumer
@@ -408,6 +409,10 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
 		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
+		{"AccessExpired", "organization.notify-access-expired", partyConsumers.OnAccessExpired},
+		{"ExternalAccessExtended", "organization.notify-access-extended", partyConsumers.OnAccessExtended},
+		{"ExternalPartySponsorChanged", "organization.notify-sponsor-changed", partyConsumers.OnSponsorChanged},
+		{"ExternalPartyDeactivated", "organization.notify-party-deactivated", partyConsumers.OnPartyDeactivated},
 	} {
 		if err := d.Register(r.event, r.name, r.fn); err != nil {
 			return err

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { errorMessageKey } from '../../platform/api/errorMessages';
 import { peopleAdminApi } from './adminApi';
+import { externalPartiesApi } from './externalApi';
 import '../access/api';
 
 describe('F14 error codes', () => {
@@ -119,6 +120,13 @@ describe('F14 import, bulk, link and extend calls', () => {
       accessExpiresAt: '2027-01-01T00:00:00Z',
       reason: 'contract_renewed',
     });
+  });
+
+  it('reads the sponsor page from the permission-free endpoint', async () => {
+    respond(200, { items: [], extendReasons: ['contract_renewed'] });
+    const out = await externalPartiesApi.sponsored();
+    expect(calls[0]?.url).toBe('/api/v1/external-parties/sponsored');
+    expect(out.items).toEqual([]);
   });
 
   it('links and unlinks Entra identities with the documented paths and bodies', async () => {

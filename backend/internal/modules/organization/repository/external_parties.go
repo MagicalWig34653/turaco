@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 )
 
 // External Parties (F14 slice A-G). Every write locks the party row, checks the version, authorizes inside the
@@ -198,8 +199,22 @@ func (r *Repository) UpdateExternalParty(ctx context.Context, c application.Call
 			SELECT `+partyColumns+` FROM organization.external_parties p JOIN organization.users s ON s.id = p.sponsor_user_id WHERE p.id = $1`, u)); err != nil {
 			return fmt.Errorf("reload external party: %w", err)
 		}
-		return r.record(ctx, tx, c, "organization.external_party.updated", "external_party", id, partyState(before), partyState(out),
-			map[string]any{"fields": fields})
+		if err := r.record(ctx, tx, c, "organization.external_party.updated", "external_party", id, partyState(before), partyState(out),
+			map[string]any{"fields": fields}); err != nil {
+			return err
+		}
+		// Participant notifications (sponsor hand-over, deactivation) are made by consumers of these events.
+		if after.SponsorUserID != before.SponsorUserID {
+			if err := events.Publish(ctx, tx, events.Publication{Type: "ExternalPartySponsorChanged", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
+				Payload: map[string]any{"partyId": id, "sponsorUserId": after.SponsorUserID, "previousSponsorUserId": before.SponsorUserID}}); err != nil {
+				return err
+			}
+		}
+		if before.Active && !after.Active {
+			return events.Publish(ctx, tx, events.Publication{Type: "ExternalPartyDeactivated", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
+				Payload: map[string]any{"partyId": id}})
+		}
+		return nil
 	})
 	if err != nil {
 		return application.ExternalParty{}, wrapParty(err, "update external party")

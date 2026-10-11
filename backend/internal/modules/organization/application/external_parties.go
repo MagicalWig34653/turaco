@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -92,6 +91,29 @@ type ExternalPartyStore interface {
 	GetExternalParty(ctx context.Context, id string) (ExternalParty, []PartyAccount, error)
 	CreateExternalParty(ctx context.Context, c Caller, in NewExternalPartyInput) (ExternalParty, error)
 	UpdateExternalParty(ctx context.Context, c Caller, id string, in ExternalPartyChange) (ExternalParty, error)
+	// ListSponsoredParties returns the External Parties whose sponsor is sponsorUserID, with their accounts. The
+	// filter is part of the query: nobody sees a party they do not sponsor.
+	ListSponsoredParties(ctx context.Context, sponsorUserID string) ([]SponsoredParty, error)
+}
+
+// SponsoredAccount is an external account as its sponsor sees it: no email address, no department, nothing but what
+// the sponsor needs to renew access.
+type SponsoredAccount struct {
+	UserID          string
+	DisplayName     string
+	Status          string
+	AccessExpiresAt time.Time
+	// Version is the optimistic-lock version the extend-access operation expects.
+	Version int
+}
+
+// SponsoredParty is an External Party with its accounts, as shown on the sponsor's own page.
+type SponsoredParty struct {
+	ID       string
+	Kind     string
+	Name     string
+	Active   bool
+	Accounts []SponsoredAccount
 }
 
 // ExternalParties validates and performs External Party operations. All of them need
@@ -114,6 +136,19 @@ func (e *ExternalParties) Get(ctx context.Context, c Caller, id string) (Externa
 		return ExternalParty{}, nil, ErrForbidden
 	}
 	return e.store.GetExternalParty(ctx, id)
+}
+
+// ListSponsored returns the External Parties the caller sponsors. It needs no permission (being the sponsor is the
+// authority, as for extend-access); an active employee session is required and the store filters by the caller's id,
+// so a caller who sponsors nothing gets an empty list and learns nothing about other parties.
+func (e *ExternalParties) ListSponsored(ctx context.Context, c Caller) ([]SponsoredParty, error) {
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
+	if c.Actor.UserID == "" || !validUUID(c.Actor.UserID) {
+		return nil, ErrForbidden
+	}
+	return e.store.ListSponsoredParties(ctx, strings.ToLower(c.Actor.UserID))
 }
 
 func cleanPartyKind(kind string) (string, error) {
@@ -239,16 +274,4 @@ func NewExpireHandler(store ExpiryStore, now func() time.Time) jobs.Handler {
 		_, remindErr := store.RemindSponsors(ctx, at, AccessReminderLeadDays, ExpireAccessBatch)
 		return errors.Join(expireErr, remindErr)
 	}
-}
-
-// NotificationCategories are the notification categories of Organization: the reminder to the sponsor of an
-// external account whose access ends soon. It carries the account's id and the end date only.
-func NotificationCategories() []notifications.Category {
-	return []notifications.Category{{
-		Name: NotificationAccessExpiring, Owner: "organization", LinkType: "user", LinkPath: "/admin/users/{id}",
-		Email: map[string]notifications.EmailText{
-			"en": {Subject: "External access ends soon: %s", Intro: "The access of an external account you sponsor ends soon:", Action: "Open account"},
-			"de": {Subject: "Externer Zugang endet bald: %s", Intro: "Der Zugang eines externen Kontos, für das Sie verantwortlich sind, endet bald:", Action: "Konto öffnen"},
-		},
-	}}
 }

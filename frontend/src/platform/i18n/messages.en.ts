@@ -1638,6 +1638,21 @@ export const en = {
   'notifications.organization.access_expiring': 'The access of {title} ends soon.',
   'notifications.category.organization.access_expiring':
     'Access of an external person I sponsor ends soon',
+  'notifications.organization.access_expired': 'The access of {title} has ended.',
+  'notifications.category.organization.access_expired':
+    'Access of an external person I sponsor has ended',
+  'notifications.organization.access_extended': 'The access of {title} was extended.',
+  'notifications.category.organization.access_extended':
+    'Access of an external person I sponsor was extended by someone else',
+  'notifications.organization.party_sponsor_assigned': 'You are now the sponsor of {title}.',
+  'notifications.category.organization.party_sponsor_assigned':
+    'I became the sponsor of an external party',
+  'notifications.organization.party_sponsor_removed': 'You are no longer the sponsor of {title}.',
+  'notifications.category.organization.party_sponsor_removed':
+    'I am no longer the sponsor of an external party',
+  'notifications.organization.party_deactivated': 'The external party {title} was deactivated.',
+  'notifications.category.organization.party_deactivated':
+    'An external party I sponsor was deactivated',
   'notifications.asset.assigned': 'Equipment was assigned to you: {title}',
   'notifications.category.asset.assigned': 'Equipment is assigned to me',
   'assets.intro':
@@ -5516,6 +5531,17 @@ export const en = {
   'people.create.open': 'Open user',
   'people.create.another': 'Create another user',
   'nav.externalParties': 'External parties',
+  'sponsored.title': 'External parties I sponsor',
+  'sponsored.intro':
+    'The external parties you answer for and their accounts. You can extend access before it ends; ending access early is done by an administrator.',
+  'sponsored.empty': 'You do not sponsor any external party.',
+  'sponsored.noAccounts': 'This party has no external accounts yet.',
+  'sponsored.col.name': 'Name',
+  'sponsored.col.status': 'Status',
+  'sponsored.col.ends': 'Access ends',
+  'sponsored.col.actions': 'Actions',
+  'sponsored.extend': 'Extend access…',
+  'sponsored.partyInactive': 'Party deactivated',
   'external.title': 'External parties',
   'external.intro':
     'Companies whose staff sign in with a restricted external account. Every party has a sponsor who is reminded before access ends.',

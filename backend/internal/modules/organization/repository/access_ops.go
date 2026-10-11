@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 )
 
 // LinkDirectoryIdentity attaches the directory identity of a synchronization conflict to a local account (ADR-0034
@@ -170,10 +171,15 @@ func (r *Repository) ExtendAccess(ctx context.Context, c application.Caller, id 
 		if out, err = reloadUser(ctx, tx, id); err != nil {
 			return fmt.Errorf("reload user: %w", err)
 		}
-		return r.record(ctx, tx, c, "organization.user.access_extended", "user", id,
+		if err := r.record(ctx, tx, c, "organization.user.access_extended", "user", id,
 			map[string]any{"accessExpiresAt": before.AccessExpiresAt.UTC().Format(time.RFC3339)},
 			map[string]any{"accessExpiresAt": until.UTC().Format(time.RFC3339), "version": out.Version},
-			map[string]any{"reasonCode": reason, "bySponsor": !c.ExternalPartiesManage})
+			map[string]any{"reasonCode": reason, "bySponsor": !c.ExternalPartiesManage}); err != nil {
+			return err
+		}
+		// The sponsor is told by the notification consumer unless they extended it themselves.
+		return events.Publish(ctx, tx, events.Publication{Type: "ExternalAccessExtended", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
+			Payload: map[string]any{"userId": id, "externalPartyId": *before.ExternalPartyID, "accessExpiresAt": until.UTC().Format(time.RFC3339)}})
 	})
 	return finishPeople(out, err, "extend access")
 }

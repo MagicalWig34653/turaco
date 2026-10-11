@@ -93,6 +93,26 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.request.rejected',
       labelKey: 'notifications.category.request.rejected',
     },
+    'organization.access_expired': {
+      textKey: 'notifications.organization.access_expired',
+      labelKey: 'notifications.category.organization.access_expired',
+    },
+    'organization.access_extended': {
+      textKey: 'notifications.organization.access_extended',
+      labelKey: 'notifications.category.organization.access_extended',
+    },
+    'organization.party_sponsor_assigned': {
+      textKey: 'notifications.organization.party_sponsor_assigned',
+      labelKey: 'notifications.category.organization.party_sponsor_assigned',
+    },
+    'organization.party_sponsor_removed': {
+      textKey: 'notifications.organization.party_sponsor_removed',
+      labelKey: 'notifications.category.organization.party_sponsor_removed',
+    },
+    'organization.party_deactivated': {
+      textKey: 'notifications.organization.party_deactivated',
+      labelKey: 'notifications.category.organization.party_deactivated',
+    },
     'organization.access_expiring': {
       textKey: 'notifications.organization.access_expiring',
       labelKey: 'notifications.category.organization.access_expiring',
@@ -102,6 +122,14 @@ export function registerModuleNotifications(): void {
       labelKey: 'notifications.category.request.completed',
     },
   });
+  registerNotificationLink(
+    'sponsored_account',
+    (id) => `/sponsored-parties?account=${encodeURIComponent(id)}`,
+  );
+  registerNotificationLink(
+    'sponsored_party',
+    (id) => `/sponsored-parties?party=${encodeURIComponent(id)}`,
+  );
   registerNotificationLink('initiative', (id) => `/initiatives/${encodeURIComponent(id)}`);
   registerNotificationLink(
     'security_advisory',

@@ -1683,6 +1683,23 @@ export const de: Record<MessageKey, string> = {
   'notifications.organization.access_expiring': 'Der Zugang von {title} endet bald.',
   'notifications.category.organization.access_expiring':
     'Der Zugang einer externen Person, für die ich bürge, endet bald',
+  'notifications.organization.access_expired': 'Der Zugang von {title} ist beendet.',
+  'notifications.category.organization.access_expired':
+    'Der Zugang einer externen Person, für die ich bürge, ist beendet',
+  'notifications.organization.access_extended': 'Der Zugang von {title} wurde verlängert.',
+  'notifications.category.organization.access_extended':
+    'Der Zugang einer externen Person, für die ich bürge, wurde von jemand anderem verlängert',
+  'notifications.organization.party_sponsor_assigned':
+    'Sie sind jetzt Verantwortlicher für {title}.',
+  'notifications.category.organization.party_sponsor_assigned':
+    'Ich wurde Verantwortlicher für einen externen Partner',
+  'notifications.organization.party_sponsor_removed':
+    'Sie sind nicht mehr Verantwortlicher für {title}.',
+  'notifications.category.organization.party_sponsor_removed':
+    'Ich bin nicht mehr Verantwortlicher für einen externen Partner',
+  'notifications.organization.party_deactivated': 'Der externe Partner {title} wurde deaktiviert.',
+  'notifications.category.organization.party_deactivated':
+    'Ein externer Partner, für den ich bürge, wurde deaktiviert',
   'notifications.asset.assigned': 'Ihnen wurde Ausstattung zugewiesen: {title}',
   'notifications.category.asset.assigned': 'Mir wird Ausstattung zugewiesen',
   'assets.intro':
@@ -5706,6 +5723,17 @@ export const de: Record<MessageKey, string> = {
   'people.create.open': 'Benutzer öffnen',
   'people.create.another': 'Weiteren Benutzer anlegen',
   'nav.externalParties': 'Externe Partner',
+  'sponsored.title': 'Externe Partner in meiner Verantwortung',
+  'sponsored.intro':
+    'Die externen Partner, für die Sie verantwortlich sind, und ihre Konten. Sie können den Zugang vor Ablauf verlängern; ein vorzeitiges Ende veranlasst ein Administrator.',
+  'sponsored.empty': 'Sie sind für keinen externen Partner verantwortlich.',
+  'sponsored.noAccounts': 'Dieser Partner hat noch keine externen Konten.',
+  'sponsored.col.name': 'Name',
+  'sponsored.col.status': 'Status',
+  'sponsored.col.ends': 'Zugang endet',
+  'sponsored.col.actions': 'Aktionen',
+  'sponsored.extend': 'Zugang verlängern…',
+  'sponsored.partyInactive': 'Partner deaktiviert',
   'external.title': 'Externe Partner',
   'external.intro':
     'Firmen, deren Mitarbeitende sich mit einem eingeschränkten externen Konto anmelden. Jeder Partner hat eine verantwortliche Person, die vor dem Zugangsende erinnert wird.',

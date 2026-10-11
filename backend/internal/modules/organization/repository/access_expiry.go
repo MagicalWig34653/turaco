@@ -151,7 +151,7 @@ func (r *Repository) RemindSponsors(ctx context.Context, now time.Time, leadDays
 			err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 				ok, err := r.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: d.sponsor, Category: application.NotificationAccessExpiring,
 					Params:   map[string]any{"title": d.name, "accessExpiresAt": d.ends.UTC().Format(time.RFC3339), "leadDays": lead},
-					LinkType: "user", LinkID: d.id, DedupeKey: key})
+					LinkType: application.LinkSponsoredAccount, LinkID: d.id, DedupeKey: key})
 				if ok {
 					created++
 				}

@@ -256,7 +256,7 @@ func TestRemindSponsorsOncePerLeadWindow(t *testing.T) {
 		}
 		byUser[in.LinkID] = in
 	}
-	if in := byUser[ten.ID]; in.Params["leadDays"] != 14 || in.Category != application.NotificationAccessExpiring || in.LinkType != "user" {
+	if in := byUser[ten.ID]; in.Params["leadDays"] != 14 || in.Category != application.NotificationAccessExpiring || in.LinkType != application.LinkSponsoredAccount {
 		t.Errorf("10 days: %+v", in)
 	}
 	if in := byUser[two.ID]; in.Params["leadDays"] != 3 {

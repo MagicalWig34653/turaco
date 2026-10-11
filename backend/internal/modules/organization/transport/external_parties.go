@@ -22,6 +22,10 @@ func RegisterExternalParties(mux *http.ServeMux, parties *application.ExternalPa
 	route := func(pattern string, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(manage(fn)))
 	}
+	// The sponsor's own page: needs no permission, only a session. The store filters by the caller's id, so a User
+	// sees exactly the parties they sponsor (an empty list otherwise); extending uses POST /users/{id}/extend-access,
+	// which authorizes the sponsor itself.
+	mux.Handle("GET /api/v1/external-parties/sponsored", httpx.NoStore(authorization.RequireAuthenticated(auth)(http.HandlerFunc(h.sponsored))))
 	route("GET /api/v1/external-parties", h.list)
 	route("POST /api/v1/external-parties", h.create)
 	route("GET /api/v1/external-parties/{id}", h.get)
@@ -125,4 +129,38 @@ func (h *partyHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, toParty(p))
+}
+
+type sponsoredAccountDTO struct {
+	UserID          string `json:"userId"`
+	DisplayName     string `json:"displayName"`
+	Status          string `json:"status"`
+	AccessExpiresAt string `json:"accessExpiresAt"`
+	Version         int    `json:"version"`
+}
+
+type sponsoredPartyDTO struct {
+	ID       string                `json:"id"`
+	Kind     string                `json:"kind"`
+	Name     string                `json:"name"`
+	Active   bool                  `json:"active"`
+	Accounts []sponsoredAccountDTO `json:"accounts"`
+}
+
+func (h *partyHandler) sponsored(w http.ResponseWriter, r *http.Request) {
+	items, err := h.parties.ListSponsored(r.Context(), caller(w, r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out := make([]sponsoredPartyDTO, 0, len(items))
+	for _, p := range items {
+		d := sponsoredPartyDTO{ID: p.ID, Kind: p.Kind, Name: p.Name, Active: p.Active, Accounts: make([]sponsoredAccountDTO, 0, len(p.Accounts))}
+		for _, a := range p.Accounts {
+			d.Accounts = append(d.Accounts, sponsoredAccountDTO{UserID: a.UserID, DisplayName: a.DisplayName, Status: a.Status,
+				AccessExpiresAt: ts(a.AccessExpiresAt), Version: a.Version})
+		}
+		out = append(out, d)
+	}
+	ok(w, map[string]any{"items": out, "extendReasons": application.ExtendReasons()})
 }

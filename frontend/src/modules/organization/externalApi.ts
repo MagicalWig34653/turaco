@@ -53,10 +53,33 @@ export type ExternalPartyUpdate = {
   active?: boolean;
 };
 
+/** An account as its sponsor sees it: no email address; `version` is what extend-access expects. */
+export type SponsoredAccount = {
+  userId: string;
+  displayName: string;
+  status: string;
+  accessExpiresAt: string;
+  version: number;
+};
+
+/** An External Party the signed-in person sponsors. */
+export type SponsoredParty = {
+  id: string;
+  kind: PartyKind;
+  name: string;
+  active: boolean;
+  accounts: SponsoredAccount[];
+};
+
 /** External Parties (F14 slice A-G); every call needs organization.external_parties.manage. */
 export const externalPartiesApi = {
   list: (signal?: Signal) =>
     api.get<{ items: ExternalParty[]; kinds: PartyKind[] }>('/external-parties', { signal }),
+  /** The parties the signed-in person sponsors (no permission; the server filters by the session). */
+  sponsored: (signal?: Signal) =>
+    api.get<{ items: SponsoredParty[]; extendReasons: string[] }>('/external-parties/sponsored', {
+      signal,
+    }),
   get: (id: string, signal?: Signal) =>
     api.get<ExternalPartyDetail>(`/external-parties/${enc(id)}`, { signal }),
   create: (body: ExternalPartyCreate) => api.post<ExternalParty>('/external-parties', body),

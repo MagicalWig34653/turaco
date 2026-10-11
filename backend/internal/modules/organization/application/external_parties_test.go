@@ -9,6 +9,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/jobs"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 )
 
 const testID = "0198a7c0-1111-7222-8333-444455556666"
@@ -200,9 +201,29 @@ func TestExpireHandlerRunsBothPartsAndReportsFailures(t *testing.T) {
 	}
 }
 
-func TestSponsorReminderCategoryIsComplete(t *testing.T) {
+func TestPartyNotificationCategoriesAreComplete(t *testing.T) {
+	want := map[string]bool{NotificationAccessExpiring: true, NotificationAccessExpired: true, NotificationAccessExtended: true,
+		NotificationSponsorAssigned: true, NotificationSponsorRemoved: true, NotificationPartyDeactivated: true}
 	cats := NotificationCategories()
-	if len(cats) != 1 || cats[0].Name != NotificationAccessExpiring || cats[0].Email["en"].Subject == "" || cats[0].Email["de"].Subject == "" || cats[0].LinkType != "user" {
-		t.Errorf("categories = %+v", cats)
+	if len(cats) != len(want) {
+		t.Fatalf("categories = %d, want %d", len(cats), len(want))
+	}
+	for _, c := range cats {
+		if !want[c.Name] || c.Owner != "organization" {
+			t.Errorf("unexpected category %+v", c)
+		}
+		for _, loc := range []string{"en", "de"} {
+			if c.Email[loc].Subject == "" || c.Email[loc].Intro == "" || c.Email[loc].Action == "" {
+				t.Errorf("%s: incomplete %s text", c.Name, loc)
+			}
+		}
+		// Only the removal has no link: the page no longer shows the party to the previous sponsor.
+		if (c.Name == NotificationSponsorRemoved) != (c.LinkType == "") {
+			t.Errorf("%s: link type %q", c.Name, c.LinkType)
+		}
+	}
+	// They register without conflict in the platform registry.
+	if _, err := notifications.NewRegistry(cats...); err != nil {
+		t.Errorf("registry: %v", err)
 	}
 }
