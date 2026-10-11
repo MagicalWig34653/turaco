@@ -86,6 +86,19 @@ func (c *Consumers) notify(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent
 		if !active[id] {
 			continue
 		}
+		// A requester may stop public ticket notifications. Assignment and internal mentions
+		// belong to staff workflows and do not consult this preference.
+		if (category == "ticket.comment" || category == "ticket.resolved") && (id == t.ReporterID || id == t.AffectedUserID) {
+			if fs, ok := c.store.(FollowStore); ok {
+				following, err := fs.FollowingTx(ctx, tx, t.ID, id)
+				if err != nil {
+					return fmt.Errorf("check ticket follow: %w", err)
+				}
+				if !following {
+					continue
+				}
+			}
+		}
 		ref := t.Reference
 		if c.references != nil {
 			r, err := c.references(ctx, id, t)

@@ -18,15 +18,19 @@ export function TicketCallbackDialog({
   ticket,
   onClose,
   onDone,
+  initialTitle = '',
+  initialDue = '',
 }: {
   ticket: TicketDetail;
   onClose: () => void;
   onDone: () => void;
+  initialTitle?: string;
+  initialDue?: string;
 }) {
   const { t } = useI18n();
   const { session } = useSession();
-  const [due, setDue] = useState('');
-  const [title, setTitle] = useState('');
+  const [due, setDue] = useState(initialDue);
+  const [title, setTitle] = useState(initialTitle);
   const [assignee, setAssignee] = useState<Assignee | null>(
     session?.userId ? { id: session.userId, label: session.displayName ?? session.userId } : null,
   );

@@ -57,6 +57,12 @@ export const ticketsApi = {
   ) =>
     api.get<Page<Ticket>>('/tickets', { signal, query: { scope, ...filter, limit: 50, cursor } }),
   get: (id: string, signal?: Signal) => api.get<TicketDetail>(`/tickets/${enc(id)}`, { signal }),
+  following: (id: string, signal?: Signal) =>
+    api.get<{ following: boolean }>(`/tickets/${enc(id)}/follow`, { signal }),
+  follow: (id: string, on: boolean) =>
+    on
+      ? api.post<{ following: boolean }>(`/tickets/${enc(id)}/follow`, {})
+      : api.delete<{ following: boolean }>(`/tickets/${enc(id)}/follow`),
   create: (body: {
     title: string;
     description?: string;
