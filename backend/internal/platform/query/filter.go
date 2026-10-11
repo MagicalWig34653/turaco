@@ -93,17 +93,18 @@ type compiled struct {
 }
 
 type compiler struct {
-	cat      *Catalog
-	subj     Subject
-	lenient  bool
-	extra    *SearchExtra
-	now      time.Time
-	loc      *time.Location
-	args     []any
-	conds    int
-	cost     int
-	used     map[string]bool
-	warnings []Warning
+	cat        *Catalog
+	subj       Subject
+	lenient    bool
+	extra      *SearchExtra
+	searchSkip []string
+	now        time.Time
+	loc        *time.Location
+	args       []any
+	conds      int
+	cost       int
+	used       map[string]bool
+	warnings   []Warning
 	// valueCost is set by an operator whose cost depends on the value (a substring shorter than a trigram
 	// cannot use the trigram index); condition() consumes it.
 	valueCost int
@@ -778,7 +779,7 @@ func (c *compiler) search(s string) (string, error) {
 	for _, key := range c.cat.order {
 		f := c.cat.fields[key]
 		// Only fields the caller may filter and that are marked searchable.
-		if !f.Searchable || !f.Filterable || !f.available(c.subj) {
+		if !f.Searchable || !f.Filterable || !f.available(c.subj) || slices.Contains(c.searchSkip, f.Key) {
 			continue
 		}
 		parts = append(parts, f.Column.sql+" ILIKE "+c.arg(pat)+escapeClause)
