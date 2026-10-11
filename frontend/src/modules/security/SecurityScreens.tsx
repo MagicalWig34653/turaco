@@ -17,6 +17,7 @@ import { Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { Table } from '../../platform/ui/Table';
 import { securityApi } from './api';
+import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
 import { AdvisoryRemediation, FindingRemediation } from './Remediation';
 import {
   advisoryActions,
@@ -432,6 +433,12 @@ export function AdvisoriesScreen() {
               render: (x: Advisory) => <Label kind="status" value={x.status} />,
             },
             {
+              key: 'owner',
+              sortValue: (x: Advisory) => x.ownerName ?? '',
+              header: t('security.owner'),
+              render: (x: Advisory) => x.ownerName || '—',
+            },
+            {
               key: 'source',
               sortValue: (x) => x.source,
               header: t('security.source'),
@@ -669,6 +676,7 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
     [id, detail.data?.advisory.version],
   );
   const [edit, setEdit] = useState(false);
+  const [ownerSelection, setOwnerSelection] = useState<Assignee | null | undefined>(undefined);
   const [aliasCriterion, setAliasCriterion] = useState<Criterion>();
   const [normalizationResult, setNormalizationResult] = useState<{
     matched: number;
@@ -686,6 +694,17 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
       setWarnings(result.warnings ?? []);
       setError(undefined);
       setReasonAction('');
+      detail.reload();
+    } catch (cause) {
+      setError(asApiError(cause));
+    }
+  }
+  async function assignOwner(value: Assignee | null) {
+    if (!a) return;
+    try {
+      await securityApi.assignOwner(id, a.version, value?.id ?? null);
+      setOwnerSelection(undefined);
+      setError(undefined);
       detail.reload();
     } catch (cause) {
       setError(asApiError(cause));
@@ -720,6 +739,8 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
             <h2>{t('security.facts')}</h2>
             <p>{a.summary}</p>
             <dl>
+              <dt>{t('security.owner')}</dt>
+              <dd>{a.ownerName || '—'}</dd>
               <dt>{t('security.source')}</dt>
               <dd>
                 {a.source} {a.externalId}
@@ -745,6 +766,36 @@ export function AdvisoryDetailScreen({ id }: { id: string }) {
               <dt>{t('security.matchedAt')}</dt>
               <dd>{a.matchedAt ?? '—'}</dd>
             </dl>
+            {can('security.manage') && (
+              <div>
+                <AssigneePicker
+                  type="user"
+                  label={t('security.owner')}
+                  value={
+                    ownerSelection === undefined
+                      ? a.ownerUserId
+                        ? { id: a.ownerUserId, label: a.ownerName || a.ownerUserId }
+                        : null
+                      : ownerSelection
+                  }
+                  onChange={setOwnerSelection}
+                />
+                <Button
+                  type="button"
+                  onClick={() =>
+                    void assignOwner(
+                      ownerSelection === undefined
+                        ? a.ownerUserId
+                          ? { id: a.ownerUserId, label: a.ownerName || a.ownerUserId }
+                          : null
+                        : ownerSelection,
+                    )
+                  }
+                >
+                  {t('security.assignOwner')}
+                </Button>
+              </div>
+            )}
             {a.matchTruncated && <p>{t('security.truncated')}</p>}
           </section>
           <section>

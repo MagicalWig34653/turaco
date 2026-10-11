@@ -391,3 +391,14 @@ func (s *Service) LinkedChanges(ctx context.Context, p Principal, id string) ([]
 func canSeeChange(p Principal, c changespublic.ChangeInfo) bool {
 	return p.ChangesView || c.RequesterID == p.UserID || c.OwnerID != nil && *c.OwnerID == p.UserID
 }
+
+// WithOwnerDirectory supplies active User validation through Organization's public contract.
+func (s *Service) WithOwnerDirectory(directory Directory) *Service { s.directory = directory; return s }
+
+// OwnerNames resolves a page of advisory owner names through the shared Organization lookup.
+func (s *Service) OwnerNames(ctx context.Context, ids []string) (map[string]string, error) {
+	if s.names == nil || len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	return s.names.UserNames(ctx, ids)
+}

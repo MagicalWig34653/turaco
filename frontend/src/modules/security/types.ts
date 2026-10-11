@@ -71,6 +71,8 @@ export type Advisory = {
   sourceUrl: string | null;
   status: string;
   statusReason: string | null;
+  ownerUserId: string | null;
+  ownerName?: string;
   version: number;
   publishedAt: string | null;
   modifiedAt: string | null;

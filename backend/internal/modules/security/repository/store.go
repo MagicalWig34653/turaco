@@ -51,7 +51,7 @@ func isUnique(err error) bool {
 // ---- advisories ----
 
 const advisoryCols = `id::text, reference, source, external_id, title, summary, severity, edited_by_user, published_at, modified_at, source_url,
-	status, status_reason, criteria_revision, criteria_changed_at, matched_revision, matched_at, matched_ingestion_at, match_truncated, created_by::text,
+	status, status_reason, criteria_revision, criteria_changed_at, matched_revision, matched_at, matched_ingestion_at, match_truncated, created_by::text, owner_user_id::text,
 	applicable_at, resolved_at, archived_at, version, created_at, updated_at,
 	known_exploited, known_exploited_added_at, kev_due_date, criteria_incomplete, criteria_skipped, criteria_changed_upstream,
 	(SELECT count(*) FROM security.advisory_criteria c WHERE c.advisory_id = security.advisories.id AND c.normalization = 'unmatched')`
@@ -60,7 +60,7 @@ func scanAdvisory(row pgx.Row) (application.Advisory, error) {
 	var a application.Advisory
 	err := row.Scan(&a.ID, &a.Reference, &a.Source, &a.ExternalID, &a.Title, &a.Summary, &a.Severity, &a.EditedByUser, &a.PublishedAt, &a.ModifiedAt,
 		&a.SourceURL, &a.Status, &a.StatusReason, &a.CriteriaRevision, &a.CriteriaChangedAt, &a.MatchedRevision, &a.MatchedAt, &a.MatchedIngestionAt,
-		&a.MatchTruncated, &a.CreatedBy, &a.ApplicableAt, &a.ResolvedAt, &a.ArchivedAt, &a.Version, &a.CreatedAt, &a.UpdatedAt,
+		&a.MatchTruncated, &a.CreatedBy, &a.OwnerUserID, &a.ApplicableAt, &a.ResolvedAt, &a.ArchivedAt, &a.Version, &a.CreatedAt, &a.UpdatedAt,
 		&a.KnownExploited, &a.KnownExploitedAddedAt, &a.KEVDueDate, &a.CriteriaIncomplete, &a.CriteriaSkipped, &a.CriteriaChangedUpstream, &a.UnmatchedCriteria)
 	return a, err
 }
@@ -112,11 +112,11 @@ func (r *Repository) UpdateAdvisoryTx(ctx context.Context, tx pgx.Tx, a applicat
 		UPDATE security.advisories SET title = $2, summary = $3, severity = $4, published_at = $5, modified_at = $6, source_url = $7,
 			status = $8, status_reason = $9, criteria_changed_at = CASE WHEN criteria_revision <> $10 THEN now() ELSE criteria_changed_at END,
 			criteria_revision = $10, applicable_at = $11, resolved_at = $12, archived_at = $13,
-			edited_by_user = $14, criteria_incomplete = $15, criteria_skipped = $16, criteria_changed_upstream = $17,
+			edited_by_user = $14, criteria_incomplete = $15, criteria_skipped = $16, criteria_changed_upstream = $17, owner_user_id = $18::uuid,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+advisoryCols,
 		a.ID, a.Title, a.Summary, a.Severity, a.PublishedAt, a.ModifiedAt, a.SourceURL, a.Status, a.StatusReason, a.CriteriaRevision,
-		a.ApplicableAt, a.ResolvedAt, a.ArchivedAt, a.EditedByUser, a.CriteriaIncomplete, a.CriteriaSkipped, a.CriteriaChangedUpstream))
+		a.ApplicableAt, a.ResolvedAt, a.ArchivedAt, a.EditedByUser, a.CriteriaIncomplete, a.CriteriaSkipped, a.CriteriaChangedUpstream, a.OwnerUserID))
 	return advisoryResult(out, err, "update")
 }
 

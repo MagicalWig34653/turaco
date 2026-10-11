@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -82,9 +83,24 @@ func (h *handler) listAdvisories(w http.ResponseWriter, r *http.Request) {
 		h.writeErr(w, r, e)
 		return
 	}
+	ids := make([]string, 0, len(v.Items))
+	for _, a := range v.Items {
+		if a.OwnerUserID != nil {
+			ids = append(ids, *a.OwnerUserID)
+		}
+	}
+	names, e := h.svc.OwnerNames(r.Context(), ids)
+	if e != nil {
+		h.writeErr(w, r, e)
+		return
+	}
 	items := make([]any, 0, len(v.Items))
 	for _, a := range v.Items {
-		items = append(items, advisoryDTO(a))
+		dto := advisoryDTO(a)
+		if a.OwnerUserID != nil {
+			dto["ownerName"] = names[*a.OwnerUserID]
+		}
+		items = append(items, dto)
 	}
 	httpx.JSON(w, 200, map[string]any{"items": items, "nextCursor": v.NextCursor})
 }
@@ -128,7 +144,16 @@ func (h *handler) getAdvisory(w http.ResponseWriter, r *http.Request) {
 		h.writeErr(w, r, e)
 		return
 	}
-	httpx.JSON(w, 200, map[string]any{"advisory": advisoryDTO(a.Advisory), "criteria": criteriaDTO(a.Criteria), "productNames": a.ProductNames})
+	dto := advisoryDTO(a.Advisory)
+	if a.OwnerUserID != nil {
+		names, err := h.svc.OwnerNames(r.Context(), []string{*a.OwnerUserID})
+		if err != nil {
+			h.writeErr(w, r, err)
+			return
+		}
+		dto["ownerName"] = names[*a.OwnerUserID]
+	}
+	httpx.JSON(w, 200, map[string]any{"advisory": dto, "criteria": criteriaDTO(a.Criteria), "productNames": a.ProductNames})
 }
 func (h *handler) updateAdvisory(w http.ResponseWriter, r *http.Request) {
 	var b struct {
@@ -332,7 +357,7 @@ func (h *handler) findingTransitions(w http.ResponseWriter, r *http.Request) {
 }
 
 func advisoryDTO(a application.Advisory) map[string]any {
-	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "criteriaIncomplete": a.CriteriaIncomplete, "criteriaSkipped": a.CriteriaSkipped, "criteriaChangedUpstream": a.CriteriaChangedUpstream, "knownExploited": a.KnownExploited, "knownExploitedAddedAt": dateOnly(a.KnownExploitedAddedAt), "kevDueDate": dateOnly(a.KEVDueDate), "createdBy": a.CreatedBy, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
+	return map[string]any{"id": a.ID, "reference": a.Reference, "source": a.Source, "externalId": a.ExternalID, "title": a.Title, "summary": a.Summary, "severity": a.Severity, "publishedAt": a.PublishedAt, "modifiedAt": a.ModifiedAt, "sourceUrl": a.SourceURL, "status": a.Status, "statusReason": a.StatusReason, "criteriaRevision": a.CriteriaRevision, "matchedRevision": a.MatchedRevision, "matchedAt": a.MatchedAt, "matchedIngestionAt": a.MatchedIngestionAt, "matchTruncated": a.MatchTruncated, "unmatchedCriteria": a.UnmatchedCriteria, "criteriaIncomplete": a.CriteriaIncomplete, "criteriaSkipped": a.CriteriaSkipped, "criteriaChangedUpstream": a.CriteriaChangedUpstream, "knownExploited": a.KnownExploited, "knownExploitedAddedAt": dateOnly(a.KnownExploitedAddedAt), "kevDueDate": dateOnly(a.KEVDueDate), "createdBy": a.CreatedBy, "ownerUserId": a.OwnerUserID, "applicableAt": a.ApplicableAt, "resolvedAt": a.ResolvedAt, "archivedAt": a.ArchivedAt, "version": a.Version, "createdAt": a.CreatedAt, "updatedAt": a.UpdatedAt}
 }
 func criteriaDTO(criteria []application.Criterion) []any {
 	out := make([]any, 0, len(criteria))
@@ -356,4 +381,25 @@ func dateOnly(t *time.Time) any {
 		return nil
 	}
 	return t.Format(time.DateOnly)
+}
+
+func (h *handler) assignAdvisoryOwner(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int            `json:"expectedVersion"`
+		OwnerUserID     json.RawMessage `json:"ownerUserId"`
+	}
+	if !decode(w, r, &b, maxBody) {
+		return
+	}
+	if b.OwnerUserID == nil {
+		h.writeErr(w, r, &application.InvalidInputError{Message: "ownerUserId is required (null clears it)"})
+		return
+	}
+	var owner *string
+	if err := json.Unmarshal(b.OwnerUserID, &owner); err != nil {
+		h.writeErr(w, r, &application.InvalidInputError{Message: "ownerUserId must be a user id or null"})
+		return
+	}
+	a, e := h.svc.AssignAdvisoryOwner(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, owner)
+	h.advisoryResponse(w, r, a, e)
 }

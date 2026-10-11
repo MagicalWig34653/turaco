@@ -32,6 +32,7 @@ type CallbackTaskInput struct {
 // the Task in the caller's transaction so the Task exists exactly when the audit entry does.
 type CallbackTasks interface {
 	CreateInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID string, in CallbackTaskInput) (string, error)
+	ByContext(ctx context.Context, ticketID string, limit int) ([]CallbackTask, error)
 }
 
 // ErrAssigneeInvalid means the chosen assignee does not exist or is not active.
@@ -54,7 +55,7 @@ type Callback struct {
 // to assigneeID (empty: the caller). It needs work access in the Ticket's Queue and an open Ticket
 // (Abilities.ScheduleCallback). The Ticket itself does not change. Audited as servicedesk.ticket.callback_scheduled
 // with the Task id, the due time and the assignee; the ticket title is not copied.
-func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, id string, dueAt time.Time, assigneeID string) (Callback, error) {
+func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, id string, dueAt time.Time, assigneeID string, title string) (Callback, error) {
 	if err := c.validate(); err != nil {
 		return Callback{}, err
 	}
@@ -65,6 +66,10 @@ func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, i
 	now := time.Now().UTC()
 	if dueAt.IsZero() || !dueAt.After(now) || dueAt.After(now.Add(MaxCallbackHorizon)) {
 		return Callback{}, invalid("dueAt must be in the future and at most one year ahead")
+	}
+	title, err := cleanText(title, 200, false, "title")
+	if err != nil {
+		return Callback{}, err
 	}
 	assigneeID = lower(assigneeID)
 	if assigneeID == "" {
@@ -89,8 +94,11 @@ func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, i
 			}
 			return &InvalidTransitionError{Operation: "schedule_callback", From: cur.Status}
 		}
+		if title == "" {
+			title = "Callback " + cur.Reference
+		}
 		taskID, err := s.callbacks.CreateInTx(ctx, tx, c.Actor, c.CorrelationID, CallbackTaskInput{
-			TicketID: cur.ID, Title: "Callback " + cur.Reference, DueAt: dueAt, AssignedUserID: assigneeID})
+			TicketID: cur.ID, Title: title, DueAt: dueAt, AssignedUserID: assigneeID})
 		if err != nil {
 			return err
 		}
@@ -100,4 +108,59 @@ func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, i
 			Metadata: map[string]any{"taskId": taskID, "dueAt": dueAt.Format(time.RFC3339), "assigneeId": assigneeID}})
 	})
 	return out, err
+}
+
+// CallbackTask is a live Task projection for staff on the Ticket detail.
+type CallbackTask struct {
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	Status         string     `json:"status"`
+	DueAt          *time.Time `json:"dueAt"`
+	AssignedUserID *string    `json:"assignedUserId"`
+	AssigneeName   *string    `json:"assigneeName"`
+}
+
+// CallbackTasksForTicket returns bounded live Tasks to staff with access to the Ticket's Queue.
+func (s *Service) CallbackTasksForTicket(ctx context.Context, p Principal, id string) ([]CallbackTask, error) {
+	if p.External {
+		return nil, ErrNotFound
+	}
+	if s.callbacks == nil {
+		return nil, errors.New("servicedesk: callbacks are not configured")
+	}
+	a, err := s.resolve(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.store.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !a.eff(p, t.QueueID).staff() {
+		return nil, ErrNotFound
+	}
+	tasks, err := s.callbacks.ByContext(ctx, t.ID, 100)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		if task.AssignedUserID != nil {
+			ids = append(ids, *task.AssignedUserID)
+		}
+	}
+	if len(ids) > 0 {
+		names, err := s.dir.UserNames(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range tasks {
+			if tasks[i].AssignedUserID != nil {
+				if name := names[*tasks[i].AssignedUserID]; name != "" {
+					tasks[i].AssigneeName = &name
+				}
+			}
+		}
+	}
+	return tasks, nil
 }
