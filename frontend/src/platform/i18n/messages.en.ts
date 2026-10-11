@@ -6260,7 +6260,8 @@ export const en = {
   // END Administration settings
   'tickets.follow': 'Follow ticket',
   'tickets.unfollow': 'Unfollow ticket',
-  'tickets.securityPrompt': 'Security ticket: assess whether personal data is affected. If it is, consider a data protection task due within 72 hours of the report.',
+  'tickets.securityPrompt':
+    'Security ticket: assess whether personal data is affected. If it is, consider a data protection task due within 72 hours of the report.',
   'tickets.securityTask': 'Create data protection due task',
   'tickets.securityTaskTitle': 'Data protection 72-hour assessment',
 } as const;

@@ -93,7 +93,7 @@ Fixed: a push that overlapped a change is detected in one statement and repeated
 
 The explicit `POST /tickets/{id}/wait` accepts optional `expectedAt` (future RFC 3339 instant) alongside the closed waiting reason. The Ticket stores it as nullable `waiting_until`; a database CHECK permits it only in `waiting`, and every exit clears it. The Wait audit metadata and the staff history entry include the date. Ticket detail and the list status cell show it with the waiting reason. The date is an estimate, not a Task, due date, reminder or SLA; it creates no event or notification. Past dates receive 400.
 
-## Requester follow and security due-task prompt (2026-10-11, migration 000090)
+## Requester follow and security due-task prompt (2026-10-11, migration 000089)
 
 The reporter and affected User can read and change their own Ticket notification preference through `GET`, `POST` and `DELETE /tickets/{id}/follow`; other callers, including staff who are not requesters, receive 404. The absence of a preference means following, preserving notifications on existing Tickets. Unfollowing suppresses `ticket.comment` for public replies and `ticket.resolved` for that requester; internal notes and assignment events never enter the requester notification flow. The operation is idempotent, uses the existing notification categories, and audits a changed preference as `servicedesk.ticket.follow_changed`. It does not change the Ticket version. The Service Desk owns the small preference table; there is no new notification category or delivery system.
 

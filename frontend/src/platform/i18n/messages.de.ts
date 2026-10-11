@@ -6480,7 +6480,8 @@ export const de: Record<MessageKey, string> = {
   // END Administration settings
   'tickets.follow': 'Ticket folgen',
   'tickets.unfollow': 'Ticket nicht mehr folgen',
-  'tickets.securityPrompt': 'Sicherheitsticket: Prüfen, ob personenbezogene Daten betroffen sind. Falls ja, eine Datenschutzaufgabe mit Frist innerhalb von 72 Stunden ab Meldung erwägen.',
+  'tickets.securityPrompt':
+    'Sicherheitsticket: Prüfen, ob personenbezogene Daten betroffen sind. Falls ja, eine Datenschutzaufgabe mit Frist innerhalb von 72 Stunden ab Meldung erwägen.',
   'tickets.securityTask': 'Datenschutzaufgabe mit Frist erstellen',
   'tickets.securityTaskTitle': 'Datenschutzprüfung innerhalb von 72 Stunden',
 };

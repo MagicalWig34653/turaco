@@ -812,10 +812,11 @@ function TicketWorkspace({ id }: { id: string }) {
                     busy={followBusy}
                     disabled={followBusy}
                     onClick={() => {
+                      const following = follow.data?.following ?? false;
                       setFollowBusy(true);
                       setActionError(undefined);
                       void ticketsApi
-                        .follow(ticket.id, !follow.data.following)
+                        .follow(ticket.id, !following)
                         .then(() => follow.reload())
                         .catch((cause) => setActionError(asApiError(cause)))
                         .finally(() => setFollowBusy(false));
