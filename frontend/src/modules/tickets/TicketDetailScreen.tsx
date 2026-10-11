@@ -359,8 +359,13 @@ function TicketWorkspace({ id }: { id: string }) {
   }
   const manage = can('tickets.manage');
   const staff = manage || can('tickets.view');
+  // A requester does not see who works the ticket when it sits in a desk they may not know: say that it is being
+  // handled instead of "nobody yet" once work has started.
+  const handledByTeam =
+    !ticket.assigneeId && ['open', 'in_progress', 'waiting'].includes(ticket.status);
   const name = (key: string | null) =>
     key ? (ticket.names[key] ?? t('ticketWorkspace.unknownPerson')) : t('tickets.fact.unassigned');
+  const assigneeText = handledByTeam ? t('tickets.fact.handledByTeam') : name(ticket.assigneeId);
   const done = () => {
     setDialog(null);
     setActionError(undefined);
@@ -480,7 +485,7 @@ function TicketWorkspace({ id }: { id: string }) {
           <Avatar name={ticket.assigneeId ? name(ticket.assigneeId) : null} />
           <span>
             <small>{t('tickets.fact.assignee')}</small>
-            <strong>{name(ticket.assigneeId)}</strong>
+            <strong>{assigneeText}</strong>
           </span>
         </span>
         <span className="incident-age">
@@ -769,7 +774,7 @@ function TicketWorkspace({ id }: { id: string }) {
                 {ticket.statusReason ? <p>{ticket.statusReason}</p> : null}
               </dd>
               <dt>{t('tickets.fact.assignee')}</dt>
-              <dd>{name(ticket.assigneeId)}</dd>
+              <dd>{assigneeText}</dd>
               {queueName ? (
                 <>
                   <dt>{t('tickets.fact.queue')}</dt>

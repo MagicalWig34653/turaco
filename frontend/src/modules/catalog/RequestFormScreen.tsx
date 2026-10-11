@@ -11,13 +11,19 @@ import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextArea, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { requestsApi } from '../requests/api';
-import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
+import type { Assignee } from '../tasks/AssigneePicker';
 import { PersonLookup } from '../organization/PersonLookup';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
 import { useDebouncedValue } from '../../platform/ui/hooks';
 import { previewState, stepText } from './approvalModel';
 import { approvalPreview, catalogApi } from './api';
-import { fieldErrorKey, initialValues, toAnswers, type FormValues } from './formModel';
+import {
+  fieldErrorKey,
+  initialValues,
+  openRequestsForItem,
+  toAnswers,
+  type FormValues,
+} from './formModel';
 import type { CatalogForm, FormField } from './types';
 
 function UserField({
@@ -37,8 +43,10 @@ function UserField({
         {field.required ? ' *' : ''}
       </legend>
       {field.help ? <p className="field-hint">{field.help}</p> : null}
-      <AssigneePicker
-        type="user"
+      {/* The colleague lookup every signed-in person may call; the directory picker is only its fallback for
+          people with directory access when the lookup is switched off. */}
+      <PersonLookup
+        label={field.label}
         value={selected}
         onChange={(next) => {
           setSelected(next);
@@ -218,6 +226,11 @@ function RequestForm({ form }: { form: CatalogForm }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const mine = useAsync(
+    async (signal) => (await requestsApi.list('mine', '', undefined, signal)).items,
+    [],
+  );
+  const open = openRequestsForItem(mine.data ?? [], form.id);
   // A second submit before the first answer arrives (double click, Enter twice) would create a second request.
   const submitting = useRef(false);
 
@@ -257,6 +270,17 @@ function RequestForm({ form }: { form: CatalogForm }) {
       <p>
         <Link to="/catalog">{t('catalog.back')}</Link>
       </p>
+      {open.length > 0 ? (
+        <Alert kind="info">
+          {t('catalog.form.openRequest')}{' '}
+          {open.map((request, index) => (
+            <span key={request.id}>
+              {index > 0 ? ', ' : ''}
+              <Link to={`/requests/${encodeURIComponent(request.id)}`}>{request.reference}</Link>
+            </span>
+          ))}
+        </Alert>
+      ) : null}
       <form className="form" onSubmit={(event) => void submit(event)} noValidate>
         {error ? <ApiErrorAlert error={error} /> : null}
         {Object.keys(fieldErrors).length > 0 ? (

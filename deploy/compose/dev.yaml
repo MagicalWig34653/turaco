@@ -29,7 +29,7 @@ services:
   # signature database (a minute or two) and the container reports healthy once clamd answers. Uploads stay
   # `pending` until it does. Production notes: docs/operations/installation.md.
   clamav:
-    image: clamav/clamav:1.4.2
+    image: clamav/clamav:1.4.6-debian
     environment:
       CLAMD_CONF_StreamMaxLength: 100M
       CLAMD_CONF_MaxFileSize: 100M
