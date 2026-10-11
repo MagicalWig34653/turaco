@@ -38,6 +38,12 @@ export type Asset = {
   supplierId: string | null;
   purchasedAt: string | null;
   warrantyUntil: string | null;
+  firmwareVersion: string | null;
+  firmwareSource: string | null;
+  firmwareObservedAt: string | null;
+  lastCalibratedAt: string | null;
+  nextCalibrationDue: string | null;
+  nextMaintenanceDue: string | null;
   locationId: string | null;
   notes: string | null;
   version: number;
@@ -108,5 +114,12 @@ export type AssetUpdate = {
   ownershipType?: string;
   warrantyUntil?: string;
   clearWarrantyUntil?: boolean;
+  firmwareVersion?: string;
+  lastCalibratedAt?: string;
+  clearLastCalibratedAt?: boolean;
+  nextCalibrationDue?: string;
+  clearNextCalibrationDue?: boolean;
+  nextMaintenanceDue?: string;
+  clearNextMaintenanceDue?: boolean;
   notes?: string;
 };

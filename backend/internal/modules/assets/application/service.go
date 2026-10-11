@@ -12,6 +12,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
@@ -25,6 +26,7 @@ type Service struct {
 	dir      Directory
 	products Products
 	devices  DeviceSearcher
+	engine   *query.Engine
 	now      func() time.Time
 }
 
@@ -32,7 +34,7 @@ func NewService(store Store, dir Directory, products Products, now func() time.T
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{store: store, dir: dir, products: products, now: now}
+	return &Service{store: store, dir: dir, products: products, now: now, engine: query.NewEphemeralEngine()}
 }
 
 func publish(ctx context.Context, tx pgx.Tx, c Caller, typ string, payload map[string]any) error {
@@ -52,6 +54,8 @@ func auditState(a *Asset) any {
 		"status": a.Status, "provisioning": a.ProvisioningStatus, "ownership": a.OwnershipType,
 		"productId": a.ProductID, "locationId": a.LocationID, "version": a.Version,
 		"serialNumber": a.SerialNumber, "assetTag": a.AssetTag,
+		"firmwareVersion": a.FirmwareVersion, "firmwareSource": a.FirmwareSource, "firmwareObservedAt": a.FirmwareObservedAt,
+		"lastCalibratedAt": a.LastCalibratedAt, "nextCalibrationDue": a.NextCalibrationDue, "nextMaintenanceDue": a.NextMaintenanceDue,
 	}
 }
 
@@ -228,11 +232,18 @@ type UpdateInput struct {
 	PurchasedAt   *time.Time
 	WarrantyUntil *time.Time
 	// ClearPurchasedAt and ClearWarrantyUntil remove the dates.
-	ClearPurchasedAt   bool
-	ClearWarrantyUntil bool
-	LocationID         *string
-	ClearLocation      bool
-	Notes              *string
+	ClearPurchasedAt        bool
+	ClearWarrantyUntil      bool
+	FirmwareVersion         *string
+	LastCalibratedAt        *time.Time
+	ClearLastCalibratedAt   bool
+	NextCalibrationDue      *time.Time
+	ClearNextCalibrationDue bool
+	NextMaintenanceDue      *time.Time
+	ClearNextMaintenanceDue bool
+	LocationID              *string
+	ClearLocation           bool
+	Notes                   *string
 }
 
 // Update changes an asset's descriptive fields. Requires assets.manage; the
@@ -319,6 +330,50 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 		case in.WarrantyUntil != nil:
 			next.WarrantyUntil = in.WarrantyUntil
 			changed = append(changed, "warrantyUntil")
+		}
+		if in.FirmwareVersion != nil {
+			value := strings.TrimSpace(*in.FirmwareVersion)
+			if value == "" {
+				next.FirmwareVersion, next.FirmwareSource, next.FirmwareObservedAt = nil, nil, nil
+			} else {
+				cleaned, err := cleanCode(value, 100, "firmware version")
+				if err != nil {
+					return err
+				}
+				next.FirmwareVersion = &cleaned
+				source := "manual"
+				next.FirmwareSource = &source
+				observed := s.now().UTC()
+				next.FirmwareObservedAt = &observed
+			}
+			changed = append(changed, "firmwareVersion")
+		}
+		switch {
+		case in.ClearLastCalibratedAt:
+			next.LastCalibratedAt = nil
+			changed = append(changed, "lastCalibratedAt")
+		case in.LastCalibratedAt != nil:
+			next.LastCalibratedAt = in.LastCalibratedAt
+			changed = append(changed, "lastCalibratedAt")
+		}
+		switch {
+		case in.ClearNextCalibrationDue:
+			next.NextCalibrationDue = nil
+			changed = append(changed, "nextCalibrationDue")
+		case in.NextCalibrationDue != nil:
+			next.NextCalibrationDue = in.NextCalibrationDue
+			changed = append(changed, "nextCalibrationDue")
+		}
+		switch {
+		case in.ClearNextMaintenanceDue:
+			next.NextMaintenanceDue = nil
+			changed = append(changed, "nextMaintenanceDue")
+		case in.NextMaintenanceDue != nil:
+			next.NextMaintenanceDue = in.NextMaintenanceDue
+			changed = append(changed, "nextMaintenanceDue")
+		}
+		if next.LastCalibratedAt != nil && next.NextCalibrationDue != nil && next.NextCalibrationDue.Before(*next.LastCalibratedAt) {
+			return invalid("next calibration due must not precede the last calibration")
 		}
 		switch {
 		case in.ClearLocation:

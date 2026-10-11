@@ -68,6 +68,12 @@ type Asset struct {
 	SourceID           *string
 	PurchasedAt        *time.Time
 	WarrantyUntil      *time.Time
+	FirmwareVersion    *string
+	FirmwareSource     *string
+	FirmwareObservedAt *time.Time
+	LastCalibratedAt   *time.Time
+	NextCalibrationDue *time.Time
+	NextMaintenanceDue *time.Time
 	LocationID         *string
 	Notes              *string
 	Version            int

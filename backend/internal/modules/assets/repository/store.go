@@ -23,13 +23,13 @@ var _ application.Store = (*Repository)(nil)
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 const columns = `id::text, reference, product_id::text, serial_number, asset_tag, status, status_reason, provisioning_status,
-	ownership_type, supplier_id::text, source_type, source_id::text, purchased_at, warranty_until, location_id::text, notes,
+	ownership_type, supplier_id::text, source_type, source_id::text, purchased_at, warranty_until, firmware_version, firmware_source, firmware_observed_at, last_calibrated_at, next_calibration_due, next_maintenance_due, location_id::text, notes,
 	version, created_at, updated_at`
 
 func scan(row pgx.Row) (application.Asset, error) {
 	var a application.Asset
 	err := row.Scan(&a.ID, &a.Reference, &a.ProductID, &a.SerialNumber, &a.AssetTag, &a.Status, &a.StatusReason, &a.ProvisioningStatus,
-		&a.OwnershipType, &a.SupplierID, &a.SourceType, &a.SourceID, &a.PurchasedAt, &a.WarrantyUntil, &a.LocationID, &a.Notes,
+		&a.OwnershipType, &a.SupplierID, &a.SourceType, &a.SourceID, &a.PurchasedAt, &a.WarrantyUntil, &a.FirmwareVersion, &a.FirmwareSource, &a.FirmwareObservedAt, &a.LastCalibratedAt, &a.NextCalibrationDue, &a.NextMaintenanceDue, &a.LocationID, &a.Notes,
 		&a.Version, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
@@ -81,10 +81,11 @@ func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, a application.Asse
 	out, err := scan(tx.QueryRow(ctx, `
 		UPDATE assets.assets SET serial_number = $2, asset_tag = $3, status = $4, status_reason = $5, provisioning_status = $6,
 			ownership_type = $7, purchased_at = $8, warranty_until = $9, location_id = $10::uuid, notes = $11,
+			firmware_version = $12, firmware_source = $13, firmware_observed_at = $14, last_calibrated_at = $15, next_calibration_due = $16, next_maintenance_due = $17,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+columns,
 		a.ID, a.SerialNumber, a.AssetTag, a.Status, a.StatusReason, a.ProvisioningStatus,
-		a.OwnershipType, a.PurchasedAt, a.WarrantyUntil, a.LocationID, a.Notes))
+		a.OwnershipType, a.PurchasedAt, a.WarrantyUntil, a.LocationID, a.Notes, a.FirmwareVersion, a.FirmwareSource, a.FirmwareObservedAt, a.LastCalibratedAt, a.NextCalibrationDue, a.NextMaintenanceDue))
 	if pgCode(err) == "23505" {
 		return application.Asset{}, application.ErrConflict
 	}
