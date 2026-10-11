@@ -4,6 +4,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,11 +19,27 @@ import (
 type handler struct {
 	svc    *application.Service
 	logger *slog.Logger
+	// resolved, when set, is told about a decided approval so its notifications stop asking for attention.
+	resolved Resolver
 }
 
+// Resolver clears the notifications of an approval that was decided.
+type Resolver interface {
+	MarkReadByLink(ctx context.Context, linkType, linkID string, categories []string) (int, error)
+}
+
+// Option configures Register.
+type Option func(*handler)
+
+// WithResolver clears the "approval requested" notifications of a decided approval for every approver.
+func WithResolver(r Resolver) Option { return func(h *handler) { h.resolved = r } }
+
 // Register mounts the approval routes.
-func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger, opts ...Option) {
 	h := &handler{svc: svc, logger: logger}
+	for _, o := range opts {
+		o(h)
+	}
 	authed := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(authed(fn))) }
 	route("GET /api/v1/approvals", h.list)
@@ -131,6 +148,12 @@ func (h *handler) decide(decision string) http.HandlerFunc {
 		if err != nil {
 			h.fail(w, r, err)
 			return
+		}
+		if h.resolved != nil {
+			// Best effort: a failure to tidy notifications never fails the decision.
+			if _, err := h.resolved.MarkReadByLink(r.Context(), "approval", a.ID, []string{"approval.requested"}); err != nil {
+				h.logger.WarnContext(r.Context(), "clear approval notifications failed", "request_id", httpx.RequestID(w), "error", err)
+			}
 		}
 		httpx.JSON(w, http.StatusOK, toDTO(a))
 	}

@@ -2151,6 +2151,10 @@ export const de: Record<MessageKey, string> = {
   'incidents.col.status': 'Status',
   'incidents.col.tickets': 'Tickets',
   'incidents.col.updated': 'Aktualisiert',
+  'incidents.fresh.overdue': 'Das zugesagte Update ({time}) ist überfällig.',
+  'incidents.fresh.planned': 'Nächstes Update: {time}',
+  'incidents.fresh.none':
+    'Es ist kein nächstes Update geplant; die letzte Änderung war vor {hours} Std.',
   'incidents.follow': 'Folgen',
   'incidents.unfollow': 'Nicht mehr folgen',
   'incidents.declare': 'Störung ausrufen',

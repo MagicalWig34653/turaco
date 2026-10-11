@@ -48,6 +48,10 @@ func TestArticleLifecycleVisibilityAndSearch(t *testing.T) {
 	if err != nil || internal.Status != "draft" || internal.Reference == "" {
 		t.Fatalf("create = %+v %v", internal, err)
 	}
+	german, err := svc.Create(ctx, c(editor), manage, application.Input{Title: tag + " Gäste-WLAN einrichten", Body: "Das Gäste-WLAN der Straße wird getrennt.", Audience: "employee"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	public, err := svc.Create(ctx, c(editor), manage, application.Input{Title: tag + " Connect to the guest wifi", Body: "Choose the guest network and accept the terms.", Audience: "employee"})
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +79,9 @@ func TestArticleLifecycleVisibilityAndSearch(t *testing.T) {
 	if _, err := svc.Publish(ctx, c(editor), manage, internal.ID, nil); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.Publish(ctx, c(editor), manage, german.ID, nil); err != nil {
+		t.Fatal(err)
+	}
 	var tr *application.InvalidTransitionError
 	if _, err := svc.Publish(ctx, c(editor), manage, public.ID, nil); !errors.As(err, &tr) {
 		t.Errorf("publishing twice: %v", err)
@@ -97,8 +104,12 @@ func TestArticleLifecycleVisibilityAndSearch(t *testing.T) {
 		}
 		return len(res.Items)
 	}
-	if hits(user, tag) != 1 || hits(view, tag) != 2 || hits(manage, tag) != 2 {
-		t.Errorf("visible matches: employee %d, view %d, manage %d; want 1, 2, 2", hits(user, tag), hits(view, tag), hits(manage, tag))
+	if hits(user, tag) != 2 || hits(view, tag) != 3 || hits(manage, tag) != 3 {
+		t.Errorf("visible matches: employee %d, view %d, manage %d; want 2, 3, 3", hits(user, tag), hits(view, tag), hits(manage, tag))
+	}
+	// German variants: umlauts fold (Gast finds Gäste), a hyphen separates words, the sharp s folds (Strasse).
+	if hits(user, "Gast-WLAN") != 1 || hits(user, "gaeste") != 0 || hits(user, "Gäste WLAN") != 1 || hits(user, "Strasse") != 1 || hits(user, "strasse") != 1 {
+		t.Errorf("German folding: Gast-WLAN %d, Gäste WLAN %d, Strasse %d", hits(user, "Gast-WLAN"), hits(user, "Gäste WLAN"), hits(user, "Strasse"))
 	}
 	if hits(user, "guest network") != 1 || hits(user, "bitlocker") != 0 || hits(view, "BitLocker") != 1 {
 		t.Error("full-text search must respect case and visibility")

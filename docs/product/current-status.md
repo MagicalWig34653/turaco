@@ -189,3 +189,5 @@ Recorded so the next session does not depend on conversation memory. Order is th
 - **Service desk:** SLA and time tracking, routing rules, meetings and calendar, per-site permission scoping (needs an ADR), a first-administrator wizard in the web UI, release packages, and broader end-to-end coverage (only sign-in is covered by the mocked Playwright smoke tests).
 
 - Entra sign-out (2026-10-10, migration `000081`): the sign-in page offers "shared computer"; logout ends the Microsoft session too according to the setting `auth.entra_signout_mode` (`shared_only` by default); `POST /auth/logout` then answers 200 with `redirectUrl`.
+
+- Simulation round 5 fixes (2026-10-11, migration `000083`): the knowledge substring search folds German umlauts and the sharp s and splits at hyphens ("Gast-WLAN" finds "Gäste-WLAN"); a decided approval marks its "approval requested" notifications read for every approver (`notifications.MarkReadByLink`); the incident banner shows whether the next update is planned, overdue or missing; a requester sees no "unknown person" location row; the triage article states the patient-impact rule.

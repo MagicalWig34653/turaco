@@ -860,7 +860,9 @@ function TicketWorkspace({ id }: { id: string }) {
                 <strong>{t(impactKey)}</strong>
               </p>
             ) : null}
-            {ticket.affectedLocationId || abilities.setLocation ? (
+            {/* A requester whose location name cannot be loaded would see "unknown person": show nothing then. */}
+            {(ticket.affectedLocationId && (location.data || staffReader)) ||
+            abilities.setLocation ? (
               <p>
                 <span className="incident-event-label">{t('ticketLocation.label')}</span>{' '}
                 <strong>
