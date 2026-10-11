@@ -41,12 +41,13 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 // is (target_type, target_id, ...)). ActionPrefix is a literal prefix, matched
 // as a byte range on the action text.
 type Filter struct {
-	TargetType    string
-	TargetID      string
-	Action        string
-	ActionPrefix  string
-	ActorID       string
-	CorrelationID string
+	TargetType          string
+	TargetID            string
+	Action              string
+	ActionPrefix        string
+	ExcludeActionPrefix string
+	ActorID             string
+	CorrelationID       string
 	// Via is "ai" or "mcp" (AI-assisted actions). ActorKind is "user" or "system"; SystemActor narrows system
 	// actors by name ("cli", "directory-sync", ...).
 	Via         string
@@ -96,7 +97,7 @@ func (f Filter) validate() error {
 	for _, c := range []struct {
 		v   string
 		max int
-	}{{f.TargetType, 100}, {f.TargetID, 200}, {f.Action, 200}, {f.ActionPrefix, 200}, {f.CorrelationID, 200}} {
+	}{{f.TargetType, 100}, {f.TargetID, 200}, {f.Action, 200}, {f.ActionPrefix, 200}, {f.ExcludeActionPrefix, 200}, {f.CorrelationID, 200}} {
 		if utf8.RuneCountInString(c.v) > c.max || !utf8.ValidString(c.v) || strings.ContainsRune(c.v, 0) {
 			return ErrInvalidFilter
 		}
@@ -239,6 +240,16 @@ func (f Filter) conditions() ([]string, []any) {
 		add("action ~>=~ ?", f.ActionPrefix)
 		if upper, ok := prefixUpperBound(f.ActionPrefix); ok {
 			add("action ~<~ ?", upper)
+		}
+	}
+	if f.ExcludeActionPrefix != "" {
+		args = append(args, f.ExcludeActionPrefix)
+		lower := fmt.Sprintf("$%d", len(args))
+		if upper, ok := prefixUpperBound(f.ExcludeActionPrefix); ok {
+			args = append(args, upper)
+			conds = append(conds, fmt.Sprintf("NOT (action ~>=~ %s AND action ~<~ $%d)", lower, len(args)))
+		} else {
+			conds = append(conds, fmt.Sprintf("NOT (action ~>=~ %s)", lower))
 		}
 	}
 	if f.ActorID != "" {

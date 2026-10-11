@@ -16,8 +16,11 @@ import { PageHeader } from '../../platform/ui/PageHeader';
 import { Table } from '../../platform/ui/Table';
 import { assetsApi } from '../assets/api';
 import { infrastructureApi } from '../infrastructure/api';
+import { peopleAdminApi } from '../organization/adminApi';
+import type { TeamRow } from '../organization/adminTypes';
+import { PersonPicker, type PickedPerson } from '../organization/PersonPicker';
 import { servicesApi, type ServiceFields } from './api';
-import { impactTarget, impactUrl, nodeLabel } from './helpers';
+import { impactTarget, impactUrl, nodeLabel, teamName } from './helpers';
 import {
   criticalities,
   removalReasons,
@@ -79,6 +82,30 @@ function ServiceForm({
     supportTeamId: service?.supportTeamId ?? '',
     criticality: service?.criticality ?? 'medium',
   });
+  const { can } = useSession();
+  const allowed = can('organization.view');
+  const teams = useAsync(
+    (signal): Promise<TeamRow[]> =>
+      allowed ? peopleAdminApi.teams('', signal) : Promise.resolve([]),
+    [allowed],
+  );
+  const ownerLookup = useAsync(
+    (signal) =>
+      allowed && service?.ownerUserId
+        ? peopleAdminApi.user(service.ownerUserId, signal)
+        : Promise.resolve(null),
+    [allowed, service?.ownerUserId],
+  );
+  const [owner, setOwner] = useState<PickedPerson | null>(null);
+  const selectedOwner =
+    owner?.id === fields.ownerUserId
+      ? owner
+      : fields.ownerUserId
+        ? {
+            id: fields.ownerUserId,
+            label: ownerLookup.data?.displayName ?? t('services.nameUnavailable'),
+          }
+        : null;
   const [status, setStatus] = useState<'operational' | 'planned'>('operational');
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
@@ -102,18 +129,42 @@ function ServiceForm({
     <Dialog title={t(service ? 'services.edit' : 'services.create')} onClose={onClose}>
       <form className="form" onSubmit={(e) => void submit(e)}>
         {error && <ApiErrorAlert error={error} />}
-        {(['name', 'description', 'ownerUserId', 'ownerTeamId', 'supportTeamId'] as const).map(
-          (key) => (
-            <label key={key}>
-              {t(`services.${key}`)}
-              <input
-                required={key === 'name'}
-                value={fields[key]}
-                onChange={(e) => set(key, e.target.value)}
-              />
-            </label>
-          ),
-        )}
+        {(['name', 'description'] as const).map((key) => (
+          <label key={key}>
+            {t(`services.${key}`)}
+            <input
+              required={key === 'name'}
+              value={fields[key]}
+              onChange={(e) => set(key, e.target.value)}
+            />
+          </label>
+        ))}
+        <PersonPicker
+          label={t('services.ownerUserId')}
+          value={selectedOwner}
+          onChange={(person) => {
+            setOwner(person);
+            set('ownerUserId', person?.id ?? '');
+          }}
+        />
+        {(['ownerTeamId', 'supportTeamId'] as const).map((key) => (
+          <Select
+            key={key}
+            label={t(`services.${key}`)}
+            value={fields[key]}
+            onChange={(e) => set(key, e.target.value)}
+            options={[
+              { value: '', label: t('services.chooseTeam') },
+              ...(teams.data ?? [])
+                .filter((team) => team.active || team.id === fields[key])
+                .map((team) => ({ value: team.id, label: team.name })),
+              ...(fields[key] && !teams.data?.some((team) => team.id === fields[key])
+                ? [{ value: fields[key], label: t('services.nameUnavailable') }]
+                : []),
+            ]}
+          />
+        ))}
+        {teams.error && <ApiErrorAlert error={teams.error} onRetry={teams.reload} />}
         <Choice
           label={t('services.criticality')}
           value={fields.criticality}
@@ -143,6 +194,14 @@ function ServiceForm({
 export function ServicesListScreen() {
   const { t } = useI18n();
   const { can } = useSession();
+  const allowed = can('organization.view');
+  const teams = useAsync(
+    (signal): Promise<TeamRow[]> =>
+      allowed ? peopleAdminApi.teams('', signal) : Promise.resolve([]),
+    [allowed],
+  );
+  const [owner, setOwner] = useState<PickedPerson | null>(null);
+  const [appliedOwner, setAppliedOwner] = useState<PickedPerson | null>(null);
   const [form, setForm] = useState({
     q: '',
     status: '',
@@ -194,10 +253,12 @@ export function ServicesListScreen() {
       ? [
           {
             key: 'ownerUserId',
-            label: `${t('services.ownerUserId')}: ${filter.ownerUserId}`,
+            label: `${t('services.ownerUserId')}: ${appliedOwner?.id === filter.ownerUserId ? appliedOwner.label : t('services.nameUnavailable')}`,
             onRemove: () => {
               setFilter((current) => ({ ...current, ownerUserId: '' }));
               setForm((current) => ({ ...current, ownerUserId: '' }));
+              setOwner(null);
+              setAppliedOwner(null);
             },
           },
         ]
@@ -206,7 +267,7 @@ export function ServicesListScreen() {
       ? [
           {
             key: 'teamId',
-            label: `${t('services.teamId')}: ${filter.teamId}`,
+            label: `${t('services.teamId')}: ${teamName(teams.data, filter.teamId) ?? t('services.nameUnavailable')}`,
             onRemove: () => {
               setFilter((current) => ({ ...current, teamId: '' }));
               setForm((current) => ({ ...current, teamId: '' }));
@@ -236,6 +297,7 @@ export function ServicesListScreen() {
         onSubmit={(e) => {
           e.preventDefault();
           setFilter({ ...form });
+          setAppliedOwner(owner);
         }}
       >
         <TextField
@@ -261,16 +323,24 @@ export function ServicesListScreen() {
             ...criticalities.map((value) => ({ value, label: t(`services.criticality.${value}`) })),
           ]}
         />
-        <TextField
+        <PersonPicker
           label={t('services.ownerUserId')}
-          value={form.ownerUserId}
-          onChange={(e) => setForm({ ...form, ownerUserId: e.target.value })}
+          value={owner}
+          onChange={(person) => {
+            setOwner(person);
+            setForm((current) => ({ ...current, ownerUserId: person?.id ?? '' }));
+          }}
         />
-        <TextField
+        <Select
           label={t('services.teamId')}
           value={form.teamId}
           onChange={(e) => setForm({ ...form, teamId: e.target.value })}
+          options={[
+            { value: '', label: t('filters.all') },
+            ...(teams.data ?? []).map((team) => ({ value: team.id, label: team.name })),
+          ]}
         />
+        {teams.error && <ApiErrorAlert error={teams.error} onRetry={teams.reload} />}
         <Button type="submit">{t('filters.apply')}</Button>
       </FilterBar>
       <DataTable
@@ -550,6 +620,19 @@ export function ServiceDetailScreen({ id }: { id: string }) {
   const { can } = useSession();
   const loaded = useAsync((signal) => servicesApi.get(id, signal), [id]);
   const s = loaded.data;
+  const allowed = can('organization.view');
+  const teams = useAsync(
+    (signal): Promise<TeamRow[]> =>
+      allowed && s ? peopleAdminApi.teams('', signal) : Promise.resolve([]),
+    [allowed, s?.id],
+  );
+  const owner = useAsync(
+    (signal) =>
+      allowed && s?.ownerUserId
+        ? peopleAdminApi.user(s.ownerUserId, signal)
+        : Promise.resolve(null),
+    [allowed, s?.ownerUserId],
+  );
   const [dialog, setDialog] = useState<'edit' | 'status' | 'retire' | 'add' | 'remove'>();
   const [status, setStatus] = useState<'operational' | 'degraded' | 'outage' | 'planned'>(
     'operational',
@@ -600,11 +683,21 @@ export function ServiceDetailScreen({ id }: { id: string }) {
             <dt>{t('services.criticality')}</dt>
             <dd>{t(`services.criticality.${s.criticality}`)}</dd>
             <dt>{t('services.ownerUserId')}</dt>
-            <dd>{s.ownerUserId || '–'}</dd>
+            <dd>
+              {s.ownerUserId ? (owner.data?.displayName ?? t('services.nameUnavailable')) : '–'}
+            </dd>
             <dt>{t('services.ownerTeamId')}</dt>
-            <dd>{s.ownerTeamId || '–'}</dd>
+            <dd>
+              {s.ownerTeamId
+                ? (teamName(teams.data, s.ownerTeamId) ?? t('services.nameUnavailable'))
+                : '–'}
+            </dd>
             <dt>{t('services.supportTeamId')}</dt>
-            <dd>{s.supportTeamId || '–'}</dd>
+            <dd>
+              {s.supportTeamId
+                ? (teamName(teams.data, s.supportTeamId) ?? t('services.nameUnavailable'))
+                : '–'}
+            </dd>
           </dl>
           {can('services.manage') && s.status !== 'retired' && (
             <>

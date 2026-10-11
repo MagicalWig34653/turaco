@@ -34,6 +34,8 @@ F8a is implemented in the backend with migration `000047_security.up.sql`, the `
 
 Software Product / installation observations (F6), Device (F6), Task (F2), Change (F7), Planning contracts (F7), Notification, Approval (risk acceptance may later need approval; F8 records actor/reason/review date only), Relationship (platform), audit/outbox/jobs/permissions/i18n. No new task, notification, search or relationship system.
 
+The advisory detail can re-run normalization for unmatched criteria and reports how many criteria were newly matched and how many remain open. Matching is limited to exact normalized Software Product names or aliases. A caller with both `security.manage` and `endpoints.manage` can register a Software Product from an unmatched criterion, with its criterion name prefilled as an alias; registration is audited and relinks already observed unmatched installations. The caller then re-runs advisory normalization to match the criterion.
+
 ## New concepts
 
 Security Advisory, Affected Criteria, Vulnerability Finding (confidence), Risk Acceptance, Briefing feed entry (computed). Terms are in the glossary or are added with the slice.

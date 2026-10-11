@@ -28,6 +28,7 @@ import {
 import { summarizeFeed } from '../modules/my-work/workModel';
 import { SetupTile } from '../modules/health/SetupTile';
 import { QueueHealth } from '../modules/tickets/QueueHealth';
+import { IncidentBanner } from '../modules/incidents/IncidentBanner';
 
 const quickActions: ReadonlyArray<{ route: RouteId; icon: RouteId; label: MessageKey }> = [
   { route: 'taskNew', icon: 'tasks', label: 'overview.action.createTask' },
@@ -171,6 +172,7 @@ export function OverviewScreen() {
           ) : null
         }
       />
+      {enabled('servicedesk') ? <IncidentBanner /> : null}
       {loading ? (
         <Skeleton lines={3} />
       ) : !list.error && !feed.error ? (

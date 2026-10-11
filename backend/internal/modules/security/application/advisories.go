@@ -748,28 +748,28 @@ func (s *Service) EditCriteria(ctx context.Context, c Caller, p Principal, id st
 // product name or alias, for example after a product or alias was registered) and queues a re-match when
 // any criterion changed. Allowed while the criteria are editable. Requires security.manage and
 // expectedVersion.
-func (s *Service) NormalizeCriteria(ctx context.Context, c Caller, p Principal, id string, expected *int) (Advisory, []Criterion, error) {
+func (s *Service) NormalizeCriteria(ctx context.Context, c Caller, p Principal, id string, expected *int) (Advisory, []Criterion, int, error) {
 	if err := c.validate(); err != nil {
-		return Advisory{}, nil, err
+		return Advisory{}, nil, 0, err
 	}
 	if !p.Manage {
-		return Advisory{}, nil, ErrForbidden
+		return Advisory{}, nil, 0, ErrForbidden
 	}
 	exp, err := requireVersion(expected)
 	if err != nil {
-		return Advisory{}, nil, err
+		return Advisory{}, nil, 0, err
 	}
 	if !uuidPattern.MatchString(id) {
-		return Advisory{}, nil, ErrNotFound
+		return Advisory{}, nil, 0, ErrNotFound
 	}
 	id = strings.ToLower(id)
 	before, err := s.store.Criteria(ctx, id)
 	if err != nil {
-		return Advisory{}, nil, err
+		return Advisory{}, nil, 0, err
 	}
 	crit, err := s.normalize(ctx, before, true)
 	if err != nil {
-		return Advisory{}, nil, err
+		return Advisory{}, nil, 0, err
 	}
 	matched := 0
 	for i := range crit {
@@ -811,9 +811,9 @@ func (s *Service) NormalizeCriteria(ctx context.Context, c Caller, p Principal, 
 		return enqueueMatch(ctx, tx, cur.ID)
 	})
 	if err != nil {
-		return Advisory{}, nil, err
+		return Advisory{}, nil, 0, err
 	}
-	return out, crit, nil
+	return out, crit, matched, nil
 }
 
 // advisoryOp moves an Advisory to status to; reason is validated by the caller.

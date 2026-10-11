@@ -5887,7 +5887,7 @@ paths:
     post:
       operationId: declareMajorIncident
       summary: Declare a Major Incident.
-      description: "Needs `majorincidents.manage`. The message becomes the first public update. `ticketIds` link tickets right away (see MajorIncidentDeclare); `notLinkedTicketIds` lists those that could not be linked. Emits MajorIncidentDeclared."
+      description: "Needs `majorincidents.manage`. The message becomes the first public update. `locationIds` set affected Organization Locations atomically with declaration. `ticketIds` link tickets right away (see MajorIncidentDeclare); `notLinkedTicketIds` lists those that could not be linked. Emits MajorIncidentDeclared."
       security:
         - sessionAuth: []
       requestBody:
@@ -9113,7 +9113,7 @@ paths:
     get:
       operationId: listAuditEvents
       summary: Query the audit log.
-      description: "Requires `platform.audit.view`. Newest first by occurredAt, then id. `cursor` is opaque (pass `nextCursor` back unchanged). `action` is exact; `actionPrefix` is a literal, valid UTF-8 prefix (e.g. `authorization.`); `targetId` requires `targetType`; time bounds are RFC 3339 and half-open [from, to). Combine broad prefixes with a time range for speed. Invalid filters yield 400 audit.invalid_filter."
+      description: "Requires `platform.audit.view`. Newest first by occurredAt, then id. `cursor` is opaque (pass `nextCursor` back unchanged). `action` is exact; `actionPrefix` and `excludeActionPrefix` are literal, valid UTF-8 prefixes (e.g. `authorization.`); `targetId` requires `targetType`; time bounds are RFC 3339 and half-open [from, to). Combine broad prefixes with a time range for speed. Invalid filters yield 400 audit.invalid_filter."
       security:
         - sessionAuth: []
       parameters:
@@ -9121,6 +9121,7 @@ paths:
         - {name: targetId, in: query, schema: {type: string, maxLength: 200}}
         - {name: action, in: query, schema: {type: string, maxLength: 200}}
         - {name: actionPrefix, in: query, schema: {type: string, maxLength: 200}}
+        - {name: excludeActionPrefix, in: query, schema: {type: string, maxLength: 200}}
         - {name: actorId, in: query, schema: {type: string}}
         - {name: correlationId, in: query, schema: {type: string, maxLength: 200}}
         - {name: module, in: query, description: Module key; the same as `actionPrefix=<module>.` (not combinable with actionPrefix)., schema: {type: string, pattern: '^[a-z][a-z0-9_]{0,63}$'}}
@@ -9173,6 +9174,7 @@ paths:
         - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
         - {name: includeDetails, in: query, schema: {type: boolean}}
         - {name: actionPrefix, in: query, schema: {type: string, maxLength: 200}}
+        - {name: excludeActionPrefix, in: query, schema: {type: string, maxLength: 200}}
         - {name: module, in: query, schema: {type: string}}
         - {name: actorId, in: query, schema: {type: string}}
         - {name: actorKind, in: query, schema: {type: string, enum: [user, system]}}
@@ -11767,7 +11769,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SecurityAdvisoryWithCriteria'
+                $ref: '#/components/schemas/SecurityNormalizationResult'
   /security/advisories/{id}/start-analysis:
     post:
       operationId: startSecurityAnalysis
@@ -12703,6 +12705,29 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
   /software/products:
+    post:
+      operationId: registerSoftwareProduct
+      summary: Register a normalized Software Product and aliases.
+      description: "Needs `endpoints.manage` (elevated). The product name is also an alias. Existing unmatched installations are relinked by exact normalized name or alias. The registration is audited."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterSoftwareProductRequest'
+      responses:
+        '201':
+          description: Registered product and number of relinked installations.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RegisterSoftwareProductResponse'}
+        '400': {$ref: '#/components/responses/SoftwareInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/SoftwareConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
     get:
       operationId: listSoftwareProducts
       summary: List Software Products with their Software Approval Status.
@@ -18135,6 +18160,10 @@ components:
           type: object
           description: "Product names of the assets on the page."
           additionalProperties: {type: string}
+        locationNames:
+          type: object
+          description: "Names of asset locations on the caller-visible page."
+          additionalProperties: {type: string}
     AssetAssignment:
       type: object
       additionalProperties: false
@@ -19000,6 +19029,17 @@ components:
         isExercise: {type: boolean, description: "A drill: excluded from the banner, the briefing and Overview counts; shown with an Exercise badge. Set when declared."}
         nextUpdateDue: {type: [string, "null"], format: date-time, description: "When the next public update is promised; cleared on resolve."}
         ownerUserId: {type: string, format: uuid, description: "Only returned to `majorincidents.manage` holders, and only when an owner is set."}
+        locations:
+          description: "Named affected Organization Locations on list rows. Unresolvable names are omitted; compare with affectedLocationCount to distinguish them from no affected Locations."
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name]
+            properties:
+              id: {type: string, format: uuid}
+              name: {type: string}
+        affectedLocationCount: {type: integer, minimum: 0, description: "Total affected Locations, including those whose names could not be resolved; present on list rows and detail."}
     MajorIncidentList:
       type: object
       additionalProperties: false
@@ -19062,6 +19102,11 @@ components:
         title: {type: string, maxLength: 200}
         message: {type: string, maxLength: 2000}
         isExercise: {type: boolean, default: false, description: "Declare a drill. Cannot be changed afterwards."}
+        locationIds:
+          type: array
+          maxItems: 20
+          items: {type: string, format: uuid}
+          description: "Affected active Organization Locations. Validated and committed with the incident."
         ticketIds:
           type: array
           maxItems: 50
@@ -19358,6 +19403,23 @@ components:
         approvalReason: {type: [string, "null"], description: 'Reason code of the last deprecate, retire or block.'}
         version: {type: integer}
         updatedAt: {type: string, format: date-time}
+    RegisterSoftwareProductRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        publisher: {type: string, maxLength: 200}
+        aliases: {type: array, maxItems: 50, items: {type: string, minLength: 1, maxLength: 300}}
+    RegisterSoftwareProductResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, publisher, relinkedInstallations]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        publisher: {type: [string, 'null']}
+        relinkedInstallations: {type: integer, minimum: 0}
     SoftwareProductList:
       type: object
       additionalProperties: false
@@ -21604,6 +21666,13 @@ components:
       properties:
         advisory: {$ref: '#/components/schemas/SecurityAdvisory'}
         criteria: {type: array, items: {$ref: '#/components/schemas/SecurityCriterion'}}
+    SecurityNormalizationResult:
+      type: object
+      required: [advisory, criteria, matched]
+      properties:
+        advisory: {$ref: '#/components/schemas/SecurityAdvisory'}
+        criteria: {type: array, items: {$ref: '#/components/schemas/SecurityCriterion'}}
+        matched: {type: integer, minimum: 0, description: 'Criteria newly matched by this call.'}
     SecurityAdvisoryDetail:
       allOf:
         - {$ref: '#/components/schemas/SecurityAdvisoryWithCriteria'}

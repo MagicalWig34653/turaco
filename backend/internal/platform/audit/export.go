@@ -101,7 +101,7 @@ func rangeText(t *time.Time) string {
 // Hash returns a stable hash of the filter, for audit records that must identify a filter without storing it.
 func (f Filter) Hash() string {
 	from, to := rangeText(f.From), rangeText(f.To)
-	h := sha256.Sum256([]byte(strings.Join([]string{f.TargetType, f.TargetID, f.Action, f.ActionPrefix, f.ActorID,
+	h := sha256.Sum256([]byte(strings.Join([]string{f.TargetType, f.TargetID, f.Action, f.ActionPrefix, f.ExcludeActionPrefix, f.ActorID,
 		f.CorrelationID, f.Via, f.ActorKind, f.SystemActor, from, to}, "\x1f")))
 	return hex.EncodeToString(h[:8])
 }

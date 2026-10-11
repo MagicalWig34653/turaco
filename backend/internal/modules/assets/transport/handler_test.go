@@ -73,8 +73,14 @@ func (d dir) PrimaryLocationIDs(_ context.Context, ids []string) (map[string]str
 	}
 	return out, nil
 }
-func (d dir) LocationNames(context.Context, []string) (map[string]string, error) {
-	return map[string]string{}, nil
+func (d dir) LocationNames(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		if id == site {
+			out[id] = "Ward 3"
+		}
+	}
+	return out, nil
 }
 
 type products map[string]application.ProductInfo
@@ -97,6 +103,16 @@ const (
 	site      = "00000000-0000-7000-8000-0000000000e5"
 	elsewhere = "00000000-0000-7000-8000-0000000000f6"
 )
+
+func TestLocationNamesForVisibleAssets(t *testing.T) {
+	svc := application.NewService(nil, dir{}, nil, nil)
+	names, err := svc.LocationNames(context.Background(), []application.Asset{{LocationID: stringPtr(site)}, {LocationID: stringPtr(elsewhere)}})
+	if err != nil || names[site] != "Ward 3" || len(names) != 1 {
+		t.Fatalf("location names = %v, %v", names, err)
+	}
+}
+
+func stringPtr(s string) *string { return &s }
 
 func serve(t *testing.T, a authorization.Authenticator) http.Handler {
 	t.Helper()
@@ -224,6 +240,9 @@ func TestSharedDevicesOfThePrimaryLocationOnly(t *testing.T) {
 	rec := do(asHolder, "GET", "/api/v1/my-assets/shared", "")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), shared) {
 		t.Fatalf("shared = %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"locationNames":{"`+site+`":"Ward 3"}`) {
+		t.Fatalf("shared location name missing: %s", rec.Body)
 	}
 	if strings.Contains(rec.Body.String(), other) || strings.Contains(rec.Body.String(), "internal note") {
 		t.Errorf("shared list leaks another location's asset or the notes: %s", rec.Body)

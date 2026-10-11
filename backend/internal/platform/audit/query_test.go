@@ -98,6 +98,9 @@ func TestListFilters(t *testing.T) {
 	if n := len(list(Filter{ActionPrefix: s.pfx + ".b."}, Page{}).Items); n != 3 {
 		t.Fatalf("prefix = %d", n)
 	}
+	if n := len(list(Filter{ExcludeActionPrefix: s.pfx + ".b."}, Page{}).Items); n != 2 {
+		t.Fatalf("excluded prefix = %d", n)
+	}
 	if n := len(list(Filter{ActionPrefix: s.pfx + "_b."}, Page{}).Items); n != 0 { // _ is literal
 		t.Fatalf("escaped prefix = %d", n)
 	}
@@ -133,7 +136,7 @@ func TestListRejectsInvalidInput(t *testing.T) {
 		long[i] = 'a'
 	}
 	t0 := time.Now()
-	for _, f := range []Filter{{ActorID: "nope"}, {Action: string(long)}, {TargetType: string(make([]byte, 101))}, {Action: "a\x00"}, {From: &t0, To: &t0}, {TargetID: "x"}, {ActionPrefix: "a\xff"}} {
+	for _, f := range []Filter{{ActorID: "nope"}, {Action: string(long)}, {TargetType: string(make([]byte, 101))}, {Action: "a\x00"}, {From: &t0, To: &t0}, {TargetID: "x"}, {ActionPrefix: "a\xff"}, {ExcludeActionPrefix: "a\xff"}} {
 		if _, err := s.reader.List(ctx, f, Page{}); !errors.Is(err, ErrInvalidFilter) {
 			t.Fatalf("filter %+v err = %v", f, err)
 		}

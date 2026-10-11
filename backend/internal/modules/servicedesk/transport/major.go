@@ -96,8 +96,15 @@ type majorDTO struct {
 	UpdatedAt  string  `json:"updatedAt"`
 	IsExercise bool    `json:"isExercise"`
 	// NextUpdateDue is public; the owner is staff information and only sent to majorincidents.manage holders.
-	NextUpdateDue *string `json:"nextUpdateDue"`
-	OwnerUserID   *string `json:"ownerUserId,omitempty"`
+	NextUpdateDue         *string            `json:"nextUpdateDue"`
+	OwnerUserID           *string            `json:"ownerUserId,omitempty"`
+	Locations             []majorLocationDTO `json:"locations,omitempty"`
+	AffectedLocationCount *int               `json:"affectedLocationCount,omitempty"`
+}
+
+type majorLocationDTO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 func toMajor(m application.MajorIncident, manage bool) majorDTO {
@@ -131,7 +138,14 @@ func (h *majorHandler) list(w http.ResponseWriter, r *http.Request) {
 		NextCursor string     `json:"nextCursor,omitempty"`
 	}{Items: make([]majorDTO, 0, len(res.Items)), NextCursor: res.NextCursor}
 	for _, m := range res.Items {
-		out.Items = append(out.Items, toMajorPublic(m))
+		d := toMajorPublic(m)
+		count := m.AffectedLocationCount
+		d.AffectedLocationCount = &count
+		d.Locations = make([]majorLocationDTO, 0, len(m.Locations))
+		for _, l := range m.Locations {
+			d.Locations = append(d.Locations, majorLocationDTO{ID: l.ID, Name: l.Name})
+		}
+		out.Items = append(out.Items, d)
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
@@ -162,15 +176,16 @@ func (h *majorHandler) get(w http.ResponseWriter, r *http.Request) {
 	}
 	out := struct {
 		majorDTO
-		Updates           []upd    `json:"updates"`
-		Tickets_          []tk     `json:"tickets"`
-		AllowedOperations []string `json:"allowedOperations"`
-		Locations         []ref    `json:"locations"`
+		Updates               []upd    `json:"updates"`
+		Tickets_              []tk     `json:"tickets"`
+		AllowedOperations     []string `json:"allowedOperations"`
+		Locations             []ref    `json:"locations"`
+		AffectedLocationCount int      `json:"affectedLocationCount"`
 		// HiddenTickets and OwnerName are staff information (majorincidents.manage only).
 		HiddenTickets int    `json:"hiddenLinkedTickets,omitempty"`
 		OwnerName     string `json:"ownerName,omitempty"`
 	}{majorDTO: toMajor(d.Incident, manage), Updates: make([]upd, 0, len(d.Updates)), Tickets_: make([]tk, 0, len(d.Tickets)), AllowedOperations: d.Operations,
-		Locations: make([]ref, 0, len(d.Locations)), HiddenTickets: d.HiddenTickets}
+		Locations: make([]ref, 0, len(d.Locations)), AffectedLocationCount: len(d.Incident.LocationIDs), HiddenTickets: d.HiddenTickets}
 	if d.Owner != nil {
 		out.OwnerName = d.Owner.Name
 	}
@@ -193,10 +208,11 @@ const maxDeclareTickets = 50
 // incident exists either way.
 func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Title      string   `json:"title"`
-		Message    string   `json:"message"`
-		TicketIDs  []string `json:"ticketIds"`
-		IsExercise bool     `json:"isExercise"`
+		Title       string   `json:"title"`
+		Message     string   `json:"message"`
+		TicketIDs   []string `json:"ticketIds"`
+		IsExercise  bool     `json:"isExercise"`
+		LocationIDs []string `json:"locationIds"`
 	}
 	if !mdecode(w, r, &b) {
 		return
@@ -207,7 +223,7 @@ func (h *majorHandler) declare(w http.ResponseWriter, r *http.Request) {
 	}
 	_, manage := me(r)
 	c := mcaller(w, r)
-	m, err := h.svc.Declare(r.Context(), c, manage, b.Title, b.Message, b.IsExercise)
+	m, err := h.svc.Declare(r.Context(), c, manage, b.Title, b.Message, b.IsExercise, b.LocationIDs...)
 	if err != nil {
 		h.fail(w, r, err)
 		return

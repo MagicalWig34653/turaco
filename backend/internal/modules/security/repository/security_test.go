@@ -24,9 +24,10 @@ const (
 )
 
 type inventory struct {
-	mu      sync.Mutex
-	items   []application.Installation
-	retired *time.Time
+	mu         sync.Mutex
+	items      []application.Installation
+	retired    *time.Time
+	aliasReady bool
 }
 
 func (v *inventory) set(items ...application.Installation) {
@@ -88,8 +89,32 @@ func (v *inventory) LatestObservedByProducts(_ context.Context, products []strin
 func (v *inventory) SoftwareProducts(context.Context, []string) (map[string]application.SoftwareProduct, error) {
 	return map[string]application.SoftwareProduct{securityTestProduct: {ID: securityTestProduct, Name: "Test software"}}, nil
 }
-func (v *inventory) FindSoftwareProduct(context.Context, string, string) (application.SoftwareProduct, string, bool, error) {
+func (v *inventory) FindSoftwareProduct(_ context.Context, name, _ string) (application.SoftwareProduct, string, bool, error) {
+	if v.aliasReady && name == "Security alias test" {
+		return application.SoftwareProduct{ID: securityTestProduct, Name: "Test software"}, "alias", true, nil
+	}
 	return application.SoftwareProduct{}, "", false, nil
+}
+
+func TestNormalizeCriteriaReportsNewMatches(t *testing.T) {
+	pool, svc, inv, caller := securityEnv(t)
+	ctx := context.Background()
+	p := application.Principal{UserID: securityTestUser, View: true, Manage: true}
+	a, _, err := svc.Create(ctx, caller, p, application.AdvisoryInput{Title: "Alias normalization test", Severity: "medium",
+		Criteria: []application.CriterionInput{{ProductName: "Security alias test", Rules: []application.Rule{{Kind: "fixed", Version: "2.0"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupAdvisory(t, pool, a.ID)
+	inv.aliasReady = true
+	a, criteria, matched, err := svc.NormalizeCriteria(ctx, caller, p, a.ID, &a.Version)
+	if err != nil || matched != 1 || len(criteria) != 1 || criteria[0].Normalization != application.NormalizationMatched {
+		t.Fatalf("first normalization: matched=%d criteria=%+v err=%v", matched, criteria, err)
+	}
+	_, _, matched, err = svc.NormalizeCriteria(ctx, caller, p, a.ID, &a.Version)
+	if err != nil || matched != 0 {
+		t.Fatalf("repeat normalization: matched=%d err=%v", matched, err)
+	}
 }
 
 func securityEnv(t *testing.T) (*pgxpool.Pool, *application.Service, *inventory, application.Caller) {

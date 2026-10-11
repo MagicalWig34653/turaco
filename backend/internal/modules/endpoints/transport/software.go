@@ -26,6 +26,7 @@ func registerSoftware(route func(string, func(http.Handler) http.Handler, http.H
 	approve := authorization.Require(auth, permSoftwareApprove)
 	pkg := authorization.Require(auth, permSoftwarePackage)
 	route("GET /api/v1/software/products", read, h.softwareProducts)
+	route("POST /api/v1/software/products", authorization.Require(auth, permManage), h.registerSoftwareProduct)
 	route("POST /api/v1/software/products/{id}/{op}", approve, h.softwareProductOp)
 	route("GET /api/v1/software/versions", read, h.softwareVersions)
 	route("POST /api/v1/software/versions", pkg, h.registerSoftwareVersion)
@@ -39,6 +40,26 @@ func registerSoftware(route func(string, func(http.Handler) http.Handler, http.H
 	route("GET /api/v1/software/packages", read, h.softwarePackages)
 	route("POST /api/v1/software/packages/sync", pkg, h.syncSoftwarePackages)
 	route("POST /api/v1/software/packages/{id}/publish", pkg, h.publishSoftwarePackage)
+}
+
+type registerSoftwareProductBody struct {
+	Name      string   `json:"name"`
+	Publisher string   `json:"publisher"`
+	Aliases   []string `json:"aliases"`
+}
+
+func (h *handler) registerSoftwareProduct(w http.ResponseWriter, r *http.Request) {
+	var b registerSoftwareProductBody
+	if err := httpx.DecodeJSON(w, r, &b, maxRegisterBody); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "endpoints.invalid_request", "The request body is not valid JSON for this operation.")
+		return
+	}
+	product, relinked, err := h.svc.RegisterSoftwareProduct(r.Context(), caller(w, r), principal(r), b.Name, b.Publisher, b.Aliases)
+	if err != nil {
+		h.softwareFail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{"id": product.ID, "name": product.Name, "publisher": product.Publisher, "relinkedInstallations": relinked})
 }
 
 // softwareFail maps the software errors and hands everything else to fail.

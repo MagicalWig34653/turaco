@@ -164,12 +164,12 @@ func (h *handler) normalizeCriteria(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b, maxBody) {
 		return
 	}
-	a, c, e := h.svc.NormalizeCriteria(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion)
+	a, c, matched, e := h.svc.NormalizeCriteria(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion)
 	if e != nil {
 		h.writeErr(w, r, e)
 		return
 	}
-	httpx.JSON(w, 200, map[string]any{"advisory": advisoryDTO(a), "criteria": criteriaDTO(c)})
+	httpx.JSON(w, 200, map[string]any{"advisory": advisoryDTO(a), "criteria": criteriaDTO(c), "matched": matched})
 }
 func (h *handler) advisoryOperation(w http.ResponseWriter, r *http.Request) {
 	var b versionBody

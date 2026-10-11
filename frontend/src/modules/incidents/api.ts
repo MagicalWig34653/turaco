@@ -33,6 +33,8 @@ export type MajorIncident = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  locations?: Array<{ id: string; name: string }>;
+  affectedLocationCount?: number;
 };
 
 export type MajorIncidentDetail = MajorIncident & {
@@ -40,7 +42,6 @@ export type MajorIncidentDetail = MajorIncident & {
   /** Linked tickets the caller may see; absent on servers that do not return them yet. */
   tickets?: Array<{ id: string; reference: string; title: string; status: string }>;
   allowedOperations: string[];
-  locations?: Array<{ id: string; name: string }>;
   /** Linked tickets the caller cannot see; only for majorincidents.manage holders, omitted at zero. */
   hiddenLinkedTickets?: number;
   ownerName?: string;
@@ -55,8 +56,8 @@ export const incidentsApi = {
     }),
   get: (id: string, signal?: Signal) =>
     api.get<MajorIncidentDetail>(`/major-incidents/${enc(id)}`, { signal }),
-  declare: (title: string, message: string, isExercise = false) =>
-    api.post<MajorIncident>('/major-incidents', { title, message, isExercise }),
+  declare: (title: string, message: string, isExercise = false, locationIds: string[] = []) =>
+    api.post<MajorIncident>('/major-incidents', { title, message, isExercise, locationIds }),
   setOwner: (id: string, expectedVersion: number, ownerUserId: string | null) =>
     api.post<MajorIncident>(`/major-incidents/${enc(id)}/owner`, { expectedVersion, ownerUserId }),
   setNextUpdate: (id: string, expectedVersion: number, dueAt: string | null) =>

@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { incidentFreshness, nextUpdateState } from './incidentModel';
+import { incidentFreshness, incidentLocationNames, nextUpdateState } from './incidentModel';
+
+it('shows named affected locations and keeps an empty set explicit', () => {
+  expect(incidentLocationNames(undefined, 0, 'Unavailable')).toBeNull();
+  expect(incidentLocationNames([], 0, 'Unavailable')).toBeNull();
+  expect(incidentLocationNames([], 1, 'Unavailable')).toBe('Unavailable');
+  expect(incidentLocationNames([{ name: 'Main Campus' }], 2, 'Unavailable')).toBe(
+    'Main Campus, Unavailable',
+  );
+  expect(
+    incidentLocationNames([{ name: 'Main Campus' }, { name: 'North Wing' }], 2, 'Unavailable'),
+  ).toBe('Main Campus, North Wing');
+});
 
 describe('nextUpdateState', () => {
   const now = new Date('2026-10-10T12:00:00Z');

@@ -647,6 +647,20 @@ func (s *Service) names(ctx context.Context, a Asset, as []Assignment) (map[stri
 	return out, nil
 }
 
+// LocationNames resolves only locations of assets already selected for a caller-visible page.
+func (s *Service) LocationNames(ctx context.Context, assets []Asset) (map[string]string, error) {
+	ids := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		if asset.LocationID != nil {
+			ids = append(ids, *asset.LocationID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	return s.dir.LocationNames(ctx, ids)
+}
+
 // List returns assets. Requires assets.view.
 func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, error) {
 	if !p.canView() {

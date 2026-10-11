@@ -16,6 +16,11 @@ describe('toAuditFilter', () => {
     expect(filter.from).toMatch(/Z$/);
     expect(filter.to).toBeUndefined();
   });
+  it('excludes login events when selected', () => {
+    expect(toAuditFilter({ ...emptyForm, excludeLoginEvents: true })).toEqual({
+      excludeActionPrefix: 'auth.',
+    });
+  });
 });
 
 describe('toAuditFilter new filters', () => {
