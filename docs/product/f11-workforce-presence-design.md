@@ -1,6 +1,6 @@
 # F11 Workforce Presence — Feature Design
 
-**Status:** Draft 2026-10-07; decisions W1–W9 adopted by default (autonomous progress; revisit with the customer's data protection review). P-A (backend) is implemented, see the implementation notes at the end; of P-B the presence UI and availability hints (My Work, Ticket assignee picker, Ticket page) are implemented, the Change window view, IT Briefing item and coverage notification are not; P-C is not. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0028](../decisions/ADR-0028-workforce-presence.md) (decision and privacy constraints, non-negotiable), [glossary](../domain/glossary.md#workforce-presence-implemented-backend-and-ui-external-sources-planned-adr-0028), [module boundaries](../architecture/module-boundaries.md), [state machines](../domain/state-machines.md), [F7 design](f7-infrastructure-change-design.md) (Changes, Maintenance Window), [F10 design](f10-remote-access-design.md) (format reference).
+**Status:** Draft 2026-10-07; decisions W1–W9 adopted by default (autonomous progress; revisit with the customer's data protection review). P-A (backend) is implemented, see the implementation notes at the end; of P-B the presence UI, availability hints (My Work, Ticket assignee picker, Ticket page, Change detail), and the Team Coverage IT Briefing feed item are implemented. Coverage notifications are not; P-C is not. Target design; [current status](current-status.md) is authoritative for what is implemented. Related: [ADR-0028](../decisions/ADR-0028-workforce-presence.md) (decision and privacy constraints, non-negotiable), [glossary](../domain/glossary.md#workforce-presence-implemented-backend-and-ui-external-sources-planned-adr-0028), [module boundaries](../architecture/module-boundaries.md), [state machines](../domain/state-machines.md), [F7 design](f7-infrastructure-change-design.md) (Changes, Maintenance Window), [F10 design](f10-remote-access-design.md) (format reference).
 
 ## Decisions
 
@@ -173,3 +173,9 @@ Fixed after the P-A review:
 Accepted:
 
 6. The database function `presence.purge_entries` is executable by the application role (the application deletes through it by design); there is no separate retention role. Authorization of purge stays in the application (`presence.admin`, the worker job).
+
+## P-B Change and Briefing follow-up (2026-10-11)
+
+The authorized Change detail reads the assigned owner's availability over the remaining maintenance window through `presence/public.AvailabilityWindow`. It returns derived segments with source freshness, omits the hint for viewers outside Presence scope and when Presence is off, and never changes Submit or Schedule decisions. Past portions of a window are not queried. Changes have one assigned owner; there is no separate implementer list in the Change model.
+
+The computed IT Briefing feed asks `presence/public.TeamCoverage` for the viewer's current Teams and publishes a Team Coverage entry when today's coverage is below the configured minimum or configured on-site coverage is zero. It includes Team names and counts only; the public contract never returns member names. `presence.view_availability` is required, and module switches remove the source. Manual editorial items have no structured person reference; their free text is not parsed for names.

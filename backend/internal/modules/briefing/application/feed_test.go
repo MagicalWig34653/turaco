@@ -3,14 +3,79 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	endpointspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/public"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 )
+
+type feedPresence struct {
+	calls    int
+	disabled bool
+}
+
+func (f *feedPresence) CurrentTeamIDs(context.Context, string) ([]string, error) {
+	return []string{"team"}, nil
+}
+func (f *feedPresence) TeamNames(context.Context, []string) (map[string]string, error) {
+	return map[string]string{"team": "Operations"}, nil
+}
+func (f *feedPresence) TeamCoverage(_ context.Context, v presencepublic.Viewer, _ string, _, _ time.Time, _ string) (presencepublic.CoverageResult, error) {
+	f.calls++
+	if !v.ViewAvailability || v.ViewEntries {
+		panic("briefing must request scoped counts only")
+	}
+	members := 3
+	return presencepublic.CoverageResult{Disabled: f.disabled, CoverageResult: presencepublic.Coverage{Members: &members, Days: []presencepublic.CoverageDay{{Available: 1, Unavailable: 2, State: "below", UnavailableUserIDs: []string{"secret-user"}}}}}, nil
+}
+
+func TestFeedPresenceCountsOnlyAndDenied(t *testing.T) {
+	now := time.Now()
+	source := &feedPresence{}
+	feed := NewFeedService(nil, FeedSources{Presence: source})
+	denied, err := feed.Feed(context.Background(), FeedPrincipal{UserID: "viewer", Briefing: true}, now)
+	if err != nil || source.calls != 0 || len(denied.Entries) != 0 {
+		t.Fatalf("presence permission denial: %+v, %v", denied, err)
+	}
+	allowed, err := feed.Feed(context.Background(), FeedPrincipal{UserID: "viewer", Presence: true}, now)
+	if err != nil || len(allowed.Entries) != 1 {
+		t.Fatalf("coverage: %+v, %v", allowed, err)
+	}
+	entry := allowed.Entries[0]
+	if entry.Kind != "team_coverage" || entry.Params["team"] != "Operations" || entry.Count == nil || *entry.Count != 1 {
+		t.Fatalf("coverage entry: %+v", entry)
+	}
+	if strings.Contains(fmt.Sprint(entry), "secret-user") {
+		t.Fatalf("personal detail leaked: %+v", entry)
+	}
+	source.disabled = true
+	off, err := NewFeedService(nil, FeedSources{Presence: source}).Feed(context.Background(), FeedPrincipal{UserID: "viewer", Presence: true}, now)
+	if err != nil || len(off.Entries) != 0 {
+		t.Fatalf("disabled presence: %+v, %v", off, err)
+	}
+	enabled := true
+	switched := NewFeedService(nil, FeedSources{Presence: source}).WithSourceFilter(func(_ context.Context, sources FeedSources) FeedSources {
+		if !enabled {
+			sources.Presence = nil
+		}
+		return sources
+	})
+	source.disabled = false
+	on, err := switched.Feed(context.Background(), FeedPrincipal{UserID: "viewer", Presence: true}, now)
+	if err != nil || len(on.Entries) != 1 {
+		t.Fatalf("enabled switch: %+v, %v", on, err)
+	}
+	enabled = false
+	off, err = switched.Feed(context.Background(), FeedPrincipal{UserID: "viewer", Presence: true}, now)
+	if err != nil || len(off.Entries) != 0 {
+		t.Fatalf("switch retained cached presence data: %+v, %v", off, err)
+	}
+}
 
 type feedSecurity struct {
 	fail   bool

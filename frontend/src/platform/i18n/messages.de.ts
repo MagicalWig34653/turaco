@@ -1372,6 +1372,15 @@ export const de: Record<MessageKey, string> = {
   'briefing.feed.deployment_engine_resolving_stuck': 'Verteilungen hängen beim Auflösen der Ziele',
   'briefing.feed.directory_sync': 'Verzeichnisabgleich für {provider} fehlgeschlagen: {reason}',
   'briefing.feed.pending_approvals': 'Ausstehende Genehmigungen',
+  'briefing.feed.team_coverage':
+    'Teamabdeckung heute: {team} ({available} von {members} verfügbar)',
+  'briefing.kind.team_coverage': 'Teamabdeckung',
+  'briefing.source.presence': 'Anwesenheit',
+  'changes.presence.window': 'Verfügbarkeit der verantwortlichen Person im Wartungsfenster',
+  'changes.presence.warning':
+    'Die verantwortliche Person ist in diesem Zeitfenster möglicherweise nicht verfügbar. Sie können fortfahren.',
+  'changes.presence.unknown':
+    'Die Verfügbarkeit konnte für dieses Zeitfenster nicht geprüft werden.',
   'briefing.kind.manual_item': 'Manueller Eintrag',
   'briefing.kind.security_advisory': 'Sicherheitsmeldung',
   'briefing.kind.risk_review_due': 'Risikoprüfung',

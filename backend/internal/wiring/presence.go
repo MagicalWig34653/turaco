@@ -9,8 +9,26 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	presencerepository "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
+
+// ChangePresence applies the module switch before reading the public Presence contract.
+type ChangePresence struct {
+	Presence *presencepublic.Presence
+	Modules  *modules.Service
+}
+
+func (p ChangePresence) AvailabilityWindow(ctx context.Context, viewer presencepublic.Viewer, userID string, from, to time.Time, need presencepublic.Need) (presencepublic.WindowResult, error) {
+	if p.Modules != nil {
+		on, err := p.Modules.Enabled(ctx, "presence")
+		if err != nil || !on {
+			return presencepublic.WindowResult{Disabled: true}, nil
+		}
+	}
+	return p.Presence.AvailabilityWindow(ctx, viewer, userID, from, to, need)
+}
 
 // Presence builds the Workforce Presence service over Organization's work directory (ADR-0028).
 func Presence(pool *pgxpool.Pool, cfg presenceapp.Config) *presenceapp.Service {

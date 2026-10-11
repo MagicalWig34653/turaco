@@ -252,6 +252,7 @@ func TestFeedPermissionTableExactFlagsAndRedaction(t *testing.T) {
 		"endpoints.manage":      {Endpoints: true, Directory: true}, "integrations.intune.manage": {Endpoints: true, Directory: true},
 		"deployments.view": {Deployments: true}, "deployments.manage": {Deployments: true}, "deployments.execute": {Deployments: true},
 		"organization.directory.sync": {Directory: true},
+		"presence.view_availability": {Presence: true},
 	}
 	if len(feedPermissions()) != len(expected) {
 		t.Fatalf("permissions = %v", feedPermissions())

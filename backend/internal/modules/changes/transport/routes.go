@@ -1,11 +1,14 @@
 package transport
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 )
 
@@ -195,14 +198,89 @@ type taskDTO struct {
 
 type detailDTO struct {
 	changeDTO
-	Affected  []affectedDTO `json:"affected"`
-	Approvals []approvalDTO `json:"approvals"`
-	Tasks     struct {
+	OwnerAvailability *ownerAvailabilityDTO `json:"ownerAvailability,omitempty"`
+	Affected          []affectedDTO         `json:"affected"`
+	Approvals         []approvalDTO         `json:"approvals"`
+	Tasks             struct {
 		Total int       `json:"total"`
 		Open  int       `json:"open"`
 		Items []taskDTO `json:"items"`
 	} `json:"tasks"`
 	Names userNamesDTO `json:"names"`
+}
+
+type ownerAvailabilityDTO struct {
+	UserID   string                       `json:"userId"`
+	Segments []applicationPresenceSegment `json:"segments"`
+}
+
+type applicationPresenceSegment struct {
+	From        string              `json:"from"`
+	To          string              `json:"to"`
+	Value       string              `json:"value"`
+	Explanation string              `json:"explanation"`
+	LimitedBy   string              `json:"limitedBy,omitempty"`
+	Sources     []presenceSourceDTO `json:"sources"`
+}
+
+type presenceSourceDTO struct {
+	Source     string  `json:"source"`
+	Freshness  string  `json:"freshness"`
+	ObservedAt *string `json:"observedAt"`
+}
+
+func (h *handler) ownerWindowHint(ctx context.Context, viewer presencepublic.Viewer, ownerID string, start, end, now time.Time) *ownerAvailabilityDTO {
+	if h.presence == nil || !end.After(now) {
+		return nil
+	}
+	from := start
+	if from.Before(now) {
+		from = now
+	}
+	result, err := h.presence.AvailabilityWindow(ctx, viewer, ownerID, from, end, presencepublic.Need{})
+	if err != nil || result.Disabled {
+		return nil
+	}
+	hint := &ownerAvailabilityDTO{UserID: ownerID, Segments: []applicationPresenceSegment{}}
+	for _, segment := range result.Segments {
+		if segment.Explanation == "out_of_scope" {
+			return nil
+		}
+		entry := applicationPresenceSegment{From: ts(segment.From), To: ts(segment.To), Value: segment.Value, Explanation: segment.Explanation, LimitedBy: segment.LimitedBy, Sources: []presenceSourceDTO{}}
+		for _, source := range segment.Sources {
+			entry.Sources = append(entry.Sources, presenceSourceDTO{Source: source.Source, Freshness: source.Freshness, ObservedAt: tsPtr(source.ObservedAt)})
+		}
+		hint.Segments = append(hint.Segments, entry)
+	}
+	return hint
+}
+
+func (h *handler) ownerAvailability(w http.ResponseWriter, r *http.Request) {
+	d, err := h.svc.Get(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	from, fromOK := parseTime(w, r.URL.Query().Get("from"))
+	if !fromOK {
+		return
+	}
+	to, toOK := parseTime(w, r.URL.Query().Get("to"))
+	if !toOK {
+		return
+	}
+	if from == nil || to == nil || !to.After(*from) || to.Sub(*from) > application.MaxWindow {
+		httpx.WriteError(w, http.StatusBadRequest, "changes.invalid_request", "A maintenance window of at most 30 days is required.")
+		return
+	}
+	var hint *ownerAvailabilityDTO
+	if d.Change.OwnerID != nil {
+		viewer, _ := authorization.PrincipalFrom(r.Context())
+		hint = h.ownerWindowHint(r.Context(), presencepublic.Viewer{UserID: viewer.UserID, ViewAvailability: viewer.Has("presence.view_availability")}, *d.Change.OwnerID, *from, *to, time.Now())
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		OwnerAvailability *ownerAvailabilityDTO `json:"ownerAvailability"`
+	}{hint})
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +290,10 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailDTO{changeDTO: toChange(d.Change), Affected: make([]affectedDTO, 0, len(d.Affected)), Approvals: make([]approvalDTO, 0, len(d.Approvals))}
+	if d.Change.OwnerID != nil && d.Change.WindowStart != nil && d.Change.WindowEnd != nil {
+		viewer, _ := authorization.PrincipalFrom(r.Context())
+		out.OwnerAvailability = h.ownerWindowHint(r.Context(), presencepublic.Viewer{UserID: viewer.UserID, ViewAvailability: viewer.Has("presence.view_availability")}, *d.Change.OwnerID, *d.Change.WindowStart, *d.Change.WindowEnd, time.Now())
+	}
 	out.AllowedOperations = d.AllowedOps
 	for _, a := range d.Affected {
 		out.Affected = append(out.Affected, affectedDTO{RelationshipID: a.RelationshipID, Type: a.Type, ID: a.ID, Name: a.Name, Reference: a.Reference,

@@ -76,6 +76,7 @@ var feedPermissionTable = []feedPermission{
 	{"deployments.manage", func(p *application.FeedPrincipal) { p.Deployments = true }},
 	{"deployments.execute", func(p *application.FeedPrincipal) { p.Deployments = true }},
 	{"organization.directory.sync", func(p *application.FeedPrincipal) { p.Directory = true }},
+	{"presence.view_availability", func(p *application.FeedPrincipal) { p.Presence = true }},
 }
 
 func feedPermissions() []string {

@@ -12,6 +12,7 @@ import (
 	endpointspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 	deskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 )
@@ -23,10 +24,11 @@ type FeedPrincipal struct {
 	Briefing, Security, Planning, Changes, Desk, Tickets, Autotask, Endpoints, Directory bool
 	// Deployments is deployments.view, manage or execute: it adds Deployment names to the rollout entries.
 	Deployments bool
+	Presence    bool
 }
 
 func (p FeedPrincipal) Allowed() bool {
-	return p.UserID != "" && (p.Briefing || p.Security || p.Planning || p.Changes || p.Desk || p.Tickets || p.Endpoints || p.Autotask || p.Directory || p.Deployments)
+	return p.UserID != "" && (p.Briefing || p.Security || p.Planning || p.Changes || p.Desk || p.Tickets || p.Endpoints || p.Autotask || p.Directory || p.Deployments || p.Presence)
 }
 
 type FeedReference struct {
@@ -89,7 +91,13 @@ type DirectoryFeed interface {
 type ApprovalFeed interface {
 	PendingForUserCount(context.Context, string) (int, error)
 }
+type PresenceFeed interface {
+	CurrentTeamIDs(context.Context, string) ([]string, error)
+	TeamNames(context.Context, []string) (map[string]string, error)
+	TeamCoverage(context.Context, presencepublic.Viewer, string, time.Time, time.Time, string) (presencepublic.CoverageResult, error)
+}
 type FeedSources struct {
+	Presence    PresenceFeed
 	Security    SecurityFeed
 	Planning    PlanningFeed
 	Desk        DeskFeed
@@ -125,8 +133,8 @@ type feedKey struct {
 }
 
 func sourceSignature(s FeedSources) string {
-	b := make([]byte, 0, 7)
-	for _, on := range []bool{s.Security != nil, s.Planning != nil, s.Desk != nil, s.Endpoints != nil, s.Deployments != nil, s.Directory != nil, s.Approvals != nil} {
+	b := make([]byte, 0, 8)
+	for _, on := range []bool{s.Security != nil, s.Planning != nil, s.Desk != nil, s.Endpoints != nil, s.Deployments != nil, s.Directory != nil, s.Approvals != nil, s.Presence != nil} {
 		if on {
 			b = append(b, '1')
 		} else {
@@ -191,6 +199,52 @@ func (s *FeedService) Feed(ctx context.Context, p FeedPrincipal, now time.Time) 
 		out.Unavailable = append(out.Unavailable, FeedFailure{source, reason})
 	}
 	count := func(n int) *int { return &n }
+	if p.Presence && src.Presence != nil {
+		type coveragePage struct {
+			entries []FeedEntry
+			more    bool
+		}
+		page, e := sourceCall(ctx, func(c context.Context) (coveragePage, error) {
+			teams, err := src.Presence.CurrentTeamIDs(c, p.UserID)
+			if err != nil {
+				return coveragePage{}, err
+			}
+			sort.Strings(teams)
+			more := len(teams) > feedLimit
+			if len(teams) > feedLimit {
+				teams = teams[:feedLimit]
+			}
+			names, err := src.Presence.TeamNames(c, teams)
+			if err != nil {
+				return coveragePage{}, err
+			}
+			dayStart := now.Truncate(24 * time.Hour)
+			items := []FeedEntry{}
+			for _, teamID := range teams {
+				coverage, err := src.Presence.TeamCoverage(c, presencepublic.Viewer{UserID: p.UserID, ViewAvailability: true}, teamID, dayStart, dayStart.Add(24*time.Hour), "")
+				if err != nil {
+					return coveragePage{}, err
+				}
+				if coverage.Disabled || len(coverage.Days) == 0 || coverage.Members == nil {
+					continue
+				}
+				day := coverage.Days[0]
+				if day.State == "unknown" {
+					continue
+				}
+				if day.State != "below" && (day.OnsiteAvailable == nil || *day.OnsiteAvailable > 0) {
+					continue
+				}
+				items = append(items, FeedEntry{Kind: "team_coverage", Severity: SeverityWarning, TitleKey: "briefing.feed.team_coverage", Params: map[string]any{"team": names[teamID], "available": day.Available, "members": *coverage.Members}, Count: count(day.Available), Reference: &FeedReference{"team", teamID}, LinkPath: "/presence/teams", Source: "presence"})
+			}
+			return coveragePage{items, more}, nil
+		})
+		if e != nil {
+			fail("presence", e)
+		} else {
+			add("presence", page.entries, page.more)
+		}
+	}
 	if p.Briefing && s.manual != nil {
 		r, e := sourceCall(ctx, func(c context.Context) (Result, error) {
 			return s.manual.store.List(c, ListQuery{PublishedOnly: true, Page: Page{Limit: feedLimit + 1}})

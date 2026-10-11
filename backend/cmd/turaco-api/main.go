@@ -41,6 +41,7 @@ import (
 	planningapp "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/application"
 	planningtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/transport"
 	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	presencetransport "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/transport"
 	procurementtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/procurement/transport"
 	productsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/products/application"
@@ -326,7 +327,7 @@ func main() {
 	inventorytransport.Register(mux, wiring.Inventory(pool), sessionAuth, logger)
 	infrastructuretransport.Register(mux, wiring.Infrastructure(pool), sessionAuth, logger)
 	servicestransport.Register(mux, wiring.Services(pool), sessionAuth, logger)
-	changestransport.Register(mux, wiring.Changes(pool), sessionAuth, logger)
+	changestransport.Register(mux, wiring.Changes(pool), sessionAuth, logger, wiring.ChangePresence{Presence: presencepublic.New(wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter})), Modules: moduleSvc})
 	planningtransport.Register(mux, wiring.Planning(pool), sessionAuth, logger)
 	securitytransport.Register(mux, wiring.Security(pool), sessionAuth, logger)
 	providers, err := remoteaccess.NewRegistry(cfg.RemoteAccessProviders)
@@ -348,7 +349,7 @@ func main() {
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
 		catalogpublic.NewProducts(productspublic.NewDirectory(productsRepo))).WithLocations(catalogpublic.NewLocations(orgpublic.NewWorkDirectory(orgReader))), sessionAuth, logger)
 	briefingService := wiring.BriefingAnnouncements(pool, briefingapp.NewService(briefingrepository.New(pool), nil), moduleSvc)
-	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService, moduleSvc))
+	briefingtransport.Register(mux, briefingService, sessionAuth, logger, wiring.BriefingFeed(pool, briefingService, moduleSvc, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}))
 	taskstransport.RegisterRecurrence(mux, tasksapp.NewRecurrenceService(tasksrepository.NewDefinitions(pool), orgpublic.NewWorkDirectory(orgReader), nil), sessionAuth, logger)
 	categories, err := notifications.NewRegistry(allCategories()...)
 	if err != nil {
