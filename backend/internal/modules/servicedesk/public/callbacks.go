@@ -32,3 +32,15 @@ func (x *CallbackTasks) CreateInTx(ctx context.Context, tx pgx.Tx, actor audit.A
 	}
 	return id, err
 }
+
+func (x *CallbackTasks) ByContext(ctx context.Context, ticketID string, limit int) ([]application.CallbackTask, error) {
+	tasks, err := x.c.ByContext(ctx, application.TaskContextType, ticketID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]application.CallbackTask, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, application.CallbackTask{ID: t.ID, Title: t.Title, Status: t.Status, DueAt: t.DueAt, AssignedUserID: t.AssignedUserID})
+	}
+	return out, nil
+}

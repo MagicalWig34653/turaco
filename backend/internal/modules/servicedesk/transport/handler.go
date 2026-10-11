@@ -54,6 +54,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/related-tickets", h.linkTicket)
 	route("DELETE /api/v1/tickets/{id}/related-tickets/{otherId}", h.unlinkTicket)
 	route("POST /api/v1/tickets/{id}/callback", h.callback)
+	route("GET /api/v1/tickets/{id}/callback-tasks", h.callbackTasks)
 	route("GET /api/v1/tickets/{id}/changes", h.linkedChanges)
 	route("POST /api/v1/tickets/{id}/changes", h.linkChange)
 	route("DELETE /api/v1/tickets/{id}/changes/{changeId}", h.unlinkChange)
@@ -541,11 +542,12 @@ func (h *handler) callback(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		DueAt      time.Time `json:"dueAt"`
 		AssigneeID string    `json:"assigneeId"`
+		Title      string    `json:"title"`
 	}
 	if !decode(w, r, &b) {
 		return
 	}
-	cb, err := h.svc.ScheduleCallback(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.DueAt, b.AssigneeID)
+	cb, err := h.svc.ScheduleCallback(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.DueAt, b.AssigneeID, b.Title)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -750,4 +752,13 @@ func (h *handler) unlinkTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) callbackTasks(w http.ResponseWriter, r *http.Request) {
+	tasks, err := h.svc.CallbackTasksForTicket(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": tasks})
 }

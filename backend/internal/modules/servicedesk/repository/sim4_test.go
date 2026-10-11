@@ -331,6 +331,18 @@ type fakeCallbackTasks struct {
 	created []application.CallbackTaskInput
 }
 
+func (f *fakeCallbackTasks) ByContext(_ context.Context, ticketID string, limit int) ([]application.CallbackTask, error) {
+	out := []application.CallbackTask{}
+	for _, t := range f.created {
+		if t.TicketID == ticketID && len(out) < limit {
+			due := t.DueAt
+			assignee := t.AssignedUserID
+			out = append(out, application.CallbackTask{Title: t.Title, DueAt: &due, AssignedUserID: &assignee})
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeCallbackTasks) CreateInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, _ string, in application.CallbackTaskInput) (string, error) {
 	if in.AssignedUserID == "00000000-0000-4000-8000-000000000000" {
 		return "", application.ErrAssigneeInvalid
@@ -351,41 +363,57 @@ func TestScheduleCallbackCreatesATaskAuditsAndShowsInTheHistory(t *testing.T) {
 	due := time.Now().Add(2 * time.Hour)
 
 	// View-only staff, past and far-future due times and unknown assignees are refused; nothing is created.
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u2), e.employee(e.u2), tk.ID, due, ""); !errors.Is(err, application.ErrForbidden) {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u2), e.employee(e.u2), tk.ID, due, "", ""); !errors.Is(err, application.ErrForbidden) {
 		t.Errorf("view-only err = %v, want forbidden", err)
 	}
 	var inv *application.InvalidInputError
 	for _, bad := range []time.Time{{}, time.Now().Add(-time.Minute), time.Now().Add(400 * 24 * time.Hour)} {
-		if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, bad, ""); !errors.As(err, &inv) {
+		if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, bad, "", ""); !errors.As(err, &inv) {
 			t.Errorf("dueAt %v err = %v, want invalid input", bad, err)
 		}
 	}
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "not-a-uuid"); !errors.As(err, &inv) {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "not-a-uuid", ""); !errors.As(err, &inv) {
 		t.Errorf("assignee err = %v, want invalid input", err)
 	}
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, application.ErrAssigneeInvalid) {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "00000000-0000-4000-8000-000000000000", ""); !errors.Is(err, application.ErrAssigneeInvalid) {
 		t.Errorf("inactive assignee err = %v", err)
 	}
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.alice), e.employee(e.alice), tk.ID, due, ""); err == nil {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.alice), e.employee(e.alice), tk.ID, due, "", ""); err == nil {
 		t.Error("an unrelated employee must not schedule a callback")
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "", "bad\u200btitle"); !errors.As(err, &inv) {
+		t.Errorf("unsafe title err = %v", err)
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "", strings.Repeat("x", 201)); !errors.As(err, &inv) {
+		t.Errorf("long title err = %v", err)
 	}
 	if len(tasks.created) != 0 {
 		t.Fatalf("refused calls created %d tasks", len(tasks.created))
 	}
 
 	// The default assignee is the caller; an explicit colleague is honoured.
-	cb, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "")
+	cb, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "", "")
 	if err != nil || cb.AssignedUserID != e.u1 || cb.TaskID == "" {
 		t.Fatalf("callback = %+v, %v", cb, err)
 	}
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, e.u2); err != nil {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, e.u2, ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(tasks.created) != 2 || tasks.created[0].TicketID != tk.ID || tasks.created[0].Title != "Callback "+tk.Reference || tasks.created[1].AssignedUserID != e.u2 {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, e.u2, "Legal data protection deadline"); err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks.created) != 3 || tasks.created[0].TicketID != tk.ID || tasks.created[0].Title != "Callback "+tk.Reference || tasks.created[1].AssignedUserID != e.u2 || tasks.created[2].Title != "Legal data protection deadline" {
 		t.Errorf("tasks = %+v", tasks.created)
 	}
-	if got := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.ticket.callback_scheduled' AND target_id = $2`, e.corr, tk.ID); got != 2 {
-		t.Errorf("audit events = %d, want 2", got)
+	listed, err := e.svc.CallbackTasksForTicket(ctx, u1, tk.ID)
+	if err != nil || len(listed) != 3 || listed[2].Title != "Legal data protection deadline" || listed[2].DueAt == nil {
+		t.Fatalf("ticket tasks = %+v, %v", listed, err)
+	}
+	if _, err := e.svc.CallbackTasksForTicket(ctx, e.employee(e.alice), tk.ID); !errors.Is(err, application.ErrNotFound) {
+		t.Errorf("unrelated ticket tasks: %v", err)
+	}
+	if got := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.ticket.callback_scheduled' AND target_id = $2`, e.corr, tk.ID); got != 3 {
+		t.Errorf("audit events = %d, want 3", got)
 	}
 	cur, err := e.svc.Get(ctx, u1, tk.ID)
 	if err != nil || !cur.Abilities.ScheduleCallback || cur.Ticket.Version != tk.Version {
@@ -410,7 +438,7 @@ func TestScheduleCallbackCreatesATaskAuditsAndShowsInTheHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	var tr *application.InvalidTransitionError
-	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, ""); !errors.As(err, &tr) {
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "", ""); !errors.As(err, &tr) {
 		t.Errorf("cancelled ticket err = %v, want invalid transition", err)
 	}
 }

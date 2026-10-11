@@ -420,3 +420,54 @@ func TestExpiredRiskAcceptanceReopensOnce(t *testing.T) {
 		t.Fatalf("review_due transitions = %d, %v (accepted version %d)", count, err, accepted.Version)
 	}
 }
+
+type advisoryOwnerDirectory struct{ active bool }
+
+func (d advisoryOwnerDirectory) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = d.active
+	}
+	return out, nil
+}
+
+func TestAssignAdvisoryOwnerVersionAuditAndClear(t *testing.T) {
+	pool, svc, _, caller := securityEnv(t)
+	ctx := context.Background()
+	p := application.Principal{UserID: securityTestUser, View: true, Manage: true}
+	a, _, err := svc.Create(ctx, caller, p, application.AdvisoryInput{Title: "Owner assignment", Severity: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupAdvisory(t, pool, a.ID)
+	var owner string
+	if err := pool.QueryRow(ctx, `INSERT INTO organization.users(display_name, status) VALUES ('Advisory test owner', 'active') RETURNING id::text`).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM organization.users WHERE id = $1::uuid`, owner)
+	})
+	svc.WithOwnerDirectory(advisoryOwnerDirectory{active: false})
+	if _, err := svc.AssignAdvisoryOwner(ctx, caller, p, a.ID, &a.Version, &owner); err == nil {
+		t.Fatal("inactive owner accepted")
+	}
+	svc.WithOwnerDirectory(advisoryOwnerDirectory{active: true})
+	if _, err := svc.AssignAdvisoryOwner(ctx, caller, application.Principal{UserID: securityTestUser, View: true}, a.ID, &a.Version, &owner); !errors.Is(err, application.ErrForbidden) {
+		t.Fatalf("permission: %v", err)
+	}
+	assigned, err := svc.AssignAdvisoryOwner(ctx, caller, p, a.ID, &a.Version, &owner)
+	if err != nil || assigned.OwnerUserID == nil || *assigned.OwnerUserID != owner || assigned.Version != a.Version+1 {
+		t.Fatalf("assigned: %+v %v", assigned, err)
+	}
+	if _, err := svc.AssignAdvisoryOwner(ctx, caller, p, a.ID, &a.Version, nil); !errors.Is(err, application.ErrVersionConflict) {
+		t.Fatalf("stale version: %v", err)
+	}
+	cleared, err := svc.AssignAdvisoryOwner(ctx, caller, p, a.ID, &assigned.Version, nil)
+	if err != nil || cleared.OwnerUserID != nil {
+		t.Fatalf("cleared: %+v %v", cleared, err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events WHERE target_id = $1 AND action = 'security.advisory.owner_assigned'`, a.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("audit count = %d, %v", count, err)
+	}
+}

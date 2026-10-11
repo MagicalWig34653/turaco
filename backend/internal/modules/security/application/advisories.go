@@ -900,3 +900,46 @@ func (s *Service) Archive(ctx context.Context, c Caller, p Principal, id string,
 	return s.advisoryOp(ctx, c, p, id, expected, "archive", "archived", AdvisoryArchived, "",
 		AdvisoryNew, AdvisoryNotApplicable, AdvisoryResolved)
 }
+
+// AssignAdvisoryOwner assigns an active User or clears the owner. It is versioned and audited atomically.
+func (s *Service) AssignAdvisoryOwner(ctx context.Context, c Caller, p Principal, id string, expected *int, ownerID *string) (Advisory, error) {
+	if err := c.validate(); err != nil {
+		return Advisory{}, err
+	}
+	if !p.Manage {
+		return Advisory{}, ErrForbidden
+	}
+	exp, err := requireVersion(expected)
+	if err != nil {
+		return Advisory{}, err
+	}
+	if ownerID != nil {
+		if !uuidPattern.MatchString(*ownerID) {
+			return Advisory{}, invalid("ownerUserId must be a user id")
+		}
+		normalized := strings.ToLower(*ownerID)
+		ownerID = &normalized
+		if s.directory == nil {
+			return Advisory{}, errors.New("security: owner directory is not configured")
+		}
+		active, err := s.directory.ActiveUsers(ctx, []string{*ownerID})
+		if err != nil {
+			return Advisory{}, err
+		}
+		if !active[*ownerID] {
+			return Advisory{}, invalid("ownerUserId must be an active user")
+		}
+	}
+	var out Advisory
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.lockAdvisory(ctx, tx, id, exp, "assign_owner")
+		if err != nil {
+			return err
+		}
+		next := cur
+		next.OwnerUserID = ownerID
+		out, err = s.commitAdvisory(ctx, tx, c, cur, next, "owner_assigned", "", nil)
+		return err
+	})
+	return out, err
+}

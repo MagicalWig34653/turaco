@@ -6,6 +6,7 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
+import { TextField } from '../../platform/ui/Field';
 import { DateTimeField } from '../../platform/ui/DateTimeField';
 import { Dialog } from '../../platform/ui/Dialog';
 import { AssigneePicker, type Assignee } from '../tasks/AssigneePicker';
@@ -25,6 +26,7 @@ export function TicketCallbackDialog({
   const { t } = useI18n();
   const { session } = useSession();
   const [due, setDue] = useState('');
+  const [title, setTitle] = useState('');
   const [assignee, setAssignee] = useState<Assignee | null>(
     session?.userId ? { id: session.userId, label: session.displayName ?? session.userId } : null,
   );
@@ -41,6 +43,7 @@ export function TicketCallbackDialog({
     try {
       await ticketsApi.scheduleCallback(ticket.id, {
         dueAt: dueDate.toISOString(),
+        title: title.trim(),
         ...(assignee ? { assigneeId: assignee.id } : {}),
       });
       onDone();
@@ -54,6 +57,13 @@ export function TicketCallbackDialog({
       <form className="form" onSubmit={(event) => void submit(event)}>
         {error ? <ApiErrorAlert error={error} /> : null}
         <p className="field-hint">{t('ticketCallback.hint')}</p>
+        <TextField
+          label={t('ticketCallback.taskTitle')}
+          hint={t('ticketCallback.taskTitleHint')}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={200}
+        />
         <DateTimeField
           label={t('ticketCallback.due')}
           hint={t('ticketCallback.dueHint')}

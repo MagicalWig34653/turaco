@@ -76,3 +76,7 @@ Task and Change data can change after the Security progress snapshot, so the res
 ## Feeds status
 
 B1 is closed for NVD, OSV and CISA KEV: see [advisory feeds](../integrations/advisory-feeds.md) for sources, rate limits (*verify*), mapping and operation. The sync is a platform job (`security.advisory_sync`) that imports through the existing Import path as system actor `advisory-feed`; `known_exploited`, `known_exploited_added_at` and `kev_due_date` on `security.advisories` are written only by the KEV enrichment. Vendor RSS and MSRC remain later adapters of the same port.
+
+### Advisory owner (2026-10-11)
+
+`AssignAdvisoryOwner` (`POST /security/advisories/{id}/assign-owner`) sets or clears the nullable `owner_user_id` for an active User. It requires `security.manage` and `expectedVersion`, increments the Advisory version and records `security.advisory.owner_assigned` in the same transaction. Owner name is resolved in a batch through Organization for the list and detail. Assignment does not change Advisory status or notify the owner; comparable Security assignments do not notify. Migration `000084` adds the nullable foreign key and index.

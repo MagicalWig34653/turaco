@@ -106,8 +106,19 @@ export const ticketsApi = {
       `/tickets/${enc(id)}/participant-candidates`,
       { signal, query: { q } },
     ),
+  callbackTasks: (id: string, signal?: Signal) =>
+    api.get<{
+      items: {
+        id: string;
+        title: string;
+        status: string;
+        dueAt: string | null;
+        assignedUserId: string | null;
+        assigneeName: string | null;
+      }[];
+    }>(`/tickets/${enc(id)}/callback-tasks`, { signal }),
   /** Schedules a callback: a Task for the ticket, due at `dueAt` (ISO), assigned to `assigneeId` (default: me). */
-  scheduleCallback: (id: string, input: { dueAt: string; assigneeId?: string }) =>
+  scheduleCallback: (id: string, input: { dueAt: string; assigneeId?: string; title?: string }) =>
     api.post<{ taskId: string; dueAt: string; assigneeId: string }>(
       `/tickets/${enc(id)}/callback`,
       input,

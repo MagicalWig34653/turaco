@@ -78,6 +78,11 @@ export const securityApi = {
     ),
   import: (records: unknown[]) =>
     api.post<Record<string, number>>('/security/advisories/import', { records }),
+  assignOwner: (id: string, expectedVersion: number, ownerUserId: string | null) =>
+    api.post<Advisory>(`/security/advisories/${enc(id)}/assign-owner`, {
+      expectedVersion,
+      ownerUserId,
+    }),
   advisoryAction: (id: string, action: string, expectedVersion: number, reason?: string) =>
     api.post<AdvisoryActionResponse>(`/security/advisories/${enc(id)}/${action}`, {
       expectedVersion,

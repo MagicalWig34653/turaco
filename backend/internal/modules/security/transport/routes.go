@@ -33,6 +33,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/security/advisories/import", manage, h.importAdvisories)
 	route("GET /api/v1/security/advisories/{id}", view, h.getAdvisory)
 	route("PATCH /api/v1/security/advisories/{id}", manage, h.updateAdvisory)
+	route("POST /api/v1/security/advisories/{id}/assign-owner", manage, h.assignAdvisoryOwner)
 	route("PUT /api/v1/security/advisories/{id}/criteria", manage, h.editCriteria)
 	route("POST /api/v1/security/advisories/{id}/normalize", manage, h.normalizeCriteria)
 	route("POST /api/v1/security/advisories/{id}/start-analysis", manage, h.advisoryOperation)

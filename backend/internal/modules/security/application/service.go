@@ -20,7 +20,7 @@ import (
 
 // Service performs Security operations. Audit actions are security.advisory.<operation> (created,
 // imported, updated, criteria_changed, criteria_normalized, analysis_started, applicable,
-// not_applicable, remediation_planned, remediation_started, resolved, archived, matched, kev_enriched) and
+// not_applicable, remediation_planned, remediation_started, resolved, archived, owner_assigned, matched, kev_enriched) and
 // security.finding.<operation> (investigating, risk_accepted, false_positive, remediation_planned,
 // remediation_started, reopened, remediated, observed_again), written in the mutation's transaction
 // with ids, states, counts and reason codes only: advisory titles, summaries, URLs and device names are
@@ -33,6 +33,7 @@ type Service struct {
 	changes         ChangeReader
 	graph           *relationships.Graph
 	names           AssigneeNames
+	directory       Directory
 	relationshipsDB relationships.Querier
 	feeds           FeedSources
 }
@@ -79,7 +80,7 @@ func advisoryState(a *Advisory) any {
 	if a == nil {
 		return nil
 	}
-	return map[string]any{"status": a.Status, "severity": a.Severity, "criteriaRevision": a.CriteriaRevision, "version": a.Version}
+	return map[string]any{"status": a.Status, "severity": a.Severity, "criteriaRevision": a.CriteriaRevision, "version": a.Version, "ownerUserId": a.OwnerUserID}
 }
 
 func findingState(f *Finding) any {

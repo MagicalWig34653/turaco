@@ -5385,8 +5385,8 @@ paths:
   /tickets/{id}/callback:
     post:
       operationId: scheduleTicketCallback
-      summary: Schedule a callback for a ticket.
-      description: "Explicit operation: creates an ordinary Task (Tasks public contract, context type `ticket`, title `Callback <reference>`) due at `dueAt` and assigned to `assigneeId` (default: the caller), so it shows in My Work and the Task list. Needs work access in the ticket's Queue and a ticket that is not closed or cancelled (`abilities.scheduleCallback`). `dueAt` must be in the future and at most one year ahead (400); the assignee must be an active user (400 tickets.user_invalid). The ticket does not change (no version bump). Audited (servicedesk.ticket.callback_scheduled, without the title) and listed in the history as `callback_scheduled`. Each call creates one Task."
+      summary: Create a ticket Task with a due date.
+      description: "Explicit operation: creates an ordinary Task (Tasks public contract, context type `ticket`, default title `Callback <reference>`, or optional safe `title` of 1-200 characters) due at `dueAt` and assigned to `assigneeId` (default: the caller), so it shows in My Work and the Task list. Needs work access in the ticket's Queue and a ticket that is not closed or cancelled (`abilities.scheduleCallback`). `dueAt` must be in the future and at most one year ahead (400); the assignee must be an active user (400 tickets.user_invalid). The ticket does not change (no version bump). Audited (servicedesk.ticket.callback_scheduled, without the title) and listed in the history as `callback_scheduled`. Each call creates one Task."
       security:
         - sessionAuth: []
       parameters:
@@ -5399,7 +5399,7 @@ paths:
               $ref: '#/components/schemas/TicketCallback'
       responses:
         '201':
-          description: The callback Task.
+          description: The created Task.
           content:
             application/json:
               schema:
@@ -5416,6 +5416,37 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/callback-tasks:
+    get:
+      operationId: listTicketCallbackTasks
+      summary: List live ticket follow-up Tasks
+      description: Requires staff access to the ticket Queue. At most 100 Tasks; titles, status, due date and assignee are returned.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Ticket Tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string, format: uuid}
+                        title: {type: string}
+                        status: {type: string}
+                        dueAt: {type: [string, "null"], format: date-time}
+                        assignedUserId: {type: [string, "null"], format: uuid}
+                        assigneeName: {type: [string, "null"]}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
   /tickets/{id}/changes:
     get:
       operationId: listTicketChanges
@@ -11755,6 +11786,36 @@ paths:
           $ref: '#/components/responses/SecurityConflict'
         '500':
           $ref: '#/components/responses/InternalError'
+  /security/advisories/{id}/assign-owner:
+    post:
+      operationId: assignSecurityAdvisoryOwner
+      summary: Assign or clear an Advisory owner
+      description: Requires security.manage. The owner must be an active User. Versioned and audited in the update transaction.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, ownerUserId]
+              properties:
+                expectedVersion: {type: integer, minimum: 1}
+                ownerUserId: {type: [string, "null"], format: uuid}
+      responses:
+        '200':
+          description: Updated Advisory
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SecurityAdvisory'}
+        '400': {$ref: '#/components/responses/SecurityInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/SecurityNotFound'}
+        '409': {$ref: '#/components/responses/SecurityConflict'}
   /security/advisories/{id}/normalize:
     post:
       operationId: normalizeSecurityCriteria
@@ -18948,6 +19009,7 @@ components:
       properties:
         dueAt: {type: string, format: date-time, description: "When the callback is due; in the future, at most one year ahead."}
         assigneeId: {type: string, format: uuid, description: "An active user; default: the caller."}
+        title: {type: string, maxLength: 200, description: "Optional safe Task title; empty uses Callback and the ticket reference."}
     TicketLocation:
       type: object
       additionalProperties: false
@@ -21629,7 +21691,7 @@ components:
         riskAcceptancesDueWithin30Days: {type: integer}
     SecurityAdvisory:
       type: object
-      required: [id, reference, source, externalId, title, summary, severity, status, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, criteriaIncomplete, criteriaSkipped, criteriaChangedUpstream, knownExploited, version, createdAt, updatedAt]
+      required: [id, reference, source, externalId, title, summary, severity, status, ownerUserId, criteriaRevision, matchedRevision, matchTruncated, unmatchedCriteria, criteriaIncomplete, criteriaSkipped, criteriaChangedUpstream, knownExploited, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string}
@@ -21658,6 +21720,8 @@ components:
         criteriaSkipped: {type: integer, minimum: 0, description: How many criteria or rules were left out (see criteriaIncomplete).}
         criteriaChangedUpstream: {type: boolean, description: The feed reported different criteria for this advisory after an analyst decision; the criteria were kept as they are. Cleared by an analyst criteria edit.}
         createdBy: {type: string, nullable: true}
+        ownerUserId: {type: string, format: uuid, nullable: true, description: Active User responsible for analysis.}
+        ownerName: {type: string, description: Resolved display name in list and detail responses.}
         applicableAt: {type: string, format: date-time, nullable: true}
         resolvedAt: {type: string, format: date-time, nullable: true}
         archivedAt: {type: string, format: date-time, nullable: true}

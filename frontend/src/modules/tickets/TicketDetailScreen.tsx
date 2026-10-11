@@ -337,6 +337,7 @@ function TicketWorkspace({ id }: { id: string }) {
       | 'duplicate';
     op?: TicketOperation;
   } | null>(null);
+  const [taskRefresh, setTaskRefresh] = useState(0);
   const [busyOp, setBusyOp] = useState<string | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
   const [drafts, setDrafts] = useState({ reply: '', internal: '' });
@@ -381,6 +382,7 @@ function TicketWorkspace({ id }: { id: string }) {
     setActionError(undefined);
     loaded.reload();
     history.reload();
+    setTaskRefresh((n) => n + 1);
   };
   const queueName = ticketQueueName(ticket);
   const aliases = aliasList(ticket);
@@ -912,6 +914,9 @@ function TicketWorkspace({ id }: { id: string }) {
               </div>
             ) : null}
           </Card>
+          {staff || queueLevel === 'view' || queueLevel === 'work' || queueLevel === 'manage' ? (
+            <TicketDueTasks ticketId={ticket.id} refresh={taskRefresh} />
+          ) : null}
           {ticket.majorIncidentId ? <LinkedIncident id={ticket.majorIncidentId} /> : null}
           {abilities.markDuplicate || can('problems.manage') || can('majorincidents.manage') ? (
             <Card title={t('ticketLink.title')}>
@@ -1161,5 +1166,28 @@ function TicketWorkspace({ id }: { id: string }) {
         />
       ) : null}
     </div>
+  );
+}
+
+function TicketDueTasks({ ticketId, refresh }: { ticketId: string; refresh: number }) {
+  const { t, locale } = useI18n();
+  const tasks = useAsync(
+    (signal) => ticketsApi.callbackTasks(ticketId, signal),
+    [ticketId, refresh],
+  );
+  if (!tasks.data?.items.length && !tasks.error) return null;
+  return (
+    <Card title={t('ticketCallback.tasks')}>
+      <h2>{t('ticketCallback.tasks')}</h2>
+      {tasks.error && <ApiErrorAlert error={tasks.error} onRetry={tasks.reload} />}
+      <ul>
+        {tasks.data?.items.map((task) => (
+          <li key={task.id}>
+            <strong>{task.title}</strong> · {task.dueAt ? formatDateTime(locale, task.dueAt) : '—'}{' '}
+            · {task.assigneeName ?? task.assignedUserId ?? '—'}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

@@ -196,6 +196,7 @@ type Advisory struct {
 	KnownExploited        bool
 	KnownExploitedAddedAt *time.Time
 	KEVDueDate            *time.Time
+	OwnerUserID           *string
 	CreatedBy             *string
 	ApplicableAt          *time.Time
 	ResolvedAt            *time.Time
