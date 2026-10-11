@@ -13,6 +13,7 @@ import (
 
 	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/requests/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/search"
 )
 
 type Repository struct{ pool *pgxpool.Pool }
@@ -222,6 +223,11 @@ func (r *Repository) List(ctx context.Context, q application.ListQuery) (applica
 	}
 	if q.Status != "" {
 		add("status = ?", q.Status)
+	}
+	for _, pat := range search.SubstringPatterns(q.Search) {
+		args = append(args, pat)
+		n := len(args)
+		conds = append(conds, fmt.Sprintf(`(%[2]s(reference) ILIKE $%[1]d ESCAPE '\' OR %[2]s(catalog_item_title) ILIKE $%[1]d ESCAPE '\')`, n, search.FoldSQL))
 	}
 	if page.Cursor != "" {
 		if !validUUID(page.Cursor) {

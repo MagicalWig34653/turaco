@@ -169,6 +169,16 @@ func (s *Service) resolveNames(ctx context.Context, d *Detail) error {
 // User), newest first; all=true lists every request and needs requests.view
 // or requests.manage.
 func (s *Service) List(ctx context.Context, p Principal, all bool, status string, page Page) (Result, error) {
+	return s.list(ctx, p, all, status, "", page)
+}
+
+// Search is List restricted to requests whose reference or catalog item title contains every word of text as a
+// substring (visibility is List's: own requests, or all with requests.view or requests.manage).
+func (s *Service) Search(ctx context.Context, p Principal, all bool, text string, page Page) (Result, error) {
+	return s.list(ctx, p, all, "", text, page)
+}
+
+func (s *Service) list(ctx context.Context, p Principal, all bool, status, text string, page Page) (Result, error) {
 	if all && !p.View && !p.Manage {
 		return Result{}, ErrForbidden
 	}
@@ -179,5 +189,5 @@ func (s *Service) List(ctx context.Context, p Principal, all bool, status string
 			return Result{}, invalid("status must be one of pending_approval, in_fulfillment, waiting, completed, rejected, cancelled")
 		}
 	}
-	return s.store.List(ctx, ListQuery{UserID: p.UserID, All: all, Status: status, Page: page.Normalize()})
+	return s.store.List(ctx, ListQuery{UserID: p.UserID, All: all, Status: status, Search: text, Page: page.Normalize()})
 }

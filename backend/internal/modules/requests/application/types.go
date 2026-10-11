@@ -182,6 +182,8 @@ type ListQuery struct {
 	// All lists every request (requires requests.view); otherwise only the User's own.
 	All    bool
 	Status string
+	// Search matches every word as a substring of reference or item title (umlauts folded); see platform/search.
+	Search string
 	Page   Page
 }
 

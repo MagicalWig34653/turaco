@@ -13,6 +13,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/search"
 )
 
 // Repository stores Changes, their transitions and their execution Task links.
@@ -180,6 +181,9 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 	}
 	if f.WindowTo != nil {
 		add("window_start <= $%d", *f.WindowTo)
+	}
+	for _, pat := range search.SubstringPatterns(f.Search) {
+		add(`(`+search.FoldSQL+`(reference) ILIKE $%[1]d ESCAPE '\' OR `+search.FoldSQL+`(title) ILIKE $%[1]d ESCAPE '\')`, pat)
 	}
 	page := f.Page.Normalize()
 	if page.Cursor != "" {

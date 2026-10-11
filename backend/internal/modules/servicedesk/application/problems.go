@@ -53,7 +53,7 @@ type ProblemStore interface {
 	LockProblemTx(ctx context.Context, tx pgx.Tx, id string) (Problem, error)
 	UpdateProblemTx(ctx context.Context, tx pgx.Tx, p Problem) (Problem, error)
 	GetProblem(ctx context.Context, id string) (Problem, error)
-	ListProblems(ctx context.Context, status string, page Page) (ProblemResult, error)
+	ListProblems(ctx context.Context, status, search string, page Page) (ProblemResult, error)
 	LinkProblemTicketTx(ctx context.Context, tx pgx.Tx, problemID, ticketID, by string) (bool, error)
 	UnlinkProblemTicketTx(ctx context.Context, tx pgx.Tx, problemID, ticketID string) error
 	// ProblemTickets lists the tickets of a problem (newest first).
@@ -379,13 +379,22 @@ func (s *ProblemService) Get(ctx context.Context, p ProblemPrincipal, id string)
 
 // List returns problems, newest first (staff only).
 func (s *ProblemService) List(ctx context.Context, p ProblemPrincipal, status string, page Page) (ProblemResult, error) {
+	return s.list(ctx, p, status, "", page)
+}
+
+// Search is List restricted to problems whose reference or title contains every word of text as a substring.
+func (s *ProblemService) Search(ctx context.Context, p ProblemPrincipal, text string, page Page) (ProblemResult, error) {
+	return s.list(ctx, p, "", text, page)
+}
+
+func (s *ProblemService) list(ctx context.Context, p ProblemPrincipal, status, text string, page Page) (ProblemResult, error) {
 	if !p.canRead() {
 		return ProblemResult{}, ErrForbidden
 	}
 	if status != "" && !slices.Contains(ProblemStatuses, status) {
 		return ProblemResult{}, invalid("unknown status")
 	}
-	res, err := s.store.ListProblems(ctx, status, page.Normalize())
+	res, err := s.store.ListProblems(ctx, status, text, page.Normalize())
 	if err != nil {
 		return ProblemResult{}, err
 	}

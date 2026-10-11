@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/search"
 )
 
 var _ application.ProblemStore = (*Repository)(nil)
@@ -72,13 +73,17 @@ func (r *Repository) GetProblem(ctx context.Context, id string) (application.Pro
 	return p, nil
 }
 
-func (r *Repository) ListProblems(ctx context.Context, status string, page application.Page) (application.ProblemResult, error) {
+func (r *Repository) ListProblems(ctx context.Context, status, text string, page application.Page) (application.ProblemResult, error) {
 	page = page.Normalize()
 	args := []any{}
 	cond := "TRUE"
 	if status != "" {
 		args = append(args, status)
 		cond = fmt.Sprintf("p.status = $%d", len(args))
+	}
+	for _, pat := range search.SubstringPatterns(text) {
+		args = append(args, pat)
+		cond += fmt.Sprintf(` AND (%[2]s(p.reference) ILIKE $%[1]d ESCAPE '\' OR %[2]s(p.title) ILIKE $%[1]d ESCAPE '\')`, len(args), search.FoldSQL)
 	}
 	if page.Cursor != "" {
 		if !validUUID(page.Cursor) {

@@ -11,8 +11,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/search"
 )
 
-// recordScan bounds how many of the newest records problem and incident searches inspect: their stores have no
-// text index, so the module's authorized list is read once and matched in memory.
+// recordScan bounds how many of the newest Major Incidents the search inspects: their store has no text index, so
+// the module's list is read once and matched in memory.
 const recordScan = 200
 
 // TicketSearcher is the platform Searcher of Tickets. It uses the same query as the ticket list (reference, title,
@@ -79,8 +79,8 @@ func (ProblemSearcher) Type() string   { return "problem" }
 func (ProblemSearcher) Module() string { return "servicedesk" }
 
 func (s ProblemSearcher) Search(ctx context.Context, p authorization.Principal, q string, limit int) ([]search.Hit, error) {
-	res, err := s.svc.List(ctx, application.ProblemPrincipal{UserID: p.UserID, Staff: p.Has("tickets.view") || p.Has("tickets.manage"), Manage: p.Has("problems.manage")},
-		"", application.Page{Limit: recordScan})
+	res, err := s.svc.Search(ctx, application.ProblemPrincipal{UserID: p.UserID, Staff: p.Has("tickets.view") || p.Has("tickets.manage"), Manage: p.Has("problems.manage")},
+		q, application.Page{Limit: limit})
 	switch {
 	case errors.Is(err, application.ErrForbidden):
 		return nil, search.ErrNotAllowed
@@ -89,12 +89,7 @@ func (s ProblemSearcher) Search(ctx context.Context, p authorization.Principal, 
 	}
 	var hits []search.Hit
 	for _, pr := range res.Items {
-		if len(hits) == limit {
-			break
-		}
-		if search.Match(q, pr.Reference, pr.Title) {
-			hits = append(hits, search.Hit{ID: pr.ID, Reference: pr.Reference, Title: pr.Title, Subtitle: pr.Status, Exact: search.ExactReference(q, pr.Reference)})
-		}
+		hits = append(hits, search.Hit{ID: pr.ID, Reference: pr.Reference, Title: pr.Title, Subtitle: pr.Status, Exact: search.ExactReference(q, pr.Reference)})
 	}
 	return hits, nil
 }
