@@ -59,6 +59,11 @@ export const changesApi = {
     api.get<ChangeList>('/changes', { query: { ...filter, cursor, limit: 50 }, signal }),
   get: (id: string, signal?: AbortSignal) =>
     api.get<ChangeDetail>(`/changes/${enc(id)}`, { signal }),
+  ownerAvailability: (id: string, from: string, to: string, signal?: AbortSignal) =>
+    api.get<{ ownerAvailability: ChangeDetail['ownerAvailability'] | null }>(
+      `/changes/${enc(id)}/owner-availability`,
+      { query: { from, to }, signal },
+    ),
   /** Picker for the wizard; needs changes.manage. A type the caller cannot see answers with no items. */
   affectedLookup: (type: AffectedCandidate['type'], q: string, signal?: AbortSignal, limit = 20) =>
     api.get<{ items: AffectedCandidate[] }>('/changes/affected-lookup', {

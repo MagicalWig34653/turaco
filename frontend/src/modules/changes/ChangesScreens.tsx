@@ -8,6 +8,7 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Avatar, FilterBar, Skeleton, StatusBadge, useCountUp } from '../../platform/ui/Workspace';
 import { useContextMenu } from '../../platform/ui/ContextMenu';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
+import { Alert } from '../../platform/ui/Alert';
 import { Dialog } from '../../platform/ui/Dialog';
 import { relativeDate } from '../../platform/ui/tableModel';
 import { DataTable, type Column } from '../../platform/ui/DataTable';
@@ -831,14 +832,14 @@ function ActionDialog({
   onDone,
   onFix,
 }: {
-  change: Change;
+  change: ChangeDetail;
   action: string;
   affectedCount: number;
   onClose: () => void;
   onDone: () => void;
   onFix: (field: ReadinessField) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [risk, setRisk] = useState(change.risk);
   const [approverType, setApproverType] = useState<'user' | 'team'>('user');
   const [approver, setApprover] = useState<Assignee | null>(null);
@@ -854,6 +855,32 @@ function ActionDialog({
   const [outcomeNote, setOutcomeNote] = useState('');
   const [error, setError] = useState<ApiError>();
   const [busy, setBusy] = useState(false);
+  const proposedFrom = iso(start);
+  const proposedTo = iso(end);
+  const proposed = useAsync(
+    (signal) =>
+      action === 'schedule' &&
+      proposedFrom &&
+      proposedTo &&
+      Date.parse(proposedTo) > Date.parse(proposedFrom)
+        ? changesApi
+            .ownerAvailability(change.id, proposedFrom, proposedTo, signal)
+            .then((result) => ({ ...result, from: proposedFrom, to: proposedTo }))
+        : Promise.resolve(undefined),
+    [action, change.id, proposedFrom, proposedTo],
+  );
+  const windowHint =
+    action === 'schedule'
+      ? proposed.data?.from === proposedFrom &&
+        proposed.data?.to === proposedTo &&
+        !proposed.loading
+        ? proposed.data.ownerAvailability
+        : null
+      : change.ownerAvailability;
+  const warningSegments =
+    windowHint?.segments.filter(
+      (segment) => segment.value === 'unavailable' || segment.value === 'limited',
+    ) ?? [];
   const checksReadiness = action === 'submit' || action === 'assess';
   // Local check first; fields named by the server's 400 are added so nothing it found is hidden.
   const missing = checksReadiness
@@ -896,6 +923,30 @@ function ActionDialog({
   return (
     <Dialog title={t(`changes.action.${action}` as MessageKey)} onClose={onClose}>
       <form onSubmit={(e) => void submit(e)} className="form-stack">
+        {(action === 'submit' || action === 'schedule') && warningSegments.length > 0 && (
+          <Alert kind="warning">
+            {t('changes.presence.warning')}
+            <ul>
+              {warningSegments.map((segment) => (
+                <li key={`${segment.from}-${segment.to}`}>
+                  {t(`presence.value.${segment.value}`)} ·{' '}
+                  {new Intl.DateTimeFormat(locale, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(segment.from))}{' '}
+                  –{' '}
+                  {new Intl.DateTimeFormat(locale, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(segment.to))}
+                </li>
+              ))}
+            </ul>
+          </Alert>
+        )}
+        {action === 'schedule' && proposed.error && (
+          <Alert kind="info">{t('changes.presence.unknown')}</Alert>
+        )}
         {action === 'assess' && (
           <>
             <Choice
@@ -1225,6 +1276,46 @@ export function ChangeDetailScreen({ id }: { id: string }) {
                   <dd>
                     <Person name={c.ownerId ? c.names.users[c.ownerId] : undefined} />
                   </dd>
+                  {c.ownerAvailability?.segments.some(
+                    (segment) => segment.value === 'limited' || segment.value === 'unavailable',
+                  ) && (
+                    <>
+                      <dt>{t('changes.presence.window')}</dt>
+                      <dd>
+                        <ul>
+                          {c.ownerAvailability.segments
+                            .filter(
+                              (segment) =>
+                                segment.value === 'limited' || segment.value === 'unavailable',
+                            )
+                            .map((segment) => (
+                              <li key={`${segment.from}-${segment.to}`}>
+                                {t(`presence.value.${segment.value}`)} ·{' '}
+                                {new Intl.DateTimeFormat(locale, {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short',
+                                }).format(new Date(segment.from))}{' '}
+                                –{' '}
+                                {new Intl.DateTimeFormat(locale, {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short',
+                                }).format(new Date(segment.to))}
+                                {segment.sources.map((source, index) => (
+                                  <small key={index}>
+                                    {' '}
+                                    ·{' '}
+                                    {source.source === 'manual'
+                                      ? t('presence.manual')
+                                      : source.source}{' '}
+                                    · {t(`presence.freshness.${source.freshness}` as MessageKey)}
+                                  </small>
+                                ))}
+                              </li>
+                            ))}
+                        </ul>
+                      </dd>
+                    </>
+                  )}
                   <dt>{t('changes.windowStart')}</dt>
                   <dd>
                     {c.windowStart

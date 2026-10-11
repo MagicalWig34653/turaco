@@ -50,6 +50,10 @@ func New(svc *application.Service) *Presence { return &Presence{svc: svc} }
 
 // Need says whether the question needs the User on site.
 type Need = application.Need
+type Segment = application.Segment
+type SourceInfo = application.SourceInfo
+type CoverageDay = application.CoverageDay
+type Coverage = application.CoverageResult
 
 // Availability answers for each User at the instant. A disabled module returns unknown/Disabled for every id.
 func (p *Presence) Availability(ctx context.Context, viewer Viewer, userIDs []string, at time.Time, need Need) ([]Availability, error) {

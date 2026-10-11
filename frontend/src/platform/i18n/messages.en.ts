@@ -1334,6 +1334,13 @@ export const en = {
   'briefing.feed.deployment_engine_resolving_stuck': 'Deployments are stuck resolving targets',
   'briefing.feed.directory_sync': 'Directory sync failed for {provider}: {reason}',
   'briefing.feed.pending_approvals': 'Pending approvals',
+  'briefing.feed.team_coverage': 'Team coverage today: {team} ({available} of {members} available)',
+  'briefing.kind.team_coverage': 'Team coverage',
+  'briefing.source.presence': 'Presence',
+  'changes.presence.window': 'Owner availability during the maintenance window',
+  'changes.presence.warning':
+    'The assigned owner may be unavailable during this window. You can continue.',
+  'changes.presence.unknown': 'Availability could not be checked for this window.',
   'briefing.kind.manual_item': 'Manual item',
   'briefing.kind.security_advisory': 'Security advisory',
   'briefing.kind.risk_review_due': 'Risk review',

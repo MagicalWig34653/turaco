@@ -89,6 +89,17 @@ export type Approval = {
 };
 export type Task = { id: string; title: string; status: string; dueAt: string | null };
 export type ChangeDetail = Change & {
+  ownerAvailability?: {
+    userId: string;
+    segments: {
+      from: string;
+      to: string;
+      value: 'available' | 'limited' | 'unavailable' | 'unknown';
+      explanation: string;
+      limitedBy?: string;
+      sources: { source: string; freshness: string; observedAt: string | null }[];
+    }[];
+  };
   affected: Affected[];
   approvals: Approval[];
   tasks: { total: number; open: number; items: Task[] };

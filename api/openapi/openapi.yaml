@@ -10760,6 +10760,34 @@ paths:
         '404': {$ref: '#/components/responses/ChangesNotFound'}
         '409': {$ref: '#/components/responses/ChangesConflict'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /changes/{id}/owner-availability:
+    get:
+      operationId: getChangeOwnerAvailability
+      summary: Check the assigned owner's availability for a proposed maintenance window
+      description: "Requires Change detail access. Reads Presence's scoped public contract and returns no hint when Presence is off or the viewer lacks scope. The result is advisory and never blocks scheduling."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: from, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: Scoped hint, or null when none can be shown.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ownerAvailability]
+                properties:
+                  ownerAvailability:
+                    oneOf:
+                      - $ref: '#/components/schemas/ChangeOwnerAvailability'
+                      - type: 'null'
+        '400': {$ref: '#/components/responses/ChangesInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/ChangesNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /changes/{id}:
     get:
       operationId: getChange
@@ -16606,6 +16634,9 @@ components:
         - $ref: '#/components/schemas/Change'
         - type: object
           properties:
+            ownerAvailability:
+              description: "Scoped Presence window for the assigned owner. Omitted when Presence is disabled, the window has ended, or the viewer is out of scope. No absence reasons are exposed. This hint never blocks a transition."
+              $ref: '#/components/schemas/ChangeOwnerAvailability'
             affected: {type: array, items: {$ref: '#/components/schemas/ChangeAffected'}}
             approvals: {type: array, items: {$ref: '#/components/schemas/ChangeApproval'}}
             tasks:
@@ -16615,6 +16646,31 @@ components:
                 open: {type: integer}
                 items: {type: array, items: {$ref: '#/components/schemas/ChangeTask'}}
             names: {$ref: '#/components/schemas/ChangeNames'}
+    ChangeOwnerAvailability:
+      type: object
+      required: [userId, segments]
+      properties:
+        userId: {type: string, format: uuid}
+        segments:
+          type: array
+          items:
+            type: object
+            required: [from, to, value, explanation, sources]
+            properties:
+              from: {type: string, format: date-time}
+              to: {type: string, format: date-time}
+              value: {type: string, enum: [available, limited, unavailable, unknown]}
+              explanation: {type: string}
+              limitedBy: {type: string}
+              sources:
+                type: array
+                items:
+                  type: object
+                  required: [source, freshness, observedAt]
+                  properties:
+                    source: {type: string}
+                    freshness: {type: string, enum: [manual, fresh, stale]}
+                    observedAt: {type: [string, 'null'], format: date-time}
     ChangeVersion:
       type: object
       required: [expectedVersion]
@@ -17884,7 +17940,7 @@ components:
       additionalProperties: false
       required: [kind, severity, titleKey, params, linkPath, source]
       properties:
-        kind: {type: string, enum: [manual_item, security_advisory, risk_review_due, maintenance, milestone_due, major_incident, ticket_backlog, integration_health, pending_approvals]}
+        kind: {type: string, enum: [manual_item, security_advisory, risk_review_due, maintenance, milestone_due, major_incident, ticket_backlog, integration_health, pending_approvals, team_coverage]}
         severity: {type: string, enum: [info, warning, critical]}
         titleKey: {type: string, description: "Client localization key; clients should use a generic localized fallback for unknown keys."}
         params: {type: object, additionalProperties: true, description: "Localization parameters scoped to records visible to the caller."}
@@ -17899,7 +17955,7 @@ components:
         linkPath: {type: string, description: "Internal path to the authoritative record or filtered list."}
         occurredAt: {type: string, format: date-time}
         dueAt: {type: string, format: date-time}
-        source: {type: string}
+        source: {type: string, description: "Includes presence for scoped Team Coverage counts; no person names or absence reasons."}
     BriefingItem:
       type: object
       additionalProperties: false

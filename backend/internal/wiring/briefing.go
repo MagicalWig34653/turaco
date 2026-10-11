@@ -2,6 +2,7 @@ package wiring
 
 import (
 	"context"
+	"time"
 
 	approvalsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/application"
 	approvalspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/approvals/public"
@@ -11,11 +12,28 @@ import (
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepo "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	planningpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/planning/public"
+	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	securitypublic "github.com/MagicalWig34653/turaco/backend/internal/modules/security/public"
 	deskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type briefingPresence struct {
+	dir      *orgpublic.WorkDirectory
+	presence *presencepublic.Presence
+}
+
+func (b briefingPresence) CurrentTeamIDs(ctx context.Context, userID string) ([]string, error) {
+	return b.dir.CurrentTeamIDs(ctx, userID)
+}
+func (b briefingPresence) TeamNames(ctx context.Context, ids []string) (map[string]string, error) {
+	return b.dir.TeamNames(ctx, ids)
+}
+func (b briefingPresence) TeamCoverage(ctx context.Context, viewer presencepublic.Viewer, teamID string, from, to time.Time, timezone string) (presencepublic.CoverageResult, error) {
+	return b.presence.TeamCoverage(ctx, viewer, teamID, from, to, timezone)
+}
 
 // incidentAnnouncements reads the public Major Incident status unless Service Desk is switched off (ADR-0032); a module
 // whose state cannot be read counts as off.
@@ -38,10 +56,15 @@ func BriefingAnnouncements(pool *pgxpool.Pool, manual *briefingapp.Service, mods
 	return manual.WithIncidents(incidentAnnouncements{desk: deskpublic.NewBriefing(pool), mods: mods})
 }
 
-func BriefingFeed(pool *pgxpool.Pool, manual *briefingapp.Service, mods *modules.Service) *briefingapp.FeedService {
+func BriefingFeed(pool *pgxpool.Pool, manual *briefingapp.Service, mods *modules.Service, presenceConfig ...presenceapp.Config) *briefingapp.FeedService {
 	dir := orgpublic.NewWorkDirectory(orgrepo.New(pool))
+	var presence briefingapp.PresenceFeed
+	if len(presenceConfig) > 0 {
+		presence = briefingPresence{dir: dir, presence: presencepublic.New(Presence(pool, presenceConfig[0]))}
+	}
 	approvals := approvalspublic.New(approvalsapp.NewService(approvalsrepo.New(pool), dir, nil))
 	feed := briefingapp.NewFeedService(manual, briefingapp.FeedSources{
+		Presence: presence,
 		Security: securitypublic.NewAdvisories(Security(pool)), Planning: planningpublic.New(Planning(pool)),
 		Desk: deskpublic.NewBriefing(pool), Endpoints: endpointspublic.NewHealth(pool), Deployments: endpointspublic.NewHealth(pool), Directory: orgpublic.NewSyncHealth(orgrepo.New(pool)), Approvals: approvals,
 	})
@@ -70,6 +93,9 @@ func briefingSourceFilter(mods *modules.Service) func(context.Context, briefinga
 		}
 		if !on("endpoints") {
 			s.Endpoints, s.Deployments = nil, nil
+		}
+		if !on("presence") {
+			s.Presence = nil
 		}
 		return s
 	}

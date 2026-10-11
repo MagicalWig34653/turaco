@@ -15,7 +15,8 @@ export type FeedKind =
   | 'major_incident'
   | 'ticket_backlog'
   | 'integration_health'
-  | 'pending_approvals';
+  | 'pending_approvals'
+  | 'team_coverage';
 
 export type FeedEntry = {
   kind: FeedKind;

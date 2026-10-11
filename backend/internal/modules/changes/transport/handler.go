@@ -9,12 +9,14 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/changes/application"
+	presencepublic "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
@@ -34,13 +36,21 @@ const (
 )
 
 type handler struct {
-	svc    *application.Service
-	logger *slog.Logger
+	svc      *application.Service
+	logger   *slog.Logger
+	presence interface {
+		AvailabilityWindow(context.Context, presencepublic.Viewer, string, time.Time, time.Time, presencepublic.Need) (presencepublic.WindowResult, error)
+	}
 }
 
 // Register mounts the Changes routes.
-func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger, presence ...interface {
+	AvailabilityWindow(context.Context, presencepublic.Viewer, string, time.Time, time.Time, presencepublic.Need) (presencepublic.WindowResult, error)
+}) {
 	h := &handler{svc: svc, logger: logger}
+	if len(presence) > 0 {
+		h.presence = presence[0]
+	}
 	signedIn := authorization.RequireAuthenticated(auth)
 	manage := authorization.Require(auth, permManage)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
@@ -51,6 +61,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/changes", manage, h.create)
 	route("GET /api/v1/changes/affected-lookup", manage, h.affectedLookup)
 	route("GET /api/v1/changes/{id}", signedIn, h.get)
+	route("GET /api/v1/changes/{id}/owner-availability", signedIn, h.ownerAvailability)
 	route("PATCH /api/v1/changes/{id}", manage, h.update)
 	route("POST /api/v1/changes/{id}/affected", manage, h.addAffected)
 	route("DELETE /api/v1/changes/{id}/affected/{type}/{resourceId}", manage, h.removeAffected)

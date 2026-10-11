@@ -24,6 +24,7 @@ const titles: Record<string, MessageKey> = {
   'briefing.feed.deployment_engine_resolving_stuck':
     'briefing.feed.deployment_engine_resolving_stuck',
   'briefing.feed.pending_approvals': 'briefing.feed.pending_approvals',
+  'briefing.feed.team_coverage': 'briefing.feed.team_coverage',
 };
 
 export function resolveFeedTitle(entry: FeedEntry): { key: MessageKey; params: MessageParams } {
@@ -81,6 +82,7 @@ export const feedSources: Record<string, MessageKey> = {
   approvals: 'briefing.source.approvals',
   pending_approvals: 'briefing.source.approvals',
   ticket_backlog: 'briefing.source.servicedesk',
+  presence: 'briefing.source.presence',
 };
 
 export function sourceKey(source: string): MessageKey {
