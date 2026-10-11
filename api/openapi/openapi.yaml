@@ -5144,6 +5144,7 @@ paths:
                         actorId: {type: string, format: uuid}
                         via: {type: string}
                         reason: {type: string}
+                        expectedAt: {type: string, format: date-time, description: "Expected date supplied to Wait, when present."}
                         fromUserId: {type: string}
                         toUserId: {type: string}
                         fromTeamId: {type: string}
@@ -5593,7 +5594,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TicketTransition'
+              $ref: '#/components/schemas/TicketWait'
       responses:
         '200':
           description: The ticket.
@@ -9254,6 +9255,36 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /admin/health/probe:
+    post:
+      operationId: probeAdminHealth
+      summary: Run one explicit connection probe.
+      description: "Requires elevated `platform.health.probe`. Body names one supported check. At most one attempt per check per minute across API processes; the read-only provider call is bounded to 5 seconds. The sanitized outcome is stored and audited as `platform.health.probe_run`. Page views never probe. Currently supported: configured Intune Graph read provider only."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [check]
+              properties:
+                check: {type: string, enum: [intune]}
+      responses:
+        '200':
+          description: Sanitized probe result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthProbeResult'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429':
+          description: The check was probed within the last minute (`health.probe_rate_limited`).
         '500': {$ref: '#/components/responses/InternalError'}
   /admin/health:
     get:
@@ -18848,7 +18879,7 @@ components:
     Ticket:
       type: object
       additionalProperties: false
-      required: [id, reference, title, description, status, waitingReason, statusReason, resolution, priority, reporterId, affectedUserId, queueTeamId, assigneeId, assetId, majorIncidentId, deviceSnapshot, resolvedAt, closedAt, version, createdAt, updatedAt]
+      required: [id, reference, title, description, status, waitingReason, waitingUntil, statusReason, resolution, priority, reporterId, affectedUserId, queueTeamId, assigneeId, assetId, majorIncidentId, deviceSnapshot, resolvedAt, closedAt, version, createdAt, updatedAt]
       properties:
         impact: {type: [string, "null"], enum: [patient_care, blocked, impaired, request, null], description: "The impact the reporter chose in the report form."}
         patientImpact: {type: boolean, description: "The reporter said that patient care is affected (it raised an employee's priority to high at creation)."}
@@ -18860,6 +18891,7 @@ components:
         description: {type: [string, "null"]}
         status: {type: string, enum: [new, open, in_progress, waiting, resolved, closed, cancelled]}
         waitingReason: {type: [string, "null"], enum: [customer, vendor, external_service, scheduled_change, hardware, null]}
+        waitingUntil: {type: [string, "null"], format: date-time, description: "Optional expected date while waiting; null in every other status."}
         statusReason: {type: [string, "null"]}
         resolution: {type: [string, "null"]}
         priority: {type: string, enum: [low, normal, high, urgent]}
@@ -19061,6 +19093,14 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         priority: {type: string, enum: [low, normal, high, urgent]}
+    TicketWait:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        reason: {type: string, enum: [customer, vendor, external_service, scheduled_change, hardware]}
+        expectedAt: {type: string, format: date-time, description: "Optional future instant. Recorded in audit/history; cleared when the Ticket leaves waiting."}
     TicketTransition:
       type: object
       additionalProperties: false
@@ -21466,6 +21506,14 @@ components:
         minimumDays: {type: integer}
         policy: {type: string, enum: [keep, purge]}
         oldestEventAt: {type: string, format: date-time}
+    HealthProbeResult:
+      type: object
+      additionalProperties: false
+      required: [status, attemptedAt]
+      properties:
+        status: {type: string, enum: [ok, failing, unknown]}
+        attemptedAt: {type: string, format: date-time}
+        errorCode: {type: string, description: Sanitized machine code; raw provider errors are never returned.}
     HealthResult:
       type: object
       additionalProperties: false
@@ -21475,6 +21523,8 @@ components:
         category: {type: string, enum: [system, integration, module]}
         status: {type: string, enum: [ok, stale, fake, not_configured, disabled, failing, unknown]}
         mode: {type: string, enum: [real, fake, not_configured]}
+        probeSupported: {type: boolean, description: Whether this configured provider exposes an explicit read-only probe.}
+        probe: {$ref: '#/components/schemas/HealthProbeResult'}
         observedAt: {type: string, format: date-time}
         lastSuccessAt: {type: string, format: date-time}
         lastAttemptAt: {type: string, format: date-time}

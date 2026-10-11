@@ -8,10 +8,14 @@ registerErrorMessages({
   'health.version_conflict': 'health.error.versionConflict',
   'health.not_confirmable': 'health.error.notConfirmable',
   'health.not_found': 'health.error.notFound',
+  'health.probe_rate_limited': 'health.error.probeRateLimited',
+  'health.probe_unsupported': 'health.error.probeUnsupported',
   'health.invalid_request': 'health.error.invalidRequest',
 });
 
 export const healthApi = {
+  probe: (check: string) =>
+    api.post<{ status: string; attemptedAt: string }>('/admin/health/probe', { check }),
   health: (signal?: Signal) => api.get<HealthReport>('/admin/health', { signal }),
   integrations: (signal?: Signal) => api.get<HealthReport>('/admin/integrations', { signal }),
   system: (signal?: Signal) => api.get<SystemInfo>('/admin/system', { signal }),

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"slices"
 )
 
@@ -181,6 +182,7 @@ type Capabilities struct {
 // Provider is the port to a model runtime (A4). Adapters only translate wire formats; vendor types never leave
 // the adapter.
 type Provider interface {
+	Mode() health.Mode
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
 	Capabilities() Capabilities
 }

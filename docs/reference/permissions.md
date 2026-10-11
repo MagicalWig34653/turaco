@@ -50,6 +50,7 @@
 | `platform.admin` | high | Administer platform-wide configuration. |
 | `platform.audit.export` | high | Export audit events as CSV (at most 92 days and 10000 events per export, 5 exports per hour; every export is itself audited). Also needs platform.audit.view; the detail columns (before, after, metadata) are included on request. |
 | `platform.audit.view` | elevated | Query the audit log. |
+| `platform.health.probe` | elevated | Run a bounded, audited connection probe for a supported health check (at most once per check per minute). |
 | `platform.health.view` | elevated | See the setup checklist, the integration and system health pages including error codes and the names of configuration keys (never values). Skipping or confirming setup items needs platform.admin. |
 | `platform.roles.manage` | high | Create, change and delete roles and assign or revoke them; equivalent to administrator access. |
 | `platform.roles.view` | normal | View roles, permissions and role assignments. |

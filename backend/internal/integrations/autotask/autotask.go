@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"sync"
 )
 
@@ -28,6 +29,7 @@ var ErrNotConfigured = errors.New("autotask: the REST client is not configured")
 
 // Gateway creates or updates Autotask tickets.
 type Gateway interface {
+	Mode() health.Mode
 	// Upsert creates the Autotask ticket (externalID empty) or updates it and returns its id.
 	// A permanent error (rejected data) is reported as *Error with Permanent set.
 	Upsert(ctx context.Context, t Ticket, externalID string) (string, error)
@@ -45,6 +47,8 @@ func (e *Error) Error() string { return e.Message }
 // which the Service Desk shows as a failed synchronization.
 type NotConfigured struct{}
 
+func (NotConfigured) Mode() health.Mode { return health.ModeNotConfigured }
+
 func (NotConfigured) Upsert(context.Context, Ticket, string) (string, error) {
 	return "", &Error{Message: ErrNotConfigured.Error(), Permanent: true}
 }
@@ -61,6 +65,8 @@ type Fake struct {
 }
 
 func NewFake() *Fake { return &Fake{Tickets: map[string]Ticket{}} }
+
+func (f *Fake) Mode() health.Mode { return health.ModeFake }
 
 func (f *Fake) Upsert(_ context.Context, t Ticket, externalID string) (string, error) {
 	f.mu.Lock()

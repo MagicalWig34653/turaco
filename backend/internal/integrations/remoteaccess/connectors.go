@@ -2,6 +2,7 @@ package remoteaccess
 
 import (
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"regexp"
 )
 
@@ -50,6 +51,8 @@ func ValidPeerID(provider, id string) bool {
 
 // launchOnly is a connector that implements launching only (observations unsupported).
 type launchOnly struct{ key string }
+
+func (l launchOnly) Mode() health.Mode { return health.ModeReal }
 
 func (l launchOnly) Key() string                { return l.key }
 func (l launchOnly) Capabilities() Capabilities { return Capabilities{Attended: true} }

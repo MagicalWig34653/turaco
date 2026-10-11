@@ -47,6 +47,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Supplier** — organization goods/services are purchased from.
 
 ## Service management
+- **Waiting Until** — optional future date and time expected for a waiting Ticket; an estimate, not a Task due date. Cleared when the Ticket leaves waiting.
 - **Field Catalog** — module-declared list fields and their caller-visible filter, sort and search operators; SQL expressions stay server-owned.
 - **Filter AST** — versioned tree of conditions and AND/OR groups evaluated under the caller's resource scope.
 - **Saved View** — stored query intent (Filter AST, sort, columns) of one resource with an owner and a version; never results and never a grant of row access: it always runs as the viewer, through the owning module's query endpoint (`platform/views`, F13 Q-B).

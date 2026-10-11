@@ -2043,6 +2043,9 @@ export const de: Record<MessageKey, string> = {
   'tickets.action.assign': 'Zuweisen',
   'tickets.action.start': 'Bearbeitung starten',
   'tickets.action.wait': 'Auf Rückmeldung warten',
+  'tickets.wait.expectedAt': 'Erwarteter Termin (optional)',
+  'tickets.wait.expectedAt.hint':
+    'Ein zukünftiges Datum mit Uhrzeit, zum Beispiel der erwartete Liefertermin.',
   'tickets.wait.note': 'Notiz (optional)',
   'tickets.wait.note.hint':
     'Wird direkt nach dem Setzen des Wartestatus als Kommentar gespeichert.',
@@ -6126,6 +6129,11 @@ export const de: Record<MessageKey, string> = {
   'query.enum.directory': 'Verzeichnis',
   'query.enum.local': 'Lokales Konto',
   'query.enum.emergency': 'Notfallkonto',
+  'health.probe.now': 'Jetzt prüfen',
+  'health.probe.last': 'Letzte Prüfung',
+  'health.error.probeRateLimited': 'Diese Verbindung wurde innerhalb der letzten Minute geprüft.',
+  'health.error.probeUnsupported':
+    'Für diese Prüfung ist keine aktive Verbindungsmessung verfügbar.',
   'health.title': 'Plattform-Zustand',
   'health.intro':
     'Prüfungen der Plattform, ihrer Integrationen und Module. Jeder Status außer OK verdient einen Blick; eine nicht konfigurierte Prüfung bedeutet, dass die Funktion nicht arbeitet.',
@@ -6207,6 +6215,7 @@ export const de: Record<MessageKey, string> = {
     'Die gespeicherten Zustellungen konnten nicht gelesen werden.',
   'health.check.modules': 'Module',
   'health.check.modules.about': 'Ausgeschaltete Module und fehlende Voraussetzungen.',
+  'health.error.connection_failed': 'Die Verbindungsprüfung ist fehlgeschlagen.',
   'health.error.generic': 'Der letzte Versuch war nicht erfolgreich.',
   'health.error.unreadable':
     'Die gespeicherten Fakten für diese Prüfung konnten nicht gelesen werden.',

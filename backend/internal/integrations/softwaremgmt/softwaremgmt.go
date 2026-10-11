@@ -18,6 +18,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"slices"
 	"strings"
 	"sync"
@@ -105,6 +106,7 @@ type PackageRecord struct {
 
 // Provider is the Software Management Provider port.
 type Provider interface {
+	Mode() health.Mode
 	// SearchCatalog returns at most a bounded number of catalog entries matching query.
 	SearchCatalog(ctx context.Context, query string) ([]CatalogEntry, error)
 	// Package packages a Software Version. It is idempotent per opKey.
@@ -118,6 +120,8 @@ type Provider interface {
 
 // NotConfigured is the placeholder provider: every call fails with ErrNotConfigured.
 type NotConfigured struct{}
+
+func (NotConfigured) Mode() health.Mode { return health.ModeNotConfigured }
 
 func (NotConfigured) SearchCatalog(context.Context, string) ([]CatalogEntry, error) {
 	return nil, ErrNotConfigured
@@ -287,6 +291,8 @@ func (f *Fake) begin(op string) error {
 	}
 	return f.failOp[op]
 }
+
+func (f *Fake) Mode() health.Mode { return health.ModeFake }
 
 func (f *Fake) SearchCatalog(_ context.Context, query string) ([]CatalogEntry, error) {
 	f.mu.Lock()

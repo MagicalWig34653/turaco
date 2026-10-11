@@ -13,6 +13,8 @@ export type NextStep = {
 
 export type HealthResult = {
   key: string;
+  probeSupported?: boolean;
+  probe?: { status: HealthStatus; attemptedAt: string; errorCode?: string };
   category: 'system' | 'integration' | 'module';
   status: HealthStatus;
   mode?: 'real' | 'fake' | 'not_configured';

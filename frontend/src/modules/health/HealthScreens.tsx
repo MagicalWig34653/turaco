@@ -1,4 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useSession } from '../../platform/session/SessionProvider';
+import { asApiError } from '../../platform/api/useAsync';
+import type { ApiError } from '../../platform/api/client';
 import { useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Alert } from '../../platform/ui/Alert';
@@ -45,6 +48,21 @@ function ReportView({
 }) {
   const { t } = useI18n();
   const report = useAsync(load, []);
+  const { can } = useSession();
+  const [probing, setProbing] = useState<string | null>(null);
+  const [probeError, setProbeError] = useState<ApiError | undefined>();
+  const runProbe = async (key: string) => {
+    setProbing(key);
+    setProbeError(undefined);
+    try {
+      await healthApi.probe(key);
+      report.reload();
+    } catch (cause) {
+      setProbeError(asApiError(cause));
+    } finally {
+      setProbing(null);
+    }
+  };
   return (
     <div className="health-screen">
       <PageHeader
@@ -54,6 +72,7 @@ function ReportView({
       />
       <p className="health-meta">{t('health.cacheNote')}</p>
       {report.error ? <ApiErrorAlert error={report.error} onRetry={report.reload} /> : null}
+      {probeError ? <ApiErrorAlert error={probeError} /> : null}
       {report.loading && !report.data ? <Skeleton lines={4} /> : null}
       {report.data ? (
         <>
@@ -66,7 +85,14 @@ function ReportView({
                 <h2 id={`health-group-${group}`}>{t(`health.group.${group}`)}</h2>
                 <ul className="health-cards">
                   {items.map((item) => (
-                    <CheckCard key={item.key} result={item} />
+                    <CheckCard
+                      key={item.key}
+                      result={item}
+                      probing={probing === item.key}
+                      {...(can('platform.health.probe')
+                        ? { onProbe: (key: string) => void runProbe(key) }
+                        : {})}
+                    />
                   ))}
                 </ul>
               </section>

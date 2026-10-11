@@ -53,6 +53,7 @@ type Ticket struct {
 	Description     *string
 	Status          string
 	WaitingReason   *string
+	WaitingUntil    *time.Time
 	StatusReason    *string
 	Resolution      *string
 	Priority        string

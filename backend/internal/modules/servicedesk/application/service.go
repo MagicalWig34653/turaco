@@ -64,7 +64,7 @@ func state(t *Ticket) any {
 	if t == nil {
 		return nil
 	}
-	return map[string]any{"status": t.Status, "priority": t.Priority, "assignee": t.AssigneeID, "queue": t.QueueTeamID, "queueId": t.QueueID, "waitingReason": t.WaitingReason, "version": t.Version}
+	return map[string]any{"status": t.Status, "priority": t.Priority, "assignee": t.AssigneeID, "queue": t.QueueTeamID, "queueId": t.QueueID, "waitingReason": t.WaitingReason, "waitingUntil": t.WaitingUntil, "version": t.Version}
 }
 
 func record(ctx context.Context, tx pgx.Tx, c Caller, action string, before, after *Ticket, meta map[string]any) error {
@@ -386,7 +386,8 @@ func (s *Service) work(ctx context.Context, tx pgx.Tx, p Principal, m membership
 type Params struct {
 	// Reason is the waiting reason code for wait, the resolution text for resolve and the
 	// reason for reopen and cancel.
-	Reason string
+	Reason     string
+	ExpectedAt *time.Time // optional future instant for Wait only
 }
 
 // Transition performs a lifecycle operation. People who work the Ticket's Queue (tickets.manage or a work grant)
@@ -395,6 +396,9 @@ type Params struct {
 func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id string, expected *int, op string, params Params) (Ticket, error) {
 	if err := c.validate(); err != nil {
 		return Ticket{}, err
+	}
+	if op != OpWait && params.ExpectedAt != nil {
+		return Ticket{}, invalid("expectedAt is only accepted by wait")
 	}
 	r, ok := rules[op]
 	if !ok {
@@ -407,6 +411,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 			return Ticket{}, invalid("waiting reason must be one of %s", strings.Join(WaitingReasons, ", "))
 		}
 		text = params.Reason
+		if params.ExpectedAt != nil && !params.ExpectedAt.After(time.Now()) {
+			return Ticket{}, invalid("expectedAt must be in the future")
+		}
 	case op == OpResolve:
 		t, err := cleanText(params.Reason, maxText, true, "resolution")
 		if err != nil {
@@ -442,11 +449,18 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 			return &InvalidTransitionError{Operation: op, From: cur.Status}
 		}
 		next := cur
-		next.Status, next.WaitingReason, next.StatusReason = r.to, nil, nil
+		next.Status, next.WaitingReason, next.WaitingUntil, next.StatusReason = r.to, nil, nil, nil
 		now := time.Now().UTC()
 		switch op {
 		case OpWait:
+			if params.ExpectedAt != nil && !params.ExpectedAt.After(now) {
+				return invalid("expectedAt must be in the future")
+			}
 			next.WaitingReason = &text
+			if params.ExpectedAt != nil {
+				date := params.ExpectedAt.UTC()
+				next.WaitingUntil = &date
+			}
 		case OpResolve:
 			next.Resolution, next.ResolvedAt = &text, &now
 		case OpClose:
@@ -467,6 +481,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		meta := map[string]any{"operation": op}
 		if op == OpWait || op == OpReopen || op == OpCancel {
 			meta["reason"] = text
+		}
+		if op == OpWait && next.WaitingUntil != nil {
+			meta["expectedAt"] = next.WaitingUntil
 		}
 		if err := record(ctx, tx, c, "servicedesk.ticket."+op, &cur, &out, meta); err != nil {
 			return err
@@ -751,7 +768,7 @@ func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Princi
 		}
 		if owner && !ep.Manage && cur.Status == StatusWaiting && cur.WaitingReason != nil && *cur.WaitingReason == "customer" {
 			next := cur
-			next.Status, next.WaitingReason = StatusInProgress, nil
+			next.Status, next.WaitingReason, next.WaitingUntil = StatusInProgress, nil, nil
 			after, err := s.store.UpdateTx(ctx, tx, next)
 			if err != nil {
 				return err

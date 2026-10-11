@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"io"
 	"net/http"
 	"net/url"
@@ -357,6 +358,8 @@ func (c *REST) call(ctx context.Context, method, path string, query url.Values, 
 
 // Upsert implements Gateway. externalID is the Autotask ticket id (decimal); empty creates, after looking the
 // Turaco reference up.
+func (c *REST) Mode() health.Mode { return health.ModeReal }
+
 func (c *REST) Upsert(ctx context.Context, t Ticket, externalID string) (string, error) {
 	if !referenceR.MatchString(t.Reference) {
 		return "", permanent("the ticket reference is not a valid external id")

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/advisories"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 )
 
 // DefaultBaseURL is the production endpoint.
@@ -129,6 +130,8 @@ var _ advisories.Syncer = (*Client)(nil)
 var _ advisories.Provider = (*Client)(nil)
 
 // Advisories implements advisories.Provider: the records of one bounded Sync.
+func (c *Client) Mode() health.Mode { return health.ModeReal }
+
 func (c *Client) Advisories(ctx context.Context, since time.Time) ([]advisories.AdvisoryRecord, error) {
 	res, err := c.Sync(ctx, since)
 	return res.Records, err
