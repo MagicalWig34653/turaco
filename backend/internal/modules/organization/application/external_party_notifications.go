@@ -53,8 +53,8 @@ func NotificationCategories() []notifications.Category {
 	const account, party = "/sponsored-parties?account={id}", "/sponsored-parties?party={id}"
 	return []notifications.Category{
 		cat(NotificationAccessExpiring, LinkSponsoredAccount, account,
-			"External access ends soon: %s", "The access of an external account you sponsor ends soon:",
-			"Externer Zugang endet bald: %s", "Der Zugang eines externen Kontos, für das Sie verantwortlich sind, endet bald:"),
+			"External access ends soon: %s", "The access of an external account ends soon:",
+			"Externer Zugang endet bald: %s", "Der Zugang eines externen Kontos endet bald:"),
 		cat(NotificationAccessExpired, LinkSponsoredAccount, account,
 			"External access ended: %s", "The access of an external account you sponsor ended:",
 			"Externer Zugang beendet: %s", "Der Zugang eines externen Kontos, für das Sie verantwortlich sind, ist beendet:"),
@@ -78,7 +78,7 @@ type PartyNotificationStore interface {
 	// AccountContextTx returns the display name of an external account, the name of its party and the party's
 	// current sponsor. found is false for an unknown account.
 	AccountContextTx(ctx context.Context, tx pgx.Tx, accountID string) (c PartyNotificationContext, found bool, err error)
-	// PartyContextTx returns the name and current sponsor of a party.
+	// PartyContextTx returns the name, current sponsor and active state of a party.
 	PartyContextTx(ctx context.Context, tx pgx.Tx, partyID string) (c PartyNotificationContext, found bool, err error)
 	// IsActiveEmployeeTx reports whether the user is an active internal employee account.
 	IsActiveEmployeeTx(ctx context.Context, tx pgx.Tx, userID string) (bool, error)
@@ -89,6 +89,7 @@ type PartyNotificationContext struct {
 	AccountName string
 	PartyName   string
 	SponsorID   string
+	PartyActive bool
 }
 
 // PartyNotifier creates notifications inside the consumer's transaction (platform/notifications.Service).
@@ -170,8 +171,8 @@ func (c *PartyConsumers) OnAccessExtended(ctx context.Context, tx pgx.Tx, ev eve
 		pc.SponsorID)
 }
 
-// OnSponsorChanged (event ExternalPartySponsorChanged) tells the new sponsor and the previous one. A stale event
-// (the sponsor changed again meanwhile) does not tell the new sponsor.
+// OnSponsorChanged (event ExternalPartySponsorChanged) tells the new sponsor and the previous one only while
+// each message still describes the party's current sponsorship.
 func (c *PartyConsumers) OnSponsorChanged(ctx context.Context, tx pgx.Tx, ev events.OutboxEvent) error {
 	var p struct {
 		PartyID           string `json:"partyId"`
@@ -191,7 +192,10 @@ func (c *PartyConsumers) OnSponsorChanged(ctx context.Context, tx pgx.Tx, ev eve
 			return err
 		}
 	}
-	return c.notify(ctx, tx, ev, NotificationSponsorRemoved, "", "", params, p.PreviousSponsorID)
+	if pc.SponsorID != p.PreviousSponsorID {
+		return c.notify(ctx, tx, ev, NotificationSponsorRemoved, "", "", params, p.PreviousSponsorID)
+	}
+	return nil
 }
 
 // OnPartyDeactivated (event ExternalPartyDeactivated) tells the sponsor when somebody else deactivated the party.
@@ -205,6 +209,9 @@ func (c *PartyConsumers) OnPartyDeactivated(ctx context.Context, tx pgx.Tx, ev e
 	pc, found, err := c.store.PartyContextTx(ctx, tx, p.PartyID)
 	if err != nil || !found {
 		return err
+	}
+	if pc.PartyActive {
+		return nil
 	}
 	return c.notify(ctx, tx, ev, NotificationPartyDeactivated, LinkSponsoredParty, p.PartyID,
 		map[string]any{"title": pc.PartyName}, pc.SponsorID)

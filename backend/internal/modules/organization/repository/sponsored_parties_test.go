@@ -72,6 +72,26 @@ func TestApplicationListSponsoredNeedsASession(t *testing.T) {
 	}
 }
 
+func TestEmergencyAccountIsNotAnActiveEmployeeRecipient(t *testing.T) {
+	f := newPartyFix(t)
+	ctx := context.Background()
+	var id string
+	if err := f.pool.QueryRow(ctx, `INSERT INTO organization.users(display_name, origin, account_kind, status) VALUES ($1, 'emergency', 'employee', 'active') RETURNING id::text`, f.pfx+" Emergency").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	f.cleanupUser(id)
+	err := pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
+		active, err := f.repo.IsActiveEmployeeTx(ctx, tx, id)
+		if err == nil && active {
+			t.Error("emergency account selected as a notification recipient")
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (f *partyFix) outbox(eventType, key, value string) []map[string]any {
 	f.t.Helper()
 	ctx := context.Background()
@@ -220,8 +240,25 @@ func TestPartyConsumersNotifyTheSponsor(t *testing.T) {
 	if got := take(); len(got) != 0 { // previous sponsor "gone" is inactive
 		t.Errorf("stale hand-over = %v", got)
 	}
+	// In A->B->A, the delayed A->B event must not tell A that sponsorship was removed.
+	returned, err := f.repo.UpdateExternalParty(ctx, f.manage, party.ID, application.ExternalPartyChange{ExpectedVersion: party.Version + 1, SponsorUserID: &sponsor.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(consumers.OnSponsorChanged, "ev-6-return", "ExternalPartySponsorChanged", adminPtr, change)
+	if got := take(); len(got) != 0 {
+		t.Errorf("stale A->B after return to A = %v", got)
+	}
+	if _, err := f.repo.UpdateExternalParty(ctx, f.manage, party.ID, application.ExternalPartyChange{ExpectedVersion: returned.Version, SponsorUserID: &next.ID}); err != nil {
+		t.Fatal(err)
+	}
 
 	// Deactivation tells the current sponsor, never the person who did it.
+	off := false
+	deactivated, err := f.repo.UpdateExternalParty(ctx, f.manage, party.ID, application.ExternalPartyChange{ExpectedVersion: returned.Version + 1, Active: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
 	run(consumers.OnPartyDeactivated, "ev-7", "ExternalPartyDeactivated", adminPtr, map[string]any{"partyId": party.ID})
 	if got := take(); len(got) != 1 || got[0] != application.NotificationPartyDeactivated+">"+next.ID {
 		t.Errorf("deactivated = %v", got)
@@ -229,6 +266,18 @@ func TestPartyConsumersNotifyTheSponsor(t *testing.T) {
 	run(consumers.OnPartyDeactivated, "ev-8", "ExternalPartyDeactivated", &next.ID, map[string]any{"partyId": party.ID})
 	if got := take(); len(got) != 0 {
 		t.Errorf("deactivated by the sponsor = %v", got)
+	}
+	on := true
+	reactivated, err := f.repo.UpdateExternalParty(ctx, f.manage, party.ID, application.ExternalPartyChange{ExpectedVersion: deactivated.Version, Active: &on})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(consumers.OnPartyDeactivated, "ev-8-stale", "ExternalPartyDeactivated", adminPtr, map[string]any{"partyId": party.ID})
+	if got := take(); len(got) != 0 {
+		t.Errorf("stale deactivation after reactivation = %v", got)
+	}
+	if _, err := f.repo.UpdateExternalParty(ctx, f.manage, party.ID, application.ExternalPartyChange{ExpectedVersion: reactivated.Version, Active: &off}); err != nil {
+		t.Fatal(err)
 	}
 
 	// A sponsor who is no longer an active employee receives nothing.
@@ -240,7 +289,7 @@ func TestPartyConsumersNotifyTheSponsor(t *testing.T) {
 		t.Errorf("inactive sponsor = %v", got)
 	}
 	// A malformed payload is a permanent failure, not a retry loop.
-	err := pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
 		return consumers.OnPartyDeactivated(ctx, tx, events.OutboxEvent{ID: "ev-10", Payload: []byte(`[`)})
 	})
 	if err == nil || !events.IsPermanent(err) {

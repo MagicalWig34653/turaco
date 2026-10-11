@@ -120,7 +120,7 @@ func (r *Repository) RemindSponsors(ctx context.Context, now time.Time, leadDays
 			from = now.AddDate(0, 0, leads[i+1])
 		}
 		rows, err := r.pool.Query(ctx, `
-			SELECT u.id::text, u.display_name, u.access_expires_at, p.sponsor_user_id::text
+			SELECT u.id::text, u.display_name, u.access_expires_at, p.id::text
 			FROM organization.users u JOIN organization.external_parties p ON p.id = u.external_party_id
 			WHERE u.account_kind = 'external' AND u.status = 'active' AND u.access_expires_at > $1 AND u.access_expires_at <= $2
 			ORDER BY u.access_expires_at, u.id LIMIT $3`, from, horizon, limit)
@@ -128,13 +128,13 @@ func (r *Repository) RemindSponsors(ctx context.Context, now time.Time, leadDays
 			return created, fmt.Errorf("find expiring external accounts: %w", err)
 		}
 		type due struct {
-			id, name, sponsor string
-			ends              time.Time
+			id, name, party string
+			ends            time.Time
 		}
 		var list []due
 		for rows.Next() {
 			var d due
-			if err := rows.Scan(&d.id, &d.name, &d.ends, &d.sponsor); err != nil {
+			if err := rows.Scan(&d.id, &d.name, &d.ends, &d.party); err != nil {
 				rows.Close()
 				return created, fmt.Errorf("find expiring external accounts: scan: %w", err)
 			}
@@ -145,17 +145,43 @@ func (r *Repository) RemindSponsors(ctx context.Context, now time.Time, leadDays
 			return created, fmt.Errorf("find expiring external accounts: %w", err)
 		}
 		for _, d := range list {
-			// One notification per sponsor, account, lead time and end date: an extension changes the end date and
-			// so starts a fresh series; retries and parallel workers cannot send it twice.
+			// An extension changes the end date and starts a fresh series. The notifier enforces the durable key.
 			key := "access-expiring:" + d.id + ":" + strconv.Itoa(lead) + ":" + strconv.FormatInt(d.ends.Unix(), 10)
 			err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-				ok, err := r.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: d.sponsor, Category: application.NotificationAccessExpiring,
-					Params:   map[string]any{"title": d.name, "accessExpiresAt": d.ends.UTC().Format(time.RFC3339), "leadDays": lead},
-					LinkType: application.LinkSponsoredAccount, LinkID: d.id, DedupeKey: key})
-				if ok {
-					created++
+				sponsor, _, err := lockedPartySponsor(ctx, tx, d.party)
+				if err != nil {
+					return err
 				}
-				return err
+				active, err := r.IsActiveEmployeeTx(ctx, tx, sponsor)
+				if err != nil {
+					return err
+				}
+				recipients := []string{sponsor}
+				if !active {
+					recipients, err = reminderManagers(ctx, tx)
+					if err != nil {
+						return err
+					}
+				}
+				for _, recipient := range recipients {
+					dedupe := key
+					linkType, linkID := application.LinkSponsoredAccount, d.id
+					if !active {
+						dedupe += ":" + recipient
+						// Managers who are not sponsors cannot open the sponsor-only page.
+						linkType, linkID = "", ""
+					}
+					ok, err := r.notifier.Create(ctx, tx, notifications.Intent{RecipientUserID: recipient, Category: application.NotificationAccessExpiring,
+						Params:   map[string]any{"title": d.name, "accessExpiresAt": d.ends.UTC().Format(time.RFC3339), "leadDays": lead},
+						LinkType: linkType, LinkID: linkID, DedupeKey: dedupe})
+					if err != nil {
+						return err
+					}
+					if ok {
+						created++
+					}
+				}
+				return nil
 			})
 			if err != nil {
 				return created, fmt.Errorf("remind sponsor: %w", err)
@@ -163,4 +189,32 @@ func (r *Repository) RemindSponsors(ctx context.Context, now time.Time, leadDays
 		}
 	}
 	return created, nil
+}
+
+// reminderManagers resolves effective global manage grants, including the built-in administrator role and
+// currently observed directory group membership. Emergency accounts cannot be fallback recipients.
+func reminderManagers(ctx context.Context, tx pgx.Tx) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		WITH RECURSIVE member_groups(user_id, group_id) AS (
+			SELECT m.user_id, m.group_id FROM organization.directory_group_memberships m
+			JOIN organization.directory_groups g ON g.id = m.group_id AND g.deleted_observed_at IS NULL
+			WHERE m.observed_until IS NULL
+			UNION
+			SELECT member_groups.user_id, n.parent_group_id FROM member_groups
+			JOIN organization.directory_group_nesting n ON n.child_group_id = member_groups.group_id AND n.observed_until IS NULL
+			JOIN organization.directory_groups g ON g.id = n.parent_group_id AND g.deleted_observed_at IS NULL
+		)
+		SELECT u.id::text FROM organization.users u
+		WHERE u.status = 'active' AND u.account_kind = 'employee' AND u.origin <> 'emergency'
+		  AND EXISTS (
+			SELECT 1 FROM platform.role_assignments a JOIN platform.roles r ON r.id = a.role_id AND r.deleted_at IS NULL
+			WHERE a.revoked_at IS NULL AND a.scope = 'global' AND (a.expires_at IS NULL OR a.expires_at > now())
+			  AND (r.built_in OR EXISTS (SELECT 1 FROM platform.role_permissions rp WHERE rp.role_id = r.id AND rp.permission = 'organization.external_parties.manage'))
+			  AND ((a.subject_type = 'user' AND a.subject_id = u.id)
+			    OR (a.subject_type = 'directory_group' AND EXISTS (SELECT 1 FROM member_groups g WHERE g.user_id = u.id AND g.group_id = a.subject_id)))
+		  ) ORDER BY u.id`)
+	if err != nil {
+		return nil, fmt.Errorf("find external party managers: %w", err)
+	}
+	return collectStrings(rows, "find external party managers")
 }

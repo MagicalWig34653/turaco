@@ -248,12 +248,16 @@ func requirePartyActive(ctx context.Context, tx pgx.Tx, id string) error {
 	return nil
 }
 
-// partySponsor returns the sponsor of the party of an external account.
-func partySponsor(ctx context.Context, tx pgx.Tx, partyID string) (string, error) {
+// lockedPartySponsor reads sponsor and activity under one row lock for sponsor authorization.
+func lockedPartySponsor(ctx context.Context, tx pgx.Tx, partyID string) (string, bool, error) {
 	var sponsor string
-	err := tx.QueryRow(ctx, `SELECT sponsor_user_id::text FROM organization.external_parties WHERE id = $1::uuid`, partyID).Scan(&sponsor)
-	if err != nil {
-		return "", fmt.Errorf("load sponsor: %w", err)
+	var active bool
+	err := tx.QueryRow(ctx, `SELECT sponsor_user_id::text, active FROM organization.external_parties WHERE id = $1::uuid FOR SHARE`, partyID).Scan(&sponsor, &active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, application.ErrForbidden
 	}
-	return sponsor, nil
+	if err != nil {
+		return "", false, fmt.Errorf("load sponsor: %w", err)
+	}
+	return sponsor, active, nil
 }

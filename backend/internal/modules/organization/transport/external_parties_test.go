@@ -1,10 +1,51 @@
 package transport
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
+
+type externalTestSession struct{ userID string }
+
+func (s externalTestSession) Authenticate(context.Context, string) (authentication.Session, error) {
+	return authentication.Session{ID: "external-test-session", UserID: s.userID, AuthMethod: "directory"}, nil
+}
+
+type externalTestAccount struct{}
+
+func (externalTestAccount) IsActive(context.Context, string) (bool, error) { return true, nil }
+func (externalTestAccount) Account(context.Context, string) (authentication.AccountState, error) {
+	return authentication.AccountState{Active: true, External: true}, nil
+}
+
+func TestExternalSessionCannotUseSponsorRoutes(t *testing.T) {
+	h := newPeopleHTTP(t)
+	auth := authentication.NewSessionAuthenticator(externalTestSession{userID: "0198a7c0-1111-7222-8333-444455556666"}, externalTestAccount{}, authentication.NoPermissions{}, false)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	served := authentication.ConfineExternal(auth, modules.DefaultIndex().ExternalAllowed, logger)(h.mux)
+	for _, rt := range []struct{ method, path string }{
+		{"GET", "/api/v1/external-parties/sponsored"},
+		{"POST", "/api/v1/users/0198a7c0-1111-7222-8333-444455556666/extend-access"},
+	} {
+		req := httptest.NewRequest(rt.method, rt.path, nil)
+		req.AddCookie(&http.Cookie{Name: authentication.CookieName(false), Value: "external-test-token"})
+		rec := httptest.NewRecorder()
+		served.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), authentication.ErrorCodeNotAvailable) {
+			t.Errorf("external %s %s = %d %s", rt.method, rt.path, rec.Code, rec.Body.String())
+		}
+	}
+}
 
 func TestExternalPartyRoutesAuthorizationMatrix(t *testing.T) {
 	h := newPeopleHTTP(t)

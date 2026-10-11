@@ -281,6 +281,52 @@ func TestRemindSponsorsOncePerLeadWindow(t *testing.T) {
 	}
 }
 
+func TestRemindManagersWhenSponsorLeaves(t *testing.T) {
+	f := newPartyFix(t)
+	ctx := context.Background()
+	sponsor := f.local("LeavingSponsor")
+	manager := f.user(f.pfx+" Manager", "active")
+	inactiveManager := f.user(f.pfx+" InactiveManager", "inactive")
+	party := f.newParty(sponsor.ID)
+	now := time.Now().UTC().Truncate(time.Second)
+	f.external(party.ID, "NeedsRenewal", now.Add(10*24*time.Hour))
+	var roleID string
+	if err := f.pool.QueryRow(ctx, `INSERT INTO platform.roles(key, name) VALUES ($1, 'External party managers') RETURNING id::text`, f.pfx+"-reminders").Scan(&roleID); err != nil {
+		t.Fatal(err)
+	}
+	f.t.Cleanup(func() {
+		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.role_assignments WHERE role_id = $1::uuid`, roleID)
+		_, _ = f.pool.Exec(ctx, `DELETE FROM platform.roles WHERE id = $1::uuid`, roleID)
+	})
+	if _, err := f.pool.Exec(ctx, `INSERT INTO platform.role_permissions(role_id, permission) VALUES ($1::uuid, 'organization.external_parties.manage')`, roleID); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{manager, inactiveManager} {
+		if _, err := f.pool.Exec(ctx, `INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by) VALUES ($1::uuid, 'user', $2::uuid, '{}'::jsonb)`, roleID, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := &recordingNotifier{}
+	repo := f.repo.WithNotifier(n)
+	if _, err := repo.RemindSponsors(ctx, now, application.AccessReminderLeadDays, 100); err != nil {
+		t.Fatal(err)
+	}
+	if len(n.intents) != 1 || n.intents[0].RecipientUserID != sponsor.ID {
+		t.Fatalf("active sponsor reminder = %+v", n.intents)
+	}
+	n.intents = nil
+	if _, err := f.pool.Exec(ctx, `UPDATE organization.users SET status = 'inactive' WHERE id = $1::uuid`, sponsor.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.RemindSponsors(ctx, now, application.AccessReminderLeadDays, 100); err != nil {
+		t.Fatal(err)
+	}
+	if len(n.intents) != 1 || n.intents[0].RecipientUserID != manager || n.intents[0].LinkID != "" ||
+		n.intents[0].Category != application.NotificationAccessExpiring || !strings.HasSuffix(n.intents[0].DedupeKey, ":"+manager) {
+		t.Errorf("inactive sponsor fallback = %+v", n.intents)
+	}
+}
+
 func TestExtendAccessBySponsorOrPermission(t *testing.T) {
 	f := newPartyFix(t)
 	ctx := context.Background()
@@ -316,6 +362,45 @@ func TestExtendAccessBySponsorOrPermission(t *testing.T) {
 	}
 	if _, err := f.repo.ExtendAccess(ctx, f.manage, ext.ID, ext.Version+1, later.Add(time.Hour), "correction"); !errors.Is(err, application.ErrPartyInactive) {
 		t.Errorf("inactive party: %v", err)
+	}
+	if _, err := f.repo.ExtendAccess(ctx, f.caller(sponsor.ID), ext.ID, ext.Version+1, later.Add(time.Hour), "correction"); !errors.Is(err, application.ErrPartyInactive) {
+		t.Errorf("inactive party for sponsor: %v", err)
+	}
+	if _, err := f.repo.ExtendAccess(ctx, f.caller(stranger.ID), ext.ID, ext.Version+1, later.Add(time.Hour), "correction"); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("inactive party for stranger: %v", err)
+	}
+}
+
+func TestSponsorAuthorizationLocksThePartyRow(t *testing.T) {
+	f := newPartyFix(t)
+	ctx := context.Background()
+	sponsor := f.local("LockSponsor")
+	party := f.newParty(sponsor.ID)
+	tx, err := f.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	got, active, err := lockedPartySponsor(ctx, tx, party.ID)
+	if err != nil || got != sponsor.ID || !active {
+		t.Fatalf("locked sponsor = %q %v %v", got, active, err)
+	}
+	conn, err := f.pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	_, updateErr := conn.Exec(deadline, `UPDATE organization.external_parties SET active = false WHERE id = $1::uuid`, party.ID)
+	conn.Release()
+	if updateErr == nil {
+		t.Error("party update completed while sponsor authorization held FOR SHARE")
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE organization.external_parties SET active = false WHERE id = $1::uuid`, party.ID); err != nil {
+		t.Errorf("party update after sponsor authorization released lock: %v", err)
 	}
 }
 

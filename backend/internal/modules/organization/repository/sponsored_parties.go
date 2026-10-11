@@ -98,7 +98,7 @@ func (r *Repository) PartyContextTx(ctx context.Context, tx pgx.Tx, partyID stri
 		return application.PartyNotificationContext{}, false, nil
 	}
 	var c application.PartyNotificationContext
-	err := tx.QueryRow(ctx, `SELECT name, sponsor_user_id::text FROM organization.external_parties WHERE id = $1`, u).Scan(&c.PartyName, &c.SponsorID)
+	err := tx.QueryRow(ctx, `SELECT name, sponsor_user_id::text, active FROM organization.external_parties WHERE id = $1`, u).Scan(&c.PartyName, &c.SponsorID, &c.PartyActive)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.PartyNotificationContext{}, false, nil
 	}
@@ -116,7 +116,7 @@ func (r *Repository) IsActiveEmployeeTx(ctx context.Context, tx pgx.Tx, userID s
 	}
 	var active bool
 	err := tx.QueryRow(ctx, `
-		SELECT status = 'active' AND account_kind = 'employee' FROM organization.users WHERE id = $1`, u).Scan(&active)
+		SELECT status = 'active' AND account_kind = 'employee' AND origin <> 'emergency' FROM organization.users WHERE id = $1`, u).Scan(&active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}

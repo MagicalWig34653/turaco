@@ -143,11 +143,14 @@ func (r *Repository) ExtendAccess(ctx context.Context, c application.Caller, id 
 		if !c.ExternalPartiesManage {
 			allowed := false
 			if before.AccountKind == application.AccountKindExternal && before.ExternalPartyID != nil && c.Actor.UserID != "" {
-				sponsor, err := partySponsor(ctx, tx, *before.ExternalPartyID)
+				sponsor, active, err := lockedPartySponsor(ctx, tx, *before.ExternalPartyID)
 				if err != nil {
 					return err
 				}
 				allowed = strings.EqualFold(sponsor, c.Actor.UserID)
+				if allowed && !active {
+					return application.ErrPartyInactive
+				}
 			}
 			if !allowed {
 				return application.ErrForbidden
@@ -159,8 +162,10 @@ func (r *Repository) ExtendAccess(ctx context.Context, c application.Caller, id 
 		if before.Version != version {
 			return application.ErrVersionConflict
 		}
-		if err := requirePartyActive(ctx, tx, *before.ExternalPartyID); err != nil {
-			return err
+		if c.ExternalPartiesManage {
+			if err := requirePartyActive(ctx, tx, *before.ExternalPartyID); err != nil {
+				return err
+			}
 		}
 		if !until.After(*before.AccessExpiresAt) {
 			return &application.InvalidInputError{Message: "accessExpiresAt must be later than the current end of access"}
