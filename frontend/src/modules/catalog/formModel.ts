@@ -94,3 +94,14 @@ export function fieldErrorKey(code: string): `requests.fieldError.${FieldErrorCo
     ? (`requests.fieldError.${code as FieldErrorCode}` as const)
     : 'requests.fieldError.generic';
 }
+
+/** Open requests (not finished) for the same catalog item: a hint before a second one is submitted, never a block. */
+export function openRequestsForItem<T extends { catalogItemId: string; status: string }>(
+  mine: readonly T[],
+  itemId: string,
+): T[] {
+  const finished = new Set(['completed', 'rejected', 'cancelled']);
+  return mine.filter(
+    (request) => request.catalogItemId === itemId && !finished.has(request.status),
+  );
+}

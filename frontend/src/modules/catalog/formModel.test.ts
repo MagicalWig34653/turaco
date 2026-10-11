@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { en } from '../../platform/i18n/messages.en';
-import { fieldErrorKey, initialValues, toAnswers } from './formModel';
+import { fieldErrorKey, initialValues, openRequestsForItem, toAnswers } from './formModel';
 import type { FormField } from './types';
 
 const fields: FormField[] = [
@@ -99,5 +99,18 @@ describe('fieldErrorKey', () => {
     }
     expect(fieldErrorKey('something_new')).toBe('requests.fieldError.generic');
     expect('requests.fieldError.generic' in en).toBe(true);
+  });
+});
+
+describe('open request hint', () => {
+  const mine = [
+    { id: '1', catalogItemId: 'dect', status: 'pending_approval' },
+    { id: '2', catalogItemId: 'dect', status: 'completed' },
+    { id: '3', catalogItemId: 'printer', status: 'in_fulfillment' },
+    { id: '4', catalogItemId: 'dect', status: 'cancelled' },
+  ];
+  it('lists only unfinished requests of the same item', () => {
+    expect(openRequestsForItem(mine, 'dect').map((r) => r.id)).toEqual(['1']);
+    expect(openRequestsForItem(mine, 'none')).toEqual([]);
   });
 });

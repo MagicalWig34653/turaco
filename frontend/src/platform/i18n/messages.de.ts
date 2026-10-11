@@ -1458,6 +1458,7 @@ export const de: Record<MessageKey, string> = {
   'catalog.empty': 'Es sind keine Katalogeinträge verfügbar.',
   'catalog.request': 'Anfragen',
   'catalog.back': 'Zurück zum Katalog',
+  'catalog.form.openRequest': 'Sie haben bereits einen offenen Antrag für diesen Eintrag:',
   'catalog.form.requestedFor': 'Für eine andere Person anfragen',
   'catalog.form.requestedFor.hint': 'Leer lassen, um für sich selbst anzufragen.',
   'catalog.form.submit': 'Anfrage absenden',

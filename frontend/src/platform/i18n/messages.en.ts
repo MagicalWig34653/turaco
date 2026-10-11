@@ -1419,6 +1419,7 @@ export const en = {
   'catalog.empty': 'There are no catalog items available.',
   'catalog.request': 'Request',
   'catalog.back': 'Back to the catalog',
+  'catalog.form.openRequest': 'You already have an open request for this item:',
   'catalog.form.requestedFor': 'Request for another person',
   'catalog.form.requestedFor.hint': 'Leave empty to request for yourself.',
   'catalog.form.submit': 'Submit request',
