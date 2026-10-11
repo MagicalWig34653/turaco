@@ -32,6 +32,16 @@ func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID strin
 	return s.svc.GroupIDsOfUser(ctx, userID)
 }
 
+// IsLocalOriginAccount reports whether the User is a local account by origin.
+func (s *AuthorizationSubjects) IsLocalOriginAccount(ctx context.Context, userID string) (bool, error) {
+	return s.svc.IsLocalOriginAccount(ctx, userID)
+}
+
+// IsExternalAccount reports whether the User is an external account (a restricted principal, ADR-0034).
+func (s *AuthorizationSubjects) IsExternalAccount(ctx context.Context, userID string) (bool, error) {
+	return s.svc.IsExternalAccount(ctx, userID)
+}
+
 // GroupMemberUserIDs returns the Users currently in any of the groups, directly or through observed nesting.
 func (s *AuthorizationSubjects) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {
 	return s.svc.GroupMemberUserIDs(ctx, groupIDs, limit)

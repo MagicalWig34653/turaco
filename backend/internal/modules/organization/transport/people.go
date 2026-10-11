@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
@@ -112,6 +113,12 @@ func failPeople(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		httpx.WriteError(w, http.StatusForbidden, "access.dominance_required", "This account holds permissions that you do not hold; ask a platform administrator.")
 	case errors.Is(err, application.ErrExternalNeedsPermission):
 		httpx.WriteError(w, http.StatusForbidden, "access.external_party_permission_required", "Adding an external account needs the external parties permission.")
+	case errors.Is(err, application.ErrSponsorInvalid):
+		httpx.WriteError(w, http.StatusConflict, "organization.sponsor_invalid", "The sponsor must be an active employee.")
+	case errors.Is(err, application.ErrPartyInactive):
+		httpx.WriteError(w, http.StatusConflict, "organization.party_inactive", "The external party is not active.")
+	case errors.Is(err, application.ErrPartyNameTaken):
+		httpx.WriteError(w, http.StatusConflict, "organization.party_name_taken", "An external party with this name already exists.")
 	case errors.Is(err, application.ErrDirectoryIdentityDisabled):
 		httpx.WriteError(w, http.StatusConflict, "organization.directory_identity_disabled", "The directory account is disabled; the user stays inactive until the directory enables it.")
 	case errors.Is(err, application.ErrWrongState):
@@ -214,6 +221,7 @@ type userListDTO struct {
 	ManagerUserID     *string `json:"managerUserId,omitempty"`
 	EmployeeNumber    *string `json:"employeeNumber,omitempty"`
 	AccessExpiresAt   *string `json:"accessExpiresAt,omitempty"`
+	ExternalPartyID   *string `json:"externalPartyId,omitempty"`
 }
 
 func (h *peopleHandler) query(w http.ResponseWriter, r *http.Request, resource string) {
@@ -232,7 +240,7 @@ func (h *peopleHandler) query(w http.ResponseWriter, r *http.Request, resource s
 		}
 		httpx.JSON(w, http.StatusOK, query.NewEnvelope(page, func(u application.User) userListDTO {
 			d := userListDTO{ID: u.ID, DisplayName: u.DisplayName, GivenName: u.GivenName, FamilyName: u.FamilyName, PrimaryEmail: u.PrimaryEmail,
-				Status: u.Status, StatusSource: u.StatusSource, AccountKind: u.AccountKind, Source: u.Origin, Version: u.Version, UpdatedAt: ts(u.UpdatedAt)}
+				Status: u.Status, StatusSource: u.StatusSource, AccountKind: u.AccountKind, Source: u.Origin, Version: u.Version, UpdatedAt: ts(u.UpdatedAt), ExternalPartyID: u.ExternalPartyID}
 			if p.ViewDetails {
 				d.DepartmentID, d.PrimaryLocationID, d.ManagerUserID, d.EmployeeNumber = u.DepartmentID, u.PrimaryLocationID, u.ManagerUserID, u.EmployeeNumber
 				d.AccessExpiresAt = tsPtr(u.AccessExpiresAt)
@@ -297,13 +305,24 @@ func (h *peopleHandler) createUser(w http.ResponseWriter, r *http.Request) {
 		DepartmentID      *string `json:"departmentId"`
 		PrimaryLocationID *string `json:"primaryLocationId"`
 		AccountKind       string  `json:"accountKind"`
+		ExternalPartyID   *string `json:"externalPartyId"`
+		AccessExpiresAt   *string `json:"accessExpiresAt"`
 	}
 	if !peopleDecode(w, r, &body) {
 		return
 	}
-	u, err := h.people.CreateUser(r.Context(), caller(w, r), application.NewUserInput{DisplayName: body.DisplayName, GivenName: body.GivenName,
+	in := application.NewUserInput{DisplayName: body.DisplayName, GivenName: body.GivenName,
 		FamilyName: body.FamilyName, PrimaryEmail: body.PrimaryEmail, EmployeeNumber: body.EmployeeNumber, DepartmentID: body.DepartmentID,
-		LocationID: body.PrimaryLocationID, AccountKind: body.AccountKind})
+		LocationID: body.PrimaryLocationID, AccountKind: body.AccountKind, ExternalPartyID: body.ExternalPartyID}
+	if body.AccessExpiresAt != nil {
+		until, err := time.Parse(time.RFC3339, *body.AccessExpiresAt)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_request", "accessExpiresAt must be an RFC 3339 timestamp.")
+			return
+		}
+		in.AccessExpiresAt = &until
+	}
+	u, err := h.people.CreateUser(r.Context(), caller(w, r), in)
 	if err != nil {
 		h.fail(w, r, err)
 		return

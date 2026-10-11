@@ -40,6 +40,7 @@ import { organizationApi } from '../organization/api';
 import { TicketMoveDialog } from './TicketMoveDialog';
 import { TicketLocationDialog } from './TicketLocationDialog';
 import { TicketChangesCard } from './TicketChangesCard';
+import { TicketParticipantsCard } from './TicketParticipantsCard';
 import { MentionPicker } from './MentionPicker';
 import {
   historyLocationIds,
@@ -890,6 +891,9 @@ function TicketWorkspace({ id }: { id: string }) {
           ) : null}
           {staffReader ? (
             <TicketChangesCard ticketId={ticket.id} canEdit={manage} onChanged={history.reload} />
+          ) : null}
+          {ticket.abilities?.internalComment ? (
+            <TicketParticipantsCard ticketId={ticket.id} />
           ) : null}
           {can('remote_access.view') ? (
             <RemoteSupportGate>

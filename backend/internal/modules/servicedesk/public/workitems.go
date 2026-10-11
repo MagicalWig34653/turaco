@@ -34,7 +34,7 @@ func (w *TicketWorkItems) Key() string    { return w.key }
 func (w *TicketWorkItems) Module() string { return "servicedesk" }
 
 func ticketPrincipal(p authorization.Principal) application.Principal {
-	return application.Principal{UserID: p.UserID, View: p.Has("tickets.view"), Manage: p.Has("tickets.manage"), QueuesManage: p.Has(application.PermQueuesManage)}
+	return application.Principal{UserID: p.UserID, View: p.Has("tickets.view"), Manage: p.Has("tickets.manage"), QueuesManage: p.Has(application.PermQueuesManage), External: p.External}
 }
 
 // Items implements workitems.Source.

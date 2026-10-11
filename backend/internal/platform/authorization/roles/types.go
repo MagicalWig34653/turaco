@@ -34,6 +34,13 @@ const (
 // implemented by organization/public; platform code must not import modules.
 type GroupResolver interface {
 	GroupIDsOfUser(ctx context.Context, userID string) ([]string, error)
+	// IsExternalAccount reports whether the User is a restricted external account (account_kind external, ADR-0034).
+	// The kind never changes after creation. An unknown User is not external.
+	IsExternalAccount(ctx context.Context, userID string) (bool, error)
+	// IsLocalOriginAccount reports whether the User is a local account by origin (organization.users.origin = local),
+	// which never changes. A local account holds no high-risk permission whether or not its credential exists yet
+	// (ADR-0034 R10): classifying by the credential alone let an uninvited local User be given the administrator role.
+	IsLocalOriginAccount(ctx context.Context, userID string) (bool, error)
 }
 
 // SubjectDirectory answers questions about assignment subjects without
@@ -73,6 +80,7 @@ var (
 	ErrRoleNotHeld                = errors.New("authorization: the actor does not hold the role")
 	ErrAdminNoExpiry              = errors.New("authorization: the administrator role is never time-limited")
 	ErrLocalAccountHighRisk       = errors.New("authorization: local accounts cannot hold high-risk permissions")
+	ErrExternalCeiling            = errors.New("authorization: the role has permissions outside the ceiling of external accounts")
 	ErrVersionConflict            = errors.New("authorization: version conflict")
 	ErrUnknownTemplate            = errors.New("authorization: unknown role template")
 )

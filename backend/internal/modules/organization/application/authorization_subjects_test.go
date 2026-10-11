@@ -16,6 +16,13 @@ func (f *fakeSubjectStore) GroupIDsOfUser(context.Context, string) ([]string, er
 	f.calls++
 	return []string{"g"}, nil
 }
+func (f *fakeSubjectStore) IsLocalOriginAccount(context.Context, string) (bool, error) {
+	return false, nil
+}
+
+func (f *fakeSubjectStore) IsExternalAccount(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (f *fakeSubjectStore) GroupMemberUserIDs(context.Context, []string, int) ([]string, error) {
 	return nil, nil
 }

@@ -121,6 +121,8 @@ make check
 
 `make test` loads `.env`, so PostgreSQL-backed tests run whenever the local database is up and skip otherwise. Tests use the separate database `turaco_test` (`TEST_DATABASE_URL`), which `make bootstrap`/`make migrate` create and migrate next to the development database, so development data and test data never mix. Set `TURACO_REQUIRE_DB_TESTS=true` to make an unavailable database a test failure, as CI and Claude Code cloud sessions do.
 
+**Browser smoke tests:** `make e2e-install` downloads Playwright's Chromium once (`frontend/package.json`, `@playwright/test`), then `make e2e` runs `frontend/e2e/*.spec.ts` against the Vite dev server on port 4173. Every API call is mocked with `page.route` in `frontend/e2e/support.ts` (unlisted `/api/v1` routes answer an empty page, so no backend, database or directory is needed). They cover sign-in, sign-out, rejected credentials, the emergency-only form and the anonymous deep-link redirect. They are not part of `make check` or `make test` (vitest excludes `e2e/`) because they need the downloaded browser; run them before changing login or the shell. When a screen starts calling an endpoint whose response is an object rather than a page, add a case to `support.ts`.
+
 Claude Code cloud sessions use this same environment through an automatic adapter; see [Claude Code Cloud Development](cloud-development.md).
 
 ## Environment

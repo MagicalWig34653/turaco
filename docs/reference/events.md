@@ -5,6 +5,7 @@
 | Event | Version | Owner | Description |
 |---|---:|---|---|
 | `AIProviderChanged` | 1 | platform | An AI Provider was created or reconfigured. Payload: providerId, operation (created, updated), enabled. Carries no endpoint, secret reference or settings. |
+| `AccessExpired` | 1 | organization | The end of access of an external account passed; the expiry job deactivated it and ended its sessions (open Task assignments need review). Payload: userId, externalPartyId. |
 | `ApprovalDecided` | 1 | approvals | An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision. |
 | `ApprovalRequested` | 1 | approvals | An approval step became pending. Payload: approvalId, subjectType, subjectId, stepIndex. |
 | `AssetAssigned` | 1 | assets | An asset assignment became active. Payload: assetId, status, operation, assigneeType, assigneeId. |

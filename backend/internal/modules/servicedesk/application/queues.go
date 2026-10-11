@@ -298,6 +298,9 @@ func (s *Service) buildAccess(p Principal, rows []QueueAccessRow) access {
 
 // resolve loads the caller's access outside a transaction.
 func (s *Service) resolve(ctx context.Context, p Principal) (access, error) {
+	if p.External {
+		return access{}, nil // grants through Teams and roles exclude external accounts (review rule R2)
+	}
 	if s.queues == nil {
 		return s.buildAccess(p, nil), nil
 	}
@@ -315,6 +318,9 @@ func (s *Service) resolve(ctx context.Context, p Principal) (access, error) {
 // resolveTx loads the caller's access inside the transaction that decides the operation, so the grants and the
 // Ticket are authorized against one snapshot.
 func (s *Service) resolveTx(ctx context.Context, tx pgx.Tx, p Principal, m memberships) (access, error) {
+	if p.External {
+		return access{}, nil
+	}
 	if s.queues == nil {
 		return s.buildAccess(p, nil), nil
 	}

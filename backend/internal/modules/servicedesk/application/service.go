@@ -34,6 +34,9 @@ type Service struct {
 	changes ChangeReader
 	graph   *relationships.Graph
 	graphDB relationships.Querier
+	// participants and externals share Tickets with external accounts (WithExternalAccounts); nil without them.
+	participants ParticipantStore
+	externals    ExternalDirectory
 }
 
 // NewService builds the service. A store that also implements QueueStore enables Queues; without it every Ticket
@@ -206,6 +209,9 @@ func isUniqueViolation(err error) bool {
 // Create raises a ticket. Every signed-in User may into a Queue they may raise tickets in; the device must be one
 // the affected User currently holds (staff may pick any device).
 func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateInput) (Ticket, error) {
+	if p.External {
+		return Ticket{}, ErrForbidden // external accounts raise no Tickets (ADR-0034)
+	}
 	if err := c.validate(); err != nil {
 		return Ticket{}, err
 	}
@@ -698,6 +704,13 @@ func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Princi
 	if err := c.validate(); err != nil {
 		return Comment{}, err
 	}
+	if p.External {
+		// An external account comments only on a Ticket shared with it, publicly (ADR-0034).
+		if internal || len(mentions) > 0 {
+			return Comment{}, ErrForbidden
+		}
+		return s.commentAsParticipant(ctx, c, p, id, body)
+	}
 	b, err := cleanText(body, maxText, true, "comment")
 	if err != nil {
 		return Comment{}, err
@@ -1005,6 +1018,9 @@ type Detail struct {
 
 // Get returns a ticket the caller may see (404 otherwise). Internal comments need view access in the Queue.
 func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, error) {
+	if p.External {
+		return s.getAsParticipant(ctx, p, id)
+	}
 	a, err := s.resolve(ctx, p)
 	if err != nil {
 		return Detail{}, err

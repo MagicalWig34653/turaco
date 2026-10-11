@@ -27,6 +27,19 @@ func (w *WorkDirectory) ActiveEmployees(ctx context.Context, ids []string) (map[
 	return w.app.ActiveEmployees(ctx, ids)
 }
 
+// ExternalAccountRef names an active external account with the party it belongs to.
+type ExternalAccountRef = application.ExternalAccountRef
+
+// ActiveExternals returns id -> true for each id that is an active external account whose access has not ended.
+func (w *WorkDirectory) ActiveExternals(ctx context.Context, ids []string) (map[string]bool, error) {
+	return w.app.ActiveExternals(ctx, ids)
+}
+
+// SearchExternals returns active external accounts of active parties whose name contains text.
+func (w *WorkDirectory) SearchExternals(ctx context.Context, text string, limit int) ([]ExternalAccountRef, error) {
+	return w.app.SearchExternals(ctx, text, limit)
+}
+
 // PrimaryLocationIDs returns user id -> primary Location id for Users that have one.
 func (w *WorkDirectory) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
 	return w.app.PrimaryLocationIDs(ctx, ids)

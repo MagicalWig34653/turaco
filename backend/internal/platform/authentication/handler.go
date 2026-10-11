@@ -44,8 +44,10 @@ type sessionResponse struct {
 	AuthMethod  string   `json:"authMethod"`
 	ExpiresAt   string   `json:"expiresAt"`
 	Permissions []string `json:"permissions"`
-	DisplayName string   `json:"displayName,omitempty"`
-	GivenName   string   `json:"givenName,omitempty"`
+	// External marks a restricted external account: the UI shows only its Tasks and shared Tickets (ADR-0034).
+	External    bool   `json:"external,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	GivenName   string `json:"givenName,omitempty"`
 }
 
 // Register mounts the session endpoints under /api/v1/auth. names may be nil;
@@ -88,6 +90,7 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 		AuthMethod:  s.AuthMethod,
 		ExpiresAt:   expires.UTC().Format(time.RFC3339),
 		Permissions: perms,
+		External:    p.External,
 	}
 	if h.names != nil {
 		// A name lookup failure must not break the session: the UI falls back

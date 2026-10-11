@@ -2,6 +2,21 @@
 # placement constraints, update policy, and monitoring are environment-specific.
 version: "3.9"
 services:
+  # One-shot job: applies migrations and exits. Redeploy the stack with a new image digest to run it again.
+  # turaco-migrate takes a PostgreSQL advisory lock, so a second concurrent run waits instead of racing.
+  # API and worker may start before it finishes; /health/ready stays failing until the schema is current.
+  turaco-migrate:
+    image: ghcr.io/OWNER/REPOSITORY/turaco-worker@sha256:REPLACE_ME
+    entrypoint: ["/usr/local/bin/turaco-migrate"]
+    networks: [platform]
+    deploy:
+      mode: replicated-job
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+    secrets:
+      - database_url
+
   turaco-api:
     image: ghcr.io/OWNER/REPOSITORY/turaco-api@sha256:REPLACE_ME
     networks: [platform]

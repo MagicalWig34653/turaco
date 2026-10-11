@@ -56,6 +56,7 @@ registerErrorMessages({
   'access.admin_no_expiry': 'access.error.adminNoExpiry',
   'access.local_account_high_risk': 'access.error.localAccountHighRisk',
   'access.external_party_permission_required': 'access.error.externalPartyPermission',
+  'access.external_ceiling': 'access.error.externalCeiling',
   'access.sod_acknowledgement_required': 'access.error.sodRequired',
   'organization.import_too_large': 'people.import.error.tooLarge',
   'organization.import_too_many_rows': 'people.import.error.tooManyRows',

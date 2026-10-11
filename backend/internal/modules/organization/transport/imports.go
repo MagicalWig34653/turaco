@@ -44,7 +44,7 @@ func RegisterImports(mux *http.ServeMux, imports *application.Imports, auth auth
 	route("POST /api/v1/import-batches/{id}/apply", authed, h.apply)
 	route("POST /api/v1/users/bulk-operations", bulk, h.bulk)
 	route("POST /api/v1/users/{id}/link-directory-identity", authorization.Require(auth, permPlatformAdmin), h.linkDirectory)
-	route("POST /api/v1/users/{id}/extend-access", authorization.Require(auth, permExternalParties), h.extendAccess)
+	route("POST /api/v1/users/{id}/extend-access", authed, h.extendAccess)
 }
 
 func (h *importHandler) fail(w http.ResponseWriter, r *http.Request, err error) {

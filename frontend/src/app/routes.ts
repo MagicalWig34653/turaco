@@ -110,6 +110,8 @@ export type RouteId =
   | 'userNew'
   | 'userImport'
   | 'userDetail'
+  | 'externalParties'
+  | 'externalPartyDetail'
   | 'teams'
   | 'teamDetail'
   | 'locations'
@@ -817,6 +819,19 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/admin/users/:id',
     titleKey: 'people.detail.title',
     requires: ['organization.view'],
+  },
+  {
+    id: 'externalParties',
+    pattern: '/admin/external-parties',
+    titleKey: 'nav.externalParties',
+    requires: ['organization.external_parties.manage'],
+    nav: 'admin',
+  },
+  {
+    id: 'externalPartyDetail',
+    pattern: '/admin/external-parties/:id',
+    titleKey: 'external.detail.title',
+    requires: ['organization.external_parties.manage'],
   },
   {
     id: 'teams',

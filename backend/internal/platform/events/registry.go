@@ -14,6 +14,7 @@ type Definition struct {
 var Registry = []Definition{
 	{Name: "UserSynchronized", Version: 1, Owner: "organization", Description: "Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md."},
 	{Name: "UserDeactivated", Version: 1, Owner: "organization", Description: "An administrator deactivated a User (sessions and open credential tokens were revoked; open Task assignments need review). Payload: userId, reasonCode."},
+	{Name: "AccessExpired", Version: 1, Owner: "organization", Description: "The end of access of an external account passed; the expiry job deactivated it and ended its sessions (open Task assignments need review). Payload: userId, externalPartyId."},
 	{Name: "UserDeparted", Version: 1, Owner: "organization", Description: "An administrator marked a User as departed. Payload: userId, reasonCode."},
 	{Name: "LocationChanged", Version: 1, Owner: "organization", Description: "A Location was changed, moved, activated or deactivated; consumers that show its name or path re-read it. Payload: locationId, operation."},
 	{Name: "TaskAssigned", Version: 1, Owner: "tasks", Description: "A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId."},

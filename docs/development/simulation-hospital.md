@@ -155,7 +155,7 @@ Testers must write these down as **gaps**, not as defects, when they look for th
 | Provider-observed **devices** (Intune sync) | Not seeded; assets exist, the device list stays empty or shows only synced data |
 | Remote access sessions, deployments | Need configured providers; not part of the dataset |
 | Workforce Presence, Turaco AI | Optional modules, default off (`/admin/modules`); test only after an admin enables them and meets their preconditions |
-| Organization CSV import and bulk edit, External Parties with expiry and sponsor, health and setup screens, audit names and export | Not implemented (F14 A-C, A-F, A-G); the vendor persona uses the `vendor-restricted` role and an emergency-style login instead |
+| Organization CSV import and bulk edit, External Parties with expiry and sponsor, health and setup screens, audit names and export | External Parties with expiry and sponsor are implemented (F14 A-G, 2026-10-11); the simulation's vendor persona still used the `vendor-restricted` role and an emergency-style login because the rest was not built then |
 | Per-user passwords by invitation in the simulation | The personas are emergency accounts with one public password. The invitation flow (`AUTH_LOCAL_LOGIN_ENABLED`, [administrator guide](../operations/administrator-getting-started.md)) exists but is not part of the dataset |
 
 ## How testers work

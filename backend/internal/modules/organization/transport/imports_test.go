@@ -43,7 +43,7 @@ func TestImportAndBulkRoutesAuthorizationMatrix(t *testing.T) {
 	routes := []struct{ method, path, body, perm string }{
 		{"POST", "/api/v1/users/bulk-operations", `{"dryRun":true,"operation":"set_department","userIds":["` + id + `"]}`, "organization.users.manage"},
 		{"POST", "/api/v1/users/" + id + "/link-directory-identity", `{"expectedVersion":1,"runId":"` + id + `","externalId":"x"}`, "platform.admin"},
-		{"POST", "/api/v1/users/" + id + "/extend-access", `{"expectedVersion":1,"accessExpiresAt":"2030-01-01T00:00:00Z","reason":"contract_renewed"}`, "organization.external_parties.manage"},
+		{"POST", "/api/v1/users/" + id + "/extend-access", fmt.Sprintf(`{"expectedVersion":1,"accessExpiresAt":%q,"reason":"contract_renewed"}`, time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339)), "organization.external_parties.manage"},
 		{"POST", "/api/v1/import-batches", ``, "organization.import"},
 	}
 	all := []string{"organization.view", "organization.users.manage", "organization.locations.manage", "organization.departments.manage", "organization.teams.manage",
@@ -185,9 +185,10 @@ func TestBulkLinkAndExtendOverHTTP(t *testing.T) {
 	h.perms = map[string]struct{}{"organization.external_parties.manage": {}}
 	expires := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
 	var ext string
+	party, _ := h.party()
 	if err := h.pool.QueryRow(context.Background(), `
-		INSERT INTO organization.users(display_name, primary_email, origin, account_kind, access_expires_at)
-		VALUES ($1, $2, 'local', 'external', $3) RETURNING id::text`, h.pfx+" Vendor", h.pfx+"-vendor@example.test", expires).Scan(&ext); err != nil {
+		INSERT INTO organization.users(display_name, primary_email, origin, account_kind, access_expires_at, external_party_id)
+		VALUES ($1, $2, 'local', 'external', $3, $4::uuid) RETURNING id::text`, h.pfx+" Vendor", h.pfx+"-vendor@example.test", expires, party).Scan(&ext); err != nil {
 		t.Fatal(err)
 	}
 	until := expires.Add(72 * time.Hour).Format(time.RFC3339)

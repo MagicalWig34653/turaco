@@ -14,6 +14,10 @@ type AuthorizationSubjectStore interface {
 	// user currently belongs to, directly or through currently observed
 	// nesting (child group -> parent group).
 	GroupIDsOfUser(ctx context.Context, userID string) ([]string, error)
+	// IsExternalAccount reports whether the user is an external account (account_kind external).
+	IsExternalAccount(ctx context.Context, userID string) (bool, error)
+	// IsLocalOriginAccount reports whether the user's origin is local.
+	IsLocalOriginAccount(ctx context.Context, userID string) (bool, error)
 	// GroupMemberUserIDs returns the ids of Users that currently belong to any of the groups directly or through
 	// observed nesting (child group into parent group), ordered by id, at most limit.
 	GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error)
@@ -48,6 +52,22 @@ func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID strin
 		return []string{}, nil
 	}
 	return s.store.GroupIDsOfUser(ctx, userID)
+}
+
+// IsExternalAccount reports whether the user is an external account; a malformed or unknown id is not.
+func (s *AuthorizationSubjects) IsExternalAccount(ctx context.Context, userID string) (bool, error) {
+	if !subjectUUID.MatchString(userID) {
+		return false, nil
+	}
+	return s.store.IsExternalAccount(ctx, userID)
+}
+
+// IsLocalOriginAccount reports whether the user is a local account by origin; a malformed or unknown id is not.
+func (s *AuthorizationSubjects) IsLocalOriginAccount(ctx context.Context, userID string) (bool, error) {
+	if !subjectUUID.MatchString(userID) {
+		return false, nil
+	}
+	return s.store.IsLocalOriginAccount(ctx, userID)
 }
 
 // GroupMemberUserIDs returns the Users of the given groups; malformed group ids are ignored.

@@ -7,12 +7,31 @@ services:
       POSTGRES_DB: turaco
     volumes:
       - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U turaco -d turaco"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     networks: [backend]
 
   s3mock:
     image: adobe/s3mock:5.1.0
     environment:
       initialBuckets: turaco
+    networks: [backend]
+
+  # One-shot migration step. turaco-migrate holds a PostgreSQL advisory lock, so parallel runs are safe.
+  turaco-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/turaco-worker.Dockerfile
+    entrypoint: ["/usr/local/bin/turaco-migrate"]
+    environment:
+      DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
     networks: [backend]
 
   turaco-api:
@@ -28,7 +47,9 @@ services:
       # Clients reach the API through turaco-web (nginx); trust only nginx's
       # fixed address so login throttling sees real client addresses.
       HTTP_TRUSTED_PROXIES: 172.30.240.10
-    depends_on: [postgres]
+    depends_on:
+      turaco-migrate:
+        condition: service_completed_successfully
     networks: [backend]
 
   turaco-worker:
@@ -40,7 +61,9 @@ services:
       DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
       S3_ENDPOINT: http://s3mock:9090
       S3_BUCKET: turaco
-    depends_on: [postgres]
+    depends_on:
+      turaco-migrate:
+        condition: service_completed_successfully
     networks: [backend]
 
   turaco-web:

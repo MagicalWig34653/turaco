@@ -24,6 +24,10 @@ type fakeDirectory struct {
 	inactive map[string]bool
 	// groupsOf is what the GroupResolver returns per user.
 	groupsOf map[string][]string
+	// external lists users that are external accounts (ADR-0034).
+	external map[string]bool
+	// localOrigin marks Users whose origin is local (no credential needed).
+	localOrigin map[string]bool
 }
 
 func (f *fakeDirectory) UserExists(_ context.Context, id string) (bool, error) {
@@ -78,6 +82,14 @@ func (f *fakeDirectory) GroupIDsOfUser(_ context.Context, userID string) ([]stri
 	return f.groupsOf[userID], nil
 }
 
+func (f *fakeDirectory) IsLocalOriginAccount(_ context.Context, userID string) (bool, error) {
+	return f.localOrigin[userID], nil
+}
+
+func (f *fakeDirectory) IsExternalAccount(_ context.Context, userID string) (bool, error) {
+	return f.external[userID], nil
+}
+
 type fixture struct {
 	t    *testing.T
 	pool *pgxpool.Pool
@@ -94,7 +106,7 @@ func newFixture(t *testing.T) *fixture {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	f := &fixture{t: t, pool: pool, pfx: "zt-" + hex.EncodeToString(b)}
-	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}}
+	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}, external: map[string]bool{}, localOrigin: map[string]bool{}}
 	f.svc = NewService(pool, f.dir)
 	f.cli = audit.CLIActor("tester")
 	f.corr = f.pfx + "-c"

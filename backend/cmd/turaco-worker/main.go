@@ -42,6 +42,7 @@ import (
 	aiplatform "github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/attachments"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
@@ -298,6 +299,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		}},
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
 		{"organization import previews", func() error { return registerOrgImportPurge(runner, pool) }},
+		{"external access expiry", func() error { return registerExternalAccessExpiry(runner, pool, d.Categories, d.SMTP.Enabled()) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
 		{"saved views retention", func() error { return registerViewsPurge(runner, pool) }},
 		{"audit retention", func() error { return registerAuditPurge(runner, pool, d.AuditRetentionDays) }},
@@ -678,6 +680,20 @@ func registerOrgImportPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	return runner.AddSchedule(jobs.Schedule{JobType: orgapp.ImportPurgeJobType, DedupeKey: orgapp.ImportPurgeJobType, Interval: orgapp.ImportPurgeInterval, MaxAttempts: 2})
 }
 
+// registerExternalAccessExpiry registers the job that deactivates external accounts whose access ended and reminds
+// their sponsors 14 and 3 days before (ADR-0034 point 5; core, always on).
+func registerExternalAccessExpiry(runner *jobs.Runner, pool *pgxpool.Pool, categories *notifications.Registry, email bool) error {
+	notifier := notifications.NewService(pool, categories)
+	if email {
+		notifier = notifier.WithEmail()
+	}
+	repo := orgrepository.New(pool).WithGuards(nil, authentication.SessionRevoker{}).WithNotifier(notifier)
+	if err := runner.Register(orgapp.ExpireAccessJobType, orgapp.ExpireAccessJobTimeout, orgapp.NewExpireHandler(repo, time.Now)); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: orgapp.ExpireAccessJobType, DedupeKey: orgapp.ExpireAccessJobType, Interval: orgapp.ExpireAccessInterval, MaxAttempts: 2})
+}
+
 // registerPresence registers the daily Workforce Presence retention job (idempotent; counts-only audit summary).
 func registerPresence(runner *jobs.Runner, pool *pgxpool.Pool, cfg presenceapp.Config) error {
 	svc := wiring.Presence(pool, cfg)
@@ -800,6 +816,7 @@ func allCategories() []notifications.Category {
 	out = append(out, remoteaccessapp.NotificationCategories()...)
 	out = append(out, securityapp.NotificationCategories()...)
 	out = append(out, endpointsapp.NotificationCategories()...)
+	out = append(out, orgapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 

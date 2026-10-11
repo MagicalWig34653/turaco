@@ -43,7 +43,7 @@ Administration > Users (`/admin/users`, permission `organization.view`; writes n
 - **Deactivate, reactivate, mark as departed** are explicit operations with a closed reason; they revoke sessions and open tokens. You cannot deactivate yourself, and the last active platform administrator cannot be deactivated. Resets, invitations, email changes and deactivations of someone else need either the platform-administrator role or every effective permission of the target person (dominance rule).
 - **Structure:** Teams (members and leads; nobody edits their own membership), Locations (a tree of sites and areas) and Departments (a tree). Archiving an entry that is still referenced asks for explicit confirmation and shows the counts.
 
-**Gaps:** CSV import and bulk edit, linking a directory identity to a local person, cost centers, and External Parties (vendors with restricted accounts, slice A-G) are not implemented. Local accounts are for people outside the directory; external accounts with an expiry and sponsor do not exist yet.
+**Gaps:** cost centers are not implemented. Local accounts are for people outside the directory. Vendor staff get an external account under Administration > External parties: create the party with a sponsor, then add accounts (an invitation by email, an end of access of at most 365 days). External accounts see only their tasks and the tickets you share with them, and stop working on the end date; the sponsor is reminded 14 and 3 days before.
 
 ## 5. Roles from templates
 
@@ -90,5 +90,5 @@ Tasks > Boards (`/tasks/boards`) creates a Board over a Task filter with two to 
 
 - Real Microsoft Graph (Intune), Autotask REST and Teams integrations: the internal sides exist; the clients do not. Deployments halt with `assignment_failed` because the production writer is a placeholder.
 - Platform health, setup checklist, integrations page, audit names and global search beyond the command palette (F14 A-C and A-F).
-- CSV import and bulk edit of people, External Parties, per-site role scope.
+- CSV import and bulk edit of people, per-site role scope.
 - Development tooling that must not run in production: `turaco-admin demo seed` and `demo seed-hospital`, the simulation passwords and the load generator ([simulation](../development/simulation-hospital.md), [load testing](../development/load-testing.md)). They refuse to run unless `APP_ENV=development`.

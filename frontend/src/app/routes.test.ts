@@ -17,6 +17,21 @@ const ids = (
     | 'admin',
 ) => visibleNavItems(createCan({ permissions }), group).map((route) => route.id);
 
+describe('external parties', () => {
+  it('are offered only with organization.external_parties.manage', () => {
+    expect(ids([], 'admin')).not.toContain('externalParties');
+    expect(ids(['organization.view'], 'admin')).not.toContain('externalParties');
+    expect(ids(['organization.external_parties.manage'], 'admin')).toContain('externalParties');
+  });
+
+  it('resolve the list and the detail page', () => {
+    expect(matchRoute(appRoutes, '/admin/external-parties')?.route.id).toBe('externalParties');
+    const detail = matchRoute(appRoutes, '/admin/external-parties/0198a7c0-1111');
+    expect(detail?.route.id).toBe('externalPartyDetail');
+    expect(detail?.params.id).toBe('0198a7c0-1111');
+  });
+});
+
 describe('visibleNavItems', () => {
   it('always shows the main entries and hides admin entries without permission', () => {
     expect(ids([], 'main')).toEqual([

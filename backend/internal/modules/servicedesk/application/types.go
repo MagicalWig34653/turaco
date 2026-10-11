@@ -111,6 +111,9 @@ type Principal struct {
 	QueuesManage bool
 	// ChangesView (changes.view, manage or execute) lets the caller read Change titles linked to a Ticket.
 	ChangesView bool
+	// External marks a restricted external account (ADR-0034): it reads only Tickets shared with it through
+	// ticket_participants and has no Queue access whatever Teams or roles it belongs to.
+	External bool
 }
 
 func (p Principal) staff() bool { return p.View || p.Manage }

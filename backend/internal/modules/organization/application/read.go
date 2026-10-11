@@ -61,6 +61,8 @@ type User struct {
 	AccountKind     string
 	Origin          string
 	AccessExpiresAt *time.Time
+	// ExternalPartyID is set for external accounts only.
+	ExternalPartyID *string
 	Version         int
 }
 

@@ -130,6 +130,16 @@ export type TicketDetail = Ticket & {
   names: Record<string, string>;
 };
 
+/** An external account a Ticket is shared with; it reads the Ticket and its public comments. */
+export type TicketParticipant = {
+  userId: string;
+  displayName: string;
+  level: 'read' | 'comment';
+  addedBy: string;
+  addedAt: string;
+  expiresAt: string | null;
+};
+
 export type TicketOperation =
   'start' | 'wait' | 'resume' | 'resolve' | 'close' | 'reopen' | 'cancel';
 

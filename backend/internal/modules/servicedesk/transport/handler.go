@@ -52,6 +52,10 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/changes", h.linkChange)
 	route("DELETE /api/v1/tickets/{id}/changes/{changeId}", h.unlinkChange)
 	route("GET /api/v1/changes/{id}/tickets", h.ticketsOfChange)
+	route("GET /api/v1/tickets/{id}/participants", h.participants)
+	route("POST /api/v1/tickets/{id}/participants", h.addParticipant)
+	route("DELETE /api/v1/tickets/{id}/participants/{userId}", h.removeParticipant)
+	route("GET /api/v1/tickets/{id}/participant-candidates", h.participantCandidates)
 	registerQueues(route, h)
 	for _, op := range []string{application.OpStart, application.OpWait, application.OpResume, application.OpResolve, application.OpClose, application.OpReopen, application.OpCancel} {
 		route("POST /api/v1/tickets/{id}/"+op, h.transition(op))
@@ -103,6 +107,10 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "servicedesk.invalid_duplicate_target", "This ticket cannot be the target: it must be another ticket that is not cancelled, not itself a duplicate, and the ticket being marked must not have duplicates of its own.")
 	case errors.Is(err, application.ErrAssigneeNoAccess):
 		httpx.WriteError(w, http.StatusBadRequest, "servicedesk.assignee_no_queue_access", "The assignee cannot view tickets of this queue.")
+	case errors.Is(err, application.ErrParticipantInvalid):
+		httpx.WriteError(w, http.StatusBadRequest, "tickets.participant_invalid", "Only active external accounts can be added as participants.")
+	case errors.Is(err, application.ErrParticipantLimit):
+		httpx.WriteError(w, http.StatusConflict, "tickets.participant_limit", "This ticket has reached the participant limit.")
 	case errors.Is(err, application.ErrInvalidCursor):
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.invalid_cursor", "The cursor is invalid.")
 	default:
@@ -114,7 +122,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage),
-		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
+		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), External: p.External}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

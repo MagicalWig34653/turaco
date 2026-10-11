@@ -1208,3 +1208,35 @@ html[data-theme='cyberpunk'] .badge {
   justify-content: center;
   text-decoration: none;
 }
+
+/* Small shell of restricted external accounts (vendor staff): Tasks, notifications and shared tickets only. */
+.external-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.external-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border, #d0d5dd);
+}
+.external-bar nav {
+  display: flex;
+  gap: 1rem;
+  flex: 1 1 auto;
+}
+.external-main {
+  padding: 1rem;
+  max-width: 64rem;
+  width: 100%;
+  margin: 0 auto;
+}
+.participant-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}

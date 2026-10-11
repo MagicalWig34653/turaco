@@ -190,8 +190,12 @@ type NewUserInput struct {
 	EmployeeNumber *string
 	DepartmentID   *string
 	LocationID     *string
-	// AccountKind is "employee" (default). "external" arrives with the External Party slice (A-G) and is refused.
-	AccountKind string
+	// AccountKind is "employee" (default) or "external". An external account needs the caller's
+	// organization.external_parties.manage, an active External Party, a primary email address and an end of access
+	// at most MaxAccessDays from now; it carries no department, location or employee number.
+	AccountKind     string
+	ExternalPartyID *string
+	AccessExpiresAt *time.Time
 }
 
 // ProfileChange names the profile fields to change; ExpectedVersion is required.
@@ -306,9 +310,15 @@ type PeopleStore interface {
 }
 
 // People validates and performs the People operations.
-type People struct{ store PeopleStore }
+type People struct {
+	store PeopleStore
+	now   func() time.Time
+}
 
-func NewPeople(store PeopleStore) *People { return &People{store: store} }
+func NewPeople(store PeopleStore) *People { return &People{store: store, now: time.Now} }
+
+// WithClock replaces the clock (tests).
+func (p *People) WithClock(now func() time.Time) *People { p.now = now; return p }
 
 func requireVersion(v int) error {
 	if v < 1 {
@@ -378,8 +388,8 @@ func (p *People) CreateUser(ctx context.Context, c Caller, in NewUserInput) (Use
 	if in.AccountKind == "" {
 		in.AccountKind = AccountKindEmployee
 	}
-	if in.AccountKind != AccountKindEmployee {
-		return User{}, invalid("accountKind must be employee; external accounts are not available yet")
+	if in.AccountKind != AccountKindEmployee && in.AccountKind != AccountKindExternal {
+		return User{}, invalid("accountKind must be employee or external")
 	}
 	if in.GivenName, err = optText("givenName", in.GivenName, maxPersonNameLength); err != nil {
 		return User{}, err
@@ -393,7 +403,42 @@ func (p *People) CreateUser(ctx context.Context, c Caller, in NewUserInput) (Use
 	if in.PrimaryEmail, err = cleanEmail(in.PrimaryEmail); err != nil {
 		return User{}, err
 	}
+	if in.AccountKind == AccountKindExternal {
+		if err := p.checkExternal(c, &in); err != nil {
+			return User{}, err
+		}
+	} else if in.ExternalPartyID != nil || in.AccessExpiresAt != nil {
+		return User{}, invalid("externalPartyId and accessExpiresAt apply to external accounts only")
+	}
 	return p.store.CreateLocalUser(ctx, c, in)
+}
+
+// checkExternal validates the input of an external account (ADR-0034 point 4).
+func (p *People) checkExternal(c Caller, in *NewUserInput) error {
+	if !c.ExternalPartiesManage {
+		return ErrExternalNeedsPermission
+	}
+	if in.ExternalPartyID == nil || !validUUID(strings.ToLower(*in.ExternalPartyID)) {
+		return invalid("externalPartyId is required for an external account")
+	}
+	id := strings.ToLower(*in.ExternalPartyID)
+	in.ExternalPartyID = &id
+	if in.PrimaryEmail == nil {
+		return invalid("primaryEmail is required for an external account")
+	}
+	if in.DepartmentID != nil || in.LocationID != nil || in.EmployeeNumber != nil {
+		return invalid("an external account has no department, location or employee number")
+	}
+	now := p.now().UTC()
+	if in.AccessExpiresAt == nil || !in.AccessExpiresAt.After(now) {
+		return invalid("accessExpiresAt is required and must be in the future")
+	}
+	until := in.AccessExpiresAt.UTC().Truncate(time.Microsecond)
+	if until.After(now.AddDate(0, 0, MaxAccessDays)) {
+		return invalid("accessExpiresAt must be at most %d days from now", MaxAccessDays)
+	}
+	in.AccessExpiresAt = &until
+	return nil
 }
 
 func (p *People) UpdateProfile(ctx context.Context, c Caller, id string, in ProfileChange) (User, error) {
