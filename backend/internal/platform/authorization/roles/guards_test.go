@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // assign gives a role to a user through the CLI actor (no guards relative to an actor).
@@ -621,5 +623,90 @@ func TestTemplatesViewSharing(t *testing.T) {
 		if slices.Contains(tpl.Permissions, "views.publish") {
 			t.Errorf("%s contains views.publish", tpl.Key)
 		}
+	}
+}
+
+func TestExternalAccountsAreConfinedToTheCeiling(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	ext := f.user("Vendor")
+	f.dir.external[ext] = true
+	outside := f.role("outside", "tasks.work", "tickets.view")
+	inside := f.role("inside", "tasks.work")
+	builtIn, _ := f.svc.GetRoleByKey(ctx, AdministratorRoleKey)
+
+	// First line: a role with a permission outside the ceiling, and the administrator role, are refused (409 at the API).
+	for name, r := range map[string]Role{"outside the ceiling": outside, "administrator": builtIn} {
+		if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: r.ID, SubjectType: SubjectUser, SubjectID: ext}); !errors.Is(err, ErrExternalCeiling) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	f.assign(inside, ext)
+	eval := NewEvaluator(f.pool, f.dir)
+	if p, _ := eval.Permissions(ctx, ext); len(p) != 1 {
+		t.Fatalf("permissions of the external account: %v", p)
+	} else if _, ok := p["tasks.work"]; !ok {
+		t.Fatalf("the ceiling permission is missing: %v", p)
+	}
+
+	// Second line: roles assigned before the account was external (or edited afterwards) are cut by the evaluator.
+	late := f.user("Later vendor")
+	f.assign(outside, late)
+	f.makeAdmin(late)
+	if p, _ := eval.Permissions(ctx, late); len(p) < 10 {
+		t.Fatalf("setup: the administrator role yields everything: %d permissions", len(p))
+	}
+	f.dir.external[late] = true
+	p, _ := eval.Permissions(ctx, late)
+	if len(p) != 1 {
+		t.Fatalf("the evaluator must intersect with the ceiling, got %v", p)
+	}
+	if _, ok := p["tasks.work"]; !ok {
+		t.Fatalf("the ceiling permission stays: %v", p)
+	}
+	ex, err := eval.Explain(ctx, late)
+	if err != nil || !ex.External || !slices.Contains(ex.Excluded, "tickets.view") || len(ex.Permissions) != 1 {
+		t.Fatalf("explanation: %+v %v", ex, err)
+	}
+	// An external account that holds the administrator role is still no administrator for the guards (dominance).
+	guards := NewGuards(f.pool, f.dir)
+	if err := pgx.BeginFunc(ctx, f.pool, func(tx pgx.Tx) error {
+		admin, err := guards.IsAdministrator(ctx, tx, late)
+		if admin {
+			t.Error("an external account is never an administrator")
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// An employee keeps everything.
+	emp := f.user("Employee")
+	f.assign(outside, emp)
+	if p, _ := eval.Permissions(ctx, emp); len(p) != 2 {
+		t.Fatalf("employee permissions: %v", p)
+	}
+	if !InExternalCeiling("tasks.work") || InExternalCeiling("tickets.view") || InExternalCeiling("knowledge.view") {
+		t.Error("the ceiling is tasks.work only until knowledge articles have an external audience")
+	}
+}
+
+// A local account is local by its immutable origin, also before it has a credential: an uninvited local User must
+// not be given a high-risk role or the administrator role.
+func TestLocalOriginWithoutCredentialNeverHoldsHighRiskPermissions(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	local := f.user("Uninvited")
+	f.dir.localOrigin[local] = true
+	risky := f.role("high2", "changes.approve", "tickets.view")
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: risky.ID, SubjectType: SubjectUser, SubjectID: local}); !errors.Is(err, ErrLocalAccountHighRisk) {
+		t.Fatalf("high-risk role to an uninvited local User: %v", err)
+	}
+	builtIn, _ := f.svc.GetRoleByKey(ctx, AdministratorRoleKey)
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: builtIn.ID, SubjectType: SubjectUser, SubjectID: local}); !errors.Is(err, ErrLocalAccountHighRisk) {
+		t.Fatalf("administrator role to an uninvited local User: %v", err)
+	}
+	safe := f.role("safe2", "tickets.view")
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: safe.ID, SubjectType: SubjectUser, SubjectID: local}); err != nil {
+		t.Fatalf("a low-risk role stays assignable: %v", err)
 	}
 }

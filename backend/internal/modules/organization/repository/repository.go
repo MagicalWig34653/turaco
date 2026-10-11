@@ -23,6 +23,7 @@ type Repository struct {
 	issuer   application.CredentialIssuer
 	mailer   application.CredentialMailer
 	removers application.LocalCredentialRemover
+	notifier Notifier
 }
 
 // WithCredentialRemover returns a copy that can delete a local credential when a directory identity is linked.
@@ -182,13 +183,13 @@ func (r *Repository) exists(ctx context.Context, sql string, id string) error {
 
 const userColumns = `id::text, display_name, given_name, family_name, primary_email, status,
 	department_id::text, primary_location_id::text, manager_user_id::text, updated_at,
-	employee_number, status_source, account_kind, origin, access_expires_at, version`
+	employee_number, status_source, account_kind, origin, access_expires_at, version, external_party_id::text`
 
 func scanUser(row pgx.Row) (application.User, error) {
 	var u application.User
 	err := row.Scan(&u.ID, &u.DisplayName, &u.GivenName, &u.FamilyName, &u.PrimaryEmail, &u.Status,
 		&u.DepartmentID, &u.PrimaryLocationID, &u.ManagerUserID, &u.UpdatedAt,
-		&u.EmployeeNumber, &u.StatusSource, &u.AccountKind, &u.Origin, &u.AccessExpiresAt, &u.Version)
+		&u.EmployeeNumber, &u.StatusSource, &u.AccountKind, &u.Origin, &u.AccessExpiresAt, &u.Version, &u.ExternalPartyID)
 	return u, err
 }
 

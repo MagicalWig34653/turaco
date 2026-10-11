@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
+import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
-import { Link } from '../../platform/router/Router';
+import { Link, useLocation } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Alert } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
@@ -10,6 +11,8 @@ import { Button } from '../../platform/ui/Button';
 import { Checkbox, Select, TextField } from '../../platform/ui/Field';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { peopleAdminApi } from './adminApi';
+import { externalPartiesApi } from './externalApi';
+import { extendInstant, extendMax, extendMin } from './importModel';
 import { composeDisplayName, looksLikeEmail } from './adminModel';
 import type { CredentialLink, PersonRow } from './adminTypes';
 import { CredentialResult } from './OneTimeLink';
@@ -26,15 +29,34 @@ type Outcome = {
 
 /** Wizard for a local User (no directory account): who, placement, how they sign in, review. */
 export function UserCreateScreen() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can } = useSession();
+  const { search } = useLocation();
   const details = can('organization.users.view_details');
+  // External accounts (restricted vendor staff, ADR-0034) need organization.external_parties.manage.
+  const canExternal = can('organization.external_parties.manage');
+  const query = new URLSearchParams(search);
+  const [kind, setKind] = useState<'employee' | 'external'>(
+    canExternal && query.get('kind') === 'external' ? 'external' : 'employee',
+  );
+  const external = kind === 'external';
+  const [partyId, setPartyId] = useState(query.get('party') ?? '');
+  const [until, setUntil] = useState('');
+  const [now] = useState(() => new Date());
+  const parties = useAsync(
+    async (signal) => (canExternal ? (await externalPartiesApi.list(signal)).items : []),
+    [canExternal],
+  );
+  const activeParties = (parties.data ?? []).filter((party) => party.active);
+  const party = activeParties.find((entry) => entry.id === partyId);
+  const endOfAccess = extendInstant(until, undefined, now);
   const lookups = useOrgLookups();
   const methods = useAsync(
     (signal) => peopleAdminApi.authMethods(signal).catch(() => undefined),
     [],
   );
   const [step, setStep] = useState<Step>('who');
+  const flow: readonly Step[] = external ? ['who', 'access', 'review'] : steps;
   const [form, setForm] = useState({
     givenName: '',
     familyName: '',
@@ -60,8 +82,10 @@ export function UserCreateScreen() {
   };
   const emailInvalid = form.primaryEmail.trim() !== '' && !looksLikeEmail(form.primaryEmail);
   const nameMissing = form.displayName.trim() === '';
-  const whoValid = !nameMissing && !emailInvalid;
-  const inviteNeedsEmail = invite && form.primaryEmail.trim() === '';
+  const emailMissing = form.primaryEmail.trim() === '';
+  const externalValid = !external || (!emailMissing && !!party && endOfAccess !== undefined);
+  const whoValid = !nameMissing && !emailInvalid && externalValid;
+  const inviteNeedsEmail = invite && emailMissing;
 
   const next = () => {
     if (step === 'who') {
@@ -69,9 +93,9 @@ export function UserCreateScreen() {
       if (!whoValid) return;
     }
     if (step === 'access' && inviteNeedsEmail) return;
-    setStep(steps[Math.min(steps.indexOf(step) + 1, steps.length - 1)] ?? 'review');
+    setStep(flow[Math.min(flow.indexOf(step) + 1, flow.length - 1)] ?? 'review');
   };
-  const back = () => setStep(steps[Math.max(steps.indexOf(step) - 1, 0)] ?? 'who');
+  const back = () => setStep(flow[Math.max(flow.indexOf(step) - 1, 0)] ?? 'who');
 
   const create = async () => {
     setBusy(true);
@@ -83,11 +107,18 @@ export function UserCreateScreen() {
         ...(form.givenName.trim() ? { givenName: form.givenName.trim() } : {}),
         ...(form.familyName.trim() ? { familyName: form.familyName.trim() } : {}),
         ...(form.primaryEmail.trim() ? { primaryEmail: form.primaryEmail.trim() } : {}),
-        ...(details && form.employeeNumber.trim()
+        ...(external && party && endOfAccess
+          ? {
+              accountKind: 'external' as const,
+              externalPartyId: party.id,
+              accessExpiresAt: endOfAccess,
+            }
+          : {}),
+        ...(!external && details && form.employeeNumber.trim()
           ? { employeeNumber: form.employeeNumber.trim() }
           : {}),
-        ...(details && form.departmentId ? { departmentId: form.departmentId } : {}),
-        ...(details && form.locationId ? { primaryLocationId: form.locationId } : {}),
+        ...(!external && details && form.departmentId ? { departmentId: form.departmentId } : {}),
+        ...(!external && details && form.locationId ? { primaryLocationId: form.locationId } : {}),
       });
     } catch (cause) {
       setError(asApiError(cause));
@@ -118,6 +149,7 @@ export function UserCreateScreen() {
       locationId: '',
     });
     setNameEdited(false);
+    setUntil('');
     setInvite(true);
     setTouched(false);
     setStep('who');
@@ -188,11 +220,11 @@ export function UserCreateScreen() {
         }
       />
       <ol className="adm-steps" aria-label={t('people.create.steps')}>
-        {steps.map((entry, index) => (
+        {flow.map((entry, index) => (
           <li
             key={entry}
             aria-current={entry === step ? 'step' : undefined}
-            className={entry === step ? 'is-current' : index < steps.indexOf(step) ? 'is-done' : ''}
+            className={entry === step ? 'is-current' : index < flow.indexOf(step) ? 'is-done' : ''}
           >
             <span className="adm-step-number" aria-hidden="true">
               {index + 1}
@@ -213,6 +245,18 @@ export function UserCreateScreen() {
         {error ? <ApiErrorAlert error={error} /> : null}
         {step === 'who' ? (
           <>
+            {canExternal ? (
+              <Select
+                label={t('people.create.kind')}
+                value={kind}
+                onChange={(event) => setKind(event.target.value as 'employee' | 'external')}
+                options={[
+                  { value: 'employee', label: t('people.create.kind.employee') },
+                  { value: 'external', label: t('people.create.kind.external') },
+                ]}
+              />
+            ) : null}
+            {external ? <Alert kind="info">{t('people.create.externalIntro')}</Alert> : null}
             <TextField
               label={t('people.field.givenName')}
               value={form.givenName}
@@ -243,10 +287,48 @@ export function UserCreateScreen() {
               type="email"
               value={form.primaryEmail}
               maxLength={254}
-              error={emailInvalid ? t('people.error.emailInvalid') : undefined}
+              required={external}
+              error={
+                emailInvalid
+                  ? t('people.error.emailInvalid')
+                  : touched && external && emailMissing
+                    ? t('people.create.externalNeedsEmail')
+                    : undefined
+              }
               onChange={(event) => update({ primaryEmail: event.target.value })}
             />
-            {details ? (
+            {external ? (
+              <>
+                <Select
+                  label={t('people.create.party')}
+                  hint={t('people.create.partyHint')}
+                  value={partyId}
+                  required
+                  error={touched && !party ? t('people.create.partyRequired') : undefined}
+                  onChange={(event) => setPartyId(event.target.value)}
+                  options={[
+                    { value: '', label: t('lifecycle.reason.choose') },
+                    ...activeParties.map((entry) => ({ value: entry.id, label: entry.name })),
+                  ]}
+                />
+                <TextField
+                  label={t('people.create.accessEnds')}
+                  hint={t('people.create.accessEndsHint')}
+                  type="date"
+                  value={until}
+                  min={extendMin(null, now)}
+                  max={extendMax(now)}
+                  required
+                  error={
+                    touched && endOfAccess === undefined
+                      ? t('people.create.accessEndsInvalid')
+                      : undefined
+                  }
+                  onChange={(event) => setUntil(event.target.value)}
+                />
+              </>
+            ) : null}
+            {details && !external ? (
               <TextField
                 label={t('people.field.employeeNumber')}
                 value={form.employeeNumber}
@@ -322,7 +404,19 @@ export function UserCreateScreen() {
                 <dt>{t('people.field.primaryEmail')}</dt>
                 <dd>{form.primaryEmail || '–'}</dd>
               </div>
-              {details ? (
+              {external ? (
+                <>
+                  <div className="adm-row">
+                    <dt>{t('people.create.party')}</dt>
+                    <dd>{party?.name ?? '–'}</dd>
+                  </div>
+                  <div className="adm-row">
+                    <dt>{t('people.create.accessEnds')}</dt>
+                    <dd>{endOfAccess ? formatDateTime(locale, endOfAccess) : '–'}</dd>
+                  </div>
+                </>
+              ) : null}
+              {details && !external ? (
                 <>
                   <div className="adm-row">
                     <dt>{t('people.field.department')}</dt>

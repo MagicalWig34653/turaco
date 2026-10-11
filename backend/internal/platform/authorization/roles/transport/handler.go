@@ -96,6 +96,8 @@ func (h *httpHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "access.admin_no_expiry", "The administrator role cannot be assigned with an expiry date.")
 	case errors.Is(err, roles.ErrLocalAccountHighRisk):
 		httpx.WriteError(w, http.StatusConflict, "access.local_account_high_risk", "Local accounts cannot hold high-risk permissions.")
+	case errors.Is(err, roles.ErrExternalCeiling):
+		httpx.WriteError(w, http.StatusConflict, "access.external_ceiling", "External accounts can only hold roles with permissions from the external ceiling.")
 	case errors.Is(err, roles.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "authorization.version_conflict", "The role changed since it was loaded.")
 	case errors.Is(err, roles.ErrUnknownTemplate):

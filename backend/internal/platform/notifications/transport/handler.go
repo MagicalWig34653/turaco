@@ -53,6 +53,15 @@ func userID(r *http.Request) string {
 	return p.UserID
 }
 
+// categoryPrefixes is the category restriction of the caller: external accounts read only the categories of their
+// Tasks (ADR-0034); everybody else reads all of their notifications.
+func categoryPrefixes(r *http.Request) []string {
+	if p, _ := authorization.PrincipalFrom(r.Context()); p.External {
+		return notifications.ExternalCategoryPrefixes
+	}
+	return nil
+}
+
 type notificationDTO struct {
 	ID        string         `json:"id"`
 	Category  string         `json:"category"`
@@ -83,7 +92,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "notifications.invalid_request", "The unread filter must be true.")
 		return
 	}
-	res, err := h.svc.List(r.Context(), userID(r), unread, notifications.Page{Limit: limit, Cursor: r.URL.Query().Get("cursor")})
+	res, err := h.svc.ListOnly(r.Context(), userID(r), unread, notifications.Page{Limit: limit, Cursor: r.URL.Query().Get("cursor")}, categoryPrefixes(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -107,7 +116,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) unreadCount(w http.ResponseWriter, r *http.Request) {
-	n, err := h.svc.UnreadCount(r.Context(), userID(r))
+	n, err := h.svc.UnreadCountOnly(r.Context(), userID(r), categoryPrefixes(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return

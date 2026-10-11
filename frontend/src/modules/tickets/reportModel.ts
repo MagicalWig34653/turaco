@@ -45,7 +45,13 @@ export function withDeviceNote(description: string, label: string, note: string)
 const normalizeTitle = (value: string) =>
   value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
 
-type OpenTicket = { id: string; reference: string; title: string; status: string };
+type OpenTicket = {
+  id: string;
+  reference: string;
+  title: string;
+  status: string;
+  assetId?: string | null;
+};
 
 const finished = new Set(['resolved', 'closed', 'cancelled']);
 
@@ -58,20 +64,36 @@ function significantWords(value: string): Set<string> {
   );
 }
 
+/** A word this long is specific enough (a device kind, a system name) to point at the same problem alone. */
+const specificWordLength = 8;
+
 /**
- * Open tickets of the same person whose subject is identical (ignoring case and spacing) or shares
- * at least two significant words with the new title. A hint only, never a block.
+ * Open tickets of the same person that probably describe the same problem: the same device, an identical
+ * subject (ignoring case and spacing), two shared significant words, or one shared specific word of eight
+ * letters or more ("Etikettendrucker", "Visitenwagen"). A hint only, never a block.
  */
-export function duplicateCandidates<T extends OpenTicket>(title: string, mine: readonly T[]): T[] {
+export function duplicateCandidates<T extends OpenTicket>(
+  title: string,
+  mine: readonly T[],
+  assetId?: string,
+): T[] {
   const wanted = normalizeTitle(title);
-  if ([...wanted].length < 4) return [];
+  const sameDeviceOnly = [...wanted].length < 4;
+  if (sameDeviceOnly && !assetId) return [];
   const words = significantWords(title);
   return mine.filter((ticket) => {
     if (finished.has(ticket.status)) return false;
+    if (assetId && ticket.assetId === assetId) return true;
+    if (sameDeviceOnly) return false;
     if (normalizeTitle(ticket.title) === wanted) return true;
     let shared = 0;
-    for (const word of significantWords(ticket.title)) if (words.has(word)) shared += 1;
-    return shared >= 2;
+    let specific = false;
+    for (const word of significantWords(ticket.title)) {
+      if (!words.has(word)) continue;
+      shared += 1;
+      if ([...word].length >= specificWordLength) specific = true;
+    }
+    return shared >= 2 || specific;
   });
 }
 

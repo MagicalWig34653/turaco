@@ -34,8 +34,8 @@ Turaco is an early build. There is no packaged release, installer, Helm chart or
 - **turaco-api** serves the REST API under `/api/v1` and the probes `/health/live` and `/health/ready`. It does not serve the frontend files.
 - **turaco-worker** runs the outbox, scheduled jobs (directory sync, email, retention, advisory feeds) and writes a heartbeat. It has no HTTP listener and needs the same database.
 - **Frontend** is a static single-page application built by Vite (`frontend/dist`). The API does not embed it. The `turaco-web` image (nginx) serves it and proxies `/api/` and `/health/` to `turaco-api:8080` (`deploy/docker/nginx.conf`); on a native install any web server with the same rules does.
-- **turaco-migrate** applies SQL migrations once per deployment. It is a separate binary and is not part of the API or worker images (section 6).
-- **turaco-admin** is the operator CLI (first administrator, emergency account). The container images ship it in the worker image only.
+- **turaco-migrate** applies SQL migrations once per deployment. It is a separate binary. The worker image ships it with the SQL files (`/usr/local/bin/turaco-migrate`, `MIGRATIONS_DIR=/migrations`) so a one-shot container can run it (section 6). A PostgreSQL advisory lock serializes parallel runs.
+- **turaco-admin** is the operator CLI (first administrator, emergency account). The container images ship it in the worker image only (together with `turaco-migrate`).
 
 State lives in PostgreSQL and object storage; API and worker nodes keep no required local files ([Deployment](deployment.md)).
 
@@ -67,7 +67,7 @@ done
 make docker-build   # turaco/api:dev, turaco/worker:dev, turaco/web:dev
 ```
 
-The images contain no migrations and no `turaco-migrate`. Run migrations from a binary built as above (section 6).
+The worker image contains `turaco-migrate` and the migration files; the API and web images do not. Run migrations from the worker image as a one-shot container, or from a binary built as above (section 6).
 
 ## 4. Database
 
@@ -149,7 +149,16 @@ export DATABASE_URL='postgres://turaco:...@db.example.org:5432/turaco?sslmode=ve
 dist/bin/turaco-migrate -dir backend/migrations
 ```
 
-`make migrate` is the development wrapper (`scripts/migrate.sh` through `scripts/with-env.sh`, which reads a `.env` file); it also creates a test database when `TEST_DATABASE_URL` is set, so use the binary directly for a real deployment. Released migrations are never edited; a fix is a new migration. Whether the tool guards against two parallel runs is **not verified**: run it from one place at a time.
+`make migrate` is the development wrapper (`scripts/migrate.sh` through `scripts/with-env.sh`, which reads a `.env` file); it also creates a test database when `TEST_DATABASE_URL` is set, so use the binary directly for a real deployment. Released migrations are never edited; a fix is a new migration. `turaco-migrate` takes a session-level PostgreSQL advisory lock (`pg_advisory_lock`, key `turaco-migrate`) before it reads the applied versions, so several runs started at once (init containers, replicas, a retried job) apply each migration once: later runs wait for the lock and then find nothing to do. The lock is released when the run ends or its connection drops. The lock is only taken on the database named by `DATABASE_URL`; migrations still run one transaction per file.
+
+From the worker image (the container needs only `DATABASE_URL`):
+
+```bash
+docker run --rm -e DATABASE_URL='postgres://turaco:...@db.example.org:5432/turaco?sslmode=verify-full' \
+  --entrypoint /usr/local/bin/turaco-migrate <worker image>
+```
+
+`deploy/compose/full.yaml` runs this as the one-shot service `turaco-migrate` (API and worker wait for `service_completed_successfully`); `deploy/swarm/stack.example.yaml` has a `replicated-job` service of the same name. In the swarm example the API and worker may start before the job finishes and report not-ready until the schema is current.
 
 ## 7. Start the API and the worker
 
@@ -207,7 +216,7 @@ WantedBy=multi-user.target
 
 ### Containers
 
-`deploy/compose/full.yaml` builds and starts PostgreSQL, S3Mock, `turaco-api`, `turaco-worker` and `turaco-web` (nginx, host port 8088). It is a **single-host trial**, not a production stack: it uses `APP_ENV: local-compose`, the password `change-me`, `sslmode=disable`, S3Mock and no TLS. It contains no migration step and does not publish the PostgreSQL port, so apply migrations yourself (for example by temporarily adding `ports: ["5432:5432"]` to the `postgres` service and running `turaco-migrate` from the host; a migration container is not provided, **not verified**). For plain-HTTP trials on `http://localhost:8088` the session cookie is `Secure` by default; whether your browser keeps it on localhost is **not verified**, and `SESSION_COOKIE_SECURE=false` on the API is the documented development switch.
+`deploy/compose/full.yaml` builds and starts PostgreSQL, S3Mock, `turaco-api`, `turaco-worker` and `turaco-web` (nginx, host port 8088). It is a **single-host trial**, not a production stack: it uses `APP_ENV: local-compose`, the password `change-me`, `sslmode=disable`, S3Mock and no TLS. The one-shot `turaco-migrate` service (worker image) applies migrations after PostgreSQL is healthy, and the API and worker start only after it succeeded. The PostgreSQL port is not published. For plain-HTTP trials on `http://localhost:8088` the session cookie is `Secure` by default; whether your browser keeps it on localhost is **not verified**, and `SESSION_COOKIE_SECURE=false` on the API is the documented development switch.
 
 ```bash
 docker compose -f deploy/compose/full.yaml up -d --build
@@ -261,9 +270,10 @@ With this block set `HTTP_TRUSTED_PROXIES=127.0.0.1/32` on the API. The Vite dev
 
 ## 9. First sign-in and first-run setup
 
-A fresh installation has no administrator, and no web wizard creates one. The first platform administrator is granted on the command line with `turaco-admin`, which uses `DATABASE_URL` and the configuration from its environment. Its subcommands (from `backend/cmd/turaco-admin/main.go`):
+A fresh installation has no administrator, and no web wizard creates one. The first platform administrator is created on the command line with `turaco-admin admin create-first` (below), which uses `DATABASE_URL` and the configuration from its environment. Its subcommands (from `backend/cmd/turaco-admin/main.go`):
 
 ```text
+turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
 turaco-admin role list
 turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
 turaco-admin role revoke --assignment <uuid>
@@ -272,13 +282,19 @@ turaco-admin emergency set-password --login <name> [--password-stdin]
 turaco-admin emergency enable  --login <name>
 turaco-admin emergency disable --login <name>
 turaco-admin security import < advisories.json
-turaco-admin security sync-feeds [--source nvd|cisa_kev] [--since YYYY-MM-DD]
+turaco-admin entra link   --user <username|email|uuid> --tenant <guid> --object <guid>
+turaco-admin entra unlink --tenant <guid> --object <guid>
+turaco-admin security sync-feeds [--source nvd|osv|msrc|cisa_kev] [--since YYYY-MM-DD]
 ```
 
 `turaco-admin demo seed` and `demo seed-hospital` are development only; do not run them in production.
 
-- **With a directory:** configure `LDAP_*`, wait for the first sync, run `turaco-admin role grant --role platform-administrator --user <username>` and sign in with the directory password.
-- **Without a directory:** `turaco-admin emergency create`, `role grant` for the emergency user id it prints, `emergency enable`, set `AUTH_EMERGENCY_LOGIN_ENABLED=true` on the API and sign in with the emergency option. Emergency sessions last at most one hour.
+- **Directory user** (`LDAP_*` configured): wait for the first sync so the user exists, then run `turaco-admin admin create-first --user <username|email|uuid>` and sign in with the directory password.
+- **Entra identity** (Entra sign-in configured, [ADR-0035](../decisions/ADR-0035-entra-oidc-login.md)): the user must exist first (from the directory sync) and the Entra account is attached by tenant and object id from the Entra portal, never by e-mail. `turaco-admin admin create-first --user <username|email|uuid> --tenant <guid> --object <guid>` links the identity and grants the role in one command; use it when the people who administer Turaco sign in with Entra and have no directory password, or when their directory user is not yet linked. Without `--tenant/--object` the user must already be linked or use directory sign-in.
+- **Local accounts can never be platform administrators** ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); the command refuses them even with `--force`. With neither a directory nor Entra, use the break-glass path below.
+- **Without a directory or Entra:** `turaco-admin emergency create`, `role grant` for the emergency user id it prints, `emergency enable`, set `AUTH_EMERGENCY_LOGIN_ENABLED=true` on the API and sign in with the emergency option. Emergency sessions last at most one hour.
+
+`admin create-first` refuses to run when an active platform-administrator assignment already exists (to prevent a stray operator from adding administrators outside the web UI); `--force` overrides this for recovery, for example when every administrator lost access. A concurrent run is serialized by an advisory lock. Each success is audited twice, with the CLI actor: the normal `authorization.role.assigned` event and `authorization.first_administrator.created` (metadata: user id, whether `--force` was needed, whether an Entra identity was linked). Later administrators are assigned in the web UI by an existing administrator.
 
 In the container images `turaco-admin` is in the worker image: `docker exec <worker> turaco-admin ...`. Natively, use `dist/bin/turaco-admin` with the same environment file. Details and the break-glass procedure: [Deployment](deployment.md#first-administrator-and-emergency-access) and [Getting started as an administrator](administrator-getting-started.md#2-first-administrator-and-first-sign-in). A platform administrator then works through the setup checklist at `/admin/setup` (permission `platform.health.view`; changing items needs `platform.admin`).
 
@@ -360,10 +376,9 @@ Compatibility of old binaries with a newer schema during a rolling upgrade is **
 ## 15. Known limits
 
 - **No packaged installer or release artifacts** are documented in the repository; install is from source or locally built images. Published GHCR image names and tags are **not verified**.
-- **No migration step in the container images or compose files.** Migrations run with the separate `turaco-migrate` binary.
-- **No production first-administrator path in the web UI.** The first administrator comes from `turaco-admin role grant`, which needs a synced directory user or the emergency account. `make dev-setup` and the dev admin are development tooling ([current status](../product/current-status.md)) and must not be used in production. Without a directory the only administrator is the break-glass account, because local accounts cannot be platform administrators ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)). No MFA exists.
+- **No first-administrator wizard in the web UI.** The first administrator comes from `turaco-admin admin create-first`, which needs a synced directory user (optionally with an Entra identity link) or, with `role grant`, the emergency account. `make dev-setup` and the dev admin are development tooling ([current status](../product/current-status.md)) and must not be used in production. Without a directory the only administrator is the break-glass account, because local accounts cannot be platform administrators ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)). No MFA exists.
 - **One `DATABASE_URL` and one database role** for migrations, API and worker.
 - **The API does not serve the frontend or terminate TLS.**
 - **The single-host trial is not highly available:** the compose file runs one instance of each service and a test double for object storage.
-- **Live Intune, Autotask and software provider clients, an endpoint-agent transport and External Parties are not built** ([current status](../product/current-status.md)).
+- **Live Intune, Autotask and software provider clients, an endpoint-agent transport are not built** ([current status](../product/current-status.md)).
 - Windows service packaging and Kubernetes manifests do not exist in the repository.

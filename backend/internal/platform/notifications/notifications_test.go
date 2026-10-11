@@ -260,3 +260,37 @@ func testRegistry(t *testing.T) *notifications.Registry {
 	}
 	return r
 }
+
+func TestCategoryRestrictionForExternalAccounts(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.create(f.intent(f.a, "task-1"))
+	// A ticket notification exists for the same recipient (inserted directly: the test registry has task categories only).
+	if _, err := f.pool.Exec(ctx, `INSERT INTO platform.notifications(recipient_user_id, category, params, dedupe_key) VALUES ($1::uuid, 'ticket.comment', '{}', 'ticket-1')`, f.a); err != nil {
+		t.Fatal(err)
+	}
+	all, err := f.svc.List(ctx, f.a, false, notifications.Page{Limit: 10})
+	if err != nil || len(all.Items) != 2 {
+		t.Fatalf("unrestricted list = %d %v", len(all.Items), err)
+	}
+	only, err := f.svc.ListOnly(ctx, f.a, false, notifications.Page{Limit: 10}, notifications.ExternalCategoryPrefixes)
+	if err != nil || len(only.Items) != 1 || only.Items[0].Category != "task.assigned" {
+		t.Fatalf("restricted list = %+v %v", only.Items, err)
+	}
+	if n, _ := f.svc.UnreadCountOnly(ctx, f.a, notifications.ExternalCategoryPrefixes); n != 1 {
+		t.Errorf("restricted unread count = %d, want 1", n)
+	}
+	if n, _ := f.svc.UnreadCount(ctx, f.a); n != 2 {
+		t.Errorf("unrestricted unread count = %d, want 2", n)
+	}
+	// Cursor paging keeps the restriction.
+	page, err := f.svc.ListOnly(ctx, f.a, false, notifications.Page{Limit: 1, Cursor: all.Items[0].ID}, notifications.ExternalCategoryPrefixes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range page.Items {
+		if !strings.HasPrefix(n.Category, "task.") {
+			t.Errorf("category %q escaped the restriction", n.Category)
+		}
+	}
+}

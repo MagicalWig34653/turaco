@@ -168,25 +168,35 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in Intent) (bool, error
 	return true, nil
 }
 
+// ExternalCategoryPrefixes are the notification categories an external account (ADR-0034) may read: its Tasks.
+// Everything else is about records an external account cannot open.
+var ExternalCategoryPrefixes = []string{"task."}
+
 // List returns the recipient's notifications, newest first.
 func (s *Service) List(ctx context.Context, userID string, unreadOnly bool, p Page) (Result, error) {
+	return s.ListOnly(ctx, userID, unreadOnly, p, nil)
+}
+
+// ListOnly is List restricted to categories that start with one of the prefixes (nil: no restriction).
+func (s *Service) ListOnly(ctx context.Context, userID string, unreadOnly bool, p Page, prefixes []string) (Result, error) {
 	p = p.normalize()
 	if !validUUID(userID) {
 		return Result{Items: []Notification{}}, nil
 	}
-	args := []any{userID, unreadOnly, p.Limit + 1}
+	args := []any{userID, unreadOnly, p.Limit + 1, prefixes}
 	cursor := ""
 	if p.Cursor != "" {
 		if !validUUID(p.Cursor) {
 			return Result{}, ErrInvalidCursor
 		}
 		args = append(args, p.Cursor)
-		cursor = " AND id < $4::uuid"
+		cursor = " AND id < $5::uuid"
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, category, params, link_type, link_id::text, created_at, read_at
 		FROM platform.notifications
-		WHERE recipient_user_id = $1::uuid AND (NOT $2::boolean OR read_at IS NULL)`+cursor+`
+		WHERE recipient_user_id = $1::uuid AND (NOT $2::boolean OR read_at IS NULL)
+		  AND ($4::text[] IS NULL OR EXISTS (SELECT 1 FROM unnest($4::text[]) pre WHERE category LIKE pre || '%'))`+cursor+`
 		ORDER BY id DESC LIMIT $3`, args...)
 	if err != nil {
 		return Result{}, fmt.Errorf("list notifications: %w", err)
@@ -217,6 +227,11 @@ func (s *Service) List(ctx context.Context, userID string, unreadOnly bool, p Pa
 
 // UnreadCount returns the number of unread notifications, at most MaxUnreadCount.
 func (s *Service) UnreadCount(ctx context.Context, userID string) (int, error) {
+	return s.UnreadCountOnly(ctx, userID, nil)
+}
+
+// UnreadCountOnly is UnreadCount restricted to categories that start with one of the prefixes (nil: no restriction).
+func (s *Service) UnreadCountOnly(ctx context.Context, userID string, prefixes []string) (int, error) {
 	if !validUUID(userID) {
 		return 0, nil
 	}
@@ -224,8 +239,10 @@ func (s *Service) UnreadCount(ctx context.Context, userID string) (int, error) {
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM (
 			SELECT 1 FROM platform.notifications
-			WHERE recipient_user_id = $1::uuid AND read_at IS NULL LIMIT $2
-		) unread`, userID, MaxUnreadCount).Scan(&n)
+			WHERE recipient_user_id = $1::uuid AND read_at IS NULL
+			  AND ($3::text[] IS NULL OR EXISTS (SELECT 1 FROM unnest($3::text[]) pre WHERE category LIKE pre || '%'))
+			LIMIT $2
+		) unread`, userID, MaxUnreadCount, prefixes).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("unread count: %w", err)
 	}

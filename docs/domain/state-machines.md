@@ -17,6 +17,8 @@ Platform operations (F14, `ChangeStatus`; see [F14](../product/f14-administratio
 - Refused for the emergency account, for the actor's own account and when the last active platform administrator would leave `active`.
 - Audit: `organization.user.deactivated|departed|reactivated`; events `UserDeactivated|UserDeparted`. Open invitation and reset tokens end with the status change.
 
+External accounts (`account_kind = external`, F14 A-G, [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)) have a required `access_expires_at`. At that instant the account is inactive for every request and login without any write (`UserAccess.Account`, `LockActiveUser`); the core job `organization.expire_external_access` then performs `active → inactive` with `status_source = platform`, revokes sessions and credential tokens, audits `organization.user.access_expired` (actor `system:access-expiry`) and publishes `AccessExpired`. `extend-access` (the permission or the party's sponsor, closed reason code, later end at most 365 days from now) moves the end; it does not reactivate an account the job already deactivated, and `reactivate` of an external account is refused (`organization.invalid_state`) until the end lies in the future.
+
 `account_kind` (`employee|external`) and `origin` (`directory|local|emergency`) never change after creation (database trigger).
 
 Invariants every current and future status operation must keep:

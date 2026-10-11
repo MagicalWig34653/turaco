@@ -546,7 +546,7 @@ func wrap(op string, err error) error {
 		errors.Is(err, ErrDuplicateKey), errors.Is(err, ErrBuiltInRole), errors.Is(err, ErrRoleInUse),
 		errors.Is(err, ErrDuplicateAssignment), errors.Is(err, ErrLastAdministrator), errors.Is(err, ErrInvalidCursor),
 		errors.Is(err, ErrGrantExceedsHolder), errors.Is(err, ErrHighRiskNeedsAdministrator), errors.Is(err, ErrSelfAssignment),
-		errors.Is(err, ErrRoleNotHeld), errors.Is(err, ErrAdminNoExpiry), errors.Is(err, ErrLocalAccountHighRisk),
+		errors.Is(err, ErrRoleNotHeld), errors.Is(err, ErrAdminNoExpiry), errors.Is(err, ErrLocalAccountHighRisk), errors.Is(err, ErrExternalCeiling),
 		errors.Is(err, ErrVersionConflict), errors.Is(err, ErrUnknownTemplate), errors.Is(err, ErrSoDAcknowledgementRequired),
 		errors.As(err, &inv):
 		return err

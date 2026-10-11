@@ -35,12 +35,12 @@ A domain may use these capabilities but must not reimplement its own alternative
 
 | Module | Owns |
 |---|---|
-| Organization | users (profile, lifecycle, field ownership, local-account state; the credentials themselves belong to `platform/authentication`), departments (tree), teams with leads, locations (tree of sites and areas), cost centers (not implemented), external Directory Groups and observed memberships; contributes catalogs to the query engine for `users`, `teams`, `locations` and `departments` (not Saved Views). External Parties are designed (F14 A-G), not implemented |
+| Organization | users (profile, lifecycle, field ownership, local-account state; the credentials themselves belong to `platform/authentication`), departments (tree), teams with leads, locations (tree of sites and areas), cost centers (not implemented), external Directory Groups and observed memberships; contributes catalogs to the query engine for `users`, `teams`, `locations` and `departments` (not Saved Views). External Parties (company, sponsor, active; F14 A-G) and the `external` account kind with its end of access, plus the expiry job; the permission ceiling lives in `platform/authorization` and the HTTP allow-list in the module catalog |
 | Tasks (`tasks`, core) | tasks, recurring definitions, My Work reads and Task Boards (`tasks.boards`, columns, per-board ranks; a Board is a Saved View plus columns, and a card move calls the existing Task operation); contributes the Tasks catalog and a My Work source |
 | Products | product, optional variant, manufacturer, categories |
 | Catalog | requestable services/forms/eligibility |
 | Requests | service request lifecycle and fulfillment coordination |
-| Service Desk | incidents, major incidents, problems/known error state, Ticket Queues (key, prefix, counter, grants), the reference registry and Ticket moves between Queues; contributes System Views (`servicedesk/public.SystemViews`) and My Work sources (`servicedesk/public`) through platform contracts |
+| Service Desk | incidents, major incidents, problems/known error state, Ticket Queues (key, prefix, counter, grants), the reference registry, Ticket moves between Queues and Ticket participants (external accounts a Ticket is shared with); contributes System Views (`servicedesk/public.SystemViews`) and My Work sources (`servicedesk/public`) through platform contracts |
 | Knowledge | articles, procedures, runbook definitions/executions |
 | Assets | asset/device identity, lifecycle, assignment |
 | Inventory | warehouse, storage location, stock, transactions, reservations, goods receipt |

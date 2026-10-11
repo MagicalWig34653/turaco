@@ -55,6 +55,15 @@ type Module struct {
 	// enqueues the next one. Every other job type "<key>.*" is durable work: it stays pending until the module is
 	// enabled again.
 	DisposableJobs []string
+	// ExternalPaths are the API routes an external account (a restricted principal, ADR-0034) may call in this
+	// module, as "METHOD /api/v1/path" patterns: a segment {id} matches one UUID, any other {name} one non-empty
+	// segment, a trailing /* the rest of the path. Everything not listed answers 404 access.not_available for an
+	// external account.
+	ExternalPaths []string
+	// ExternalDenied says the module has no route an external account may call. Every module states its external
+	// behaviour with exactly one of ExternalPaths and ExternalDenied (NewIndex refuses the catalog otherwise), so a
+	// new route family cannot be forgotten.
+	ExternalDenied bool
 	// StartupGates names the environment variables that gate the module at startup. They are read-only
 	// information in the overview; the switch never overrides them.
 	StartupGates []string
@@ -78,10 +87,65 @@ func core(key string, prefixes ...string) Module {
 // internal/wiring connects; they are deliberately coarse and may be relaxed by a later ADR when a dependency
 // becomes optional.
 func Catalog() []Module {
+	list := catalogModules()
+	for i := range list {
+		if d, ok := externalAccess[list[i].Key]; ok {
+			list[i].ExternalPaths, list[i].ExternalDenied = d.paths, d.denied
+		}
+	}
+	return list
+}
+
+type externalDecl struct {
+	denied bool
+	paths  []string
+}
+
+var denied = externalDecl{denied: true}
+
+func allow(paths ...string) externalDecl { return externalDecl{paths: paths} }
+
+// externalAccess is the external behaviour of every module (ADR-0034 point 4, design section 6): the routes a
+// restricted external account may call. Default deny: a module without an entry makes NewIndex fail, so a new
+// module (or route family) has to decide. /search, /views, every /{resource}/query endpoint and the AI endpoints
+// are deliberately in no list. {id} matches one UUID only, so "/tickets/by-reference" or "/tasks/fields" never
+// match a pattern written for one record.
+var externalAccess = map[string]externalDecl{
+	"platform": allow("GET /api/v1/meta"),
+	"access": allow("GET /api/v1/auth/session", "POST /api/v1/auth/logout", "GET /api/v1/auth/methods", "POST /api/v1/auth/local-login",
+		"POST /api/v1/auth/credential-tokens/redeem", "GET /api/v1/modules/status"),
+	"organization":  denied,
+	"audit":         denied,
+	"tasks":         allow("GET /api/v1/tasks", "GET /api/v1/tasks/{id}", "POST /api/v1/tasks/{id}/start", "POST /api/v1/tasks/{id}/block", "POST /api/v1/tasks/{id}/unblock", "POST /api/v1/tasks/{id}/complete", "GET /api/v1/my-work", "GET /api/v1/my-work/items", "GET /api/v1/my-work/counts"),
+	"approvals":     denied,
+	"notifications": allow("GET /api/v1/notifications", "GET /api/v1/notifications/unread-count", "POST /api/v1/notifications/read-all", "POST /api/v1/notifications/{id}/read"),
+	// A Ticket shared through ticket_participants: read it and add a public comment. Nothing else of Service Desk.
+	"servicedesk":    allow("GET /api/v1/tickets/{id}", "POST /api/v1/tickets/{id}/comments"),
+	"knowledge":      denied, // knowledge.view joins the ceiling when articles gain an external audience
+	"catalog":        denied,
+	"requests":       denied,
+	"products":       denied,
+	"assets":         denied,
+	"procurement":    denied,
+	"inventory":      denied,
+	"endpoints":      denied,
+	"security":       denied,
+	"remoteaccess":   denied,
+	"infrastructure": denied,
+	"services":       denied,
+	"changes":        denied,
+	"planning":       denied,
+	"presence":       denied,
+	"teams":          denied,
+	"briefing":       denied,
+	"ai":             denied,
+}
+
+func catalogModules() []Module {
 	return []Module{
 		core("platform", "meta"),
 		core("access", "auth", "roles", "role-assignments", "role-templates", "permissions", "modules", "access"),
-		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs", "import-batches"),
+		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs", "import-batches", "external-parties"),
 		core("audit", "audit-events"),
 		core("tasks", "tasks", "recurring-task-definitions", "my-work"),
 		core("approvals", "approvals"),
@@ -138,6 +202,7 @@ func withGates(m Module, gates ...string) Module {
 
 // Index is the validated catalog with lookups.
 type Index struct {
+	external   []externalPattern
 	list       []Module
 	byKey      map[string]Module
 	byPrefix   map[string]string
@@ -151,6 +216,18 @@ func NewIndex(list []Module) (*Index, error) {
 	ix := &Index{list: append([]Module(nil), list...), byKey: map[string]Module{}, byPrefix: map[string]string{},
 		open: map[string]string{}, dependents: map[string][]string{}}
 	for _, m := range ix.list {
+		if (len(m.ExternalPaths) > 0) == m.ExternalDenied {
+			return nil, fmt.Errorf("modules: %q must state its external behaviour with exactly one of ExternalPaths and ExternalDenied", m.Key)
+		}
+		for _, p := range m.ExternalPaths {
+			ep, err := parseExternalPattern(p)
+			if err != nil {
+				return nil, fmt.Errorf("modules: %q: %w", m.Key, err)
+			}
+			if len(ep.segments) < 3 || !slices.Contains(m.RoutePrefixes, ep.segments[2]) {
+				return nil, fmt.Errorf("modules: %q: external pattern %q is outside the module's route prefixes", m.Key, p)
+			}
+		}
 		if m.Key == "" || strings.ToLower(m.Key) != m.Key || strings.ContainsAny(m.Key, " -.") {
 			return nil, fmt.Errorf("modules: invalid key %q", m.Key)
 		}
@@ -169,6 +246,10 @@ func NewIndex(list []Module) (*Index, error) {
 		}
 		for _, p := range m.OpenPaths {
 			ix.open[p] = m.Key
+		}
+		for _, p := range m.ExternalPaths {
+			ep, _ := parseExternalPattern(p)
+			ix.external = append(ix.external, ep)
 		}
 	}
 	for _, m := range ix.list {

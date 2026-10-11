@@ -4,7 +4,7 @@ SHELL := /bin/bash
 # which can contain Go packages (and tests) shipped by npm dependencies.
 GO_PACKAGES := ./backend/... ./agents/... ./tools/...
 
-.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down lab-up lab-down lab-reset lab-verify migrate api worker frontend test test-go test-frontend lint fmt fmt-check typecheck archcheck load-test doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
+.PHONY: help doctor bootstrap dev dev-setup infra-up infra-down lab-up lab-down lab-reset lab-verify migrate api worker frontend test test-go test-frontend e2e e2e-install lint fmt fmt-check typecheck archcheck load-test doccheck docs lockfiles-check docs-check check build docker-build clean site-build site-serve
 
 help:
 	@printf '%s\n' \
@@ -22,6 +22,8 @@ help:
 	  '  make worker       Run turaco-worker natively' \
 	  '  make frontend     Run Vite dev server natively' \
 	  '  make dev          Print the recommended local dev commands' \
+	  '  make e2e-install  Install the Playwright Chromium browser (once)' \
+	  '  make e2e          Run browser smoke tests against mocked API routes (not part of check)' \
 	  '  make check        Run the repository quality gate' \
 	  '  make load-test    Run the development load generator (LOADTEST_ARGS="--profile ramp ...")' \
 	  '  make build        Build backend, agents, and frontend' \
@@ -85,6 +87,13 @@ test-go:
 
 test-frontend:
 	@cd frontend && npm test
+
+# Browser smoke tests are deliberately not part of `make check`: they need a downloaded browser.
+e2e-install:
+	@cd frontend && npm run e2e:install
+
+e2e:
+	@cd frontend && npm run e2e
 
 lint:
 	@go vet $(GO_PACKAGES)

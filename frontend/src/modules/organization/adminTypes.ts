@@ -22,6 +22,7 @@ export type PersonRow = {
   managerUserId?: string | null;
   employeeNumber?: string | null;
   accessExpiresAt?: string | null;
+  externalPartyId?: string | null;
 };
 
 /** Owner of one attribute: who may change it, where the value came from and how fresh it is. */
@@ -68,7 +69,9 @@ export type PersonCreate = {
   employeeNumber?: string | null;
   departmentId?: string | null;
   primaryLocationId?: string | null;
-  accountKind?: 'employee';
+  accountKind?: 'employee' | 'external';
+  externalPartyId?: string;
+  accessExpiresAt?: string;
 };
 
 export type ProfileUpdate = {

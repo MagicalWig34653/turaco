@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -130,14 +131,35 @@ func (r *Repository) ExtendAccess(ctx context.Context, c application.Caller, id 
 	var out application.User
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
 		before, err := lockUser(ctx, tx, id)
+		if errors.Is(err, application.ErrNotFound) && !c.ExternalPartiesManage {
+			return application.ErrForbidden // the same answer as for an account that is not theirs to extend
+		}
 		if err != nil {
 			return err
 		}
-		if before.AccountKind != application.AccountKindExternal || before.AccessExpiresAt == nil || before.Status == application.StatusDeparted {
+		// The permission or being the sponsor of the account's party (design section 6); checked first so that a
+		// caller without either learns nothing about the account.
+		if !c.ExternalPartiesManage {
+			allowed := false
+			if before.AccountKind == application.AccountKindExternal && before.ExternalPartyID != nil && c.Actor.UserID != "" {
+				sponsor, err := partySponsor(ctx, tx, *before.ExternalPartyID)
+				if err != nil {
+					return err
+				}
+				allowed = strings.EqualFold(sponsor, c.Actor.UserID)
+			}
+			if !allowed {
+				return application.ErrForbidden
+			}
+		}
+		if before.AccountKind != application.AccountKindExternal || before.AccessExpiresAt == nil || before.ExternalPartyID == nil || before.Status == application.StatusDeparted {
 			return application.ErrWrongState
 		}
 		if before.Version != version {
 			return application.ErrVersionConflict
+		}
+		if err := requirePartyActive(ctx, tx, *before.ExternalPartyID); err != nil {
+			return err
 		}
 		if !until.After(*before.AccessExpiresAt) {
 			return &application.InvalidInputError{Message: "accessExpiresAt must be later than the current end of access"}
@@ -151,7 +173,7 @@ func (r *Repository) ExtendAccess(ctx context.Context, c application.Caller, id 
 		return r.record(ctx, tx, c, "organization.user.access_extended", "user", id,
 			map[string]any{"accessExpiresAt": before.AccessExpiresAt.UTC().Format(time.RFC3339)},
 			map[string]any{"accessExpiresAt": until.UTC().Format(time.RFC3339), "version": out.Version},
-			map[string]any{"reasonCode": reason})
+			map[string]any{"reasonCode": reason, "bySponsor": !c.ExternalPartiesManage})
 	})
 	return finishPeople(out, err, "extend access")
 }

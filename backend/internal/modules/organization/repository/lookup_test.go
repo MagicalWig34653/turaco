@@ -17,8 +17,9 @@ func TestPeopleLookupFindsAnyNameTokenOfActiveInternalEmployeesOnly(t *testing.T
 	target := f.insert(`INSERT INTO organization.users(display_name, given_name, family_name, status) VALUES ($1, 'Birgit', $2, 'active') RETURNING id::text`,
 		`DELETE FROM organization.users WHERE id = $1`, "Dr. Birgit "+family, family)
 	f.user("Gone "+family, "inactive")
-	f.insert(`INSERT INTO organization.users(display_name, status, account_kind, access_expires_at) VALUES ($1, 'active', 'external', now() + interval '30 days') RETURNING id::text`,
-		`DELETE FROM organization.users WHERE id = $1`, "Vendor "+family)
+	party := f.party()
+	f.insert(`INSERT INTO organization.users(display_name, status, account_kind, access_expires_at, external_party_id) VALUES ($1, 'active', 'external', now() + interval '30 days', $2::uuid) RETURNING id::text`,
+		`DELETE FROM organization.users WHERE id = $1`, "Vendor "+family, party)
 	f.insert(`INSERT INTO organization.users(display_name, status, origin) VALUES ($1, 'active', 'emergency') RETURNING id::text`,
 		`DELETE FROM organization.users WHERE id = $1`, "Breakglass "+family)
 	svc := application.NewPeopleLookup(f.repo)
@@ -49,8 +50,8 @@ func TestPeopleLookupFindsAnyNameTokenOfActiveInternalEmployeesOnly(t *testing.T
 		t.Errorf("wildcards must be literal: %+v", res)
 	}
 	// An external account that calls gets nothing, even for a matching text.
-	ext := f.insert(`INSERT INTO organization.users(display_name, status, account_kind, access_expires_at) VALUES ($1, 'active', 'external', now() + interval '30 days') RETURNING id::text`,
-		`DELETE FROM organization.users WHERE id = $1`, "Ext caller "+family+"e")
+	ext := f.insert(`INSERT INTO organization.users(display_name, status, account_kind, access_expires_at, external_party_id) VALUES ($1, 'active', 'external', now() + interval '30 days', $2::uuid) RETURNING id::text`,
+		`DELETE FROM organization.users WHERE id = $1`, "Ext caller "+family+"e", party)
 	if res, err := svc.Find(ctx, audit.UserActor(ext), "corr-"+f.pfx, family); err != nil || len(res) != 0 {
 		t.Errorf("external caller = %+v %v", res, err)
 	}

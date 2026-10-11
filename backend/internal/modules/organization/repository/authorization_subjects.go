@@ -121,7 +121,8 @@ func (r *Repository) DisplayNames(ctx context.Context, userIDs, groupIDs []strin
 
 func (r *Repository) ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND status = 'active'`, ids)
+		SELECT id::text FROM organization.users WHERE id = ANY($1::text[]::uuid[]) AND status = 'active'
+			AND (access_expires_at IS NULL OR access_expires_at > now())`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("active users: %w", err)
 	}
@@ -158,6 +159,26 @@ func (r *Repository) UserByEmail(ctx context.Context, email string) (string, boo
 	return id, true, nil
 }
 
+// IsExternalAccount implements application.AuthorizationSubjectStore.
+func (r *Repository) IsExternalAccount(ctx context.Context, userID string) (bool, error) {
+	var external bool
+	err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organization.users WHERE id = $1::uuid AND account_kind = 'external')`, userID).Scan(&external)
+	if err != nil {
+		return false, fmt.Errorf("check external account: %w", err)
+	}
+	return external, nil
+}
+
+// IsLocalOriginAccount implements application.AuthorizationSubjectStore.
+func (r *Repository) IsLocalOriginAccount(ctx context.Context, userID string) (bool, error) {
+	var local bool
+	err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM organization.users WHERE id = $1::uuid AND origin = 'local')`, userID).Scan(&local)
+	if err != nil {
+		return false, fmt.Errorf("check local account: %w", err)
+	}
+	return local, nil
+}
+
 // ActiveEmployees returns id -> true for each id that is an active internal employee account (not external, not the
 // emergency account). Used where a person may name another person without directory permissions (on-behalf tickets).
 func (r *Repository) ActiveEmployees(ctx context.Context, ids []string) (map[string]bool, error) {
@@ -175,6 +196,49 @@ func (r *Repository) ActiveEmployees(ctx context.Context, ids []string) (map[str
 		out[id] = true
 	}
 	return out, nil
+}
+
+// ActiveExternals returns id -> true for each id that is an active external account whose access has not ended
+// and whose party is active.
+func (r *Repository) ActiveExternals(ctx context.Context, ids []string) (map[string]bool, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id::text FROM organization.users u JOIN organization.external_parties p ON p.id = u.external_party_id
+		WHERE u.id = ANY($1::text[]::uuid[]) AND u.status = 'active' AND u.account_kind = 'external' AND u.access_expires_at > now() AND p.active`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("active externals: %w", err)
+	}
+	active, err := collectStrings(rows, "active externals")
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(active))
+	for _, id := range active {
+		out[id] = true
+	}
+	return out, nil
+}
+
+// SearchExternals returns active external accounts of active parties whose display name contains text.
+func (r *Repository) SearchExternals(ctx context.Context, text string, limit int) ([]application.ExternalAccountRef, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id::text, u.display_name, p.name
+		FROM organization.users u JOIN organization.external_parties p ON p.id = u.external_party_id
+		WHERE u.status = 'active' AND u.account_kind = 'external' AND u.access_expires_at > now() AND p.active
+		  AND lower(u.display_name) LIKE '%' || lower($1) || '%' ESCAPE '\'
+		ORDER BY lower(u.display_name), u.id LIMIT $2`, prefixPattern(text), limit)
+	if err != nil {
+		return nil, fmt.Errorf("search externals: %w", err)
+	}
+	defer rows.Close()
+	out := []application.ExternalAccountRef{}
+	for rows.Next() {
+		var a application.ExternalAccountRef
+		if err := rows.Scan(&a.UserID, &a.DisplayName, &a.PartyName); err != nil {
+			return nil, fmt.Errorf("search externals: scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // PrimaryLocationIDs returns user id -> primary Location id for Users that have one.

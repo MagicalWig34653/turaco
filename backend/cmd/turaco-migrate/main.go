@@ -49,10 +49,34 @@ func main() {
 		logger.Error("ping database", "error", err)
 		os.Exit(1)
 	}
-	if err := run(ctx, pool, *dir, logger); err != nil {
+	if err := withLock(ctx, pool, logger, func() error { return run(ctx, pool, *dir, logger) }); err != nil {
 		logger.Error("migration failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// lockKey is the PostgreSQL advisory lock that serializes migration runs. Several replicas or init containers
+// may start together; the others wait until the first has applied everything and then find nothing to do.
+const lockKey = "turaco-migrate"
+
+// withLock runs fn while holding a session-level advisory lock on a dedicated connection. The lock is released
+// when the connection closes, so a crashed run never leaves it behind.
+func withLock(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger, fn func() error) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire lock connection: %w", err)
+	}
+	defer conn.Release()
+	logger.Info("waiting for migration lock")
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return fmt.Errorf("take migration lock: %w", err)
+	}
+	defer func() {
+		if _, err := conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, lockKey); err != nil {
+			logger.Warn("release migration lock", "error", err)
+		}
+	}()
+	return fn()
 }
 
 func run(ctx context.Context, pool *pgxpool.Pool, dir string, logger *slog.Logger) error {

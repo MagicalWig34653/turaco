@@ -154,7 +154,7 @@ export function TicketCreateScreen() {
   const [impact, setImpact] = useState<ImpactChoice | ''>('');
   const [deviceNote, setDeviceNote] = useState('');
   const debouncedTitle = useDebouncedValue(title, 400);
-  const duplicates = duplicateCandidates(debouncedTitle, mine.data ?? []);
+  const duplicates = duplicateCandidates(debouncedTitle, mine.data ?? [], assetId || undefined);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [created, setCreated] = useState<Ticket>();

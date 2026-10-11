@@ -24,6 +24,9 @@ type Principal struct {
 	TenantID string
 	// SessionID is the authentication session of the request (empty for other authenticators).
 	SessionID string
+	// External marks a restricted external account (ADR-0034 point 4): the HTTP allow-list applies, grants through
+	// Team subjects do not, and the permission ceiling already limited Permissions.
+	External bool
 }
 
 // Has reports whether the principal holds the named permission.

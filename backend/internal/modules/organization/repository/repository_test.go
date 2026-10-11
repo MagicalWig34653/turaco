@@ -52,6 +52,17 @@ func (f *fixture) user(name, status string) string {
 		`DELETE FROM organization.users WHERE id = $1`, name, status)
 }
 
+// party inserts an active External Party with its own sponsor and returns the party id. Register it before the
+// external accounts that reference it: cleanups run in reverse order.
+func (f *fixture) party() string {
+	f.t.Helper()
+	sponsor := f.user(f.pfx+" Sponsor", "active")
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return f.insert(`INSERT INTO organization.external_parties(kind, name, sponsor_user_id) VALUES ('vendor', $1, $2::uuid) RETURNING id::text`,
+		`DELETE FROM organization.external_parties WHERE id = $1`, f.pfx+" Vendor "+hex.EncodeToString(b), sponsor)
+}
+
 func (f *fixture) team(name string) string {
 	return f.insert(`INSERT INTO organization.teams(name) VALUES ($1) RETURNING id::text`,
 		`DELETE FROM organization.teams WHERE id = $1`, name)

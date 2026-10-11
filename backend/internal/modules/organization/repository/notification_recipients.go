@@ -11,7 +11,7 @@ func (r *Repository) ActiveUserIDs(ctx context.Context, after string, limit int)
 		limit = 1000
 	}
 	rows, err := r.pool.Query(ctx, `SELECT id::text FROM organization.users
-		WHERE status = 'active' AND id > COALESCE(NULLIF($1, '')::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+		WHERE status = 'active' AND (access_expires_at IS NULL OR access_expires_at > now()) AND id > COALESCE(NULLIF($1, '')::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
 		ORDER BY id LIMIT $2`, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list notification recipients: %w", err)

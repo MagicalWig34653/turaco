@@ -142,12 +142,25 @@ func (r *Repository) createLocalUserTx(ctx context.Context, tx pgx.Tx, c applica
 				return err
 			}
 		}
+		kind := in.AccountKind
+		if kind == "" {
+			kind = application.AccountKindEmployee
+		}
+		if kind == application.AccountKindExternal {
+			if in.ExternalPartyID == nil || in.AccessExpiresAt == nil {
+				return application.ErrWrongState
+			}
+			if err := requirePartyActive(ctx, tx, *in.ExternalPartyID); err != nil {
+				return err
+			}
+		}
 		var id string
 		err := tx.QueryRow(ctx, `
 			INSERT INTO organization.users (display_name, given_name, family_name, primary_email, employee_number, status, status_source,
-				origin, account_kind, department_id, primary_location_id)
-			VALUES ($1, $2, $3, $4, $5, 'active', 'platform', 'local', 'employee', $6::uuid, $7::uuid) RETURNING id::text`,
-			in.DisplayName, in.GivenName, in.FamilyName, in.PrimaryEmail, in.EmployeeNumber, in.DepartmentID, in.LocationID).Scan(&id)
+				origin, account_kind, department_id, primary_location_id, external_party_id, access_expires_at)
+			VALUES ($1, $2, $3, $4, $5, 'active', 'platform', 'local', $8, $6::uuid, $7::uuid, $9::uuid, $10) RETURNING id::text`,
+			in.DisplayName, in.GivenName, in.FamilyName, in.PrimaryEmail, in.EmployeeNumber, in.DepartmentID, in.LocationID,
+			kind, in.ExternalPartyID, in.AccessExpiresAt).Scan(&id)
 		if isUnique(err) {
 			return application.ErrConflict
 		}
@@ -159,7 +172,8 @@ func (r *Repository) createLocalUserTx(ctx context.Context, tx pgx.Tx, c applica
 		}
 		return r.record(ctx, tx, c, "organization.user.created_local", "user", id, nil,
 			map[string]any{"status": out.Status, "statusSource": out.StatusSource, "origin": out.Origin, "accountKind": out.AccountKind,
-				"departmentId": out.DepartmentID, "primaryLocationId": out.PrimaryLocationID}, nil)
+				"departmentId": out.DepartmentID, "primaryLocationId": out.PrimaryLocationID, "externalPartyId": out.ExternalPartyID,
+				"accessExpiresAt": out.AccessExpiresAt}, nil)
 	}()
 	return out, err
 }
@@ -509,6 +523,10 @@ func (r *Repository) changeStatusTx(ctx context.Context, tx pgx.Tx, c applicatio
 				if !enabled {
 					return application.ErrDirectoryIdentityDisabled
 				}
+			}
+			if before.AccountKind == application.AccountKindExternal && (before.AccessExpiresAt == nil || !before.AccessExpiresAt.After(time.Now())) {
+				// The access end has passed: extend it first, otherwise the account would be inactive again at once.
+				return application.ErrWrongState
 			}
 			to, action = application.StatusActive, "organization.user.reactivated"
 		default:

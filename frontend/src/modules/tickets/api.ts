@@ -15,6 +15,7 @@ import type {
   TicketHistoryEntry,
   TicketExternalSync,
   TicketOperation,
+  TicketParticipant,
   TicketQueue,
   TicketStatus,
 } from './types';
@@ -39,6 +40,8 @@ registerErrorMessages({
   'servicedesk.queue_has_open_tickets': 'error.queueHasOpenTickets',
   'servicedesk.queue_is_default': 'error.queueIsDefault',
   'servicedesk.assignee_no_queue_access': 'error.assigneeNoQueueAccess',
+  'tickets.participant_invalid': 'error.ticketsParticipantInvalid',
+  'tickets.participant_limit': 'error.ticketsParticipantLimit',
 });
 registerErrorResolver((error) =>
   error.code.startsWith('tickets.invalid_') ? 'error.invalidRequest' : undefined,
@@ -88,6 +91,20 @@ export const ticketsApi = {
       internal,
       ...(internal && mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
     }),
+  /** The external accounts the Ticket is shared with (ADR-0034); work access in the Queue. */
+  participants: (id: string, signal?: Signal) =>
+    api.get<{ items: TicketParticipant[] }>(`/tickets/${enc(id)}/participants`, { signal }),
+  addParticipant: (
+    id: string,
+    body: { userId: string; level: 'read' | 'comment'; expiresAt?: string },
+  ) => api.post<TicketParticipant>(`/tickets/${enc(id)}/participants`, body),
+  removeParticipant: (id: string, userId: string) =>
+    api.delete<void>(`/tickets/${enc(id)}/participants/${enc(userId)}`),
+  participantCandidates: (id: string, q: string, signal?: Signal) =>
+    api.get<{ items: { userId: string; displayName: string; partyName: string }[] }>(
+      `/tickets/${enc(id)}/participant-candidates`,
+      { signal, query: { q } },
+    ),
   /** Corrects the affected person's location; null clears it. */
   setLocation: (id: string, expectedVersion: number, locationId: string | null) =>
     api.post<Ticket>(`/tickets/${enc(id)}/location`, { expectedVersion, locationId }),

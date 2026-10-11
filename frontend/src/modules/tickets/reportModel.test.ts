@@ -55,6 +55,26 @@ describe('duplicate hint', () => {
     expect(duplicateCandidates('Drucker Stationszimmer', list).map((t) => t.id)).toEqual(['4']);
     expect(duplicateCandidates('Drucker kaputt', list)).toEqual([]);
   });
+  it('finds a ticket for the same device whatever the wording', () => {
+    const list = [
+      { id: '7', reference: 'TKT-7', title: 'Bildschirm flackert', status: 'new', assetId: 'a-1' },
+      { id: '8', reference: 'TKT-8', title: 'Bildschirm flackert', status: 'new', assetId: 'a-2' },
+    ];
+    expect(duplicateCandidates('Monitor zeigt Streifen', list, 'a-1').map((t) => t.id)).toEqual([
+      '7',
+    ]);
+    expect(duplicateCandidates('', list, 'a-1').map((t) => t.id)).toEqual(['7']);
+    expect(duplicateCandidates('Monitor zeigt Streifen', list)).toEqual([]);
+  });
+  it('treats one specific long word as the same problem', () => {
+    const list = [
+      { id: '9', reference: 'TKT-9', title: 'Armbanddrucker druckt unscharf', status: 'new' },
+      { id: '10', reference: 'TKT-10', title: 'Drucker unscharf', status: 'new' },
+    ];
+    expect(duplicateCandidates('Armbanddrucker Notaufnahme kaputt', list).map((t) => t.id)).toEqual(
+      ['9'],
+    );
+  });
   it('ignores short titles and finished tickets', () => {
     expect(duplicateCandidates('abc', mine)).toEqual([]);
     expect(duplicateCandidates('Anderes', mine).map((t) => t.id)).toEqual(['3']);

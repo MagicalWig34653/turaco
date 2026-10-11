@@ -63,6 +63,7 @@ const paths: Partial<Record<RouteId, string>> = {
   userNew: 'M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM3 21v-2a7 7 0 0 1 14 0v2M19 8v6m-3-3h6',
   teams:
     'M3 21v-3a5 5 0 0 1 10 0v3M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M15 21v-2a4 4 0 0 1 6 0v2M18 14a3 3 0 1 0 0-6',
+  externalParties: 'M3 21V9l7-5 7 5v12M3 21h14M7 13h2m3 0h2M7 17h2m3 0h2M20 8v8m-3-4h6',
   locations:
     'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11ZM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
   departments: 'M12 3v5M6 8h12M6 8v4m12-4v4M3 12h6v5H3zm12 0h6v5h-6zM9 17v3h6v-3',

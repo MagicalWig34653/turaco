@@ -144,6 +144,16 @@ export function ProfileCard({ person, lookups }: { person: PersonDetail; lookups
             }
           />
         ) : null}
+        {person.externalPartyId && can('organization.external_parties.manage') ? (
+          <Row
+            label={t('external.party')}
+            value={
+              <Link to={`/admin/external-parties/${encodeURIComponent(person.externalPartyId)}`}>
+                {t('external.openParty')}
+              </Link>
+            }
+          />
+        ) : null}
       </dl>
     </section>
   );

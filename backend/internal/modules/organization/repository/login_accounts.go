@@ -74,14 +74,16 @@ func (r *Repository) LockActiveUser(ctx context.Context, tx pgx.Tx, userID strin
 		return false, nil
 	}
 	var status string
-	err := tx.QueryRow(ctx, `SELECT status FROM organization.users WHERE id = $1 FOR SHARE`, userID).Scan(&status)
+	var expired bool
+	// An external account past its end of access is inactive at once, before the expiry job writes the status.
+	err := tx.QueryRow(ctx, `SELECT status, coalesce(access_expires_at <= now(), false) FROM organization.users WHERE id = $1 FOR SHARE`, userID).Scan(&status, &expired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("lock user: %w", err)
 	}
-	return status == statusActive, nil
+	return status == statusActive && !expired, nil
 }
 
 // InsertLocalUser implements application.LoginAccountStore.
@@ -123,14 +125,16 @@ func (r *Repository) LocalAccountState(ctx context.Context, tx pgx.Tx, userID st
 	var origin, status string
 	var name string
 	var email *string
-	err := tx.QueryRow(ctx, `SELECT origin, status, display_name, primary_email FROM organization.users WHERE id = $1::uuid FOR SHARE`, userID).Scan(&origin, &status, &name, &email)
+	var expired bool
+	err := tx.QueryRow(ctx, `SELECT origin, status, display_name, primary_email, coalesce(access_expires_at <= now(), false) FROM organization.users WHERE id = $1::uuid FOR SHARE`, userID).
+		Scan(&origin, &status, &name, &email, &expired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.LocalAccountState{}, nil
 	}
 	if err != nil {
 		return application.LocalAccountState{}, fmt.Errorf("local account state: %w", err)
 	}
-	st := application.LocalAccountState{Exists: true, Local: origin == application.OriginLocal, Active: status == application.StatusActive, DisplayName: name}
+	st := application.LocalAccountState{Exists: true, Local: origin == application.OriginLocal, Active: status == application.StatusActive && !expired, DisplayName: name}
 	if email != nil {
 		st.Email = *email
 	}

@@ -807,7 +807,7 @@ func (h *hospitalSeeder) briefing(ctx context.Context) error {
 			continue
 		}
 		until := time.Now().UTC().Add(time.Duration(b.ValidDays) * 24 * time.Hour)
-		it, err := svc.Create(ctx, c, p, briefingapp.CreateInput{Title: b.Title, Body: b.Body, Severity: b.Severity, ValidUntil: &until})
+		it, err := svc.Create(ctx, c, p, briefingapp.CreateInput{Title: b.Title, Body: b.Body, Severity: b.Severity, Audience: b.Audience, ValidUntil: &until})
 		if err != nil {
 			return fmt.Errorf("briefing %q: %w", b.Title, err)
 		}

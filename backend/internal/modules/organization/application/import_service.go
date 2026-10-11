@@ -133,9 +133,7 @@ func (i *Imports) ExtendAccess(ctx context.Context, c Caller, id string, version
 	if err := c.validate(); err != nil {
 		return User{}, err
 	}
-	if !c.ExternalPartiesManage {
-		return User{}, ErrForbidden
-	}
+	// The permission or being the sponsor of the account's External Party is checked by the store next to the lock.
 	if err := requireVersion(version); err != nil {
 		return User{}, err
 	}

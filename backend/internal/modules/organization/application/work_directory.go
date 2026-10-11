@@ -102,6 +102,41 @@ func (w *WorkDirectory) ActiveEmployees(ctx context.Context, ids []string) (map[
 	return es.ActiveEmployees(ctx, valid)
 }
 
+// ExternalAccountRef names an active external account with the party it belongs to.
+type ExternalAccountRef struct {
+	UserID      string
+	DisplayName string
+	PartyName   string
+}
+
+// externalStore is the optional capability of a store that knows external accounts.
+type externalStore interface {
+	ActiveExternals(ctx context.Context, ids []string) (map[string]bool, error)
+	SearchExternals(ctx context.Context, text string, limit int) ([]ExternalAccountRef, error)
+}
+
+// ActiveExternals returns id -> true for each id that is an active external account whose access has not ended. A
+// store without the capability answers nobody.
+func (w *WorkDirectory) ActiveExternals(ctx context.Context, ids []string) (map[string]bool, error) {
+	valid := validIDs(ids)
+	es, ok := w.store.(externalStore)
+	if len(valid) == 0 || !ok {
+		return map[string]bool{}, nil
+	}
+	return es.ActiveExternals(ctx, valid)
+}
+
+// SearchExternals returns at most limit active external accounts of active parties whose name contains text (2 or
+// more characters), for choosing who a Ticket is shared with.
+func (w *WorkDirectory) SearchExternals(ctx context.Context, text string, limit int) ([]ExternalAccountRef, error) {
+	es, ok := w.store.(externalStore)
+	text = strings.TrimSpace(text)
+	if !ok || len([]rune(text)) < 2 {
+		return []ExternalAccountRef{}, nil
+	}
+	return es.SearchExternals(ctx, text, min(max(limit, 1), 50))
+}
+
 // PrimaryLocationIDs returns user id -> primary Location id for Users that have one (empty when the store cannot say).
 func (w *WorkDirectory) PrimaryLocationIDs(ctx context.Context, ids []string) (map[string]string, error) {
 	valid := validIDs(ids)

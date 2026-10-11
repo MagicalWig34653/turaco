@@ -3,6 +3,7 @@
 // emergency (break-glass) account. It talks to PostgreSQL directly using
 // DATABASE_URL; every change is audited with the actor {"actor":"cli"}.
 //
+//	turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
 //	turaco-admin role list
 //	turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
 //	turaco-admin role revoke --assignment <uuid>
@@ -48,6 +49,7 @@ type env struct {
 }
 
 const usage = `usage:
+  turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
   turaco-admin role list
   turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
   turaco-admin role revoke --assignment <uuid>
@@ -99,6 +101,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runSecurity(ctx, e, command, rest)
 	case "entra":
 		err = runEntra(ctx, e, command, rest)
+	case "admin":
+		err = runAdmin(ctx, e, command, rest)
 	default:
 		err = errUsage
 	}

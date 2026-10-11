@@ -76,6 +76,7 @@ func (f *peopleFix) cleanupUser(id string) {
 			`DELETE FROM platform.credential_tokens WHERE user_id = $1`,
 			`DELETE FROM platform.local_credentials WHERE user_id = $1`,
 			`DELETE FROM platform.sessions WHERE user_id = $1`,
+			`DELETE FROM organization.external_identities WHERE user_id = $1 AND provider_key LIKE 'ad-test-%'`,
 			`DELETE FROM organization.team_memberships WHERE user_id = $1`,
 			`DELETE FROM organization.users WHERE id = $1`,
 		} {
@@ -124,15 +125,27 @@ func sodKeys() []string {
 
 func (f *peopleFix) admin(name string) application.User {
 	f.t.Helper()
-	u := f.local(name)
+	// A directory User: the administrator role is not assignable to a local account (R10, also by origin).
+	f.n++
+	email := fmt.Sprintf("%s-adm%d@example.test", f.pfx, f.n)
+	var id string
+	if err := f.pool.QueryRow(context.Background(), `INSERT INTO organization.users(display_name, primary_email, status) VALUES ($1, $2, 'active') RETURNING id::text`,
+		f.pfx+" "+name, email).Scan(&id); err != nil {
+		f.t.Fatalf("create administrator: %v", err)
+	}
+	f.cleanupUser(id)
+	// An enabled directory identity, as a synchronized User has (reactivation needs it).
+	if _, err := f.pool.Exec(context.Background(), `INSERT INTO organization.external_identities(user_id, provider_key, external_subject, username) VALUES ($1::uuid, $2, $3, $3)`, id, "ad-test-"+f.pfx, fmt.Sprintf("%s-adm%d", f.pfx, f.n)); err != nil {
+		f.t.Fatalf("create directory identity: %v", err)
+	}
 	built, err := f.roles.GetRoleByKey(context.Background(), roles.AdministratorRoleKey)
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	if _, err := f.roles.AssignRole(context.Background(), f.cli, "corr-"+f.pfx, roles.AssignInput{RoleID: built.ID, SubjectType: roles.SubjectUser, SubjectID: u.ID}); err != nil {
+	if _, err := f.roles.AssignRole(context.Background(), f.cli, "corr-"+f.pfx, roles.AssignInput{RoleID: built.ID, SubjectType: roles.SubjectUser, SubjectID: id}); err != nil {
 		f.t.Fatal(err)
 	}
-	return u
+	return f.reload(id)
 }
 
 func (f *peopleFix) reload(id string) application.User {
@@ -260,7 +273,7 @@ func TestDominanceRuleBlocksTakeover(t *testing.T) {
 	f.mailer.mail = true
 	delegate := f.local("Delegate", "organization.users.manage", "tickets.view")
 	staff := f.local("Staff", "tickets.view")
-	powerful := f.local("Powerful", "tickets.view", "changes.approve")
+	powerful := f.local("Powerful", "tickets.view", "tickets.manage") // elevated, not high: local accounts hold no high-risk permission
 	admin := f.admin("Admin")
 
 	// Reset, invitation-like, email change, deactivation and reactivation: refused on a more privileged target.
@@ -656,8 +669,9 @@ func TestTeamMembershipRules(t *testing.T) {
 		t.Error("an unknown role must fail (database constraint)")
 	}
 	// An external account is a restricted principal: it enters a Team only with the external parties permission.
-	ext := f.insert(`INSERT INTO organization.users(display_name, account_kind, access_expires_at, origin) VALUES ($1, 'external', now() + interval '30 days', 'local') RETURNING id::text`,
-		`DELETE FROM organization.users WHERE id = $1`, f.pfx+"-ext")
+	party := f.party()
+	ext := f.insert(`INSERT INTO organization.users(display_name, account_kind, access_expires_at, origin, external_party_id) VALUES ($1, 'external', now() + interval '30 days', 'local', $2::uuid) RETURNING id::text`,
+		`DELETE FROM organization.users WHERE id = $1`, f.pfx+"-ext", party)
 	f.t.Cleanup(func() { _, _ = f.pool.Exec(ctx, `DELETE FROM organization.team_memberships WHERE user_id = $1`, ext) })
 	if _, err := f.repo.AddTeamMember(ctx, f.caller(lead.ID), team.ID, ext, nil); !errors.Is(err, application.ErrExternalNeedsPermission) {
 		t.Errorf("external account without the permission: %v", err)

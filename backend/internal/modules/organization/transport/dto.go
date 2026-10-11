@@ -45,11 +45,13 @@ type userDTO struct {
 	AccountKind       string  `json:"accountKind"`
 	// Source is where the account comes from: directory, local or emergency.
 	Source string `json:"source"`
+	// ExternalPartyID is the External Party of an external account (omitted for employees).
+	ExternalPartyID *string `json:"externalPartyId,omitempty"`
 }
 
 func toUser(u application.User) userDTO {
 	return userDTO{u.ID, u.DisplayName, u.GivenName, u.FamilyName, u.PrimaryEmail, u.Status, u.DepartmentID, u.PrimaryLocationID, u.ManagerUserID, ts(u.UpdatedAt),
-		u.Version, u.StatusSource, u.AccountKind, u.Origin}
+		u.Version, u.StatusSource, u.AccountKind, u.Origin, u.ExternalPartyID}
 }
 
 type teamDTO struct {

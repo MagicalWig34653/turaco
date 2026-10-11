@@ -139,6 +139,8 @@ import { TeamsScreen } from '../modules/organization/TeamsScreen';
 import { ImportScreen } from '../modules/organization/ImportScreen';
 import { UserCreateScreen } from '../modules/organization/UserCreateScreen';
 import { UserDetailScreen } from '../modules/organization/UserDetailScreen';
+import { ExternalPartiesScreen } from '../modules/organization/ExternalPartiesScreen';
+import { ExternalPartyDetailScreen } from '../modules/organization/ExternalPartyDetailScreen';
 import { UsersScreen } from '../modules/organization/UsersScreen';
 import { SetPasswordScreen } from '../modules/auth/SetPasswordScreen';
 import { DirectorySyncRunScreen } from '../modules/directory/DirectorySyncRunScreen';
@@ -148,6 +150,7 @@ import { matchRoute } from '../platform/router/routing';
 import { navigate, useLocation } from '../platform/router/Router';
 import { SessionProvider, useSession } from '../platform/session/SessionProvider';
 import { ThemeProvider } from '../platform/theme/ThemeProvider';
+import { ExternalApp } from './ExternalApp';
 import { Home } from './Home';
 import { appRoutes, canViewRoute, type RouteId } from './routes';
 import { Shell } from './Shell';
@@ -381,6 +384,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ImportScreen />;
     case 'userDetail':
       return <UserDetailScreen key={params.id} id={params.id ?? ''} />;
+    case 'externalParties':
+      return <ExternalPartiesScreen />;
+    case 'externalPartyDetail':
+      return <ExternalPartyDetailScreen key={params.id} id={params.id ?? ''} />;
     case 'teams':
       return <TeamsScreen />;
     case 'teamDetail':
@@ -473,6 +480,9 @@ function Gate() {
     );
   }
   if (state.status === 'anonymous') return <LoginScreen />;
+  // A restricted external account gets its own small application: the server allows it only Tasks, notifications
+  // and the Tickets shared with it, so the full shell (search, views, assistant, presence) is never loaded.
+  if (state.session.external) return <ExternalApp />;
   return (
     <ModulesProvider key={state.session.userId}>
       <PresenceProvider>

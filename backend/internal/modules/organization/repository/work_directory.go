@@ -127,7 +127,7 @@ func (r *Repository) MembershipIntervals(ctx context.Context, teamID string, fro
 
 func (r *Repository) Contacts(ctx context.Context, ids []string) (map[string]application.Contact, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, display_name, coalesce(primary_email, ''), status = 'active'
+		SELECT id::text, display_name, coalesce(primary_email, ''), status = 'active' AND (access_expires_at IS NULL OR access_expires_at > now())
 		FROM organization.users WHERE id = ANY($1::text[]::uuid[])`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("contacts: %w", err)

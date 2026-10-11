@@ -301,7 +301,7 @@ func TestBulkOperationsApplyDominanceAndOwnershipPerRow(t *testing.T) {
 	ctx := context.Background()
 	delegate := f.local("Delegate", "organization.users.manage", "tickets.view")
 	plain := f.local("Plain", "tickets.view")
-	powerful := f.local("Powerful", "tickets.view", "changes.approve")
+	powerful := f.local("Powerful", "tickets.view", "tickets.manage")
 	dir := f.user(f.pfx+" Directory", "active")
 	c := f.batchCaller(delegate.ID, false, application.PermUsersManage)
 	ids := []string{plain.ID, powerful.ID, dir, delegate.ID, "0198f3c2-0000-7000-8000-00000000dead"}
@@ -477,10 +477,11 @@ func TestExtendAccessOnExternalAccounts(t *testing.T) {
 	c := f.caller(admin.ID)
 	c.ExternalPartiesManage = true
 	expires := time.Now().UTC().Add(10 * 24 * time.Hour).Truncate(time.Microsecond)
+	party := f.party()
 	id := f.insert(`
-		INSERT INTO organization.users(display_name, primary_email, status, origin, account_kind, access_expires_at)
-		VALUES ($1, $2, 'active', 'local', 'external', $3) RETURNING id::text`,
-		`DELETE FROM organization.users WHERE id = $1`, f.pfx+" Vendor", f.pfx+"-vendor@example.test", expires)
+		INSERT INTO organization.users(display_name, primary_email, status, origin, account_kind, access_expires_at, external_party_id)
+		VALUES ($1, $2, 'active', 'local', 'external', $3, $4::uuid) RETURNING id::text`,
+		`DELETE FROM organization.users WHERE id = $1`, f.pfx+" Vendor", f.pfx+"-vendor@example.test", expires, party)
 	u := f.reload(id)
 
 	later := expires.Add(30 * 24 * time.Hour)

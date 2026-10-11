@@ -165,7 +165,7 @@ SCIM provisioning from Entra is deferred: it needs an inbound endpoint reachable
 | Privilege through Entra group membership (M365 group owners, guests) | security groups only, no high-risk via groups, Directory Group freshness |
 | Low-assurance session uses admin rights | high-risk needs `mfa` assurance, step-up issues a new session |
 | Shared workstation reuses previous Entra session | `prompt=select_account`, optional Entra sign-out redirect, session cap |
-| Guest or partner-tenant user lands as employee | guests refused until A-G, then only to pre-created `external` Users |
+| Guest or partner-tenant user lands as employee | guests refused until E-E maps them (F14 A-G exists since 2026-10-11), then only to pre-created `external` Users |
 | Credential theft from the API host | certificate preferred, secret files readable only by `turaco-api`, no Graph application permissions on the sign-in registration |
 | Database breach | no refresh or access tokens stored; transaction rows hold nothing reusable after 10 minutes |
 
@@ -327,7 +327,7 @@ Cloud endpoint table (`global|usgov|china`), host allow-list per feature, `MICRO
 | E-B | Linking: administrator link/unlink, hybrid source-anchor match, auto-provisioning policy, guest refusal | no link by email in any path (tests); collision refusal; ADR-0034 R5 rules hold; dominance tests |
 | E-C | Graph reconciliation and cloud-only Directory Group sync on the Graph read registration | disabled Entra user loses sessions within one interval (test with Fake); mass-removal safeguard; no high-risk via Entra groups (409) |
 | E-D | Assurance and step-up; evaluator rule; R10 text update in F14 | low-assurance Entra session has no high-risk permission; step-up issues a new session; local accounts unchanged |
-| E-E | `multi_restricted` tenants and guests as `external` Users (after F14 A-G) | foreign tenant refused unless allowed; guest maps only to pre-created external User; ceiling applies |
+| E-E | `multi_restricted` tenants and guests as `external` Users (F14 A-G is implemented) | foreign tenant refused unless allowed; guest maps only to pre-created external User; ceiling applies |
 | T-A | `teams` module, channel routes, `teams_channel` deliveries, Workflows adapter | broadcastable-only routing; reference-only content test per category; 429 retry; module off creates nothing |
 | T-B | Teams app package, bot send, personal deliveries, preferences | deliveries only for linked, active, permitted recipients; cards contain no titles by default; deep links valid |
 | T-C | Inbound endpoint, JWT verifier, action tokens, Approvals decision as User | all verifier negatives refused; token single use and recipient-bound; high-impact has no buttons; security review passed |
@@ -369,7 +369,7 @@ The fifteen open questions are answered. They bind the implementation; the numbe
 | 5 | Entra ID P1 (Conditional Access authentication context) is a supported prerequisite for MFA step-up. |
 | 6 | Both layouts are supported: separate registrations (recommended) and one combined registration for small installations (the same client id in several configuration keys is valid). |
 | 7 | Global cloud only (EU tenants and data boundary); sovereign clouds are not built. |
-| 8 | Guests (B2B) wait for F14 A-G (External Parties). |
+| 8 | Guests (B2B) wait for E-E; F14 A-G (External Parties) is implemented. |
 | 9 | No SCIM. The 15-minute reconciliation pull is sufficient. |
 | 10 | Phases T-A, then T-B, then T-C. On-premises installations have no inbound access from outside, so they get T-A (outbound only); T-B and T-C require a reachable bot endpoint and are available for hosted installations or on-premises installations that publish one deliberately. |
 | 11 | Personal Teams notifications are opt-in per user. An administrator can also set the default or switch the channel off for everybody in the settings. |

@@ -23,6 +23,19 @@ type UserGate interface {
 	IsActive(ctx context.Context, userID string) (bool, error)
 }
 
+// AccountState is what a request needs to know about its user: whether the account may hold a session and whether
+// it is a restricted external account (ADR-0034 point 4).
+type AccountState struct {
+	Active   bool
+	External bool
+}
+
+// AccountGate is the richer UserGate: one read answers both questions. A UserGate that also implements it is used
+// for the Principal's External flag; otherwise every account counts as internal.
+type AccountGate interface {
+	Account(ctx context.Context, userID string) (AccountState, error)
+}
+
 // PermissionLoader resolves the effective permissions of a user.
 type PermissionLoader interface {
 	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
@@ -70,6 +83,9 @@ func (a *SessionAuthenticator) Authenticate(r *http.Request) (authorization.Prin
 // Resolve returns the valid session and principal of the request. ok=false
 // means no valid session; an error is returned only for internal failures.
 func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.Principal, bool, error) {
+	if c, ok := r.Context().Value(resolvedKey{}).(resolved); ok {
+		return c.session, c.principal, true, nil // resolved earlier in this request by ConfineExternal
+	}
 	token, ok := tokenFromRequest(r, a.secure)
 	if !ok {
 		return Session{}, authorization.Principal{}, false, nil
@@ -84,18 +100,27 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	if s.AuthMethod == methodLocal && !a.localEnabled {
 		return Session{}, authorization.Principal{}, false, nil
 	}
-	active, err := a.users.IsActive(r.Context(), s.UserID)
-	if err != nil {
-		return Session{}, authorization.Principal{}, false, fmt.Errorf("check user active: %w", err)
+	var state AccountState
+	if gate, ok := a.users.(AccountGate); ok {
+		var err error
+		if state, err = gate.Account(r.Context(), s.UserID); err != nil {
+			return Session{}, authorization.Principal{}, false, fmt.Errorf("check user active: %w", err)
+		}
+	} else {
+		active, err := a.users.IsActive(r.Context(), s.UserID)
+		if err != nil {
+			return Session{}, authorization.Principal{}, false, fmt.Errorf("check user active: %w", err)
+		}
+		state.Active = active
 	}
-	if !active {
+	if !state.Active {
 		return Session{}, authorization.Principal{}, false, nil
 	}
 	perms, err := a.permissions.Permissions(r.Context(), s.UserID)
 	if err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
 	}
-	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID}, true, nil
+	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID, External: state.External}, true, nil
 }
 
 type sessionKey struct{}

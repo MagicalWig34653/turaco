@@ -26,7 +26,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F11 Workforce Presence | P-A and the P-B UI done (manual entries, availability hints) | Change window and Briefing integration, coverage notifications, external sources (P-C) |
 | F12 Turaco AI | A-A (read-only backend) and A-B (UI) done | AI Proposals and write tools (A-C), MCP server (A-D), non-local providers |
 | F13 Workbench Views | Q-A to Q-D done (query engine, Saved Views, Queues, System Views, My Work sources, Boards; backend and UI) | Q-E catalogs of further resources, routing rules, archived-View restore screen |
-| F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties |
+| F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties (done 2026-10-11, security review open) |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
 | F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
 

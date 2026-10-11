@@ -47,16 +47,48 @@ type queueMemberships struct {
 	eval  *roles.Evaluator
 }
 
+// external reports whether the User is an external account: its Teams and roles never open Queues (review rule R2),
+// also when staff assign a ticket to it.
+func (m queueMemberships) external(ctx context.Context, userID string) (bool, error) {
+	ext, err := m.teams.ActiveExternals(ctx, []string{userID})
+	return ext[userID], err
+}
+
 func (m queueMemberships) TeamIDs(ctx context.Context, userID string) ([]string, error) {
+	if ext, err := m.external(ctx, userID); err != nil || ext {
+		return nil, err
+	}
 	return m.teams.CurrentTeamIDs(ctx, userID)
 }
 
 func (m queueMemberships) RoleIDs(ctx context.Context, userID string) ([]string, error) {
+	if ext, err := m.external(ctx, userID); err != nil || ext {
+		return nil, err
+	}
 	return m.eval.RoleIDs(ctx, userID)
 }
 
 func (m queueMemberships) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {
 	return m.eval.Permissions(ctx, userID)
+}
+
+// externalAccounts adapts the Organization work directory to the Service Desk participant directory.
+type externalAccounts struct{ dir *orgpublic.WorkDirectory }
+
+func (e externalAccounts) ActiveExternals(ctx context.Context, ids []string) (map[string]bool, error) {
+	return e.dir.ActiveExternals(ctx, ids)
+}
+
+func (e externalAccounts) SearchExternals(ctx context.Context, text string, limit int) ([]servicedeskapp.ExternalAccount, error) {
+	list, err := e.dir.SearchExternals(ctx, text, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]servicedeskapp.ExternalAccount, len(list))
+	for i, a := range list {
+		out[i] = servicedeskapp.ExternalAccount{UserID: a.UserID, DisplayName: a.DisplayName, PartyName: a.PartyName}
+	}
+	return out, nil
 }
 
 // ServiceDesk builds the ticket service over the other modules' public contracts.
@@ -65,7 +97,8 @@ func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	dir := orgpublic.NewWorkDirectory(org)
 	members := queueMemberships{teams: dir, eval: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org))}
 	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).
-		WithQueryEngine(QueryEngine(pool)).WithMemberships(members).WithChanges(changespublic.NewChanges(Changes(pool)), Relationships(), pool)
+		WithQueryEngine(QueryEngine(pool)).WithMemberships(members).WithChanges(changespublic.NewChanges(Changes(pool)), Relationships(), pool).
+		WithExternalAccounts(servicedeskrepository.New(pool), externalAccounts{dir})
 }
 
 // gatewayAdapter adapts the Autotask adapter to the Service Desk port.

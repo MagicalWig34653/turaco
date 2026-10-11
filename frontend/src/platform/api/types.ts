@@ -19,6 +19,8 @@ export type AuthSession = {
   givenName?: string;
   /** The user's preferred UI language when the profile has one ('de' or 'en'). */
   locale?: string;
+  /** A restricted external account (ADR-0034): only its Tasks and the Tickets shared with it. */
+  external?: boolean;
 };
 
 export type LoginRequest = { identifier: string; password: string };

@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -59,34 +60,37 @@ const grantsSQL = `
 		OR (a.subject_type = 'directory_group' AND a.subject_id = ANY($2::text[]::uuid[])))
 	ORDER BY a.id`
 
-func (e *Evaluator) load(ctx context.Context, q querier, userID string) (grants []grant, local bool, err error) {
+func (e *Evaluator) load(ctx context.Context, q querier, userID string) (grants []grant, local, external bool, err error) {
 	if !uuidPattern.MatchString(userID) {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 	groupIDs, err := e.groups.GroupIDsOfUser(ctx, userID)
 	if err != nil {
-		return nil, false, fmt.Errorf("resolve groups: %w", err)
+		return nil, false, false, fmt.Errorf("resolve groups: %w", err)
+	}
+	if external, err = e.groups.IsExternalAccount(ctx, userID); err != nil {
+		return nil, false, false, fmt.Errorf("resolve account kind: %w", err)
 	}
 	if groupIDs == nil {
 		groupIDs = []string{}
 	}
 	rows, err := q.Query(ctx, grantsSQL, userID, groupIDs)
 	if err != nil {
-		return nil, false, fmt.Errorf("load role permissions: %w", err)
+		return nil, false, false, fmt.Errorf("load role permissions: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var g grant
 		if err := rows.Scan(&g.roleID, &g.roleKey, &g.roleName, &g.builtIn, &g.perms, &g.assignmentID, &g.subjectType, &g.subjectID,
 			&g.expiresAt, &local); err != nil {
-			return nil, false, fmt.Errorf("load role permissions: scan: %w", err)
+			return nil, false, false, fmt.Errorf("load role permissions: scan: %w", err)
 		}
 		grants = append(grants, g)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("load role permissions: %w", err)
+		return nil, false, false, fmt.Errorf("load role permissions: %w", err)
 	}
-	return grants, local, nil
+	return grants, local, external, nil
 }
 
 func registryRisk() map[string]string {
@@ -116,8 +120,9 @@ func grantPermissions(g grant, known map[string]string) []string {
 }
 
 // reduce is the one place that turns grants into the effective set. excluded lists the high-risk permissions the
-// local-account rule removed.
-func reduce(grants []grant, local bool) (set map[string]struct{}, excluded []string) {
+// local-account rule or the external ceiling removed (for an external account the built-in administrator role
+// yields everything and the ceiling removes all but the ceiling, which is not listed one by one).
+func reduce(grants []grant, local, external bool) (set map[string]struct{}, excluded []string) {
 	known := registryRisk()
 	set = map[string]struct{}{}
 	removed := map[string]struct{}{}
@@ -125,6 +130,12 @@ func reduce(grants []grant, local bool) (set map[string]struct{}, excluded []str
 		for _, p := range grantPermissions(g, known) {
 			if local && known[p] == RiskHigh {
 				removed[p] = struct{}{}
+				continue
+			}
+			if external && !InExternalCeiling(p) {
+				if !g.builtIn {
+					removed[p] = struct{}{}
+				}
 				continue
 			}
 			set[p] = struct{}{}
@@ -139,6 +150,15 @@ func reduce(grants []grant, local bool) (set map[string]struct{}, excluded []str
 	return set, excluded
 }
 
+// ExternalCeiling is the closed list of permissions an external account can ever hold (ADR-0034 point 4). The
+// evaluator intersects the permissions of an external account with it, whatever roles are assigned. knowledge.view
+// joins the list when knowledge articles gain an external audience; until then no knowledge permission is in it
+// (the baseline "published employee articles" is closed to external accounts by the HTTP allow-list).
+var ExternalCeiling = []string{"tasks.work"}
+
+// InExternalCeiling reports whether an external account may hold the permission.
+func InExternalCeiling(permission string) bool { return slices.Contains(ExternalCeiling, permission) }
+
 // RiskHigh is the registry risk class of permissions that only a platform administrator may hand out.
 const RiskHigh = "high"
 
@@ -150,18 +170,18 @@ func (e *Evaluator) Permissions(ctx context.Context, userID string) (map[string]
 // PermissionsIn is Permissions inside the caller's transaction (guards evaluate the actor and the target in the
 // transaction that changes them).
 func (e *Evaluator) PermissionsIn(ctx context.Context, q querier, userID string) (map[string]struct{}, error) {
-	grants, local, err := e.load(ctx, q, userID)
+	grants, local, external, err := e.load(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
-	set, _ := reduce(grants, local)
+	set, _ := reduce(grants, local, external)
 	return set, nil
 }
 
 // RoleIDs returns the ids of the active roles that apply to the User (assigned to the User or to one of the User's
 // Directory Groups). Modules use them to resolve grants that name a role.
 func (e *Evaluator) RoleIDs(ctx context.Context, userID string) ([]string, error) {
-	grants, _, err := e.load(ctx, e.pool, userID)
+	grants, _, _, err := e.load(ctx, e.pool, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -205,23 +225,26 @@ type Explanation struct {
 	// LocalAccount is true for a User with a local credential; Excluded lists the high-risk permissions its roles
 	// would grant and the rule removed.
 	LocalAccount bool
-	Excluded     []string
+	// External is true for an external account; Excluded then also lists the permissions of its roles that lie
+	// outside the external ceiling.
+	External bool
+	Excluded []string
 }
 
 // Explain returns the effective permissions of userID with their grant paths. The permission set equals
 // Permissions(userID) by construction.
 func (e *Evaluator) Explain(ctx context.Context, userID string) (Explanation, error) {
-	grants, local, err := e.load(ctx, e.pool, userID)
+	grants, local, external, err := e.load(ctx, e.pool, userID)
 	if err != nil {
 		return Explanation{}, err
 	}
-	return explain(grants, local), nil
+	return explain(grants, local, external), nil
 }
 
-func explain(grants []grant, local bool) Explanation {
+func explain(grants []grant, local, external bool) Explanation {
 	known := registryRisk()
-	set, excluded := reduce(grants, local)
-	out := Explanation{Roles: []RoleGrant{}, Permissions: []ExplainedPermission{}, LocalAccount: local, Excluded: excluded}
+	set, excluded := reduce(grants, local, external)
+	out := Explanation{Roles: []RoleGrant{}, Permissions: []ExplainedPermission{}, LocalAccount: local, External: external, Excluded: excluded}
 	by := map[string][]string{}
 	for _, g := range grants {
 		rg := RoleGrant{RoleID: g.roleID, RoleKey: g.roleKey, RoleName: g.roleName, BuiltInAdmin: g.builtIn, AssignmentID: g.assignmentID,
@@ -253,15 +276,15 @@ type holdings struct {
 
 // holdingsOf evaluates a User inside the caller's transaction.
 func (e *Evaluator) holdingsOf(ctx context.Context, q querier, userID string) (holdings, error) {
-	grants, local, err := e.load(ctx, q, userID)
+	grants, local, external, err := e.load(ctx, q, userID)
 	if err != nil {
 		return holdings{}, err
 	}
 	h := holdings{roleIDs: map[string]struct{}{}, local: local}
-	h.perms, _ = reduce(grants, local)
+	h.perms, _ = reduce(grants, local, external)
 	for _, g := range grants {
 		h.roleIDs[g.roleID] = struct{}{}
-		if g.builtIn {
+		if g.builtIn && !external {
 			h.admin = true
 		}
 	}

@@ -204,8 +204,10 @@ func TestLinkAndExtendValidation(t *testing.T) {
 		t.Errorf("valid link = %v (%s)", err, store.called)
 	}
 
-	if _, err := svc.ExtendAccess(context.Background(), base, "id", 1, now.AddDate(0, 0, 10), "contract_renewed"); !errors.Is(err, ErrForbidden) {
-		t.Errorf("extend without external_parties.manage = %v", err)
+	// Who may extend (the permission or the sponsor of the party) is decided by the store next to the row lock.
+	store.called = ""
+	if _, err := svc.ExtendAccess(context.Background(), base, "id", 1, now.AddDate(0, 0, 10), "contract_renewed"); err != nil || store.called != "extend" {
+		t.Errorf("extend without the permission reaches the store, which decides = %v (%s)", err, store.called)
 	}
 	ext := base
 	ext.ExternalPartiesManage = true

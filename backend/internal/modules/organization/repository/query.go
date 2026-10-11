@@ -18,7 +18,7 @@ func (r *Repository) QueryUsers(ctx context.Context, plan *query.Plan) (query.Pa
 			var u application.User
 			err := rows.Scan(append([]any{&u.ID, &u.DisplayName, &u.GivenName, &u.FamilyName, &u.PrimaryEmail, &u.Status,
 				&u.DepartmentID, &u.PrimaryLocationID, &u.ManagerUserID, &u.UpdatedAt,
-				&u.EmployeeNumber, &u.StatusSource, &u.AccountKind, &u.Origin, &u.AccessExpiresAt, &u.Version}, extra...)...)
+				&u.EmployeeNumber, &u.StatusSource, &u.AccountKind, &u.Origin, &u.AccessExpiresAt, &u.Version, &u.ExternalPartyID}, extra...)...)
 			return u, err
 		})
 }

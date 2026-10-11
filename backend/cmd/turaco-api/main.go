@@ -269,6 +269,7 @@ func main() {
 	orgtransport.RegisterTeams(mux, orgapp.NewTeams(orgReader), sessionAuth, logger)
 	orgtransport.RegisterPeople(mux, orgapp.NewPeople(orgReader), orgapp.NewQueries(orgReader, wiring.QueryEngine(pool)), orgReader, sessionAuth, logger)
 	orgtransport.RegisterImports(mux, orgapp.NewImports(orgReader), sessionAuth, logger)
+	orgtransport.RegisterExternalParties(mux, orgapp.NewExternalParties(orgReader), sessionAuth, logger)
 	var entraTenants []string
 	if entraCfg.Enabled {
 		entraTenants = entraCfg.AllowedTenantIDs
@@ -406,8 +407,10 @@ func main() {
 
 	server := &http.Server{
 		Addr: cfg.HTTPAddr,
-		// Every unsafe request must be same-origin, whatever route it reaches.
-		Handler:           httpx.Middleware(logger, authentication.RequireSameOrigin(moduleSvc.Gate(sessionAuth, logger, mux))),
+		// Every unsafe request must be same-origin, whatever route it reaches. External accounts reach only the
+		// routes the module catalog allows them (ADR-0034), checked before any route runs.
+		Handler: httpx.Middleware(logger, authentication.RequireSameOrigin(
+			authentication.ConfineExternal(sessionAuth, moduleSvc.Index().ExternalAllowed, logger)(moduleSvc.Gate(sessionAuth, logger, mux)))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -440,6 +443,7 @@ func allCategories() []notifications.Category {
 	out = append(out, planningapp.NotificationCategories()...)
 	out = append(out, securityapp.NotificationCategories()...)
 	out = append(out, remoteaccessapp.NotificationCategories()...)
+	out = append(out, orgapp.NotificationCategories()...)
 	return append(out, servicedeskapp.NotificationCategories()...)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -140,8 +141,22 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 			if err != nil {
 				return err
 			}
+			if !local {
+				if local, err = s.subjects.IsLocalOriginAccount(ctx, in.SubjectID); err != nil {
+					return fmt.Errorf("check account origin: %w", err)
+				}
+			}
 			if local && hasHighRisk(role.Permissions) {
 				return ErrLocalAccountHighRisk
+			}
+			// An external account holds only permissions inside the ceiling (ADR-0034 point 4); the evaluator
+			// intersects anyway, this refusal tells the administrator instead of assigning an inert role.
+			external, err := s.subjects.IsExternalAccount(ctx, in.SubjectID)
+			if err != nil {
+				return fmt.Errorf("check account kind: %w", err)
+			}
+			if external && (role.BuiltIn || slices.ContainsFunc(role.Permissions, func(p string) bool { return !InExternalCeiling(p) })) {
+				return ErrExternalCeiling
 			}
 		}
 		// A role the subject holds already (or an administrator) adds no new conflicts; the built-in role is the

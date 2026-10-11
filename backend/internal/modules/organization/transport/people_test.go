@@ -85,6 +85,21 @@ func (a as) Authenticate(*http.Request) (authorization.Principal, bool, error) {
 	return authorization.Principal{UserID: a.h.actor, Permissions: a.h.perms}, true, nil
 }
 
+// party inserts an active External Party named with the test prefix, sponsored by a new employee, and returns the
+// party id and the sponsor id. The harness cleanup removes both.
+func (h *peopleHTTP) party() (partyID, sponsorID string) {
+	h.t.Helper()
+	ctx := context.Background()
+	if err := h.pool.QueryRow(ctx, `INSERT INTO organization.users(display_name) VALUES ($1) RETURNING id::text`, h.pfx+" Sponsor").Scan(&sponsorID); err != nil {
+		h.t.Fatal(err)
+	}
+	if err := h.pool.QueryRow(ctx, `INSERT INTO organization.external_parties(kind, name, sponsor_user_id) VALUES ('vendor', $1, $2::uuid) RETURNING id::text`,
+		h.pfx+" Vendor Inc", sponsorID).Scan(&partyID); err != nil {
+		h.t.Fatal(err)
+	}
+	return partyID, sponsorID
+}
+
 func newPeopleHTTP(t *testing.T) *peopleHTTP {
 	pool := dbtest.Pool(t)
 	b := make([]byte, 5)
@@ -98,6 +113,7 @@ func newPeopleHTTP(t *testing.T) *peopleHTTP {
 	RegisterTeams(h.mux, application.NewTeams(repo), auth, logger)
 	RegisterPeople(h.mux, application.NewPeople(repo), application.NewQueries(repo, query.NewEphemeralEngine().WithLimiter(query.NewLimiter(1000, 1000))), repo, auth, logger)
 	RegisterImports(h.mux, application.NewImports(repo), auth, logger)
+	RegisterExternalParties(h.mux, application.NewExternalParties(repo), auth, logger)
 	RegisterEntra(h.mux, application.NewEntraLinking(repo, []string{testEntraTenant}, h.notices), testEntraTenant, auth, logger)
 	Register(h.mux, repo, repo, "", auth, logger)
 	t.Cleanup(func() {
@@ -111,6 +127,8 @@ func newPeopleHTTP(t *testing.T) *peopleHTTP {
 			`UPDATE organization.users SET department_id = NULL, primary_location_id = NULL WHERE display_name LIKE $1 || '%'`,
 			`DELETE FROM organization.import_batches WHERE created_by IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
 			`DELETE FROM organization.external_identities WHERE user_id IN (SELECT id FROM organization.users WHERE display_name LIKE $1 || '%')`,
+			`DELETE FROM organization.users WHERE account_kind = 'external' AND display_name LIKE $1 || '%'`,
+			`DELETE FROM organization.external_parties WHERE name LIKE $1 || '%'`,
 			`DELETE FROM organization.users WHERE display_name LIKE $1 || '%'`,
 			`DELETE FROM organization.departments WHERE name LIKE $1 || '%'`,
 			`DELETE FROM organization.locations WHERE name LIKE $1 || '%'`,
@@ -269,9 +287,9 @@ func TestUserOperationsRequireVersionAndReportOwnership(t *testing.T) {
 			t.Errorf("profile body %s: %d", body, code)
 		}
 	}
-	// An external account cannot be created before the External Party slice exists.
-	if code, _, _ := h.do("POST", "/api/v1/users", `{"displayName":"`+h.pfx+` X","accountKind":"external"}`); code != 400 {
-		t.Errorf("external creation: %d", code)
+	// An external account needs the external parties permission, a party, an email and an end of access.
+	if code, body, _ := h.do("POST", "/api/v1/users", `{"displayName":"`+h.pfx+` X","accountKind":"external"}`); code != 403 || errCodeOf(body) != "access.external_party_permission_required" {
+		t.Errorf("external creation without the permission: %d %v", code, body)
 	}
 	// Directory-owned fields answer with the field names.
 	var dir string

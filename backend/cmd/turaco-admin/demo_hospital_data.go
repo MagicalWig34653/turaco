@@ -491,12 +491,14 @@ var simTasks = []simTask{
 type simBriefing struct {
 	Title, Body, Severity string
 	ValidDays             int
+	// Audience is "all" for announcements every employee sees on the home page, otherwise IT staff only.
+	Audience string
 }
 
 var simBriefings = []simBriefing{
-	{"Wartungsfenster ORBIS am Samstag 22:00 bis 02:00 Uhr", "Das KIS ist in dieser Zeit eingeschränkt. Papier-Notfallprozess ist vorbereitet; ORBIS/KIS-Team besetzt.", "warning", 7},
-	{"Phishing-Welle: gefälschte Rechnungen an die Verwaltung", "Bitte keine Anhänge unbekannter Absender öffnen. Verdachtsfälle als Ticket an Security melden.", "critical", 5},
-	{"Neues Medizin-WLAN-Profil auf Station 3B ab Montag", "Visitenwagen erhalten ein neues WLAN-Profil. Bei Problemen Ticket mit Gerätenummer erstellen.", "info", 14},
+	{"Wartungsfenster ORBIS am Samstag 22:00 bis 02:00 Uhr", "Das KIS ist in dieser Zeit eingeschränkt. Papier-Notfallprozess ist vorbereitet; ORBIS/KIS-Team besetzt.", "warning", 7, "all"},
+	{"Phishing-Welle: gefälschte Rechnungen an die Verwaltung", "Bitte keine Anhänge unbekannter Absender öffnen. Verdachtsfälle als Ticket an Security melden.", "critical", 5, "all"},
+	{"Neues Medizin-WLAN-Profil auf Station 3B ab Montag", "Visitenwagen erhalten ein neues WLAN-Profil. Bei Problemen Ticket mit Gerätenummer erstellen.", "info", 14, "it"},
 }
 
 // ---- knowledge ----

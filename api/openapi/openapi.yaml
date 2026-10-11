@@ -75,7 +75,7 @@ paths:
     post:
       operationId: createLocalUser
       summary: Create a local User.
-      description: "Requires `organization.users.manage`. The User is created in Turaco (origin `local`), active, without a credential; send an invitation to let the person sign in. The primary email is unique. `accountKind` is `employee`; external accounts are not available yet and the kind can never change afterwards. Audited (organization.user.created_local)."
+      description: "Requires `organization.users.manage`. The User is created in Turaco (origin `local`), active, without a credential; send an invitation to let the person sign in. The primary email is unique. `accountKind` is `employee` (default) or `external`; the kind can never change afterwards. An external account (a restricted principal, ADR-0034) additionally needs `organization.external_parties.manage` (403 access.external_party_permission_required), an active External Party (`externalPartyId`, 409 organization.party_inactive), a primary email and `accessExpiresAt` in the future and at most 365 days away; it has no department, location or employee number. Audited (organization.user.created_local)."
       security:
         - sessionAuth: []
       requestBody:
@@ -405,7 +405,7 @@ paths:
     post:
       operationId: extendUserAccess
       summary: Extend the access end of an external account.
-      description: "Requires `organization.external_parties.manage`. Only for external accounts that are not departed (409 organization.invalid_state otherwise). The new end must be later than the current one and at most 365 days from now; `reason` is a closed code (contract_renewed, project_extended, sponsor_request, correction). An account that the expiry job already deactivated stays inactive until it is reactivated. `expectedVersion` is required. Audited as organization.user.access_extended."
+      description: "Requires `organization.external_parties.manage` or being the sponsor of the account's External Party (403 for everybody else, also for unknown ids). Only for external accounts of an active party that are not departed (409 organization.invalid_state or organization.party_inactive otherwise). The new end must be later than the current one and at most 365 days from now; `reason` is a closed code (contract_renewed, project_extended, sponsor_request, correction). An account that the expiry job already deactivated stays inactive until it is reactivated. `expectedVersion` is required. Audited as organization.user.access_extended."
       security:
         - sessionAuth: []
       parameters:
@@ -421,6 +421,93 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /external-parties:
+    get:
+      operationId: listExternalParties
+      summary: List External Parties.
+      description: "Requires `organization.external_parties.manage`. All parties with sponsor name and the number of accounts, plus the allowed kinds."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The parties.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, kinds]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/ExternalParty'}}
+                  kinds: {type: array, items: {type: string, enum: [vendor, contractor, partner]}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createExternalParty
+      summary: Create an External Party.
+      description: "Requires `organization.external_parties.manage`. The sponsor must be an active employee (409 organization.sponsor_invalid); names are unique, whatever the case (409 organization.party_name_taken). Notes are at most 500 characters and carry no personal data, address or contract data. Audited (organization.external_party.created)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExternalPartyCreate'}
+      responses:
+        '201':
+          description: The party.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExternalParty'}
+        '400': {$ref: '#/components/responses/PeopleInvalid'}
+        '409': {$ref: '#/components/responses/PeopleConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /external-parties/{id}:
+    get:
+      operationId: getExternalParty
+      summary: Read an External Party with its accounts.
+      description: "Requires `organization.external_parties.manage`. The accounts are the external Users of the party (at most 500)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The party.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExternalPartyDetail'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/AccessRefused'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateExternalParty
+      summary: Change an External Party.
+      description: "Requires `organization.external_parties.manage`. `expectedVersion` is required (409 organization.version_conflict). `active=false` stops new accounts and extensions for the party; existing accounts keep working until their end of access. A new sponsor must be an active employee. Audited (organization.external_party.updated, with the changed field names)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExternalPartyUpdate'}
+      responses:
+        '200':
+          description: The party.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExternalParty'}
         '400': {$ref: '#/components/responses/PeopleInvalid'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/PeopleConflict'}
@@ -4546,6 +4633,100 @@ paths:
         '409': {$ref: '#/components/responses/TicketsConflict'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/participants:
+    get:
+      operationId: listTicketParticipants
+      summary: List the external accounts a ticket is shared with.
+      description: "Callers with view access in the ticket's Queue. 404 for everybody else, including external accounts."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The participants, oldest first (expired ones included).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/TicketParticipant'}}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: addTicketParticipant
+      summary: Share a ticket with an external account.
+      description: "Needs work access in the ticket's Queue (403 otherwise). The user must be an active external account (400 tickets.participant_invalid); at most 20 participants (409 tickets.participant_limit); not on closed or cancelled tickets. Sharing again changes level and expiry. An external participant reads the ticket and its public comments only (`comment` level also adds public comments). Audited (servicedesk.ticket.participant_added)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TicketParticipantCreate'}
+      responses:
+        '200':
+          description: The participant.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketParticipant'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/participants/{userId}:
+    delete:
+      operationId: removeTicketParticipant
+      summary: Stop sharing a ticket with an external account.
+      description: "Needs work access in the ticket's Queue. 404 when the account is not a participant. Audited (servicedesk.ticket.participant_removed)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Removed.}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/participant-candidates:
+    get:
+      operationId: findTicketParticipantCandidates
+      summary: Find external accounts to share a ticket with.
+      description: "Needs work access in the ticket's Queue. `q` is at least 2 characters of the display name; only active external accounts of active parties are found (at most 20). The answer holds names and party names only."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2}}
+      responses:
+        '200':
+          description: The candidates.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [userId, displayName, partyName]
+                      properties:
+                        userId: {type: string, format: uuid}
+                        displayName: {type: string}
+                        partyName: {type: string}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
         '500': {$ref: '#/components/responses/InternalError'}
   /views/counts:
     get:
@@ -16569,6 +16750,7 @@ components:
           type: array
           items: {type: string}
           description: Sorted effective permission names.
+        external: {type: boolean, description: "True for a restricted external account: the UI shows only its Tasks and the Tickets shared with it (ADR-0034)."}
         displayName:
           type: string
           description: The session user's own display name, for presentation only. Omitted when unknown or temporarily unavailable.
@@ -16598,7 +16780,80 @@ components:
         employeeNumber: {type: [string, "null"], maxLength: 40}
         departmentId: {type: [string, "null"], format: uuid}
         primaryLocationId: {type: [string, "null"], format: uuid}
-        accountKind: {type: string, enum: [employee], description: "External accounts follow with the External Party slice; the kind is immutable."}
+        accountKind: {type: string, enum: [employee, external], description: "The kind is immutable. External needs organization.external_parties.manage."}
+        externalPartyId: {type: [string, "null"], format: uuid, description: "Required for external accounts, forbidden for employees."}
+        accessExpiresAt: {type: [string, "null"], format: date-time, description: "Required for external accounts: in the future, at most 365 days from now."}
+    ExternalParty:
+      type: object
+      additionalProperties: false
+      required: [id, kind, name, sponsorUserId, sponsorName, active, notes, version, accountCount, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [vendor, contractor, partner]}
+        name: {type: string}
+        sponsorUserId: {type: string, format: uuid}
+        sponsorName: {type: string}
+        active: {type: boolean}
+        notes: {type: string, maxLength: 500}
+        version: {type: integer}
+        accountCount: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    ExternalPartyDetail:
+      allOf:
+        - {$ref: '#/components/schemas/ExternalParty'}
+        - type: object
+          required: [accounts]
+          properties:
+            accounts:
+              type: array
+              items:
+                type: object
+                required: [userId, displayName, status, accessExpiresAt]
+                properties:
+                  userId: {type: string, format: uuid}
+                  displayName: {type: string}
+                  status: {type: string}
+                  accessExpiresAt: {type: string, format: date-time}
+    ExternalPartyCreate:
+      type: object
+      additionalProperties: false
+      required: [kind, name, sponsorUserId]
+      properties:
+        kind: {type: string, enum: [vendor, contractor, partner]}
+        name: {type: string, minLength: 1, maxLength: 200}
+        sponsorUserId: {type: string, format: uuid}
+        notes: {type: string, maxLength: 500}
+    ExternalPartyUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        kind: {type: string, enum: [vendor, contractor, partner]}
+        name: {type: string, minLength: 1, maxLength: 200}
+        sponsorUserId: {type: string, format: uuid}
+        notes: {type: string, maxLength: 500}
+        active: {type: boolean}
+    TicketParticipant:
+      type: object
+      additionalProperties: false
+      required: [userId, displayName, level, addedBy, addedAt, expiresAt]
+      properties:
+        userId: {type: string, format: uuid}
+        displayName: {type: string}
+        level: {type: string, enum: [read, comment]}
+        addedBy: {type: string, format: uuid}
+        addedAt: {type: string, format: date-time}
+        expiresAt: {type: [string, "null"], format: date-time}
+    TicketParticipantCreate:
+      type: object
+      additionalProperties: false
+      required: [userId, level]
+      properties:
+        userId: {type: string, format: uuid}
+        level: {type: string, enum: [read, comment]}
+        expiresAt: {type: [string, "null"], format: date-time, description: "Optional end of the sharing: in the future, at most 365 days away."}
     UserProfileUpdate:
       type: object
       additionalProperties: false
@@ -16772,6 +17027,7 @@ components:
         statusSource: {type: string, enum: [platform, directory]}
         accountKind: {type: string, enum: [employee, external]}
         source: {type: string, enum: [directory, local, emergency]}
+        externalPartyId: {type: [string, "null"], format: uuid}
         version: {type: integer}
         updatedAt: {type: string, format: date-time}
         departmentId: {type: [string, "null"], format: uuid, description: Only with organization.users.view_details.}
@@ -17064,6 +17320,7 @@ components:
         version: {type: integer}
         statusSource: {type: string, enum: [platform, directory]}
         accountKind: {type: string, enum: [employee, external]}
+        externalPartyId: {type: [string, "null"], format: uuid, description: The External Party of an external account.}
         source: {type: string, enum: [directory, local, emergency], description: Where the account comes from. Directory-origin Users have directory-owned profile attributes.}
     Team:
       type: object
@@ -20439,6 +20696,7 @@ components:
         version: {type: integer}
         statusSource: {type: string}
         accountKind: {type: string}
+        externalPartyId: {type: [string, "null"], format: uuid}
         source: {type: string}
         fields: {type: array, items: {$ref: '#/components/schemas/FieldOwner'}, description: "Owner and source of every attribute, so the UI can show badges."}
         employeeNumber: {type: [string, "null"], description: Only with organization.users.view_details.}
