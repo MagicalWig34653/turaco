@@ -780,7 +780,8 @@ export const en = {
   'infra.rack': 'Rack',
   'infra.vms': 'Virtual machines',
   'infra.empty': 'No sites with buildings yet.',
-  'infra.counts': '{buildings} buildings · {rooms} rooms · {racks} racks · {assets} assets',
+  'infra.counts':
+    '{buildings} buildings · {rooms} rooms · {racks} racks · {assets} assets placed in racks',
   'infra.createBuilding': 'Add building',
   'infra.createRoom': 'Add room',
   'infra.createRack': 'Add rack',
