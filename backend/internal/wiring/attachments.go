@@ -24,27 +24,9 @@ func Attachments(pool *pgxpool.Pool, cfg config.Config, sc config.StorageConfig,
 	if !sc.Enabled() {
 		return nil, nil
 	}
-	var backend storage.Backend
-	var err error
-	switch sc.Driver {
-	case config.StorageDriverFilesystem:
-		backend, err = fsstore.New(sc.Path)
-	case config.StorageDriverS3:
-		backend, err = s3store.New(s3store.Config{Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
-			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, PathStyle: cfg.S3PathStyle})
-	default:
-		err = fmt.Errorf("unknown STORAGE_DRIVER %q", sc.Driver)
-	}
+	vault, err := StorageVault(cfg, sc)
 	if err != nil {
-		return nil, fmt.Errorf("storage: %w", err)
-	}
-	key, err := storage.LoadMasterKey(sc.MasterKeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("storage: %w", err)
-	}
-	vault, err := storage.NewVault(backend, key)
-	if err != nil {
-		return nil, fmt.Errorf("storage: %w", err)
+		return nil, err
 	}
 	policy, err := attachments.NewPolicy(sc.MaxBytes, sc.AllowedTypes)
 	if err != nil {
@@ -65,6 +47,36 @@ func Attachments(pool *pgxpool.Pool, cfg config.Config, sc config.StorageConfig,
 		}
 	}
 	return svc, nil
+}
+
+// StorageVault builds the same encrypted store for services and operator tasks.
+func StorageVault(cfg config.Config, sc config.StorageConfig) (*storage.Vault, error) {
+	if !sc.Enabled() {
+		return nil, fmt.Errorf("STORAGE_DRIVER is not configured")
+	}
+	var backend storage.Backend
+	var err error
+	switch sc.Driver {
+	case config.StorageDriverFilesystem:
+		backend, err = fsstore.New(sc.Path)
+	case config.StorageDriverS3:
+		backend, err = s3store.New(s3store.Config{Endpoint: cfg.S3Endpoint, Region: cfg.S3Region, Bucket: cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKey, SecretKey: cfg.S3SecretKey, PathStyle: cfg.S3PathStyle})
+	default:
+		err = fmt.Errorf("unknown STORAGE_DRIVER %q", sc.Driver)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: %w", err)
+	}
+	keys, err := storage.LoadKeyring(sc.MasterKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("storage: %w", err)
+	}
+	vault, err := storage.NewVaultWithKeys(backend, keys)
+	if err != nil {
+		return nil, fmt.Errorf("storage: %w", err)
+	}
+	return vault, nil
 }
 
 // StorageHealth is the storage and scanner health input: the vault's backend check and the scan backlog facts.

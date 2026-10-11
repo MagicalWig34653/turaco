@@ -20,6 +20,21 @@ services:
       initialBuckets: turaco
     networks: [backend]
 
+  clamav:
+    image: clamav/clamav:1.4.6-debian
+    environment:
+      CLAMD_CONF_StreamMaxLength: 100M
+      CLAMD_CONF_MaxFileSize: 100M
+    volumes:
+      - clamav-signatures:/var/lib/clamav
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    networks: [backend]
+
   # One-shot migration step. turaco-migrate holds a PostgreSQL advisory lock, so parallel runs are safe.
   turaco-migrate:
     build:
@@ -44,12 +59,21 @@ services:
       DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
       S3_ENDPOINT: http://s3mock:9090
       S3_BUCKET: turaco
+      STORAGE_DRIVER: s3
+      STORAGE_MASTER_KEY_FILE: /run/secrets/storage_master_key
+      CLAMAV_ADDRESS: clamav:3310
       # Clients reach the API through turaco-web (nginx); trust only nginx's
       # fixed address so login throttling sees real client addresses.
       HTTP_TRUSTED_PROXIES: 172.30.240.10
     depends_on:
       turaco-migrate:
         condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+    secrets:
+      - source: storage_master_key
+        target: storage_master_key
+        mode: 0400
     networks: [backend]
 
   turaco-worker:
@@ -61,9 +85,18 @@ services:
       DATABASE_URL: postgres://turaco:change-me@postgres:5432/turaco?sslmode=disable
       S3_ENDPOINT: http://s3mock:9090
       S3_BUCKET: turaco
+      STORAGE_DRIVER: s3
+      STORAGE_MASTER_KEY_FILE: /run/secrets/storage_master_key
+      CLAMAV_ADDRESS: clamav:3310
     depends_on:
       turaco-migrate:
         condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+    secrets:
+      - source: storage_master_key
+        target: storage_master_key
+        mode: 0400
     networks: [backend]
 
   turaco-web:
@@ -85,3 +118,9 @@ networks:
 
 volumes:
   postgres:
+  clamav-signatures:
+
+secrets:
+  storage_master_key:
+    # File-backed Compose secrets keep host ownership; own this mode-0400 file as uid 10001.
+    file: ${TURACO_STORAGE_MASTER_KEY_FILE:?Set TURACO_STORAGE_MASTER_KEY_FILE to a mode 0400 key file}
