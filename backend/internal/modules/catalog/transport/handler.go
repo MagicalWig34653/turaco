@@ -35,7 +35,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
 	route("GET /api/v1/catalog-items", authed, h.list)
-	route("GET /api/v1/catalog-locations", authed, h.locations)
+	route("GET /api/v1/catalog-items/locations", authed, h.locations)
 	route("GET /api/v1/catalog-items/{id}", authed, h.get)
 	route("POST /api/v1/catalog-items", manage, h.create)
 	route("PATCH /api/v1/catalog-items/{id}", manage, h.update)

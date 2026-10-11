@@ -25,7 +25,7 @@ registerErrorResolver((error) =>
 
 export const catalogApi = {
   locations: (q: string, signal?: AbortSignal) =>
-    api.get<{ items: Array<{ id: string; name: string }> }>('/catalog-locations', {
+    api.get<{ items: Array<{ id: string; name: string }> }>('/catalog-items/locations', {
       signal,
       query: { q },
     }),

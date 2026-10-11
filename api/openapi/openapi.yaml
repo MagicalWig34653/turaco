@@ -2434,7 +2434,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
-  /catalog-locations:
+  /catalog-items/locations:
     get:
       operationId: searchCatalogLocations
       summary: Search active Organization Locations for a catalog request.
