@@ -1959,6 +1959,7 @@ export const en = {
   'tickets.patientImpact': 'Patient care',
   'tickets.col.location': 'Location',
   'tickets.filter.locationHint': 'Show only tickets from this location',
+  'tickets.fact.handledByTeam': 'Being handled by the team',
   'tickets.fact.assignee': 'Assigned to',
   'tickets.fact.unassigned': 'Nobody yet',
   'tickets.fact.queue': 'Queue',

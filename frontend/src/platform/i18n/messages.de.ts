@@ -2012,6 +2012,7 @@ export const de: Record<MessageKey, string> = {
   'tickets.patientImpact': 'Patientenversorgung',
   'tickets.col.location': 'Standort',
   'tickets.filter.locationHint': 'Nur Tickets von diesem Standort anzeigen',
+  'tickets.fact.handledByTeam': 'Wird vom Team bearbeitet',
   'tickets.fact.assignee': 'Zugewiesen an',
   'tickets.fact.unassigned': 'Noch niemand',
   'tickets.fact.queue': 'Warteschlange',
