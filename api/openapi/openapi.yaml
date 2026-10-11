@@ -2902,6 +2902,30 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /assets/fields:
+    get:
+      operationId: getAssetFields
+      summary: Field catalog for querying assets.
+      description: "Requires `assets.view` or `assets.manage`. Includes typed firmware and calibration/maintenance dates."
+      security: [{sessionAuth: []}]
+      responses:
+        '200': {description: Caller-visible Asset field catalog, content: {application/json: {schema: {$ref: '#/components/schemas/QueryCatalog'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /assets/query:
+    post:
+      operationId: queryAssets
+      summary: Query assets with the shared Filter AST.
+      description: "Requires `assets.view` or `assets.manage`; no holder-only query access. Due dates are queryable but do not create Tasks or calendar entries."
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/QueryRequest'}}}
+      responses:
+        '200': {description: Asset query page, content: {application/json: {schema: {$ref: '#/components/schemas/AssetQueryPage'}}}}
+        '400': {$ref: '#/components/responses/AssetsInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /assets/lookup:
     get:
       operationId: lookupAsset
@@ -18461,7 +18485,7 @@ components:
     Asset:
       type: object
       additionalProperties: false
-      required: [id, reference, productId, serialNumber, assetTag, status, statusReason, provisioningStatus, ownershipType, supplierId, purchasedAt, warrantyUntil, locationId, notes, version, createdAt, updatedAt]
+      required: [id, reference, productId, serialNumber, assetTag, status, statusReason, provisioningStatus, ownershipType, supplierId, purchasedAt, warrantyUntil, firmwareVersion, firmwareSource, firmwareObservedAt, lastCalibratedAt, nextCalibrationDue, nextMaintenanceDue, locationId, notes, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string, description: "Human reference such as AST-000001."}
@@ -18475,6 +18499,12 @@ components:
         supplierId: {type: [string, "null"], format: uuid}
         purchasedAt: {type: [string, "null"], format: date}
         warrantyUntil: {type: [string, "null"], format: date}
+        firmwareVersion: {type: [string, "null"], maxLength: 100}
+        firmwareSource: {type: [string, "null"], description: "manual for staff entry; integration source for externally observed values."}
+        firmwareObservedAt: {type: [string, "null"], format: date-time}
+        lastCalibratedAt: {type: [string, "null"], format: date}
+        nextCalibrationDue: {type: [string, "null"], format: date}
+        nextMaintenanceDue: {type: [string, "null"], format: date}
         locationId: {type: [string, "null"], format: uuid}
         notes: {type: [string, "null"]}
         version: {type: integer, minimum: 1}
@@ -18497,6 +18527,25 @@ components:
           type: object
           description: "Names of asset locations on the caller-visible page."
           additionalProperties: {type: string}
+    AssetQueryPage:
+      type: object
+      additionalProperties: false
+      required: [items, productNames, locationNames, warnings]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Asset'}}
+        nextCursor: {type: string}
+        productNames: {type: object, additionalProperties: {type: string}}
+        locationNames: {type: object, additionalProperties: {type: string}}
+        count: {type: integer}
+        countCapped: {type: boolean}
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [code, path]
+            properties:
+              code: {type: string}
+              path: {type: string}
     AssetAssignment:
       type: object
       additionalProperties: false
@@ -18554,6 +18603,13 @@ components:
         clearPurchasedAt: {type: boolean}
         warrantyUntil: {type: string, format: date}
         clearWarrantyUntil: {type: boolean}
+        firmwareVersion: {type: string, maxLength: 100, description: "Empty clears. Staff entry sets source to manual and observedAt to current time."}
+        lastCalibratedAt: {type: string, format: date}
+        clearLastCalibratedAt: {type: boolean}
+        nextCalibrationDue: {type: string, format: date}
+        clearNextCalibrationDue: {type: boolean}
+        nextMaintenanceDue: {type: string, format: date}
+        clearNextMaintenanceDue: {type: boolean}
         locationId: {type: string, format: uuid}
         clearLocation: {type: boolean}
         notes: {type: string, maxLength: 2000}

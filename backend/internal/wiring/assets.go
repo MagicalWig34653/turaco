@@ -17,5 +17,5 @@ import (
 func Assets(pool *pgxpool.Pool) *assetsapp.Service {
 	dir := orgpublic.NewWorkDirectory(orgrepository.New(pool))
 	products := assetspublic.NewProducts(productspublic.NewDirectory(productsrepository.New(pool)))
-	return assetsapp.NewService(assetsrepository.New(pool), dir, products, nil).WithDeviceSearch(endpointspublic.NewHostnames(pool))
+	return assetsapp.NewService(assetsrepository.New(pool), dir, products, nil).WithDeviceSearch(endpointspublic.NewHostnames(pool)).WithQueryEngine(QueryEngine(pool))
 }

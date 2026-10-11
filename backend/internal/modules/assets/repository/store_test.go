@@ -342,6 +342,13 @@ func TestUpdateAndProvisioning(t *testing.T) {
 	if _, err := e.svc.SetProvisioning(ctx, e.caller(e.manager), e.manage, a.ID, nil, "weird"); !errors.As(err, &inv) {
 		t.Errorf("unknown provisioning status: %v", err)
 	}
+	technical, err := e.svc.Update(ctx, e.caller(e.manager), e.manage, a.ID, out.Version, application.UpdateInput{FirmwareVersion: strp("v2.3")})
+	if err != nil || technical.FirmwareSource == nil || *technical.FirmwareSource != "manual" || technical.FirmwareObservedAt == nil {
+		t.Fatalf("firmware provenance = %+v, %v", technical, err)
+	}
+	if e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'assets.asset.updated' AND after_data::text LIKE '%v2.3%' AND after_data::text LIKE '%manual%'`, e.corr) != 1 {
+		t.Error("firmware change must be audited with provenance")
+	}
 }
 
 func TestAccessRules(t *testing.T) {

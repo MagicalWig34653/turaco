@@ -115,6 +115,10 @@ function EditDialog({
   const [serial, setSerial] = useState(asset.serialNumber ?? '');
   const [tag, setTag] = useState(asset.assetTag ?? '');
   const [notes, setNotes] = useState(asset.notes ?? '');
+  const [firmware, setFirmware] = useState(asset.firmwareVersion ?? '');
+  const [lastCalibrated, setLastCalibrated] = useState(asset.lastCalibratedAt ?? '');
+  const [calibrationDue, setCalibrationDue] = useState(asset.nextCalibrationDue ?? '');
+  const [maintenanceDue, setMaintenanceDue] = useState(asset.nextMaintenanceDue ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const submit = async (event: FormEvent) => {
@@ -127,6 +131,22 @@ function EditDialog({
         serialNumber: serial.trim(),
         assetTag: tag.trim(),
         notes: notes.trim(),
+        ...(firmware !== (asset.firmwareVersion ?? '') ? { firmwareVersion: firmware.trim() } : {}),
+        ...(lastCalibrated !== (asset.lastCalibratedAt ?? '')
+          ? lastCalibrated
+            ? { lastCalibratedAt: lastCalibrated }
+            : { clearLastCalibratedAt: true }
+          : {}),
+        ...(calibrationDue !== (asset.nextCalibrationDue ?? '')
+          ? calibrationDue
+            ? { nextCalibrationDue: calibrationDue }
+            : { clearNextCalibrationDue: true }
+          : {}),
+        ...(maintenanceDue !== (asset.nextMaintenanceDue ?? '')
+          ? maintenanceDue
+            ? { nextMaintenanceDue: maintenanceDue }
+            : { clearNextMaintenanceDue: true }
+          : {}),
       });
       onDone();
     } catch (cause) {
@@ -149,6 +169,30 @@ function EditDialog({
           value={tag}
           maxLength={50}
           onChange={(event) => setTag(event.target.value)}
+        />
+        <TextField
+          label={t('assets.field.firmwareVersion')}
+          value={firmware}
+          maxLength={100}
+          onChange={(event) => setFirmware(event.target.value)}
+        />
+        <TextField
+          label={t('assets.field.lastCalibratedAt')}
+          type="date"
+          value={lastCalibrated}
+          onChange={(event) => setLastCalibrated(event.target.value)}
+        />
+        <TextField
+          label={t('assets.field.nextCalibrationDue')}
+          type="date"
+          value={calibrationDue}
+          onChange={(event) => setCalibrationDue(event.target.value)}
+        />
+        <TextField
+          label={t('assets.field.nextMaintenanceDue')}
+          type="date"
+          value={maintenanceDue}
+          onChange={(event) => setMaintenanceDue(event.target.value)}
         />
         <TextArea
           label={t('assets.field.notes')}
@@ -297,6 +341,23 @@ export function AssetDetailScreen({ id }: { id: string }) {
         <dd>{asset.purchasedAt ? formatDateTime(locale, asset.purchasedAt) : '–'}</dd>
         <dt>{t('assets.field.warrantyUntil')}</dt>
         <dd>{asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '–'}</dd>
+        <dt>{t('assets.field.firmwareVersion')}</dt>
+        <dd>{asset.firmwareVersion ?? '–'}</dd>
+        {asset.firmwareVersion ? (
+          <>
+            <dt>{t('assets.field.firmwareSource')}</dt>
+            <dd>
+              {asset.firmwareSource === 'manual' ? t('assets.source.manual') : asset.firmwareSource}{' '}
+              · {asset.firmwareObservedAt ? formatDateTime(locale, asset.firmwareObservedAt) : '–'}
+            </dd>
+          </>
+        ) : null}
+        <dt>{t('assets.field.lastCalibratedAt')}</dt>
+        <dd>{asset.lastCalibratedAt ?? '–'}</dd>
+        <dt>{t('assets.field.nextCalibrationDue')}</dt>
+        <dd>{asset.nextCalibrationDue ?? '–'}</dd>
+        <dt>{t('assets.field.nextMaintenanceDue')}</dt>
+        <dd>{asset.nextMaintenanceDue ?? '–'}</dd>
         {asset.notes ? (
           <>
             <dt>{t('assets.field.notes')}</dt>

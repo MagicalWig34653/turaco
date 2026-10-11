@@ -15,6 +15,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 const (
@@ -54,6 +55,8 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	}
 	route("GET /api/v1/assets", read, h.list)
 	route("POST /api/v1/assets", write, h.create)
+	route("GET /api/v1/assets/fields", read, h.fields)
+	route("POST /api/v1/assets/query", read, h.query)
 	route("GET /api/v1/assets/lookup", read, h.lookup)
 	route("GET /api/v1/my-assets", authed, h.mine)
 	route("GET /api/v1/my-assets/shared", authed, h.shared)
@@ -68,6 +71,9 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var inv *application.InvalidInputError
 	var tr *application.InvalidTransitionError
+	if query.WriteError(w, err) {
+		return
+	}
 	switch {
 	case errors.As(err, &inv):
 		httpx.WriteError(w, http.StatusBadRequest, "assets.invalid_request", inv.Message)
@@ -157,6 +163,12 @@ type assetDTO struct {
 	SupplierID         *string `json:"supplierId"`
 	PurchasedAt        *string `json:"purchasedAt"`
 	WarrantyUntil      *string `json:"warrantyUntil"`
+	FirmwareVersion    *string `json:"firmwareVersion"`
+	FirmwareSource     *string `json:"firmwareSource"`
+	FirmwareObservedAt *string `json:"firmwareObservedAt"`
+	LastCalibratedAt   *string `json:"lastCalibratedAt"`
+	NextCalibrationDue *string `json:"nextCalibrationDue"`
+	NextMaintenanceDue *string `json:"nextMaintenanceDue"`
 	LocationID         *string `json:"locationId"`
 	Notes              *string `json:"notes"`
 	Version            int     `json:"version"`
@@ -168,7 +180,8 @@ func toAsset(a application.Asset) assetDTO {
 	return assetDTO{
 		ID: a.ID, Reference: a.Reference, ProductID: a.ProductID, SerialNumber: a.SerialNumber, AssetTag: a.AssetTag, Status: a.Status,
 		StatusReason: a.StatusReason, ProvisioningStatus: a.ProvisioningStatus, OwnershipType: a.OwnershipType, SupplierID: a.SupplierID,
-		PurchasedAt: datePtr(a.PurchasedAt), WarrantyUntil: datePtr(a.WarrantyUntil), LocationID: a.LocationID, Notes: a.Notes,
+		PurchasedAt: datePtr(a.PurchasedAt), WarrantyUntil: datePtr(a.WarrantyUntil), FirmwareVersion: a.FirmwareVersion, FirmwareSource: a.FirmwareSource, FirmwareObservedAt: tsPtr(a.FirmwareObservedAt),
+		LastCalibratedAt: datePtr(a.LastCalibratedAt), NextCalibrationDue: datePtr(a.NextCalibrationDue), NextMaintenanceDue: datePtr(a.NextMaintenanceDue), LocationID: a.LocationID, Notes: a.Notes,
 		Version: a.Version, CreatedAt: ts(a.CreatedAt), UpdatedAt: ts(a.UpdatedAt),
 	}
 }
@@ -254,6 +267,39 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *handler) fields(w http.ResponseWriter, r *http.Request) {
+	info, err := h.svc.QueryFields(principal(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, info)
+}
+
+func (h *handler) query(w http.ResponseWriter, r *http.Request) {
+	req, err := query.DecodeBody(w, r)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	page, err := h.svc.Query(r.Context(), principal(r), req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	out, err := h.toList(r, application.Result{Items: page.Items, NextCursor: page.NextCursor})
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		listResponse
+		Count       *int            `json:"count,omitempty"`
+		CountCapped bool            `json:"countCapped,omitempty"`
+		Warnings    []query.Warning `json:"warnings"`
+	}{out, page.Count, page.CountCapped, page.Warnings})
 }
 
 func (h *handler) mine(w http.ResponseWriter, r *http.Request) {
@@ -358,17 +404,24 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateBody struct {
-	ExpectedVersion    *int    `json:"expectedVersion"`
-	SerialNumber       *string `json:"serialNumber"`
-	AssetTag           *string `json:"assetTag"`
-	OwnershipType      *string `json:"ownershipType"`
-	PurchasedAt        *string `json:"purchasedAt"`
-	ClearPurchasedAt   bool    `json:"clearPurchasedAt"`
-	WarrantyUntil      *string `json:"warrantyUntil"`
-	ClearWarrantyUntil bool    `json:"clearWarrantyUntil"`
-	LocationID         *string `json:"locationId"`
-	ClearLocation      bool    `json:"clearLocation"`
-	Notes              *string `json:"notes"`
+	ExpectedVersion         *int    `json:"expectedVersion"`
+	SerialNumber            *string `json:"serialNumber"`
+	AssetTag                *string `json:"assetTag"`
+	OwnershipType           *string `json:"ownershipType"`
+	PurchasedAt             *string `json:"purchasedAt"`
+	ClearPurchasedAt        bool    `json:"clearPurchasedAt"`
+	WarrantyUntil           *string `json:"warrantyUntil"`
+	ClearWarrantyUntil      bool    `json:"clearWarrantyUntil"`
+	FirmwareVersion         *string `json:"firmwareVersion"`
+	LastCalibratedAt        *string `json:"lastCalibratedAt"`
+	ClearLastCalibratedAt   bool    `json:"clearLastCalibratedAt"`
+	NextCalibrationDue      *string `json:"nextCalibrationDue"`
+	ClearNextCalibrationDue bool    `json:"clearNextCalibrationDue"`
+	NextMaintenanceDue      *string `json:"nextMaintenanceDue"`
+	ClearNextMaintenanceDue bool    `json:"clearNextMaintenanceDue"`
+	LocationID              *string `json:"locationId"`
+	ClearLocation           bool    `json:"clearLocation"`
+	Notes                   *string `json:"notes"`
 }
 
 func (h *handler) update(w http.ResponseWriter, r *http.Request) {
@@ -388,9 +441,23 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	lastCalibrated, ok := parseDate(w, b.LastCalibratedAt)
+	if !ok {
+		return
+	}
+	nextCalibration, ok := parseDate(w, b.NextCalibrationDue)
+	if !ok {
+		return
+	}
+	nextMaintenance, ok := parseDate(w, b.NextMaintenanceDue)
+	if !ok {
+		return
+	}
 	a, err := h.svc.Update(r.Context(), caller(w, r), principal(r), r.PathValue("id"), *b.ExpectedVersion, application.UpdateInput{
 		SerialNumber: b.SerialNumber, AssetTag: b.AssetTag, OwnershipType: b.OwnershipType,
 		PurchasedAt: purchased, ClearPurchasedAt: b.ClearPurchasedAt, WarrantyUntil: warranty, ClearWarrantyUntil: b.ClearWarrantyUntil,
+		FirmwareVersion: b.FirmwareVersion, LastCalibratedAt: lastCalibrated, ClearLastCalibratedAt: b.ClearLastCalibratedAt,
+		NextCalibrationDue: nextCalibration, ClearNextCalibrationDue: b.ClearNextCalibrationDue, NextMaintenanceDue: nextMaintenance, ClearNextMaintenanceDue: b.ClearNextMaintenanceDue,
 		LocationID: b.LocationID, ClearLocation: b.ClearLocation, Notes: b.Notes,
 	})
 	if err != nil {

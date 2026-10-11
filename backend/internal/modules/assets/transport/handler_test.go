@@ -170,7 +170,7 @@ func TestPermissionsAndOwnershipOverHTTP(t *testing.T) {
 		t.Errorf("my assets = %d %s", rec.Code, rec.Body)
 	}
 	for _, c := range []struct{ method, path string }{
-		{"GET", "/api/v1/assets"}, {"GET", "/api/v1/assets/lookup?code=HTTP-T1"}, {"POST", "/api/v1/assets"},
+		{"GET", "/api/v1/assets"}, {"GET", "/api/v1/assets/fields"}, {"POST", "/api/v1/assets/query"}, {"GET", "/api/v1/assets/lookup?code=HTTP-T1"}, {"POST", "/api/v1/assets"},
 		{"PATCH", "/api/v1/assets/" + created.ID}, {"POST", "/api/v1/assets/" + created.ID + "/return"},
 	} {
 		if rec := do(asHolder, c.method, c.path, `{}`); rec.Code != http.StatusForbidden {
@@ -253,5 +253,41 @@ func TestSharedDevicesOfThePrimaryLocationOnly(t *testing.T) {
 	}
 	if rec := do(serve(t, fakeAuth{}), "GET", "/api/v1/my-assets/shared", ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("anonymous = %d", rec.Code)
+	}
+}
+
+func TestTechnicalFactsAndQueryOverHTTP(t *testing.T) {
+	manage := serve(t, as(admin, "assets.manage"))
+	created := do(manage, "POST", "/api/v1/assets", `{"productId":"`+product+`","serialNumber":"TECH-1"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", created.Code, created.Body)
+	}
+	var a struct {
+		ID      string `json:"id"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	update := do(manage, "PATCH", "/api/v1/assets/"+a.ID, `{"expectedVersion":1,"firmwareVersion":"v2.3","lastCalibratedAt":"2026-10-01","nextCalibrationDue":"2027-10-01","nextMaintenanceDue":"2027-04-01"}`)
+	if update.Code != http.StatusOK || !strings.Contains(update.Body.String(), `"firmwareSource":"manual"`) || !strings.Contains(update.Body.String(), `"nextCalibrationDue":"2027-10-01"`) {
+		t.Fatalf("update = %d %s", update.Code, update.Body)
+	}
+	if rec := do(manage, "PATCH", "/api/v1/assets/"+a.ID, `{"expectedVersion":2,"lastCalibratedAt":"2028-01-01"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("calibration order = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(manage, "PATCH", "/api/v1/assets/"+a.ID, `{"expectedVersion":1,"firmwareVersion":"stale"}`); rec.Code != http.StatusConflict {
+		t.Errorf("stale = %d", rec.Code)
+	}
+	view := serve(t, as(stranger, "assets.view"))
+	if rec := do(view, "GET", "/api/v1/assets/fields", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "next_calibration_due") {
+		t.Errorf("fields = %d %s", rec.Code, rec.Body)
+	}
+	query := `{"filter":{"v":1,"root":{"type":"condition","field":"next_calibration_due","op":"before","value":"2027-12-31"}}}`
+	if rec := do(view, "POST", "/api/v1/assets/query", query); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), a.ID) {
+		t.Errorf("query = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(view, "PATCH", "/api/v1/assets/"+a.ID, `{"expectedVersion":2,"firmwareVersion":"wrong"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("view-only update = %d", rec.Code)
 	}
 }
