@@ -39,7 +39,9 @@ import { reportedImpactKey } from './impactModel';
 import { organizationApi } from '../organization/api';
 import { TicketMoveDialog } from './TicketMoveDialog';
 import { TicketCallbackDialog } from './TicketCallbackDialog';
+import { TicketDeviceDialog } from './TicketDeviceDialog';
 import { TicketLocationDialog } from './TicketLocationDialog';
+import { TicketRelatedCard } from './TicketRelatedCard';
 import { TicketChangesCard } from './TicketChangesCard';
 import { TicketParticipantsCard } from './TicketParticipantsCard';
 import { MentionPicker } from './MentionPicker';
@@ -323,6 +325,7 @@ function TicketWorkspace({ id }: { id: string }) {
       | 'assign'
       | 'move'
       | 'location'
+      | 'device'
       | 'callback'
       | 'linkProblem'
       | 'linkIncident'
@@ -389,6 +392,7 @@ function TicketWorkspace({ id }: { id: string }) {
       canOfferMove(ticket) &&
       (manage || queueLevel === 'work' || queueLevel === 'manage'),
   });
+  const canSetDevice = abilities.setDevice && (can('assets.view') || can('assets.manage'));
   // A server that returns abilities already accounts for the Ticket state and Queue level.
   const canMove = abilities.move && canOfferMove(ticket);
   const mode = effectiveCommentKind(abilities, internalChoice);
@@ -883,13 +887,22 @@ function TicketWorkspace({ id }: { id: string }) {
                 ) : null}
               </p>
             ) : null}
-            {ticket.deviceSnapshot ? (
+            {ticket.deviceSnapshot || canSetDevice ? (
               <div className="incident-device">
                 <span className="incident-event-label">{t('tickets.field.device')}</span>
-                <strong>{String(ticket.deviceSnapshot.product ?? '')}</strong>
-                <span>{String(ticket.deviceSnapshot.reference ?? '')}</span>
-                {ticket.deviceSnapshot.serialNumber ? (
+                <strong>
+                  {ticket.deviceSnapshot
+                    ? String(ticket.deviceSnapshot.product ?? '')
+                    : t('ticketDevice.none')}
+                </strong>
+                <span>{String(ticket.deviceSnapshot?.reference ?? '')}</span>
+                {ticket.deviceSnapshot?.serialNumber ? (
                   <span>{String(ticket.deviceSnapshot.serialNumber)}</span>
+                ) : null}
+                {canSetDevice ? (
+                  <Button onClick={() => setDialog({ kind: 'device' })}>
+                    {t('ticketDevice.edit')}
+                  </Button>
                 ) : null}
               </div>
             ) : null}
@@ -919,6 +932,13 @@ function TicketWorkspace({ id }: { id: string }) {
           ) : null}
           {staffReader ? (
             <TicketChangesCard
+              ticketId={ticket.id}
+              canEdit={abilities.internalComment}
+              onChanged={history.reload}
+            />
+          ) : null}
+          {staffReader ? (
+            <TicketRelatedCard
               ticketId={ticket.id}
               canEdit={abilities.internalComment}
               onChanged={history.reload}
@@ -1080,6 +1100,9 @@ function TicketWorkspace({ id }: { id: string }) {
           onClose={() => setDialog(null)}
           onDone={done}
         />
+      ) : null}
+      {dialog?.kind === 'device' ? (
+        <TicketDeviceDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
       ) : null}
       {dialog?.kind === 'linkProblem' || dialog?.kind === 'linkIncident' ? (
         <LinkToDialog

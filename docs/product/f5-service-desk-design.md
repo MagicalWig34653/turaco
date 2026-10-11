@@ -82,3 +82,7 @@ Fixed: a push that overlapped a change is detected in one statement and repeated
 - **Change links.** The Service Desk owns the relationship triple `ticket RELATES_TO change` in the platform relationship graph and reads Change summaries through the Changes public reader (`changes/public`). Linking needs work access in the ticket's Queue and the right to read the Change; at most 25 per ticket. No new table, no change to the Change.
 - **History ids.** One audit event can yield several history entries; the first keeps the event id, later ones get `<event id>:<n>`.
 - **Resume.** `resume` assigns the actor when the ticket has no assignee, like `start`.
+
+## Device correction and related tickets (2026-10-11)
+
+`SetDevice` mirrors `SetLocation`: explicit, version-guarded, `abilities.setDevice`, audit `servicedesk.ticket.device_changed` (asset ids and references in the metadata) and a `device_changed` history entry. Create still requires a device the affected person holds; staff correct it afterwards with `assets.view`, because ticket handling must not become a way to read arbitrary assets for people without that permission. Related tickets reuse the `ticket RELATES_TO` relationship (target type `ticket`), stored once and read in both directions; duplicates are listed from `duplicate_of_ticket_id` and are not relationships.

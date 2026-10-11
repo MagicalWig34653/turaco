@@ -5140,7 +5140,7 @@ paths:
                       properties:
                         id: {type: string, format: uuid}
                         at: {type: string, format: date-time}
-                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed, callback_scheduled]}
+                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed, device_changed, callback_scheduled]}
                         actorId: {type: string, format: uuid}
                         via: {type: string}
                         reason: {type: string}
@@ -5155,6 +5155,8 @@ paths:
                         duplicateOfId: {type: string}
                         fromLocationId: {type: string, description: "location_changed: the earlier affected Location; absent when there was none."}
                         toLocationId: {type: string, description: "location_changed: the new affected Location; absent when it was cleared."}
+                        fromDevice: {type: string, description: "device_changed: the reference of the earlier device; absent when there was none."}
+                        toDevice: {type: string, description: "device_changed: the reference of the new device; absent when it was cleared."}
                         taskId: {type: string, format: uuid, description: "callback_scheduled: the Task of the callback (GET /tasks/{id} for people who may see it)."}
                         dueAt: {type: string, format: date-time, description: "callback_scheduled: when the callback is due."}
                         assigneeId: {type: string, format: uuid, description: "callback_scheduled: who the callback Task is assigned to (named in `names`)."}
@@ -5253,6 +5255,130 @@ paths:
         '400': {$ref: '#/components/responses/TicketsInvalid'}
         '404': {$ref: '#/components/responses/TicketsNotFound'}
         '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/device:
+    post:
+      operationId: setTicketDevice
+      summary: Set the device.
+      description: "Explicit operation: corrects the device of the ticket. Needs work access in the ticket's Queue (`abilities.setDevice`, ticket not closed or cancelled) and `assets.view` or `assets.manage` for a non-null `assetId` (403); staff may pick any device, not only one the affected person holds. `expectedVersion` is required (409 tickets.version_conflict). An unknown device is 400 tickets.device_invalid. A null `assetId` clears the device. The device snapshot is taken at the time of the change. Audited (servicedesk.ticket.device_changed) and listed in the history as `device_changed`. Setting the current device changes nothing."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketDevice'
+      responses:
+        '200':
+          description: The ticket.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Ticket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/duplicates:
+    get:
+      operationId: listTicketDuplicates
+      summary: List the duplicates of a ticket.
+      description: "For people who view the ticket's Queue: the tickets marked as duplicates of this one (newest first, at most 50). Duplicates in a Queue the caller may not view are left out."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The duplicates.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/RelatedTicket'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/related-tickets:
+    get:
+      operationId: listRelatedTickets
+      summary: List the tickets related to a ticket.
+      description: "For people who view the ticket's Queue. Relationship `ticket RELATES_TO ticket` of the platform relationship service (owner: servicedesk), read in both directions. Tickets in a Queue the caller may not view appear as hidden placeholders."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The links.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/RelatedTicket'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: linkRelatedTicket
+      summary: Relate a ticket to another ticket.
+      description: "Needs work access in the Queues of both tickets (an unknown and an invisible other ticket are the same 404). Idempotent, also when the link exists from the other side. A ticket cannot be linked to itself (400); at most 25 links per ticket. Audited (servicedesk.ticket.ticket_linked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ticketId]
+              properties:
+                ticketId: {type: string, format: uuid}
+      responses:
+        '200':
+          description: The link.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RelatedTicket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/related-tickets/{otherId}:
+    delete:
+      operationId: unlinkRelatedTicket
+      summary: Remove a ticket-to-ticket link.
+      description: "Needs work access in the Queue of the ticket in the path; the link ends whichever ticket created it. Idempotent. Audited (servicedesk.ticket.ticket_unlinked)."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - {name: otherId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Link removed.}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -18719,6 +18845,7 @@ components:
                 move: {type: boolean, description: "POST /tickets/{id}/move-queue (the target Queue needs the create level)."}
                 markDuplicate: {type: boolean, description: "POST /tickets/{id}/duplicate."}
                 setLocation: {type: boolean, description: "POST /tickets/{id}/location (work level in the Queue, ticket not closed or cancelled)."}
+                setDevice: {type: boolean, description: "POST /tickets/{id}/device (work level in the Queue, ticket not closed or cancelled; picking a device also needs assets.view)."}
                 scheduleCallback: {type: boolean, description: "POST /tickets/{id}/callback (work level in the Queue, ticket not closed or cancelled)."}
             names:
               type: object
@@ -18764,6 +18891,24 @@ components:
       properties:
         expectedVersion: {type: integer, minimum: 1}
         locationId: {type: [string, "null"], format: uuid, description: "An active Location (GET /locations lookup); null clears it."}
+    TicketDevice:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        assetId: {type: [string, "null"], format: uuid, description: "An asset (GET /assets?q= lookup, needs assets.view); null clears the device."}
+    RelatedTicket:
+      type: object
+      additionalProperties: false
+      required: [id, hidden]
+      properties:
+        id: {type: string}
+        ticketId: {type: string, format: uuid}
+        reference: {type: string}
+        title: {type: string}
+        status: {type: string}
+        hidden: {type: boolean, description: "True when the caller may not view the other ticket's Queue; the other fields are then absent."}
     TicketChangeLink:
       type: object
       additionalProperties: false

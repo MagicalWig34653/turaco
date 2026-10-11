@@ -101,6 +101,16 @@ export function describeHistory(
         params: { from: fromLocation, to: toLocation },
       };
     }
+    case 'device_changed': {
+      if (!entry.toDevice)
+        return { key: 'ticketHistory.deviceCleared', params: { from: entry.fromDevice ?? '' } };
+      if (!entry.fromDevice)
+        return { key: 'ticketHistory.deviceSet', params: { to: entry.toDevice } };
+      return {
+        key: 'ticketHistory.deviceChanged',
+        params: { from: entry.fromDevice, to: entry.toDevice },
+      };
+    }
     case 'callback_scheduled':
       return {
         key: 'ticketHistory.callbackScheduled',

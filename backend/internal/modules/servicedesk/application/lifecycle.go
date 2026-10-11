@@ -70,6 +70,8 @@ type Abilities struct {
 	MoveQueue bool
 	// SetLocation corrects the affected location of the Ticket.
 	SetLocation bool
+	// SetDevice corrects the device of the Ticket.
+	SetDevice bool
 	// MarkDuplicate cancels the Ticket as a duplicate of another one.
 	MarkDuplicate bool
 	// ScheduleCallback creates a due Task for the Ticket (staff of the Queue, Ticket not closed or cancelled).
@@ -95,6 +97,7 @@ func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
 		Transition:       len(AllowedOperations(t, ep)) > 0,
 		MoveQueue:        ep.Manage && canMove && movableStatus(t.Status),
 		SetLocation:      ep.Manage && open,
+		SetDevice:        ep.Manage && open,
 		MarkDuplicate:    ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
 		ScheduleCallback: ep.Manage && open,
 	}

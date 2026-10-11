@@ -60,6 +60,7 @@ export function resolveAbilities(
   return {
     ...base,
     setLocation: base.setLocation === true,
+    setDevice: base.setDevice === true,
     composer: base.comment || base.internalComment,
     canChooseKind: base.comment && base.internalComment,
   };

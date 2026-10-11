@@ -111,6 +111,8 @@ type Principal struct {
 	QueuesManage bool
 	// ChangesView (changes.view, manage or execute) lets the caller read Change titles linked to a Ticket.
 	ChangesView bool
+	// AssetsView (assets.view or assets.manage) lets staff pick any device for a Ticket.
+	AssetsView bool
 	// External marks a restricted external account (ADR-0034): it reads only Tickets shared with it through
 	// ticket_participants and has no Queue access whatever Teams or roles it belongs to.
 	External bool
@@ -226,6 +228,8 @@ type Store interface {
 	UpdateTx(ctx context.Context, tx pgx.Tx, t Ticket) (Ticket, error)
 	// UpdateLocationTx sets the affected Location (nil clears it) and bumps the version.
 	UpdateLocationTx(ctx context.Context, tx pgx.Tx, id string, locationID *string) (Ticket, error)
+	// UpdateDeviceTx sets the device and its snapshot (nil clears both) and bumps the version.
+	UpdateDeviceTx(ctx context.Context, tx pgx.Tx, id string, assetID *string, snapshot map[string]any) (Ticket, error)
 	Get(ctx context.Context, id string) (Ticket, error)
 	List(ctx context.Context, f Filter) (Result, error)
 	InsertCommentTx(ctx context.Context, tx pgx.Tx, c Comment) (Comment, error)

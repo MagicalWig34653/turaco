@@ -48,6 +48,11 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
 	route("POST /api/v1/tickets/{id}/location", h.location)
+	route("POST /api/v1/tickets/{id}/device", h.device)
+	route("GET /api/v1/tickets/{id}/duplicates", h.duplicates)
+	route("GET /api/v1/tickets/{id}/related-tickets", h.relatedTickets)
+	route("POST /api/v1/tickets/{id}/related-tickets", h.linkTicket)
+	route("DELETE /api/v1/tickets/{id}/related-tickets/{otherId}", h.unlinkTicket)
 	route("POST /api/v1/tickets/{id}/callback", h.callback)
 	route("GET /api/v1/tickets/{id}/changes", h.linkedChanges)
 	route("POST /api/v1/tickets/{id}/changes", h.linkChange)
@@ -125,7 +130,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage),
-		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), External: p.External}
+		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), AssetsView: p.Has("assets.view") || p.Has("assets.manage"), External: p.External}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -235,6 +240,7 @@ type abilitiesDTO struct {
 	Move             bool `json:"move"`
 	MarkDuplicate    bool `json:"markDuplicate"`
 	SetLocation      bool `json:"setLocation"`
+	SetDevice        bool `json:"setDevice"`
 	ScheduleCallback bool `json:"scheduleCallback"`
 }
 
@@ -334,7 +340,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names, Abilities: abilitiesDTO{Comment: d.Abilities.Comment, InternalComment: d.Abilities.InternalComment,
-		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation, ScheduleCallback: d.Abilities.ScheduleCallback}}
+		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation, SetDevice: d.Abilities.SetDevice, ScheduleCallback: d.Abilities.ScheduleCallback}}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, toComment(c))
 	}
@@ -453,6 +459,8 @@ type historyDTO struct {
 	DuplicateOfID  string `json:"duplicateOfId,omitempty"`
 	FromLocationID string `json:"fromLocationId,omitempty"`
 	ToLocationID   string `json:"toLocationId,omitempty"`
+	FromDevice     string `json:"fromDevice,omitempty"`
+	ToDevice       string `json:"toDevice,omitempty"`
 	TaskID         string `json:"taskId,omitempty"`
 	DueAt          string `json:"dueAt,omitempty"`
 	AssigneeID     string `json:"assigneeId,omitempty"`
@@ -469,7 +477,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	out := make([]historyDTO, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
-			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID})
+			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, FromDevice: e.FromDevice, ToDevice: e.ToDevice, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID})
 	}
 	httpx.JSON(w, http.StatusOK, struct {
 		Items []historyDTO      `json:"items"`
@@ -503,6 +511,23 @@ func (h *handler) location(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := h.svc.SetLocation(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.LocationID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+// device sets (or, with a null assetId, clears) the device of the ticket.
+func (h *handler) device(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ExpectedVersion *int    `json:"expectedVersion"`
+		AssetID         *string `json:"assetId"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	t, err := h.svc.SetDevice(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.AssetID)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -662,4 +687,67 @@ func (h *handler) ticketsOfChange(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, struct {
 		Items []item `json:"items"`
 	}{out})
+}
+
+type relatedTicketDTO struct {
+	ID        string `json:"id"`
+	TicketID  string `json:"ticketId,omitempty"`
+	Reference string `json:"reference,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Hidden    bool   `json:"hidden"`
+}
+
+func writeRelated(w http.ResponseWriter, links []application.RelatedTicket) {
+	out := make([]relatedTicketDTO, 0, len(links))
+	for _, l := range links {
+		out = append(out, relatedTicketDTO{ID: l.ID, TicketID: l.TicketID, Reference: l.Reference, Title: l.Title, Status: l.Status, Hidden: l.Hidden})
+	}
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []relatedTicketDTO `json:"items"`
+	}{out})
+}
+
+// duplicates lists the tickets marked as duplicates of the ticket.
+func (h *handler) duplicates(w http.ResponseWriter, r *http.Request) {
+	links, err := h.svc.Duplicates(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeRelated(w, links)
+}
+
+// relatedTickets lists the tickets linked to the ticket.
+func (h *handler) relatedTickets(w http.ResponseWriter, r *http.Request) {
+	links, err := h.svc.RelatedTickets(r.Context(), principal(r), r.PathValue("id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeRelated(w, links)
+}
+
+// linkTicket relates the ticket to another ticket (idempotent).
+func (h *handler) linkTicket(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		TicketID string `json:"ticketId"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	l, err := h.svc.LinkTicket(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.TicketID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, relatedTicketDTO{ID: l.ID, TicketID: l.TicketID, Reference: l.Reference, Title: l.Title, Status: l.Status})
+}
+
+func (h *handler) unlinkTicket(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.UnlinkTicket(r.Context(), caller(w, r), principal(r), r.PathValue("id"), r.PathValue("otherId")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
