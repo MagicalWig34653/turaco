@@ -132,7 +132,7 @@ func (s *Service) getAsParticipant(ctx context.Context, p Principal, id string) 
 // externalView keeps what a participant may read of a Ticket.
 func externalView(t Ticket) Ticket {
 	return Ticket{ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status,
-		WaitingReason: t.WaitingReason, Resolution: t.Resolution, Priority: t.Priority, ResolvedAt: t.ResolvedAt, ClosedAt: t.ClosedAt,
+		WaitingReason: t.WaitingReason, WaitingUntil: t.WaitingUntil, Resolution: t.Resolution, Priority: t.Priority, ResolvedAt: t.ResolvedAt, ClosedAt: t.ClosedAt,
 		Version: t.Version, CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
 }
 

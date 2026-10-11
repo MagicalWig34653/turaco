@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"regexp"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ import (
 
 // Step produces the provider's answer to one call.
 type Step func(req ai.ChatRequest) (ai.ChatResponse, error)
+
+func (p *Provider) Mode() health.Mode { return health.ModeFake }
 
 // Provider implements ai.Provider.
 type Provider struct {

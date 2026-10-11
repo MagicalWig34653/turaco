@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -45,6 +46,8 @@ var _ AssignmentWriter = (*GraphWriter)(nil)
 func NewGraphWriter(g *microsoft.Graph) *GraphWriter { return &GraphWriter{g: g} }
 
 // Status implements providerstatus.Reporter.
+func (w *GraphWriter) Mode() health.Mode { return health.ModeReal }
+
 func (w *GraphWriter) Status() providerstatus.Snapshot { return w.g.Status() }
 
 var guidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

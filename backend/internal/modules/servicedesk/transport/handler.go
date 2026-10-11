@@ -164,6 +164,7 @@ type ticketDTO struct {
 	Description     *string        `json:"description"`
 	Status          string         `json:"status"`
 	WaitingReason   *string        `json:"waitingReason"`
+	WaitingUntil    *string        `json:"waitingUntil"`
 	StatusReason    *string        `json:"statusReason"`
 	Resolution      *string        `json:"resolution"`
 	Priority        string         `json:"priority"`
@@ -201,7 +202,7 @@ func toTicket(t application.Ticket) ticketDTO {
 	if t.Queue != nil {
 		q = &queueRefDTO{ID: t.Queue.ID, Key: t.Queue.Key, Prefix: t.Queue.Prefix, Name: t.Queue.Name}
 	}
-	return ticketDTO{QueueID: queueIDOf(t), Queue: q, QueueLabel: t.QueueLabel, Aliases: t.Aliases, ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason,
+	return ticketDTO{QueueID: queueIDOf(t), Queue: q, QueueLabel: t.QueueLabel, Aliases: t.Aliases, ID: t.ID, Reference: t.Reference, Title: t.Title, Description: t.Description, Status: t.Status, WaitingReason: t.WaitingReason, WaitingUntil: tsPtr(t.WaitingUntil),
 		StatusReason: t.StatusReason, Resolution: t.Resolution, Priority: t.Priority, ReporterID: t.ReporterID, AffectedUserID: t.AffectedUserID,
 		QueueTeamID: t.QueueTeamID, AssigneeID: t.AssigneeID, AssetID: t.AssetID, MajorIncidentID: t.MajorIncidentID, DuplicateOfID: t.DuplicateOfID, PatientImpact: t.PatientImpact, Impact: nilStr(t.ReportedImpact), LocationID: t.AffectedLocationID, DeviceSnapshot: t.DeviceSnapshot, ResolvedAt: tsPtr(t.ResolvedAt),
 		ClosedAt: tsPtr(t.ClosedAt), Version: t.Version, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)}
@@ -449,6 +450,7 @@ type historyDTO struct {
 	ActorID        string `json:"actorId,omitempty"`
 	Via            string `json:"via"`
 	Reason         string `json:"reason,omitempty"`
+	ExpectedAt     string `json:"expectedAt,omitempty"`
 	FromUserID     string `json:"fromUserId,omitempty"`
 	ToUserID       string `json:"toUserId,omitempty"`
 	FromTeamID     string `json:"fromTeamId,omitempty"`
@@ -477,7 +479,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]historyDTO, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
+		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, ExpectedAt: e.ExpectedAt, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
 			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, FromDevice: e.FromDevice, ToDevice: e.ToDevice, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID})
 	}
 	httpx.JSON(w, http.StatusOK, struct {
@@ -562,13 +564,14 @@ func (h *handler) callback(w http.ResponseWriter, r *http.Request) {
 func (h *handler) transition(op string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var b struct {
-			ExpectedVersion *int   `json:"expectedVersion"`
-			Reason          string `json:"reason"`
+			ExpectedVersion *int       `json:"expectedVersion"`
+			Reason          string     `json:"reason"`
+			ExpectedAt      *time.Time `json:"expectedAt"`
 		}
 		if !decode(w, r, &b) {
 			return
 		}
-		t, err := h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, application.Params{Reason: b.Reason})
+		t, err := h.svc.Transition(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, op, application.Params{Reason: b.Reason, ExpectedAt: b.ExpectedAt})
 		if err != nil {
 			h.fail(w, r, err)
 			return

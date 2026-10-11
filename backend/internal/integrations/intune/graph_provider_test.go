@@ -244,3 +244,20 @@ func TestMapAssignmentRejectsAGroupTargetWithoutGroup(t *testing.T) {
 		t.Fatal("accepted")
 	}
 }
+
+func TestGraphProviderProbeReadsOneDeviceOnly(t *testing.T) {
+	s := newGraphServer(t)
+	s.mux.HandleFunc("/deviceManagement/managedDevices", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Query().Get("$top") != "1" || r.URL.Query().Get("$select") != "id" {
+			t.Errorf("probe request: %s %s", r.Method, r.URL)
+		}
+		json200(w, `{"value":[{"id":"dev-1"}]}`)
+	})
+	if err := NewGraphProvider(s.graph(t), false).Probe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	calls := s.calls()
+	if len(calls) != 2 || calls[1] != "GET /v1.0/deviceManagement/managedDevices" {
+		t.Fatalf("probe calls: %v", calls)
+	}
+}

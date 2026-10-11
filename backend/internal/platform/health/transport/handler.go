@@ -3,6 +3,7 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	permHealthView = "platform.health.view"
-	permAdmin      = "platform.admin"
+	permHealthView  = "platform.health.view"
+	permHealthProbe = "platform.health.probe"
+	permAdmin       = "platform.admin"
 )
 
 // SystemInfo is the static part of GET /admin/system.
@@ -32,12 +34,17 @@ type handler struct {
 	setup  *health.Setup
 	info   SystemInfo
 	logger *slog.Logger
+	prober *health.Prober
 }
 
 // Register mounts the routes; all need platform.health.view, and changing a setup item needs platform.admin.
-func Register(mux *http.ServeMux, reg *health.Registry, setup *health.Setup, info SystemInfo, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, reg *health.Registry, setup *health.Setup, info SystemInfo, auth authorization.Authenticator, logger *slog.Logger, probers ...*health.Prober) {
 	h := &handler{reg: reg, setup: setup, info: info, logger: logger}
+	if len(probers) > 0 {
+		h.prober = probers[0]
+	}
 	view := authorization.Require(auth, permHealthView)
+	mux.Handle("POST /api/v1/admin/health/probe", httpx.NoStore(authorization.Require(auth, permHealthProbe)(http.HandlerFunc(h.probe))))
 	mux.Handle("GET /api/v1/admin/health", httpx.NoStore(view(http.HandlerFunc(h.health))))
 	mux.Handle("GET /api/v1/admin/integrations", httpx.NoStore(view(http.HandlerFunc(h.integrations))))
 	mux.Handle("GET /api/v1/admin/system", httpx.NoStore(view(http.HandlerFunc(h.system))))
@@ -56,13 +63,13 @@ func summary(entries []health.Entry) map[string]int {
 }
 
 func (h *handler) health(w http.ResponseWriter, r *http.Request) {
-	entries := h.reg.All(r.Context())
+	entries := h.entries(r.Context())
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": entries, "summary": summary(entries)})
 }
 
 func (h *handler) integrations(w http.ResponseWriter, r *http.Request) {
 	out := []health.Entry{}
-	for _, e := range h.reg.All(r.Context()) {
+	for _, e := range h.entries(r.Context()) {
 		if e.Category == health.CategoryIntegration {
 			out = append(out, e)
 		}
@@ -134,4 +141,53 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		h.logger.ErrorContext(r.Context(), "health request failed", "request_id", httpx.RequestID(w), "error", err)
 		httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
 	}
+}
+
+func (h *handler) entries(ctx context.Context) []health.Entry {
+	entries := h.reg.All(ctx)
+	if h.prober == nil {
+		return entries
+	}
+	stored, err := h.prober.Snapshot(ctx)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "read health probes", "error", err)
+		return entries
+	}
+	for i := range entries {
+		if h.prober.Supports(entries[i].Key) {
+			entries[i].ProbeSupported = true
+			if result, ok := stored[entries[i].Key]; ok {
+				entries[i].Probe = &result
+			}
+		}
+	}
+	return entries
+}
+
+func (h *handler) probe(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Check string `json:"check"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil || body.Check == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "health.invalid_request", "A check name is required.")
+		return
+	}
+	if h.prober == nil || !h.prober.Supports(body.Check) {
+		httpx.WriteError(w, http.StatusNotFound, "health.probe_unsupported", "This check has no active probe.")
+		return
+	}
+	p, _ := authorization.PrincipalFrom(r.Context())
+	result, err := h.prober.Run(r.Context(), body.Check, p.UserID, httpx.RequestID(w))
+	if err != nil {
+		if errors.Is(err, health.ErrProbeRateLimited) {
+			w.Header().Set("Retry-After", "60")
+			httpx.WriteError(w, http.StatusTooManyRequests, "health.probe_rate_limited", "This check was probed within the last minute.")
+			return
+		}
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, result)
 }

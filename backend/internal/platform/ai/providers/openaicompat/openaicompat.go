@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"net/http"
 	"strings"
 
@@ -24,6 +25,8 @@ type Config struct {
 	// Client overrides the transport (tests); production always builds the safehttp client from Endpoint and Local.
 	Client *safehttp.Client
 }
+
+func (p *Provider) Mode() health.Mode { return health.ModeReal }
 
 // Provider implements ai.Provider.
 type Provider struct {

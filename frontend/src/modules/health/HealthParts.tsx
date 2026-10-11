@@ -1,6 +1,7 @@
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { Link } from '../../platform/router/Router';
 import { Badge } from '../../platform/ui/Alert';
+import { Button } from '../../platform/ui/Button';
 import { docsPathUrl } from '../../platform/ui/docsLinks';
 import { TableDate } from '../../platform/ui/TableDate';
 import { errorTextKey, messageOr, resolveAppRoute, statusKey, statusTone } from './model';
@@ -56,7 +57,15 @@ const countLabels = (counts: Record<string, number> | undefined) =>
   Object.entries(counts ?? {}).filter(([, value]) => Number.isFinite(value));
 
 /** One check: status, mode, freshness (observed, last success, last attempt), error code, counts, next step. */
-export function CheckCard({ result }: { result: HealthResult }) {
+export function CheckCard({
+  result,
+  onProbe,
+  probing,
+}: {
+  result: HealthResult;
+  onProbe?: (key: string) => void;
+  probing?: boolean;
+}) {
   const { t } = useI18n();
   const counts = countLabels(result.counts);
   const code = result.errorCode;
@@ -69,6 +78,18 @@ export function CheckCard({ result }: { result: HealthResult }) {
       <p className="health-meta">
         {t(messageOr(`health.check.${result.key}.about`, 'health.check.unknown.about'))}
       </p>
+      {result.probeSupported && onProbe ? (
+        <Button busy={probing ?? false} onClick={() => onProbe(result.key)}>
+          {t('health.probe.now')}
+        </Button>
+      ) : null}
+      {result.probe ? (
+        <p className="health-meta">
+          {t('health.probe.last')}: <HealthStatusBadge status={result.probe.status} /> ·{' '}
+          <TableDate value={result.probe.attemptedAt} />
+          {result.probe.errorCode ? <> · {t(errorTextKey(result.probe.errorCode))}</> : null}
+        </p>
+      ) : null}
       <dl className="health-meta-list">
         {result.mode ? (
           <>

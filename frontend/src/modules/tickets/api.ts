@@ -150,8 +150,18 @@ export const ticketsApi = {
   ) => api.post<Ticket>(`/tickets/${enc(id)}/assign`, { expectedVersion, ...body }),
   setPriority: (id: string, expectedVersion: number, priority: string) =>
     api.post<Ticket>(`/tickets/${enc(id)}/priority`, { expectedVersion, priority }),
-  operate: (id: string, op: TicketOperation, expectedVersion: number, reason = '') =>
-    api.post<Ticket>(`/tickets/${enc(id)}/${op}`, { expectedVersion, reason }),
+  operate: (
+    id: string,
+    op: TicketOperation,
+    expectedVersion: number,
+    reason = '',
+    expectedAt?: string,
+  ) =>
+    api.post<Ticket>(`/tickets/${enc(id)}/${op}`, {
+      expectedVersion,
+      reason,
+      ...(expectedAt ? { expectedAt } : {}),
+    }),
   /** Staff-visible change history with a name map for the ids in it; 403/404 for requesters. */
   history: (id: string, signal?: Signal) =>
     api.get<{ items: TicketHistoryEntry[]; names?: Record<string, string> }>(

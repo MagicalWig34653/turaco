@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
@@ -173,5 +174,26 @@ func TestProblemsOverHTTP(t *testing.T) {
 	}
 	if rec := do(employee, "POST", "/api/v1/problems", `{"title":"x"}`); rec.Code != http.StatusForbidden {
 		t.Errorf("employee create = %d", rec.Code)
+	}
+}
+
+func TestWaitRejectsPastExpectedAtOverHTTP(t *testing.T) {
+	h := serve(t, as(agent, "tickets.manage"))
+	created := do(h, "POST", "/api/v1/tickets", `{"title":"Waiting date test"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", created.Code, created.Body)
+	}
+	var ticket struct{ ID string }
+	if err := json.Unmarshal(created.Body.Bytes(), &ticket); err != nil {
+		t.Fatal(err)
+	}
+	started := do(h, "POST", "/api/v1/tickets/"+ticket.ID+"/start", `{}`)
+	if started.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", started.Code, started.Body)
+	}
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	rec := do(h, "POST", "/api/v1/tickets/"+ticket.ID+"/wait", `{"reason":"hardware","expectedAt":"`+past+`"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("past wait: %d %s", rec.Code, rec.Body)
 	}
 }

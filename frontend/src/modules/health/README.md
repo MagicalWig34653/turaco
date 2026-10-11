@@ -1,12 +1,12 @@
 # Health, integrations, system and setup (F14 A-F)
 
 Screens for the platform health contract (`GET /admin/health`, `/admin/integrations`, `/admin/system`,
-`/admin/setup`, `PUT /admin/setup/items/{key}`), routed at `/admin/health`, `/admin/integrations`,
+`/admin/setup`, `PUT /admin/setup/items/{key}`, `POST /admin/health/probe`), routed at `/admin/health`, `/admin/integrations`,
 `/admin/system` and `/admin/setup` in the Administration navigation group.
 
 - Permission: `platform.health.view` shows the routes and the Overview tile; `platform.admin` enables skip,
   confirm and reopen on the setup checklist. Direct URLs without permission show the shared forbidden view.
-  The backend remains authoritative.
+  `platform.health.probe` enables Probe now only on supported checks. The backend remains authoritative.
 - Server state is read with `useAsync` (one request per screen, refresh button, no polling). Setup writes send
   `expectedVersion` of an existing mark; a `health.version_conflict` reloads the list and shows a review notice.
 - Status vocabulary (`model.ts`): `ok` is the only success tone; `stale`, `fake` and `not_configured` are warnings,
@@ -17,4 +17,4 @@ Screens for the platform health contract (`GET /admin/health`, `/admin/integrati
   has; the contract's `/admin/people` and `/admin/directory` map to Users and Directory Sync), the configuration key
   names (never values) and a `docs/` guide link. Other docs paths are not linked.
 - `SetupTile` is rendered on the Overview for health viewers while `open > 0`.
-- Not built: connectivity probes, per-check history, a worker/jobs tab.
+- The configured Intune Graph read adapter supports an explicit, rate-limited probe; GET pages show the stored result without running it. Directory, SMTP, storage and ClamAV do not have a suitable cheap read-only probe yet. Per-check history and a worker/jobs tab are not built.

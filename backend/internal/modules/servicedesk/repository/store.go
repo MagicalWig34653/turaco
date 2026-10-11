@@ -24,12 +24,12 @@ var _ application.Store = (*Repository)(nil)
 
 func New(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-const columns = `id::text, reference, kind, title, description, status, waiting_reason, status_reason, resolution, priority,
+const columns = `id::text, reference, kind, title, description, status, waiting_reason, waiting_until, status_reason, resolution, priority,
 	reporter_user_id::text, affected_user_id::text, queue_team_id::text, assignee_user_id::text, asset_id::text, major_incident_id::text, device_snapshot,
 	resolved_at, closed_at, version, created_at, updated_at, queue_id::text, number, patient_impact, affected_location_id::text, duplicate_of_ticket_id::text, reported_impact`
 
 // queryColumns is columns qualified with the query alias.
-const queryColumns = `t.id::text, t.reference, t.kind, t.title, t.description, t.status, t.waiting_reason, t.status_reason, t.resolution, t.priority,
+const queryColumns = `t.id::text, t.reference, t.kind, t.title, t.description, t.status, t.waiting_reason, t.waiting_until, t.status_reason, t.resolution, t.priority,
 	t.reporter_user_id::text, t.affected_user_id::text, t.queue_team_id::text, t.assignee_user_id::text, t.asset_id::text, t.major_incident_id::text, t.device_snapshot,
 	t.resolved_at, t.closed_at, t.version, t.created_at, t.updated_at, t.queue_id::text, t.number, t.patient_impact, t.affected_location_id::text, t.duplicate_of_ticket_id::text, t.reported_impact`
 
@@ -40,7 +40,7 @@ func scanWith(row pgx.Row, extra ...any) (application.Ticket, error) {
 	var t application.Ticket
 	var snap []byte
 	var impact *string
-	dest := append([]any{&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.StatusReason, &t.Resolution, &t.Priority,
+	dest := append([]any{&t.ID, &t.Reference, &t.Kind, &t.Title, &t.Description, &t.Status, &t.WaitingReason, &t.WaitingUntil, &t.StatusReason, &t.Resolution, &t.Priority,
 		&t.ReporterID, &t.AffectedUserID, &t.QueueTeamID, &t.AssigneeID, &t.AssetID, &t.MajorIncidentID, &snap, &t.ResolvedAt, &t.ClosedAt, &t.Version, &t.CreatedAt, &t.UpdatedAt, &t.QueueID, &t.Number, &t.PatientImpact, &t.AffectedLocationID, &t.DuplicateOfID, &impact}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
@@ -101,10 +101,10 @@ func (r *Repository) LockTx(ctx context.Context, tx pgx.Tx, id string) (applicat
 
 func (r *Repository) UpdateTx(ctx context.Context, tx pgx.Tx, t application.Ticket) (application.Ticket, error) {
 	out, err := scan(tx.QueryRow(ctx, `
-		UPDATE servicedesk.tickets SET status = $2, waiting_reason = $3, status_reason = $4, resolution = $5, priority = $6,
+		UPDATE servicedesk.tickets SET status = $2, waiting_reason = $3, waiting_until = $11, status_reason = $4, resolution = $5, priority = $6,
 			queue_team_id = $7::uuid, assignee_user_id = $8::uuid, resolved_at = $9, closed_at = $10, version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+columns,
-		t.ID, t.Status, t.WaitingReason, t.StatusReason, t.Resolution, t.Priority, t.QueueTeamID, t.AssigneeID, t.ResolvedAt, t.ClosedAt))
+		t.ID, t.Status, t.WaitingReason, t.StatusReason, t.Resolution, t.Priority, t.QueueTeamID, t.AssigneeID, t.ResolvedAt, t.ClosedAt, t.WaitingUntil))
 	if err != nil {
 		return application.Ticket{}, fmt.Errorf("update ticket: %w", err)
 	}
@@ -339,7 +339,7 @@ var _ application.HistoryStore = (*Repository)(nil)
 // MarkDuplicateTx implements application.DuplicateStore.
 func (r *Repository) MarkDuplicateTx(ctx context.Context, tx pgx.Tx, id, targetID string) (application.Ticket, error) {
 	out, err := scan(tx.QueryRow(ctx, `
-		UPDATE servicedesk.tickets SET status = 'cancelled', status_reason = $3, waiting_reason = NULL, duplicate_of_ticket_id = $2::uuid,
+		UPDATE servicedesk.tickets SET status = 'cancelled', status_reason = $3, waiting_reason = NULL, waiting_until = NULL, duplicate_of_ticket_id = $2::uuid,
 			version = version + 1, updated_at = now()
 		WHERE id = $1::uuid RETURNING `+columns, id, targetID, application.StatusReasonDuplicate))
 	if err != nil {

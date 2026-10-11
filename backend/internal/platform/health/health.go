@@ -58,15 +58,17 @@ type NextStep struct {
 
 // Result is what a check reports. ErrorCode is a short machine code, never raw error text.
 type Result struct {
-	Status        Status         `json:"status"`
-	Mode          Mode           `json:"mode,omitempty"`
-	ObservedAt    time.Time      `json:"observedAt"`
-	LastSuccessAt *time.Time     `json:"lastSuccessAt,omitempty"`
-	LastAttemptAt *time.Time     `json:"lastAttemptAt,omitempty"`
-	ErrorCode     string         `json:"errorCode,omitempty"`
-	Counts        map[string]int `json:"counts,omitempty"`
-	Detail        map[string]any `json:"detail,omitempty"`
-	NextStep      *NextStep      `json:"nextStep,omitempty"`
+	Probe          *ProbeResult   `json:"probe,omitempty"`
+	ProbeSupported bool           `json:"probeSupported,omitempty"`
+	Status         Status         `json:"status"`
+	Mode           Mode           `json:"mode,omitempty"`
+	ObservedAt     time.Time      `json:"observedAt"`
+	LastSuccessAt  *time.Time     `json:"lastSuccessAt,omitempty"`
+	LastAttemptAt  *time.Time     `json:"lastAttemptAt,omitempty"`
+	ErrorCode      string         `json:"errorCode,omitempty"`
+	Counts         map[string]int `json:"counts,omitempty"`
+	Detail         map[string]any `json:"detail,omitempty"`
+	NextStep       *NextStep      `json:"nextStep,omitempty"`
 }
 
 // Category groups checks for the pages that show them.

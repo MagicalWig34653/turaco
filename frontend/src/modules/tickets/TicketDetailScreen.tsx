@@ -12,6 +12,7 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Alert, Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Button } from '../../platform/ui/Button';
+import { DateTimeField } from '../../platform/ui/DateTimeField';
 import { Checkbox, Select, TextArea } from '../../platform/ui/Field';
 import { AttachmentsPanel } from '../../platform/attachments/AttachmentsPanel';
 import { PageHeader } from '../../platform/ui/PageHeader';
@@ -200,6 +201,7 @@ function WaitDialog({
   const { t } = useI18n();
   const [reason, setReason] = useState<string>('customer');
   const [note, setNote] = useState('');
+  const [expected, setExpected] = useState('');
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | undefined>(undefined);
@@ -208,7 +210,13 @@ function WaitDialog({
     setBusy(true);
     setError(undefined);
     try {
-      await ticketsApi.operate(ticket.id, 'wait', ticket.version, reason);
+      await ticketsApi.operate(
+        ticket.id,
+        'wait',
+        ticket.version,
+        reason,
+        expected ? new Date(expected).toISOString() : undefined,
+      );
       // The note is a second call; the hold itself has already succeeded, so a failure must not undo it.
       if (note.trim()) {
         try {
@@ -232,6 +240,12 @@ function WaitDialog({
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           options={waitingReasons.map((value) => ({ value, label: t(`tickets.waiting.${value}`) }))}
+        />
+        <DateTimeField
+          label={t('tickets.wait.expectedAt')}
+          value={expected}
+          onChange={setExpected}
+          hint={t('tickets.wait.expectedAt.hint')}
         />
         <TextArea
           label={t('tickets.wait.note')}
@@ -602,6 +616,12 @@ function TicketWorkspace({ id }: { id: string }) {
                             {reason.kind === 'text' ? reason.text : t(reason.key)}
                           </p>
                         ) : null}
+                        {entry.expectedAt ? (
+                          <p>
+                            {t('tickets.wait.expectedAt')}:{' '}
+                            {formatDateTime(locale, entry.expectedAt)}
+                          </p>
+                        ) : null}
                       </div>
                     </li>
                   );
@@ -801,7 +821,12 @@ function TicketWorkspace({ id }: { id: string }) {
               <dd key={ticket.status}>
                 <TicketStatusBadge status={ticket.status} />
                 {ticket.waitingReason ? (
-                  <p>{t(`tickets.waiting.${ticket.waitingReason}`)}</p>
+                  <p>
+                    {t(`tickets.waiting.${ticket.waitingReason}`)}
+                    {ticket.waitingUntil
+                      ? ` · ${t('tickets.wait.expectedAt')}: ${formatDateTime(locale, ticket.waitingUntil)}`
+                      : ''}
+                  </p>
                 ) : null}
                 {ticket.statusReason ? <p>{ticket.statusReason}</p> : null}
               </dd>

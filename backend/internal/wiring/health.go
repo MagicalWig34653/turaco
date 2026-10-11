@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/microsoft"
+	"github.com/MagicalWig34653/turaco/backend/internal/integrations/remoteaccess"
 	catalogpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/catalog/public"
 	orgpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	orgrepo "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
@@ -178,7 +179,17 @@ func Health(pool *pgxpool.Pool, mods *modules.Service, cfg HealthConfig) (*healt
 				return notConfigured("REMOTE_ACCESS_PROVIDERS")
 			}
 			// Launch-link connectors only; the unverified URI formats are documented in the remote access design.
-			return health.Result{Status: health.StatusOK, Mode: health.ModeReal, Counts: map[string]int{"providers": len(cfg.RemoteAccessProviders)}}
+			mode := health.ModeReal
+			for _, key := range cfg.RemoteAccessProviders {
+				connector, err := remoteaccess.NewConnector(key)
+				if err != nil {
+					return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_configured"}
+				}
+				if connector.Mode() == health.ModeFake {
+					mode = health.ModeFake
+				}
+			}
+			return health.Result{Status: health.StatusOK, Mode: mode, Counts: map[string]int{"providers": len(cfg.RemoteAccessProviders)}}
 		}},
 	}
 	for _, key := range []string{"presence", "ai"} {
@@ -227,12 +238,15 @@ func providerCheck(key string, syncOn bool, flag, docs string, p ProviderHealth,
 	return health.Check{Key: key, Category: health.CategoryIntegration, Run: func(ctx context.Context) health.Result {
 		step := &health.NextStep{Kind: "config", ConfigKeys: []string{flag}, DocsPath: docs}
 		if !syncOn {
-			return health.Result{Status: health.StatusDisabled, Mode: health.ModeNotConfigured, NextStep: step}
+			return health.Result{Status: health.StatusDisabled, Mode: p.Mode, NextStep: step}
 		}
-		if !p.Built {
+		if !p.Built && p.Mode != health.ModeFake {
 			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_built", NextStep: step}
 		}
-		if !p.Configured {
+		if p.Mode == health.ModeFake {
+			return health.Result{Status: health.StatusFake, Mode: health.ModeFake, NextStep: step}
+		}
+		if p.Mode == health.ModeNotConfigured || !p.Configured {
 			return health.Result{Status: health.StatusNotConfigured, Mode: health.ModeNotConfigured, ErrorCode: "client_not_configured",
 				NextStep: &health.NextStep{Kind: "config", ConfigKeys: p.MissingKeys, DocsPath: docs}}
 		}

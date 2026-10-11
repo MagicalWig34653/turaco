@@ -10,6 +10,7 @@ package intune
 import (
 	"context"
 	"errors"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"sync"
 	"time"
 )
@@ -113,6 +114,7 @@ type ManagementSnapshot struct {
 
 // Provider reads a complete snapshot of devices and their discovered software, and the management data.
 type Provider interface {
+	Mode() health.Mode
 	// Devices returns every managed device.
 	Devices(ctx context.Context) ([]DeviceRecord, error)
 	// Software returns the applications discovered on one device.
@@ -124,6 +126,8 @@ type Provider interface {
 
 // NotConfigured is the placeholder provider: every call fails with ErrNotConfigured.
 type NotConfigured struct{}
+
+func (NotConfigured) Mode() health.Mode { return health.ModeNotConfigured }
 
 func (NotConfigured) Devices(context.Context) ([]DeviceRecord, error) {
 	return nil, ErrNotConfigured
@@ -169,6 +173,8 @@ func (f *Fake) FailWith(err error) {
 	defer f.mu.Unlock()
 	f.err = err
 }
+
+func (f *Fake) Mode() health.Mode { return health.ModeFake }
 
 func (f *Fake) Devices(context.Context) ([]DeviceRecord, error) {
 	f.mu.Lock()

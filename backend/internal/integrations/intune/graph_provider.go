@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -41,6 +42,18 @@ func NewGraphProvider(g *microsoft.Graph, beta bool) *GraphProvider {
 }
 
 // Status implements providerstatus.Reporter.
+func (p *GraphProvider) Mode() health.Mode { return health.ModeReal }
+
+// Probe reads at most one managed device id. It does not ingest or alter provider data.
+func (p *GraphProvider) Probe(ctx context.Context) error {
+	var response struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	return p.g.Get(ctx, query("/v1.0/deviceManagement/managedDevices", "$top", "1", "$select", "id"), &response)
+}
+
 func (p *GraphProvider) Status() providerstatus.Snapshot { return p.g.Status() }
 
 // Limits that keep a hostile or misbehaving answer bounded.

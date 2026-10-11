@@ -40,6 +40,7 @@ type HistoryEntry struct {
 	ActorID    string
 	Via        string
 	Reason     string
+	ExpectedAt string
 	FromUserID string
 	ToUserID   string
 	FromTeamID string
@@ -113,6 +114,7 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 		_ = json.Unmarshal(ev.After, &after)
 		var meta struct {
 			Reason      string `json:"reason"`
+			ExpectedAt  string `json:"expectedAt"`
 			ReasonCode  string `json:"reasonCode"`
 			Operation   string `json:"operation"`
 			DuplicateOf string `json:"duplicateOfId"`
@@ -129,7 +131,7 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			reason = meta.ReasonCode
 		}
 		via := strings.TrimPrefix(ev.Action, "servicedesk.ticket.")
-		base := HistoryEntry{ID: ev.ID, At: ev.OccurredAt, ActorID: deref(ev.ActorID), Via: via, Reason: reason}
+		base := HistoryEntry{ID: ev.ID, At: ev.OccurredAt, ActorID: deref(ev.ActorID), Via: via, Reason: reason, ExpectedAt: meta.ExpectedAt}
 		n := 0
 		add := func(kind string, f func(*HistoryEntry)) {
 			e := base

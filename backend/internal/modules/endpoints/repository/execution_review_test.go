@@ -9,6 +9,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/intune"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/endpoints/application"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 )
 
 // Tests for the G3 review findings: write protocol, kill switch, evidence rules, guards (docs/product/f9-software-lifecycle-design.md,
@@ -20,6 +21,8 @@ type hookWriter struct {
 	onSet    func()
 	clearErr func(ringKey string) error
 }
+
+func (h *hookWriter) Mode() health.Mode { return h.inner.Mode() }
 
 func (h *hookWriter) SetRingAssignment(ctx context.Context, op intune.RingAssignmentOp) error {
 	if h.onSet != nil {

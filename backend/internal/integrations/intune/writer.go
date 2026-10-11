@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"slices"
 	"sync"
 	"time"
@@ -60,6 +61,7 @@ func (op RingAssignmentOp) Validate() error {
 // AssignmentWriter sets and clears the assignment of one ring. It is the only write port of the endpoint
 // provider.
 type AssignmentWriter interface {
+	Mode() health.Mode
 	SetRingAssignment(ctx context.Context, op RingAssignmentOp) error
 	ClearRingAssignment(ctx context.Context, operationID, managementArtifactExternalID, ringKey string) error
 }
@@ -71,6 +73,8 @@ func IsTransient(err error) bool {
 
 // NotConfiguredWriter is the production placeholder: every call fails permanently.
 type NotConfiguredWriter struct{}
+
+func (NotConfiguredWriter) Mode() health.Mode { return health.ModeNotConfigured }
 
 func (NotConfiguredWriter) SetRingAssignment(context.Context, RingAssignmentOp) error {
 	return fmt.Errorf("%w: %w", ErrPermanent, ErrWriterNotConfigured)
@@ -112,6 +116,8 @@ func NewFakeWriter(provider *Fake) *FakeWriter {
 }
 
 // FailNext makes the next calls fail with the given errors, one per call (nil entries succeed).
+func (w *FakeWriter) Mode() health.Mode { return health.ModeFake }
+
 func (w *FakeWriter) FailNext(errs ...error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

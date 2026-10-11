@@ -15,6 +15,7 @@ package advisories
 import (
 	"context"
 	"errors"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"io"
 	"net/http"
 	"slices"
@@ -167,12 +168,15 @@ func ReadLimited(r io.Reader, max int64) ([]byte, error) {
 
 // Provider reads advisories from a feed.
 type Provider interface {
+	Mode() health.Mode
 	// Advisories returns the advisories published or modified since the given time (zero: all).
 	Advisories(ctx context.Context, since time.Time) ([]AdvisoryRecord, error)
 }
 
 // NotConfigured is the placeholder provider: every call fails with ErrNotConfigured.
 type NotConfigured struct{}
+
+func (NotConfigured) Mode() health.Mode { return health.ModeNotConfigured }
 
 func (NotConfigured) Advisories(context.Context, time.Time) ([]AdvisoryRecord, error) {
 	return nil, ErrNotConfigured
@@ -203,6 +207,8 @@ func (f *Fake) FailWith(err error) {
 
 // Advisories returns the records modified (or, without a modification time, published) at or after
 // since; records without either time are always returned.
+func (f *Fake) Mode() health.Mode { return health.ModeFake }
+
 func (f *Fake) Advisories(_ context.Context, since time.Time) ([]AdvisoryRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

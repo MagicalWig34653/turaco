@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"sort"
 	"strings"
 	"time"
@@ -64,6 +65,7 @@ func (u LaunchURI) MarshalText() ([]byte, error) { return []byte("[launch-uri re
 
 // Provider is the launch port every connector implements.
 type Provider interface {
+	Mode() health.Mode
 	Key() string
 	Capabilities() Capabilities
 	// BuildLaunch builds the launch link from the validated peer id and the fixed template of the provider.
@@ -105,6 +107,8 @@ type launchSpec struct {
 
 // NotConfigured is the provider used when a key has no usable client; every operation reports it.
 type NotConfigured struct{ ProviderKey string }
+
+func (n NotConfigured) Mode() health.Mode { return health.ModeNotConfigured }
 
 func (n NotConfigured) Key() string                { return n.ProviderKey }
 func (n NotConfigured) Capabilities() Capabilities { return Capabilities{} }

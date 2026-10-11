@@ -1990,6 +1990,8 @@ export const en = {
   'tickets.action.assign': 'Assign',
   'tickets.action.start': 'Start work',
   'tickets.action.wait': 'Wait for response',
+  'tickets.wait.expectedAt': 'Expected date (optional)',
+  'tickets.wait.expectedAt.hint': 'A future date and time, such as a delivery estimate.',
   'tickets.wait.note': 'Note (optional)',
   'tickets.wait.note.hint': 'Saved as a comment right after the ticket is put on hold.',
   'tickets.wait.note.visible': 'Visible to the requester',
@@ -5921,6 +5923,10 @@ export const en = {
   'query.enum.directory': 'Directory',
   'query.enum.local': 'Local account',
   'query.enum.emergency': 'Emergency account',
+  'health.probe.now': 'Probe now',
+  'health.probe.last': 'Last probe',
+  'health.error.probeRateLimited': 'This check was probed within the last minute.',
+  'health.error.probeUnsupported': 'This check has no active probe.',
   'health.title': 'Platform health',
   'health.intro':
     'Checks of the platform, its integrations and modules. Every status other than OK needs a look; a check that is not configured is not working.',
@@ -5999,6 +6005,7 @@ export const en = {
   'health.error.deliveries_unreadable': 'The stored deliveries could not be read.',
   'health.check.modules': 'Modules',
   'health.check.modules.about': 'Switched-off modules and unmet preconditions.',
+  'health.error.connection_failed': 'The connection probe failed.',
   'health.error.generic': 'The last attempt did not succeed.',
   'health.error.unreadable': 'The stored facts for this check could not be read.',
   'health.error.worker_not_running':

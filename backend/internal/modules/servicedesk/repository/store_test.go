@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -372,5 +374,47 @@ func TestStaffCannotReadForeignDevicesCommentCapAndRedaction(t *testing.T) {
 	}
 	if _, err := e.svc.AddComment(ctx, e.c(e.agent), e.staff(), t2.ID, "staff can no longer answer either", false); !errors.Is(err, application.ErrCommentLimit) {
 		t.Errorf("the cap holds for staff too: %v", err)
+	}
+}
+
+func TestWaitingExpectedDateLifecycle(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	started, err := e.op(e.raise(), e.staff(), application.OpStart, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if _, err := e.svc.Transition(ctx, e.c(e.agent), e.staff(), started.ID, nil, application.OpWait, application.Params{Reason: "hardware", ExpectedAt: &past}); err == nil {
+		t.Fatal("past expected date accepted")
+	}
+	future := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+	waiting, err := e.svc.Transition(ctx, e.c(e.agent), e.staff(), started.ID, nil, application.OpWait, application.Params{Reason: "hardware", ExpectedAt: &future})
+	if err != nil || waiting.WaitingUntil == nil || !waiting.WaitingUntil.Equal(future) {
+		t.Fatalf("wait: %+v, %v", waiting, err)
+	}
+	var meta string
+	if err := e.pool.QueryRow(ctx, `SELECT metadata::text FROM platform.audit_events WHERE target_type = 'ticket' AND target_id = $1 AND action = 'servicedesk.ticket.wait' ORDER BY occurred_at DESC LIMIT 1`, waiting.ID).Scan(&meta); err != nil || !strings.Contains(meta, "expectedAt") {
+		t.Fatalf("audit metadata: %q, %v", meta, err)
+	}
+	history, _, err := e.svc.History(ctx, e.staff(), waiting.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range history {
+		if entry.Via == "wait" && entry.ExpectedAt != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("waiting expected date absent from history")
+	}
+	resumed, err := e.op(waiting, e.staff(), application.OpResume, "")
+	if err != nil || resumed.WaitingUntil != nil {
+		t.Fatalf("resume: %+v, %v", resumed, err)
+	}
+	if _, err := e.pool.Exec(ctx, `UPDATE servicedesk.tickets SET waiting_until = now() WHERE id = $1::uuid`, resumed.ID); err == nil {
+		t.Fatal("database allowed expected date outside waiting")
 	}
 }

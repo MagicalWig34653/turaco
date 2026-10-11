@@ -3,6 +3,7 @@ package remoteaccess
 import (
 	"context"
 	"errors"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	"sync"
 	"time"
 )
@@ -23,6 +24,8 @@ type Fake struct {
 
 // NewFake creates a Fake under a provider key.
 func NewFake(key string) *Fake { return &Fake{key: key} }
+
+func (f *Fake) Mode() health.Mode { return health.ModeFake }
 
 func (f *Fake) Key() string { return f.key }
 func (f *Fake) Capabilities() Capabilities {

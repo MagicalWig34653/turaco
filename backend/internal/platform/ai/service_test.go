@@ -18,6 +18,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/providers/fake"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 )
 
 func newID() string {
@@ -56,6 +57,7 @@ type boxed struct{ b *providerBox }
 func (x boxed) Chat(ctx context.Context, r ai.ChatRequest) (ai.ChatResponse, error) {
 	return x.b.get().Chat(ctx, r)
 }
+func (x boxed) Mode() health.Mode             { return x.b.get().Mode() }
 func (x boxed) Capabilities() ai.Capabilities { return x.b.get().Capabilities() }
 
 type ticketDTO struct {
@@ -690,6 +692,7 @@ func (b blockingProvider) Chat(context.Context, ai.ChatRequest) (ai.ChatResponse
 	<-b.release
 	return ai.ChatResponse{Content: "late"}, nil
 }
+func (b blockingProvider) Mode() health.Mode             { return health.ModeFake }
 func (b blockingProvider) Capabilities() ai.Capabilities { return ai.Capabilities{} }
 
 func TestGatesDisabledProviderChangeAndTenant(t *testing.T) {
@@ -859,6 +862,7 @@ func (h *hookProvider) Chat(context.Context, ai.ChatRequest) (ai.ChatResponse, e
 	}
 	return h.resp[i], nil
 }
+func (h *hookProvider) Mode() health.Mode             { return health.ModeFake }
 func (h *hookProvider) Capabilities() ai.Capabilities { return ai.Capabilities{} }
 
 func TestPermissionRevocationDuringATurnStopsTheNextToolCall(t *testing.T) {

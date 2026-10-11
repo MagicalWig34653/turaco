@@ -69,6 +69,7 @@ import (
 	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 	healthtransport "github.com/MagicalWig34653/turaco/backend/internal/platform/health/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 	modulestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/modules/transport"
@@ -368,6 +369,8 @@ func main() {
 		logger.Error("load advisory feed configuration", "error", err)
 		os.Exit(1)
 	}
+	intuneHealth.Mode = intuneProvider.Mode()
+	autotaskHealth.Mode = autotaskGateway.Mode()
 	healthRegistry, err := wiring.Health(pool, moduleSvc, wiring.HealthConfig{
 		Environment: cfg.Environment, Version: version, LDAPConfigured: ldapConn.Enabled(), KerberosConfigured: cfg.Kerberos.Enabled(),
 		SMTPConfigured: smtpCfg.Enabled(), EmailBaseURLSet: cfg.EmailBaseURL != "", S3Configured: cfg.S3Endpoint != "" || cfg.S3Bucket != "", Attachments: attachmentSvc,
@@ -375,7 +378,7 @@ func main() {
 		IntuneSync: cfg.IntuneSync, SoftwareSync: cfg.SoftwareProviderSync, AutotaskSync: cfg.AutotaskSync, AdvisorySync: advisoryCfg.Enabled,
 		RemoteAccessProviders: cfg.RemoteAccessProviders,
 		Teams:                 wiring.TeamsHealth{Mode: teamsSender.Mode(), Destinations: len(teamsSender.DestinationKeys())},
-		Providers:             map[string]wiring.ProviderHealth{"intune": intuneHealth, "autotask": autotaskHealth, "software_provider": {}},
+		Providers:             map[string]wiring.ProviderHealth{"intune": intuneHealth, "autotask": autotaskHealth, "software_provider": {Mode: softwaremgmt.NotConfigured{}.Mode()}},
 		EntraEnabled:          entraCfg.Enabled, EntraCredentialKind: entraCredentialKind(entraCredential), EntraCredentialExpires: entraCredentialExpiry(entraCredential),
 	})
 	if err != nil {
@@ -383,8 +386,13 @@ func main() {
 		os.Exit(1)
 	}
 	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
+	probeChecks := map[string]func(context.Context) error{}
+	if p, ok := intuneProvider.(interface{ Probe(context.Context) error }); ok {
+		probeChecks["intune"] = p.Probe
+	}
 	healthtransport.Register(mux, healthRegistry, wiring.HealthSetup(pool, moduleSvc, healthRegistry),
-		healthtransport.SystemInfo{Version: version, Environment: cfg.Environment, StartedAt: time.Now()}, sessionAuth, logger)
+		healthtransport.SystemInfo{Version: version, Environment: cfg.Environment, StartedAt: time.Now()}, sessionAuth, logger,
+		health.NewProber(pool, probeChecks))
 	// Module switches (ADR-0032): the overview and status routes, and the gate below that answers 404 for every route
 	// of a switched-off module. Startup gates and module preconditions stay in force.
 	modulestransport.Register(mux, moduleSvc, sessionAuth, logger)

@@ -31,6 +31,7 @@ export type Ticket = {
   description: string | null;
   status: TicketStatus;
   waitingReason: (typeof waitingReasons)[number] | null;
+  waitingUntil: string | null;
   statusReason: string | null;
   resolution: string | null;
   priority: Priority;
@@ -97,6 +98,7 @@ export type TicketHistoryEntry = {
   /** The operation that caused the change (assign, start, queue_move, ...). */
   via?: string | null;
   reason?: string | null;
+  expectedAt?: string | null;
   fromUserId?: string | null;
   toUserId?: string | null;
   fromTeamId?: string | null;

@@ -9,12 +9,14 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/microsoft"
 	"github.com/MagicalWig34653/turaco/backend/internal/integrations/providerstatus"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
 )
 
 // ProviderHealth describes what the health check of a provider integration may report. Real clients are written
 // from the vendor documentation and stay "unverified" until a call was observed to succeed; this wiring never
 // claims more.
 type ProviderHealth struct {
+	Mode health.Mode
 	// Built is true when a real client exists for the provider at all (false: only fake and placeholder adapters).
 	Built bool
 	// Configured is true when the real client was built from configuration in this process.
@@ -51,13 +53,13 @@ var graphReadKeys = []string{"MICROSOFT_GRAPH_TENANT_ID", "MICROSOFT_GRAPH_CLIEN
 // otherwise the "not configured" placeholder. beta allows the Graph beta endpoints (INTUNE_GRAPH_BETA).
 func IntuneProvider(reg config.GraphRegistration, beta bool) (intune.Provider, ProviderHealth, error) {
 	if !reg.Configured {
-		return intune.NotConfigured{}, ProviderHealth{Built: true, MissingKeys: graphReadKeys}, nil
+		return intune.NotConfigured{}, ProviderHealth{Built: true, Mode: health.ModeNotConfigured, MissingKeys: graphReadKeys}, nil
 	}
 	g, cred, err := graphClient(reg)
 	if err != nil {
 		return nil, ProviderHealth{}, fmt.Errorf("configure the Intune Graph read client: %w", err)
 	}
-	h := ProviderHealth{Built: true, Configured: true, Reporter: g}
+	h := ProviderHealth{Built: true, Configured: true, Mode: health.ModeReal, Reporter: g}
 	if exp, ok := cred.ExpiresAt(); ok {
 		h.CredentialExpires = &exp
 	}
@@ -68,13 +70,13 @@ func IntuneProvider(reg config.GraphRegistration, beta bool) (intune.Provider, P
 // configured, otherwise the placeholder whose writes fail permanently. Only the worker's deployment engine writes.
 func IntuneWriter(reg config.GraphRegistration) (intune.AssignmentWriter, ProviderHealth, error) {
 	if !reg.Configured {
-		return intune.NotConfiguredWriter{}, ProviderHealth{Built: true, MissingKeys: []string{"MICROSOFT_GRAPH_WRITE_TENANT_ID", "MICROSOFT_GRAPH_WRITE_CLIENT_ID", "MICROSOFT_GRAPH_WRITE_CLIENT_SECRET_FILE"}}, nil
+		return intune.NotConfiguredWriter{}, ProviderHealth{Built: true, Mode: health.ModeNotConfigured, MissingKeys: []string{"MICROSOFT_GRAPH_WRITE_TENANT_ID", "MICROSOFT_GRAPH_WRITE_CLIENT_ID", "MICROSOFT_GRAPH_WRITE_CLIENT_SECRET_FILE"}}, nil
 	}
 	g, cred, err := graphClient(reg)
 	if err != nil {
 		return nil, ProviderHealth{}, fmt.Errorf("configure the Intune Graph write client: %w", err)
 	}
-	h := ProviderHealth{Built: true, Configured: true, Reporter: g}
+	h := ProviderHealth{Built: true, Configured: true, Mode: health.ModeReal, Reporter: g}
 	if exp, ok := cred.ExpiresAt(); ok {
 		h.CredentialExpires = &exp
 	}
@@ -85,7 +87,7 @@ func IntuneWriter(reg config.GraphRegistration) (intune.AssignmentWriter, Provid
 // "not configured" placeholder.
 func AutotaskGateway(c config.AutotaskCredentials) (autotask.Gateway, ProviderHealth, error) {
 	if !c.Configured {
-		return autotask.NotConfigured{}, ProviderHealth{Built: true, MissingKeys: []string{"AUTOTASK_API_USERNAME", "AUTOTASK_API_SECRET_FILE", "AUTOTASK_INTEGRATION_CODE", "AUTOTASK_COMPANY_ID", "AUTOTASK_STATUS_MAP", "AUTOTASK_PRIORITY_MAP"}}, nil
+		return autotask.NotConfigured{}, ProviderHealth{Built: true, Mode: health.ModeNotConfigured, MissingKeys: []string{"AUTOTASK_API_USERNAME", "AUTOTASK_API_SECRET_FILE", "AUTOTASK_INTEGRATION_CODE", "AUTOTASK_COMPANY_ID", "AUTOTASK_STATUS_MAP", "AUTOTASK_PRIORITY_MAP"}}, nil
 	}
 	rest, err := autotask.NewREST(autotask.RESTConfig{
 		Username: c.Username, SecretFile: c.SecretFile, IntegrationCode: c.IntegrationCode, CompanyID: c.CompanyID, QueueID: c.QueueID,
@@ -94,5 +96,5 @@ func AutotaskGateway(c config.AutotaskCredentials) (autotask.Gateway, ProviderHe
 	if err != nil {
 		return nil, ProviderHealth{}, fmt.Errorf("configure the Autotask REST client: %w", err)
 	}
-	return rest, ProviderHealth{Built: true, Configured: true, Reporter: rest}, nil
+	return rest, ProviderHealth{Built: true, Configured: true, Mode: health.ModeReal, Reporter: rest}, nil
 }

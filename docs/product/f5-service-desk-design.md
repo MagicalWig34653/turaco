@@ -88,3 +88,7 @@ Fixed: a push that overlapped a change is detected in one statement and repeated
 ## Device correction and related tickets (2026-10-11)
 
 `SetDevice` mirrors `SetLocation`: explicit, version-guarded, `abilities.setDevice`, audit `servicedesk.ticket.device_changed` (asset ids and references in the metadata) and a `device_changed` history entry. Create still requires a device the affected person holds; staff correct it afterwards with `assets.view`, because ticket handling must not become a way to read arbitrary assets for people without that permission. Related tickets reuse the `ticket RELATES_TO` relationship (target type `ticket`), stored once and read in both directions; duplicates are listed from `duplicate_of_ticket_id` and are not relationships.
+
+## Waiting expected date (2026-10-11, migration 000085)
+
+The explicit `POST /tickets/{id}/wait` accepts optional `expectedAt` (future RFC 3339 instant) alongside the closed waiting reason. The Ticket stores it as nullable `waiting_until`; a database CHECK permits it only in `waiting`, and every exit clears it. The Wait audit metadata and the staff history entry include the date. Ticket detail and the list status cell show it with the waiting reason. The date is an estimate, not a Task, due date, reminder or SLA; it creates no event or notification. Past dates receive 400.

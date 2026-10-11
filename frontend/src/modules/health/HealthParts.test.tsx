@@ -43,6 +43,19 @@ describe('CheckCard', () => {
     expect(html).toContain('<code>EMAIL_BASE_URL</code>');
     expect(html).toContain('/blob/main/docs/integrations/mail.md');
   });
+  it('shows a probe action only when supported and allowed, with the stored result', () => {
+    const probe: HealthResult = {
+      ...result,
+      key: 'intune',
+      probeSupported: true,
+      probe: { status: 'failing', attemptedAt: result.observedAt, errorCode: 'connection_failed' },
+    };
+    expect(render(<CheckCard result={probe} />)).not.toContain('Probe now');
+    const html = render(<CheckCard result={probe} onProbe={() => {}} />);
+    expect(html).toContain('Probe now');
+    expect(html).toContain('Last probe');
+    expect(html).toContain('Failing');
+  });
   it('renders an unknown check key without crashing', () => {
     const bare: HealthResult = {
       key: 'brand_new',

@@ -1,5 +1,6 @@
 import { useAi } from '../ai/AiProvider';
 import { TableDate } from '../../platform/ui/TableDate';
+import { formatDateTime, formatDate } from '../../platform/format/format';
 import { FilterBar } from '../../platform/ui/FilterBar';
 import { useEffect, useState } from 'react';
 import { useQueryList } from '../../platform/ui/query/useQueryList';
@@ -43,7 +44,7 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 
 /** "My tickets" for everyone, the full queue for people with tickets.view. */
 export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { can, session } = useSession();
   const ai = useAi();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -174,7 +175,24 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
       key: 'status',
       sortValue: (x) => x.status,
       header: t('tickets.col.status'),
-      render: (x) => <TicketStatusBadge status={x.status} />,
+      render: (x) => (
+        <>
+          <TicketStatusBadge status={x.status} />
+          {x.waitingReason ? (
+            <span
+              title={
+                x.waitingUntil
+                  ? `${t(`tickets.waiting.${x.waitingReason}`)} · ${t('tickets.wait.expectedAt')}: ${formatDateTime(locale, x.waitingUntil)}`
+                  : t(`tickets.waiting.${x.waitingReason}`)
+              }
+            >
+              {' · '}
+              {t(`tickets.waiting.${x.waitingReason}`)}
+              {x.waitingUntil ? ` · ${formatDate(locale, x.waitingUntil)}` : ''}
+            </span>
+          ) : null}
+        </>
+      ),
     },
     ...(scope === 'all'
       ? [
