@@ -64,7 +64,7 @@ Accepted, documented limitations:
 
 - `TaskCompleted` feeds the task notification and the request completion in one claim transaction (ADR-0024): a permanently failing consumer blocks both for that event.
 - A request whose advance event fails after all attempts stays `pending_approval`; there is no reconciliation job yet (only `requests.manage` can cancel it).
-- Requesters and requested-for Users see the approval steps (approver ids, comments) and fulfillment task titles of their own request; this is intended transparency, not a reduced view.
+- Requesters and requested-for Users see approval steps (approver ids, comments) and fulfillment step titles, progress (`open`, `in_progress`, `done`) and responsible Team names. The public step view excludes task IDs and assigned people; viewers with Task permissions also receive task links and full task details. This is intended transparency.
 - No per-user submit rate limit; a Team-approved item notifies up to 500 members per submission.
 - Request lists load the stored definition and answers although only a summary is shown.
 - Reopening a task of a completed or cancelled request creates orphan work that nothing reacts to.

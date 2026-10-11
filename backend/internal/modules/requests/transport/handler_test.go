@@ -42,15 +42,19 @@ func as(user string, perms ...string) fakeAuth {
 
 type store struct {
 	application.Store
-	req   application.Request
-	query application.ListQuery
+	req          application.Request
+	query        application.ListQuery
+	requestTasks []application.RequestTask
+	taskViews    []taskspublic.Task
 }
 
 func (s *store) Get(context.Context, string) (application.Request, error) { return s.req, nil }
 func (s *store) References(context.Context, string) ([]catalogpublic.Reference, error) {
 	return nil, nil
 }
-func (s *store) Tasks(context.Context, string) ([]application.RequestTask, error) { return nil, nil }
+func (s *store) Tasks(context.Context, string) ([]application.RequestTask, error) {
+	return s.requestTasks, nil
+}
 func (s *store) List(_ context.Context, q application.ListQuery) (application.Result, error) {
 	s.query = q
 	return application.Result{Items: []application.Request{s.req}}, nil
@@ -85,7 +89,7 @@ func (a approvals) CanView(context.Context, string, string, string) (bool, error
 	return a.canView, nil
 }
 
-type tasks struct{}
+type tasks struct{ views []taskspublic.Task }
 
 func (tasks) CreateInTx(context.Context, pgx.Tx, taskspublic.Caller, taskspublic.CreateInput) (string, error) {
 	return "t1", nil
@@ -93,7 +97,7 @@ func (tasks) CreateInTx(context.Context, pgx.Tx, taskspublic.Caller, taskspublic
 func (tasks) CancelByContextInTx(context.Context, pgx.Tx, taskspublic.Caller, string, string, string) (int, error) {
 	return 0, nil
 }
-func (tasks) Tasks(context.Context, []string) ([]taskspublic.Task, error) { return nil, nil }
+func (t tasks) Tasks(context.Context, []string) ([]taskspublic.Task, error) { return t.views, nil }
 func (tasks) StatusesInTx(context.Context, pgx.Tx, []string) (map[string]string, error) {
 	return nil, nil
 }
@@ -113,7 +117,9 @@ func (dir) ActiveTeams(ctx context.Context, ids []string) (map[string]bool, erro
 func (dir) UserNames(context.Context, []string) (map[string]string, error) {
 	return map[string]string{me: "Ada"}, nil
 }
-func (dir) TeamNames(context.Context, []string) (map[string]string, error)  { return nil, nil }
+func (dir) TeamNames(context.Context, []string) (map[string]string, error) {
+	return map[string]string{"team-1": "Service Desk"}, nil
+}
 func (dir) ManagerIDs(context.Context, []string) (map[string]string, error) { return nil, nil }
 
 type lookups struct{}
@@ -138,7 +144,7 @@ func serve(t *testing.T, s *store, canView bool, a authorization.Authenticator, 
 	t.Helper()
 	sub := catalogpublic.Submission{ID: "i1", Key: "laptop", Title: "Laptop", Active: true,
 		Definition: catalogpublic.Definition{Fields: []catalogpublic.Field{{Key: "reason", Type: "text", Label: "Reason", Required: true}}}, Snapshot: []byte(`{"fields":[{"key":"reason","type":"text","label":"Reason","required":true}],"approvals":[],"fulfillment":[]}`)}
-	svc := application.NewService(s, catalog{sub}, approvals{canView}, tasks{}, dir{}, lookups{}, lookups{}, nil)
+	svc := application.NewService(s, catalog{sub}, approvals{canView}, tasks{s.taskViews}, dir{}, lookups{}, lookups{}, nil)
 	mux := http.NewServeMux()
 	Register(mux, svc, a, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	rec := httptest.NewRecorder()
@@ -207,6 +213,39 @@ func TestRequestDetailIsOnlyForPeopleInvolvedAndHidesApprovalAndFulfillmentDefin
 	}
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Error("requests contain personal data and must not be cached")
+	}
+}
+
+func TestFulfillmentStepsGiveRequesterStateAndTeamWithoutTaskDetails(t *testing.T) {
+	team, assignee := "team-1", "user-1"
+	s := &store{req: newReq(), requestTasks: []application.RequestTask{{TaskID: "task-1", Mandatory: true}},
+		taskViews: []taskspublic.Task{{ID: "task-1", Title: "Prepare laptop", Status: taskspublic.StatusInProgress,
+			AssignedTeamID: &team, AssignedUserID: &assignee, Priority: "high"}}}
+	rec := serve(t, s, false, as(me), "GET", rPath, "")
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, `"title":"Prepare laptop"`) || !strings.Contains(body, `"state":"in_progress"`) || !strings.Contains(body, `"teamName":"Service Desk"`) {
+		t.Fatalf("requester steps: %d %s", rec.Code, body)
+	}
+	for _, hidden := range []string{`"id":"task-1"`, `"assignedUserId"`, `"priority":"high"`, "user-1"} {
+		if strings.Contains(body, hidden) {
+			t.Errorf("requester sees %q: %s", hidden, body)
+		}
+	}
+	rec = serve(t, s, false, as(me, "tasks.view"), "GET", rPath, "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"task-1"`) {
+		t.Errorf("task viewer loses link: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFulfillmentState(t *testing.T) {
+	for status, want := range map[string]string{
+		taskspublic.StatusOpen: "open", taskspublic.StatusInProgress: "in_progress",
+		taskspublic.StatusBlocked: "in_progress", taskspublic.StatusCompleted: "done",
+		taskspublic.StatusCancelled: "done",
+	} {
+		if got := fulfillmentState(status); got != want {
+			t.Errorf("%s: got %s, want %s", status, got, want)
+		}
 	}
 }
 

@@ -52,4 +52,6 @@ export const problemsApi = {
     api.delete<void>(`/problems/${enc(id)}/tickets/${enc(ticketId)}`),
   knownErrors: (ticketId: string, signal?: Signal) =>
     api.get<{ items: Problem[] }>(`/tickets/${enc(ticketId)}/known-errors`, { signal }),
+  ofTicket: (ticketId: string, signal?: Signal) =>
+    api.get<{ items: Problem[] }>(`/tickets/${enc(ticketId)}/problems`, { signal }),
 };

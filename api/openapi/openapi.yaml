@@ -6408,7 +6408,7 @@ paths:
     get:
       operationId: listTicketKnownErrors
       summary: Known errors a ticket is linked to.
-      description: "Needs `tickets.view` or `tickets.manage`; only problems in status known_error or resolution_planned, so staff see the workaround."
+      description: "Needs problem read permission and visibility of this ticket; only problems in status known_error or resolution_planned, so staff see the workaround. At most 20."
       security:
         - sessionAuth: []
       parameters:
@@ -6421,6 +6421,26 @@ paths:
               schema: {$ref: '#/components/schemas/ProblemItems'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/problems:
+    get:
+      operationId: listTicketProblems
+      summary: Problems linked to a ticket.
+      description: "Staff need problem read permission and visibility of this ticket. Returns at most 20 linked problems, including those not yet known errors. Requesters cannot read this list."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Linked problems.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemItems'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
         '500': {$ref: '#/components/responses/InternalError'}
   /problems/{id}/investigate:
     post:
@@ -18055,7 +18075,7 @@ components:
         expectedVersion: {type: integer, minimum: 1}
     ServiceRequestDetail:
       type: object
-      required: [id, reference, status, version, allowRequestedFor, fields, answers, references, approvals, tasks, names, actions]
+      required: [id, reference, status, version, allowRequestedFor, fields, answers, references, approvals, tasks, fulfillmentSteps, names, actions]
       properties:
         id: {type: string, format: uuid}
         reference: {type: string}
@@ -18104,6 +18124,7 @@ components:
               decisionComment: {type: [string, "null"]}
         tasks:
           type: array
+          description: "Full task details only for a viewer with tasks.view, tasks.manage or tasks.work; otherwise empty."
           items:
             type: object
             additionalProperties: false
@@ -18118,6 +18139,20 @@ components:
               dueAt: {type: [string, "null"], format: date-time}
               assignedUserId: {type: [string, "null"], format: uuid}
               assignedTeamId: {type: [string, "null"], format: uuid}
+        fulfillmentSteps:
+          type: array
+          description: "Minimal progress view for everyone who can view the request. Task IDs appear only for viewers with task access."
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, state, teamName, mandatory, resultNote]
+            properties:
+              id: {type: string, format: uuid, description: "Present only with task access."}
+              title: {type: string}
+              state: {type: string, enum: [open, in_progress, done]}
+              teamName: {type: [string, "null"]}
+              mandatory: {type: boolean}
+              resultNote: {type: [string, "null"]}
         names:
           type: object
           additionalProperties: {type: string}

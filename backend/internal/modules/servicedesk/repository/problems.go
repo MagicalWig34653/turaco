@@ -168,21 +168,33 @@ func (r *Repository) ProblemTickets(ctx context.Context, problemID string) ([]ap
 }
 
 func (r *Repository) KnownErrorsOfTicket(ctx context.Context, ticketID string) ([]application.Problem, error) {
+	return r.problemsOfTicket(ctx, ticketID, true)
+}
+
+func (r *Repository) ProblemsOfTicket(ctx context.Context, ticketID string) ([]application.Problem, error) {
+	return r.problemsOfTicket(ctx, ticketID, false)
+}
+
+func (r *Repository) problemsOfTicket(ctx context.Context, ticketID string, knownOnly bool) ([]application.Problem, error) {
 	if !validUUID(ticketID) {
 		return []application.Problem{}, nil
 	}
+	filter := ""
+	if knownOnly {
+		filter = "p.status IN ('known_error', 'resolution_planned') AND "
+	}
 	rows, err := r.pool.Query(ctx, `SELECT `+problemCols+` FROM servicedesk.problems p
-		WHERE p.status IN ('known_error', 'resolution_planned') AND p.id IN (SELECT problem_id FROM servicedesk.problem_tickets WHERE ticket_id = $1::uuid)
+		WHERE `+filter+`p.id IN (SELECT problem_id FROM servicedesk.problem_tickets WHERE ticket_id = $1::uuid)
 		ORDER BY p.id DESC LIMIT 20`, ticketID)
 	if err != nil {
-		return nil, fmt.Errorf("known errors of ticket: %w", err)
+		return nil, fmt.Errorf("list ticket problems: %w", err)
 	}
 	defer rows.Close()
 	out := []application.Problem{}
 	for rows.Next() {
 		p, err := scanProblem(rows)
 		if err != nil {
-			return nil, fmt.Errorf("known errors of ticket: scan: %w", err)
+			return nil, fmt.Errorf("list ticket problems: scan: %w", err)
 		}
 		out = append(out, p)
 	}
