@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
@@ -218,11 +218,14 @@ function RequestForm({ form }: { form: CatalogForm }) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  // A second submit before the first answer arrives (double click, Enter twice) would create a second request.
+  const submitting = useRef(false);
 
   const message = (code: string) => t(fieldErrorKey(code) as MessageKey);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (submitting.current) return;
     const { answers, errors } = toAnswers(form.fields, values);
     setError(undefined);
     if (Object.keys(errors).length > 0) {
@@ -230,6 +233,7 @@ function RequestForm({ form }: { form: CatalogForm }) {
       return;
     }
     setFieldErrors({});
+    submitting.current = true;
     setBusy(true);
     try {
       const created = await requestsApi.submit({
@@ -242,6 +246,7 @@ function RequestForm({ form }: { form: CatalogForm }) {
       const apiError = asApiError(cause);
       setError(apiError);
       setFieldErrors({ ...apiError.fields });
+      submitting.current = false;
       setBusy(false);
     }
   };
