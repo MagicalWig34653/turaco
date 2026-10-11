@@ -805,7 +805,7 @@ export const de: Record<MessageKey, string> = {
   'infra.rack': 'Rack',
   'infra.vms': 'Virtuelle Maschinen',
   'infra.empty': 'Noch keine Standorte mit Gebäuden.',
-  'infra.counts': '{buildings} Gebäude · {rooms} Räume · {racks} Racks · {assets} Assets',
+  'infra.counts': '{buildings} Gebäude · {rooms} Räume · {racks} Racks · {assets} Assets in Racks platziert',
   'infra.createBuilding': 'Gebäude hinzufügen',
   'infra.createRoom': 'Raum hinzufügen',
   'infra.createRack': 'Rack hinzufügen',
