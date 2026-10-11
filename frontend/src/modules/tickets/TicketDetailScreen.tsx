@@ -6,7 +6,7 @@ import type { ApiError } from '../../platform/api/client';
 import { asApiError, useAsync } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
-import type { MessageKey } from '../../platform/i18n/i18n';
+import { translate, type MessageKey } from '../../platform/i18n/i18n';
 import { Link } from '../../platform/router/Router';
 import { useSession } from '../../platform/session/SessionProvider';
 import { Alert, Badge } from '../../platform/ui/Alert';
@@ -45,6 +45,7 @@ import { TicketLocationDialog } from './TicketLocationDialog';
 import { TicketRelatedCard } from './TicketRelatedCard';
 import { TicketChangesCard } from './TicketChangesCard';
 import { TicketParticipantsCard } from './TicketParticipantsCard';
+import { dataProtectionDueValue, shouldSuggestDataProtectionTask } from './securityPromptModel';
 import { MentionPicker } from './MentionPicker';
 import {
   historyLocationIds,
@@ -282,6 +283,22 @@ function TicketWorkspace({ id }: { id: string }) {
   const { t, locale } = useI18n();
   const { can, session } = useSession();
   const loaded = useAsync((signal) => ticketsApi.get(id, signal), [id]);
+  const follow = useAsync(
+    async (signal) =>
+      loaded.data &&
+      !!session?.userId &&
+      (session.userId === loaded.data.reporterId || session.userId === loaded.data.affectedUserId)
+        ? ticketsApi.following(id, signal)
+        : null,
+    [id, loaded.data?.id, session?.userId],
+  );
+  const securityTasks = useAsync(
+    async (signal) =>
+      loaded.data?.queue?.key === 'security' && loaded.data.abilities?.scheduleCallback
+        ? ticketsApi.callbackTasks(id, signal)
+        : null,
+    [id, loaded.data?.queue?.key, loaded.data?.abilities?.scheduleCallback],
+  );
   const staffReader = can('tickets.view') || can('tickets.manage');
   const problemReader = staffReader || can('problems.manage');
   const known = useAsync(
@@ -346,6 +363,7 @@ function TicketWorkspace({ id }: { id: string }) {
       | 'location'
       | 'device'
       | 'callback'
+      | 'securityTask'
       | 'linkProblem'
       | 'linkIncident'
       | 'duplicate';
@@ -353,6 +371,7 @@ function TicketWorkspace({ id }: { id: string }) {
   } | null>(null);
   const [taskRefresh, setTaskRefresh] = useState(0);
   const [busyOp, setBusyOp] = useState<string | null>(null);
+  const [followBusy, setFollowBusy] = useState(false);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
   const [drafts, setDrafts] = useState({ reply: '', internal: '' });
   const [view, setView] = useState('conversation');
@@ -397,6 +416,7 @@ function TicketWorkspace({ id }: { id: string }) {
     loaded.reload();
     history.reload();
     setTaskRefresh((n) => n + 1);
+    securityTasks.reload();
   };
   const queueName = ticketQueueName(ticket);
   const aliases = aliasList(ticket);
@@ -404,6 +424,12 @@ function TicketWorkspace({ id }: { id: string }) {
   const queueLevel = queues.data?.find((queue) => queue.id === ticket.queueId)?.level;
   const isOwner =
     session?.userId === ticket.reporterId || session?.userId === ticket.affectedUserId;
+  const securityTaskTitle = t('tickets.securityTaskTitle');
+  const showSecurityPrompt = shouldSuggestDataProtectionTask(ticket, securityTasks.data?.items, [
+    translate('en', 'tickets.securityTaskTitle'),
+    translate('de', 'tickets.securityTaskTitle'),
+  ]);
+  const securityDue = dataProtectionDueValue(ticket.createdAt);
   const abilities = resolveAbilities(ticket.abilities, {
     manage,
     isOwner,
@@ -781,6 +807,23 @@ function TicketWorkspace({ id }: { id: string }) {
                     {t('ticketCallback.action')}
                   </Button>
                 ) : null}
+                {isOwner && follow.data ? (
+                  <Button
+                    busy={followBusy}
+                    disabled={followBusy}
+                    onClick={() => {
+                      setFollowBusy(true);
+                      setActionError(undefined);
+                      void ticketsApi
+                        .follow(ticket.id, !follow.data.following)
+                        .then(() => follow.reload())
+                        .catch((cause) => setActionError(asApiError(cause)))
+                        .finally(() => setFollowBusy(false));
+                    }}
+                  >
+                    {t(follow.data.following ? 'tickets.unfollow' : 'tickets.follow')}
+                  </Button>
+                ) : null}
                 {canMove ? (
                   <Button disabled={busyOp !== null} onClick={() => setDialog({ kind: 'move' })}>
                     {t('tickets.action.moveQueue')}
@@ -941,6 +984,14 @@ function TicketWorkspace({ id }: { id: string }) {
           </Card>
           {staff || queueLevel === 'view' || queueLevel === 'work' || queueLevel === 'manage' ? (
             <TicketDueTasks ticketId={ticket.id} refresh={taskRefresh} />
+          ) : null}
+          {showSecurityPrompt ? (
+            <Card title={t('tickets.securityTask')}>
+              <p>{t('tickets.securityPrompt')}</p>
+              <Button onClick={() => setDialog({ kind: 'securityTask' })}>
+                {t('tickets.securityTask')}
+              </Button>
+            </Card>
           ) : null}
           {ticket.majorIncidentId ? <LinkedIncident id={ticket.majorIncidentId} /> : null}
           {abilities.markDuplicate || can('problems.manage') || can('majorincidents.manage') ? (
@@ -1151,6 +1202,15 @@ function TicketWorkspace({ id }: { id: string }) {
       ) : null}
       {dialog?.kind === 'callback' ? (
         <TicketCallbackDialog ticket={ticket} onClose={() => setDialog(null)} onDone={done} />
+      ) : null}
+      {dialog?.kind === 'securityTask' ? (
+        <TicketCallbackDialog
+          ticket={ticket}
+          initialTitle={securityTaskTitle}
+          initialDue={securityDue}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
       ) : null}
       {dialog?.kind === 'location' ? (
         <TicketLocationDialog

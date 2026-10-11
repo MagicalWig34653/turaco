@@ -6478,4 +6478,9 @@ export const de: Record<MessageKey, string> = {
   'settings.key.teams.cards_with_titles.hint':
     'Standardmäßig aus. Titel können Patientendaten enthalten; erst nach der Datenschutzprüfung aktivieren.',
   // END Administration settings
+  'tickets.follow': 'Ticket folgen',
+  'tickets.unfollow': 'Ticket nicht mehr folgen',
+  'tickets.securityPrompt': 'Sicherheitsticket: Prüfen, ob personenbezogene Daten betroffen sind. Falls ja, eine Datenschutzaufgabe mit Frist innerhalb von 72 Stunden ab Meldung erwägen.',
+  'tickets.securityTask': 'Datenschutzaufgabe mit Frist erstellen',
+  'tickets.securityTaskTitle': 'Datenschutzprüfung innerhalb von 72 Stunden',
 };

@@ -5408,6 +5408,55 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/follow:
+    get:
+      operationId: getTicketFollowing
+      summary: Read the requester's ticket notification preference.
+      description: Only the reporter or affected user may read this preference; an unknown or other ticket returns 404. Following defaults to true for existing behavior.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Current preference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketFollow'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      operationId: followTicket
+      summary: Follow a ticket as its requester.
+      description: Only the reporter or affected user; idempotent and audited when the preference changes. Enables existing public comment and resolved notifications. Never subscribes to internal notes or assignment details.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Following.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketFollow'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    delete:
+      operationId: unfollowTicket
+      summary: Unfollow a ticket as its requester.
+      description: Only the reporter or affected user; idempotent and audited when the preference changes. Suppresses existing public comment and resolved notifications for this requester.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Not following.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TicketFollow'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
   /tickets/{id}/callback:
     post:
       operationId: scheduleTicketCallback
@@ -19040,6 +19089,12 @@ components:
           items: {type: string, format: uuid}
           description: "People an internal note mentions who may view the ticket's Queue (always empty for public comments). They received a ticket.mention notification."
         createdAt: {type: string, format: date-time}
+    TicketFollow:
+      type: object
+      additionalProperties: false
+      required: [following]
+      properties:
+        following: {type: boolean}
     TicketDetail:
       allOf:
         - $ref: '#/components/schemas/Ticket'
