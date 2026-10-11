@@ -697,6 +697,10 @@ func TestQueueScopedQueriesCannotBeUsedAsAnOracle(t *testing.T) {
 		}
 		return out
 	}
+	var invalidQueue *application.InvalidInputError
+	if _, err := e.svc.QueryScoped(ctx, u1, query.Request{Limit: 100}, application.ScopeAuto, nil, "telefonie-wlan"); !errors.As(err, &invalidQueue) {
+		t.Errorf("non-UUID queue = %v, want invalid input", err)
+	}
 	// Without a routing filter u1 sees q1's tickets and their own ticket in q2.
 	page, err := e.svc.QueryScoped(ctx, u1, query.Request{Limit: 100}, application.ScopeAuto, nil, "")
 	if err != nil || !ids(page)[t1.ID] || !ids(page)[own.ID] {
