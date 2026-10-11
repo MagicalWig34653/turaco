@@ -17,16 +17,17 @@ import (
 
 // History kinds.
 const (
-	HistoryCreated         = "created"
-	HistoryAssigned        = "assigned"
-	HistoryUnassigned      = "unassigned"
-	HistoryReassigned      = "reassigned"
-	HistoryTeamRouted      = "team_routed"
-	HistoryStatusChanged   = "status_changed"
-	HistoryPriorityChanged = "priority_changed"
-	HistoryQueueMoved      = "queue_moved"
-	HistoryMarkedDuplicate = "marked_duplicate"
-	HistoryLocationChanged = "location_changed"
+	HistoryCreated           = "created"
+	HistoryAssigned          = "assigned"
+	HistoryUnassigned        = "unassigned"
+	HistoryReassigned        = "reassigned"
+	HistoryTeamRouted        = "team_routed"
+	HistoryStatusChanged     = "status_changed"
+	HistoryPriorityChanged   = "priority_changed"
+	HistoryQueueMoved        = "queue_moved"
+	HistoryMarkedDuplicate   = "marked_duplicate"
+	HistoryLocationChanged   = "location_changed"
+	HistoryCallbackScheduled = "callback_scheduled"
 )
 
 // HistoryEntry is one change. From/To fields are set only for the kinds they apply to. Via names the operation
@@ -51,6 +52,10 @@ type HistoryEntry struct {
 	// FromLocationID and ToLocationID are set on HistoryLocationChanged (empty: no location).
 	FromLocationID string
 	ToLocationID   string
+	// TaskID, DueAt and AssigneeID are set on HistoryCallbackScheduled (the Task of the callback).
+	TaskID     string
+	DueAt      string
+	AssigneeID string
 }
 
 // HistoryStore reads the audit events of a Ticket, oldest first. The repository implements it.
@@ -78,6 +83,19 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 	out := []HistoryEntry{}
 	for _, ev := range events {
 		if !strings.HasPrefix(ev.Action, "servicedesk.ticket.") {
+			continue
+		}
+		if ev.Action == "servicedesk.ticket.callback_scheduled" {
+			var m struct {
+				TaskID     string `json:"taskId"`
+				DueAt      string `json:"dueAt"`
+				AssigneeID string `json:"assigneeId"`
+			}
+			if len(ev.Metadata) > 0 {
+				_ = json.Unmarshal(ev.Metadata, &m)
+			}
+			out = append(out, HistoryEntry{ID: ev.ID, At: ev.OccurredAt, Kind: HistoryCallbackScheduled, ActorID: deref(ev.ActorID),
+				Via: "callback_scheduled", TaskID: m.TaskID, DueAt: m.DueAt, AssigneeID: m.AssigneeID})
 			continue
 		}
 		var before, after auditState
@@ -182,7 +200,7 @@ func (s *Service) History(ctx context.Context, p Principal, id string) ([]Histor
 	entries := buildHistory(events)
 	var users, teams []string
 	for _, e := range entries {
-		users = append(users, e.ActorID, e.FromUserID, e.ToUserID)
+		users = append(users, e.ActorID, e.FromUserID, e.ToUserID, e.AssigneeID)
 		teams = append(teams, e.FromTeamID, e.ToTeamID)
 	}
 	names, err := s.dir.UserNames(ctx, nonEmpty(users))

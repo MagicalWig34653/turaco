@@ -48,6 +48,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
 	route("POST /api/v1/tickets/{id}/location", h.location)
+	route("POST /api/v1/tickets/{id}/callback", h.callback)
 	route("GET /api/v1/tickets/{id}/changes", h.linkedChanges)
 	route("POST /api/v1/tickets/{id}/changes", h.linkChange)
 	route("DELETE /api/v1/tickets/{id}/changes/{changeId}", h.unlinkChange)
@@ -81,6 +82,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "tickets.version_conflict", "The ticket was changed by someone else; reload and try again.")
 	case errors.Is(err, application.ErrCommentLimit):
 		httpx.WriteError(w, http.StatusConflict, "tickets.comment_limit", "This ticket has reached the comment limit.")
+	case errors.Is(err, application.ErrAssigneeInvalid):
+		httpx.WriteError(w, http.StatusBadRequest, "tickets.user_invalid", "The user does not exist or is not active.")
 	case errors.Is(err, application.ErrUserInvalid):
 		httpx.WriteError(w, http.StatusBadRequest, "tickets.user_invalid", "The user does not exist or is not active.")
 	case errors.Is(err, application.ErrTeamInvalid):
@@ -224,14 +227,15 @@ type detailDTO struct {
 }
 
 type abilitiesDTO struct {
-	Comment         bool `json:"comment"`
-	InternalComment bool `json:"internalComment"`
-	Assign          bool `json:"assign"`
-	SetPriority     bool `json:"setPriority"`
-	Transition      bool `json:"transition"`
-	Move            bool `json:"move"`
-	MarkDuplicate   bool `json:"markDuplicate"`
-	SetLocation     bool `json:"setLocation"`
+	Comment          bool `json:"comment"`
+	InternalComment  bool `json:"internalComment"`
+	Assign           bool `json:"assign"`
+	SetPriority      bool `json:"setPriority"`
+	Transition       bool `json:"transition"`
+	Move             bool `json:"move"`
+	MarkDuplicate    bool `json:"markDuplicate"`
+	SetLocation      bool `json:"setLocation"`
+	ScheduleCallback bool `json:"scheduleCallback"`
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -330,7 +334,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names, Abilities: abilitiesDTO{Comment: d.Abilities.Comment, InternalComment: d.Abilities.InternalComment,
-		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation}}
+		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation, ScheduleCallback: d.Abilities.ScheduleCallback}}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, toComment(c))
 	}
@@ -449,6 +453,9 @@ type historyDTO struct {
 	DuplicateOfID  string `json:"duplicateOfId,omitempty"`
 	FromLocationID string `json:"fromLocationId,omitempty"`
 	ToLocationID   string `json:"toLocationId,omitempty"`
+	TaskID         string `json:"taskId,omitempty"`
+	DueAt          string `json:"dueAt,omitempty"`
+	AssigneeID     string `json:"assigneeId,omitempty"`
 }
 
 // history lists the change history of a Ticket (assignments, routing, status, priority, Queue moves) for people
@@ -462,7 +469,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	out := make([]historyDTO, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
-			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID})
+			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID})
 	}
 	httpx.JSON(w, http.StatusOK, struct {
 		Items []historyDTO      `json:"items"`
@@ -501,6 +508,28 @@ func (h *handler) location(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, toTicket(t))
+}
+
+// callback schedules a callback: a Task of the Tasks module for the ticket, due at dueAt, assigned to assigneeId
+// (default: the caller).
+func (h *handler) callback(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		DueAt      time.Time `json:"dueAt"`
+		AssigneeID string    `json:"assigneeId"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	cb, err := h.svc.ScheduleCallback(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.DueAt, b.AssigneeID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, struct {
+		TaskID     string `json:"taskId"`
+		DueAt      string `json:"dueAt"`
+		AssigneeID string `json:"assigneeId"`
+	}{cb.TaskID, ts(cb.DueAt), cb.AssignedUserID})
 }
 
 func (h *handler) transition(op string) http.HandlerFunc {

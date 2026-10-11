@@ -7,12 +7,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	changespublic "github.com/MagicalWig34653/turaco/backend/internal/modules/changes/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/events"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/notifications"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/relationships"
@@ -321,5 +323,94 @@ func TestTicketsLinkToChangesThroughTheRelationshipGraph(t *testing.T) {
 	}
 	if err := e.svc.UnlinkChange(ctx, e.c(e.u1), e.employee(e.u1), tk.ID, change); err != nil {
 		t.Errorf("unlink twice is a no-op: %v", err)
+	}
+}
+
+// fakeCallbackTasks records the Tasks created for callbacks and inserts nothing.
+type fakeCallbackTasks struct {
+	created []application.CallbackTaskInput
+}
+
+func (f *fakeCallbackTasks) CreateInTx(_ context.Context, _ pgx.Tx, _ audit.Actor, _ string, in application.CallbackTaskInput) (string, error) {
+	if in.AssignedUserID == "00000000-0000-4000-8000-000000000000" {
+		return "", application.ErrAssigneeInvalid
+	}
+	f.created = append(f.created, in)
+	return "11111111-1111-4111-8111-111111111111", nil
+}
+
+func TestScheduleCallbackCreatesATaskAuditsAndShowsInTheHistory(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	q := e.queue(application.QueueInternal)
+	e.grant(q, user(e.u1, "work"), user(e.u2, "view"))
+	tk := e.raise(e.global, q)
+	tasks := &fakeCallbackTasks{}
+	e.svc.WithCallbackTasks(tasks)
+	u1 := e.employee(e.u1)
+	due := time.Now().Add(2 * time.Hour)
+
+	// View-only staff, past and far-future due times and unknown assignees are refused; nothing is created.
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u2), e.employee(e.u2), tk.ID, due, ""); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("view-only err = %v, want forbidden", err)
+	}
+	var inv *application.InvalidInputError
+	for _, bad := range []time.Time{{}, time.Now().Add(-time.Minute), time.Now().Add(400 * 24 * time.Hour)} {
+		if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, bad, ""); !errors.As(err, &inv) {
+			t.Errorf("dueAt %v err = %v, want invalid input", bad, err)
+		}
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "not-a-uuid"); !errors.As(err, &inv) {
+		t.Errorf("assignee err = %v, want invalid input", err)
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, application.ErrAssigneeInvalid) {
+		t.Errorf("inactive assignee err = %v", err)
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.alice), e.employee(e.alice), tk.ID, due, ""); err == nil {
+		t.Error("an unrelated employee must not schedule a callback")
+	}
+	if len(tasks.created) != 0 {
+		t.Fatalf("refused calls created %d tasks", len(tasks.created))
+	}
+
+	// The default assignee is the caller; an explicit colleague is honoured.
+	cb, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, "")
+	if err != nil || cb.AssignedUserID != e.u1 || cb.TaskID == "" {
+		t.Fatalf("callback = %+v, %v", cb, err)
+	}
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, e.u2); err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks.created) != 2 || tasks.created[0].TicketID != tk.ID || tasks.created[0].Title != "Callback "+tk.Reference || tasks.created[1].AssignedUserID != e.u2 {
+		t.Errorf("tasks = %+v", tasks.created)
+	}
+	if got := e.count(`SELECT count(*) FROM platform.audit_events WHERE correlation_id = $1 AND action = 'servicedesk.ticket.callback_scheduled' AND target_id = $2`, e.corr, tk.ID); got != 2 {
+		t.Errorf("audit events = %d, want 2", got)
+	}
+	cur, err := e.svc.Get(ctx, u1, tk.ID)
+	if err != nil || !cur.Abilities.ScheduleCallback || cur.Ticket.Version != tk.Version {
+		t.Fatalf("ticket after = version %d abilities %+v, %v", cur.Ticket.Version, cur.Abilities, err)
+	}
+	entries, _, err := e.svc.History(ctx, e.admin, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen int
+	for _, en := range entries {
+		if en.Kind == application.HistoryCallbackScheduled && en.ActorID == e.u1 && en.TaskID == cb.TaskID && en.AssigneeID == e.u1 && en.DueAt != "" {
+			seen++
+		}
+	}
+	if seen != 1 {
+		t.Errorf("callback_scheduled history entries for the first callback = %d in %+v", seen, entries)
+	}
+
+	// A closed ticket cannot get a callback.
+	if _, err := e.svc.Transition(ctx, e.c(e.u1), u1, tk.ID, nil, application.OpCancel, application.Params{Reason: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	var tr *application.InvalidTransitionError
+	if _, err := e.svc.ScheduleCallback(ctx, e.c(e.u1), u1, tk.ID, due, ""); !errors.As(err, &tr) {
+		t.Errorf("cancelled ticket err = %v, want invalid transition", err)
 	}
 }

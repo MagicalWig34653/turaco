@@ -5140,7 +5140,7 @@ paths:
                       properties:
                         id: {type: string, format: uuid}
                         at: {type: string, format: date-time}
-                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed]}
+                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed, callback_scheduled]}
                         actorId: {type: string, format: uuid}
                         via: {type: string}
                         reason: {type: string}
@@ -5155,6 +5155,9 @@ paths:
                         duplicateOfId: {type: string}
                         fromLocationId: {type: string, description: "location_changed: the earlier affected Location; absent when there was none."}
                         toLocationId: {type: string, description: "location_changed: the new affected Location; absent when it was cleared."}
+                        taskId: {type: string, format: uuid, description: "callback_scheduled: the Task of the callback (GET /tasks/{id} for people who may see it)."}
+                        dueAt: {type: string, format: date-time, description: "callback_scheduled: when the callback is due."}
+                        assigneeId: {type: string, format: uuid, description: "callback_scheduled: who the callback Task is assigned to (named in `names`)."}
                       description: "Every entry has its own id; several entries made by one audit event (for example the assignee and the status of a start) are distinct."
                   names:
                     type: object
@@ -5247,6 +5250,40 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Ticket'}
+        '400': {$ref: '#/components/responses/TicketsInvalid'}
+        '404': {$ref: '#/components/responses/TicketsNotFound'}
+        '409': {$ref: '#/components/responses/TicketsConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /tickets/{id}/callback:
+    post:
+      operationId: scheduleTicketCallback
+      summary: Schedule a callback for a ticket.
+      description: "Explicit operation: creates an ordinary Task (Tasks public contract, context type `ticket`, title `Callback <reference>`) due at `dueAt` and assigned to `assigneeId` (default: the caller), so it shows in My Work and the Task list. Needs work access in the ticket's Queue and a ticket that is not closed or cancelled (`abilities.scheduleCallback`). `dueAt` must be in the future and at most one year ahead (400); the assignee must be an active user (400 tickets.user_invalid). The ticket does not change (no version bump). Audited (servicedesk.ticket.callback_scheduled, without the title) and listed in the history as `callback_scheduled`. Each call creates one Task."
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TicketCallback'
+      responses:
+        '201':
+          description: The callback Task.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [taskId, dueAt, assigneeId]
+                properties:
+                  taskId: {type: string, format: uuid}
+                  dueAt: {type: string, format: date-time}
+                  assigneeId: {type: string, format: uuid}
         '400': {$ref: '#/components/responses/TicketsInvalid'}
         '404': {$ref: '#/components/responses/TicketsNotFound'}
         '409': {$ref: '#/components/responses/TicketsConflict'}
@@ -18682,6 +18719,7 @@ components:
                 move: {type: boolean, description: "POST /tickets/{id}/move-queue (the target Queue needs the create level)."}
                 markDuplicate: {type: boolean, description: "POST /tickets/{id}/duplicate."}
                 setLocation: {type: boolean, description: "POST /tickets/{id}/location (work level in the Queue, ticket not closed or cancelled)."}
+                scheduleCallback: {type: boolean, description: "POST /tickets/{id}/callback (work level in the Queue, ticket not closed or cancelled)."}
             names:
               type: object
               additionalProperties: {type: string}
@@ -18712,6 +18750,13 @@ components:
           maxItems: 10
           items: {type: string, format: uuid}
           description: "Only with internal=true (400 otherwise). Inactive people and people who cannot view the ticket's Queue are dropped silently; the author is never notified. The rest get a ticket.mention notification that names the ticket, never the note text."
+    TicketCallback:
+      type: object
+      additionalProperties: false
+      required: [dueAt]
+      properties:
+        dueAt: {type: string, format: date-time, description: "When the callback is due; in the future, at most one year ahead."}
+        assigneeId: {type: string, format: uuid, description: "An active user; default: the caller."}
     TicketLocation:
       type: object
       additionalProperties: false

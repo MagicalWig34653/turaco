@@ -3037,6 +3037,7 @@ export const en = {
   'nav.softwareRollouts': 'Active rollouts',
   'tasks.fact.context': 'Related to',
   'tasks.context.deployment': 'Open deployment',
+  'tasks.context.ticket': 'Open ticket',
   'deployments.field.createTasks': 'Create follow-up tasks',
   'deployments.field.createTasksHint':
     'Turaco creates a task when failures cluster or a ring halts while this deployment runs.',
@@ -4685,6 +4686,15 @@ export const en = {
   'ticketLocation.results': 'Locations',
   'ticketLocation.empty': 'No location found.',
   'ticketLocation.clear': 'Remove location',
+  'ticketHistory.callbackScheduled': 'Callback scheduled for {assignee}, due {due}.',
+  'ticketCallback.action': 'Schedule callback',
+  'ticketCallback.title': 'Schedule callback',
+  'ticketCallback.hint':
+    'Creates a task for this ticket. It appears in My Work of the assignee with the ticket reference.',
+  'ticketCallback.due': 'Due date and time',
+  'ticketCallback.dueHint': 'Must be in the future.',
+  'ticketCallback.assignee': 'Assignee',
+  'ticketCallback.submit': 'Schedule',
   'ticketMention.label': 'Mention colleagues',
   'ticketMention.hint': 'Search by name (at least 3 characters).',
   'ticketMention.limit': 'You can mention at most {max} people.',

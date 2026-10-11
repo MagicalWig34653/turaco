@@ -156,6 +156,16 @@ export function TaskDetailScreen({ id }: { id: string }) {
             </dd>
           </>
         ) : null}
+        {task.contextType === 'ticket' && task.contextId ? (
+          <>
+            <dt>{t('tasks.fact.context')}</dt>
+            <dd>
+              <Link to={`/tickets/${encodeURIComponent(task.contextId)}`}>
+                {t('tasks.context.ticket')}
+              </Link>
+            </dd>
+          </>
+        ) : null}
         <dt>{t('tasks.fact.created')}</dt>
         <dd>{formatDateTime(locale, task.createdAt)}</dd>
         <dt>{t('tasks.col.updated')}</dt>

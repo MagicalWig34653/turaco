@@ -122,6 +122,17 @@ func TestMajorIncidentExerciseOwnerDueLocationsAndHiddenTickets(t *testing.T) {
 	if _, err := svc.SetOwner(ctx, e.c(e.agent), true, live.ID, nil, &e.alice); !errors.As(err, &inv) {
 		t.Errorf("owner must be an active user: %v", err)
 	}
+	// An owner must be able to act on the incident: without majorincidents.manage the assignment is refused.
+	perms := &ownerPerms{held: map[string]bool{}}
+	guarded := svc.WithOwnerPermissions(perms)
+	if _, err := guarded.SetOwner(ctx, e.c(e.agent), true, live.ID, nil, &e.agent); !errors.As(err, &inv) {
+		t.Errorf("owner without the manage permission: %v", err)
+	}
+	perms.held[e.agent] = true
+	if _, err := guarded.SetOwner(ctx, e.c(e.agent), true, live.ID, nil, nil); err != nil {
+		t.Errorf("clearing the owner never needs a permission: %v", err)
+	}
+	svc.WithOwnerPermissions(nil)
 	stale := live.Version + 5
 	if _, err := svc.SetOwner(ctx, e.c(e.agent), true, live.ID, &stale, &e.agent); !errors.Is(err, application.ErrVersionConflict) {
 		t.Errorf("stale owner change: %v", err)
@@ -202,3 +213,14 @@ func TestMajorIncidentExerciseOwnerDueLocationsAndHiddenTickets(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// ownerPerms is a fake permission source for the owner check.
+type ownerPerms struct{ held map[string]bool }
+
+func (o *ownerPerms) Permissions(_ context.Context, userID string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	if o.held[userID] {
+		out["majorincidents.manage"] = struct{}{}
+	}
+	return out, nil
+}

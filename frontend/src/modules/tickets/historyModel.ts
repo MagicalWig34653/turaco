@@ -53,6 +53,7 @@ export function describeHistory(
   entry: TicketHistoryEntry,
   name: (id: string | null | undefined) => string,
   label: (kind: 'status' | 'priority', value: string) => string,
+  formatTime: (iso: string) => string = (iso) => iso,
 ): HistoryText {
   const to = name(entry.toUserId);
   const from = name(entry.fromUserId);
@@ -100,6 +101,14 @@ export function describeHistory(
         params: { from: fromLocation, to: toLocation },
       };
     }
+    case 'callback_scheduled':
+      return {
+        key: 'ticketHistory.callbackScheduled',
+        params: {
+          assignee: entry.assigneeId ? name(entry.assigneeId) : '',
+          due: entry.dueAt ? formatTime(entry.dueAt) : '',
+        },
+      };
     default:
       return { key: 'ticketHistory.other', params: {} };
   }

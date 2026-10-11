@@ -43,6 +43,26 @@ describe('describeHistory location', () => {
   });
 });
 
+describe('describeHistory callback', () => {
+  it('names the assignee and formats the due time', () => {
+    const e = entry('9', '2026-10-01T10:00:00Z', 'callback_scheduled', {
+      assigneeId: 'u1',
+      dueAt: '2026-10-02T09:00:00Z',
+    });
+    expect(
+      describeHistory(
+        e,
+        (id) => (id ? `N:${id}` : ''),
+        (_, v) => v,
+        (iso) => `T:${iso}`,
+      ),
+    ).toEqual({
+      key: 'ticketHistory.callbackScheduled',
+      params: { assignee: 'N:u1', due: 'T:2026-10-02T09:00:00Z' },
+    });
+  });
+});
+
 describe('mergeTimeline', () => {
   it('orders comments and changes chronologically and drops the created entry', () => {
     const items = mergeTimeline(

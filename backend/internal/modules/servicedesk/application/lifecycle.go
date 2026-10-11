@@ -72,6 +72,8 @@ type Abilities struct {
 	SetLocation bool
 	// MarkDuplicate cancels the Ticket as a duplicate of another one.
 	MarkDuplicate bool
+	// ScheduleCallback creates a due Task for the Ticket (staff of the Queue, Ticket not closed or cancelled).
+	ScheduleCallback bool
 }
 
 // movableStatus reports whether a Ticket in the status can still change Queue (the move operation and its ability
@@ -86,13 +88,14 @@ func AbilitiesOf(t Ticket, ep Principal, canMove bool) Abilities {
 	owner := ep.UserID != "" && (t.ReporterID == ep.UserID || t.AffectedUserID == ep.UserID)
 	open := t.Status != StatusClosed && t.Status != StatusCancelled
 	return Abilities{
-		Comment:         (ep.Manage || owner) && open,
-		InternalComment: ep.Manage && open,
-		Assign:          ep.Manage && !slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, t.Status),
-		SetPriority:     ep.Manage,
-		Transition:      len(AllowedOperations(t, ep)) > 0,
-		MoveQueue:       ep.Manage && canMove && movableStatus(t.Status),
-		SetLocation:     ep.Manage && open,
-		MarkDuplicate:   ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
+		Comment:          (ep.Manage || owner) && open,
+		InternalComment:  ep.Manage && open,
+		Assign:           ep.Manage && !slices.Contains([]string{StatusResolved, StatusClosed, StatusCancelled}, t.Status),
+		SetPriority:      ep.Manage,
+		Transition:       len(AllowedOperations(t, ep)) > 0,
+		MoveQueue:        ep.Manage && canMove && movableStatus(t.Status),
+		SetLocation:      ep.Manage && open,
+		MarkDuplicate:    ep.Manage && slices.Contains(rules[OpCancel].from, t.Status),
+		ScheduleCallback: ep.Manage && open,
 	}
 }

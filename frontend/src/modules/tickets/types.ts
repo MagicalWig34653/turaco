@@ -82,6 +82,7 @@ export const historyKinds = [
   'priority_changed',
   'queue_moved',
   'location_changed',
+  'callback_scheduled',
 ] as const;
 export type TicketHistoryKind = (typeof historyKinds)[number];
 
@@ -105,6 +106,10 @@ export type TicketHistoryEntry = {
   toPriority?: string | null;
   fromLocationId?: string | null;
   toLocationId?: string | null;
+  /** callback_scheduled: the Task of the callback, when it is due and who it is assigned to. */
+  taskId?: string | null;
+  dueAt?: string | null;
+  assigneeId?: string | null;
 };
 
 /** What the caller may do with this Ticket; decided by the server per Ticket. */
@@ -118,6 +123,8 @@ export type TicketAbilities = {
   markDuplicate: boolean;
   /** Whether the affected person's location may be corrected; absent on older servers. */
   setLocation?: boolean;
+  /** Whether a callback Task may be scheduled; absent on older servers. */
+  scheduleCallback?: boolean;
 };
 
 export type TicketDetail = Ticket & {
