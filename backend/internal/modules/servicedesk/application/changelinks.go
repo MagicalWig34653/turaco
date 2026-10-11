@@ -16,7 +16,10 @@ import (
 // the triple and does not change the Change. The Changes module's public reader supplies the Change summaries.
 
 // Triples are the relationships the Service Desk registers.
-var Triples = []relationships.Triple{{SourceType: "ticket", Type: "RELATES_TO", TargetType: "change", Owner: "servicedesk"}}
+var Triples = []relationships.Triple{
+	{SourceType: "ticket", Type: "RELATES_TO", TargetType: "change", Owner: "servicedesk"},
+	{SourceType: "ticket", Type: "RELATES_TO", TargetType: "ticket", Owner: "servicedesk"},
+}
 
 // MaxLinkedChanges bounds the Changes linked to one Ticket (and the Tickets listed for one Change).
 const MaxLinkedChanges = 25

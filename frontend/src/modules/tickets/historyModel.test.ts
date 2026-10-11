@@ -43,6 +43,27 @@ describe('describeHistory location', () => {
   });
 });
 
+describe('describeHistory device', () => {
+  const name = (id: string | null | undefined) => (id ? `N:${id}` : '');
+  const label = (_: 'status' | 'priority', v: string) => v;
+  it('describes set, change and clear with asset references', () => {
+    const at = '2026-10-01T10:00:00Z';
+    expect(
+      describeHistory(entry('1', at, 'device_changed', { toDevice: 'AST-2' }), name, label),
+    ).toEqual({ key: 'ticketHistory.deviceSet', params: { to: 'AST-2' } });
+    expect(
+      describeHistory(
+        entry('2', at, 'device_changed', { fromDevice: 'AST-1', toDevice: 'AST-2' }),
+        name,
+        label,
+      ),
+    ).toEqual({ key: 'ticketHistory.deviceChanged', params: { from: 'AST-1', to: 'AST-2' } });
+    expect(
+      describeHistory(entry('3', at, 'device_changed', { fromDevice: 'AST-1' }), name, label).key,
+    ).toBe('ticketHistory.deviceCleared');
+  });
+});
+
 describe('describeHistory callback', () => {
   it('names the assignee and formats the due time', () => {
     const e = entry('9', '2026-10-01T10:00:00Z', 'callback_scheduled', {

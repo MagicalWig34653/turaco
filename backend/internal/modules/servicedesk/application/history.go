@@ -27,6 +27,7 @@ const (
 	HistoryQueueMoved        = "queue_moved"
 	HistoryMarkedDuplicate   = "marked_duplicate"
 	HistoryLocationChanged   = "location_changed"
+	HistoryDeviceChanged     = "device_changed"
 	HistoryCallbackScheduled = "callback_scheduled"
 )
 
@@ -52,6 +53,9 @@ type HistoryEntry struct {
 	// FromLocationID and ToLocationID are set on HistoryLocationChanged (empty: no location).
 	FromLocationID string
 	ToLocationID   string
+	// FromDevice and ToDevice are the device references on HistoryDeviceChanged (empty: no device).
+	FromDevice string
+	ToDevice   string
 	// TaskID, DueAt and AssigneeID are set on HistoryCallbackScheduled (the Task of the callback).
 	TaskID     string
 	DueAt      string
@@ -114,6 +118,8 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			DuplicateOf string `json:"duplicateOfId"`
 			FromLoc     string `json:"fromLocationId"`
 			ToLoc       string `json:"toLocationId"`
+			FromDevice  string `json:"fromDevice"`
+			ToDevice    string `json:"toDevice"`
 		}
 		if len(ev.Metadata) > 0 {
 			_ = json.Unmarshal(ev.Metadata, &meta)
@@ -134,6 +140,10 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			}
 			f(&e)
 			out = append(out, e)
+		}
+		if ev.Action == "servicedesk.ticket.device_changed" {
+			add(HistoryDeviceChanged, func(e *HistoryEntry) { e.FromDevice, e.ToDevice = meta.FromDevice, meta.ToDevice })
+			continue
 		}
 		if ev.Action == "servicedesk.ticket.location_changed" {
 			add(HistoryLocationChanged, func(e *HistoryEntry) { e.FromLocationID, e.ToLocationID = meta.FromLoc, meta.ToLoc })

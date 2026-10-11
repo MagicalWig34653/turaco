@@ -9,6 +9,7 @@ import type {
   QueueVisibility,
   Priority,
   Ticket,
+  RelatedTicket,
   TicketChangeLink,
   TicketComment,
   TicketDetail,
@@ -114,6 +115,17 @@ export const ticketsApi = {
   /** Corrects the affected person's location; null clears it. */
   setLocation: (id: string, expectedVersion: number, locationId: string | null) =>
     api.post<Ticket>(`/tickets/${enc(id)}/location`, { expectedVersion, locationId }),
+  /** Corrects the device (an asset id); null clears it. */
+  setDevice: (id: string, expectedVersion: number, assetId: string | null) =>
+    api.post<Ticket>(`/tickets/${enc(id)}/device`, { expectedVersion, assetId }),
+  duplicates: (id: string, signal?: Signal) =>
+    api.get<{ items: RelatedTicket[] }>(`/tickets/${enc(id)}/duplicates`, { signal }),
+  relatedTickets: (id: string, signal?: Signal) =>
+    api.get<{ items: RelatedTicket[] }>(`/tickets/${enc(id)}/related-tickets`, { signal }),
+  linkTicket: (id: string, ticketId: string) =>
+    api.post<RelatedTicket>(`/tickets/${enc(id)}/related-tickets`, { ticketId }),
+  unlinkTicket: (id: string, otherId: string) =>
+    api.delete<void>(`/tickets/${enc(id)}/related-tickets/${enc(otherId)}`),
   changes: (id: string, signal?: Signal) =>
     api.get<{ items: TicketChangeLink[] }>(`/tickets/${enc(id)}/changes`, { signal }),
   linkChange: (id: string, changeId: string) =>

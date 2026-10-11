@@ -82,6 +82,7 @@ export const historyKinds = [
   'priority_changed',
   'queue_moved',
   'location_changed',
+  'device_changed',
   'callback_scheduled',
 ] as const;
 export type TicketHistoryKind = (typeof historyKinds)[number];
@@ -106,6 +107,9 @@ export type TicketHistoryEntry = {
   toPriority?: string | null;
   fromLocationId?: string | null;
   toLocationId?: string | null;
+  /** device_changed: asset references of the earlier and the new device. */
+  fromDevice?: string | null;
+  toDevice?: string | null;
   /** callback_scheduled: the Task of the callback, when it is due and who it is assigned to. */
   taskId?: string | null;
   dueAt?: string | null;
@@ -123,6 +127,8 @@ export type TicketAbilities = {
   markDuplicate: boolean;
   /** Whether the affected person's location may be corrected; absent on older servers. */
   setLocation?: boolean;
+  /** Whether the device may be corrected; absent on older servers. */
+  setDevice?: boolean;
   /** Whether a callback Task may be scheduled; absent on older servers. */
   scheduleCallback?: boolean;
 };
@@ -201,6 +207,16 @@ export type TicketQueue = {
 export type TicketChangeLink = {
   id: string;
   changeId: string;
+  reference?: string;
+  title?: string;
+  status?: string;
+  hidden?: boolean;
+};
+
+/** A Ticket related to another one (a duplicate or a link); `hidden` rows are in a Queue the caller cannot view. */
+export type RelatedTicket = {
+  id: string;
+  ticketId?: string;
   reference?: string;
   title?: string;
   status?: string;

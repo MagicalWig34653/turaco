@@ -886,6 +886,77 @@ func (s *Service) SetLocation(ctx context.Context, c Caller, p Principal, id str
 	return out, s.shape(ctx, acc, &out)
 }
 
+// SetDevice corrects the device of the Ticket (a nil assetID clears it). Requires work access in the Ticket's Queue
+// and the right to view assets, because staff may pick any device, not only one the affected person holds. Version
+// guarded, audited and part of the Ticket history. Setting the current device changes nothing.
+func (s *Service) SetDevice(ctx context.Context, c Caller, p Principal, id string, expected *int, assetID *string) (Ticket, error) {
+	if err := c.validate(); err != nil {
+		return Ticket{}, err
+	}
+	if err := needVersion(expected); err != nil {
+		return Ticket{}, err
+	}
+	var asset *string
+	var snap map[string]any
+	if assetID != nil {
+		a := strings.ToLower(strings.TrimSpace(*assetID))
+		if !uuidPattern.MatchString(a) {
+			return Ticket{}, invalid("assetId must be an asset id")
+		}
+		if !p.AssetsView {
+			return Ticket{}, ErrForbidden
+		}
+		var err error
+		if snap, err = s.device.Snapshot(ctx, a, ""); err != nil {
+			return Ticket{}, ErrDeviceInvalid
+		}
+		asset = &a
+	}
+	m, err := s.memberships(ctx, p.UserID)
+	if err != nil {
+		return Ticket{}, err
+	}
+	var out Ticket
+	var acc access
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, a, ep, err := s.work(ctx, tx, p, m, id)
+		if err != nil {
+			return err
+		}
+		acc = a
+		if !AbilitiesOf(cur, ep, s.queues != nil).SetDevice {
+			if !ep.Manage {
+				return ErrForbidden
+			}
+			return &InvalidTransitionError{Operation: "set_device", From: cur.Status}
+		}
+		if *expected != cur.Version {
+			return ErrVersionConflict
+		}
+		if samePtr(cur.AssetID, asset) {
+			out = cur
+			return nil
+		}
+		out, err = s.store.UpdateDeviceTx(ctx, tx, cur.ID, asset, snap)
+		if err != nil {
+			return err
+		}
+		return record(ctx, tx, c, "servicedesk.ticket.device_changed", &cur, &out, map[string]any{
+			"fromAssetId": deref(cur.AssetID), "toAssetId": deref(out.AssetID),
+			"fromDevice": deviceRef(cur.DeviceSnapshot), "toDevice": deviceRef(out.DeviceSnapshot)})
+	})
+	if err != nil {
+		return out, err
+	}
+	return out, s.shape(ctx, acc, &out)
+}
+
+// deviceRef is the asset reference of a device snapshot ("" without one).
+func deviceRef(snap map[string]any) string {
+	ref, _ := snap["reference"].(string)
+	return ref
+}
+
 // MoveReasonValid reports whether the reason code is one of MoveReasons.
 func MoveReasonValid(code string) bool { return slices.Contains(MoveReasons, code) }
 

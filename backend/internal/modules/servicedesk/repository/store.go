@@ -121,6 +121,45 @@ func (r *Repository) UpdateLocationTx(ctx context.Context, tx pgx.Tx, id string,
 	return out, nil
 }
 
+func (r *Repository) UpdateDeviceTx(ctx context.Context, tx pgx.Tx, id string, assetID *string, snapshot map[string]any) (application.Ticket, error) {
+	var snap []byte
+	if snapshot != nil {
+		b, err := json.Marshal(snapshot)
+		if err != nil {
+			return application.Ticket{}, fmt.Errorf("encode device snapshot: %w", err)
+		}
+		snap = b
+	}
+	out, err := scan(tx.QueryRow(ctx, `
+		UPDATE servicedesk.tickets SET asset_id = $2::uuid, device_snapshot = $3::jsonb, version = version + 1, updated_at = now()
+		WHERE id = $1::uuid RETURNING `+columns, id, assetID, snap))
+	if err != nil {
+		return application.Ticket{}, fmt.Errorf("update ticket device: %w", err)
+	}
+	return out, nil
+}
+
+// Duplicates implements application.DuplicateStore: the tickets marked as duplicates of the ticket, newest first.
+func (r *Repository) Duplicates(ctx context.Context, id string, limit int) ([]application.Ticket, error) {
+	if !validUUID(id) {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+columns+` FROM servicedesk.tickets WHERE duplicate_of_ticket_id = $1::uuid ORDER BY created_at DESC, id LIMIT $2`, id, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list duplicates: %w", err)
+	}
+	defer rows.Close()
+	var out []application.Ticket
+	for rows.Next() {
+		t, err := scan(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan duplicate: %w", err)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) Get(ctx context.Context, id string) (application.Ticket, error) {
 	if !validUUID(id) {
 		return application.Ticket{}, application.ErrNotFound

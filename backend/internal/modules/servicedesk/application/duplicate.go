@@ -27,6 +27,8 @@ type DuplicateStore interface {
 	MarkDuplicateTx(ctx context.Context, tx pgx.Tx, id, targetID string) (Ticket, error)
 	// DuplicateStateTx reports whether the ticket is itself a duplicate and how many tickets are marked as its duplicates.
 	DuplicateStateTx(ctx context.Context, tx pgx.Tx, id string) (isDuplicate bool, duplicates int, err error)
+	// Duplicates lists the tickets marked as duplicates of the ticket, newest first (at most limit).
+	Duplicates(ctx context.Context, id string, limit int) ([]Ticket, error)
 }
 
 // MarkDuplicate marks the ticket as a duplicate of another one. expected is the duplicate's version. targetID
