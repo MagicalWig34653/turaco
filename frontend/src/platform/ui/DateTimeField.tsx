@@ -78,12 +78,18 @@ export function DateTimeField({ label, value, onChange, hint, required = false }
     triggerRef.current?.focus();
   };
   const choose = (day: CalendarDay) => {
+    // A first pick of today after 09:00 starts at the next full hour instead of a time that has passed.
+    const isToday =
+      day.year === now.getFullYear() &&
+      day.month === now.getMonth() + 1 &&
+      day.day === now.getDate();
+    const firstHour = isToday && now.getHours() >= 9 ? Math.min(now.getHours() + 1, 23) : 9;
     onChange(
       toLocalValue({
         year: day.year,
         month: day.month,
         day: day.day,
-        hour: parts?.hour ?? 9,
+        hour: parts?.hour ?? firstHour,
         minute: parts?.minute ?? 0,
       }),
     );

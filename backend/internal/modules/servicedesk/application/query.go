@@ -201,6 +201,9 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	if p.UserID == "" {
 		return query.Page[Ticket]{}, ErrForbidden
 	}
+	if inQueue != "" && !uuidPattern.MatchString(inQueue) {
+		return query.Page[Ticket]{}, invalid("queue must be a Queue id")
+	}
 	qs, ok := s.store.(QueryStore)
 	if !ok {
 		return query.Page[Ticket]{}, errNoQueryStore
