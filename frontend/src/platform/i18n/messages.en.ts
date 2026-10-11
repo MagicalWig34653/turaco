@@ -1616,6 +1616,9 @@ export const en = {
   'products.picker.noPermission': 'Choosing a product needs the permission to view products.',
   'approvals.openOrder': 'Open the purchase order',
   'approvals.orderNoAccess': 'The purchase order is only visible with procurement permissions.',
+  'notifications.organization.access_expiring': 'The access of {title} ends soon.',
+  'notifications.category.organization.access_expiring':
+    'Access of an external person I sponsor ends soon',
   'notifications.asset.assigned': 'Equipment was assigned to you: {title}',
   'notifications.category.asset.assigned': 'Equipment is assigned to me',
   'assets.intro':

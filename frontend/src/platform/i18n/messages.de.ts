@@ -1659,6 +1659,9 @@ export const de: Record<MessageKey, string> = {
     'Zum Auswählen eines Produkts ist die Berechtigung zum Ansehen von Produkten nötig.',
   'approvals.openOrder': 'Bestellung öffnen',
   'approvals.orderNoAccess': 'Die Bestellung ist nur mit Beschaffungsberechtigung sichtbar.',
+  'notifications.organization.access_expiring': 'Der Zugang von {title} endet bald.',
+  'notifications.category.organization.access_expiring':
+    'Der Zugang einer externen Person, für die ich bürge, endet bald',
   'notifications.asset.assigned': 'Ihnen wurde Ausstattung zugewiesen: {title}',
   'notifications.category.asset.assigned': 'Mir wird Ausstattung zugewiesen',
   'assets.intro':

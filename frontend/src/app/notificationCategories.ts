@@ -93,6 +93,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.request.rejected',
       labelKey: 'notifications.category.request.rejected',
     },
+    'organization.access_expiring': {
+      textKey: 'notifications.organization.access_expiring',
+      labelKey: 'notifications.category.organization.access_expiring',
+    },
     'request.completed': {
       textKey: 'notifications.request.completed',
       labelKey: 'notifications.category.request.completed',
