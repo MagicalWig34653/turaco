@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -96,6 +97,9 @@ func (s *Service) MarkDuplicate(ctx context.Context, c Caller, p Principal, id s
 		meta := map[string]any{"operation": "mark_duplicate", "duplicateOfId": target.ID, "reasonCode": StatusReasonDuplicate}
 		if reason != "" {
 			meta["reason"] = reason
+		}
+		if err := s.applySLA(ctx, tx, out, "mark_duplicate", "", c, time.Now().UTC(), meta); err != nil {
+			return err
 		}
 		if err := record(ctx, tx, c, "servicedesk.ticket.marked_duplicate", &cur, &out, meta); err != nil {
 			return err

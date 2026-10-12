@@ -56,6 +56,7 @@ import (
 	securitytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/security/transport"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	sladomain "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
+	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	slatransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/sla"
 	servicedesktransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/transport"
 	servicestransport "github.com/MagicalWig34653/turaco/backend/internal/modules/services/transport"
@@ -332,7 +333,7 @@ func main() {
 	endpointstransport.Register(mux, wiring.Endpoints(pool, intuneProvider, cfg.IntuneSync, softwaremgmt.NotConfigured{}, cfg.SoftwareProviderSync).WithDeployWrite(cfg.SoftwareDeployWrite, intune.NotConfiguredWriter{}), sessionAuth, logger)
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
-	servicedesktransport.Register(mux, wiring.ServiceDesk(pool), sessionAuth, logger)
+	servicedesktransport.Register(mux, wiring.ServiceDesk(pool).WithSLA(func(ctx context.Context) (bool, error) { return moduleSvc.Enabled(ctx, "sla") }), sessionAuth, logger)
 	attachmentstransport.Register(mux, attachmentSvc, sessionAuth, logger)
 	servicedesktransport.RegisterExternal(mux, wiring.ExternalSync(pool, autotaskGateway, cfg.AutotaskSync), sessionAuth, logger)
 	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)
@@ -407,7 +408,7 @@ func main() {
 		os.Exit(1)
 	}
 	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
-	schedulingtransport.Register(mux, scheduling.NewCalendarStore(pool).WithUsage(sladomain.CalendarUsage{}), sessionAuth, logger)
+	schedulingtransport.Register(mux, scheduling.NewCalendarStore(pool).WithUsage(sladomain.CalendarUsage{}).WithClockRecalculator(servicedeskrepository.New(pool)), sessionAuth, logger)
 	slatransport.Register(mux, slatransport.New(pool), sessionAuth, logger)
 	probeChecks := map[string]func(context.Context) error{}
 	smtpProbe, err := wiring.SMTPProbe(smtpCfg)

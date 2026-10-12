@@ -6,6 +6,14 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /sla/tickets/{id}/exempt:
+    post:
+      operationId: exemptTicketSLA
+      summary: Exempt active SLA clocks for a Ticket (sla.manage and Queue view access).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, required: [expectedVersion, reason], properties: {expectedVersion: {type: integer, minimum: 1}, reason: {type: string, enum: [misclassified, duplicate_of_major_incident, test_ticket, other]}}}}}}
+      responses: {'200': {description: Clocks exempted}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {$ref: '#/components/responses/TicketsNotFound'}, '409': {$ref: '#/components/responses/TicketsConflict'}}
   /sla/policies:
     get:
       operationId: listSLAPolicies
@@ -5343,7 +5351,7 @@ paths:
   /tickets/{id}/history:
     get:
       operationId: getTicketHistory
-      summary: The change history of a ticket (assignments, routing, status, priority, Queue moves, duplicates).
+      summary: The change history of a ticket (including staff-only SLA clock changes while enabled).
       description: "Needs view access in the ticket's Queue (404 otherwise, also for reporters who cannot work the ticket). Derived from the ticket's audit events, oldest first, at most the newest 200 events. Every entry has the actor (`actorId`), the time, the causing operation (`via`: assigned, start, queue_moved, marked_duplicate, ...) and a reason where one was given. `kind`: created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate. An assignment made by a person shows that person as actor; an assignment caused by starting work shows `via` start."
       security:
         - sessionAuth: []
@@ -5366,7 +5374,7 @@ paths:
                       properties:
                         id: {type: string, format: uuid}
                         at: {type: string, format: date-time}
-                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed, device_changed, callback_scheduled]}
+                        kind: {type: string, enum: [created, assigned, unassigned, reassigned, team_routed, status_changed, priority_changed, queue_moved, marked_duplicate, location_changed, device_changed, callback_scheduled, sla]}
                         actorId: {type: string, format: uuid}
                         via: {type: string}
                         reason: {type: string}
@@ -5387,6 +5395,8 @@ paths:
                         taskId: {type: string, format: uuid, description: "callback_scheduled: the Task of the callback (GET /tasks/{id} for people who may see it)."}
                         dueAt: {type: string, format: date-time, description: "callback_scheduled: when the callback is due."}
                         assigneeId: {type: string, format: uuid, description: "callback_scheduled: who the callback Task is assigned to (named in `names`)."}
+                        slaKind: {type: string, enum: [first_response, resolution]}
+                        slaOperation: {type: string, enum: [start, pause, resume, complete, reopen_resume, cancel, retarget, exempt]}
                       description: "Every entry has its own id; several entries made by one audit event (for example the assignee and the status of a start) are distinct."
                   names:
                     type: object
@@ -20098,12 +20108,38 @@ components:
       required: [following]
       properties:
         following: {type: boolean}
+    TicketSLAClock:
+      type: object
+      additionalProperties: false
+      required: [kind, status, outcome, targetMinutes, timeBasis, calendarName, policyName, dueAt, remainingSeconds, pausedAt, pauseReason, completedAt, warnedAt, breachedAt]
+      properties:
+        kind: {type: string, enum: [first_response, resolution]}
+        status: {type: string, enum: [running, paused, completed, cancelled]}
+        outcome: {type: string, enum: ['', met, breached, exempted, not_measured]}
+        targetMinutes: {type: integer}
+        timeBasis: {type: string, enum: [business, continuous]}
+        calendarName: {type: string}
+        policyName: {type: string}
+        dueAt: {type: [string, 'null'], format: date-time}
+        remainingSeconds: {type: integer}
+        pausedAt: {type: [string, 'null'], format: date-time}
+        pauseReason: {type: [string, 'null']}
+        completedAt: {type: [string, 'null'], format: date-time}
+        warnedAt: {type: [string, 'null'], format: date-time}
+        breachedAt: {type: [string, 'null'], format: date-time}
     TicketDetail:
       allOf:
         - $ref: '#/components/schemas/Ticket'
         - type: object
           required: [comments, allowedOperations, abilities, names]
           properties:
+            sla:
+              type: object
+              additionalProperties: false
+              description: "SLA clocks for Queue staff only while the sla module is on. Never returned to the reporter, affected User or external participants."
+              required: [clocks]
+              properties:
+                clocks: {type: array, items: {$ref: '#/components/schemas/TicketSLAClock'}}
             comments:
               type: array
               items: {$ref: '#/components/schemas/TicketComment'}
@@ -20126,6 +20162,7 @@ components:
                 setLocation: {type: boolean, description: "POST /tickets/{id}/location (work level in the Queue, ticket not closed or cancelled)."}
                 setDevice: {type: boolean, description: "POST /tickets/{id}/device (work level in the Queue, ticket not closed or cancelled; picking a device also needs assets.view)."}
                 scheduleCallback: {type: boolean, description: "POST /tickets/{id}/callback (work level in the Queue, ticket not closed or cancelled)."}
+                exemptSla: {type: boolean, description: "POST /sla/tickets/{id}/exempt (sla.manage and Queue view access)."}
             names:
               type: object
               additionalProperties: {type: string}

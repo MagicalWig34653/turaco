@@ -273,6 +273,16 @@
   overflow-wrap: anywhere;
   font-size: 13px;
 }
+.ticket-sla-clock {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-token);
+}
+.ticket-sla-clock:last-of-type {
+  border-bottom: 0;
+}
+.ticket-sla-clock p {
+  margin: 6px 0 0;
+}
 .incident-facts {
   display: grid;
   grid-template-columns: minmax(80px, 0.7fr) minmax(0, 1fr);

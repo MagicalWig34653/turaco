@@ -1,6 +1,6 @@
 # F17 SLA Deadlines and Time Tracking — Feature Design
 
-**Status:** S-A Business Calendars and S-B SLA Policies implemented; S-C through S-E and T-A through T-C remain design only. [Current status](current-status.md) is authoritative for what exists. Decision record: [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Related: [F5 design](f5-service-desk-design.md) (Tickets, waiting reasons), [F13 design](f13-workbench-views-design.md) (Queues, query engine, My Work sources, manager overview), [module switches](module-switches-design.md) and [ADR-0032](../decisions/ADR-0032-module-switches.md), [F11 design](f11-workforce-presence-design.md) (privacy and works-council pattern), [state machines](../domain/state-machines.md#sla-clock-planned-f16), [glossary](../domain/glossary.md#service-management).
+**Status:** S-A Business Calendars, S-B SLA Policies and S-C Ticket clocks implemented; S-D, S-E and T-A through T-C remain design only. [Current status](current-status.md) is authoritative for what exists. Decision record: [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Related: [F5 design](f5-service-desk-design.md) (Tickets, waiting reasons), [F13 design](f13-workbench-views-design.md) (Queues, query engine, My Work sources, manager overview), [module switches](module-switches-design.md) and [ADR-0032](../decisions/ADR-0032-module-switches.md), [F11 design](f11-workforce-presence-design.md) (privacy and works-council pattern), [state machines](../domain/state-machines.md#sla-clock-f17-s-c), [glossary](../domain/glossary.md#service-management).
 
 ## Product decisions already taken
 
@@ -133,7 +133,7 @@ Indexes (partial over the open statuses `new|open|in_progress|waiting`, like the
 ### 3.5 Background work
 
 - `sla.clock_sweep` (recurring, every minute; **disposable** while the switch is off): batches of 500 clocks by the sweep indexes, `MarkWarned`/`MarkBreached`, projection update, events. Precision of notifications is one minute; reads compute "overdue" from `due_at < now()` so the UI is exact without the sweep.
-- `BusinessCalendarChanged` consumer `sla.calendar_changed` enqueues the durable job `sla.recompute_due` (dedupe by calendar id) that recomputes `due_at`/`warn_at` of running clocks with that calendar in batches. A clock whose new `due_at` is already past gets `breached_at` = the new `due_at` on the next sweep; a recomputation never clears a recorded breach.
+- S-C recomputes `due_at`/`warn_at` of running clocks synchronously in the calendar-change transaction, locking each Ticket before its clocks. This keeps calendar edits and the Ticket projection consistent but may lengthen a calendar edit for a large Queue. S-D may move this to the durable `sla.calendar_changed` / `sla.recompute_due` path with batches and deduplication. A clock whose new `due_at` is already past gets `breached_at` on the S-D sweep; recomputation never clears a recorded breach.
 
 ## 4. Visibility (slices S-C and S-E)
 

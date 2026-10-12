@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +30,7 @@ const (
 	HistoryLocationChanged   = "location_changed"
 	HistoryDeviceChanged     = "device_changed"
 	HistoryCallbackScheduled = "callback_scheduled"
+	HistorySLA               = "sla"
 )
 
 // HistoryEntry is one change. From/To fields are set only for the kinds they apply to. Via names the operation
@@ -58,9 +60,11 @@ type HistoryEntry struct {
 	FromDevice string
 	ToDevice   string
 	// TaskID, DueAt and AssigneeID are set on HistoryCallbackScheduled (the Task of the callback).
-	TaskID     string
-	DueAt      string
-	AssigneeID string
+	TaskID       string
+	DueAt        string
+	AssigneeID   string
+	SLAKind      string
+	SLAOperation string
 }
 
 // HistoryStore reads the audit events of a Ticket, oldest first. The repository implements it.
@@ -122,6 +126,10 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			ToLoc       string `json:"toLocationId"`
 			FromDevice  string `json:"fromDevice"`
 			ToDevice    string `json:"toDevice"`
+			SLA         []struct {
+				Kind      string `json:"kind"`
+				Operation string `json:"operation"`
+			} `json:"sla"`
 		}
 		if len(ev.Metadata) > 0 {
 			_ = json.Unmarshal(ev.Metadata, &meta)
@@ -155,6 +163,10 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 			add(HistoryCreated, func(e *HistoryEntry) {
 				e.ToStatus, e.ToPrio, e.ToUserID, e.ToTeamID = after.Status, after.Priority, deref(after.Assignee), deref(after.Queue)
 			})
+			for _, c := range meta.SLA {
+				kind, operation := c.Kind, c.Operation
+				add(HistorySLA, func(e *HistoryEntry) { e.SLAKind = kind; e.SLAOperation = operation })
+			}
 			continue
 		}
 		if deref(before.Assignee) != deref(after.Assignee) {
@@ -183,6 +195,10 @@ func buildHistory(events []audit.Event) []HistoryEntry {
 		if before.QueueID != after.QueueID && after.QueueID != "" {
 			add(HistoryQueueMoved, func(e *HistoryEntry) {})
 		}
+		for _, c := range meta.SLA {
+			kind, operation := c.Kind, c.Operation
+			add(HistorySLA, func(e *HistoryEntry) { e.SLAKind = kind; e.SLAOperation = operation })
+		}
 	}
 	return out
 }
@@ -210,6 +226,13 @@ func (s *Service) History(ctx context.Context, p Principal, id string) ([]Histor
 		return nil, nil, err
 	}
 	entries := buildHistory(events)
+	on, err := s.slaOn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !on || s.isOwner(t, p) {
+		entries = slices.DeleteFunc(entries, func(e HistoryEntry) bool { return e.Kind == HistorySLA })
+	}
 	var users, teams []string
 	for _, e := range entries {
 		users = append(users, e.ActorID, e.FromUserID, e.ToUserID, e.AssigneeID)

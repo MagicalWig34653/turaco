@@ -85,6 +85,7 @@ export const historyKinds = [
   'location_changed',
   'device_changed',
   'callback_scheduled',
+  'sla',
 ] as const;
 export type TicketHistoryKind = (typeof historyKinds)[number];
 
@@ -116,6 +117,8 @@ export type TicketHistoryEntry = {
   taskId?: string | null;
   dueAt?: string | null;
   assigneeId?: string | null;
+  slaKind?: 'first_response' | 'resolution';
+  slaOperation?: string;
 };
 
 /** What the caller may do with this Ticket; decided by the server per Ticket. */
@@ -133,9 +136,29 @@ export type TicketAbilities = {
   setDevice?: boolean;
   /** Whether a callback Task may be scheduled; absent on older servers. */
   scheduleCallback?: boolean;
+  exemptSla?: boolean;
+};
+
+export type TicketSLAClock = {
+  kind: 'first_response' | 'resolution';
+  status: 'running' | 'paused' | 'completed' | 'cancelled';
+  outcome: 'met' | 'breached' | 'exempted' | 'not_measured' | '';
+  targetMinutes: number;
+  timeBasis: 'business' | 'continuous';
+  calendarName: string;
+  policyName: string;
+  dueAt: string | null;
+  remainingSeconds: number;
+  pausedAt: string | null;
+  pauseReason: string | null;
+  completedAt: string | null;
+  warnedAt: string | null;
+  breachedAt: string | null;
 };
 
 export type TicketDetail = Ticket & {
+  /** Staff only, and absent while the SLA module is off. */
+  sla?: { clocks: TicketSLAClock[] };
   /** Absent on servers that do not return abilities yet. */
   abilities?: TicketAbilities;
   comments: TicketComment[];
