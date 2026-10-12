@@ -1844,6 +1844,10 @@ export const en = {
   'notifications.organization.party_deactivated': 'The external party {title} was deactivated.',
   'notifications.category.organization.party_deactivated':
     'An external party I sponsor was deactivated',
+  'notifications.organization.scoped_location_moved':
+    'The Location {title} was moved; {count} Location-scoped role assignments now cover different Locations.',
+  'notifications.category.organization.scoped_location_moved':
+    'A Location move changed Location-scoped access',
   'notifications.asset.assigned': 'Equipment was assigned to you: {title}',
   'notifications.category.asset.assigned': 'Equipment is assigned to me',
   'assets.intro':
@@ -5274,6 +5278,8 @@ export const en = {
     'Other records still refer to this entry. Confirm the consequences to continue.',
   'people.error.invalidHierarchy':
     'That move is not possible: it would create a loop or exceed the maximum depth.',
+  'people.error.locationMoveRequiresAdministrator':
+    'This move changes which Locations Location-scoped role assignments cover. Only a platform administrator can make it.',
   'people.error.targetInactive': 'The chosen target is archived or inactive.',
   'people.error.invalidState': 'This is not possible in the current state of the record.',
   'people.error.directoryUser':

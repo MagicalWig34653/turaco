@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -181,55 +182,167 @@ func (r *Repository) updateLocationTx(ctx context.Context, tx pgx.Tx, c applicat
 	return out, err
 }
 
+// locationMovePlan is the validated outcome of a requested move inside the move's transaction.
+type locationMovePlan struct {
+	before application.Location
+	// noop: the Location already has the requested parent.
+	noop    bool
+	preview application.LocationMovePreview
+}
+
+// planLocationMove takes the tree lock, locks and validates the move and runs the Location move guard (ADR-0040, F16
+// design L10, slice L-C). Re-parenting changes which Locations a Location-scoped role assignment covers, so the guard
+// counts the active scoped assignments the move affects through the role service: those at the moved Location and
+// its descendants, and those at the ancestors of the old or the new position that are not ancestors of both (a
+// common ancestor covers the subtree before and after). A non-zero count makes the move administrator-only: a
+// holder of organization.locations.manage cannot pull another Site's area below a Site where someone (or they) hold
+// a scoped role. Scoped role assignments and revocations take the same tree lock in shared mode, so none is in flight
+// while the count runs. A move without guards fails closed.
+func (r *Repository) planLocationMove(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, parentID *string) (locationMovePlan, error) {
+	if r.guards == nil {
+		return locationMovePlan{}, application.ErrNoGuards
+	}
+	if err := lockTree(ctx, tx, treeLockLocations); err != nil {
+		return locationMovePlan{}, err
+	}
+	before, err := lockLocation(ctx, tx, id)
+	if err != nil {
+		return locationMovePlan{}, err
+	}
+	plan := locationMovePlan{before: before, preview: application.LocationMovePreview{Allowed: true}}
+	if before.Version != version {
+		return plan, application.ErrVersionConflict
+	}
+	// A site is a root and an area always has a parent: a move never changes the kind.
+	if (before.Kind == application.LocationSite) != (parentID == nil) {
+		return plan, application.ErrHierarchy
+	}
+	if equalPtr(before.ParentID, parentID) {
+		plan.noop = true
+		return plan, nil
+	}
+	if parentID != nil {
+		if err := requireActive(ctx, tx, "locations", *parentID); err != nil {
+			return plan, err
+		}
+		var cycle bool
+		if err := tx.QueryRow(ctx, `
+			WITH RECURSIVE up(id, depth) AS (
+				SELECT $1::uuid, 0
+				UNION ALL
+				SELECT l.parent_location_id, up.depth + 1 FROM organization.locations l JOIN up ON l.id = up.id
+				WHERE l.parent_location_id IS NOT NULL AND up.depth < 32)
+			SELECT EXISTS (SELECT 1 FROM up WHERE id = $2::uuid)`, *parentID, id).Scan(&cycle); err != nil {
+			return plan, fmt.Errorf("check location cycle: %w", err)
+		}
+		if cycle {
+			return plan, application.ErrHierarchy
+		}
+		depth, err := locationDepth(ctx, tx, *parentID)
+		if err != nil {
+			return plan, fmt.Errorf("location depth: %w", err)
+		}
+		height, err := locationHeight(ctx, tx, id)
+		if err != nil {
+			return plan, fmt.Errorf("location height: %w", err)
+		}
+		if depth+height > application.MaxLocationDepth {
+			return plan, application.ErrHierarchy
+		}
+	}
+	affected, err := moveAffectedLocations(ctx, tx, id, before.ParentID, parentID)
+	if err != nil {
+		return plan, err
+	}
+	n, err := r.guards.ScopedAssignmentsAffectedBy(ctx, tx, affected)
+	if err != nil {
+		return plan, fmt.Errorf("count scoped role assignments: %w", err)
+	}
+	plan.preview.ScopedAssignmentsAffected = n
+	if n > 0 {
+		plan.preview.AdministratorRequired = true
+		if c.Actor.UserID != "" {
+			admin, err := r.guards.IsAdministrator(ctx, tx, c.Actor.UserID)
+			if err != nil {
+				return plan, fmt.Errorf("check administrator: %w", err)
+			}
+			plan.preview.Allowed = admin
+		}
+	}
+	return plan, nil
+}
+
+// moveAffectedLocations returns the Locations whose scoped role assignments a move of id from oldParent to newParent
+// affects: the subtree of id and the symmetric difference of the ancestor-or-self chains of both parents. It runs
+// under the tree lock, so the tree cannot change underneath.
+func moveAffectedLocations(ctx context.Context, tx pgx.Tx, id string, oldParent, newParent *string) ([]string, error) {
+	rows, err := tx.Query(ctx, `
+		WITH RECURSIVE down(id, depth) AS (
+			SELECT id, 1 FROM organization.locations WHERE id = $1::uuid
+			UNION ALL
+			SELECT l.id, down.depth + 1 FROM organization.locations l JOIN down ON l.parent_location_id = down.id WHERE down.depth < 32)
+		SELECT id::text FROM down`, id)
+	if err != nil {
+		return nil, fmt.Errorf("location subtree: %w", err)
+	}
+	out, err := collectStrings(rows, "location subtree")
+	if err != nil {
+		return nil, err
+	}
+	oldChain, err := ancestorsOrSelf(ctx, tx, oldParent)
+	if err != nil {
+		return nil, err
+	}
+	newChain, err := ancestorsOrSelf(ctx, tx, newParent)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range oldChain {
+		if !slices.Contains(newChain, a) {
+			out = append(out, a)
+		}
+	}
+	for _, a := range newChain {
+		if !slices.Contains(oldChain, a) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// ancestorsOrSelf returns the Location and its ancestors; nothing for nil.
+func ancestorsOrSelf(ctx context.Context, tx pgx.Tx, id *string) ([]string, error) {
+	if id == nil {
+		return nil, nil
+	}
+	rows, err := tx.Query(ctx, `
+		WITH RECURSIVE up(id, parent, depth) AS (
+			SELECT id, parent_location_id, 1 FROM organization.locations WHERE id = $1::uuid
+			UNION ALL
+			SELECT l.id, l.parent_location_id, up.depth + 1 FROM organization.locations l JOIN up ON l.id = up.parent WHERE up.depth < 32)
+		SELECT id::text FROM up`, *id)
+	if err != nil {
+		return nil, fmt.Errorf("location ancestors: %w", err)
+	}
+	return collectStrings(rows, "location ancestors")
+}
+
+// MoveLocation re-parents a Location after the move guard (planLocationMove). The audit record carries the number of
+// affected Location-scoped role assignments; when it is not zero, ScopedLocationMoved tells the other platform
+// administrators (consumer in turaco-worker).
 func (r *Repository) MoveLocation(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.Location, error) {
 	var out application.Location
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-		if err := lockTree(ctx, tx, treeLockLocations); err != nil {
-			return err
-		}
-		before, err := lockLocation(ctx, tx, id)
+		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID)
 		if err != nil {
 			return err
 		}
-		if before.Version != version {
-			return application.ErrVersionConflict
-		}
-		// A site is a root and an area always has a parent: a move never changes the kind.
-		if (before.Kind == application.LocationSite) != (parentID == nil) {
-			return application.ErrHierarchy
-		}
-		if equalPtr(before.ParentID, parentID) {
-			out = before
+		if plan.noop {
+			out = plan.before
 			return nil
 		}
-		if parentID != nil {
-			if err := requireActive(ctx, tx, "locations", *parentID); err != nil {
-				return err
-			}
-			var cycle bool
-			if err := tx.QueryRow(ctx, `
-				WITH RECURSIVE up(id, depth) AS (
-					SELECT $1::uuid, 0
-					UNION ALL
-					SELECT l.parent_location_id, up.depth + 1 FROM organization.locations l JOIN up ON l.id = up.id
-					WHERE l.parent_location_id IS NOT NULL AND up.depth < 32)
-				SELECT EXISTS (SELECT 1 FROM up WHERE id = $2::uuid)`, *parentID, id).Scan(&cycle); err != nil {
-				return fmt.Errorf("check location cycle: %w", err)
-			}
-			if cycle {
-				return application.ErrHierarchy
-			}
-			depth, err := locationDepth(ctx, tx, *parentID)
-			if err != nil {
-				return fmt.Errorf("location depth: %w", err)
-			}
-			height, err := locationHeight(ctx, tx, id)
-			if err != nil {
-				return fmt.Errorf("location height: %w", err)
-			}
-			if depth+height > application.MaxLocationDepth {
-				return application.ErrHierarchy
-			}
+		if !plan.preview.Allowed {
+			return application.ErrLocationMoveRequiresAdministrator
 		}
 		if _, err := tx.Exec(ctx, `UPDATE organization.locations SET parent_location_id = $2::uuid, version = version + 1, updated_at = now() WHERE id = $1::uuid`, id, parentID); err != nil {
 			if err = treeError(err); errors.Is(err, application.ErrHierarchy) {
@@ -240,14 +353,53 @@ func (r *Repository) MoveLocation(ctx context.Context, c application.Caller, id 
 		if out, err = reloadLocation(ctx, tx, id); err != nil {
 			return fmt.Errorf("reload location: %w", err)
 		}
+		affected := plan.preview.ScopedAssignmentsAffected
 		if err := r.record(ctx, tx, c, "organization.location.moved", "location", id,
-			map[string]any{"parentId": before.ParentID}, map[string]any{"parentId": out.ParentID, "version": out.Version}, nil); err != nil {
+			map[string]any{"parentId": plan.before.ParentID}, map[string]any{"parentId": out.ParentID, "version": out.Version},
+			map[string]any{"scopedAssignmentsAffected": affected}); err != nil {
 			return err
 		}
-		return events.Publish(ctx, tx, events.Publication{Type: "LocationChanged", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
-			Payload: map[string]any{"locationId": id, "operation": "moved"}})
+		if err := events.Publish(ctx, tx, events.Publication{Type: "LocationChanged", ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
+			Payload: map[string]any{"locationId": id, "operation": "moved"}}); err != nil {
+			return err
+		}
+		if affected == 0 {
+			return nil
+		}
+		return events.Publish(ctx, tx, events.Publication{Type: application.EventScopedLocationMoved, ActorID: actorUserID(c), CorrelationID: c.CorrelationID,
+			Payload: map[string]any{"locationId": id, "fromParentId": plan.before.ParentID, "toParentId": out.ParentID, "scopedAssignmentsAffected": affected}})
 	})
 	return finishPeople(out, err, "move location")
+}
+
+var _ application.LocationMoveStore = (*Repository)(nil)
+
+// LocationNameTx implements application.LocationMoveStore.
+func (r *Repository) LocationNameTx(ctx context.Context, tx pgx.Tx, id string) (string, bool, error) {
+	u, ok := parseID(id)
+	if !ok {
+		return "", false, nil
+	}
+	var name string
+	err := tx.QueryRow(ctx, `SELECT name FROM organization.locations WHERE id = $1`, u).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("location name: %w", err)
+	}
+	return name, true, nil
+}
+
+// PreviewLocationMove implements application.PeopleStore: planLocationMove in a transaction that changes nothing.
+func (r *Repository) PreviewLocationMove(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.LocationMovePreview, error) {
+	var out application.LocationMovePreview
+	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
+		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID)
+		out = plan.preview
+		return err
+	})
+	return finishPeople(out, err, "preview location move")
 }
 
 func (r *Repository) SetLocationActive(ctx context.Context, c application.Caller, id string, version int, active, confirm bool) (application.Location, error) {

@@ -8064,7 +8064,7 @@ paths:
     post:
       operationId: moveLocation
       summary: Move an area below another Location.
-      description: "Requires `organization.locations.manage`. A site is a root and an area always has a parent. Cycles and a depth beyond four levels (site, area, sub-area, sub-sub-area) are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). Audited (organization.location.moved)."
+      description: "Requires `organization.locations.manage`. A site is a root and an area always has a parent. Cycles and a depth beyond four levels (site, area, sub-area, sub-sub-area) are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). Location move guard (ADR-0040): a move that changes what active Location-scoped role assignments cover (assignments at the moved Location or its descendants, or at an ancestor of the old or the new position that is not an ancestor of both) needs a platform administrator (403 organization.location_move_requires_administrator); the CLI is exempt. `dryRun: true` runs every check, changes nothing and answers a LocationMovePreview with the count and whether the caller may make the move. Audited (organization.location.moved with scopedAssignmentsAffected); a guarded move publishes ScopedLocationMoved and notifies the other platform administrators."
       security:
         - sessionAuth: []
       parameters:
@@ -8073,13 +8073,16 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/MoveRequest'}
+            schema: {$ref: '#/components/schemas/LocationMoveRequest'}
       responses:
         '200':
-          description: The record.
+          description: The moved record, or the preview when dryRun is true.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/Location'}
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/Location'}
+                  - {$ref: '#/components/schemas/LocationMovePreview'}
         '400': {$ref: '#/components/responses/PeopleInvalid'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/PeopleConflict'}
@@ -9476,7 +9479,7 @@ paths:
     post:
       operationId: assignRole
       summary: Assign a role to a User or Directory Group, globally or at a Location.
-      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment at the same scope (the same role may be held globally and at several Locations). `scopeLocationId` makes the assignment Location-scoped (ADR-0040): it applies at that Location and its sub-Locations. Guards: nobody assigns to themselves or to a Directory Group they belong to (409 access.self_assignment, administrators included; the CLI is exempt); a non-administrator assigns only roles they hold globally or, for a scoped assignment, at the Location or an ancestor (403 access.role_not_held), only permissions they cover at that scope (global-only permissions held globally; 403 access.grant_exceeds_holder) and never high-risk ones; the built-in administrator role takes no expiry (409 access.admin_no_expiry) and no scope (409 access.admin_scope_global); external accounts receive no scoped assignment (409 access.external_scope_unsupported); the scope Location must exist and be active (422 access.scope_location_invalid); a role with a high-risk permission is assigned for at most 366 days and never to a local account (409 access.local_account_high_risk); new separation-of-duties conflicts (over global and scoped holdings) need `acknowledgedRules` and `reason`. Audited (authorization.role.assigned with scope and scopeLocationId)."
+      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment at the same scope (the same role may be held globally and at several Locations). `scopeLocationId` makes the assignment Location-scoped (ADR-0040): it applies at that Location and its sub-Locations. Guards: nobody assigns to themselves or to a Directory Group they belong to (409 access.self_assignment, administrators included; the CLI is exempt); a non-administrator assigns only roles they hold globally or, for a scoped assignment, at the Location or an ancestor (403 access.role_not_held), only permissions they cover at that scope (global-only permissions held globally; 403 access.grant_exceeds_holder) and never high-risk ones; the built-in administrator role takes no expiry (409 access.admin_no_expiry) and no scope (409 access.admin_scope_global); external accounts receive no scoped assignment (409 access.external_scope_unsupported); the scope Location must exist and be active (422 access.scope_location_invalid, checked after the actor guards so it reveals nothing to an actor who may not assign there); a scoped assignment that would give the subject more than 1000 distinct scope Locations is refused (409 access.scoped_roots_exceeded); a scoped assignment holds the Location tree lock while it is checked and written, so a concurrent Location move waits for it; a role with a high-risk permission is assigned for at most 366 days and never to a local account (409 access.local_account_high_risk); new separation-of-duties conflicts (over global and scoped holdings) need `acknowledgedRules` and `reason`. Audited (authorization.role.assigned with scope, scopeLocationId and a snapshot of scopeLocationName and scopeLocationPath; an expired assignment replaced at the same scope is recorded as authorization.role.assignment_expired with triggeredBy)."
       security:
         - sessionAuth: []
       requestBody:
@@ -9505,7 +9508,7 @@ paths:
     post:
       operationId: revokeRoleAssignment
       summary: Revoke a role assignment.
-      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Nobody revokes their own assignments (409 access.self_assignment) and a non-administrator needs every permission of the role at the assignment's scope (globally, or for a scoped assignment globally or at its Location or an ancestor; 403 access.grant_exceeds_holder). Audited (authorization.role.assignment_revoked with the scope)."
+      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Nobody revokes their own assignments (409 access.self_assignment) and a non-administrator needs every permission of the role at the assignment's scope (globally, or for a scoped assignment globally or at its Location or an ancestor; 403 access.grant_exceeds_holder). Audited (authorization.role.assignment_revoked with the scope and, for a scoped assignment, a snapshot of the Location name and path)."
       security:
         - sessionAuth: []
       parameters:
@@ -16636,7 +16639,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     AuthorizationConflict:
-      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator, authorization.version_conflict, access.self_assignment, access.admin_no_expiry, access.admin_scope_global, access.external_ceiling, access.external_scope_unsupported, access.local_account_high_risk, access.sod_acknowledgement_required with details.rules). Refusals of the escalation guards are 403 (access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held).
+      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator, authorization.version_conflict, access.self_assignment, access.admin_no_expiry, access.admin_scope_global, access.external_ceiling, access.external_scope_unsupported, access.scoped_roots_exceeded, access.local_account_high_risk, access.sod_acknowledgement_required with details.rules). Refusals of the escalation guards are 403 (access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held).
       content:
         application/json:
           schema:
@@ -18315,6 +18318,22 @@ components:
       required: [role]
       properties:
         role: {type: string, enum: [lead, member]}
+    LocationMoveRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, parentId]
+      properties:
+        expectedVersion: {type: integer, minimum: 1}
+        parentId: {type: [string, "null"], format: uuid, description: New parent (an area always has one; a site stays a root). The key is required.}
+        dryRun: {type: boolean, default: false, description: "Run every check including the Location move guard and answer a LocationMovePreview; nothing changes and nothing is audited."}
+    LocationMovePreview:
+      type: object
+      required: [dryRun, scopedAssignmentsAffected, administratorRequired, allowed]
+      properties:
+        dryRun: {type: boolean, const: true}
+        scopedAssignmentsAffected: {type: integer, minimum: 0, description: "Active Location-scoped role assignments whose coverage the move changes."}
+        administratorRequired: {type: boolean, description: True when scopedAssignmentsAffected is not zero.}
+        allowed: {type: boolean, description: Whether the caller may make the move (a platform administrator or the CLI when administratorRequired).}
     MoveRequest:
       type: object
       additionalProperties: false

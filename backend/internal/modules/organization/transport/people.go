@@ -125,6 +125,8 @@ func failPeople(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		httpx.WriteError(w, http.StatusConflict, "organization.invalid_state", "The operation does not apply to the current state.")
 	case errors.Is(err, application.ErrHierarchy):
 		httpx.WriteError(w, http.StatusConflict, "organization.invalid_hierarchy", "The change would create a cycle or exceed the maximum depth.")
+	case errors.Is(err, application.ErrLocationMoveRequiresAdministrator):
+		httpx.WriteError(w, http.StatusForbidden, "organization.location_move_requires_administrator", "This move changes what Location-scoped role assignments cover; only a platform administrator can make it.")
 	case errors.Is(err, application.ErrTargetInactive):
 		httpx.WriteError(w, http.StatusConflict, "organization.target_inactive", "The referenced record is not active.")
 	case errors.Is(err, application.ErrUserNotActive):
@@ -499,9 +501,30 @@ func (h *peopleHandler) moveLocation(w http.ResponseWriter, r *http.Request) {
 	if !peopleDecode(w, r, &raw) {
 		return
 	}
+	// dryRun (optional) answers the move guard's preview instead of moving (ADR-0040, F16 design L10).
+	dryRun := false
+	if v, present := raw["dryRun"]; present {
+		b, isBool := v.(bool)
+		if !isBool {
+			httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_request", "dryRun must be a boolean.")
+			return
+		}
+		dryRun = b
+		delete(raw, "dryRun")
+	}
 	version, parent, valid := parseLinkBody(raw, "parentId")
 	if !valid {
 		httpx.WriteError(w, http.StatusBadRequest, "organization.invalid_request", "expectedVersion and parentId (a UUID or null) are required.")
+		return
+	}
+	if dryRun {
+		p, err := h.people.PreviewLocationMove(r.Context(), caller(w, r), r.PathValue("id"), version, parent)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		ok(w, locationMovePreviewDTO{DryRun: true, ScopedAssignmentsAffected: p.ScopedAssignmentsAffected,
+			AdministratorRequired: p.AdministratorRequired, Allowed: p.Allowed})
 		return
 	}
 	l, err := h.people.MoveLocation(r.Context(), caller(w, r), r.PathValue("id"), version, parent)

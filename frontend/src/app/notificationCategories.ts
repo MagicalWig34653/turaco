@@ -117,6 +117,10 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.organization.access_expiring',
       labelKey: 'notifications.category.organization.access_expiring',
     },
+    'organization.scoped_location_moved': {
+      textKey: 'notifications.organization.scoped_location_moved',
+      labelKey: 'notifications.category.organization.scoped_location_moved',
+    },
     'request.completed': {
       textKey: 'notifications.request.completed',
       labelKey: 'notifications.category.request.completed',
@@ -129,6 +133,10 @@ export function registerModuleNotifications(): void {
   registerNotificationLink(
     'sponsored_party',
     (id) => `/sponsored-parties?party=${encodeURIComponent(id)}`,
+  );
+  registerNotificationLink(
+    'location_admin',
+    (id) => `/admin/locations?location=${encodeURIComponent(id)}`,
   );
   registerNotificationLink('initiative', (id) => `/initiatives/${encodeURIComponent(id)}`);
   registerNotificationLink(

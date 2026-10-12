@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -66,7 +67,7 @@ func TestLocationScopeSQL(t *testing.T) {
 func TestScopeOfKeepsGlobalAndScopedApart(t *testing.T) {
 	p := Principal{
 		Permissions: map[string]struct{}{"tickets.view": {}},
-		Scopes: map[string]LocationScope{
+		scopes: map[string]LocationScope{
 			"tickets.view": {Locations: []string{"x"}},
 			"assets.view":  {Locations: []string{"a", "a1"}},
 			// A Global entry in Scopes is malformed input and must not become a global holding.
@@ -87,8 +88,31 @@ func TestScopeOfKeepsGlobalAndScopedApart(t *testing.T) {
 	}
 	// ScopeOf returns a copy.
 	p.ScopeOf("assets.view").Locations[0] = "zzz"
-	if p.Scopes["assets.view"].Locations[0] != "a" {
+	if p.scopes["assets.view"].Locations[0] != "a" {
 		t.Fatal("ScopeOf must not expose the principal's slice")
+	}
+}
+
+// L-B security review gate 6: the scoped map is unexported; WithScopes stores a copy and ScopedPermissions names only
+// non-empty, non-global holdings.
+func TestWithScopesCopiesAndScopedPermissionsNames(t *testing.T) {
+	in := map[string]LocationScope{
+		"assets.view":  {Locations: []string{"a"}},
+		"tickets.view": {Locations: []string{"b"}},
+		"tasks.view":   {},
+		"assets.edit":  {Global: true, Locations: []string{"c"}},
+	}
+	p := Principal{UserID: "u", Permissions: map[string]struct{}{"tickets.view": {}}}.WithScopes(in)
+	in["assets.view"].Locations[0] = "zzz"
+	in["new.perm"] = LocationScope{Locations: []string{"x"}}
+	if got := p.ScopeOf("assets.view").Locations; len(got) != 1 || got[0] != "a" {
+		t.Fatalf("WithScopes must copy: %v", got)
+	}
+	if got := p.ScopedPermissions(); !slices.Equal(got, []string{"assets.view"}) {
+		t.Fatalf("ScopedPermissions = %v", got)
+	}
+	if got := (Principal{}).WithScopes(nil).ScopedPermissions(); got == nil || len(got) != 0 {
+		t.Fatalf("empty: %v", got)
 	}
 }
 
@@ -143,9 +167,9 @@ func TestRequireScopedAdmission(t *testing.T) {
 		want int
 	}{
 		{"global", Principal{UserID: "u", Permissions: map[string]struct{}{"assets.view": {}}}, http.StatusOK},
-		{"scoped", Principal{UserID: "u", Scopes: map[string]LocationScope{"assets.manage": {Locations: []string{"a"}}}}, http.StatusOK},
-		{"scoped but empty", Principal{UserID: "u", Scopes: map[string]LocationScope{"assets.view": {}}}, http.StatusForbidden},
-		{"other permission scoped", Principal{UserID: "u", Scopes: map[string]LocationScope{"tickets.view": {Locations: []string{"a"}}}}, http.StatusForbidden},
+		{"scoped", Principal{UserID: "u", scopes: map[string]LocationScope{"assets.manage": {Locations: []string{"a"}}}}, http.StatusOK},
+		{"scoped but empty", Principal{UserID: "u", scopes: map[string]LocationScope{"assets.view": {}}}, http.StatusForbidden},
+		{"other permission scoped", Principal{UserID: "u", scopes: map[string]LocationScope{"tickets.view": {Locations: []string{"a"}}}}, http.StatusForbidden},
 		{"nothing", Principal{UserID: "u"}, http.StatusForbidden},
 	} {
 		var seen Principal
@@ -171,7 +195,7 @@ func TestRequireScopedAdmission(t *testing.T) {
 
 // A route that has not adopted scope (Require/RequireAny) never admits a caller whose only holding is scoped.
 func TestRequireIgnoresScopedHoldings(t *testing.T) {
-	p := Principal{UserID: "u", Scopes: map[string]LocationScope{"assets.view": {Locations: []string{"a"}}}}
+	p := Principal{UserID: "u", scopes: map[string]LocationScope{"assets.view": {Locations: []string{"a"}}}}
 	rec := httptest.NewRecorder()
 	Require(fixed{p: p, ok: true}, "assets.view")(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusForbidden {
@@ -184,6 +208,24 @@ func TestRequireIgnoresScopedHoldings(t *testing.T) {
 // "modules/assets/application/scope_test.go:TestAssetsLocationScope"). An adoption slice adds its permissions here in
 // the same change that marks them scopable in the registry. No module has adopted scope yet, so the table is empty.
 var scopeAdoption = map[string]string{}
+
+// scopePrerequisites are the tests of safeguards that must exist before any permission becomes scopable, as
+// "<file under backend/internal>:<TestName>". L-B security review gate 1: Location moves are guarded (slice L-C),
+// otherwise organization.locations.manage could pull another Site's area below a scoped Site.
+var scopePrerequisites = []string{
+	"modules/organization/repository/location_move_guard_test.go:TestLocationMoveGuard",
+}
+
+// The adoption table accepts entries only while every prerequisite test exists.
+func TestScopeAdoptionPrerequisitesExist(t *testing.T) {
+	for _, ref := range scopePrerequisites {
+		file, test, _ := strings.Cut(ref, ":")
+		src, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(file)))
+		if err != nil || !strings.Contains(string(src), "func "+test+"(t *testing.T)") {
+			t.Errorf("prerequisite %s is missing (%v); no permission may become scopable without it (%d adoption entries)", ref, err, len(scopeAdoption))
+		}
+	}
+}
 
 // Every adoption entry names a test function that exists and calls scopetest.Run (L-A security review item 7).
 func TestScopeAdoptionEntriesNameHarnessTests(t *testing.T) {

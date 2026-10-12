@@ -13,6 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
@@ -74,6 +76,12 @@ type SubjectDirectory interface {
 	// to the Location itself (last). Unknown and malformed ids are absent. The role service uses it to validate the
 	// Location of a scoped assignment, to name it, and to find the ancestors whose scoped assignments cover it.
 	LocationPaths(ctx context.Context, ids []string) (map[string][]LocationRef, error)
+	// LockLocationPath freezes the Location tree for the rest of tx (shared with other assignment transactions,
+	// exclusive against Location moves, creations and (de)activations), locks the Location row FOR SHARE and returns
+	// its path like LocationPaths (nil for an unknown or malformed id). A scoped assignment or revocation calls it
+	// before it evaluates any Location coverage, so the coverage it decides on cannot change before it commits (F16
+	// L-B security review gate 1).
+	LockLocationPath(ctx context.Context, tx pgx.Tx, locationID string) ([]LocationRef, error)
 }
 
 // LocationRef is one Location on a path of LocationPaths.
@@ -109,6 +117,9 @@ var (
 	ErrAdminScopeGlobal         = errors.New("authorization: the administrator role is always assigned globally")
 	ErrExternalScopeUnsupported = errors.New("authorization: external accounts receive no Location-scoped assignment")
 	ErrScopeLocationInvalid     = errors.New("authorization: the scope Location does not exist or is inactive")
+	// ErrScopedRootsExceeded: the assignment would give the subject more than MaxScopedRoots distinct scope
+	// Locations, beyond which the evaluator would cut roots (F16 L-B security review gate 2).
+	ErrScopedRootsExceeded = errors.New("authorization: too many Location-scoped assignments for this subject")
 )
 
 // SoDRequiredError reports separation-of-duties rules the change would violate and the caller has not

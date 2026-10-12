@@ -294,7 +294,7 @@ func (e *Evaluator) PermissionsIn(ctx context.Context, q querier, userID string)
 	return reduce(grants, local, external, e.scopable).global, nil
 }
 
-// Access returns the global set and the expanded scoped map of userID (Principal.Permissions and Principal.Scopes).
+// Access returns the global set and the expanded scoped map of userID (Principal.Permissions and the Principal's scoped holdings, WithScopes).
 // The Location tree is read only when the User has scoped holdings of a scopable permission.
 func (e *Evaluator) Access(ctx context.Context, userID string) (authorization.Access, error) {
 	grants, local, external, err := e.load(ctx, e.pool, userID)
@@ -503,7 +503,8 @@ func explain(grants []grant, local, external bool, scopable func(string) bool) (
 	sort.Slice(out.Permissions, func(i, j int) bool { return out.Permissions[i].Name < out.Permissions[j].Name })
 	for p, roots := range r.scoped {
 		sp := ScopedPermission{Name: p, Risk: known[p]}
-		for _, root := range roots {
+		// Only the roots that survive the cut of expand are effective, so only they are listed (gate 2).
+		for _, root := range roots[:min(len(roots), MaxScopedRoots)] {
 			sp.Roots = append(sp.Roots, ScopedRoot{RootLocationID: root, GrantedBy: r.scopedBy[p][root]})
 		}
 		out.Scoped = append(out.Scoped, sp)
@@ -522,7 +523,7 @@ func explain(grants []grant, local, external bool, scopable func(string) bool) (
 type holdings struct {
 	// perms is the global set (Principal.Permissions).
 	perms map[string]struct{}
-	// scoped maps a scopable permission not held globally to its expanded, sorted Location set (Principal.Scopes).
+	// scoped maps a scopable permission not held globally to its expanded, sorted Location set (Principal.ScopeOf).
 	scoped map[string][]string
 	admin  bool
 	// roleIDs are the roles held through global assignments.
@@ -530,7 +531,10 @@ type holdings struct {
 	// roleScoped maps a role held only through scoped assignments to the expanded, sorted Location set. Scoped
 	// assignments of an external account and of the built-in administrator role are left out (as in RoleGrants).
 	roleScoped map[string][]string
-	local      bool
+	// inert are the global-only permissions the User reaches only through scoped assignments (no effect today, but
+	// a later registry change could make them effective; dominance treats them like global holdings, gate 3).
+	inert map[string]struct{}
+	local bool
 }
 
 // covers reports whether the User holds permission p globally (locationID "") or at locationID: globally, or p is
@@ -585,7 +589,13 @@ func (e *Evaluator) holdingsOf(ctx context.Context, q querier, userID string) (h
 		return holdings{}, err
 	}
 	r := reduce(grants, local, external, e.scopable)
-	h := holdings{perms: r.global, scoped: map[string][]string{}, roleIDs: map[string]struct{}{}, roleScoped: map[string][]string{}, local: local}
+	h := holdings{perms: r.global, scoped: map[string][]string{}, roleIDs: map[string]struct{}{}, roleScoped: map[string][]string{},
+		inert: map[string]struct{}{}, local: local}
+	for _, perms := range r.inert {
+		for _, p := range perms {
+			h.inert[p] = struct{}{}
+		}
+	}
 	roleRoots := map[string]map[string]struct{}{}
 	for _, g := range grants {
 		switch {

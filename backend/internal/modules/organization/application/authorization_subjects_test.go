@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type fakeSubjectStore struct {
@@ -35,6 +37,11 @@ func (f *fakeSubjectStore) LocationPaths(_ context.Context, ids []string) (map[s
 		out[id] = []LocationPathNode{{ID: id, Name: "n", Active: true}}
 	}
 	return out, nil
+}
+
+func (f *fakeSubjectStore) LockLocationPath(_ context.Context, _ pgx.Tx, id string) ([]LocationPathNode, error) {
+	f.calls++
+	return []LocationPathNode{{ID: id, Name: "n", Active: true}}, nil
 }
 
 func (f *fakeSubjectStore) IsExternalAccount(context.Context, string) (bool, error) {

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
@@ -88,6 +89,10 @@ func (f *fakeDirectory) LocationPaths(_ context.Context, ids []string) (map[stri
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeDirectory) LockLocationPath(_ context.Context, _ pgx.Tx, id string) ([]roles.LocationRef, error) {
+	return f.paths[id], nil
 }
 
 // location adds a Location below parent ("" for a Site) and returns its id.

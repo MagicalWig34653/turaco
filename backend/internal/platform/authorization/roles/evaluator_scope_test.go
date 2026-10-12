@@ -98,7 +98,7 @@ func TestScopedAssignmentYieldsOnlyScopedHoldings(t *testing.T) {
 	if ids, _ := f.svc.eval.RoleIDs(ctx, lead); len(ids) != 0 {
 		t.Fatalf("RoleIDs = %v: a scoped role must not turn into a whole-Queue role grant", ids)
 	}
-	p := authorization.Principal{UserID: lead, Permissions: acc.Permissions, Scopes: acc.Scopes}
+	p := authorization.Principal{UserID: lead, Permissions: acc.Permissions}.WithScopes(acc.Scopes)
 	if p.Has("tickets.view") || !p.ScopeOf("tickets.view").Allows(l.areaA1a) || p.ScopeOf("tickets.view").Allows(l.siteB) || p.ScopeOf("tickets.view").Allows("") {
 		t.Fatalf("principal scope wrong: %+v", p.ScopeOf("tickets.view"))
 	}

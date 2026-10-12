@@ -70,6 +70,7 @@ func NotificationCategories() []notifications.Category {
 		cat(NotificationPartyDeactivated, LinkSponsoredParty, party,
 			"External party deactivated: %s", "An external party you sponsor was deactivated:",
 			"Externer Partner deaktiviert: %s", "Ein externer Partner, für den Sie verantwortlich sind, wurde deaktiviert:"),
+		locationMoveCategory(),
 	}
 }
 

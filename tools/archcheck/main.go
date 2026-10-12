@@ -99,10 +99,11 @@ func assistViolations(path string, file *ast.File, set *token.FileSet, aliases m
 	return violations
 }
 
-// scopesReaders may read or set authorization.Principal.Scopes directly: the package that defines it, the evaluator
-// (roles) that computes it, the authentication package that fills it and the scopetest harness that builds callers.
-// Every other package uses Principal.ScopeOf (ADR-0040: scoped holdings are read only through ScopeOf, so a module
-// cannot treat a Location-scoped right as global by accident).
+// scopesReaders may build Principals with scoped holdings (Principal.WithScopes) and read or set the raw scoped map
+// of authorization.Access (Access.Scopes): the package that defines them, the evaluator (roles) that computes them,
+// the authentication package that fills the Principal and the scopetest harness that builds callers. The Principal's
+// own scoped map is unexported (F16 L-B security review gate 6), so the compiler stops reads of it; every other
+// package uses Principal.ScopeOf (ADR-0040: a module cannot treat a Location-scoped right as global by accident).
 var scopesReaders = []string{
 	"backend/internal/platform/authorization",
 	"backend/internal/platform/authorization/roles",
@@ -110,8 +111,9 @@ var scopesReaders = []string{
 	"backend/internal/platform/authentication",
 }
 
-// scopesViolations flags a selector named Scopes in a file that imports platform/authorization, outside
-// scopesReaders. The check is syntactic; the name is reserved for Principal.Scopes in such files.
+// scopesViolations flags a selector named Scopes or WithScopes, and a composite-literal key Scopes, in a file that
+// imports platform/authorization, outside scopesReaders. The check is syntactic; the names are reserved for
+// Access.Scopes and Principal.WithScopes in such files.
 func scopesViolations(path string, file *ast.File, set *token.FileSet) []string {
 	dir := filepath.ToSlash(filepath.Dir(path))
 	for _, allowed := range scopesReaders {
@@ -131,11 +133,14 @@ func scopesViolations(path string, file *ast.File, set *token.FileSet) []string 
 	var violations []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Scopes" {
-			violations = append(violations, fmt.Sprintf("%s: read Location scope through Principal.ScopeOf, not Principal.Scopes", set.Position(sel.Pos())))
+			violations = append(violations, fmt.Sprintf("%s: read Location scope through Principal.ScopeOf, not Access.Scopes", set.Position(sel.Pos())))
+		}
+		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "WithScopes" {
+			violations = append(violations, fmt.Sprintf("%s: only the evaluator, authentication and scopetest build Principals with scoped holdings", set.Position(sel.Pos())))
 		}
 		if kv, ok := n.(*ast.KeyValueExpr); ok {
 			if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Scopes" {
-				violations = append(violations, fmt.Sprintf("%s: only the evaluator and authentication set Principal.Scopes", set.Position(kv.Pos())))
+				violations = append(violations, fmt.Sprintf("%s: only the evaluator and authentication set Access.Scopes", set.Position(kv.Pos())))
 			}
 		}
 		return true

@@ -109,6 +109,14 @@ type locationDTO struct {
 	Version     int     `json:"version"`
 }
 
+// locationMovePreviewDTO is the answer of POST /locations/{id}/move with dryRun true.
+type locationMovePreviewDTO struct {
+	DryRun                    bool `json:"dryRun"`
+	ScopedAssignmentsAffected int  `json:"scopedAssignmentsAffected"`
+	AdministratorRequired     bool `json:"administratorRequired"`
+	Allowed                   bool `json:"allowed"`
+}
+
 func toLocation(l application.Location) locationDTO {
 	return locationDTO{l.ID, l.Name, l.ExternalKey, l.Active, ts(l.UpdatedAt), l.Kind, l.ParentID, l.Code, l.Description, l.Version}
 }

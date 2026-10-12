@@ -22,9 +22,11 @@ type Principal struct {
 	UserID string
 	// Permissions are the permissions held globally. Has, HasAny, Require and RequireAny read only this set.
 	Permissions map[string]struct{}
-	// Scopes are scopable permissions held only through Location-scoped role assignments (ADR-0040), permission ->
-	// expanded Location set. Read them through ScopeOf; nil means none.
-	Scopes map[string]LocationScope
+	// scopes are scopable permissions held only through Location-scoped role assignments (ADR-0040), permission ->
+	// expanded Location set; nil means none. Unexported so no other package can read them except through ScopeOf
+	// (or name them through ScopedPermissions), and none can set them except through WithScopes (F16 L-B security
+	// review gate 6: no alias, positional-literal or reflection bypass).
+	scopes map[string]LocationScope
 	// TenantID is the data plane of the caller, resolved on the server (WithTenant), never from request fields.
 	TenantID string
 	// SessionID is the authentication session of the request (empty for other authenticators).

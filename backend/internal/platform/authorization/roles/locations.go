@@ -5,23 +5,50 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Location helpers of the role service (ADR-0040). Location data is owned by Organization and read only through
 // SubjectDirectory.LocationPaths.
 
-// requireActiveLocation refuses a scope Location that does not exist or is inactive (F16 design L5, 422
-// access.scope_location_invalid). Inactive Locations stay in existing scopes (L2); only new assignments are refused.
-func (s *Service) requireActiveLocation(ctx context.Context, locationID string) error {
-	paths, err := s.subjects.LocationPaths(ctx, []string{locationID})
+// lockScope freezes the Location tree for the rest of tx and returns the path of the scope Location (nil when it is
+// unknown). It runs before any coverage of the Location is evaluated (the guards expand the actor's scoped roots
+// through LocationTree), so a concurrent Location move cannot change what the guards decided on before the
+// assignment commits; a move waits for the assignment and then counts it (F16 L-B security review gate 1, slice L-C).
+func (s *Service) lockScope(ctx context.Context, tx pgx.Tx, locationID string) ([]LocationRef, error) {
+	path, err := s.subjects.LockLocationPath(ctx, tx, locationID)
 	if err != nil {
-		return fmt.Errorf("check scope location: %w", err)
+		return nil, fmt.Errorf("lock scope location: %w", err)
 	}
-	path := paths[locationID]
+	return path, nil
+}
+
+// requireActivePath refuses a scope Location that does not exist or is inactive (F16 design L5, 422
+// access.scope_location_invalid). Inactive Locations stay in existing scopes (L2); only new assignments are refused.
+// AssignRole calls it after the actor guards, so the answer reveals nothing about Location ids to an actor who may
+// not assign there (F16 L-B security review gate 4).
+func requireActivePath(path []LocationRef, locationID string) error {
 	if len(path) == 0 || !strings.EqualFold(path[len(path)-1].ID, locationID) || !path[len(path)-1].Active {
 		return ErrScopeLocationInvalid
 	}
 	return nil
+}
+
+// scopeSnapshot is the Location name and path (Site first) of a scoped assignment at the time of an audit record, so
+// the record stays explainable after the Location is renamed or moved (F16 L-B security review gate 5). Nothing is
+// added for a global assignment or an unknown Location.
+func scopeSnapshot(path []LocationRef, m map[string]any) map[string]any {
+	if len(path) == 0 {
+		return m
+	}
+	names := make([]string, len(path))
+	for i, ref := range path {
+		names[i] = ref.Name
+	}
+	m["scopeLocationName"] = path[len(path)-1].Name
+	m["scopeLocationPath"] = names
+	return m
 }
 
 // LocationLabel names a scope Location for display: its name and the names on its path from the Site down to it.

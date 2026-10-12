@@ -7,6 +7,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // AuthorizationSubjectStore is the storage port behind the authorization
@@ -42,6 +44,9 @@ type AuthorizationSubjectStore interface {
 	// LocationPaths returns, per given id that is a Location, the path from its Site (first) down to the Location
 	// itself (last) in the current tree. Unknown ids are absent.
 	LocationPaths(ctx context.Context, ids []string) (map[string][]LocationPathNode, error)
+	// LockLocationPath takes the Location tree lock in shared mode for the rest of tx, locks the Location row FOR
+	// SHARE and returns its path like LocationPaths (nil for an unknown id).
+	LockLocationPath(ctx context.Context, tx pgx.Tx, id string) ([]LocationPathNode, error)
 }
 
 // LocationPathNode is one Location on a path of LocationPaths.
@@ -108,6 +113,16 @@ func (s *AuthorizationSubjects) LocationPaths(ctx context.Context, ids []string)
 		return nil, fmt.Errorf("location paths: %d ids exceed the limit of %d", len(valid), maxSubtreeRoots)
 	}
 	return s.store.LocationPaths(ctx, valid)
+}
+
+// LockLocationPath freezes the Location tree for the rest of tx and returns the Location's path (ADR-0040, F16 L-B
+// security review gate 1): a scoped role assignment holds the lock while it evaluates and writes, so a Location move,
+// creation or (de)activation waits for it and a move then counts it. A malformed id locks nothing and has no path.
+func (s *AuthorizationSubjects) LockLocationPath(ctx context.Context, tx pgx.Tx, id string) ([]LocationPathNode, error) {
+	if !subjectUUID.MatchString(id) {
+		return nil, nil
+	}
+	return s.store.LockLocationPath(ctx, tx, strings.ToLower(id))
 }
 
 func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID string) ([]string, error) {

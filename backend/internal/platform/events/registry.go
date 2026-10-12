@@ -21,6 +21,7 @@ var Registry = []Definition{
 	{Name: "ExternalPartyDeactivated", Version: 1, Owner: "organization", Description: "An External Party was deactivated (no new accounts or extensions); the sponsor is notified unless they did it. Payload: partyId."},
 	{Name: "UserDeparted", Version: 1, Owner: "organization", Description: "An administrator marked a User as departed. Payload: userId, reasonCode."},
 	{Name: "LocationChanged", Version: 1, Owner: "organization", Description: "A Location was changed, moved, activated or deactivated; consumers that show its name or path re-read it. Payload: locationId, operation."},
+	{Name: "ScopedLocationMoved", Version: 1, Owner: "organization", Description: "A Location move changed what active Location-scoped role assignments cover (ADR-0040); the other platform administrators are notified. Payload: locationId, fromParentId, toParentId, scopedAssignmentsAffected."},
 	{Name: "TaskAssigned", Version: 1, Owner: "tasks", Description: "A task was assigned to a User and/or Team. Payload: taskId, assignedUserId, assignedTeamId, previousUserId, previousTeamId."},
 	{Name: "TaskCompleted", Version: 1, Owner: "tasks", Description: "A task was completed. Payload: taskId, completedByUserId."},
 	{Name: "TaskCancelled", Version: 1, Owner: "tasks", Description: "A task was cancelled, by a person or because the record it belongs to was cancelled. Payload: taskId."},

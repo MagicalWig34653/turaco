@@ -556,7 +556,7 @@ func wrap(op string, err error) error {
 		errors.Is(err, ErrRoleNotHeld), errors.Is(err, ErrAdminNoExpiry), errors.Is(err, ErrLocalAccountHighRisk), errors.Is(err, ErrExternalCeiling),
 		errors.Is(err, ErrVersionConflict), errors.Is(err, ErrUnknownTemplate), errors.Is(err, ErrSoDAcknowledgementRequired),
 		errors.Is(err, ErrAdminScopeGlobal), errors.Is(err, ErrExternalScopeUnsupported), errors.Is(err, ErrScopeLocationInvalid),
-		errors.As(err, &inv):
+		errors.Is(err, ErrScopedRootsExceeded), errors.As(err, &inv):
 		return err
 	}
 	return fmt.Errorf("%s: %w", op, err)

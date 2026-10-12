@@ -1,6 +1,6 @@
 # ADR-0040: Location-Scoped Role Assignments
 
-- Status: Accepted (2026-10-12) as product direction. Slices L-A (data model, evaluator, `RequireScoped`, harness) and L-B (assignment operations, scope-aware guards, API) are implemented; L-B awaits its security review. No permission is scopable yet; see [current status](../product/current-status.md).
+- Status: Accepted (2026-10-12) as product direction. Slices L-A (data model, evaluator, `RequireScoped`, harness), L-B (assignment operations, scope-aware guards, API) and L-C (Location move guard and the L-B security review gates) are implemented; L-C awaits its security review. No permission is scopable yet; see [current status](../product/current-status.md).
 - Related: [F16 design](../product/f16-location-scoped-access-design.md), [identity and access design](../security/identity-access-design.md) (E3: scope `global` only "until the first scoped module"), [F14 design](../product/f14-administration-design.md) sections 2.3 to 2.5 (guards), [F13 design](../product/f13-workbench-views-design.md) (Queue grants, row-specific disclosure), [ADR-0033](ADR-0033-workbench-views-query-engine.md), [ADR-0034](ADR-0034-local-accounts-and-external-parties.md).
 
 ## Context
@@ -56,4 +56,13 @@ Full list in the F16 design section "Slice L-B as implemented".
 - The guards' holdings carry expanded scoped sets per permission and per role; ceilings and the role-holding rule compare at the assignment's scope, dominance compares the target's scoped holdings Location by Location, and separation-of-duties checks use the union. Role permission edits keep the global comparison (point 7 above).
 - Location names in responses need `organization.view`; without it a response carries the scope Location id only.
 - Fail-closed caps: more than 1000 scoped roots per permission or role are cut (in id order) and logged instead of failing the session; a Location walk that reaches its depth bound is logged as corrupt data.
-- `Principal.Scopes` stays exported because the evaluator, authentication and the `scopetest` harness construct Principals; an archcheck rule forbids other packages to read or set it.
+- `Principal.Scopes` stayed exported in L-B (archcheck rule only); L-C unexported it (see below).
+
+## Implementation notes (slice L-C)
+
+Full list in the F16 design section "Slice L-C as implemented".
+
+- No migration. Organization's `MoveLocation` counts the active scoped assignments a move affects through `roles.Guards.ScopedAssignmentsAffectedBy` (Organization passes the Location ids: the moved subtree and the ancestors of the old or the new position that are not ancestors of both). A non-zero count needs a platform administrator or the CLI (403 `organization.location_move_requires_administrator`); `dryRun` previews the count. The move is audited with `scopedAssignmentsAffected` and publishes `ScopedLocationMoved`, whose consumer notifies the other administrators.
+- Scoped assignments and revocations take Organization's Location tree lock in shared mode through `SubjectDirectory.LockLocationPath` before any guard evaluates coverage; moves, creations and (de)activations take it exclusively. A move therefore never races an in-flight scoped assignment.
+- The guards validate the scope Location after the actor guards, refuse an assignment beyond `MaxScopedRoots` scope Locations (409 `access.scoped_roots_exceeded`), and treat a target's inert permissions as global holdings for dominance. Scoped assignment audit records snapshot the Location name and path; a replacement after expiry records who triggered it.
+- `Principal`'s scoped map is unexported (`WithScopes`, `ScopeOf`, `ScopedPermissions`); archcheck restricts `WithScopes` and `Access.Scopes` to the evaluator, authentication and `scopetest`.

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -82,7 +83,38 @@ func (r *Repository) LocationSubtreeIDs(ctx context.Context, rootIDs []string) (
 // LocationPaths walks upwards from each Location to its Site and returns the path Site first. The walk is bounded
 // like LocationSubtreeIDs; a path cut by the bound (corrupt data) is returned as far as it was walked.
 func (r *Repository) LocationPaths(ctx context.Context, ids []string) (map[string][]application.LocationPathNode, error) {
-	rows, err := r.pool.Query(ctx, `
+	return locationPaths(ctx, r.pool, ids)
+}
+
+// LockLocationPath implements application.AuthorizationSubjectStore: the shared form of the Location tree lock that
+// moves, creations and (de)activations take exclusively (lockTree), a FOR SHARE lock on the Location row, and the
+// path read in tx. A scoped role assignment holds them until it commits (ADR-0040, slice L-C).
+func (r *Repository) LockLocationPath(ctx context.Context, tx pgx.Tx, id string) ([]application.LocationPathNode, error) {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, treeLockLocations); err != nil {
+		return nil, fmt.Errorf("lock location tree (shared): %w", err)
+	}
+	var found bool
+	err := tx.QueryRow(ctx, `SELECT true FROM organization.locations WHERE id = $1::uuid FOR SHARE`, id).Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock location: %w", err)
+	}
+	paths, err := locationPaths(ctx, tx, []string{id})
+	if err != nil {
+		return nil, err
+	}
+	return paths[id], nil
+}
+
+// pathQuerier is a pool or a transaction.
+type pathQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+func locationPaths(ctx context.Context, q pathQuerier, ids []string) (map[string][]application.LocationPathNode, error) {
+	rows, err := q.Query(ctx, `
 		WITH RECURSIVE up(start_id, id, parent_id, name, active, depth) AS (
 			SELECT l.id, l.id, l.parent_location_id, l.name, l.active, 0
 			FROM organization.locations l WHERE l.id = ANY($1::text[]::uuid[])

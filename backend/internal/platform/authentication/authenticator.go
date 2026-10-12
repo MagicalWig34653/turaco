@@ -43,7 +43,7 @@ type PermissionLoader interface {
 }
 
 // AccessLoader is the richer PermissionLoader: it also returns the Location-scoped holdings (ADR-0040). A
-// PermissionLoader that implements it fills Principal.Scopes; otherwise the Principal has no scoped holdings.
+// PermissionLoader that implements it fills the Principal's scoped holdings (WithScopes); otherwise the Principal has no scoped holdings.
 type AccessLoader interface {
 	Access(ctx context.Context, userID string) (authorization.Access, error)
 }
@@ -137,8 +137,8 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	} else if access.Permissions, err = a.permissions.Permissions(r.Context(), s.UserID); err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
 	}
-	return s, authorization.Principal{UserID: s.UserID, Permissions: access.Permissions, Scopes: access.Scopes, SessionID: s.ID, External: state.External,
-		EntraSession: s.AuthMethod == methodEntra, EntraAssuredAt: s.AssuranceAt, EntraStepUpMaxAge: a.stepUpMaxAge}, true, nil
+	return s, authorization.Principal{UserID: s.UserID, Permissions: access.Permissions, SessionID: s.ID, External: state.External,
+		EntraSession: s.AuthMethod == methodEntra, EntraAssuredAt: s.AssuranceAt, EntraStepUpMaxAge: a.stepUpMaxAge}.WithScopes(access.Scopes), true, nil
 }
 
 type sessionKey struct{}

@@ -203,7 +203,8 @@ func TestExpireHandlerRunsBothPartsAndReportsFailures(t *testing.T) {
 
 func TestPartyNotificationCategoriesAreComplete(t *testing.T) {
 	want := map[string]bool{NotificationAccessExpiring: true, NotificationAccessExpired: true, NotificationAccessExtended: true,
-		NotificationSponsorAssigned: true, NotificationSponsorRemoved: true, NotificationPartyDeactivated: true}
+		NotificationSponsorAssigned: true, NotificationSponsorRemoved: true, NotificationPartyDeactivated: true,
+		NotificationScopedLocationMoved: true}
 	cats := NotificationCategories()
 	if len(cats) != len(want) {
 		t.Fatalf("categories = %d, want %d", len(cats), len(want))

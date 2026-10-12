@@ -363,6 +363,11 @@ func TestExpiredScopedAssignmentIsReplaced(t *testing.T) {
 	if rows[1].metadata["scopeLocationId"] != l.siteA || rows[1].metadata["reason"] != "replaced_after_expiry" {
 		t.Fatalf("expiry audit = %v", rows[1].metadata)
 	}
+	// L-B security review gate 5: the record names who triggered the replacement and snapshots the Location.
+	trigger, _ := rows[1].metadata["triggeredBy"].(map[string]any)
+	if trigger["actor"] != f.cli.System || rows[1].metadata["scopeLocationName"] != "loc-"+l.siteA {
+		t.Fatalf("expiry audit trigger and snapshot = %v", rows[1].metadata)
+	}
 	// The assignment at Site B is untouched.
 	page, _ := f.svc.ListAssignments(ctx, AssignmentFilter{SubjectID: u})
 	if len(page.Items) != 2 || !slices.ContainsFunc(page.Items, func(a Assignment) bool { return a.ID == other.ID }) {

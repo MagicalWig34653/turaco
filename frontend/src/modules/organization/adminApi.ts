@@ -36,6 +36,8 @@ registerErrorMessages({
   'organization.field_directory_owned': 'people.error.directoryOwned',
   'organization.impact_confirmation_required': 'people.error.impactRequired',
   'organization.invalid_hierarchy': 'people.error.invalidHierarchy',
+  'organization.location_move_requires_administrator':
+    'people.error.locationMoveRequiresAdministrator',
   'organization.target_inactive': 'people.error.targetInactive',
   'organization.invalid_state': 'people.error.invalidState',
   'organization.directory_user': 'people.error.directoryUser',

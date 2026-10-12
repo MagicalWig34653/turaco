@@ -61,6 +61,7 @@
 | `RingPromoted` | 1 | endpoints | A Deployment Ring was promoted (by a person, or the last ring by the engine when the Deployment completes). Payload: deploymentId, ringId, ringRunId, position. |
 | `RunbookExecutionCompleted` | 1 | knowledge | Every task of a runbook execution finished. Payload: executionId, runbookId. |
 | `RunbookExecutionStarted` | 1 | knowledge | A runbook execution started and created its tasks. Payload: executionId, runbookId. |
+| `ScopedLocationMoved` | 1 | organization | A Location move changed what active Location-scoped role assignments cover (ADR-0040); the other platform administrators are notified. Payload: locationId, fromParentId, toParentId, scopedAssignmentsAffected. |
 | `SecurityAdvisoryPublished` | 1 | security | A Security Advisory became applicable. Payload: advisoryId, severity. |
 | `SecurityAdvisoryPublishedFanOut` | 1 | security (internal) | Continuation of security.advisory notification fan-out. Payload: advisoryId, after, sourceEventId. |
 | `ServiceCreated` | 1 | services | A Service was created. Payload: serviceId, criticality, status. |

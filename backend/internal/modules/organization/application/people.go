@@ -49,6 +49,9 @@ var (
 	ErrTargetInactive = errors.New("organization: the referenced record is not active")
 	// ErrNoGuards: an operation that needs the access guards ran on a repository without them (fail closed).
 	ErrNoGuards = errors.New("organization: access guards are not configured")
+	// ErrLocationMoveRequiresAdministrator: the move changes which Locations active Location-scoped role assignments
+	// cover, so only a platform administrator or the CLI may make it (ADR-0040, F16 design L10).
+	ErrLocationMoveRequiresAdministrator = errors.New("organization: this Location move affects Location-scoped role assignments")
 )
 
 // FieldDirectoryOwnedError names the directory-owned fields a request tried to change.
@@ -73,6 +76,20 @@ type AccessGuards interface {
 	WouldLoseLastAdministrator(ctx context.Context, tx pgx.Tx, userID string) (bool, error)
 	HoldsAnyRole(ctx context.Context, tx pgx.Tx, userID string) (bool, error)
 	IsAdministrator(ctx context.Context, tx pgx.Tx, userID string) (bool, error)
+	// ScopedAssignmentsAffectedBy counts the active Location-scoped role assignments at any of the Locations (the
+	// Location move guard, ADR-0040 slice L-C).
+	ScopedAssignmentsAffectedBy(ctx context.Context, tx pgx.Tx, locationIDs []string) (int, error)
+}
+
+// LocationMovePreview is the dry run of a Location move (F16 design L10): how many active Location-scoped role
+// assignments the move affects, whether that makes it an administrator-only move, and whether the caller may make
+// it. The count covers assignments at the moved Location and its descendants and at the ancestors of the old or the
+// new position that are not ancestors of both (an assignment at a common ancestor covers the subtree before and
+// after the move).
+type LocationMovePreview struct {
+	ScopedAssignmentsAffected int
+	AdministratorRequired     bool
+	Allowed                   bool
 }
 
 // SessionRevoker ends the sessions of a User and the open credential tokens; implemented over
@@ -296,6 +313,8 @@ type PeopleStore interface {
 	CreateLocation(ctx context.Context, c Caller, in NewLocationInput) (Location, error)
 	UpdateLocation(ctx context.Context, c Caller, id string, in LocationChange) (Location, error)
 	MoveLocation(ctx context.Context, c Caller, id string, version int, parentID *string) (Location, error)
+	// PreviewLocationMove runs every check of MoveLocation except the administrator requirement and changes nothing.
+	PreviewLocationMove(ctx context.Context, c Caller, id string, version int, parentID *string) (LocationMovePreview, error)
 	SetLocationActive(ctx context.Context, c Caller, id string, version int, active, confirmImpact bool) (Location, error)
 
 	CreateDepartment(ctx context.Context, c Caller, in NewDepartmentInput) (Department, error)
@@ -612,6 +631,18 @@ func (p *People) MoveLocation(ctx context.Context, c Caller, id string, version 
 		return Location{}, err
 	}
 	return p.store.MoveLocation(ctx, c, id, version, parentID)
+}
+
+// PreviewLocationMove is the dry run of MoveLocation: the same validation, the count of affected Location-scoped
+// role assignments and whether the caller may make the move; nothing is changed or audited.
+func (p *People) PreviewLocationMove(ctx context.Context, c Caller, id string, version int, parentID *string) (LocationMovePreview, error) {
+	if err := c.validate(); err != nil {
+		return LocationMovePreview{}, err
+	}
+	if err := requireVersion(version); err != nil {
+		return LocationMovePreview{}, err
+	}
+	return p.store.PreviewLocationMove(ctx, c, id, version, parentID)
 }
 
 func (p *People) SetLocationActive(ctx context.Context, c Caller, id string, version int, active, confirmImpact bool) (Location, error) {

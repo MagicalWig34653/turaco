@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -35,6 +36,10 @@ type fakeDirectory struct {
 	subtreeErr   error
 	// inactiveLocations marks deactivated Locations.
 	inactiveLocations map[string]bool
+	// locked records the Locations LockLocationPath was called for.
+	locked []string
+	// calls records the order of LockLocationPath ("lock") and SubtreeIDs ("subtree") calls.
+	calls []string
 }
 
 // LocationPaths walks the in-memory tree upwards like organization/public does; a Location's name is its id.
@@ -53,10 +58,19 @@ func (f *fakeDirectory) LocationPaths(_ context.Context, ids []string) (map[stri
 	return out, nil
 }
 
+// LockLocationPath records the lock and returns the path like LocationPaths (the in-memory tree has no rows to lock).
+func (f *fakeDirectory) LockLocationPath(ctx context.Context, _ pgx.Tx, id string) ([]LocationRef, error) {
+	f.locked = append(f.locked, id)
+	f.calls = append(f.calls, "lock")
+	paths, err := f.LocationPaths(ctx, []string{id})
+	return paths[id], err
+}
+
 // SubtreeIDs walks the in-memory tree like organization/public does: each known root and its descendants, depth
 // bounded so a corrupt (cyclic) parent map terminates.
 func (f *fakeDirectory) SubtreeIDs(_ context.Context, roots []string) ([]string, error) {
 	f.subtreeCalls++
+	f.calls = append(f.calls, "subtree")
 	if f.subtreeErr != nil {
 		return nil, f.subtreeErr
 	}

@@ -121,11 +121,14 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 				return invalid("a role with high-risk permissions is assigned for at most %d days", MaxHighRiskAssignmentDays)
 			}
 		}
+		var scopePath []LocationRef
 		if scopeLoc != "" {
 			if role.BuiltIn {
 				return ErrAdminScopeGlobal
 			}
-			if err := s.requireActiveLocation(ctx, scopeLoc); err != nil {
+			// Freeze the tree before the guards expand any scoped holding; the Location itself is validated after the
+			// guards (gate 4), from this locked path.
+			if scopePath, err = s.lockScope(ctx, tx, scopeLoc); err != nil {
 				return err
 			}
 		}
@@ -153,6 +156,14 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 		}
 		if err := a.checkGrant(role.Permissions, scopeLoc); err != nil {
 			return err
+		}
+		if scopeLoc != "" {
+			if err := requireActivePath(scopePath, scopeLoc); err != nil {
+				return err
+			}
+			if err := s.requireScopedRootsBelowCap(ctx, tx, in.SubjectType, in.SubjectID, scopeLoc); err != nil {
+				return err
+			}
 		}
 		var target holdings
 		if in.SubjectType == SubjectUser {
@@ -212,9 +223,11 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 			RETURNING id::text`, in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(audit.SystemActor("access-expiry"))), scopeArg).Scan(&expiredID)
 		switch {
 		case err == nil:
-			meta := map[string]any{"reason": "replaced_after_expiry", "scope": scope}
+			// The job's system actor revokes; the metadata names who triggered the replacement (gate 5).
+			meta := map[string]any{"reason": "replaced_after_expiry", "scope": scope, "triggeredBy": actorRef(actor)}
 			if scopeLoc != "" {
 				meta["scopeLocationId"] = scopeLoc
+				scopeSnapshot(scopePath, meta)
 			}
 			if err := s.record(ctx, tx, audit.SystemActor("access-expiry"), correlationID, "authorization.role.assignment_expired",
 				"role_assignment", expiredID, nil, nil, meta); err != nil {
@@ -240,13 +253,54 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 		if out, err = scanAssignment(tx.QueryRow(ctx, assignmentSelect+` WHERE a.id = $1`, id)); err != nil {
 			return fmt.Errorf("reload assignment: %w", err)
 		}
-		return s.record(ctx, tx, actor, correlationID, "authorization.role.assigned", "role_assignment", id, nil, assignmentState(out), nil)
+		return s.record(ctx, tx, actor, correlationID, "authorization.role.assigned", "role_assignment", id, nil,
+			scopeSnapshot(scopePath, assignmentState(out)), nil)
 	})
 	if err != nil {
 		return Assignment{}, wrap("assign role", err)
 	}
 	s.name(ctx, &out)
 	return out, nil
+}
+
+// requireScopedRootsBelowCap refuses a scoped assignment that would give the subject more than MaxScopedRoots
+// distinct scope Locations (409 access.scoped_roots_exceeded, F16 L-B security review gate 2). The evaluator cuts
+// roots beyond the cap in id order, so without this refusal new assignments could silently be the ones cut. For a
+// User the count is over every active scoped assignment that reaches the User (directly and through Directory
+// Groups), which bounds the roots of each permission and role; for a Directory Group it is over the group's own
+// assignments. Re-assigning at a Location the subject already has adds nothing.
+func (s *Service) requireScopedRootsBelowCap(ctx context.Context, tx pgx.Tx, subjectType, subjectID, locationID string) error {
+	roots := map[string]struct{}{strings.ToLower(locationID): {}}
+	if subjectType == SubjectUser {
+		grants, _, _, err := s.eval.load(ctx, tx, subjectID)
+		if err != nil {
+			return fmt.Errorf("count scoped roots: %w", err)
+		}
+		for _, g := range grants {
+			if g.scope == ScopeLocation && g.scopeLocationID != "" {
+				roots[strings.ToLower(g.scopeLocationID)] = struct{}{}
+			}
+		}
+	} else {
+		rows, err := tx.Query(ctx, `
+			SELECT DISTINCT scope_location_id::text FROM platform.role_assignments
+			WHERE subject_type = $1 AND subject_id = $2::uuid AND scope = 'location' AND revoked_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > now())`, subjectType, subjectID)
+		if err != nil {
+			return fmt.Errorf("count scoped roots: %w", err)
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return fmt.Errorf("count scoped roots: %w", err)
+		}
+		for _, id := range ids {
+			roots[strings.ToLower(id)] = struct{}{}
+		}
+	}
+	if len(roots) > MaxScopedRoots {
+		return ErrScopedRootsExceeded
+	}
+	return nil
 }
 
 // RevokeAssignment revokes an assignment. Revoking an already revoked
@@ -289,6 +343,14 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor audit.Actor, corre
 			outcome.AlreadyRevoked = true
 			return nil
 		}
+		// A scoped revocation freezes the tree before the removal ceiling expands the actor's scoped holdings, like
+		// AssignRole; the path also names the Location in the audit record.
+		var scopePath []LocationRef
+		if before.ScopeLocationID != "" {
+			if scopePath, err = s.lockScope(ctx, tx, before.ScopeLocationID); err != nil {
+				return err
+			}
+		}
 		a, err := s.actorOf(ctx, tx, actor)
 		if err != nil {
 			return err
@@ -328,7 +390,7 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor audit.Actor, corre
 			return fmt.Errorf("reload assignment: %w", err)
 		}
 		return s.record(ctx, tx, actor, correlationID, "authorization.role.assignment_revoked", "role_assignment", id,
-			assignmentState(before), assignmentState(out), extra)
+			scopeSnapshot(scopePath, assignmentState(before)), scopeSnapshot(scopePath, assignmentState(out)), extra)
 	})
 	if err != nil {
 		return Assignment{}, RevokeOutcome{}, wrap("revoke assignment", err)

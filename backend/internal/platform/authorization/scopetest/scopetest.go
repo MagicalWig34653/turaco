@@ -119,16 +119,18 @@ func scoped(entries map[string][]string) map[string]authorization.LocationScope 
 // view and manage at Site A; ScopedViewA only view there; Emptied holds a scoped entry with no Location.
 func NewPrincipals(cfg Config, atA, atB []string, users func(name string) string) Principals {
 	return Principals{
-		Global:      authorization.Principal{UserID: users("Global holder"), Permissions: map[string]struct{}{cfg.View: {}, cfg.Manage: {}}},
-		ScopedA:     authorization.Principal{UserID: users("Site A lead"), Permissions: map[string]struct{}{}, Scopes: scoped(map[string][]string{cfg.View: atA, cfg.Manage: atA})},
-		ScopedViewA: authorization.Principal{UserID: users("Site A viewer"), Permissions: map[string]struct{}{}, Scopes: scoped(map[string][]string{cfg.View: atA})},
-		Emptied: authorization.Principal{UserID: users("Emptied scope"), Permissions: map[string]struct{}{},
-			Scopes: map[string]authorization.LocationScope{cfg.View: {}, cfg.Manage: {}}},
+		Global: authorization.Principal{UserID: users("Global holder"), Permissions: map[string]struct{}{cfg.View: {}, cfg.Manage: {}}},
+		ScopedA: authorization.Principal{UserID: users("Site A lead"), Permissions: map[string]struct{}{}}.
+			WithScopes(scoped(map[string][]string{cfg.View: atA, cfg.Manage: atA})),
+		ScopedViewA: authorization.Principal{UserID: users("Site A viewer"), Permissions: map[string]struct{}{}}.
+			WithScopes(scoped(map[string][]string{cfg.View: atA})),
+		Emptied: authorization.Principal{UserID: users("Emptied scope"), Permissions: map[string]struct{}{}}.
+			WithScopes(map[string]authorization.LocationScope{cfg.View: {}, cfg.Manage: {}}),
 		None: authorization.Principal{UserID: users("No rights"), Permissions: map[string]struct{}{}},
-		GlobalViewScopedManageA: authorization.Principal{UserID: users("Global viewer, Site A manager"), Permissions: map[string]struct{}{cfg.View: {}},
-			Scopes: scoped(map[string][]string{cfg.Manage: atA})},
-		ViewAManageB: authorization.Principal{UserID: users("Site A viewer, Site B manager"), Permissions: map[string]struct{}{},
-			Scopes: scoped(map[string][]string{cfg.View: atA, cfg.Manage: atB})},
+		GlobalViewScopedManageA: authorization.Principal{UserID: users("Global viewer, Site A manager"), Permissions: map[string]struct{}{cfg.View: {}}}.
+			WithScopes(scoped(map[string][]string{cfg.Manage: atA})),
+		ViewAManageB: authorization.Principal{UserID: users("Site A viewer, Site B manager"), Permissions: map[string]struct{}{}}.
+			WithScopes(scoped(map[string][]string{cfg.View: atA, cfg.Manage: atB})),
 	}
 }
 
@@ -313,8 +315,8 @@ func check(r reporter, t *testing.T, cfg Config, s Subject) {
 	if !s.Get(t, after.ScopedA, atB1) || !slices.Contains(s.List(t, after.ScopedA), atB1) {
 		r.Errorf("scopetest: Site A caller does not see %s after its Location moved below Site A", atB1)
 	}
-	siteB := authorization.Principal{UserID: s.User(t, "Site B viewer"), Permissions: map[string]struct{}{},
-		Scopes: scoped(map[string][]string{cfg.View: movedB, cfg.Manage: movedB})}
+	siteB := authorization.Principal{UserID: s.User(t, "Site B viewer"), Permissions: map[string]struct{}{}}.
+		WithScopes(scoped(map[string][]string{cfg.View: movedB, cfg.Manage: movedB}))
 	if s.Get(t, siteB, atB1) || slices.Contains(s.List(t, siteB), atB1) || s.Mutate(t, siteB, atB1) {
 		r.Errorf("scopetest: Site B caller still reaches %s after its Location moved away", atB1)
 	}

@@ -113,10 +113,8 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 // scopedPermissions lists the non-empty scoped holdings of the principal.
 func scopedPermissions(p authorization.Principal) map[string][]string {
 	out := map[string][]string{}
-	for name := range p.Scopes {
-		if s := p.ScopeOf(name); !s.Global && len(s.Locations) > 0 {
-			out[name] = s.Locations
-		}
+	for _, name := range p.ScopedPermissions() {
+		out[name] = p.ScopeOf(name).Locations
 	}
 	return out
 }

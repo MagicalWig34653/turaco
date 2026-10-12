@@ -1906,6 +1906,10 @@ export const de: Record<MessageKey, string> = {
   'notifications.organization.party_deactivated': 'Der externe Partner {title} wurde deaktiviert.',
   'notifications.category.organization.party_deactivated':
     'Ein externer Partner, für den ich bürge, wurde deaktiviert',
+  'notifications.organization.scoped_location_moved':
+    'Der Standort {title} wurde verschoben; {count} standortbezogene Rollenzuweisungen decken jetzt andere Standorte ab.',
+  'notifications.category.organization.scoped_location_moved':
+    'Eine Standortverschiebung hat standortbezogene Rechte verändert',
   'notifications.asset.assigned': 'Ihnen wurde Ausstattung zugewiesen: {title}',
   'notifications.category.asset.assigned': 'Mir wird Ausstattung zugewiesen',
   'assets.intro':
@@ -5455,6 +5459,8 @@ export const de: Record<MessageKey, string> = {
     'Andere Einträge verweisen noch auf diesen Eintrag. Bestätigen Sie die Folgen, um fortzufahren.',
   'people.error.invalidHierarchy':
     'Diese Verschiebung ist nicht möglich: Sie würde eine Schleife erzeugen oder die maximale Tiefe überschreiten.',
+  'people.error.locationMoveRequiresAdministrator':
+    'Diese Verschiebung ändert, welche Standorte standortbezogene Rollenzuweisungen abdecken. Nur eine Plattformadministration kann sie durchführen.',
   'people.error.targetInactive': 'Das gewählte Ziel ist archiviert oder inaktiv.',
   'people.error.invalidState': 'Das ist im aktuellen Zustand des Eintrags nicht möglich.',
   'people.error.directoryUser':

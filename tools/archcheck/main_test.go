@@ -9,16 +9,17 @@ import (
 func TestPrincipalScopesRestricted(t *testing.T) {
 	src := `package caller
 import "example/backend/internal/platform/authorization"
-func run(p authorization.Principal) bool {
-	_ = authorization.Principal{Scopes: nil}
-	return len(p.Scopes) > 0
+func run(p authorization.Principal, a authorization.Access) bool {
+	_ = authorization.Access{Scopes: nil}
+	_ = p.WithScopes(a.Scopes)
+	return len(a.Scopes) > 0
 }`
 	set := token.NewFileSet()
 	file, err := parser.ParseFile(set, "caller.go", src, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := scopesViolations("backend/internal/modules/assets/application/caller.go", file, set); len(got) != 2 {
+	if got := scopesViolations("backend/internal/modules/assets/application/caller.go", file, set); len(got) != 4 {
 		t.Fatalf("module: %v", got)
 	}
 	if got := scopesViolations("backend/internal/platform/authentication/caller.go", file, set); len(got) != 0 {

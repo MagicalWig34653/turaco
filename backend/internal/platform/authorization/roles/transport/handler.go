@@ -106,6 +106,8 @@ func (h *httpHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "access.external_scope_unsupported", "External accounts cannot receive a Location-scoped role assignment.")
 	case errors.Is(err, roles.ErrScopeLocationInvalid):
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "access.scope_location_invalid", "The scope Location does not exist or is inactive.")
+	case errors.Is(err, roles.ErrScopedRootsExceeded):
+		httpx.WriteError(w, http.StatusConflict, "access.scoped_roots_exceeded", "This subject already has the maximum number of Location-scoped assignments.")
 	case errors.Is(err, roles.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "authorization.version_conflict", "The role changed since it was loaded.")
 	case errors.Is(err, roles.ErrUnknownTemplate):

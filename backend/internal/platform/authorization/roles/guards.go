@@ -299,6 +299,13 @@ func dominates(actor, target holdings) bool {
 			return false
 		}
 	}
+	// Global-only permissions the target reaches through scoped assignments are inert today, but checkGrant demands
+	// them globally from whoever hands them out; taking over such a target needs the same (gate 3).
+	for p := range target.inert {
+		if !actor.covers(p, "") {
+			return false
+		}
+	}
 	for p, locs := range target.scoped {
 		if actor.covers(p, "") {
 			continue

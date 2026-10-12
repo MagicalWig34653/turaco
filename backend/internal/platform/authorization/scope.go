@@ -12,7 +12,8 @@ import (
 )
 
 // Location scope (ADR-0040, F16 design L4). Principal.Permissions and Has keep meaning "held globally"; a permission
-// held only through Location-scoped role assignments appears in Principal.Scopes and is read only through ScopeOf.
+// held only through Location-scoped role assignments is in the Principal's unexported scoped map, set only through
+// WithScopes and read only through ScopeOf.
 // Code that has not adopted scope therefore never sees a scoped right (fail closed by construction).
 
 // LocationScope is where a caller holds one permission: everywhere (Global) or at the listed Locations. Locations is
@@ -67,12 +68,40 @@ func (p Principal) ScopeOf(permission string) LocationScope {
 	if p.Has(permission) {
 		return LocationScope{Global: true}
 	}
-	s, ok := p.Scopes[permission]
+	s, ok := p.scopes[permission]
 	if !ok || s.Global {
-		// A Global entry in Scopes is not a global holding; only Permissions is.
+		// A Global entry in the scoped map is not a global holding; only Permissions is.
 		return LocationScope{}
 	}
 	return LocationScope{Locations: slices.Clone(s.Locations)}
+}
+
+// WithScopes returns a copy of the principal with the scoped map permission -> expanded Location set (a copy of
+// scopes is stored). Only the code that evaluates access (the evaluator-backed session authenticator) and the
+// scopetest harness build Principals with scoped holdings; archcheck refuses calls from anywhere else.
+func (p Principal) WithScopes(scopes map[string]LocationScope) Principal {
+	if len(scopes) == 0 {
+		p.scopes = nil
+		return p
+	}
+	p.scopes = make(map[string]LocationScope, len(scopes))
+	for name, s := range scopes {
+		p.scopes[name] = LocationScope{Global: s.Global, Locations: slices.Clone(s.Locations)}
+	}
+	return p
+}
+
+// ScopedPermissions returns the sorted names of the permissions the principal holds only at Locations (a non-empty
+// ScopeOf that is not global). Code that lists scoped holdings (the session response) reads each with ScopeOf.
+func (p Principal) ScopedPermissions() []string {
+	out := []string{}
+	for name := range p.scopes {
+		if s := p.ScopeOf(name); !s.Global && len(s.Locations) > 0 {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // HasAnywhere reports whether the principal holds the permission globally or at least at one Location. It is for

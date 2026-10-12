@@ -20,6 +20,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/public"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
@@ -425,6 +426,44 @@ func TestLocationAndDepartmentEndpoints(t *testing.T) {
 	}
 	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", `{"expectedVersion":1}`); code != 400 {
 		t.Errorf("move without parentId key: %d %v", code, body)
+	}
+	// The dry run of a move answers the guard's preview and changes nothing (ADR-0040 slice L-C).
+	_, site2, _ := h.do("POST", "/api/v1/locations", fmt.Sprintf(`{"kind":"site","name":"%s Site2"}`, h.pfx))
+	dry := fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s","dryRun":true}`, site2["id"])
+	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", dry); code != 200 || body["dryRun"] != true ||
+		body["scopedAssignmentsAffected"] != float64(0) || body["administratorRequired"] != false || body["allowed"] != true {
+		t.Errorf("dry run: %d %v", code, body)
+	}
+	if code, body, _ := h.do("GET", "/api/v1/locations/"+area["id"].(string), ``); code != 200 || body["parentId"] != site["id"] || body["version"] != float64(1) {
+		t.Errorf("the dry run moved the area: %d %v", code, body)
+	}
+	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s","dryRun":"yes"}`, site2["id"])); code != 400 {
+		t.Errorf("dryRun must be a boolean: %d %v", code, body)
+	}
+	if code, body, _ := h.do("POST", "/api/v1/locations/"+site["id"].(string)+"/move", fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s","dryRun":true}`, area["id"])); code != 409 || errCodeOf(body) != "organization.invalid_hierarchy" {
+		t.Errorf("the dry run validates like the move: %d %v", code, body)
+	}
+	// With a Location-scoped assignment at the target Site the move needs an administrator.
+	rolesSvc := roles.NewService(h.pool, public.NewAuthorizationSubjects(repository.New(h.pool)))
+	cliActor := audit.CLIActor("test")
+	role, err := rolesSvc.CreateRole(context.Background(), cliActor, h.pfx+"-corr", roles.CreateRoleInput{Key: h.pfx + "-scoped", Name: h.pfx + " Scoped", Permissions: []string{"tickets.view"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = h.pool.Exec(context.Background(), `DELETE FROM platform.role_assignments WHERE role_id = $1`, role.ID)
+		_, _ = h.pool.Exec(context.Background(), `DELETE FROM platform.roles WHERE id = $1`, role.ID)
+	})
+	if _, err := rolesSvc.AssignRole(context.Background(), cliActor, h.pfx+"-corr", roles.AssignInput{RoleID: role.ID, SubjectType: roles.SubjectUser,
+		SubjectID: setup, ScopeLocationID: site2["id"].(string)}); err != nil {
+		t.Fatal(err)
+	}
+	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", dry); code != 200 ||
+		body["scopedAssignmentsAffected"] != float64(1) || body["administratorRequired"] != true || body["allowed"] != false {
+		t.Errorf("dry run with a scoped assignment: %d %v", code, body)
+	}
+	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s"}`, site2["id"])); code != 403 || errCodeOf(body) != "organization.location_move_requires_administrator" {
+		t.Errorf("guarded move: %d %v", code, body)
 	}
 	// Deactivating a site with an active area needs confirmImpact.
 	code, body, _ := h.do("POST", "/api/v1/locations/"+site["id"].(string)+"/deactivate", `{"expectedVersion":1}`)

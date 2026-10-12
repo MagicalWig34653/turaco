@@ -91,7 +91,7 @@ func finishPeople[T any](v T, err error, what string) (T, error) {
 		errors.Is(err, application.ErrTargetInactive), errors.Is(err, application.ErrExternalNeedsPermission), errors.Is(err, application.ErrNoGuards),
 		errors.Is(err, application.ErrUserNotActive), errors.Is(err, application.ErrTeamInactive),
 		errors.Is(err, application.ErrMailNotConfigured), errors.Is(err, application.ErrBaseURLNotConfigured), errors.Is(err, application.ErrMailFailed),
-		errors.Is(err, application.ErrNoEmail),
+		errors.Is(err, application.ErrNoEmail), errors.Is(err, application.ErrLocationMoveRequiresAdministrator),
 		errors.Is(err, application.ErrAdminRequired), errors.Is(err, application.ErrDirectoryLinkRoles), errors.Is(err, application.ErrDirectoryIdentityInUse),
 		errors.Is(err, application.ErrImportStale), errors.Is(err, application.ErrForbidden),
 		errors.Is(err, application.ErrEntraNotConfigured), errors.Is(err, application.ErrEntraTenantNotAllowed),
