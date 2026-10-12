@@ -230,3 +230,16 @@ L-A and L-B need an Opus security review before merge; L-D and L-E need the adve
 12. **Location moves:** require a platform administrator when scoped assignments are affected (default), or block such moves entirely and require revoke and re-assign?
 13. **Separation of duties per scope:** warnings computed over the union (default) or only where scopes overlap?
 14. **Inactive Locations:** scoped assignments on a deactivated Location stay effective and are flagged (default), or are revoked by an audited job?
+
+## L-A security review outcome (2026-10-12)
+
+The independent review found nothing exploitable today (no permission is scopable and the only assignment INSERT writes `global`). The following latent findings **must be fixed before any permission becomes scopable or any scoped assignment can be created**; they are binding acceptance criteria for L-B:
+
+1. **Dominance guard (R1) target side.** `roles/guards.go` compares the target's global holdings only; a target holding rights only at a Site would pass `RequireDominance`. The target's holdings must include scoped entries (permission plus roots), or the guard rejects targets with any scoped grant. A test must fail while the adoption table is non-empty and this is missing.
+2. **Separation of duties.** `roles/assignments.go` builds the before/after sets from global permissions only; use the union of global and scoped holdings.
+3. **`MembersOf` and the health roles count** list scoped holders without scope; filter to `scope='global'` or return the scope.
+4. **Expired scoped replacement.** The expired-replacement UPDATE handles global assignments only; an expired scoped assignment would block re-creation.
+5. **Scoped-root cap.** More than 1000 scoped roots makes `Access` fail the whole session; cap per permission and log instead.
+6. **Depth bound.** Log when the subtree depth bound is reached (the tree is at most 4 levels deep, so valid data is never cut).
+7. **`scopetest` gaps.** Add a mixed-scope caller (global View plus scoped Manage; View at A plus Manage at B), a create-into-Site-B and create-without-Location case, a fixture with an inactive and a moved Location, count checks on extra surfaces, and a check that every `scopeAdoption` entry names a real `scopetest.Run` test. Consider unexporting `Principal.Scopes` or adding an archcheck rule so modules must use `ScopeOf`.
+
