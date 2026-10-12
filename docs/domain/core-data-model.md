@@ -4,7 +4,11 @@
 
 ## SLA Policies and Targets (F17 S-B)
 
-`servicedesk.sla_policies` stores an immutable key, name, description, optional Business Calendar, waiting reasons that pause clocks (default `customer`), warning percentage (default 80), escalation-task flag (default false), active or archived status, version and timestamps. A calendar is required whenever any Target uses business time. `servicedesk.sla_targets` has one row per Policy, Priority (`low|normal|high|urgent`) and clock kind (`first_response|resolution`), with a positive target of at most 129,600 minutes and a `business|continuous` basis. Missing rows mean no target. `servicedesk.queues.sla_policy_id` is nullable, so Queues begin unassigned. Migration `000098` adds these records without backfill. Policy and target changes, plus Queue assignment, are versioned and audited. No SLA clocks or Ticket changes exist yet.
+`servicedesk.sla_policies` stores an immutable key, name, description, optional Business Calendar, waiting reasons that pause clocks (default `customer`), warning percentage (default 80), escalation-task flag (default false), active or archived status, version and timestamps. A calendar is required whenever any Target uses business time. `servicedesk.sla_targets` has one row per Policy, Priority (`low|normal|high|urgent`) and clock kind (`first_response|resolution`), with a positive target of at most 129,600 minutes and a `business|continuous` basis. Missing rows mean no target. `servicedesk.queues.sla_policy_id` is nullable, so Queues begin unassigned. Migration `000098` adds these records without backfill. Policy and target changes, plus Queue assignment, are versioned and audited.
+
+## SLA Clocks (F17 S-C)
+
+Migration `000099` adds one `servicedesk.ticket_sla_clocks` row per Ticket and target kind, immutable `ticket_sla_clock_transitions`, and nullable due-date projections plus `sla_tracked` on `servicedesk.tickets`. Clocks start only when a Ticket is created while SLA is enabled and its Queue has the matching target; there is no backfill. Ticket operations maintain existing clocks even while the SLA switch is off. The projection is updated with the clocks without changing Ticket version or `updated_at`. Queue-scoped partial indexes support due-date reads; the warning and breach sweep, notification paths and list fields remain S-D/S-E work.
 
 ## Business Calendars (F17 S-A)
 

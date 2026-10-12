@@ -58,6 +58,24 @@ export function describeHistory(
   const to = name(entry.toUserId);
   const from = name(entry.fromUserId);
   switch (entry.kind) {
+    case 'sla': {
+      const operations = [
+        'start',
+        'pause',
+        'resume',
+        'complete',
+        'reopen_resume',
+        'cancel',
+        'retarget',
+        'exempt',
+      ];
+      return {
+        key: operations.includes(entry.slaOperation ?? '')
+          ? (`ticketHistory.sla.${entry.slaOperation}` as MessageKey)
+          : 'ticketHistory.other',
+        params: {},
+      };
+    }
     case 'assigned':
       return { key: 'ticketHistory.assigned', params: { to } };
     case 'unassigned':

@@ -49,6 +49,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/comments", h.comment)
 	route("POST /api/v1/tickets/{id}/assign", h.assign)
 	route("GET /api/v1/tickets/{id}/history", h.history)
+	route("POST /api/v1/sla/tickets/{id}/exempt", h.exemptSLA)
 	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
 	route("POST /api/v1/tickets/{id}/location", h.location)
@@ -135,7 +136,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
 	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage),
-		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), AssetsView: p.Has("assets.view") || p.Has("assets.manage"), External: p.External}
+		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), AssetsView: p.Has("assets.view") || p.Has("assets.manage"), External: p.External, SLAManage: p.Has("sla.manage")}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -231,10 +232,15 @@ func toComment(c application.Comment) commentDTO {
 
 type detailDTO struct {
 	ticketDTO
+	SLA               *slaDTO           `json:"sla,omitempty"`
 	Comments          []commentDTO      `json:"comments"`
 	AllowedOperations []string          `json:"allowedOperations"`
 	Abilities         abilitiesDTO      `json:"abilities"`
 	Names             map[string]string `json:"names"`
+}
+
+type slaDTO struct {
+	Clocks []application.SLAClock `json:"clocks"`
 }
 
 type abilitiesDTO struct {
@@ -248,6 +254,7 @@ type abilitiesDTO struct {
 	SetLocation      bool `json:"setLocation"`
 	SetDevice        bool `json:"setDevice"`
 	ScheduleCallback bool `json:"scheduleCallback"`
+	ExemptSLA        bool `json:"exemptSla"`
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -347,10 +354,36 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	}
 	out := detailDTO{ticketDTO: toTicket(d.Ticket), Comments: make([]commentDTO, 0, len(d.Comments)), AllowedOperations: d.Allowed, Names: d.Names, Abilities: abilitiesDTO{Comment: d.Abilities.Comment, InternalComment: d.Abilities.InternalComment,
 		Assign: d.Abilities.Assign, SetPriority: d.Abilities.SetPriority, Transition: d.Abilities.Transition, Move: d.Abilities.MoveQueue, MarkDuplicate: d.Abilities.MarkDuplicate, SetLocation: d.Abilities.SetLocation, SetDevice: d.Abilities.SetDevice, ScheduleCallback: d.Abilities.ScheduleCallback}}
+	if d.SLA != nil {
+		out.SLA = &slaDTO{Clocks: d.SLA}
+	}
+	if principal(r).SLAManage {
+		for _, clock := range d.SLA {
+			if clock.Status == "running" || clock.Status == "paused" {
+				out.Abilities.ExemptSLA = true
+				break
+			}
+		}
+	}
 	for _, c := range d.Comments {
 		out.Comments = append(out.Comments, toComment(c))
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *handler) exemptSLA(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ExpectedVersion *int   `json:"expectedVersion"`
+		Reason          string `json:"reason"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if err := h.svc.ExemptSLA(r.Context(), caller(w, r), principal(r), r.PathValue("id"), in.ExpectedVersion, in.Reason); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"exempted": true})
 }
 
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +504,8 @@ type historyDTO struct {
 	TaskID         string `json:"taskId,omitempty"`
 	DueAt          string `json:"dueAt,omitempty"`
 	AssigneeID     string `json:"assigneeId,omitempty"`
+	SLAKind        string `json:"slaKind,omitempty"`
+	SLAOperation   string `json:"slaOperation,omitempty"`
 }
 
 // history lists the change history of a Ticket (assignments, routing, status, priority, Queue moves) for people
@@ -484,7 +519,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	out := make([]historyDTO, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, historyDTO{ID: e.ID, At: ts(e.At), Kind: e.Kind, ActorID: e.ActorID, Via: e.Via, Reason: e.Reason, ExpectedAt: e.ExpectedAt, FromUserID: e.FromUserID, ToUserID: e.ToUserID,
-			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, FromDevice: e.FromDevice, ToDevice: e.ToDevice, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID})
+			FromTeamID: e.FromTeamID, ToTeamID: e.ToTeamID, FromStatus: e.FromStatus, ToStatus: e.ToStatus, FromPrio: e.FromPrio, ToPrio: e.ToPrio, DuplicateOfID: e.DuplicateOfID, FromLocationID: e.FromLocationID, ToLocationID: e.ToLocationID, FromDevice: e.FromDevice, ToDevice: e.ToDevice, TaskID: e.TaskID, DueAt: e.DueAt, AssigneeID: e.AssigneeID, SLAKind: e.SLAKind, SLAOperation: e.SLAOperation})
 	}
 	httpx.JSON(w, http.StatusOK, struct {
 		Items []historyDTO      `json:"items"`

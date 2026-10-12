@@ -38,7 +38,8 @@ type Service struct {
 	participants ParticipantStore
 	externals    ExternalDirectory
 	// callbacks creates the Tasks of scheduled callbacks (WithCallbackTasks); nil without it.
-	callbacks CallbackTasks
+	callbacks  CallbackTasks
+	slaEnabled func(context.Context) (bool, error)
 }
 
 // NewService builds the service. A store that also implements QueueStore enables Queues; without it every Ticket
@@ -330,6 +331,10 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 			t.AffectedLocationID = &loc
 		}
 	}
+	startSLA, err := s.slaOn(ctx)
+	if err != nil {
+		return Ticket{}, err
+	}
 	var out Ticket
 	// The number comes from the Queue counter inside the insert; a unique violation (a safety net that the counter
 	// lock should make unreachable) is retried once.
@@ -342,6 +347,9 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 			meta := map[string]any{"affectedUserId": out.AffectedUserID, "queueId": out.QueueID, "onBehalf": out.AffectedUserID != out.ReporterID, "patientImpact": out.PatientImpact}
 			if out.AssetID != nil {
 				meta["assetId"] = *out.AssetID
+			}
+			if err := s.startSLA(ctx, tx, out, c, startSLA, meta); err != nil {
+				return err
 			}
 			if err := record(ctx, tx, c, "servicedesk.ticket.created", nil, &out, meta); err != nil {
 				return err
@@ -484,6 +492,9 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 		}
 		if op == OpWait && next.WaitingUntil != nil {
 			meta["expectedAt"] = next.WaitingUntil
+		}
+		if err := s.applySLA(ctx, tx, out, op, text, c, now, meta); err != nil {
+			return err
 		}
 		if err := record(ctx, tx, c, "servicedesk.ticket."+op, &cur, &out, meta); err != nil {
 			return err
@@ -698,7 +709,11 @@ func (s *Service) SetPriority(ctx context.Context, c Caller, p Principal, id str
 		if err != nil {
 			return err
 		}
-		return record(ctx, tx, c, "servicedesk.ticket.priority_changed", &cur, &out, nil)
+		meta := map[string]any{}
+		if err := s.applySLA(ctx, tx, out, "set_priority", "", c, time.Now().UTC(), meta); err != nil {
+			return err
+		}
+		return record(ctx, tx, c, "servicedesk.ticket.priority_changed", &cur, &out, meta)
 	})
 	if err != nil {
 		return out, err
@@ -869,7 +884,7 @@ func (s *Service) addComment(ctx context.Context, c Caller, p Principal, id, bod
 		if err != nil {
 			return err
 		}
-		if owner && !ep.Manage && cur.Status == StatusWaiting && cur.WaitingReason != nil && *cur.WaitingReason == "customer" {
+		if owner && !internal && cur.Status == StatusWaiting && cur.WaitingReason != nil && *cur.WaitingReason == "customer" {
 			next := cur
 			next.Status, next.WaitingReason, next.WaitingUntil = StatusInProgress, nil, nil
 			after, err := s.store.UpdateTx(ctx, tx, next)
@@ -878,6 +893,24 @@ func (s *Service) addComment(ctx context.Context, c Caller, p Principal, id, bod
 			}
 			if err := record(ctx, tx, c, "servicedesk.ticket.resume", &cur, &after, map[string]any{"cause": "customer_replied"}); err != nil {
 				return err
+			}
+		}
+		if !internal {
+			meta := map[string]any{}
+			if owner && cur.Status == StatusWaiting && cur.WaitingReason != nil && *cur.WaitingReason == "customer" {
+				if err := s.applySLA(ctx, tx, cur, "resume", "", c, out.CreatedAt, meta); err != nil {
+					return err
+				}
+			}
+			if ep.Manage && !owner {
+				if err := s.applySLA(ctx, tx, cur, "first_response", "", c, out.CreatedAt, meta); err != nil {
+					return err
+				}
+			}
+			if len(meta) > 0 {
+				if err := record(ctx, tx, c, "servicedesk.ticket.sla_changed", &cur, &cur, meta); err != nil {
+					return err
+				}
 			}
 		}
 		if err := audit.Record(ctx, tx, audit.Change{Action: "servicedesk.ticket.comment_added", TargetType: "ticket", TargetID: cur.ID, Actor: c.Actor,
@@ -1181,6 +1214,9 @@ func (s *Service) MoveToQueue(ctx context.Context, c Caller, p Principal, id str
 		}
 		meta := map[string]any{"fromQueueId": cur.QueueID, "toQueueId": target, "oldReference": cur.Reference, "newReference": out.Reference,
 			"reasonCode": reason, "assigneeCleared": cleared}
+		if err := s.applySLA(ctx, tx, out, "move_queue", "", c, time.Now().UTC(), meta); err != nil {
+			return err
+		}
 		if err := record(ctx, tx, c, "servicedesk.ticket.queue_moved", &cur, &out, meta); err != nil {
 			return err
 		}
@@ -1202,6 +1238,7 @@ var errNoQueueStore = errors.New("servicedesk: store does not support queues")
 // Detail is a ticket with the comments the caller may see.
 type Detail struct {
 	Ticket   Ticket
+	SLA      []SLAClock
 	Comments []Comment
 	Allowed  []string
 	// Abilities is what the caller may do with the Ticket (see AbilitiesOf).
@@ -1231,6 +1268,20 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 		return Detail{}, err
 	}
 	d := Detail{Ticket: t, Comments: comments, Allowed: AllowedOperations(t, ep), Abilities: AbilitiesOf(t, ep, s.queues != nil)}
+	if ep.staff() && !s.isOwner(t, p) {
+		on, err := s.slaOn(ctx)
+		if err != nil {
+			return Detail{}, err
+		}
+		if on {
+			if cs, ok := s.store.(SLAStore); ok {
+				d.SLA, err = cs.SLAClocks(ctx, t.ID)
+				if err != nil {
+					return Detail{}, err
+				}
+			}
+		}
+	}
 	if d.Ticket.Aliases, err = s.aliasesFor(ctx, a, t); err != nil {
 		return Detail{}, err
 	}

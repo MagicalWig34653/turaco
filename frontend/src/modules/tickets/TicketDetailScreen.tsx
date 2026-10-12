@@ -373,6 +373,8 @@ function TicketWorkspace({ id }: { id: string }) {
   const [busyOp, setBusyOp] = useState<string | null>(null);
   const [followBusy, setFollowBusy] = useState(false);
   const [actionError, setActionError] = useState<ApiError | undefined>(undefined);
+  const [slaReason, setSlaReason] = useState('misclassified');
+  const [slaExempting, setSlaExempting] = useState(false);
   const [drafts, setDrafts] = useState({ reply: '', internal: '' });
   const [view, setView] = useState('conversation');
   const [workaroundInserted, setWorkaroundInserted] = useState(false);
@@ -550,6 +552,88 @@ function TicketWorkspace({ id }: { id: string }) {
           </span>
         </span>
       </div>
+      {enabled('sla') && staffReader && !isOwner && ticket.sla ? (
+        <Card title={t('sla.clock.title')}>
+          <h2>{t('sla.clock.title')}</h2>
+          {ticket.sla.clocks.length === 0 ? <p>{t('sla.clock.notMeasured')}</p> : null}
+          {ticket.sla.clocks.map((clock) => (
+            <div key={clock.kind} className="ticket-sla-clock">
+              <strong>{t(`sla.kind.${clock.kind}`)}</strong>{' '}
+              <Badge>{t(`sla.clock.status.${clock.status}`)}</Badge>{' '}
+              {clock.outcome ? <Badge>{t(`sla.clock.outcome.${clock.outcome}`)}</Badge> : null}
+              {clock.status === 'running' &&
+              clock.dueAt &&
+              Date.parse(clock.dueAt) < Date.now() &&
+              !clock.breachedAt ? (
+                <Badge>{t('sla.clock.overdue')}</Badge>
+              ) : null}
+              <p>
+                {clock.policyName} · {clock.targetMinutes} {t('sla.clock.minutes')} ·{' '}
+                {t(`sla.clock.basis.${clock.timeBasis}`)}
+              </p>
+              {clock.calendarName ? <p>{clock.calendarName}</p> : null}
+              {clock.dueAt ? (
+                <p>
+                  {t('sla.clock.due')}: {formatDateTime(locale, clock.dueAt)}
+                </p>
+              ) : null}
+              {clock.status === 'running' || clock.status === 'paused' ? (
+                <p>
+                  {t('sla.clock.remaining')}: {Math.max(0, Math.ceil(clock.remainingSeconds / 60))}{' '}
+                  {t('sla.clock.minutes')}
+                </p>
+              ) : null}
+              {clock.pausedAt ? (
+                <p>
+                  {t('sla.clock.paused')}: {formatDateTime(locale, clock.pausedAt)}
+                  {clock.pauseReason
+                    ? ` · ${t(`sla.reason.${clock.pauseReason}` as MessageKey)}`
+                    : ''}
+                </p>
+              ) : null}
+              {clock.completedAt ? (
+                <p>
+                  {t('sla.clock.completed')}: {formatDateTime(locale, clock.completedAt)}
+                </p>
+              ) : null}
+              {clock.warnedAt ? (
+                <p>
+                  {t('sla.clock.warned')}: {formatDateTime(locale, clock.warnedAt)}
+                </p>
+              ) : null}
+              {clock.breachedAt ? (
+                <p>
+                  {t('sla.clock.breached')}: {formatDateTime(locale, clock.breachedAt)}
+                </p>
+              ) : null}
+            </div>
+          ))}
+          {ticket.abilities?.exemptSla ? (
+            <div className="form">
+              <Select
+                label={t('sla.clock.exemptReason')}
+                value={slaReason}
+                onChange={(event) => setSlaReason(event.target.value)}
+                options={(
+                  ['misclassified', 'duplicate_of_major_incident', 'test_ticket', 'other'] as const
+                ).map((value) => ({ value, label: t(`sla.clock.exempt.${value}`) }))}
+              />
+              <Button
+                busy={slaExempting}
+                onClick={() => {
+                  setSlaExempting(true);
+                  void ticketsApi
+                    .exemptSla(ticket.id, ticket.version, slaReason)
+                    .then(done, (cause: unknown) => setActionError(asApiError(cause)))
+                    .finally(() => setSlaExempting(false));
+                }}
+              >
+                {t('sla.clock.exemptAction')}
+              </Button>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
       {menu.menu}
       {actionError ? <ApiErrorAlert error={actionError} onRetry={loaded.reload} /> : null}
       <div className="incident-mobile-tabs">

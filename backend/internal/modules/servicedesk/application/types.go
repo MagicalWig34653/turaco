@@ -107,9 +107,10 @@ type Comment struct {
 // and read those they reported or are affected by; View (tickets.view) reads
 // all tickets and internal comments; Manage (tickets.manage) works them.
 type Principal struct {
-	UserID string
-	View   bool
-	Manage bool
+	UserID    string
+	View      bool
+	Manage    bool
+	SLAManage bool
 	// QueuesManage (servicedesk.queues.manage) administers Queues and may move Tickets into any Queue.
 	QueuesManage bool
 	// ChangesView (changes.view, manage or execute) lets the caller read Change titles linked to a Ticket.

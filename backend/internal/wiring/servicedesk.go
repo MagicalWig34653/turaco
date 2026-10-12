@@ -16,6 +16,7 @@ import (
 	servicedeskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
 
 type deviceAdapter struct{ a *assetspublic.Assets }
@@ -99,7 +100,9 @@ func ServiceDesk(pool *pgxpool.Pool) *servicedeskapp.Service {
 	org := orgrepository.New(pool)
 	dir := orgpublic.NewWorkDirectory(org)
 	members := queueMemberships{teams: dir, eval: roles.NewEvaluator(pool, orgpublic.NewAuthorizationSubjects(org))}
+	moduleSwitch := modules.NewService(pool, modules.Options{})
 	return servicedeskapp.NewService(servicedeskrepository.New(pool), dir, deviceAdapter{assetspublic.New(Assets(pool))}).
+		WithSLA(func(ctx context.Context) (bool, error) { return moduleSwitch.Enabled(ctx, "sla") }).
 		WithQueryEngine(QueryEngine(pool)).WithMemberships(members).WithChanges(changespublic.NewChanges(Changes(pool)), Relationships(), pool).
 		WithExternalAccounts(servicedeskrepository.New(pool), externalAccounts{dir}).
 		WithCallbackTasks(servicedeskpublic.NewCallbackTasks(taskspublicCreator(pool, dir, servicedeskapp.TaskContextType)))

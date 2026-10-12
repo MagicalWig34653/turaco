@@ -55,8 +55,19 @@ type CalendarInput struct {
 	WeeklyHours map[int][]Interval `json:"weeklyHours"`
 }
 type CalendarStore struct {
-	pool  *pgxpool.Pool
-	usage CalendarUsage
+	pool              *pgxpool.Pool
+	usage             CalendarUsage
+	clockRecalculator ClockRecalculator
+}
+
+// ClockRecalculator updates due instants that depend on a changed calendar in the same transaction.
+type ClockRecalculator interface {
+	RecomputeCalendarClocksTx(context.Context, pgx.Tx, string) error
+}
+
+func (s *CalendarStore) WithClockRecalculator(r ClockRecalculator) *CalendarStore {
+	s.clockRecalculator = r
+	return s
 }
 
 // CalendarUsage is a public contract supplied by a consumer that may depend on calendars.
@@ -191,6 +202,11 @@ func (s *CalendarStore) mutate(ctx context.Context, id string, expected int, act
 	}
 	if err := s.record(ctx, tx, c, actor, corr, action, before, workingChanged); err != nil {
 		return empty, err
+	}
+	if workingChanged && s.clockRecalculator != nil {
+		if err := s.clockRecalculator.RecomputeCalendarClocksTx(ctx, tx, c.ID); err != nil {
+			return empty, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return empty, err
