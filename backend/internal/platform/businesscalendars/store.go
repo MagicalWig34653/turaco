@@ -24,6 +24,7 @@ var (
 	ErrCalendarConflict = errors.New("calendar version conflict")
 	ErrCalendarKeyTaken = errors.New("calendar key already exists")
 	ErrCalendarInvalid  = errors.New("invalid calendar")
+	ErrCalendarInUse    = errors.New("calendar used by active SLA policy")
 )
 var calendarKey = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 var calendarID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -53,7 +54,17 @@ type CalendarInput struct {
 	Timezone    string             `json:"timezone"`
 	WeeklyHours map[int][]Interval `json:"weeklyHours"`
 }
-type CalendarStore struct{ pool *pgxpool.Pool }
+type CalendarStore struct {
+	pool  *pgxpool.Pool
+	usage CalendarUsage
+}
+
+// CalendarUsage is a public contract supplied by a consumer that may depend on calendars.
+type CalendarUsage interface {
+	ActivePolicyUsesCalendar(context.Context, pgx.Tx, string) (bool, error)
+}
+
+func (s *CalendarStore) WithUsage(u CalendarUsage) *CalendarStore { s.usage = u; return s }
 
 func NewCalendarStore(pool *pgxpool.Pool) *CalendarStore { return &CalendarStore{pool: pool} }
 
@@ -223,9 +234,18 @@ func (s *CalendarStore) SetStatus(ctx context.Context, id string, expected int, 
 	if status == "active" {
 		action = "restored"
 	}
-	return s.mutate(ctx, id, expected, actor, corr, action, func(_ context.Context, _ pgx.Tx, c *Calendar) (bool, error) {
+	return s.mutate(ctx, id, expected, actor, corr, action, func(ctx context.Context, tx pgx.Tx, c *Calendar) (bool, error) {
 		if c.Status == status {
 			return false, ErrCalendarConflict
+		}
+		if status == "archived" && s.usage != nil {
+			used, err := s.usage.ActivePolicyUsesCalendar(ctx, tx, id)
+			if err != nil {
+				return false, err
+			}
+			if used {
+				return false, ErrCalendarInUse
+			}
 		}
 		c.Status = status
 		return false, nil

@@ -24,6 +24,7 @@ registerErrorMessages({
   'calendars.version_conflict': 'calendars.error.conflict',
   'calendars.key_taken': 'calendars.error.keyTaken',
   'calendars.not_found': 'calendars.error.notFound',
+  'calendars.in_use': 'calendars.error.inUse',
 });
 const emptyHours = (): Record<string, Interval[]> => ({
   '1': [{ start: 540, end: 1020 }],

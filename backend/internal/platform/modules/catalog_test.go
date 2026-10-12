@@ -52,7 +52,7 @@ func TestNewIndexRejectsBrokenCatalogs(t *testing.T) {
 func TestForPathAndForJob(t *testing.T) {
 	ix := modules.DefaultIndex()
 	paths := map[string]string{
-		"/api/v1/tickets": "servicedesk", "/api/v1/tickets/1/comments": "servicedesk", "/api/v1/remote-access/sessions": "remoteaccess",
+		"/api/v1/sla/policies": "sla", "/api/v1/tickets": "servicedesk", "/api/v1/tickets/1/comments": "servicedesk", "/api/v1/remote-access/sessions": "remoteaccess",
 		"/api/v1/software/versions": "endpoints", "/api/v1/ai/conversations": "ai", "/api/v1/presence/entries": "presence",
 		"/api/v1/briefing/feed": "briefing", "/api/v1/impact": "services", "/api/v1/maintenance-calendar": "planning",
 		"/api/v1/ai/status": "", "/api/v1/ai/status/": "", "/api/v1/presence/status": "",
@@ -134,5 +134,12 @@ func TestEveryRegisteredRouteFamilyIsInTheCatalog(t *testing.T) {
 	}
 	if seen < 100 {
 		t.Fatalf("only %d routes found; the scan is broken", seen)
+	}
+}
+
+func TestSLAIsOffByDefaultAndRequiresServiceDesk(t *testing.T) {
+	m, ok := modules.DefaultIndex().Get("sla")
+	if !ok || m.DefaultEnabled || len(m.Requires) != 1 || m.Requires[0] != "servicedesk" {
+		t.Fatalf("SLA catalog: %+v", m)
 	}
 }

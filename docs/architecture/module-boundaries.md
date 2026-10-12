@@ -40,7 +40,7 @@ A domain may use these capabilities but must not reimplement its own alternative
 | Products | product, optional variant, manufacturer, categories |
 | Catalog | requestable services/forms/eligibility |
 | Requests | service request lifecycle and fulfillment coordination |
-| Service Desk | incidents, major incidents, problems/known error state, Ticket Queues (key, prefix, counter, grants), the reference registry, Ticket moves between Queues and Ticket participants (external accounts a Ticket is shared with); contributes System Views (`servicedesk/public.SystemViews`) and My Work sources (`servicedesk/public`) through platform contracts |
+| Service Desk | incidents, major incidents, problems/known error state, Ticket Queues (key, prefix, counter, grants), the reference registry, Ticket moves between Queues and Ticket participants (external accounts a Ticket is shared with), SLA Policies and Targets assigned per Queue (F17 S-B); exposes a public active-policy Calendar usage check for Calendar archive; contributes System Views (`servicedesk/public.SystemViews`) and My Work sources (`servicedesk/public`) through platform contracts |
 | Knowledge | articles, procedures, runbook definitions/executions |
 | Assets | asset/device identity, lifecycle, assignment |
 | Inventory | warehouse, storage location, stock, transactions, reservations, goods receipt |

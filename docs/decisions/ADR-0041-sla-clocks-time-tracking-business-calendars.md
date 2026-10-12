@@ -1,6 +1,6 @@
-# ADR-0040: SLA Clocks Belong to the Service Desk, Time Tracking Is Its Own Module, Business Calendars Are a Platform Concept
+# ADR-0041: SLA Clocks Belong to the Service Desk, Time Tracking Is Its Own Module, Business Calendars Are a Platform Concept
 
-- Status: Proposed (2026-10-12). Not implemented. Design: [F17](../product/f17-sla-time-tracking-design.md).
+- Status: Proposed (2026-10-12). Business Calendars (S-A) and SLA Policies (S-B) implemented; clocks and time tracking remain planned. Design: [F17](../product/f17-sla-time-tracking-design.md).
 
 ## Context
 

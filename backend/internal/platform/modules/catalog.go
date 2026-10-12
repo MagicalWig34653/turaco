@@ -120,6 +120,7 @@ var externalAccess = map[string]externalDecl{
 	"approvals":     denied,
 	"notifications": allow("GET /api/v1/notifications", "GET /api/v1/notifications/unread-count", "POST /api/v1/notifications/read-all", "POST /api/v1/notifications/{id}/read"),
 	// A Ticket shared through ticket_participants: read it and add a public comment. Nothing else of Service Desk.
+	"sla":            denied,
 	"servicedesk":    allow("GET /api/v1/tickets/{id}", "POST /api/v1/tickets/{id}/comments"),
 	"knowledge":      denied, // knowledge.view joins the ceiling when articles gain an external audience
 	"catalog":        denied,
@@ -152,6 +153,7 @@ func catalogModules() []Module {
 		core("notifications", "notifications"),
 
 		opt("servicedesk", CategoryServiceMgmt, []string{"assets"}, "tickets", "major-incidents", "problems", "service-desk"),
+		{Key: "sla", Category: CategoryServiceMgmt, DefaultEnabled: false, Requires: []string{"servicedesk"}, RoutePrefixes: []string{"sla"}},
 		opt("knowledge", CategoryServiceMgmt, []string{"servicedesk"}, "knowledge-articles", "runbooks", "runbook-executions"),
 		opt("catalog", CategoryServiceMgmt, []string{"products"}, "catalog-items"),
 		opt("requests", CategoryServiceMgmt, []string{"catalog"}, "service-requests"),

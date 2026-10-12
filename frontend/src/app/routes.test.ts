@@ -33,6 +33,15 @@ describe('external parties', () => {
 });
 
 describe('visibleNavItems', () => {
+  it('shows SLA administration to readers only while the switch is on', () => {
+    expect(ids([], 'admin')).not.toContain('slaAdmin');
+    expect(ids(['sla.view'], 'admin')).toContain('slaAdmin');
+    expect(ids(['sla.manage'], 'admin')).toContain('slaAdmin');
+    const route = matchRoute(appRoutes, '/admin/sla-policies')?.route;
+    expect(route?.id).toBe('slaAdmin');
+    if (route) expect(canViewRoute(createCan({ permissions: ['sla.view'] }), route, (key) => key !== 'sla')).toBe(false);
+  });
+
   it('keeps Business Calendar administration behind calendars.manage', () => {
     expect(ids([], 'admin')).not.toContain('calendarsAdmin');
     expect(ids(['calendars.manage'], 'admin')).toContain('calendarsAdmin');

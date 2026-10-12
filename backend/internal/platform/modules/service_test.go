@@ -363,6 +363,12 @@ func TestGateAnswers404ForDisabledModuleRoutes(t *testing.T) {
 	if rec := do(http.MethodGet, "/api/v1/ai/status", true); rec.Code != http.StatusNoContent {
 		t.Errorf("/ai/status = %d, want pass-through", rec.Code)
 	}
+	if rec := do(http.MethodGet, "/api/v1/sla/policies", true); rec.Code != http.StatusNotFound {
+		t.Errorf("/sla/policies = %d, want 404 while sla is off", rec.Code)
+	}
+	if rec := do(http.MethodPut, "/api/v1/sla/queues/00000000-0000-0000-0000-000000000000/policy", true); rec.Code != http.StatusNotFound {
+		t.Errorf("/sla/queues policy = %d, want 404 while sla is off", rec.Code)
+	}
 	if rec := do(http.MethodGet, "/api/v1/ai/conversations", true); rec.Code != http.StatusNotFound {
 		t.Errorf("/ai/conversations = %d, want 404 while ai is off", rec.Code)
 	}

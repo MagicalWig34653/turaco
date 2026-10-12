@@ -2,6 +2,10 @@
 
 **Status:** Conceptual model; not a final SQL schema.
 
+## SLA Policies and Targets (F17 S-B)
+
+`servicedesk.sla_policies` stores an immutable key, name, description, optional Business Calendar, waiting reasons that pause clocks (default `customer`), warning percentage (default 80), escalation-task flag (default false), active or archived status, version and timestamps. A calendar is required whenever any Target uses business time. `servicedesk.sla_targets` has one row per Policy, Priority (`low|normal|high|urgent`) and clock kind (`first_response|resolution`), with a positive target of at most 129,600 minutes and a `business|continuous` basis. Missing rows mean no target. `servicedesk.queues.sla_policy_id` is nullable, so Queues begin unassigned. Migration `000098` adds these records without backfill. Policy and target changes, plus Queue assignment, are versioned and audited. No SLA clocks or Ticket changes exist yet.
+
 ## Business Calendars (F17 S-A)
 
 `platform.business_calendars` owns an immutable key, display name, IANA time zone, validated weekly hours (ISO weekdays, sorted half-open local-minute intervals), active or archived status, optimistic version and timestamps. `platform.business_calendar_closures` stores named full local dates keyed by calendar and date. There are no preloaded holiday lists. Pure scheduling functions measure elapsed working time across daylight-saving changes and reject intervals crossing midnight; callers split them across weekdays. Migration `000097` creates both tables. Calendar changes are audited, and working-time changes publish `BusinessCalendarChanged`.

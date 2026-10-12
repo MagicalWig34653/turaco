@@ -42,6 +42,7 @@ export type ModuleEnabled = (key: string) => boolean;
 /** Frontend route ownership. Settings remain reachable to resolve runtime preconditions. */
 const paths: Record<string, readonly string[]> = {
   servicedesk: ['/support', '/service-desk', '/incidents', '/problems'],
+  sla: ['/admin/sla-policies'],
   knowledge: ['/knowledge', '/runbooks'],
   catalog: ['/catalog', '/admin/catalog'],
   requests: ['/requests', '/admin/requests'],
