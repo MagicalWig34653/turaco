@@ -17,7 +17,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F2 Work Foundation | Done | Email bounce handling, digests, per-recipient language |
 | F3 Products, Catalog, Requests | Done (backend, OpenAPI, UI) | |
 | F4 Inventory, Procurement, Assets | Done (backend, OpenAPI, UI) | |
-| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client verified against a live database (implemented per documentation, unverified), webhook, routing rules, SLA |
+| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client verified against a live database (implemented per documentation, unverified), webhook, routing rules, SLA (designed in F16) |
 | F6 Endpoint Intelligence | Done against the fake provider (devices, management model, assignment intelligence, UI) | Microsoft Graph client verified against a live tenant (implemented per documentation, unverified), `assignment_stale` |
 | F7 Infrastructure and Change | Done (F7a to F7d, OpenAPI, UI) | Runbook link, native IPAM (ADR-0030: integrate) |
 | F8 Security and IT Briefing | Done (advisories, findings, remediation, feed, UI) | MSRC feed |
@@ -29,6 +29,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties (done 2026-10-11, security review open) |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
 | F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
+| F16 SLA and time tracking | Planned (design only) | Everything: S-A to S-E (calendars, SLA), T-A to T-C (time tracking) |
 
 The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
 
@@ -203,6 +204,10 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 ## F15 — Microsoft integration (planned)
 
 [ADR-0035](../decisions/ADR-0035-entra-oidc-login.md) (Entra sign-in for every deployment variant) and [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md) (Teams), both Proposed. Feature design: [F15 design](f15-microsoft-integration-design.md). Slices: M-0 shared Microsoft HTTP client and credentials; E-A sign-in core, E-B identity linking, E-C Graph reconciliation and cloud-only group sync, E-D MFA assurance and step-up, E-E restricted multi-tenant and guests (after F14 A-G); T-A channel posts, T-B personal cards, T-C approval actions, T-D meeting and channel links, T-E Microsoft 365 presence (F11 P-C). Nothing is implemented; the open product decisions are listed in the design.
+
+## F16 — SLA deadlines and time tracking (planned)
+
+[ADR-0040](../decisions/ADR-0040-sla-clocks-time-tracking-business-calendars.md) (Proposed). Feature design: [F16 design](f16-sla-time-tracking-design.md). Both capabilities are optional module switches (`sla`, `timetracking`, default off). Slices: S-A Business Calendars, S-B SLA policies, S-C SLA clocks, S-D warnings and breaches, S-E list fields, overview and report; T-A time entries, T-B timer, T-C effort report. The S and T tracks are independent. Nothing is implemented; open product questions are listed in the design.
 
 ## Later / optional
 
