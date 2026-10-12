@@ -19,12 +19,22 @@ Every provider value is untrusted: Turaco validates ids, hashes (64 lower-case h
 - Reports carry a meaningful `ObservedAt`; reports older than Turaco's stored observation are ignored.
 - A published package becomes an ordinary Management Artifact (an Intune app) that the normal management sync ingests; the package records the artifact's external id and Turaco links it once the artifact exists. Publication never means assignment, installation or deployment success.
 
-## Unverified (needs a real IntuneGet instance)
+## Verified from source (2026-10-12)
 
-- Whether IntuneGet exposes an API or webhooks at all, or whether Turaco must orchestrate only through observed Intune state (ADR-0027 consequence). The port shape is Turaco's need, not a verified IntuneGet contract.
-- Whether IntuneGet reports the installer hash, publisher signature and the resulting Intune app id, and how package ids are formed.
-- Authentication, Entra permissions IntuneGet needs and who controls its credentials (self-hosted preferred; a hosted multi-tenant instance requires a documented customer risk acceptance). Turaco stores only its own credentials as secrets ([ADR-0014](../decisions/ADR-0014-application-level-secret-and-file-encryption.md)).
-- Rate limits, paging and error semantics.
+Read from a shallow clone of `ugurkocde/IntuneGet` at commit `1a29a4c2cf4f` (2026-10-12; Next.js app, SQLite or Supabase). The code was read, not run: every authenticated path needs a real Entra app registration, which no available environment has.
+
+- **API authentication is delegated-user only.** Every Bearer endpoint (`POST /api/package`, `GET /api/intune/apps`, ...) calls `parseAccessToken`, which validates the token by calling Microsoft Graph `GET /me`. An application-only token (client credentials) has no `/me`, so it is rejected. A service such as Turaco cannot call the API with an application identity; it would need a signed-in user's delegated token.
+- **Webhooks do not carry packaging results.** User webhooks (`/api/webhooks`, HMAC `X-Webhook-Signature`, types slack, teams, discord, custom) deliver only the event `app_updates_available` (apps with newer winget versions). There is no outgoing event for a finished packaging job.
+- **Job status is pull-only:** `GET /api/package?jobId=...` and `?userId=...` are unauthenticated reads by id. Their documented fields do not include the installer SHA-256 or publisher signature as a stable contract.
+- **Packaging** runs through GitHub Actions or a local Windows packager that claims jobs with a packager key (`/api/packager/jobs`); the callback is HMAC-signed and meant for that pipeline, not for third parties.
+- **Rate limits** are in-process per IP or user; error bodies are JSON with `error` or `message`.
+
+Consequence for Turaco: the provider port in `softwaremgmt` cannot be backed by IntuneGet's HTTP API without either (a) storing a user's delegated refresh token in Turaco (rejected: breaks least privilege and MFA), (b) a service-token mode added to IntuneGet upstream, or (c) orchestrating through the Intune state Turaco already observes (the ADR-0027 fallback): operators package with IntuneGet, the published app arrives as a Management Artifact through the normal Intune sync, and Turaco links it to the approved package by name, version and hash. The decision between these is recorded in the product backlog; the Fake provider remains the default.
+
+## Still unverified
+
+- Whether the packaged app's installer hash and publisher signature can be read from a job record in a stable way (the job table schema was not run).
+- Entra permissions IntuneGet requests and who holds its credentials in a customer deployment (self-hosted preferred, [ADR-0014](../decisions/ADR-0014-application-level-secret-and-file-encryption.md) for Turaco's own secrets).
 
 ## Configuration
 
