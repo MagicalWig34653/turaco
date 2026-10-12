@@ -257,3 +257,14 @@ The independent review found nothing exploitable today (no permission is scopabl
 6. **Depth bound.** Log when the subtree depth bound is reached (the tree is at most 4 levels deep, so valid data is never cut).
 7. **`scopetest` gaps.** Add a mixed-scope caller (global View plus scoped Manage; View at A plus Manage at B), a create-into-Site-B and create-without-Location case, a fixture with an inactive and a moved Location, count checks on extra surfaces, and a check that every `scopeAdoption` entry names a real `scopetest.Run` test. Consider unexporting `Principal.Scopes` or adding an archcheck rule so modules must use `ScopeOf`.
 
+## L-B security review outcome (2026-10-12)
+
+Nothing is exploitable today (no permission is scopable). These latent findings are binding gates before any permission becomes scopable (L-C, L-D, L-E):
+
+1. **L-C is a hard prerequisite.** Location moves are unguarded (`organization/repository/org_tree.go` re-parents without a scope check) and the assign path reads the Location and the actor's subtree outside the assignment transaction. L-C must land first; `scopeAdoption` must refuse entries while L-C is missing, and the assign path must take `FOR SHARE` on the Location (through the organization/public contract) inside the assignment transaction or re-validate after the insert.
+2. **Scoped-root cap steering.** Roots are cut in Location id order (uuidv7, so the oldest Locations survive). Refuse at assign time any assignment that would push a subject past the cap (409), and make `Explain` list only roots that survive the cut.
+3. **Dominance and inert permissions.** `dominates` must apply the same rule as `checkGrant` to inert permissions of the target's scoped assignments (an actor lacking a global-only permission X must not take over a target holding X in a scoped role).
+4. **Location existence oracle.** Run the actor guards before the scope Location validation in `AssignRole`, so a `roles.manage` holder without `organization.view` cannot probe Location ids through 422 vs 403.
+5. **Audit.** The `replaced_after_expiry` revocation records the triggering user in its metadata; snapshot the Location name and path in scoped assignment audit records so later moves stay explainable.
+6. **archcheck hardening.** Unexport `Principal.Scopes` behind a constructor or accessor to remove alias, positional-literal and reflection bypasses of the syntactic rule.
+
