@@ -39,7 +39,10 @@ describe('visibleNavItems', () => {
     expect(ids(['sla.manage'], 'admin')).toContain('slaAdmin');
     const route = matchRoute(appRoutes, '/admin/sla-policies')?.route;
     expect(route?.id).toBe('slaAdmin');
-    if (route) expect(canViewRoute(createCan({ permissions: ['sla.view'] }), route, (key) => key !== 'sla')).toBe(false);
+    if (route)
+      expect(
+        canViewRoute(createCan({ permissions: ['sla.view'] }), route, (key) => key !== 'sla'),
+      ).toBe(false);
   });
 
   it('keeps Business Calendar administration behind calendars.manage', () => {

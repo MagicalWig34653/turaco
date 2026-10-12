@@ -1,4 +1,6 @@
 import type { MessageKey } from './messages.en';
+
+export const de: Record<MessageKey, string> = {
   'sla.title': 'SLA-Richtlinien',
   'sla.intro': 'Ziele festlegen und Richtlinien Ticket-Queues zuweisen.',
   'sla.policies': 'Richtlinien',
@@ -46,8 +48,6 @@ import type { MessageKey } from './messages.en';
   'sla.priority.normal': 'Normal',
   'sla.priority.high': 'Hoch',
   'sla.priority.urgent': 'Dringend',
-
-export const de: Record<MessageKey, string> = {
   'calendars.title': 'Geschäftskalender',
   'calendars.intro': 'Lokale Arbeitszeiten und ganztägige Schließtage festlegen.',
   'calendars.list': 'Kalender',

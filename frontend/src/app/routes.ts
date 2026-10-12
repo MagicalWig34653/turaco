@@ -191,7 +191,13 @@ export const appRoutes: readonly AppRoute[] = [
     requires: ['calendars.manage'],
     nav: 'admin',
   },
-  { id: 'slaAdmin', pattern: '/admin/sla-policies', titleKey: 'sla.title', requiresAny: ['sla.view', 'sla.manage'], nav: 'admin' },
+  {
+    id: 'slaAdmin',
+    pattern: '/admin/sla-policies',
+    titleKey: 'sla.title',
+    requiresAny: ['sla.view', 'sla.manage'],
+    nav: 'admin',
+  },
   {
     id: 'modulesAdmin',
     pattern: '/admin/modules',
