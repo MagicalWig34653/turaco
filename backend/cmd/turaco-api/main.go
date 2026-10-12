@@ -267,7 +267,7 @@ func main() {
 	authentication.RegisterLogin(mux, loginDeps, loginCfg)
 	(&setup.Handler{
 		Store: setup.NewStore(pool), Granter: wiring.NewFirstAdministrator(pool), Limiter: loginDeps.Throttle,
-		TrustedProxies: cfg.TrustedProxies, Logger: logger,
+		TrustedProxies: cfg.TrustedProxies, Logger: logger, AllowedTenants: setupTenants(entraCfg),
 	}).Register(mux)
 
 	// Manual directory sync requests need a configured provider; the worker
@@ -492,4 +492,13 @@ func entraCredentialExpiry(c microsoft.Credential) *time.Time {
 		return &t
 	}
 	return nil
+}
+
+// setupTenants lists the tenants the setup page may link: only the configured Entra tenants, none while Entra
+// sign-in is off.
+func setupTenants(c config.EntraConfig) []string {
+	if !c.Enabled {
+		return nil
+	}
+	return c.AllowedTenantIDs
 }

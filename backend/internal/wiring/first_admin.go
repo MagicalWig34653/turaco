@@ -92,6 +92,18 @@ func (f *FirstAdministrator) Grant(ctx context.Context, g setup.Grant) (setup.Re
 	if local {
 		return setup.Result{}, setup.ErrLocalAccount
 	}
+	var tokenID string
+	if g.TokenHash != nil {
+		// Consumed under the grant lock before any change: a token cannot outlive its use.
+		err := conn.QueryRow(ctx, `UPDATE platform.setup_tokens SET used_at = now()
+			WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING id::text`, g.TokenHash).Scan(&tokenID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return setup.Result{}, setup.ErrTokenInvalid
+		}
+		if err != nil {
+			return setup.Result{}, fmt.Errorf("consume setup token: %w", err)
+		}
+	}
 	if g.Tenant != "" {
 		provider := orgpublic.EntraProviderKey(g.Tenant)
 		if err := repo.LinkExternalIdentity(ctx, g.Actor, "first-admin-link:"+g.CorrelationID, strings.ToLower(userID), provider, strings.ToLower(g.Object), g.Via); err != nil {
@@ -115,7 +127,8 @@ func (f *FirstAdministrator) Grant(ctx context.Context, g setup.Grant) (setup.Re
 		return audit.Record(ctx, tx, audit.Change{
 			Action: "authorization.first_administrator.created", TargetType: "role_assignment", TargetID: assignment.ID,
 			Actor: g.Actor, CorrelationID: g.CorrelationID,
-			Metadata: map[string]any{"userId": userID, "forced": g.Force && existing > 0, "existingAdministrators": existing, "entraLinked": g.Tenant != "", "via": g.Via},
+			Metadata: map[string]any{"userId": userID, "forced": g.Force && existing > 0, "existingAdministrators": existing, "entraLinked": g.Tenant != "", "via": g.Via,
+				"setupTokenId": tokenID, "clientIp": g.ClientIP},
 		})
 	}); err != nil {
 		return setup.Result{}, fmt.Errorf("audit: %w", err)

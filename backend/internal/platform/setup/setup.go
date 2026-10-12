@@ -48,6 +48,10 @@ type Grant struct {
 	Actor         audit.Actor
 	CorrelationID string
 	Via           string // "cli" or "web", recorded in the audit event
+	// TokenHash, when set, is consumed inside the operation under the grant lock, after the user checks and
+	// before any change; an unusable token yields ErrTokenInvalid.
+	TokenHash []byte
+	ClientIP  string // web only, recorded in the audit event
 }
 
 // Result names what was granted.
@@ -70,6 +74,9 @@ type Store struct {
 
 // NewStore creates a Store.
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+
+// HashToken is the stored form of a token.
+func HashToken(token string) []byte { return hashToken(token) }
 
 func hashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(token))))
@@ -126,14 +133,4 @@ func (s *Store) Valid(ctx context.Context, token string) (bool, error) {
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM platform.setup_tokens
 		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now())`, hashToken(token)).Scan(&ok)
 	return ok, err
-}
-
-// Consume marks token used; it reports false when it was not open (a concurrent use won).
-func (s *Store) Consume(ctx context.Context, token string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE platform.setup_tokens SET used_at = now()
-		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`, hashToken(token))
-	if err != nil {
-		return false, err
-	}
-	return tag.RowsAffected() == 1, nil
 }

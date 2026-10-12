@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -26,12 +28,14 @@ type Handler struct {
 	Granter        Granter
 	Limiter        Limiter
 	TrustedProxies []netip.Prefix
+	// AllowedTenants lists the Entra tenants a link may name (lower case GUIDs); empty means no Entra link
+	// through the page.
+	AllowedTenants []string
 	Logger         *slog.Logger
 }
 
 const (
 	clientAttemptLimit = 10
-	globalAttemptLimit = 30
 	maxBody            = 4 << 10
 	// codeClosed is the one answer for every failure before the token is accepted.
 	codeClosed = "setup.unavailable"
@@ -78,22 +82,19 @@ func (h *Handler) firstAdministrator(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "setup.invalid_request", "The request is invalid.")
 		return
 	}
-	// Reserve attempts before any check: per client and for the installation as a whole.
-	for _, k := range []struct {
-		key   string
-		limit int
-	}{{"setup:" + authentication.ClientKey(authentication.ClientIP(r, h.TrustedProxies)), clientAttemptLimit}, {"setup:all", globalAttemptLimit}} {
-		allowed, retry, err := h.Limiter.Reserve(ctx, k.key, k.limit)
-		if err != nil {
-			h.Logger.Error("setup throttle", "error", err)
-			httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error.")
-			return
-		}
-		if !allowed {
-			w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds())+1)))
-			httpx.WriteError(w, http.StatusTooManyRequests, "setup.rate_limited", "Too many attempts. Try again later.")
-			return
-		}
+	// Attempts are counted per client before any check. There is deliberately no installation-wide counter:
+	// with 256-bit tokens it adds no protection and would let anyone lock the operator out.
+	clientIP := authentication.ClientIP(r, h.TrustedProxies)
+	allowed, retry, err := h.Limiter.Reserve(ctx, "setup:"+authentication.ClientKey(clientIP), clientAttemptLimit)
+	if err != nil {
+		h.Logger.Error("setup throttle", "error", err)
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error.")
+		return
+	}
+	if !allowed {
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds())+1)))
+		httpx.WriteError(w, http.StatusTooManyRequests, "setup.rate_limited", "Too many attempts. Try again later.")
+		return
 	}
 	open, err := h.available(ctx)
 	if err != nil {
@@ -110,7 +111,7 @@ func (h *Handler) firstAdministrator(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !valid {
-		h.Logger.Warn("setup attempt rejected")
+		h.Logger.Warn("setup attempt rejected", "client", clientIP)
 		httpx.WriteError(w, http.StatusForbidden, codeClosed, "Setup is not available or the token is not valid.")
 		return
 	}
@@ -120,12 +121,17 @@ func (h *Handler) firstAdministrator(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "setup.invalid_request", "The request is invalid.")
 		return
 	}
+	if req.Tenant != "" && !slices.Contains(h.AllowedTenants, strings.ToLower(req.Tenant)) {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "setup.entra_link_failed", "The Entra identity could not be linked to this user.")
+		return
+	}
 	_, err = h.Granter.Grant(ctx, Grant{
 		User: req.User, Tenant: req.Tenant, Object: req.Object,
 		Actor: audit.SystemActor("setup-wizard"), CorrelationID: httpx.RequestID(w), Via: "web",
+		TokenHash: HashToken(req.Token), ClientIP: clientIP,
 	})
 	switch {
-	case errors.Is(err, ErrAdministratorExists), errors.Is(err, ErrAlreadyAdministrator):
+	case errors.Is(err, ErrAdministratorExists), errors.Is(err, ErrAlreadyAdministrator), errors.Is(err, ErrTokenInvalid):
 		httpx.WriteError(w, http.StatusForbidden, codeClosed, "Setup is not available or the token is not valid.")
 		return
 	case errors.Is(err, ErrUserNotFound):
@@ -141,9 +147,6 @@ func (h *Handler) firstAdministrator(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Error("setup first administrator", "error", err)
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "Internal error.")
 		return
-	}
-	if _, err := h.Store.Consume(ctx, req.Token); err != nil {
-		h.Logger.Error("setup consume token", "error", err)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]bool{"created": true})
 }

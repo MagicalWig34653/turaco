@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 )
@@ -22,6 +24,7 @@ type fakeGranter struct {
 	err    error
 	calls  atomic.Int32
 	last   Grant
+	pool   *pgxpool.Pool
 }
 
 func (g *fakeGranter) AdministratorExists(context.Context) (bool, error) {
@@ -30,7 +33,7 @@ func (g *fakeGranter) AdministratorExists(context.Context) (bool, error) {
 	return g.exists, nil
 }
 
-func (g *fakeGranter) Grant(_ context.Context, in Grant) (Result, error) {
+func (g *fakeGranter) Grant(ctx context.Context, in Grant) (Result, error) {
 	g.calls.Add(1)
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -39,6 +42,17 @@ func (g *fakeGranter) Grant(_ context.Context, in Grant) (Result, error) {
 	}
 	if g.err != nil {
 		return Result{}, g.err
+	}
+	// Mirrors wiring.FirstAdministrator: the token is consumed under the lock before the change.
+	if in.TokenHash != nil {
+		tag, err := g.pool.Exec(ctx, `UPDATE platform.setup_tokens SET used_at = now()
+			WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`, in.TokenHash)
+		if err != nil {
+			return Result{}, err
+		}
+		if tag.RowsAffected() != 1 {
+			return Result{}, ErrTokenInvalid
+		}
 	}
 	g.last = in
 	g.exists = true
@@ -66,7 +80,8 @@ func newHandler(t *testing.T, g *fakeGranter) (*Handler, *Store, http.Handler) {
 		t.Fatal(err)
 	}
 	st := NewStore(pool)
-	h := &Handler{Store: st, Granter: g, Limiter: &countingLimiter{count: map[string]int{}}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	g.pool = pool
+	h := &Handler{Store: st, Granter: g, Limiter: &countingLimiter{count: map[string]int{}}, AllowedTenants: []string{"22222222-2222-2222-2222-222222222222"}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	mux := http.NewServeMux()
 	h.Register(mux)
 	t.Cleanup(func() {
@@ -112,6 +127,10 @@ func TestFirstAdministratorWithToken(t *testing.T) {
 	if w := post(mux, `{"token":"`+tok+`","user":"alice","tenant":"x","object":"y"}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad guid: %d", w.Code)
 	}
+	const guid = "11111111-1111-1111-1111-111111111111"
+	if w := post(mux, `{"token":"`+tok+`","user":"alice","tenant":"`+guid+`","object":"`+guid+`"}`); w.Code != http.StatusUnprocessableEntity || g.calls.Load() != 0 {
+		t.Fatalf("tenant outside the allow-list: %d, calls %d", w.Code, g.calls.Load())
+	}
 	if w := post(mux, `{"token":"`+tok+`","user":"alice"}`); w.Code != http.StatusOK {
 		t.Fatalf("valid: %d %s", w.Code, w.Body.String())
 	}
@@ -122,6 +141,18 @@ func TestFirstAdministratorWithToken(t *testing.T) {
 	g.exists = false
 	if w := post(mux, `{"token":"`+tok+`","user":"bob"}`); w.Code != http.StatusForbidden {
 		t.Fatalf("reuse: %d", w.Code)
+	}
+}
+
+func TestTokenSurvivesRefusedUserAndIsConsumedOnGrant(t *testing.T) {
+	g := &fakeGranter{}
+	_, st, mux := newHandler(t, g)
+	tok := issue(t, st, time.Minute)
+	if w := post(mux, `{"token":"`+tok+`","user":"alice"}`); w.Code != http.StatusOK {
+		t.Fatalf("grant: %d", w.Code)
+	}
+	if ok, err := st.Valid(context.Background(), tok); err != nil || ok {
+		t.Fatalf("token still valid after the grant: %v, %v", ok, err)
 	}
 }
 
