@@ -58,9 +58,34 @@ type Change struct {
 	OccurredAt time.Time
 }
 
+// Assist is the AI-assisted marker of an action a User confirmed in Turaco AI (F12 A-C): Via "ai", the tenant and
+// the AI Proposal id. Turaco AI puts it on the context before it calls a module operation, so the module's own
+// audit entries are marked without the module knowing about AI.
+type Assist struct {
+	Via        string
+	TenantID   string
+	ProposalID string
+}
+
+type assistKey struct{}
+
+// WithAssist returns ctx carrying the AI-assisted marker; Record applies it to every entry without its own Via.
+func WithAssist(ctx context.Context, a Assist) context.Context {
+	return context.WithValue(ctx, assistKey{}, a)
+}
+
+// AssistFrom returns the AI-assisted marker of ctx, if any.
+func AssistFrom(ctx context.Context) (Assist, bool) {
+	a, ok := ctx.Value(assistKey{}).(Assist)
+	return a, ok
+}
+
 // Record writes e inside tx, generating its UUIDv7 id. Every audited
 // mutation must call it in the same transaction as the change.
 func Record(ctx context.Context, tx pgx.Tx, e Change) error {
+	if a, ok := AssistFrom(ctx); ok && e.Via == "" {
+		e.Via, e.TenantID, e.ProposalID = a.Via, a.TenantID, a.ProposalID
+	}
 	if e.Action == "" || e.TargetType == "" || e.TargetID == "" || e.CorrelationID == "" {
 		return errors.New("audit: action, target and correlation id are required")
 	}

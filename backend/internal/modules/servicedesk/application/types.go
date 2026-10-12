@@ -99,6 +99,8 @@ type Comment struct {
 	Body             string
 	Internal         bool
 	CreatedAt        time.Time
+	// IdempotencyKey is set only by an idempotent operation (an executed AI Proposal); it is never returned by the API.
+	IdempotencyKey string
 }
 
 // Principal is the caller's authority. Every signed-in User may raise tickets
@@ -234,6 +236,8 @@ type Store interface {
 	Get(ctx context.Context, id string) (Ticket, error)
 	List(ctx context.Context, f Filter) (Result, error)
 	InsertCommentTx(ctx context.Context, tx pgx.Tx, c Comment) (Comment, error)
+	// CommentByKeyTx returns the comment an idempotent operation created with key, or ok=false.
+	CommentByKeyTx(ctx context.Context, tx pgx.Tx, key string) (c Comment, ok bool, err error)
 	Comments(ctx context.Context, ticketID string, includeInternal bool) ([]Comment, error)
 }
 

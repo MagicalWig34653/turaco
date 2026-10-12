@@ -405,7 +405,7 @@ func TestJobGateDropsDisposableDefersDurableAndKeepsSafetyPaths(t *testing.T) {
 		"remoteaccess.observe":         jobs.GateDrop,
 		"changes.reminders":            jobs.GateRun, // changes is on
 		"tasks.recurrence.generate":    jobs.GateRun, "notifications.email.send": jobs.GateRun, "organization.directory_sync": jobs.GateRun,
-		"presence.purge": jobs.GateRun, "ai.sessions.expire": jobs.GateRun, "ai.retention.purge": jobs.GateRun, "unknown": jobs.GateRun,
+		"presence.purge": jobs.GateRun, "ai.sessions.expire": jobs.GateRun, "ai.retention.purge": jobs.GateRun, "ai.proposals.expire": jobs.GateRun, "unknown": jobs.GateRun,
 	}
 	for typ, want := range cases {
 		if got, err := s.JobGate(ctx, typ); err != nil || got != want {

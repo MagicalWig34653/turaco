@@ -8,6 +8,7 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 )
 
 const (
@@ -43,7 +44,86 @@ type ticketMessage struct {
 
 // AITools returns the AI Tools of the Service Desk (registered by the composition root).
 func AITools(svc *application.Service) []ai.Tool {
-	return []ai.Tool{{
+	return []ai.Tool{summarizeTool(svc), draftInternalNoteTool(svc)}
+}
+
+func aiPrincipal(c ai.Caller) application.Principal {
+	return application.Principal{UserID: c.UserID, View: c.Has("tickets.view"), Manage: c.Has("tickets.manage")}
+}
+
+// noteInput is the input of tickets.draft_internal_note.
+type noteInput struct {
+	TicketID string `json:"ticketId"`
+	Body     string `json:"body"`
+}
+
+// draftInternalNoteTool is the first write tool (F12 A-C): it proposes an internal note on a Ticket. Internal notes
+// are visible to staff only and send nothing outside Turaco (no requester-visible reply, no mail, no mentions).
+// The model only creates an AI Proposal; the note is added after the User confirms it, by AddInternalNoteOnce as
+// that User, idempotent per proposal and only while the Ticket still has the version the proposal was made for.
+func draftInternalNoteTool(svc *application.Service) ai.Tool {
+	decode := func(input json.RawMessage) (noteInput, error) {
+		var in noteInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return noteInput{}, ai.ErrToolInvalid
+		}
+		return in, nil
+	}
+	mapErr := func(err error) error {
+		var inv *application.InvalidInputError
+		var tr *application.InvalidTransitionError
+		switch {
+		case errors.Is(err, application.ErrNotFound):
+			return ai.ErrToolNotFound
+		case errors.Is(err, application.ErrForbidden):
+			return ai.ErrToolForbidden
+		case errors.Is(err, application.ErrVersionConflict):
+			return ai.ErrToolStale
+		case errors.As(err, &inv), errors.As(err, &tr), errors.Is(err, application.ErrCommentLimit):
+			return ai.ErrToolInvalid
+		}
+		return err
+	}
+	return ai.Tool{
+		Name:        "tickets.draft_internal_note",
+		Description: "Propose an internal note (visible to staff only, never to the requester) on one Ticket. This does not write anything: the user reviews the exact text in Turaco and confirms or dismisses it. Needs the ticket id and the note text.",
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["ticketId","body"],"properties":{` +
+			`"ticketId":{"type":"string","format":"uuid","maxLength":36,"x-audit":"id","description":"The Ticket id."},` +
+			`"body":{"type":"string","minLength":1,"maxLength":2000,"x-audit":"text","description":"The complete text of the internal note."}}}`),
+		Permission: "tickets.manage",
+		Risk:       ai.RiskWrite,
+		Target:     &ai.Target{Type: "ticket", Arg: "ticketId"},
+		Write: &ai.WriteSpec{
+			Effect: ai.EffectInternal,
+			Prepare: func(ctx context.Context, c ai.Caller, input json.RawMessage) (ai.Preparation, error) {
+				in, err := decode(input)
+				if err != nil {
+					return ai.Preparation{}, err
+				}
+				t, err := svc.InternalNoteTarget(ctx, aiPrincipal(c), in.TicketID)
+				if err != nil {
+					return ai.Preparation{}, mapErr(err)
+				}
+				return ai.Preparation{TargetVersion: t.Version, TargetLabel: t.Reference + " " + t.Title}, nil
+			},
+			Execute: func(ctx context.Context, c ai.Caller, input json.RawMessage, x ai.Execution) (ai.ExecutionResult, error) {
+				in, err := decode(input)
+				if err != nil {
+					return ai.ExecutionResult{}, err
+				}
+				cm, err := svc.AddInternalNoteOnce(ctx, application.Caller{Actor: audit.UserActor(c.UserID), CorrelationID: c.CorrelationID},
+					aiPrincipal(c), in.TicketID, in.Body, x.TargetVersion, x.IdempotencyKey)
+				if err != nil {
+					return ai.ExecutionResult{}, mapErr(err)
+				}
+				return ai.ExecutionResult{Result: ai.ResourceRef{Type: "ticket_comment", ID: cm.ID}}, nil
+			},
+		},
+	}
+}
+
+func summarizeTool(svc *application.Service) ai.Tool {
+	return ai.Tool{
 		Name:        "tickets.summarize",
 		Description: "Read one Ticket the user may see (fields, the people on it and the latest comments, including internal notes only if the user may see them) so it can be summarized. Needs the ticket id.",
 		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"required":["ticketId"],"properties":{"ticketId":{"type":"string","format":"uuid","maxLength":36,"x-audit":"id","description":"The Ticket id."}}}`),
@@ -77,7 +157,7 @@ func AITools(svc *application.Service) []ai.Tool {
 				return nil, ai.ErrToolInvalid
 			}
 			// The module's own authorization decides: the same Get an API call would run, as the requesting User.
-			d, err := svc.Get(ctx, application.Principal{UserID: c.UserID, View: c.Has("tickets.view"), Manage: c.Has("tickets.manage")}, in.TicketID)
+			d, err := svc.Get(ctx, aiPrincipal(c), in.TicketID)
 			switch {
 			case errors.Is(err, application.ErrNotFound):
 				return nil, ai.ErrToolNotFound
@@ -104,5 +184,5 @@ func AITools(svc *application.Service) []ai.Tool {
 			}
 			return out, nil
 		},
-	}}
+	}
 }

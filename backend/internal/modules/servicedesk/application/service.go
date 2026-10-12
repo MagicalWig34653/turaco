@@ -720,6 +720,73 @@ const MaxMentions = 10
 // internal notes. Mentioned people who are inactive or cannot view the Ticket's Queue are dropped (a mention must
 // not disclose a Ticket); the stored list holds the rest and drives the ticket.mention notification.
 func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Principal, id, body string, internal bool, mentions []string) (Comment, error) {
+	return s.addComment(ctx, c, p, id, body, internal, mentions, commentGuard{})
+}
+
+// commentGuard holds the optional conditions of an idempotent comment (AddInternalNoteOnce).
+type commentGuard struct {
+	expectedVersion *int
+	key             string
+}
+
+// NoteTarget is what a caller about to add an internal note sees of the Ticket: its reference, title and version.
+type NoteTarget struct {
+	TicketID  string
+	Reference string
+	Title     string
+	Version   int
+}
+
+// InternalNoteTarget checks, without changing anything, that the caller may add an internal note to the Ticket now
+// (the same rules as AddComment with internal=true) and returns the Ticket's current version. An AI Proposal binds
+// to that version.
+func (s *Service) InternalNoteTarget(ctx context.Context, p Principal, id string) (NoteTarget, error) {
+	if p.External {
+		return NoteTarget{}, ErrForbidden
+	}
+	m, err := s.memberships(ctx, p.UserID)
+	if err != nil {
+		return NoteTarget{}, err
+	}
+	var cur Ticket
+	var acc access
+	err = s.store.InTx(ctx, func(tx pgx.Tx) error {
+		var ep Principal
+		var err error
+		cur, acc, ep, err = s.work(ctx, tx, p, m, id)
+		if err != nil {
+			return err
+		}
+		if !ep.Manage {
+			return ErrForbidden
+		}
+		if cur.Status == StatusCancelled || cur.Status == StatusClosed {
+			return &InvalidTransitionError{Operation: "comment", From: cur.Status}
+		}
+		return nil
+	})
+	if err != nil {
+		return NoteTarget{}, err
+	}
+	// The reference the caller may know (queue disclosure rules), as the Ticket API shows it.
+	if err := s.shape(ctx, acc, &cur); err != nil {
+		return NoteTarget{}, err
+	}
+	return NoteTarget{TicketID: cur.ID, Reference: cur.Reference, Title: cur.Title, Version: cur.Version}, nil
+}
+
+// AddInternalNoteOnce adds an internal note (no mentions) exactly once per idempotency key, and only while the
+// Ticket still has expectedVersion. A repeated call with the same key returns the note the first call created
+// without a second effect, audit entry or event. A changed Ticket fails with ErrVersionConflict; the note is never
+// silently rebased. It is the operation an executed AI Proposal calls, as the confirming User.
+func (s *Service) AddInternalNoteOnce(ctx context.Context, c Caller, p Principal, id, body string, expectedVersion int, key string) (Comment, error) {
+	if !uuidPattern.MatchString(strings.ToLower(key)) {
+		return Comment{}, invalid("idempotency key must be a UUID")
+	}
+	return s.addComment(ctx, c, p, id, body, true, nil, commentGuard{expectedVersion: &expectedVersion, key: strings.ToLower(key)})
+}
+
+func (s *Service) addComment(ctx context.Context, c Caller, p Principal, id, body string, internal bool, mentions []string, g commentGuard) (Comment, error) {
 	if err := c.validate(); err != nil {
 		return Comment{}, err
 	}
@@ -748,6 +815,22 @@ func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Princi
 		if err != nil {
 			return err
 		}
+		if g.key != "" {
+			// Idempotent replay: the first call with this key already added the note (the Ticket row lock taken by
+			// work serializes concurrent calls). A key used by another author or Ticket is a conflict, never a read.
+			prev, found, err := s.store.CommentByKeyTx(ctx, tx, g.key)
+			if err != nil {
+				return err
+			}
+			if found {
+				if prev.AuthorID != p.UserID || prev.TicketID != cur.ID {
+					return ErrVersionConflict
+				}
+				prev.IdempotencyKey = ""
+				out = prev
+				return nil
+			}
+		}
 		owner := s.isOwner(cur, p)
 		if !ep.Manage && !owner {
 			return ErrForbidden
@@ -758,11 +841,14 @@ func (s *Service) AddCommentWithMentions(ctx context.Context, c Caller, p Princi
 		if cur.Status == StatusCancelled || cur.Status == StatusClosed {
 			return &InvalidTransitionError{Operation: "comment", From: cur.Status}
 		}
+		if g.expectedVersion != nil && cur.Version != *g.expectedVersion {
+			return ErrVersionConflict
+		}
 		mentioned, err = s.mentionable(ctx, tx, mentioned, p.UserID, cur.QueueID)
 		if err != nil {
 			return err
 		}
-		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: cur.ID, AuthorID: p.UserID, Body: b, Internal: internal, MentionedUserIDs: mentioned})
+		out, err = s.store.InsertCommentTx(ctx, tx, Comment{TicketID: cur.ID, AuthorID: p.UserID, Body: b, Internal: internal, MentionedUserIDs: mentioned, IdempotencyKey: g.key})
 		if err != nil {
 			return err
 		}

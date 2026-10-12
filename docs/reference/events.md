@@ -4,6 +4,9 @@
 
 | Event | Version | Owner | Description |
 |---|---:|---|---|
+| `AIProposalConfirmed` | 1 | platform | A User confirmed an AI Proposal; Turaco now executes it as that User. Payload: proposalId, tool, targetType, targetId. Carries no parameters. |
+| `AIProposalExecuted` | 1 | platform | A confirmed AI Proposal was executed through the module's own operation. Payload: proposalId, tool, targetType, targetId, resultType, resultId. Carries no parameters. |
+| `AIProposalFailed` | 1 | platform | A confirmed AI Proposal failed (target changed, permission lost, rejected by the module, or the execution outcome stayed unknown). Payload: proposalId, tool, outcome. Carries no parameters. |
 | `AIProviderChanged` | 1 | platform | An AI Provider was created or reconfigured. Payload: providerId, operation (created, updated), enabled. Carries no endpoint, secret reference or settings. |
 | `AccessExpired` | 1 | organization | The end of access of an external account passed; the expiry job deactivated it and ended its sessions (open Task assignments need review). Payload: userId, externalPartyId. |
 | `ApprovalDecided` | 1 | approvals | An approval was approved or rejected. Payload: approvalId, subjectType, subjectId, stepIndex, decision. |

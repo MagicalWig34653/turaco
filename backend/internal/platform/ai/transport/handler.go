@@ -6,10 +6,12 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
@@ -50,6 +52,10 @@ func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authentica
 	route("POST /api/v1/ai/conversations/transcript", h.transcript)
 	route("POST /api/v1/ai/conversations/scope", h.consent)
 	route("POST /api/v1/ai/conversations/end", h.end)
+	route("GET /api/v1/ai/proposals", h.listProposals)
+	route("GET /api/v1/ai/proposals/{id}", h.getProposal)
+	route("POST /api/v1/ai/proposals/{id}/confirm", h.confirmProposal)
+	route("POST /api/v1/ai/proposals/{id}/dismiss", h.dismissProposal)
 }
 
 func caller(w http.ResponseWriter, r *http.Request) ai.Caller {
@@ -80,6 +86,16 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "ai.provider_changed", "The AI provider changed; start a new conversation.")
 	case errors.Is(err, ai.ErrTurnInProgress):
 		httpx.WriteError(w, http.StatusConflict, "ai.turn_in_progress", "The assistant is still answering the previous message.")
+	case errors.Is(err, ai.ErrProposalExpired):
+		httpx.WriteError(w, http.StatusConflict, "ai.proposal_expired", "The proposal expired; ask the assistant again.")
+	case errors.Is(err, ai.ErrProposalHashMismatch):
+		httpx.WriteError(w, http.StatusConflict, "ai.proposal_hash_mismatch", "The proposal differs from what was shown; reload it and review it again.")
+	case errors.Is(err, ai.ErrProposalNotPending):
+		httpx.WriteError(w, http.StatusConflict, "ai.proposal_not_pending", "The proposal is no longer awaiting confirmation.")
+	case errors.Is(err, ai.ErrProposalInProgress):
+		httpx.WriteError(w, http.StatusConflict, "ai.proposal_in_progress", "The proposal is being executed.")
+	case errors.Is(err, ai.ErrExecutionUnknown):
+		httpx.WriteError(w, http.StatusServiceUnavailable, "ai.execution_unknown", "The outcome of the execution is not known yet; check the proposal again shortly.")
 	case errors.Is(err, ai.ErrContextTooLarge):
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "ai.conversation_too_large", "The conversation is too long; start a new one.")
 	default:
@@ -175,8 +191,106 @@ func (h *handler) message(w http.ResponseWriter, r *http.Request) {
 	for _, s := range res.ScopeRequests {
 		reqs = append(reqs, map[string]any{"resourceType": s.ResourceType, "resourceId": s.ResourceID, "tool": s.Tool})
 	}
+	proposals := make([]proposalDTO, 0, len(res.Proposals))
+	for _, p := range res.Proposals {
+		proposals = append(proposals, toProposalDTO(p))
+	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"conversationId": res.ConversationID, "answer": res.Answer, "stopReason": res.StopReason,
-		"toolsUsed": used, "scopeRequests": reqs, "tokens": map[string]int{"in": res.TokensIn, "out": res.TokensOut}, "usage": toUsage(res.Usage)})
+		"toolsUsed": used, "scopeRequests": reqs, "proposals": proposals, "tokens": map[string]int{"in": res.TokensIn, "out": res.TokensOut}, "usage": toUsage(res.Usage)})
+}
+
+// proposalDTO is an AI Proposal as its creating User sees it. Parameters are the exact stored parameters the
+// confirmation is bound to (null once purged).
+type proposalDTO struct {
+	ID             string          `json:"id"`
+	Tool           string          `json:"tool"`
+	Effect         string          `json:"effect"`
+	Parameters     json.RawMessage `json:"parameters"`
+	ParametersHash string          `json:"parametersHash"`
+	Target         refDTO          `json:"target"`
+	TargetVersion  int             `json:"targetVersion"`
+	TargetLabel    string          `json:"targetLabel"`
+	State          string          `json:"state"`
+	CreatedAt      string          `json:"createdAt"`
+	ExpiresAt      string          `json:"expiresAt"`
+	ConfirmedAt    *string         `json:"confirmedAt"`
+	EndedAt        *string         `json:"endedAt"`
+	Attempt        int             `json:"attempt"`
+	OutcomeCode    *string         `json:"outcomeCode"`
+	Result         *refDTO         `json:"result"`
+}
+
+func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+func toProposalDTO(p ai.Proposal) proposalDTO {
+	out := proposalDTO{ID: p.ID, Tool: p.Tool, Effect: string(p.Effect), Parameters: p.Parameters, ParametersHash: p.ParametersHash,
+		Target: refDTO{Type: p.Target.Type, ID: p.Target.ID}, TargetVersion: p.TargetVersion, TargetLabel: p.TargetLabel, State: p.State,
+		CreatedAt: ts(p.CreatedAt), ExpiresAt: ts(p.ExpiresAt), Attempt: p.Attempt}
+	if p.Parameters == nil {
+		out.Parameters = json.RawMessage("null")
+	}
+	if p.ConfirmedAt != nil {
+		v := ts(*p.ConfirmedAt)
+		out.ConfirmedAt = &v
+	}
+	if p.EndedAt != nil {
+		v := ts(*p.EndedAt)
+		out.EndedAt = &v
+	}
+	if p.OutcomeCode != "" {
+		v := p.OutcomeCode
+		out.OutcomeCode = &v
+	}
+	if p.Result != nil {
+		out.Result = &refDTO{Type: p.Result.Type, ID: p.Result.ID}
+	}
+	return out
+}
+
+func (h *handler) listProposals(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.Proposals(r.Context(), caller(w, r))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	items := make([]proposalDTO, 0, len(list))
+	for _, p := range list {
+		items = append(items, toProposalDTO(p))
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *handler) getProposal(w http.ResponseWriter, r *http.Request) {
+	p, err := h.svc.GetProposal(r.Context(), caller(w, r), r.PathValue("id"))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toProposalDTO(p))
+}
+
+func (h *handler) confirmProposal(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		ParametersHash string `json:"parametersHash"`
+	}
+	if !decode(w, r, &b) {
+		return
+	}
+	p, err := h.svc.ConfirmProposal(r.Context(), caller(w, r), r.PathValue("id"), b.ParametersHash)
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toProposalDTO(p))
+}
+
+func (h *handler) dismissProposal(w http.ResponseWriter, r *http.Request) {
+	p, err := h.svc.DismissProposal(r.Context(), caller(w, r), r.PathValue("id"))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toProposalDTO(p))
 }
 
 func (h *handler) transcript(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,7 @@ import (
 // schedule are intended.
 var goldenJobTypes = []string{
 	"access.expire_assignments",
+	"ai.proposals.expire",
 	"ai.retention.purge",
 	"ai.sessions.expire",
 	"changes.reminders",

@@ -255,3 +255,76 @@ func TestStartupGateOffMountsStatusAndConfigurationOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestProposalRoutesAreOwnerOnlyHashBoundAndTyped(t *testing.T) {
+	h, tenant := setup(t, true)
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM ai.proposals WHERE tenant_id=$1`, tenant) })
+	u, other := newID(), newID()
+	hash := strings.Repeat("ab", 32)
+	insert := func() string {
+		var id string
+		if err := pool.QueryRow(ctx, `INSERT INTO ai.proposals (tenant_id, user_id, tool_name, parameters, parameters_hash, target_type, target_id,
+			target_version, target_label, expires_at) VALUES ($1,$2,'tickets.gone','{"body":"Exact text"}',$3,'ticket',$4,2,'T-1 Printer', now() + interval '15 minutes')
+			RETURNING id::text`, tenant, u, hash, newID()).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	id := insert()
+	w, m := call(h, "GET", "/api/v1/ai/proposals", u, "ai.use", "")
+	items, _ := m["items"].([]any)
+	if w.Code != 200 || len(items) != 1 {
+		t.Fatalf("list: %d %v", w.Code, m)
+	}
+	w, m = call(h, "GET", "/api/v1/ai/proposals/"+id, u, "ai.use", "")
+	params, _ := m["parameters"].(map[string]any)
+	if w.Code != 200 || m["state"] != "proposed" || m["parametersHash"] != hash || params["body"] != "Exact text" || m["targetLabel"] != "T-1 Printer" {
+		t.Fatalf("get: %d %v", w.Code, m)
+	}
+	// Another User sees nothing and cannot act.
+	for _, r := range []struct{ method, path, body string }{{"GET", "/api/v1/ai/proposals/" + id, ""},
+		{"POST", "/api/v1/ai/proposals/" + id + "/confirm", `{"parametersHash":"` + hash + `"}`}, {"POST", "/api/v1/ai/proposals/" + id + "/dismiss", ""}} {
+		if w, m := call(h, r.method, r.path, other, "ai.use", r.body); w.Code != 404 || errCode(m) != "ai.not_found" {
+			t.Errorf("%s %s by another user: %d %v", r.method, r.path, w.Code, m)
+		}
+	}
+	if _, m := call(h, "GET", "/api/v1/ai/proposals", other, "ai.use", ""); len(m["items"].([]any)) != 0 {
+		t.Errorf("another user's list: %v", m)
+	}
+	if w, _ := call(h, "GET", "/api/v1/ai/proposals", u, "tickets.view", ""); w.Code != 403 {
+		t.Errorf("without ai.use: %d", w.Code)
+	}
+	// The confirmation is bound to the hash of what was shown.
+	if w, m := call(h, "POST", "/api/v1/ai/proposals/"+id+"/confirm", u, "ai.use", `{"parametersHash":"`+strings.Repeat("cd", 32)+`"}`); w.Code != 409 || errCode(m) != "ai.proposal_hash_mismatch" {
+		t.Errorf("wrong hash: %d %v", w.Code, m)
+	}
+	if w, m := call(h, "POST", "/api/v1/ai/proposals/"+id+"/confirm", u, "ai.use", `{"parametersHash":"x","extra":1}`); w.Code != 400 {
+		t.Errorf("unknown body field: %d %v", w.Code, m)
+	}
+	// A tool that no longer exists fails the proposal; the real outcome is returned.
+	w, m = call(h, "POST", "/api/v1/ai/proposals/"+id+"/confirm", u, "ai.use", `{"parametersHash":"`+hash+`"}`)
+	if w.Code != 200 || m["state"] != "failed" || m["outcomeCode"] != "tool_unavailable" {
+		t.Errorf("confirm: %d %v", w.Code, m)
+	}
+	if w, m := call(h, "POST", "/api/v1/ai/proposals/"+id+"/confirm", u, "ai.use", `{"parametersHash":"`+hash+`"}`); w.Code != 409 || errCode(m) != "ai.proposal_not_pending" {
+		t.Errorf("replay: %d %v", w.Code, m)
+	}
+	id2 := insert()
+	if w, m := call(h, "POST", "/api/v1/ai/proposals/"+id2+"/dismiss", u, "ai.use", ""); w.Code != 200 || m["state"] != "dismissed" || m["parameters"] != nil {
+		t.Errorf("dismiss: %d %v", w.Code, m)
+	}
+	id3 := insert()
+	if _, err := pool.Exec(ctx, `UPDATE ai.proposals SET expires_at = now() - interval '1 second' WHERE id=$1`, id3); err != nil {
+		t.Fatal(err)
+	}
+	if w, m := call(h, "POST", "/api/v1/ai/proposals/"+id3+"/confirm", u, "ai.use", `{"parametersHash":"`+hash+`"}`); w.Code != 409 || errCode(m) != "ai.proposal_expired" {
+		t.Errorf("expired: %d %v", w.Code, m)
+	}
+	// With the startup gate off the routes are not mounted.
+	off, _ := setup(t, false)
+	if w, _ := call(off, "GET", "/api/v1/ai/proposals", u, "ai.use", ""); w.Code != 404 {
+		t.Errorf("startup gate off: %d", w.Code)
+	}
+}
