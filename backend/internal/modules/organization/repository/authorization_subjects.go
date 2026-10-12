@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 
@@ -34,9 +35,12 @@ func (r *Repository) GroupIDsOfUser(ctx context.Context, userID string) ([]strin
 	return collectStrings(rows, "group ids of user")
 }
 
-// LocationSubtreeIDs walks the Location tree downwards from the roots. The tree is at most four levels deep (trigger
-// locations_guard_tree); the depth bound of eight also terminates the walk on corrupt data with a cycle, and nodes
-// beyond it are left out (fail closed).
+// locationWalkDepth bounds the Location tree walks. The tree is at most four levels deep (trigger
+// locations_guard_tree), so valid data never reaches the bound; it terminates a walk over corrupt (cyclic) data.
+const locationWalkDepth = 8
+
+// LocationSubtreeIDs walks the Location tree downwards from the roots. Nodes beyond locationWalkDepth are left out
+// (fail closed) and reaching the bound is logged, because it means the tree data is corrupt.
 func (r *Repository) LocationSubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		WITH RECURSIVE t(id, depth) AS (
@@ -45,13 +49,66 @@ func (r *Repository) LocationSubtreeIDs(ctx context.Context, rootIDs []string) (
 			SELECT c.id, t.depth + 1
 			FROM organization.locations c
 			JOIN t ON c.parent_location_id = t.id
-			WHERE t.depth < 8
+			WHERE t.depth < $2
 		)
-		SELECT DISTINCT id::text FROM t ORDER BY 1`, rootIDs)
+		SELECT id::text, max(depth) FROM t GROUP BY id ORDER BY 1`, rootIDs, locationWalkDepth)
 	if err != nil {
 		return nil, fmt.Errorf("location subtree ids: %w", err)
 	}
-	return collectStrings(rows, "location subtree ids")
+	defer rows.Close()
+	out := []string{}
+	bounded := false
+	for rows.Next() {
+		var id string
+		var depth int
+		if err := rows.Scan(&id, &depth); err != nil {
+			return nil, fmt.Errorf("location subtree ids: scan: %w", err)
+		}
+		if depth >= locationWalkDepth {
+			bounded = true
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("location subtree ids: %w", err)
+	}
+	if bounded {
+		slog.WarnContext(ctx, "location subtree walk reached its depth bound; the Location tree is corrupt (cycle or too deep)",
+			"bound", locationWalkDepth, "roots", len(rootIDs))
+	}
+	return out, nil
+}
+
+// LocationPaths walks upwards from each Location to its Site and returns the path Site first. The walk is bounded
+// like LocationSubtreeIDs; a path cut by the bound (corrupt data) is returned as far as it was walked.
+func (r *Repository) LocationPaths(ctx context.Context, ids []string) (map[string][]application.LocationPathNode, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH RECURSIVE up(start_id, id, parent_id, name, active, depth) AS (
+			SELECT l.id, l.id, l.parent_location_id, l.name, l.active, 0
+			FROM organization.locations l WHERE l.id = ANY($1::text[]::uuid[])
+			UNION ALL
+			SELECT up.start_id, p.id, p.parent_location_id, p.name, p.active, up.depth + 1
+			FROM organization.locations p JOIN up ON p.id = up.parent_id
+			WHERE up.depth + 1 < $2
+		)
+		SELECT start_id::text, id::text, name, active FROM up ORDER BY start_id, depth DESC`, ids, locationWalkDepth)
+	if err != nil {
+		return nil, fmt.Errorf("location paths: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]application.LocationPathNode{}
+	for rows.Next() {
+		var start string
+		var n application.LocationPathNode
+		if err := rows.Scan(&start, &n.ID, &n.Name, &n.Active); err != nil {
+			return nil, fmt.Errorf("location paths: scan: %w", err)
+		}
+		out[start] = append(out[start], n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("location paths: %w", err)
+	}
+	return out, nil
 }
 
 // GroupMemberUserIDs expands the groups over currently observed nesting to child groups and returns the

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,7 +20,10 @@ type AssignInput struct {
 	SubjectID   string
 	// ExpiresAt optionally ends the assignment. It is forbidden for the built-in administrator role and at most
 	// MaxHighRiskAssignmentDays away for a role that holds a high-risk permission.
-	ExpiresAt       *time.Time
+	ExpiresAt *time.Time
+	// ScopeLocationID, when set, makes the assignment Location-scoped (ADR-0040): it applies at that Location and
+	// all its descendants. Empty means global.
+	ScopeLocationID string
 	Acknowledgement Acknowledgement
 }
 
@@ -37,14 +41,14 @@ type RevokeOutcome struct {
 }
 
 const assignmentSelect = `
-	SELECT a.id::text, a.role_id::text, r.key, a.subject_type, a.subject_id::text, a.scope,
+	SELECT a.id::text, a.role_id::text, r.key, a.subject_type, a.subject_id::text, a.scope, COALESCE(a.scope_location_id::text, ''),
 	       a.created_at, a.created_by->>'userId', a.revoked_at, a.revoked_by->>'userId', a.expires_at
 	FROM platform.role_assignments a JOIN platform.roles r ON r.id = a.role_id`
 
 func scanAssignment(row pgx.Row) (Assignment, error) {
 	var a Assignment
 	var createdBy, revokedBy *string
-	if err := row.Scan(&a.ID, &a.RoleID, &a.RoleKey, &a.SubjectType, &a.SubjectID, &a.Scope,
+	if err := row.Scan(&a.ID, &a.RoleID, &a.RoleKey, &a.SubjectType, &a.SubjectID, &a.Scope, &a.ScopeLocationID,
 		&a.CreatedAt, &createdBy, &a.RevokedAt, &revokedBy, &a.ExpiresAt); err != nil {
 		return Assignment{}, err
 	}
@@ -59,6 +63,9 @@ func scanAssignment(row pgx.Row) (Assignment, error) {
 
 func assignmentState(a Assignment) map[string]any {
 	m := map[string]any{"roleId": a.RoleID, "roleKey": a.RoleKey, "subjectType": a.SubjectType, "subjectId": a.SubjectID, "scope": a.Scope}
+	if a.ScopeLocationID != "" {
+		m["scopeLocationId"] = a.ScopeLocationID
+	}
 	if a.ExpiresAt != nil {
 		m["expiresAt"] = a.ExpiresAt.UTC().Format(time.RFC3339)
 	}
@@ -68,10 +75,13 @@ func assignmentState(a Assignment) map[string]any {
 // AssignRole grants a role to an existing User or non-deleted Directory Group. For a user actor:
 //   - nobody assigns to themselves or to a Directory Group they belong to (access.self_assignment);
 //   - the actor holds the role or is a platform administrator, because the role also hands over the queue grants
-//     and View shares attached to it (access.role_not_held, review rule R2);
-//   - the grant ceiling applies to every permission of the role, high-risk roles only by an administrator;
+//     and View shares attached to it (access.role_not_held, review rule R2); for a scoped assignment at L the role
+//     is held globally or at L or an ancestor of L;
+//   - the grant ceiling applies to every permission of the role at the assignment's scope, high-risk roles only by
+//     an administrator;
 //
-// for every actor: the administrator role has no expiry, a high-risk role is not given to a local account (R10) and
+// for every actor: the administrator role has no expiry and is never scoped, an external account receives no scoped
+// assignment, the scope Location exists and is active, a high-risk role is not given to a local account (R10) and
 // expires within 366 days, and newly created separation-of-duties conflicts need an acknowledgement.
 func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlationID string, in AssignInput) (Assignment, error) {
 	if err := validateActor(actor, correlationID); err != nil {
@@ -85,6 +95,10 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 	}
 	if !uuidPattern.MatchString(in.SubjectID) {
 		return Assignment{}, invalid("subjectId must be a UUID")
+	}
+	scopeLoc := strings.ToLower(in.ScopeLocationID)
+	if scopeLoc != "" && !uuidPattern.MatchString(scopeLoc) {
+		return Assignment{}, invalid("scopeLocationId must be a UUID")
 	}
 	now := s.now().UTC()
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(now) {
@@ -107,6 +121,14 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 				return invalid("a role with high-risk permissions is assigned for at most %d days", MaxHighRiskAssignmentDays)
 			}
 		}
+		if scopeLoc != "" {
+			if role.BuiltIn {
+				return ErrAdminScopeGlobal
+			}
+			if err := s.requireActiveLocation(ctx, scopeLoc); err != nil {
+				return err
+			}
+		}
 		var exists bool
 		if in.SubjectType == SubjectUser {
 			exists, err = s.subjects.UserExists(ctx, in.SubjectID)
@@ -126,10 +148,10 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 		if err := a.checkNotSelf(in.SubjectType, in.SubjectID); err != nil {
 			return err
 		}
-		if !a.exempt() && !a.holdsRole(in.RoleID) {
+		if !a.exempt() && !a.holdsRoleAt(in.RoleID, scopeLoc) {
 			return ErrRoleNotHeld
 		}
-		if err := a.checkGrant(role.Permissions); err != nil {
+		if err := a.checkGrant(role.Permissions, scopeLoc); err != nil {
 			return err
 		}
 		var target holdings
@@ -155,33 +177,47 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 			if err != nil {
 				return fmt.Errorf("check account kind: %w", err)
 			}
+			if external && scopeLoc != "" {
+				return ErrExternalScopeUnsupported
+			}
 			if external && (role.BuiltIn || slices.ContainsFunc(role.Permissions, func(p string) bool { return !InExternalCeiling(p) })) {
 				return ErrExternalCeiling
 			}
 		}
 		// A role the subject holds already (or an administrator) adds no new conflicts; the built-in role is the
-		// administrators' own and exempt from separation-of-duties hygiene.
+		// administrators' own and exempt from separation-of-duties hygiene. Holdings at Locations count like global
+		// ones (F16 open question 13: conservative union).
 		if !role.BuiltIn && !target.admin {
+			before := target.unionPerms()
 			combined := permSet(role.Permissions)
-			for p := range target.perms {
+			for p := range before {
 				combined[p] = struct{}{}
 			}
 			if err := s.requireAcknowledgement(ctx, tx, actor, correlationID, "role_assignment", in.SubjectID,
-				newViolations(target.perms, combined), in.Acknowledgement); err != nil {
+				newViolations(before, combined), in.Acknowledgement); err != nil {
 				return err
 			}
 		}
-		// An assignment whose expiry passed is still "active" until the job revokes it; it must not block a new one.
+		scope, scopeArg := ScopeGlobal, any(nil)
+		if scopeLoc != "" {
+			scope, scopeArg = ScopeLocation, scopeLoc
+		}
+		// An assignment whose expiry passed is still "active" until the job revokes it; it must not block a new one at
+		// the same scope (the active-assignment unique index covers the scope Location).
 		var expiredID string
 		err = tx.QueryRow(ctx, `
 			UPDATE platform.role_assignments SET revoked_at = now(), revoked_by = $4
-			WHERE role_id = $1 AND subject_type = $2 AND subject_id = $3 AND scope = 'global' AND revoked_at IS NULL
-			  AND expires_at IS NOT NULL AND expires_at <= now()
-			RETURNING id::text`, in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(audit.SystemActor("access-expiry")))).Scan(&expiredID)
+			WHERE role_id = $1 AND subject_type = $2 AND subject_id = $3 AND scope_location_id IS NOT DISTINCT FROM $5::uuid
+			  AND revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= now()
+			RETURNING id::text`, in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(audit.SystemActor("access-expiry"))), scopeArg).Scan(&expiredID)
 		switch {
 		case err == nil:
+			meta := map[string]any{"reason": "replaced_after_expiry", "scope": scope}
+			if scopeLoc != "" {
+				meta["scopeLocationId"] = scopeLoc
+			}
 			if err := s.record(ctx, tx, audit.SystemActor("access-expiry"), correlationID, "authorization.role.assignment_expired",
-				"role_assignment", expiredID, nil, nil, map[string]any{"reason": "replaced_after_expiry"}); err != nil {
+				"role_assignment", expiredID, nil, nil, meta); err != nil {
 				return err
 			}
 		case !errors.Is(err, pgx.ErrNoRows):
@@ -189,11 +225,14 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 		}
 		var id string
 		err = tx.QueryRow(ctx, `
-			INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by, expires_at)
-			VALUES ($1,$2,$3,$4,$5) RETURNING id::text`,
-			in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(actor)), in.ExpiresAt).Scan(&id)
+			INSERT INTO platform.role_assignments(role_id, subject_type, subject_id, created_by, expires_at, scope, scope_location_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7::uuid) RETURNING id::text`,
+			in.RoleID, in.SubjectType, in.SubjectID, []byte(actorRef(actor)), in.ExpiresAt, scope, scopeArg).Scan(&id)
 		if isUnique(err) {
 			return ErrDuplicateAssignment
+		}
+		if isAdminScoped(err) {
+			return ErrAdminScopeGlobal
 		}
 		if err != nil {
 			return fmt.Errorf("insert assignment: %w", err)
@@ -262,7 +301,9 @@ func (s *Service) RevokeAssignment(ctx context.Context, actor audit.Actor, corre
 			if err != nil {
 				return err
 			}
-			if err := a.checkRemoval(role.Permissions); err != nil {
+			// The removal ceiling applies at the assignment's scope: a scoped assignment at L is revocable by an actor
+			// who covers the role's permissions at L (global-only ones globally).
+			if err := a.checkRemoval(role.Permissions, before.ScopeLocationID); err != nil {
 				return err
 			}
 		}
@@ -322,6 +363,18 @@ func (s *Service) ListAssignments(ctx context.Context, f AssignmentFilter) (Assi
 			return AssignmentPage{}, invalid("subjectId must be a UUID")
 		}
 		add("a.subject_id = $%d", f.SubjectID)
+	}
+	if f.Scope != "" {
+		if f.Scope != ScopeGlobal && f.Scope != ScopeLocation {
+			return AssignmentPage{}, invalid("scope must be global or location")
+		}
+		add("a.scope = $%d", f.Scope)
+	}
+	if f.ScopeLocationID != "" {
+		if !uuidPattern.MatchString(f.ScopeLocationID) {
+			return AssignmentPage{}, invalid("scopeLocationId must be a UUID")
+		}
+		add("a.scope_location_id = $%d::uuid", f.ScopeLocationID)
 	}
 	if !f.IncludeRevoked {
 		// An expired assignment grants nothing even before the job revokes it.

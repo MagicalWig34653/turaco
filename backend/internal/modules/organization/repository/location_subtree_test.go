@@ -1,10 +1,13 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,14 +92,59 @@ func TestLocationSubtreeIDsTerminatesOnCycle(t *testing.T) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	got, err := f.repo.LocationSubtreeIDs(cctx, []string{x})
+	slog.SetDefault(prev)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, sortedIDs(x, y)) {
 		t.Fatalf("subtree on a cycle = %v", got)
 	}
+	// Reaching the depth bound means corrupt data and is logged (L-A security review item 6).
+	if !strings.Contains(logs.String(), "depth bound") {
+		t.Fatalf("depth bound not logged: %q", logs.String())
+	}
+	// Paths terminate on the cycle as well.
+	if _, err := f.repo.LocationPaths(cctx, []string{x}); err != nil {
+		t.Fatal(err)
+	}
 	restore()
+	logs.Reset()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	_, _ = f.repo.LocationSubtreeIDs(ctx, []string{site})
+	slog.SetDefault(prev)
+	if logs.Len() != 0 {
+		t.Fatalf("valid tree logged: %q", logs.String())
+	}
+}
+
+func TestLocationPaths(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	site := f.location(f.pfx + " Site P")
+	a1 := f.area(f.pfx+" P1", site)
+	a1a := f.area(f.pfx+" P1a", a1)
+	if _, err := f.pool.Exec(ctx, `UPDATE organization.locations SET active = false WHERE id = $1`, a1); err != nil {
+		t.Fatal(err)
+	}
+	unknown := "01960000-0000-7000-8000-00000000dead"
+	got, err := f.repo.LocationPaths(ctx, []string{a1a, site, unknown})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got[unknown]; ok || len(got) != 2 {
+		t.Fatalf("paths = %+v", got)
+	}
+	p := got[a1a]
+	if len(p) != 3 || p[0].ID != site || p[1].ID != a1 || p[2].ID != a1a || p[1].Active || !p[2].Active || p[2].Name != f.pfx+" P1a" {
+		t.Fatalf("path of P1a = %+v", p)
+	}
+	if s := got[site]; len(s) != 1 || s[0].ID != site {
+		t.Fatalf("path of the Site = %+v", s)
+	}
 }
 
 // Performance bound (F16 L13): three Sites with 200 areas in total expand in one bounded query.

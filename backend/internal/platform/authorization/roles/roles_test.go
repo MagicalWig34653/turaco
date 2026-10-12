@@ -33,6 +33,24 @@ type fakeDirectory struct {
 	// subtreeCalls counts SubtreeIDs calls; subtreeErr makes them fail.
 	subtreeCalls int
 	subtreeErr   error
+	// inactiveLocations marks deactivated Locations.
+	inactiveLocations map[string]bool
+}
+
+// LocationPaths walks the in-memory tree upwards like organization/public does; a Location's name is its id.
+func (f *fakeDirectory) LocationPaths(_ context.Context, ids []string) (map[string][]LocationRef, error) {
+	out := map[string][]LocationRef{}
+	for _, id := range ids {
+		if _, ok := f.parent[id]; !ok {
+			continue
+		}
+		var path []LocationRef
+		for cur, depth := id, 0; cur != "" && depth < 8; cur, depth = f.parent[cur], depth+1 {
+			path = append([]LocationRef{{ID: cur, Name: "loc-" + cur, Active: !f.inactiveLocations[cur]}}, path...)
+		}
+		out[id] = path
+	}
+	return out, nil
 }
 
 // SubtreeIDs walks the in-memory tree like organization/public does: each known root and its descendants, depth
@@ -139,7 +157,7 @@ func newFixture(t *testing.T) *fixture {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	f := &fixture{t: t, pool: pool, pfx: "zt-" + hex.EncodeToString(b)}
-	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}, external: map[string]bool{}, localOrigin: map[string]bool{}, parent: map[string]string{}}
+	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}, external: map[string]bool{}, localOrigin: map[string]bool{}, parent: map[string]string{}, inactiveLocations: map[string]bool{}}
 	f.svc = NewService(pool, f.dir)
 	f.cli = audit.CLIActor("tester")
 	f.corr = f.pfx + "-c"

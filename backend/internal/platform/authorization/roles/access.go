@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,7 +25,8 @@ type EffectivePermissions struct {
 }
 
 // EffectivePermissionsOf explains userID. A platform administrator holds everything by design and gets no
-// separation-of-duties warnings.
+// separation-of-duties warnings. Warnings are computed over the union of global and Location-scoped holdings (F16
+// open question 13, conservative).
 func (s *Service) EffectivePermissionsOf(ctx context.Context, userID string) (EffectivePermissions, error) {
 	if !uuidPattern.MatchString(userID) {
 		return EffectivePermissions{}, ErrNotFound
@@ -44,6 +46,9 @@ func (s *Service) EffectivePermissionsOf(ctx context.Context, userID string) (Ef
 		for _, p := range ex.Permissions {
 			set[p.Name] = struct{}{}
 		}
+		for _, p := range ex.Scoped {
+			set[p.Name] = struct{}{}
+		}
 		out.Warnings = Violations(set)
 	}
 	return out, nil
@@ -60,6 +65,9 @@ type Holder struct {
 	SubjectID          string
 	SubjectDisplayName string
 	ExpiresAt          *time.Time
+	// Scope is ScopeGlobal or ScopeLocation; ScopeLocationID is the root Location of a scoped assignment.
+	Scope           string
+	ScopeLocationID string
 }
 
 // HolderPage is one page of holders.
@@ -69,27 +77,52 @@ type HolderPage struct {
 }
 
 // Holders lists the active assignments whose role grants the permission: Users directly and Directory Groups
-// (their members are listed with the group). Newest first.
-func (s *Service) Holders(ctx context.Context, permission string, page Page) (HolderPage, error) {
+// (their members are listed with the group). Newest first. Global assignments always count; Location-scoped ones
+// only for a scopable permission (otherwise the permission is inert there). With locationID, only holders whose scope
+// covers that Location are listed: global holders and scoped assignments at the Location or one of its ancestors
+// (F16 design L11).
+func (s *Service) Holders(ctx context.Context, permission, locationID string, page Page) (HolderPage, error) {
 	if _, ok := registryRisk()[permission]; !ok {
 		return HolderPage{}, &UnknownPermissionError{Names: []string{permission}}
 	}
 	page = page.Normalize()
 	args := []any{permission}
+	scopeCond := "a.scope = 'global'"
+	if s.eval.scopable(permission) {
+		if locationID == "" {
+			scopeCond = "(a.scope = 'global' OR a.scope = 'location')"
+		} else {
+			if !uuidPattern.MatchString(locationID) {
+				return HolderPage{}, invalid("locationId must be a UUID")
+			}
+			covering, err := s.ancestorsOrSelf(ctx, strings.ToLower(locationID))
+			if err != nil {
+				return HolderPage{}, err
+			}
+			if len(covering) == 0 {
+				return HolderPage{}, invalid("locationId is not a Location")
+			}
+			args = append(args, covering)
+			scopeCond = fmt.Sprintf("(a.scope = 'global' OR (a.scope = 'location' AND a.scope_location_id = ANY($%d::text[]::uuid[])))", len(args))
+		}
+	} else if locationID != "" && !uuidPattern.MatchString(locationID) {
+		return HolderPage{}, invalid("locationId must be a UUID")
+	}
 	cursor := ""
 	if page.Cursor != "" {
 		if !uuidPattern.MatchString(page.Cursor) {
 			return HolderPage{}, ErrInvalidCursor
 		}
 		args = append(args, page.Cursor)
-		cursor = " AND a.id < $2"
+		cursor = fmt.Sprintf(" AND a.id < $%d", len(args))
 	}
 	args = append(args, page.Limit+1)
 	rows, err := s.pool.Query(ctx, `
-		SELECT a.id::text, r.id::text, r.key, r.name, r.built_in, a.subject_type, a.subject_id::text, a.expires_at
+		SELECT a.id::text, r.id::text, r.key, r.name, r.built_in, a.subject_type, a.subject_id::text, a.expires_at,
+		       a.scope, COALESCE(a.scope_location_id::text, '')
 		FROM platform.role_assignments a
 		JOIN platform.roles r ON r.id = a.role_id AND r.deleted_at IS NULL
-		WHERE a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now()) AND a.scope = 'global'
+		WHERE a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now()) AND `+scopeCond+`
 		  AND (r.built_in OR EXISTS (SELECT 1 FROM platform.role_permissions rp WHERE rp.role_id = r.id AND rp.permission = $1))`+cursor+
 		fmt.Sprintf(` ORDER BY a.id DESC LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -99,7 +132,8 @@ func (s *Service) Holders(ctx context.Context, permission string, page Page) (Ho
 	var res HolderPage
 	for rows.Next() {
 		var h Holder
-		if err := rows.Scan(&h.AssignmentID, &h.RoleID, &h.RoleKey, &h.RoleName, &h.BuiltInAdmin, &h.SubjectType, &h.SubjectID, &h.ExpiresAt); err != nil {
+		if err := rows.Scan(&h.AssignmentID, &h.RoleID, &h.RoleKey, &h.RoleName, &h.BuiltInAdmin, &h.SubjectType, &h.SubjectID, &h.ExpiresAt,
+			&h.Scope, &h.ScopeLocationID); err != nil {
 			return HolderPage{}, fmt.Errorf("list holders: scan: %w", err)
 		}
 		res.Items = append(res.Items, h)
@@ -137,8 +171,12 @@ const MaxRoleMembers = 500
 type Member struct {
 	UserID      string
 	DisplayName string
-	// Source is "direct" or "directory_group".
+	// Source is "direct" or "directory_group" (the first path found; direct paths are listed first).
 	Source string
+	// Global is true when any assignment path gives the role globally. Otherwise ScopeLocationIDs are the sorted
+	// root Locations of the scoped assignments through which the User holds the role.
+	Global           bool
+	ScopeLocationIDs []string
 }
 
 // MemberList is the effective members of a role: Users assigned directly and the members of assigned Directory
@@ -157,52 +195,76 @@ func (s *Service) MembersOf(ctx context.Context, roleID string) (MemberList, err
 		return MemberList{}, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT subject_type, subject_id::text FROM platform.role_assignments
+		SELECT subject_type, subject_id::text, COALESCE(scope_location_id::text, '') FROM platform.role_assignments
 		WHERE role_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) ORDER BY id`, roleID)
 	if err != nil {
 		return MemberList{}, fmt.Errorf("list role assignments: %w", err)
 	}
-	var direct, groups []string
+	type path struct{ subject, location string }
+	var direct, groups []path
 	for rows.Next() {
-		var typ, id string
-		if err := rows.Scan(&typ, &id); err != nil {
+		var typ string
+		var p path
+		if err := rows.Scan(&typ, &p.subject, &p.location); err != nil {
 			rows.Close()
 			return MemberList{}, fmt.Errorf("list role assignments: scan: %w", err)
 		}
 		if typ == SubjectUser {
-			direct = append(direct, id)
+			direct = append(direct, p)
 		} else {
-			groups = append(groups, id)
+			groups = append(groups, p)
 		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return MemberList{}, fmt.Errorf("list role assignments: %w", err)
 	}
-	var viaGroup []string
-	if len(groups) > 0 {
-		if viaGroup, err = s.subjects.GroupMemberUserIDs(ctx, groups, MaxRoleMembers+1); err != nil {
-			return MemberList{}, fmt.Errorf("expand groups: %w", err)
+	// Group members are expanded per scope (global, then each scope Location), so each member carries the scope of
+	// the group assignment that reaches them.
+	byScope := map[string][]string{}
+	var scopes []string
+	for _, g := range groups {
+		if _, ok := byScope[g.location]; !ok {
+			scopes = append(scopes, g.location)
 		}
+		byScope[g.location] = append(byScope[g.location], g.subject)
 	}
-	seen := map[string]bool{}
+	sort.Strings(scopes)
+	index := map[string]int{}
 	var out MemberList
-	add := func(id, source string) {
-		if seen[id] {
+	add := func(id, source, location string) {
+		if i, ok := index[id]; ok {
+			m := &out.Items[i]
+			if location == "" {
+				m.Global, m.ScopeLocationIDs = true, nil
+			} else if !m.Global && !slices.Contains(m.ScopeLocationIDs, location) {
+				m.ScopeLocationIDs = append(m.ScopeLocationIDs, location)
+				sort.Strings(m.ScopeLocationIDs)
+			}
 			return
 		}
-		seen[id] = true
 		if len(out.Items) >= MaxRoleMembers {
 			out.Capped = true
 			return
 		}
-		out.Items = append(out.Items, Member{UserID: id, Source: source})
+		m := Member{UserID: id, Source: source, Global: location == ""}
+		if location != "" {
+			m.ScopeLocationIDs = []string{location}
+		}
+		index[id] = len(out.Items)
+		out.Items = append(out.Items, m)
 	}
-	for _, id := range direct {
-		add(id, "direct")
+	for _, p := range direct {
+		add(p.subject, "direct", p.location)
 	}
-	for _, id := range viaGroup {
-		add(id, SubjectDirectoryGroup)
+	for _, loc := range scopes {
+		viaGroup, err := s.subjects.GroupMemberUserIDs(ctx, byScope[loc], MaxRoleMembers+1)
+		if err != nil {
+			return MemberList{}, fmt.Errorf("expand groups: %w", err)
+		}
+		for _, id := range viaGroup {
+			add(id, SubjectDirectoryGroup, loc)
+		}
 	}
 	if out.Items == nil {
 		out.Items = []Member{}
@@ -275,7 +337,7 @@ func ExpireAssignments(ctx context.Context, pool *pgxpool.Pool, now time.Time) (
 	n := 0
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT a.id::text, a.role_id::text, a.subject_type, a.subject_id::text, a.expires_at
+			SELECT a.id::text, a.role_id::text, a.subject_type, a.subject_id::text, a.expires_at, a.scope, COALESCE(a.scope_location_id::text, '')
 			FROM platform.role_assignments a
 			WHERE a.revoked_at IS NULL AND a.expires_at IS NOT NULL AND a.expires_at <= $1
 			ORDER BY a.id LIMIT $2 FOR UPDATE OF a SKIP LOCKED`, now, expireBatch)
@@ -285,11 +347,12 @@ func ExpireAssignments(ctx context.Context, pool *pgxpool.Pool, now time.Time) (
 		type due struct {
 			id, roleID, typ, subject string
 			expires                  time.Time
+			scope, scopeLocationID   string
 		}
 		var list []due
 		for rows.Next() {
 			var d due
-			if err := rows.Scan(&d.id, &d.roleID, &d.typ, &d.subject, &d.expires); err != nil {
+			if err := rows.Scan(&d.id, &d.roleID, &d.typ, &d.subject, &d.expires, &d.scope, &d.scopeLocationID); err != nil {
 				rows.Close()
 				return fmt.Errorf("find expired assignments: scan: %w", err)
 			}
@@ -306,9 +369,13 @@ func ExpireAssignments(ctx context.Context, pool *pgxpool.Pool, now time.Time) (
 				d.id, []byte(actorRef(actor))); err != nil {
 				return fmt.Errorf("revoke expired assignment: %w", err)
 			}
+			meta := map[string]any{"roleId": d.roleID, "subjectType": d.typ, "subjectId": d.subject, "expiredAt": d.expires.UTC().Format(time.RFC3339),
+				"scope": d.scope}
+			if d.scopeLocationID != "" {
+				meta["scopeLocationId"] = d.scopeLocationID
+			}
 			if err := audit.Record(ctx, tx, audit.Change{Action: "authorization.role.assignment_expired", TargetType: "role_assignment", TargetID: d.id,
-				Actor: actor, CorrelationID: corr,
-				Metadata: map[string]any{"roleId": d.roleID, "subjectType": d.typ, "subjectId": d.subject, "expiredAt": d.expires.UTC().Format(time.RFC3339)}}); err != nil {
+				Actor: actor, CorrelationID: corr, Metadata: meta}); err != nil {
 				return err
 			}
 			n++

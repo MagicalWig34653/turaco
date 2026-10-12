@@ -48,19 +48,23 @@ func (s *Service) actorOf(ctx context.Context, tx pgx.Tx, a audit.Actor) (actor,
 // exempt reports whether the actor-relative ceilings do not apply: system actors and platform administrators.
 func (a actor) exempt() bool { return a.system || a.h.admin }
 
-func (a actor) holds(permission string) bool {
-	_, ok := a.h.perms[permission]
-	return ok
+// holdsRoleAt is the role-holding rule (R2) at a scope: locationID "" means a global assignment, which needs the
+// role held globally; a scoped assignment at L needs the role held globally or at L or an ancestor of L.
+func (a actor) holdsRoleAt(roleID, locationID string) bool {
+	return a.h.holdsRoleAt(roleID, locationID)
 }
 
-func (a actor) holdsRole(roleID string) bool {
-	_, ok := a.h.roleIDs[roleID]
-	return ok
-}
+// holdsRoleAnywhere is used by role permission edits: a role the actor holds at any scope cannot gain permissions
+// through the actor's own edit.
+func (a actor) holdsRoleAnywhere(roleID string) bool { return a.h.holdsRoleAnywhere(roleID) }
 
-// checkGrant is the grant ceiling: the actor hands out only permissions they hold, and high-risk permissions only
-// as a platform administrator (403 access.grant_exceeds_holder, access.high_risk_requires_administrator).
-func (a actor) checkGrant(perms []string) error {
+// checkGrant is the grant ceiling at a scope (F16 design L5): the actor hands out only permissions they cover there
+// (locationID "": held globally; a Location: held globally, or scopable and held at the Location or an ancestor),
+// and high-risk permissions only as a platform administrator (403 access.grant_exceeds_holder,
+// access.high_risk_requires_administrator). A global-only permission of a role assigned at a Location must be held
+// globally although it is inert there, so a later registry change cannot turn it into an uncovered grant. Role
+// permission edits affect every scope and pass "".
+func (a actor) checkGrant(perms []string, locationID string) error {
 	if a.exempt() {
 		return nil
 	}
@@ -71,20 +75,21 @@ func (a actor) checkGrant(perms []string) error {
 		}
 	}
 	for _, p := range perms {
-		if !a.holds(p) {
+		if !a.h.covers(p, locationID) {
 			return ErrGrantExceedsHolder
 		}
 	}
 	return nil
 }
 
-// checkRemoval is the removal ceiling (R6): taking permissions away from holders needs an actor who holds them all.
-func (a actor) checkRemoval(perms []string) error {
+// checkRemoval is the removal ceiling (R6) at a scope: taking permissions away from holders needs an actor who
+// covers them all there (locationID "" for a global assignment and for role permission edits).
+func (a actor) checkRemoval(perms []string, locationID string) error {
 	if a.exempt() {
 		return nil
 	}
 	for _, p := range perms {
-		if !a.holds(p) {
+		if !a.h.covers(p, locationID) {
 			return ErrGrantExceedsHolder
 		}
 	}
@@ -256,8 +261,10 @@ func (g *Guards) IsAdministrator(ctx context.Context, tx pgx.Tx, userID string) 
 	return h.admin, nil
 }
 
-// RequireDominance implements R1: the actor must be a platform administrator or hold every effective permission of
-// the target. A system actor (CLI) is the operator and passes. Evaluated in tx.
+// RequireDominance implements R1: the actor must be a platform administrator or cover every effective holding of
+// the target: each permission the target holds globally the actor holds globally, and for each permission the
+// target holds at Locations the actor holds it globally or at every one of those Locations (F16 design L5). A
+// system actor (CLI) is the operator and passes. Evaluated in tx.
 func (g *Guards) RequireDominance(ctx context.Context, tx pgx.Tx, a audit.Actor, targetUserID string) error {
 	if a.UserID == "" {
 		return nil
@@ -273,15 +280,36 @@ func (g *Guards) RequireDominance(ctx context.Context, tx pgx.Tx, a audit.Actor,
 	if err != nil {
 		return err
 	}
-	if target.admin {
+	if !dominates(actorH, target) {
 		return ErrDominanceRequired
 	}
+	return nil
+}
+
+// dominates is the R1 comparison of two evaluated Users.
+func dominates(actor, target holdings) bool {
+	if actor.admin {
+		return true
+	}
+	if target.admin {
+		return false
+	}
 	for p := range target.perms {
-		if _, ok := actorH.perms[p]; !ok {
-			return ErrDominanceRequired
+		if !actor.covers(p, "") {
+			return false
 		}
 	}
-	return nil
+	for p, locs := range target.scoped {
+		if actor.covers(p, "") {
+			continue
+		}
+		for _, l := range locs {
+			if !actor.covers(p, l) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // HoldsAnyRole reports whether the User has an active role assignment of their own (not through a group).

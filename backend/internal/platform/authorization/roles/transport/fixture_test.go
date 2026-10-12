@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +20,8 @@ import (
 type fakeDirectory struct {
 	users  map[string]string
 	groups map[string]string
+	// paths maps a Location id to its path from the Site down to itself.
+	paths map[string][]roles.LocationRef
 }
 
 func (f *fakeDirectory) UserExists(_ context.Context, id string) (bool, error) {
@@ -61,9 +65,37 @@ func (f *fakeDirectory) GroupIDsOfUser(context.Context, string) ([]string, error
 
 func (f *fakeDirectory) IsExternalAccount(context.Context, string) (bool, error) { return false, nil }
 
-// SubtreeIDs knows no Locations: a scope on any id covers nothing.
-func (f *fakeDirectory) SubtreeIDs(context.Context, []string) ([]string, error) {
-	return []string{}, nil
+// SubtreeIDs returns each known root and the Locations whose path passes through it.
+func (f *fakeDirectory) SubtreeIDs(_ context.Context, roots []string) ([]string, error) {
+	out := []string{}
+	for id, path := range f.paths {
+		for _, ref := range path {
+			if slices.Contains(roots, ref.ID) {
+				out = append(out, id)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (f *fakeDirectory) LocationPaths(_ context.Context, ids []string) (map[string][]roles.LocationRef, error) {
+	out := map[string][]roles.LocationRef{}
+	for _, id := range ids {
+		if p, ok := f.paths[id]; ok {
+			out[id] = p
+		}
+	}
+	return out, nil
+}
+
+// location adds a Location below parent ("" for a Site) and returns its id.
+func (f *fixture) location(name, parent string, active bool) string {
+	id := f.newID()
+	path := append([]roles.LocationRef{}, f.dir.paths[parent]...)
+	f.dir.paths[id] = append(path, roles.LocationRef{ID: id, Name: name, Active: active})
+	return id
 }
 func (f *fakeDirectory) IsLocalOriginAccount(context.Context, string) (bool, error) {
 	return false, nil
@@ -96,7 +128,7 @@ func newFixture(t *testing.T) *fixture {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	f := &fixture{t: t, pool: pool, pfx: "zt-" + hex.EncodeToString(b)}
-	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}}
+	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, paths: map[string][]roles.LocationRef{}}
 	f.svc = roles.NewService(pool, f.dir)
 	t.Cleanup(f.cleanup)
 	return f

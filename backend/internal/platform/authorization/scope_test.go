@@ -3,6 +3,8 @@ package authorization
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -178,9 +180,72 @@ func TestRequireIgnoresScopedHoldings(t *testing.T) {
 }
 
 // scopeAdoption is the adoption table of F16 design L3/L9: every scopable permission with the module test that runs
-// the authorization/scopetest harness for it. An adoption slice adds its permissions here in the same change that
-// marks them scopable in the registry. Slice L-A adds the model only, so the table is empty.
+// the authorization/scopetest harness for it, as "<file under backend/internal>:<TestName>" (for example
+// "modules/assets/application/scope_test.go:TestAssetsLocationScope"). An adoption slice adds its permissions here in
+// the same change that marks them scopable in the registry. No module has adopted scope yet, so the table is empty.
 var scopeAdoption = map[string]string{}
+
+// Every adoption entry names a test function that exists and calls scopetest.Run (L-A security review item 7).
+func TestScopeAdoptionEntriesNameHarnessTests(t *testing.T) {
+	checkAdoptionEntries(t, scopeAdoption)
+}
+
+// errorReporter is the part of testing.T the adoption check uses.
+type errorReporter interface {
+	Helper()
+	Errorf(format string, args ...any)
+}
+
+type failRecorder struct{ failed bool }
+
+func (r *failRecorder) Helper()               {}
+func (r *failRecorder) Errorf(string, ...any) { r.failed = true }
+
+func checkAdoptionEntries(t errorReporter, table map[string]string) {
+	t.Helper()
+	for perm, ref := range table {
+		file, test, ok := strings.Cut(ref, ":")
+		if !ok || !strings.HasSuffix(file, "_test.go") || !strings.HasPrefix(test, "Test") {
+			t.Errorf("%s: adoption entry %q is not <file_test.go>:<TestName>", perm, ref)
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join("..", "..", filepath.FromSlash(file)))
+		if err != nil {
+			t.Errorf("%s: adoption test file: %v", perm, err)
+			continue
+		}
+		body := string(src)
+		start := strings.Index(body, "func "+test+"(t *testing.T)")
+		if start < 0 {
+			t.Errorf("%s: %s has no test %s", perm, file, test)
+			continue
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		fn := body[start:]
+		if end >= 0 {
+			fn = body[start : start+1+end]
+		}
+		if !strings.Contains(fn, "scopetest.Run(") {
+			t.Errorf("%s: %s does not call scopetest.Run", perm, test)
+		}
+	}
+}
+
+// The adoption check itself rejects entries that name no harness test.
+func TestAdoptionCheckRejectsBadEntries(t *testing.T) {
+	for _, ref := range []string{
+		"no-colon",
+		"platform/authorization/scope_test.go:TestMissing",
+		"platform/authorization/scope_test.go:TestLocationScopeAllows", // exists, but runs no harness
+		"platform/authorization/missing_test.go:TestX",
+	} {
+		r := &failRecorder{}
+		checkAdoptionEntries(r, map[string]string{"x.view": ref})
+		if !r.failed {
+			t.Errorf("adoption entry %q was accepted", ref)
+		}
+	}
+}
 
 func TestScopableRegistryMatchesAdoptionTable(t *testing.T) {
 	scopable := map[string]bool{}

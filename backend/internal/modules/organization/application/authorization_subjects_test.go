@@ -28,6 +28,15 @@ func (f *fakeSubjectStore) LocationSubtreeIDs(_ context.Context, roots []string)
 	return append([]string{"b", "a"}, roots...), nil
 }
 
+func (f *fakeSubjectStore) LocationPaths(_ context.Context, ids []string) (map[string][]LocationPathNode, error) {
+	f.calls++
+	out := map[string][]LocationPathNode{}
+	for _, id := range ids {
+		out[id] = []LocationPathNode{{ID: id, Name: "n", Active: true}}
+	}
+	return out, nil
+}
+
 func (f *fakeSubjectStore) IsExternalAccount(context.Context, string) (bool, error) {
 	return false, nil
 }

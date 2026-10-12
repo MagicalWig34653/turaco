@@ -39,6 +39,16 @@ type AuthorizationSubjectStore interface {
 	// LocationSubtreeIDs returns the ids of the given Locations and all their descendants in the current Location
 	// tree (active or not), each once, ordered by id. Unknown ids contribute nothing.
 	LocationSubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error)
+	// LocationPaths returns, per given id that is a Location, the path from its Site (first) down to the Location
+	// itself (last) in the current tree. Unknown ids are absent.
+	LocationPaths(ctx context.Context, ids []string) (map[string][]LocationPathNode, error)
+}
+
+// LocationPathNode is one Location on a path of LocationPaths.
+type LocationPathNode struct {
+	ID     string
+	Name   string
+	Active bool
 }
 
 // AuthorizationSubjects serves the questions platform/authorization asks about
@@ -79,6 +89,25 @@ func (s *AuthorizationSubjects) SubtreeIDs(ctx context.Context, rootIDs []string
 	}
 	sort.Strings(ids)
 	return slices.Compact(ids), nil
+}
+
+// LocationPaths returns each known Location's path from its Site down to itself (ADR-0040: naming the scope of a role
+// assignment, validating it, and finding the ancestors whose scoped assignments cover it). Malformed and unknown ids
+// are absent.
+func (s *AuthorizationSubjects) LocationPaths(ctx context.Context, ids []string) (map[string][]LocationPathNode, error) {
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if subjectUUID.MatchString(id) {
+			valid = append(valid, strings.ToLower(id))
+		}
+	}
+	if len(valid) == 0 {
+		return map[string][]LocationPathNode{}, nil
+	}
+	if len(valid) > maxSubtreeRoots {
+		return nil, fmt.Errorf("location paths: %d ids exceed the limit of %d", len(valid), maxSubtreeRoots)
+	}
+	return s.store.LocationPaths(ctx, valid)
 }
 
 func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID string) ([]string, error) {

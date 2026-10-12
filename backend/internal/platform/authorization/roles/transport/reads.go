@@ -104,14 +104,25 @@ func (h *httpHandler) listSoDRules(w http.ResponseWriter, _ *http.Request) {
 }
 
 type grantPathDTO struct {
-	RoleID       string     `json:"roleId"`
-	RoleKey      string     `json:"roleKey"`
-	RoleName     string     `json:"roleName"`
-	BuiltInAdmin bool       `json:"builtInAdmin"`
-	AssignmentID string     `json:"assignmentId"`
-	Source       string     `json:"source"`
-	GroupID      string     `json:"groupId,omitempty"`
-	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
+	RoleID          string `json:"roleId"`
+	RoleKey         string `json:"roleKey"`
+	RoleName        string `json:"roleName"`
+	BuiltInAdmin    bool   `json:"builtInAdmin"`
+	AssignmentID    string `json:"assignmentId"`
+	Source          string `json:"source"`
+	GroupID         string `json:"groupId,omitempty"`
+	Scope           string `json:"scope"`
+	ScopeLocationID string `json:"scopeLocationId,omitempty"`
+	*locationLabelDTO
+	// InertPermissions are the global-only permissions this scoped assignment reaches without effect.
+	InertPermissions []string   `json:"inertPermissions,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+}
+
+type scopedRootDTO struct {
+	RootLocationID string `json:"rootLocationId"`
+	*locationLabelDTO
+	GrantedBy []string `json:"grantedBy"`
 }
 
 func (h *httpHandler) effectivePermissions(w http.ResponseWriter, r *http.Request) {
@@ -124,27 +135,66 @@ func (h *httpHandler) effectivePermissions(w http.ResponseWriter, r *http.Reques
 		Name      string   `json:"name"`
 		Risk      string   `json:"risk"`
 		Module    string   `json:"module"`
+		Scope     string   `json:"scope"`
 		GrantedBy []string `json:"grantedBy"`
 	}
+	type scopedPermDTO struct {
+		Name   string          `json:"name"`
+		Risk   string          `json:"risk"`
+		Module string          `json:"module"`
+		Scope  string          `json:"scope"`
+		Roots  []scopedRootDTO `json:"roots"`
+		// Locations is the expanded set: the roots and their current descendants.
+		Locations []string `json:"locations"`
+	}
 	out := struct {
-		UserID       string         `json:"userId"`
-		Roles        []grantPathDTO `json:"roles"`
-		Permissions  []permDTO      `json:"permissions"`
-		Warnings     []string       `json:"warnings"`
-		Ceilings     []string       `json:"ceilings"`
-		LocalAccount bool           `json:"localAccount"`
-		Excluded     []string       `json:"excluded"`
-	}{UserID: r.PathValue("id"), Roles: []grantPathDTO{}, Permissions: []permDTO{}, Warnings: []string{}, Ceilings: []string{}, LocalAccount: ep.LocalAccount, Excluded: []string{}}
+		UserID      string         `json:"userId"`
+		Roles       []grantPathDTO `json:"roles"`
+		Permissions []permDTO      `json:"permissions"`
+		// ScopedPermissions are held only at Locations (F16 design L4); Permissions are held everywhere.
+		ScopedPermissions []scopedPermDTO `json:"scopedPermissions"`
+		Warnings          []string        `json:"warnings"`
+		Ceilings          []string        `json:"ceilings"`
+		LocalAccount      bool            `json:"localAccount"`
+		Excluded          []string        `json:"excluded"`
+	}{UserID: r.PathValue("id"), Roles: []grantPathDTO{}, Permissions: []permDTO{}, ScopedPermissions: []scopedPermDTO{}, Warnings: []string{},
+		Ceilings: []string{}, LocalAccount: ep.LocalAccount, Excluded: []string{}}
+	var locIDs []string
+	inert := map[string][]string{}
+	for _, in := range ep.Inert {
+		inert[in.AssignmentID] = in.Permissions
+	}
+	for _, g := range ep.Roles {
+		if g.ScopeLocationID != "" {
+			locIDs = append(locIDs, g.ScopeLocationID)
+		}
+	}
+	labels := h.locationLabels(r, locIDs)
 	for _, g := range ep.Roles {
 		out.Roles = append(out.Roles, grantPathDTO{RoleID: g.RoleID, RoleKey: g.RoleKey, RoleName: g.RoleName, BuiltInAdmin: g.BuiltInAdmin,
-			AssignmentID: g.AssignmentID, Source: g.Source, GroupID: g.GroupID, ExpiresAt: g.ExpiresAt})
+			AssignmentID: g.AssignmentID, Source: g.Source, GroupID: g.GroupID, Scope: g.Scope, ScopeLocationID: g.ScopeLocationID,
+			locationLabelDTO: labelOf(labels, g.ScopeLocationID), InertPermissions: inert[g.AssignmentID], ExpiresAt: g.ExpiresAt})
 	}
 	for _, p := range ep.Permissions {
 		by := p.GrantedBy
 		if by == nil {
 			by = []string{}
 		}
-		out.Permissions = append(out.Permissions, permDTO{Name: p.Name, Risk: p.Risk, Module: permissionModule(p.Name), GrantedBy: by})
+		out.Permissions = append(out.Permissions, permDTO{Name: p.Name, Risk: p.Risk, Module: permissionModule(p.Name), Scope: roles.ScopeGlobal, GrantedBy: by})
+	}
+	for _, p := range ep.Scoped {
+		d := scopedPermDTO{Name: p.Name, Risk: p.Risk, Module: permissionModule(p.Name), Scope: roles.ScopeLocation, Roots: []scopedRootDTO{}, Locations: p.Locations}
+		if d.Locations == nil {
+			d.Locations = []string{}
+		}
+		for _, root := range p.Roots {
+			by := root.GrantedBy
+			if by == nil {
+				by = []string{}
+			}
+			d.Roots = append(d.Roots, scopedRootDTO{RootLocationID: root.RootLocationID, locationLabelDTO: labelOf(labels, root.RootLocationID), GrantedBy: by})
+		}
+		out.ScopedPermissions = append(out.ScopedPermissions, d)
 	}
 	for _, rule := range ep.Warnings {
 		out.Warnings = append(out.Warnings, rule.Key)
@@ -163,26 +213,37 @@ func (h *httpHandler) holders(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "authorization.invalid_limit", "The limit must be a positive integer.")
 		return
 	}
-	res, err := h.svc.Holders(r.Context(), q.Get("permission"), roles.Page{Limit: limit, Cursor: q.Get("cursor")})
+	res, err := h.svc.Holders(r.Context(), q.Get("permission"), q.Get("locationId"), roles.Page{Limit: limit, Cursor: q.Get("cursor")})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	type holderDTO struct {
-		AssignmentID       string     `json:"assignmentId"`
-		RoleID             string     `json:"roleId"`
-		RoleKey            string     `json:"roleKey"`
-		RoleName           string     `json:"roleName"`
-		BuiltInAdmin       bool       `json:"builtInAdmin"`
-		SubjectType        string     `json:"subjectType"`
-		SubjectID          string     `json:"subjectId"`
-		SubjectDisplayName string     `json:"subjectDisplayName"`
-		ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
+		AssignmentID       string `json:"assignmentId"`
+		RoleID             string `json:"roleId"`
+		RoleKey            string `json:"roleKey"`
+		RoleName           string `json:"roleName"`
+		BuiltInAdmin       bool   `json:"builtInAdmin"`
+		SubjectType        string `json:"subjectType"`
+		SubjectID          string `json:"subjectId"`
+		SubjectDisplayName string `json:"subjectDisplayName"`
+		Scope              string `json:"scope"`
+		ScopeLocationID    string `json:"scopeLocationId,omitempty"`
+		*locationLabelDTO
+		ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	}
+	var locIDs []string
+	for _, x := range res.Items {
+		if x.ScopeLocationID != "" {
+			locIDs = append(locIDs, x.ScopeLocationID)
+		}
+	}
+	labels := h.locationLabels(r, locIDs)
 	items := make([]holderDTO, 0, len(res.Items))
 	for _, x := range res.Items {
 		items = append(items, holderDTO{AssignmentID: x.AssignmentID, RoleID: x.RoleID, RoleKey: x.RoleKey, RoleName: x.RoleName,
-			BuiltInAdmin: x.BuiltInAdmin, SubjectType: x.SubjectType, SubjectID: x.SubjectID, SubjectDisplayName: x.SubjectDisplayName, ExpiresAt: x.ExpiresAt})
+			BuiltInAdmin: x.BuiltInAdmin, SubjectType: x.SubjectType, SubjectID: x.SubjectID, SubjectDisplayName: x.SubjectDisplayName,
+			Scope: x.Scope, ScopeLocationID: x.ScopeLocationID, locationLabelDTO: labelOf(labels, x.ScopeLocationID), ExpiresAt: x.ExpiresAt})
 	}
 	out := map[string]any{"items": items}
 	if res.NextCursor != "" {
@@ -201,10 +262,17 @@ func (h *httpHandler) roleMembers(w http.ResponseWriter, r *http.Request) {
 		UserID      string `json:"userId"`
 		DisplayName string `json:"displayName"`
 		Source      string `json:"source"`
+		// Scope is global when any path gives the role everywhere; otherwise location with the scoped root Locations.
+		Scope            string   `json:"scope"`
+		ScopeLocationIDs []string `json:"scopeLocationIds"`
 	}
 	items := make([]memberDTO, 0, len(res.Items))
 	for _, m := range res.Items {
-		items = append(items, memberDTO{UserID: m.UserID, DisplayName: m.DisplayName, Source: m.Source})
+		d := memberDTO{UserID: m.UserID, DisplayName: m.DisplayName, Source: m.Source, Scope: roles.ScopeGlobal, ScopeLocationIDs: []string{}}
+		if !m.Global {
+			d.Scope, d.ScopeLocationIDs = roles.ScopeLocation, m.ScopeLocationIDs
+		}
+		items = append(items, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"items": items, "capped": res.Capped, "limit": roles.MaxRoleMembers})
 }

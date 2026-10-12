@@ -19,7 +19,9 @@ const (
 	permRolesView   = "platform.roles.view"
 	permRolesManage = "platform.roles.manage"
 	permViewDetails = "organization.users.view_details"
-	maxBodyBytes    = 64 << 10
+	// permLocationsView lets a response name scope Locations (F16 design L11); without it only ids are returned.
+	permLocationsView = "organization.view"
+	maxBodyBytes      = 64 << 10
 )
 
 type httpHandler struct {
@@ -98,6 +100,12 @@ func (h *httpHandler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "access.local_account_high_risk", "Local accounts cannot hold high-risk permissions.")
 	case errors.Is(err, roles.ErrExternalCeiling):
 		httpx.WriteError(w, http.StatusConflict, "access.external_ceiling", "External accounts can only hold roles with permissions from the external ceiling.")
+	case errors.Is(err, roles.ErrAdminScopeGlobal):
+		httpx.WriteError(w, http.StatusConflict, "access.admin_scope_global", "The administrator role can only be assigned for all Locations.")
+	case errors.Is(err, roles.ErrExternalScopeUnsupported):
+		httpx.WriteError(w, http.StatusConflict, "access.external_scope_unsupported", "External accounts cannot receive a Location-scoped role assignment.")
+	case errors.Is(err, roles.ErrScopeLocationInvalid):
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "access.scope_location_invalid", "The scope Location does not exist or is inactive.")
 	case errors.Is(err, roles.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "authorization.version_conflict", "The role changed since it was loaded.")
 	case errors.Is(err, roles.ErrUnknownTemplate):
@@ -166,24 +174,67 @@ func toRoleDTO(r roles.Role) roleDTO {
 }
 
 type assignmentDTO struct {
-	ID                 string     `json:"id"`
-	RoleID             string     `json:"roleId"`
-	RoleKey            string     `json:"roleKey"`
-	SubjectType        string     `json:"subjectType"`
-	SubjectID          string     `json:"subjectId"`
-	SubjectDisplayName string     `json:"subjectDisplayName"`
-	Scope              string     `json:"scope"`
-	ExpiresAt          *time.Time `json:"expiresAt,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	CreatedBy          string     `json:"createdBy,omitempty"`
-	RevokedAt          *time.Time `json:"revokedAt,omitempty"`
-	RevokedBy          string     `json:"revokedBy,omitempty"`
+	ID                 string `json:"id"`
+	RoleID             string `json:"roleId"`
+	RoleKey            string `json:"roleKey"`
+	SubjectType        string `json:"subjectType"`
+	SubjectID          string `json:"subjectId"`
+	SubjectDisplayName string `json:"subjectDisplayName"`
+	Scope              string `json:"scope"`
+	ScopeLocationID    string `json:"scopeLocationId,omitempty"`
+	*locationLabelDTO
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	CreatedBy string     `json:"createdBy,omitempty"`
+	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+	RevokedBy string     `json:"revokedBy,omitempty"`
 }
 
-func toAssignmentDTO(a roles.Assignment) assignmentDTO {
+func toAssignmentDTO(a roles.Assignment, labels map[string]roles.LocationLabel) assignmentDTO {
 	return assignmentDTO{ID: a.ID, RoleID: a.RoleID, RoleKey: a.RoleKey, SubjectType: a.SubjectType, SubjectID: a.SubjectID,
-		SubjectDisplayName: a.SubjectDisplayName, Scope: a.Scope, ExpiresAt: a.ExpiresAt, CreatedAt: a.CreatedAt, CreatedBy: a.CreatedBy,
-		RevokedAt: a.RevokedAt, RevokedBy: a.RevokedBy}
+		SubjectDisplayName: a.SubjectDisplayName, Scope: a.Scope, ScopeLocationID: a.ScopeLocationID, locationLabelDTO: labelOf(labels, a.ScopeLocationID),
+		ExpiresAt: a.ExpiresAt, CreatedAt: a.CreatedAt, CreatedBy: a.CreatedBy, RevokedAt: a.RevokedAt, RevokedBy: a.RevokedBy}
+}
+
+// locationLabelDTO names a scope Location; it is present only for a scoped item and a caller who may read Locations.
+type locationLabelDTO struct {
+	ScopeLocationName   string   `json:"scopeLocationName"`
+	ScopeLocationPath   []string `json:"scopeLocationPath"`
+	ScopeLocationActive bool     `json:"scopeLocationActive"`
+}
+
+func labelOf(labels map[string]roles.LocationLabel, id string) *locationLabelDTO {
+	l, ok := labels[id]
+	if id == "" || !ok {
+		return nil
+	}
+	return &locationLabelDTO{ScopeLocationName: l.Name, ScopeLocationPath: l.Path, ScopeLocationActive: l.Active}
+}
+
+// locationLabels resolves the scope Locations for the response when the caller holds organization.view. A lookup
+// failure leaves the names out (the ids are always returned) rather than failing the request.
+func (h *httpHandler) locationLabels(r *http.Request, ids []string) map[string]roles.LocationLabel {
+	p, _ := authorization.PrincipalFrom(r.Context())
+	if !p.Has(permLocationsView) || len(ids) == 0 {
+		return nil
+	}
+	labels, err := h.svc.LocationLabels(r.Context(), ids)
+	if err != nil {
+		h.logger.WarnContext(r.Context(), "resolve scope locations failed", "path", r.URL.Path, "error", err)
+		return nil
+	}
+	return labels
+}
+
+// assignmentLabels resolves the scope Locations of assignments.
+func (h *httpHandler) assignmentLabels(r *http.Request, items ...roles.Assignment) map[string]roles.LocationLabel {
+	var ids []string
+	for _, a := range items {
+		if a.ScopeLocationID != "" {
+			ids = append(ids, a.ScopeLocationID)
+		}
+	}
+	return h.locationLabels(r, ids)
 }
 
 func (h *httpHandler) listPermissions(w http.ResponseWriter, _ *http.Request) {
@@ -310,7 +361,8 @@ func (h *httpHandler) deleteRole(w http.ResponseWriter, r *http.Request) {
 
 func (h *httpHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := roles.AssignmentFilter{RoleID: q.Get("roleId"), SubjectType: q.Get("subjectType"), SubjectID: q.Get("subjectId"), Page: roles.Page{Cursor: q.Get("cursor")}}
+	f := roles.AssignmentFilter{RoleID: q.Get("roleId"), SubjectType: q.Get("subjectType"), SubjectID: q.Get("subjectId"),
+		Scope: q.Get("scope"), ScopeLocationID: q.Get("scopeLocationId"), Page: roles.Page{Cursor: q.Get("cursor")}}
 	switch q.Get("includeRevoked") {
 	case "", "false":
 	case "true":
@@ -330,9 +382,10 @@ func (h *httpHandler) listAssignments(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	labels := h.assignmentLabels(r, res.Items...)
 	items := make([]assignmentDTO, 0, len(res.Items))
 	for _, a := range res.Items {
-		items = append(items, toAssignmentDTO(a))
+		items = append(items, toAssignmentDTO(a, labels))
 	}
 	out := map[string]any{"items": items}
 	if res.NextCursor != "" {
@@ -347,18 +400,20 @@ func (h *httpHandler) assign(w http.ResponseWriter, r *http.Request) {
 		SubjectType string     `json:"subjectType"`
 		SubjectID   string     `json:"subjectId"`
 		ExpiresAt   *time.Time `json:"expiresAt"`
+		// ScopeLocationID makes the assignment Location-scoped; absent or empty means all Locations.
+		ScopeLocationID string `json:"scopeLocationId"`
 		ackBody
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
 	a, err := h.svc.AssignRole(r.Context(), actor(r), httpx.RequestID(w), roles.AssignInput{RoleID: body.RoleID, SubjectType: body.SubjectType,
-		SubjectID: body.SubjectID, ExpiresAt: body.ExpiresAt, Acknowledgement: body.toAck()})
+		SubjectID: body.SubjectID, ExpiresAt: body.ExpiresAt, ScopeLocationID: body.ScopeLocationID, Acknowledgement: body.toAck()})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusCreated, toAssignmentDTO(a))
+	httpx.JSON(w, http.StatusCreated, toAssignmentDTO(a, h.assignmentLabels(r, a)))
 }
 
 func (h *httpHandler) revoke(w http.ResponseWriter, r *http.Request) {
@@ -367,5 +422,5 @@ func (h *httpHandler) revoke(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, toAssignmentDTO(a))
+	httpx.JSON(w, http.StatusOK, toAssignmentDTO(a, h.assignmentLabels(r, a)))
 }

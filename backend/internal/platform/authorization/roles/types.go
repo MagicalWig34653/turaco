@@ -70,6 +70,17 @@ type SubjectDirectory interface {
 	// "active"; unknown and non-active Users are absent (value false or
 	// missing). The last-administrator guard counts only these.
 	ActiveUsers(ctx context.Context, ids []string) (map[string]bool, error)
+	// LocationPaths returns, for each id that is a Location, its path in the current tree from its Site (first) down
+	// to the Location itself (last). Unknown and malformed ids are absent. The role service uses it to validate the
+	// Location of a scoped assignment, to name it, and to find the ancestors whose scoped assignments cover it.
+	LocationPaths(ctx context.Context, ids []string) (map[string][]LocationRef, error)
+}
+
+// LocationRef is one Location on a path of LocationPaths.
+type LocationRef struct {
+	ID     string
+	Name   string
+	Active bool
 }
 
 var (
@@ -93,6 +104,11 @@ var (
 	ErrExternalCeiling            = errors.New("authorization: the role has permissions outside the ceiling of external accounts")
 	ErrVersionConflict            = errors.New("authorization: version conflict")
 	ErrUnknownTemplate            = errors.New("authorization: unknown role template")
+
+	// Location scope data rules (ADR-0040, F16 design L5); they apply to every actor including the CLI.
+	ErrAdminScopeGlobal         = errors.New("authorization: the administrator role is always assigned globally")
+	ErrExternalScopeUnsupported = errors.New("authorization: external accounts receive no Location-scoped assignment")
+	ErrScopeLocationInvalid     = errors.New("authorization: the scope Location does not exist or is inactive")
 )
 
 // SoDRequiredError reports separation-of-duties rules the change would violate and the caller has not
@@ -150,7 +166,7 @@ type Role struct {
 	UpdatedAt         time.Time
 }
 
-// Assignment grants a Role to a User or Directory Group (global scope).
+// Assignment grants a Role to a User or Directory Group, globally or at a Location and its sub-Locations.
 type Assignment struct {
 	ID                 string
 	RoleID             string
@@ -158,7 +174,9 @@ type Assignment struct {
 	SubjectType        string
 	SubjectID          string
 	SubjectDisplayName string
-	Scope              string
+	// Scope is ScopeGlobal or ScopeLocation; ScopeLocationID is the root Location of a ScopeLocation assignment.
+	Scope           string
+	ScopeLocationID string
 	// ExpiresAt, when set, ends the assignment: the evaluator ignores it from then on and the job
 	// access.expire_assignments revokes it.
 	ExpiresAt *time.Time
@@ -188,11 +206,14 @@ func (p Page) Normalize() Page {
 
 // AssignmentFilter narrows ListAssignments. Empty fields do not filter.
 type AssignmentFilter struct {
-	RoleID         string
-	SubjectType    string
-	SubjectID      string
-	IncludeRevoked bool
-	Page           Page
+	RoleID      string
+	SubjectType string
+	SubjectID   string
+	// Scope is ScopeGlobal or ScopeLocation; ScopeLocationID matches the root Location exactly (no subtree).
+	Scope           string
+	ScopeLocationID string
+	IncludeRevoked  bool
+	Page            Page
 }
 
 // AssignmentPage is one page of assignments.

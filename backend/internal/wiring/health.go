@@ -382,9 +382,10 @@ func HealthSetup(pool *pgxpool.Pool, mods *modules.Service, reg *health.Registry
 		{Key: "locations", Order: 5, Route: "/admin/locations", Derive: atLeast(orgCounts.ActiveSites, 1)},
 		{Key: "queues", Order: 6, Route: "/service-desk/queues", Module: "servicedesk", Derive: atLeast(deskCounts.ActiveQueuesWithTeam, 1)},
 		{Key: "roles", Order: 7, Route: "/admin/roles", Derive: func(ctx context.Context) (bool, bool, error) {
+			// Counts global assignments only: a Location-scoped assignment alone does not complete the setup step.
 			var n int
 			err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.role_assignments a JOIN platform.roles r ON r.id = a.role_id
-				WHERE NOT r.built_in AND r.deleted_at IS NULL AND a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now())`).Scan(&n)
+				WHERE NOT r.built_in AND r.deleted_at IS NULL AND a.scope = 'global' AND a.revoked_at IS NULL AND (a.expires_at IS NULL OR a.expires_at > now())`).Scan(&n)
 			return err == nil && n >= 1, false, err
 		}},
 		{Key: "catalog", Order: 8, Route: "/catalog", Module: "catalog", Derive: atLeast(catalogCounts.ActiveItems, 1)},

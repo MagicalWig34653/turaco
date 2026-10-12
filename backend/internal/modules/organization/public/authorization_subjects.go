@@ -40,6 +40,24 @@ func (s *AuthorizationSubjects) SubtreeIDs(ctx context.Context, rootIDs []string
 	return s.svc.SubtreeIDs(ctx, rootIDs)
 }
 
+// LocationPaths returns each known Location's path from its Site (first) down to itself (last) in the current tree;
+// unknown and malformed ids are absent (roles.SubjectDirectory, ADR-0040).
+func (s *AuthorizationSubjects) LocationPaths(ctx context.Context, ids []string) (map[string][]roles.LocationRef, error) {
+	paths, err := s.svc.LocationPaths(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]roles.LocationRef, len(paths))
+	for id, path := range paths {
+		refs := make([]roles.LocationRef, len(path))
+		for i, n := range path {
+			refs[i] = roles.LocationRef{ID: n.ID, Name: n.Name, Active: n.Active}
+		}
+		out[id] = refs
+	}
+	return out, nil
+}
+
 // IsLocalOriginAccount reports whether the User is a local account by origin.
 func (s *AuthorizationSubjects) IsLocalOriginAccount(ctx context.Context, userID string) (bool, error) {
 	return s.svc.IsLocalOriginAccount(ctx, userID)

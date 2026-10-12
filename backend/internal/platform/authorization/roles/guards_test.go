@@ -528,7 +528,7 @@ func TestHoldersAndMembers(t *testing.T) {
 	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectDirectoryGroup, SubjectID: grp}); err != nil {
 		t.Fatal(err)
 	}
-	page, err := f.svc.Holders(ctx, "knowledge.manage", Page{Limit: 200})
+	page, err := f.svc.Holders(ctx, "knowledge.manage", "", Page{Limit: 200})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +544,7 @@ func TestHoldersAndMembers(t *testing.T) {
 	if !slices.Equal(subjects, want) {
 		t.Fatalf("holders %v, want %v", subjects, want)
 	}
-	if _, err := f.svc.Holders(ctx, "no.such", Page{}); !errors.Is(err, ErrUnknownPermission) {
+	if _, err := f.svc.Holders(ctx, "no.such", "", Page{}); !errors.Is(err, ErrUnknownPermission) {
 		t.Fatalf("unknown permission: %v", err)
 	}
 	m, err := f.svc.MembersOf(ctx, role.ID)

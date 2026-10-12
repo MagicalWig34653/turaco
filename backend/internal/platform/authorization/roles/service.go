@@ -271,7 +271,7 @@ func (s *Service) CreateRole(ctx context.Context, actor audit.Actor, correlation
 		if err != nil {
 			return err
 		}
-		if err := a.checkGrant(perms); err != nil {
+		if err := a.checkGrant(perms, ""); err != nil {
 			return err
 		}
 		if err := s.requireAcknowledgement(ctx, tx, actor, correlationID, "role", "pending", newViolations(nil, permSet(perms)), in.Acknowledgement); err != nil {
@@ -429,10 +429,10 @@ func (s *Service) SetRolePermissions(ctx context.Context, actor audit.Actor, cor
 			return err
 		}
 		if len(diff.Added) > 0 {
-			if err := a.checkGrant(diff.Added); err != nil {
+			if err := a.checkGrant(diff.Added, ""); err != nil {
 				return err
 			}
-			if !a.system && a.holdsRole(id) {
+			if !a.system && a.holdsRoleAnywhere(id) {
 				return ErrSelfAssignment
 			}
 			if hasHighRisk(diff.Added) {
@@ -444,7 +444,7 @@ func (s *Service) SetRolePermissions(ctx context.Context, actor audit.Actor, cor
 			}
 		}
 		if len(diff.Removed) > 0 && before.ActiveAssignments > 0 {
-			if err := a.checkRemoval(diff.Removed); err != nil {
+			if err := a.checkRemoval(diff.Removed, ""); err != nil {
 				return err
 			}
 		}
@@ -535,6 +535,13 @@ func isUnique(err error) bool {
 	return errors.As(err, &pg) && pg.Code == "23505"
 }
 
+// isAdminScoped reports the trigger role_assignments_admin_global (SQLSTATE ACC02): the database refuses a Location
+// scope on the built-in administrator role even when a code path forgot the service check.
+func isAdminScoped(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "ACC02"
+}
+
 // wrap adds context to unexpected errors and passes domain errors through.
 func wrap(op string, err error) error {
 	if err == nil {
@@ -548,6 +555,7 @@ func wrap(op string, err error) error {
 		errors.Is(err, ErrGrantExceedsHolder), errors.Is(err, ErrHighRiskNeedsAdministrator), errors.Is(err, ErrSelfAssignment),
 		errors.Is(err, ErrRoleNotHeld), errors.Is(err, ErrAdminNoExpiry), errors.Is(err, ErrLocalAccountHighRisk), errors.Is(err, ErrExternalCeiling),
 		errors.Is(err, ErrVersionConflict), errors.Is(err, ErrUnknownTemplate), errors.Is(err, ErrSoDAcknowledgementRequired),
+		errors.Is(err, ErrAdminScopeGlobal), errors.Is(err, ErrExternalScopeUnsupported), errors.Is(err, ErrScopeLocationInvalid),
 		errors.As(err, &inv):
 		return err
 	}

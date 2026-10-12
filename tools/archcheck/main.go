@@ -64,6 +64,7 @@ func main() {
 			}
 		}
 		violations = append(violations, assistViolations(path, file, set, auditAliases)...)
+		violations = append(violations, scopesViolations(path, file, set)...)
 		return nil
 	})
 	if err != nil {
@@ -92,6 +93,50 @@ func assistViolations(path string, file *ast.File, set *token.FileSet, aliases m
 		id, ok := sel.X.(*ast.Ident)
 		if ok && aliases[id.Name] {
 			violations = append(violations, fmt.Sprintf("%s: only platform/ai may call audit.WithAssist", set.Position(sel.Pos())))
+		}
+		return true
+	})
+	return violations
+}
+
+// scopesReaders may read or set authorization.Principal.Scopes directly: the package that defines it, the evaluator
+// (roles) that computes it, the authentication package that fills it and the scopetest harness that builds callers.
+// Every other package uses Principal.ScopeOf (ADR-0040: scoped holdings are read only through ScopeOf, so a module
+// cannot treat a Location-scoped right as global by accident).
+var scopesReaders = []string{
+	"backend/internal/platform/authorization",
+	"backend/internal/platform/authorization/roles",
+	"backend/internal/platform/authorization/scopetest",
+	"backend/internal/platform/authentication",
+}
+
+// scopesViolations flags a selector named Scopes in a file that imports platform/authorization, outside
+// scopesReaders. The check is syntactic; the name is reserved for Principal.Scopes in such files.
+func scopesViolations(path string, file *ast.File, set *token.FileSet) []string {
+	dir := filepath.ToSlash(filepath.Dir(path))
+	for _, allowed := range scopesReaders {
+		if dir == allowed {
+			return nil
+		}
+	}
+	imports := false
+	for _, imp := range file.Imports {
+		if strings.HasSuffix(strings.Trim(imp.Path.Value, `"`), "/backend/internal/platform/authorization") {
+			imports = true
+		}
+	}
+	if !imports {
+		return nil
+	}
+	var violations []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == "Scopes" {
+			violations = append(violations, fmt.Sprintf("%s: read Location scope through Principal.ScopeOf, not Principal.Scopes", set.Position(sel.Pos())))
+		}
+		if kv, ok := n.(*ast.KeyValueExpr); ok {
+			if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Scopes" {
+				violations = append(violations, fmt.Sprintf("%s: only the evaluator and authentication set Principal.Scopes", set.Position(kv.Pos())))
+			}
 		}
 		return true
 	})

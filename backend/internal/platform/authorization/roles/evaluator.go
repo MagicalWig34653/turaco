@@ -3,6 +3,7 @@ package roles
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -26,8 +27,8 @@ import (
 // Location scope (ADR-0040): a global assignment yields the global set (Permissions, Principal.Has). A
 // Location-scoped assignment yields only its scopable permissions, as the scoped map permission -> Locations,
 // expanded per request to the current subtrees through LocationTree; its global-only permissions are inert. Every
-// read that existed before scope (Permissions, PermissionsIn, RoleIDs, the guards' holdings) answers from global
-// assignments only, so code that has not adopted scope never sees a scoped right.
+// read that existed before scope (Permissions, PermissionsIn, RoleIDs) answers from global assignments only, so code
+// that has not adopted scope never sees a scoped right. The guards' holdings carry both and compare per Location.
 //
 // Permissions, Access and Explain share one query (load) and one reduction (reduce),
 // so the explanation can never disagree with the decision.
@@ -222,6 +223,11 @@ func reduce(grants []grant, local, external bool, scopable func(string) bool) re
 	return out
 }
 
+// MaxScopedRoots caps the distinct scoped root Locations of one permission (or role) of one User; the
+// organization/public tree contract accepts at most this many roots per call. Roots beyond the cap (in id order)
+// are dropped and logged.
+const MaxScopedRoots = 1000
+
 // expand turns the scoped map (permission -> root Locations) into permission -> expanded Location set. Permissions
 // with the same roots share one LocationTree call (a User with one scoped role at one Site needs one call). A root
 // that is not a Location contributes nothing; a permission whose roots expand to nothing is left out.
@@ -231,7 +237,14 @@ func (e *Evaluator) expand(ctx context.Context, scoped map[string][]string) (map
 		return out, nil
 	}
 	byRoots := map[string][]string{}
-	for _, roots := range scoped {
+	for name, roots := range scoped {
+		if len(roots) > MaxScopedRoots {
+			// Far beyond any real installation; keep the request working with fewer Locations (fail closed) instead
+			// of failing the whole session, and tell the operator.
+			slog.WarnContext(ctx, "location scope: scoped roots capped", "entry", name, "roots", len(roots), "cap", MaxScopedRoots)
+			roots = roots[:MaxScopedRoots]
+			scoped[name] = roots
+		}
 		key := strings.Join(roots, ",")
 		if _, done := byRoots[key]; done {
 			continue
@@ -503,30 +516,116 @@ func explain(grants []grant, local, external bool, scopable func(string) bool) (
 	return out, r
 }
 
-// holdings is what the guards need to know about one User. Until slice L-B makes the guards scope-aware they see
-// global assignments only: a scoped holding never satisfies a guard (conservative).
+// holdings is what the guards need to know about one User (F16 design L5): the global set and global roles exactly
+// as before scope, plus the expanded Location sets of scoped holdings. A scoped holding satisfies a guard only for
+// a Location inside its expanded set, never globally.
 type holdings struct {
-	perms   map[string]struct{}
-	admin   bool
+	// perms is the global set (Principal.Permissions).
+	perms map[string]struct{}
+	// scoped maps a scopable permission not held globally to its expanded, sorted Location set (Principal.Scopes).
+	scoped map[string][]string
+	admin  bool
+	// roleIDs are the roles held through global assignments.
 	roleIDs map[string]struct{}
-	local   bool
+	// roleScoped maps a role held only through scoped assignments to the expanded, sorted Location set. Scoped
+	// assignments of an external account and of the built-in administrator role are left out (as in RoleGrants).
+	roleScoped map[string][]string
+	local      bool
 }
 
-// holdingsOf evaluates a User inside the caller's transaction.
+// covers reports whether the User holds permission p globally (locationID "") or at locationID: globally, or p is
+// scopable and locationID lies in the expanded set (at or below one of the User's scoped roots for p).
+func (h holdings) covers(p, locationID string) bool {
+	if _, ok := h.perms[p]; ok {
+		return true
+	}
+	if locationID == "" {
+		return false
+	}
+	_, found := slices.BinarySearch(h.scoped[p], locationID)
+	return found
+}
+
+// holdsRoleAt reports whether the User holds the role globally, or (locationID set) through a scoped assignment at
+// locationID or one of its ancestors.
+func (h holdings) holdsRoleAt(roleID, locationID string) bool {
+	if _, ok := h.roleIDs[roleID]; ok {
+		return true
+	}
+	if locationID == "" {
+		return false
+	}
+	_, found := slices.BinarySearch(h.roleScoped[roleID], locationID)
+	return found
+}
+
+// holdsRoleAnywhere reports whether the User holds the role globally or at any Location.
+func (h holdings) holdsRoleAnywhere(roleID string) bool {
+	_, global := h.roleIDs[roleID]
+	return global || len(h.roleScoped[roleID]) > 0
+}
+
+// unionPerms is the global set plus every permission held at some Location (separation-of-duties hygiene).
+func (h holdings) unionPerms() map[string]struct{} {
+	out := make(map[string]struct{}, len(h.perms)+len(h.scoped))
+	for p := range h.perms {
+		out[p] = struct{}{}
+	}
+	for p := range h.scoped {
+		out[p] = struct{}{}
+	}
+	return out
+}
+
+// holdingsOf evaluates a User inside the caller's transaction. The Location tree is read only when the User has
+// scoped holdings, once per distinct set of scoped roots (permissions and roles share the calls).
 func (e *Evaluator) holdingsOf(ctx context.Context, q querier, userID string) (holdings, error) {
 	grants, local, external, err := e.load(ctx, q, userID)
 	if err != nil {
 		return holdings{}, err
 	}
-	h := holdings{roleIDs: map[string]struct{}{}, local: local}
-	h.perms = reduce(grants, local, external, e.scopable).global
+	r := reduce(grants, local, external, e.scopable)
+	h := holdings{perms: r.global, scoped: map[string][]string{}, roleIDs: map[string]struct{}{}, roleScoped: map[string][]string{}, local: local}
+	roleRoots := map[string]map[string]struct{}{}
 	for _, g := range grants {
-		if !g.global() {
+		switch {
+		case g.global():
+			h.roleIDs[g.roleID] = struct{}{}
+			if g.builtIn && !external {
+				h.admin = true
+			}
+		case g.scope == ScopeLocation && g.scopeLocationID != "" && !g.builtIn && !external:
+			if roleRoots[g.roleID] == nil {
+				roleRoots[g.roleID] = map[string]struct{}{}
+			}
+			roleRoots[g.roleID][g.scopeLocationID] = struct{}{}
+		}
+	}
+	// One expansion for permissions and roles: keys are prefixed so a permission and a role id cannot collide.
+	toExpand := map[string][]string{}
+	for p, roots := range r.scoped {
+		toExpand["p:"+p] = roots
+	}
+	for roleID, set := range roleRoots {
+		if _, global := h.roleIDs[roleID]; global {
 			continue
 		}
-		h.roleIDs[g.roleID] = struct{}{}
-		if g.builtIn && !external {
-			h.admin = true
+		ids := make([]string, 0, len(set))
+		for id := range set {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		toExpand["r:"+roleID] = ids
+	}
+	expanded, err := e.expand(ctx, toExpand)
+	if err != nil {
+		return holdings{}, err
+	}
+	for key, s := range expanded {
+		if p, ok := strings.CutPrefix(key, "p:"); ok {
+			h.scoped[p] = s.Locations
+		} else if roleID, ok := strings.CutPrefix(key, "r:"); ok {
+			h.roleScoped[roleID] = s.Locations
 		}
 	}
 	return h, nil
