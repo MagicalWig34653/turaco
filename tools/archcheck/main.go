@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -23,13 +24,25 @@ func main() {
 			return nil
 		}
 		set := token.NewFileSet()
-		file, err := parser.ParseFile(set, path, nil, parser.ImportsOnly)
+		file, err := parser.ParseFile(set, path, nil, 0)
 		if err != nil {
 			return err
 		}
 		owner, kind := ownerFor(path)
+		auditAliases := map[string]bool{}
 		for _, imp := range file.Imports {
 			value := strings.Trim(imp.Path.Value, `"`)
+			if strings.HasSuffix(value, "/backend/internal/platform/audit") {
+				alias := "audit"
+				if imp.Name != nil {
+					alias = imp.Name.Name
+				}
+				if alias == "." {
+					violations = append(violations, fmt.Sprintf("%s: dot import of audit hides WithAssist callers", path))
+				} else if alias != "_" {
+					auditAliases[alias] = true
+				}
+			}
 			match := moduleImport.FindStringSubmatch(value)
 			if match == nil {
 				if kind == "platform" && strings.Contains(value, "/backend/internal/integrations/") {
@@ -50,6 +63,7 @@ func main() {
 				violations = append(violations, fmt.Sprintf("%s: module %s imports private package of module %s (%s)", path, owner, target, value))
 			}
 		}
+		violations = append(violations, assistViolations(path, file, set, auditAliases)...)
 		return nil
 	})
 	if err != nil {
@@ -63,6 +77,25 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("architecture check: ok")
+}
+
+func assistViolations(path string, file *ast.File, set *token.FileSet, aliases map[string]bool) []string {
+	if filepath.ToSlash(filepath.Dir(path)) == "backend/internal/platform/ai" {
+		return nil
+	}
+	var violations []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "WithAssist" {
+			return true
+		}
+		id, ok := sel.X.(*ast.Ident)
+		if ok && aliases[id.Name] {
+			violations = append(violations, fmt.Sprintf("%s: only platform/ai may call audit.WithAssist", set.Position(sel.Pos())))
+		}
+		return true
+	})
+	return violations
 }
 
 func ownerFor(path string) (owner, kind string) {

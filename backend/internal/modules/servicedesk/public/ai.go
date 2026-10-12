@@ -95,6 +95,17 @@ func draftInternalNoteTool(svc *application.Service) ai.Tool {
 		Target:     &ai.Target{Type: "ticket", Arg: "ticketId"},
 		Write: &ai.WriteSpec{
 			Effect: ai.EffectInternal,
+			Replay: func(ctx context.Context, c ai.Caller, input json.RawMessage, x ai.Execution) (ai.ExecutionResult, bool, error) {
+				in, err := decode(input)
+				if err != nil {
+					return ai.ExecutionResult{}, false, err
+				}
+				cm, found, err := svc.ReplayInternalNote(ctx, c.UserID, in.TicketID, x.IdempotencyKey)
+				if err != nil || !found {
+					return ai.ExecutionResult{}, false, err
+				}
+				return ai.ExecutionResult{Result: ai.ResourceRef{Type: "ticket_comment", ID: cm.ID}}, true, nil
+			},
 			Prepare: func(ctx context.Context, c ai.Caller, input json.RawMessage) (ai.Preparation, error) {
 				in, err := decode(input)
 				if err != nil {

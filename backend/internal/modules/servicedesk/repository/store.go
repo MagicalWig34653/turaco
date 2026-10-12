@@ -275,6 +275,21 @@ func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c applicati
 }
 
 // CommentByKeyTx returns the comment created with an idempotency key, or ok=false.
+func (r *Repository) CommentByKey(ctx context.Context, key string) (application.Comment, bool, error) {
+	var c application.Comment
+	err := r.pool.QueryRow(ctx, `SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at, mentioned_user_ids::text[],
+		idempotency_key::text FROM servicedesk.ticket_comments WHERE idempotency_key = $1::uuid`, key).
+		Scan(&c.ID, &c.TicketID, &c.AuthorID, &c.Body, &c.Internal, &c.CreatedAt, &c.MentionedUserIDs, &c.IdempotencyKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Comment{}, false, nil
+	}
+	if err != nil {
+		return application.Comment{}, false, fmt.Errorf("comment by idempotency key: %w", err)
+	}
+	return c, true, nil
+}
+
+// CommentByKeyTx returns the comment created with an idempotency key, or ok=false.
 func (r *Repository) CommentByKeyTx(ctx context.Context, tx pgx.Tx, key string) (application.Comment, bool, error) {
 	var c application.Comment
 	err := tx.QueryRow(ctx, `SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at, mentioned_user_ids::text[],

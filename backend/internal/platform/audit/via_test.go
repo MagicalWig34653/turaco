@@ -32,6 +32,9 @@ func TestRecordViaTenantAndProposal(t *testing.T) {
 	c = base
 	c.ProposalID, c.TenantID = proposal, "t1"
 	bad["proposal without via"] = c
+	c = base
+	c.Via, c.TenantID, c.ProposalID = "ai", "t1", "not-a-uuid"
+	bad["malformed proposal id"] = c
 	for name, ch := range bad {
 		if err := rec(ch); err == nil {
 			t.Errorf("%s accepted", name)

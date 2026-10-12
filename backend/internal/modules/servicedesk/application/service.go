@@ -786,6 +786,23 @@ func (s *Service) AddInternalNoteOnce(ctx context.Context, c Caller, p Principal
 	return s.addComment(ctx, c, p, id, body, true, nil, commentGuard{expectedVersion: &expectedVersion, key: strings.ToLower(key)})
 }
 
+// ReplayInternalNote finds a note already committed by this User for this Ticket and idempotency key.
+// It does not recheck current Ticket access or status: it only reports the outcome of an earlier authorized write.
+func (s *Service) ReplayInternalNote(ctx context.Context, userID, ticketID, key string) (Comment, bool, error) {
+	if !uuidPattern.MatchString(strings.ToLower(key)) || !uuidPattern.MatchString(strings.ToLower(ticketID)) {
+		return Comment{}, false, invalid("idempotency key and ticket id must be UUIDs")
+	}
+	cm, found, err := s.store.CommentByKey(ctx, strings.ToLower(key))
+	if err != nil || !found {
+		return Comment{}, false, err
+	}
+	if cm.AuthorID != userID || cm.TicketID != ticketID || !cm.Internal {
+		return Comment{}, false, nil
+	}
+	cm.IdempotencyKey = ""
+	return cm, true, nil
+}
+
 func (s *Service) addComment(ctx context.Context, c Caller, p Principal, id, body string, internal bool, mentions []string, g commentGuard) (Comment, error) {
 	if err := c.validate(); err != nil {
 		return Comment{}, err

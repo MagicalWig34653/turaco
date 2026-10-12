@@ -43,6 +43,8 @@ func TestRecordValidation(t *testing.T) {
 		"no actor":   {Action: "a", TargetType: "t", TargetID: "1", CorrelationID: "c"},
 		"two actors": {Action: "a", TargetType: "t", TargetID: "1", CorrelationID: "c", Actor: Actor{UserID: "u", System: "cli"}},
 		"no action":  {TargetType: "t", TargetID: "1", CorrelationID: "c", Actor: SystemActor("x")},
+		"invalid proposal id": {Action: "a", TargetType: "t", TargetID: "1", CorrelationID: "c", Actor: SystemActor("x"),
+			Via: "ai", TenantID: "t", ProposalID: "not-a-uuid"},
 	} {
 		if err := Record(context.Background(), nil, e); err == nil {
 			t.Errorf("%s: expected error", name)

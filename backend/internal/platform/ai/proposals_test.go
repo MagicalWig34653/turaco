@@ -43,6 +43,15 @@ func (m *noteModule) tool() ai.Tool {
 			`"ticketId":{"type":"string","format":"uuid","maxLength":36,"x-audit":"id"},"body":{"type":"string","minLength":1,"maxLength":2000,"x-audit":"text"}}}`),
 		Target: &ai.Target{Type: "ticket", Arg: "ticketId"},
 		Write: &ai.WriteSpec{Effect: ai.EffectInternal,
+			Replay: func(_ context.Context, _ ai.Caller, _ json.RawMessage, x ai.Execution) (ai.ExecutionResult, bool, error) {
+				if m.down.Load() {
+					return ai.ExecutionResult{}, false, errors.New("module unavailable")
+				}
+				m.mu.Lock()
+				id, found := m.notes[x.IdempotencyKey]
+				m.mu.Unlock()
+				return ai.ExecutionResult{Result: ai.ResourceRef{Type: "ticket_comment", ID: id}}, found, nil
+			},
 			Prepare: func(_ context.Context, c ai.Caller, in json.RawMessage) (ai.Preparation, error) {
 				var a struct {
 					TicketID string `json:"ticketId"`
@@ -198,7 +207,7 @@ func TestWriteToolCallCreatesAProposalAndExecutesNothing(t *testing.T) {
 			t.Fatalf("a confirm tool is offered to the model: %s", d.Name)
 		}
 	}
-	// Audit: proposal created via=ai with ids and a hash of the text, never the text.
+	// Audit: proposal created via=ai with ids and only a hash prefix, never the text or full hash.
 	if e.audits(c, "ai.proposal.created") != 1 || e.audits(c, "ai.tool.called") != 1 {
 		t.Fatal("proposal creation not audited")
 	}
@@ -206,7 +215,7 @@ func TestWriteToolCallCreatesAProposalAndExecutesNothing(t *testing.T) {
 	if err := e.pool.QueryRow(context.Background(), `SELECT string_agg(metadata::text, ' ') FROM platform.audit_events WHERE correlation_id=$1`, c.CorrelationID).Scan(&meta); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(meta, "toner low") || !strings.Contains(meta, p.ParametersHash) || !strings.Contains(meta, tid) {
+	if strings.Contains(meta, "toner low") || strings.Contains(meta, p.ParametersHash) || !strings.Contains(meta, p.ParametersHash[:12]) || !strings.Contains(meta, tid) {
 		t.Fatalf("audit metadata: %s", meta)
 	}
 	got, err := e.svc.GetProposal(context.Background(), c, p.ID)
@@ -404,6 +413,12 @@ func TestPermissionLossBetweenProposalAndConfirm(t *testing.T) {
 	c := e.agent()
 	p, _ := propose(t, e, m, c, "No longer allowed.")
 	e.revoke(c, "tickets.manage")
+	if got, err := e.svc.GetProposal(ctx, c, p.ID); err != nil || got.State != ai.ProposalProposed || got.TargetLabel != "" || got.Parameters != nil {
+		t.Fatalf("get leaked revoked proposal: %+v %v", got, err)
+	}
+	if list, err := e.svc.Proposals(ctx, c); err != nil || len(list) != 1 || list[0].TargetLabel != "" || list[0].Parameters != nil || list[0].State != ai.ProposalProposed {
+		t.Fatalf("list leaked revoked proposal: %+v %v", list, err)
+	}
 	out, err := e.svc.ConfirmProposal(ctx, c, p.ID, p.ParametersHash)
 	if err != nil || out.State != ai.ProposalFailed || out.OutcomeCode != "permission_denied" {
 		t.Fatalf("revoked tool permission: %+v %v", out, err)
@@ -556,6 +571,47 @@ func TestLeaseExpiryRetryIsIdempotentAndBounded(t *testing.T) {
 	}
 	_, _ = e.pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1`, "job:"+e.corr+"-sweep2")
 	_, _ = e.pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE correlation_id = $1`, "job:"+e.corr+"-sweep2")
+}
+
+func TestRetryStopsAtUnknownWindowEvenWithoutSweep(t *testing.T) {
+	e, m := newProposalEnv(t)
+	c := e.agent()
+	ctx := context.Background()
+	p, _ := propose(t, e, m, c, "Do not run after window.")
+	m.down.Store(true)
+	if _, err := e.svc.ConfirmProposal(ctx, c, p.ID, p.ParametersHash); !errors.Is(err, ai.ErrExecutionUnknown) {
+		t.Fatal(err)
+	}
+	m.down.Store(false)
+	if _, err := e.pool.Exec(ctx, `UPDATE ai.proposals SET lease_expires_at=now()-interval '16 minutes' WHERE id=$1`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.ConfirmProposal(ctx, c, p.ID, p.ParametersHash); !errors.Is(err, ai.ErrProposalInProgress) {
+		t.Fatalf("late retry: %v", err)
+	}
+	if m.applied.Load() != 0 || e.audits(c, "ai.proposal.retried") != 0 {
+		t.Fatal("late retry applied or claimed")
+	}
+}
+
+func TestReplayRecognizesCommittedNoteAfterPermissionAndTargetChange(t *testing.T) {
+	e, m := newProposalEnv(t)
+	c := e.agent()
+	ctx := context.Background()
+	p, tid := propose(t, e, m, c, "Already committed.")
+	m.failNext.Store(1)
+	if _, err := e.svc.ConfirmProposal(ctx, c, p.ID, p.ParametersHash); !errors.Is(err, ai.ErrExecutionUnknown) {
+		t.Fatal(err)
+	}
+	m.bump(tid)
+	e.revoke(c, "tickets.manage")
+	if _, err := e.pool.Exec(ctx, `UPDATE ai.proposals SET lease_expires_at=now()-interval '1 second' WHERE id=$1`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.svc.ConfirmProposal(ctx, c, p.ID, p.ParametersHash)
+	if err != nil || out.State != ai.ProposalExecuted || m.applied.Load() != 1 {
+		t.Fatalf("replay: %+v %v", out, err)
+	}
 }
 
 // The Turaco MCP server stays read-only: a registered write tool is neither listed nor callable via MCP, even for a

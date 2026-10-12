@@ -122,6 +122,18 @@ describe('proposal confirm dialog', () => {
     expect(html).toContain(proposal.target.id);
     expect(html).not.toMatch(/confirm all/i);
   });
+  it('shows invisible and bidi controls as escaped markers', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ProposalCard
+          proposal={{ ...proposal, parameters: { body: 'ab\u200bcd\u202eEF\u2066gh\u0001' } }}
+          onChange={() => undefined}
+        />
+      </I18nProvider>,
+    );
+    expect(html).toContain('ab&lt;U+200B&gt;cd&lt;U+202E&gt;EF&lt;U+2066&gt;gh&lt;U+0001&gt;');
+    expect(html).not.toMatch(/[\u200b\u202e\u2066\u0001]/u);
+  });
   it('shows the real outcome and no enabled Confirm once the proposal ended', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>
