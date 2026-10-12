@@ -949,6 +949,36 @@ export const de: Record<MessageKey, string> = {
   'error.reference': 'Referenz: {id}',
 
   'login.title': 'Anmelden',
+  'firstAdmin.link': 'Erste Administration einrichten',
+  'firstAdmin.title': 'Erste Administration',
+  'firstAdmin.tokenIntro':
+    'Führen Sie diesen Befehl auf dem Server aus und fügen Sie das ausgegebene Einrichtungstoken ein:',
+  'firstAdmin.token': 'Einrichtungstoken',
+  'firstAdmin.next': 'Weiter',
+  'firstAdmin.userIntro': 'Wählen Sie die Person aus dem Verzeichnis für die erste Administration.',
+  'firstAdmin.user': 'Verzeichnisbenutzer',
+  'firstAdmin.userHint': 'Benutzername, E-Mail-Adresse oder UUID',
+  'firstAdmin.tenant': 'Entra-Mandanten-GUID (optional)',
+  'firstAdmin.object': 'Entra-Objekt-GUID (optional)',
+  'firstAdmin.entraHint': 'Geben Sie beide Entra-GUIDs ein, um eine Identität zu verknüpfen.',
+  'firstAdmin.create': 'Administration erstellen',
+  'firstAdmin.back': 'Zurück zum Token',
+  'firstAdmin.done': 'Die erste Administration wurde erstellt. Sie können sich jetzt anmelden.',
+  'firstAdmin.signIn': 'Zur Anmeldung',
+  'firstAdmin.unavailable': 'Die Einrichtung ist nicht verfügbar.',
+  'firstAdmin.error.invalidRequest':
+    'Prüfen Sie den Benutzer und die Entra-GUIDs und versuchen Sie es erneut.',
+  'firstAdmin.error.userNotFound':
+    'Der Verzeichnisbenutzer wurde nicht gefunden. Prüfen Sie den Namen oder warten Sie auf die Verzeichnissynchronisation.',
+  'firstAdmin.error.localAccount':
+    'Ein lokales Konto kann nicht die erste Administration übernehmen.',
+  'firstAdmin.error.entraLink':
+    'Die Entra-Identität konnte diesem Benutzer nicht zugeordnet werden.',
+  'firstAdmin.error.rateLimited': 'Zu viele Versuche. Bitte versuchen Sie es später erneut.',
+  'firstAdmin.error.status':
+    'Der Einrichtungsstatus konnte nicht geladen werden. Bitte versuchen Sie es später erneut.',
+  'firstAdmin.error.generic':
+    'Die Administration konnte nicht erstellt werden. Bitte versuchen Sie es später erneut.',
   'login.identifier': 'Benutzername oder E-Mail',
   'login.identifier.hint': 'Verzeichnis-Benutzername, DOMAIN\\Benutzername oder E-Mail-Adresse',
   'login.password': 'Passwort',

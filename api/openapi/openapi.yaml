@@ -8351,6 +8351,77 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /setup/status:
+    get:
+      operationId: getFirstAdministratorSetupStatus
+      summary: Report whether first-administrator setup is available.
+      description: "Unauthenticated; no session is created. Available only while no administrator exists and an unexpired setup token has been issued. Gives no reason when unavailable. Responses are Cache-Control: no-store."
+      responses:
+        '200':
+          description: Setup availability.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [available]
+                properties:
+                  available: {type: boolean}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /setup/first-administrator:
+    post:
+      operationId: createFirstAdministratorWithSetupToken
+      summary: Create the first administrator using a setup token.
+      description: "Unauthenticated, same-origin and rate limited per client and globally. No session is created. The token is issued by `turaco-admin admin setup-token`, is single use and stored only as a hash. A wrong, expired or used token and closed setup all return the same 403 setup.unavailable. User-specific errors are returned only after token acceptance. The administrator operation is audited with via=web. Responses are Cache-Control: no-store."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, user]
+              properties:
+                token: {type: string, description: Setup token printed by the operator CLI.}
+                user: {type: string, description: Directory username, email address or UUID.}
+                tenant: {type: string, format: uuid, description: Entra tenant GUID; requires object.}
+                object: {type: string, format: uuid, description: Entra object GUID; requires tenant.}
+      responses:
+        '200':
+          description: The administrator was created. Sign in separately.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [created]
+                properties:
+                  created: {type: boolean, const: true}
+        '400':
+          description: Invalid request (setup.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: Setup unavailable, including wrong, expired or used token or closed setup (setup.unavailable); cross-origin requests are rejected (platform.csrf_rejected).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: Accepted token but user not found, local account or Entra linking failed (setup.user_not_found, setup.local_account, setup.entra_link_failed).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429':
+          description: Too many attempts (setup.rate_limited).
+          headers:
+            Retry-After:
+              schema: {type: integer}
+              description: Seconds until another attempt is allowed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /auth/session:
     get:
       operationId: getAuthSession

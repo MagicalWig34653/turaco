@@ -18,6 +18,7 @@ import { SettingsScreen } from '../modules/settings/SettingsScreen';
 import { TeamsChannelScreen } from '../modules/teams-channel/TeamsChannelScreen';
 import { AuditScreen } from '../modules/audit/AuditScreen';
 import { LoginScreen } from '../modules/auth/LoginScreen';
+import { FirstAdministratorScreen } from '../modules/auth/FirstAdministratorScreen';
 import { MeScreen } from '../modules/access/MeScreen';
 import { HoldersScreen } from '../modules/access/HoldersScreen';
 import { RoleAssignmentsScreen } from '../modules/access/RoleAssignmentsScreen';
@@ -503,7 +504,10 @@ function Gate() {
 /** The link of an invitation or reset mail works without a session and outside the app shell. */
 function Entry() {
   const { pathname } = useLocation();
-  return pathname.replace(/\/+$/, '') === '/set-password' ? <SetPasswordScreen /> : <Gate />;
+  const path = pathname.replace(/\/+$/, '');
+  if (path === '/set-password') return <SetPasswordScreen />;
+  if (path === '/setup') return <FirstAdministratorScreen />;
+  return <Gate />;
 }
 
 export function App() {
