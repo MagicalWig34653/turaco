@@ -17,8 +17,9 @@ const reloadOn = [
 
 // Make format and control characters explicit in the exact parameter display. React still escapes the text.
 function visibleParameter(value: string): string {
-  return value.replace(/[\p{Cf}\p{Cc}\p{Zl}\p{Zp}]/gu, (char) =>
-    `<U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`,
+  return value.replace(
+    /[\p{Cf}\p{Cc}\p{Zl}\p{Zp}]/gu,
+    (char) => `<U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`,
   );
 }
 

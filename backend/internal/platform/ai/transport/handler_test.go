@@ -280,7 +280,9 @@ func TestProposalRoutesAreOwnerOnlyHashBoundAndTyped(t *testing.T) {
 	}
 	w, m = call(h, "GET", "/api/v1/ai/proposals/"+id, u, "ai.use", "")
 	params, _ := m["parameters"].(map[string]any)
-	if w.Code != 200 || m["state"] != "proposed" || m["parametersHash"] != hash || params["body"] != "Exact text" || m["targetLabel"] != "T-1 Printer" {
+	// The tool is not registered for this caller (no current tool permission): label and parameters are withheld,
+	// the state and hash stay visible.
+	if w.Code != 200 || m["state"] != "proposed" || m["parametersHash"] != hash || params != nil || m["targetLabel"] != "" {
 		t.Fatalf("get: %d %v", w.Code, m)
 	}
 	// Another User sees nothing and cannot act.

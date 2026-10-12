@@ -23,7 +23,8 @@ export const en = {
   'calendars.addClosure': 'Add closure',
   'calendars.saveClosures': 'Save closures',
   'calendars.copyNextYear': 'Copy to next year',
-  'calendars.error.invalid': 'Check the key, time zone, hours and closure dates. Intervals must be ordered, nonoverlapping and stay within one day.',
+  'calendars.error.invalid':
+    'Check the key, time zone, hours and closure dates. Intervals must be ordered, nonoverlapping and stay within one day.',
   'calendars.error.conflict': 'This calendar changed. Reload it and try again.',
   'calendars.error.keyTaken': 'This calendar key is already used.',
   'calendars.error.notFound': 'This calendar no longer exists.',

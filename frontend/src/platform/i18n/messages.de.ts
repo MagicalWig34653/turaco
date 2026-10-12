@@ -25,8 +25,10 @@ export const de: Record<MessageKey, string> = {
   'calendars.addClosure': 'Schließtag hinzufügen',
   'calendars.saveClosures': 'Schließtage speichern',
   'calendars.copyNextYear': 'Ins nächste Jahr kopieren',
-  'calendars.error.invalid': 'Schlüssel, Zeitzone, Zeiten und Schließtage prüfen. Intervalle müssen geordnet sein, dürfen sich nicht überschneiden und müssen innerhalb eines Tages liegen.',
-  'calendars.error.conflict': 'Dieser Kalender wurde geändert. Bitte neu laden und erneut versuchen.',
+  'calendars.error.invalid':
+    'Schlüssel, Zeitzone, Zeiten und Schließtage prüfen. Intervalle müssen geordnet sein, dürfen sich nicht überschneiden und müssen innerhalb eines Tages liegen.',
+  'calendars.error.conflict':
+    'Dieser Kalender wurde geändert. Bitte neu laden und erneut versuchen.',
   'calendars.error.keyTaken': 'Dieser Kalenderschlüssel wird bereits verwendet.',
   'calendars.error.notFound': 'Dieser Kalender ist nicht mehr vorhanden.',
   'calendars.day.1': 'Montag',
