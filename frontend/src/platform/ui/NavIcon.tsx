@@ -31,6 +31,7 @@ const paths: Partial<Record<RouteId, string>> = {
   procurementRequests: 'M4 5h16v14H4zM8 9h8m-8 4h8m-8 3h4',
   suppliers: 'M3 21V8l6-4v17m0-12 6-4v16m0-12 6-3v15M5 12h2m4 0h2m4 0h2',
   ticketQueue: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM12 5v14',
+  routingRules: 'M4 6h6M4 12h6M4 18h6M14 6l3 3-3 3M10 6h4M10 12h3m4 6h3',
   ticketQueues: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM8 9h8M8 12h8M8 15h5',
   managerOverview: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   slaReport: 'M4 4v16h16M8 15l3-4 3 2 5-6M8 19v-1m4 1v-3m4 3v-2',

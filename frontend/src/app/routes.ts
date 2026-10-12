@@ -93,6 +93,7 @@ export type RouteId =
   | 'ticketDetail'
   | 'ticketQueue'
   | 'ticketQueues'
+  | 'routingRules'
   | 'managerOverview'
   | 'slaReport'
   | 'knowledge'
@@ -739,6 +740,13 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'nav.slaReport',
     requiresAny: ['tickets.view', 'tickets.manage'],
     nav: 'logistics',
+  },
+  {
+    id: 'routingRules',
+    pattern: '/service-desk/routing-rules',
+    titleKey: 'routing.title',
+    requires: ['servicedesk.queues.manage'],
+    nav: 'admin',
   },
   {
     id: 'ticketQueues',

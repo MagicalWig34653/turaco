@@ -5133,6 +5133,110 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {description: "servicedesk.queue_key_taken or servicedesk.queue_prefix_taken.", content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /service-desk/routing-rules:
+    get:
+      operationId: listRoutingRules
+      summary: Queue routing rules in evaluation order.
+      description: >-
+        Needs `servicedesk.queues.manage`. When nobody chose a Queue, the first enabled rule whose conditions all hold decides the Queue of a new Ticket
+        (keywords: any word in title or description, folded for umlauts; impact; patient-impact flag); a rule never assigns people and is skipped when its
+        Queue is archived or not in routing mode `automatic` or `both`. Without a match the intake Queue applies.
+      security: [{sessionAuth: []}]
+      responses:
+        '200': {description: OK., content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/RoutingRule'}}}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createRoutingRule
+      summary: Append a routing rule.
+      description: At most 100 rules; at least one condition is required. Audited (`servicedesk.routing_rule.created`).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRuleInput'}}}}
+      responses:
+        '201': {description: Created., content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRule'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-desk/routing-rules/{id}:
+    put:
+      operationId: updateRoutingRule
+      summary: Replace a routing rule (version guarded).
+      description: Audited (`servicedesk.routing_rule.updated`).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRuleInput'}}}}
+      responses:
+        '200': {description: Updated., content: {application/json: {schema: {$ref: '#/components/schemas/RoutingRule'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Version conflict.}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteRoutingRule
+      summary: Delete a routing rule.
+      description: Needs `expectedVersion` as query parameter. Remaining rules keep their order. Audited (`servicedesk.routing_rule.deleted`).
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: expectedVersion, in: query, required: true, schema: {type: integer}}
+      responses:
+        '204': {description: Deleted.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {description: Version conflict.}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-desk/routing-rules/reorder:
+    post:
+      operationId: reorderRoutingRules
+      summary: Set the evaluation order.
+      description: "`ids` must name every rule exactly once. Audited (`servicedesk.routing_rule.reordered`)."
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [ids], properties: {ids: {type: array, items: {type: string, format: uuid}}}}}}}
+      responses:
+        '200': {description: New order., content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/RoutingRule'}}}}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /service-desk/routing-rules/test:
+    post:
+      operationId: testRouting
+      summary: Show which rule would route a sample Ticket.
+      description: Creates nothing. `rule` is null when the intake Queue applies (`defaultUsed`).
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+                description: {type: string}
+                impact: {type: string, enum: [patient_care, blocked, impaired, request]}
+                patientImpact: {type: boolean}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queue, defaultUsed, rule]
+                properties:
+                  queue: {type: object, properties: {id: {type: string}, key: {type: string}, name: {type: string}}}
+                  defaultUsed: {type: boolean}
+                  rule: {nullable: true, allOf: [{$ref: '#/components/schemas/RoutingRule'}]}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /service-desk/queues/{id}:
     get:
       operationId: getTicketQueue
@@ -23800,6 +23904,31 @@ components:
         subjectId: {type: string, format: uuid}
         startedAt: {type: string, format: date-time}
         note: {type: string, nullable: true}
+    RoutingRule:
+      type: object
+      required: [id, queueId, position, name, keywords, enabled, version]
+      properties:
+        id: {type: string, format: uuid}
+        queueId: {type: string, format: uuid}
+        position: {type: integer}
+        name: {type: string}
+        keywords: {type: array, items: {type: string}}
+        impact: {type: string, enum: [patient_care, blocked, impaired, request]}
+        patientImpact: {type: boolean}
+        enabled: {type: boolean}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    RoutingRuleInput:
+      type: object
+      required: [queueId, name, enabled]
+      properties:
+        expectedVersion: {type: integer, description: "Required on update."}
+        queueId: {type: string, format: uuid}
+        name: {type: string, maxLength: 100}
+        keywords: {type: array, maxItems: 10, items: {type: string, maxLength: 60}}
+        impact: {type: string, enum: [patient_care, blocked, impaired, request]}
+        patientImpact: {type: boolean}
+        enabled: {type: boolean}
     TimeEntryDeleteRequest:
       type: object
       additionalProperties: false

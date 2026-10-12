@@ -29,6 +29,7 @@ type Service struct {
 	device  Device
 	engine  *query.Engine
 	queues  QueueStore
+	routing RoutingStore
 	members Memberships
 	// changes, graph and graphDB link Tickets to Changes (WithChanges); nil without them.
 	changes ChangeReader
@@ -48,6 +49,9 @@ func NewService(store Store, dir Directory, device Device) *Service {
 	s := &Service{store: store, dir: dir, device: device, engine: query.NewEphemeralEngine()}
 	if qs, ok := store.(QueueStore); ok {
 		s.queues = qs
+	}
+	if rs, ok := store.(RoutingStore); ok {
+		s.routing = rs
 	}
 	return s
 }
@@ -233,9 +237,21 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	if err != nil {
 		return Ticket{}, err
 	}
-	queue, err := s.intakeQueue(a, in)
-	if err != nil {
-		return Ticket{}, err
+	var queue Queue
+	var routedBy string
+	if (in.QueueID == nil || *in.QueueID == "") && in.QueueKey == "" {
+		// Nobody chose a Queue: the first matching routing rule decides, else the intake Queue below.
+		if q, rule, ok, err := s.routeQueue(ctx, RoutingSample{Title: title, Description: desc, Impact: in.Impact, PatientImpact: in.PatientImpact}); err != nil {
+			return Ticket{}, err
+		} else if ok {
+			queue, routedBy = q, rule.ID
+		}
+	}
+	if routedBy == "" {
+		var err error
+		if queue, err = s.intakeQueue(a, in); err != nil {
+			return Ticket{}, err
+		}
 	}
 	eff := a.eff(p, queue.ID)
 	t := Ticket{Kind: "incident", Title: title, Description: strPtr(desc), Status: StatusNew, Priority: "normal", ReporterID: p.UserID, AffectedUserID: p.UserID, QueueID: queue.ID}
@@ -345,6 +361,9 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 				return err
 			}
 			meta := map[string]any{"affectedUserId": out.AffectedUserID, "queueId": out.QueueID, "onBehalf": out.AffectedUserID != out.ReporterID, "patientImpact": out.PatientImpact}
+			if routedBy != "" {
+				meta["routedByRule"] = routedBy
+			}
 			if out.AssetID != nil {
 				meta["assetId"] = *out.AssetID
 			}

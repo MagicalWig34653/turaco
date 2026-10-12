@@ -70,6 +70,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("DELETE /api/v1/tickets/{id}/participants/{userId}", h.removeParticipant)
 	route("GET /api/v1/tickets/{id}/participant-candidates", h.participantCandidates)
 	registerQueues(route, h)
+	registerRouting(route, h)
 	for _, op := range []string{application.OpStart, application.OpWait, application.OpResume, application.OpResolve, application.OpClose, application.OpReopen, application.OpCancel} {
 		route("POST /api/v1/tickets/{id}/"+op, h.transition(op))
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ func TestSLASweepToNotificationFlow(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = w.pool.Exec(ctx, `DELETE FROM servicedesk.queue_grants WHERE subject_id = $1::uuid`, w.assignee)
+		dbtest.PurgeSLAFixtures(t, w.pool, "flow-")
 	})
 	created := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Microsecond)
 	tx, err := w.pool.Begin(ctx)

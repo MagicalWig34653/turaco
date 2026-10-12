@@ -41,6 +41,7 @@ func newSweepFixture(t *testing.T, escalation bool, teamID *string) *sweepFixtur
 	if err := pool.QueryRow(ctx, `INSERT INTO servicedesk.queues(key,prefix,name,sla_policy_id,default_team_id) VALUES('sweep-'||right(uuidv7()::text,8),'SW'||upper(right(uuidv7()::text,5)),'Sweep test',$1,$2) RETURNING id::text`, f.policyID, teamID).Scan(&f.queueID); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { dbtest.PurgeSLAFixtures(t, pool, "sweep-") })
 	return f
 }
 
