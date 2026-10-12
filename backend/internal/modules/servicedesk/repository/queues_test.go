@@ -15,16 +15,19 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database/dbtest"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // fakeMem is the membership and permission source of the tests.
 type fakeMem struct {
-	mu    sync.Mutex
-	teams map[string][]string
-	roles map[string][]string
-	perms map[string]map[string]struct{}
+	// scopes holds the Location-scoped tickets.view and tickets.manage of a User (view, work).
+	scopes map[string][2]authorization.LocationScope
+	mu     sync.Mutex
+	teams  map[string][]string
+	roles  map[string][]string
+	perms  map[string]map[string]struct{}
 }
 
 func (m *fakeMem) TeamIDs(_ context.Context, u string) ([]string, error) {
@@ -36,6 +39,12 @@ func (m *fakeMem) RoleIDs(_ context.Context, u string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.roles[u], nil
+}
+func (m *fakeMem) TicketScopes(_ context.Context, u string) (authorization.LocationScope, authorization.LocationScope, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sc := m.scopes[u]
+	return sc[0], sc[1], nil
 }
 func (m *fakeMem) Permissions(_ context.Context, u string) (map[string]struct{}, error) {
 	m.mu.Lock()
@@ -58,6 +67,7 @@ type qenv struct {
 	team   string
 	role   string
 	queues []string
+	active map[string]bool
 }
 
 func newQEnv(t *testing.T) *qenv {
@@ -74,6 +84,7 @@ func newQEnv(t *testing.T) *qenv {
 		}
 		active[*dst] = true
 	}
+	e.active = active
 	e.svc = application.NewService(repository.New(pool), dir{active: active}, device{}).WithMemberships(e.mem)
 	e.admin = application.Principal{UserID: agent, View: true, Manage: true, QueuesManage: true}
 	e.global = application.Principal{UserID: agent, View: true, Manage: true}
@@ -86,6 +97,14 @@ func newQEnv(t *testing.T) *qenv {
 		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.queues WHERE id = ANY($1::uuid[])`, e.queues)
 	})
 	return e
+}
+
+// dirActive marks ids (Locations) as active in the fake directory.
+func (e *qenv) dirActive(ids ...string) {
+	e.t.Helper()
+	for _, id := range ids {
+		e.active[id] = true
+	}
 }
 
 func (e *qenv) c(user string) application.Caller {

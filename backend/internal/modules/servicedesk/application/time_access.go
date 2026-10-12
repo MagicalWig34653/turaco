@@ -44,7 +44,7 @@ func (s *Service) TimeAccess(ctx context.Context, userID string, ticketIDs []str
 		if err != nil {
 			return nil, err
 		}
-		acc := TicketTimeAccess{Found: true, QueueID: t.QueueID, CanView: a.canView(t.QueueID), CanWork: a.canWork(t.QueueID)}
+		acc := TicketTimeAccess{Found: true, QueueID: t.QueueID, CanView: a.viewT(t), CanWork: a.workT(t)}
 		if acc.CanView {
 			acc.Reference = t.Reference
 		}

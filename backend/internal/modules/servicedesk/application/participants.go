@@ -298,7 +298,7 @@ func (s *Service) Participants(ctx context.Context, p Principal, ticketID string
 	if err != nil {
 		return nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, ErrNotFound
 	}
 	list, err := s.participants.Participants(ctx, t.ID)
@@ -333,7 +333,7 @@ func (s *Service) ParticipantCandidates(ctx context.Context, p Principal, ticket
 	if err != nil {
 		return nil, err
 	}
-	if !a.canWork(t.QueueID) {
+	if !a.workT(t) {
 		return nil, ErrNotFound
 	}
 	out, err := s.externals.SearchExternals(ctx, text, 20)

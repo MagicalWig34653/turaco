@@ -94,8 +94,8 @@ Scope `global`: the permission takes effect only through a global role assignmen
 | `tasks.recurrence.manage` | normal | global | Create, change, pause and delete Recurring Task Definitions that generate tasks on a schedule. |
 | `tasks.view` | normal | global | View all tasks. Callers with only tasks.work see just the tasks assigned to them or their Teams. |
 | `tasks.work` | normal | global | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
-| `tickets.manage` | elevated | global | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
-| `tickets.view` | normal | global | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. |
+| `tickets.manage` | elevated | location | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. May be held at a Location (and its sub-Locations) through a Location-scoped role assignment: it then applies to Tickets whose affected Location is in that scope, in every Queue. |
+| `tickets.view` | normal | location | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. May be held at a Location (and its sub-Locations) through a Location-scoped role assignment: it then applies to Tickets whose affected Location is in that scope, in every Queue. |
 | `timetracking.admin` | high | global | Administer Time Tracking: the recorded works-council co-determination basis (the precondition for switching the module on), the data protection impact assessment date, edit window, retention and author visibility. |
 | `timetracking.log` | normal | global | Log, edit and delete one's own time on Tickets the caller may work (work access in the Ticket's Queue) and read one's own time entries. |
 | `timetracking.manage` | elevated | global | Log and correct time entries for other people and outside the edit window, always with a recorded reason. |

@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
 // Ticket statuses (docs/domain/state-machines.md).
@@ -131,6 +132,11 @@ type Principal struct {
 	// External marks a restricted external account (ADR-0034): it reads only Tickets shared with it through
 	// ticket_participants and has no Queue access whatever Teams or roles it belongs to.
 	External bool
+	// ViewScope and ManageScope are where the caller holds tickets.view and tickets.manage through Location-scoped
+	// role assignments (ADR-0040): Tickets whose affected Location is in the scope are viewed (and, for manage,
+	// worked) in every Queue. View and Manage keep meaning "held globally".
+	ViewScope   authorization.LocationScope
+	ManageScope authorization.LocationScope
 }
 
 func (p Principal) staff() bool { return p.View || p.Manage }
@@ -174,6 +180,9 @@ var (
 	ErrQueueIsDefault      = errors.New("servicedesk: the intake queue cannot be archived")
 	ErrQueueSame           = errors.New("servicedesk: the ticket is already in this queue")
 	ErrAssigneeNoAccess    = errors.New("servicedesk: the assignee cannot view tickets of the queue")
+	// ErrLocationOutOfScope: a caller who works the Ticket only through a Location-scoped permission tried to move it
+	// out of that scope or to no Location.
+	ErrLocationOutOfScope = errors.New("servicedesk: the location is outside the caller's scope")
 )
 
 // InvalidTransitionError reports an operation the ticket's status does not allow.
@@ -231,7 +240,11 @@ type Filter struct {
 	// Narrow restricts the result to the Queues in NarrowQueueIDs (ANDed; an empty list matches nothing).
 	Narrow         bool
 	NarrowQueueIDs []string
-	Page           Page
+	// LocationIDs, together with UserID, also widens "mine" to the Tickets whose affected Location is one of these
+	// (scoped tickets.view or tickets.manage); NarrowLocationIDs does the same for the Narrow restriction.
+	LocationIDs       []string
+	NarrowLocationIDs []string
+	Page              Page
 }
 
 // Store is the persistence port. Mutating methods run in the caller's

@@ -645,7 +645,9 @@ type Detail struct {
 }
 
 // global reports that the caller holds assets.view or assets.manage everywhere.
-func (p Principal) global() bool { return p.View || p.Manage }
+func (p Principal) global() bool {
+	return p.View || p.Manage || p.ViewScope.Global || p.ManageScope.Global
+}
 
 // canView reports that the caller may read at least some assets through a permission.
 func (p Principal) canView() bool {

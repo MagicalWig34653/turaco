@@ -121,6 +121,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusConflict, "servicedesk.queue_same", "The ticket is already in this queue.")
 	case errors.Is(err, application.ErrDuplicateTarget):
 		httpx.WriteError(w, http.StatusConflict, "servicedesk.invalid_duplicate_target", "This ticket cannot be the target: it must be another ticket that is not cancelled, not itself a duplicate, and the ticket being marked must not have duplicates of its own.")
+	case errors.Is(err, application.ErrLocationOutOfScope):
+		httpx.WriteError(w, http.StatusForbidden, "access.location_out_of_scope", "The location is outside the area you may work in.")
 	case errors.Is(err, application.ErrAssigneeNoAccess):
 		httpx.WriteError(w, http.StatusBadRequest, "servicedesk.assignee_no_queue_access", "The assignee cannot view tickets of this queue.")
 	case errors.Is(err, application.ErrParticipantInvalid):
@@ -137,7 +139,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), QueuesManage: p.Has(application.PermQueuesManage),
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), ViewScope: p.ScopeOf(permView), ManageScope: p.ScopeOf(permManage), QueuesManage: p.Has(application.PermQueuesManage),
 		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"), AssetsView: p.Has("assets.view") || p.Has("assets.manage"), External: p.External, SLAManage: p.Has("sla.manage")}
 }
 

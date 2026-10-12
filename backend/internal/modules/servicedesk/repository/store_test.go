@@ -42,6 +42,9 @@ func (d dir) pick(ids []string) map[string]bool {
 func (d dir) ActiveUsers(_ context.Context, ids []string) (map[string]bool, error) {
 	return d.pick(ids), nil
 }
+func (d dir) ActiveLocations(_ context.Context, ids []string) (map[string]bool, error) {
+	return d.pick(ids), nil
+}
 func (d dir) ActiveTeams(_ context.Context, ids []string) (map[string]bool, error) {
 	return d.pick(ids), nil
 }

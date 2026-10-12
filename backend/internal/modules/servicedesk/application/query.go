@@ -163,7 +163,7 @@ func (s *Service) WithQueryEngine(e *query.Engine) *Service {
 }
 
 func (a access) subject(p Principal, sla bool) query.Subject {
-	return query.Subject{UserID: p.UserID, Permissions: map[string]bool{permTicketsView: p.View, permTicketsManage: p.Manage, permQueueScope: a.anyView(), permSLA: sla && !p.External}}
+	return query.Subject{UserID: p.UserID, Permissions: map[string]bool{permTicketsView: p.View, permTicketsManage: p.Manage, permQueueScope: a.anyViewT(), permSLA: sla && !p.External}}
 }
 
 // QueryFields returns the ticket catalog as the caller may use it.
@@ -195,7 +195,7 @@ func (s *Service) CompatNodes(ctx context.Context, p Principal, f Filter) ([]que
 	if f.Status != "" {
 		out = append(out, query.Cond("status", query.OpEquals, f.Status))
 	}
-	if a.anyView() {
+	if a.anyViewT() {
 		if f.AssigneeID != "" {
 			out = append(out, query.Cond("assignee", query.OpEquals, f.AssigneeID))
 		}
@@ -269,11 +269,11 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	subj := a.subject(p, sla)
 	if scope == ScopeAuto {
 		scope = ScopeMine
-		if a.anyView() {
+		if a.anyViewT() {
 			scope = ScopeAll
 		}
 	}
-	if scope == ScopeAll && !a.anyView() {
+	if scope == ScopeAll && !a.anyViewT() {
 		return query.Page[Ticket]{}, ErrForbidden
 	}
 	name := "mine"
@@ -288,13 +288,13 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	}
 	req.Filter = query.And(req.Filter, compat...)
 	opts := query.Options{}
-	if !a.anyView() {
+	if !a.anyViewT() {
 		// A pure requester reads only their own Tickets. The stored number of a Ticket in a Queue they may not know
 		// must neither match their search text nor narrow it away (the Ticket is theirs and listed under an older
 		// number); an exact number they know is found by FindByReference.
 		opts.SearchSkip = []string{"reference"}
 	}
-	if a.anyView() {
+	if a.anyViewT() {
 		opts.SearchExtra, opts.RateLimited, err = s.personSearch(ctx, subj, req)
 		if err != nil {
 			return query.Page[Ticket]{}, err
@@ -305,12 +305,17 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 		return query.Page[Ticket]{}, err
 	}
 	viewable := a.viewIDs()
+	locs := a.scopedLocations()
 	own := query.Fragment{SQL: "t.reporter_user_id = ?::uuid OR t.affected_user_id = ?::uuid", Args: []any{p.UserID, p.UserID}}
 	var vis query.Fragment
 	switch {
 	case scope == ScopeAll && a.global():
 	case scope == ScopeAll:
 		vis = query.Fragment{SQL: "(" + own.SQL + ") OR t.queue_id = ANY(?::text[]::uuid[])", Args: append(append([]any{}, own.Args...), viewable)}
+		if len(locs) > 0 {
+			// Scoped tickets.view and tickets.manage: Tickets at the caller's Locations in every Queue (ADR-0040).
+			vis = query.Fragment{SQL: "(" + vis.SQL + ") OR t.affected_location_id = ANY(?::text[]::uuid[])", Args: append(append([]any{}, vis.Args...), locs)}
+		}
 	default:
 		vis = own
 	}
@@ -334,6 +339,10 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 			}
 		}
 		n := query.Fragment{SQL: "t.queue_id = ANY(?::text[]::uuid[])", Args: []any{nonNil(ids)}}
+		if inQueue == "" && len(locs) > 0 {
+			// Tickets the caller views through a scoped permission are viewed in their own right.
+			n = query.Fragment{SQL: "(" + n.SQL + " OR t.affected_location_id = ANY(?::text[]::uuid[]))", Args: append(append([]any{}, n.Args...), locs)}
+		}
 		if vis.SQL == "" {
 			vis = n
 		} else {

@@ -15,6 +15,7 @@ import (
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	servicedeskpublic "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
 	servicedeskrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/repository"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
@@ -70,6 +71,15 @@ func (m queueMemberships) RoleIDs(ctx context.Context, userID string) ([]string,
 		return nil, err
 	}
 	return m.eval.RoleIDs(ctx, userID)
+}
+
+// TicketScopes returns where the User holds tickets.view and tickets.manage through Location-scoped assignments.
+// External accounts hold nothing (their roles never open Queues, and a scoped assignment to them is refused).
+func (m queueMemberships) TicketScopes(ctx context.Context, userID string) (view, work authorization.LocationScope, err error) {
+	if ext, err := m.external(ctx, userID); err != nil || ext {
+		return view, work, err
+	}
+	return m.eval.ScopesOf(ctx, userID, "tickets.view", "tickets.manage")
 }
 
 func (m queueMemberships) Permissions(ctx context.Context, userID string) (map[string]struct{}, error) {

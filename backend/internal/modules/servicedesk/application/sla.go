@@ -91,7 +91,7 @@ type SLASummaryStore interface {
 // and are neither its reporter nor its affected User (employees see goals, not ITIL fields). Everything else is cleared.
 func (s *Service) withSLAVisibility(a access, p Principal, on bool, ts ...*Ticket) {
 	for _, t := range ts {
-		if t != nil && (!on || p.External || !a.canView(t.QueueID) || s.isOwner(*t, p)) {
+		if t != nil && (!on || p.External || !a.viewT(*t) || s.isOwner(*t, p)) {
 			t.SLA = nil
 		}
 	}

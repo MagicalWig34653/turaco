@@ -218,7 +218,7 @@ func (s *Service) History(ctx context.Context, p Principal, id string) ([]Histor
 	if err != nil {
 		return nil, nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, nil, ErrNotFound
 	}
 	events, err := hs.TicketEvents(ctx, t.ID, 500)

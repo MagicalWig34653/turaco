@@ -50,7 +50,7 @@ func (s *Service) Duplicates(ctx context.Context, p Principal, ticketID string) 
 	if err != nil {
 		return nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, ErrNotFound
 	}
 	dups, err := ds.Duplicates(ctx, t.ID, MaxListedDuplicates)
@@ -59,7 +59,7 @@ func (s *Service) Duplicates(ctx context.Context, p Principal, ticketID string) 
 	}
 	out := []RelatedTicket{}
 	for _, d := range dups {
-		if !a.eff(p, d.QueueID).staff() {
+		if !a.effT(p, d).staff() {
 			continue
 		}
 		if err := s.shape(ctx, a, &d); err != nil {
@@ -104,7 +104,7 @@ func (s *Service) LinkTicket(ctx context.Context, c Caller, p Principal, ticketI
 		if err != nil {
 			return err
 		}
-		if oe := a.eff(p, other.QueueID); !oe.staff() {
+		if oe := a.effT(p, other); !oe.staff() {
 			return ErrNotFound
 		} else if !oe.Manage {
 			return ErrForbidden
@@ -220,7 +220,7 @@ func (s *Service) RelatedTickets(ctx context.Context, p Principal, ticketID stri
 	if err != nil {
 		return nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, ErrNotFound
 	}
 	links, err := s.ticketLinks(ctx, s.graphDB, t.ID)
@@ -233,7 +233,7 @@ func (s *Service) RelatedTickets(ctx context.Context, p Principal, ticketID stri
 		if err != nil {
 			continue // a ticket that vanished is not listed
 		}
-		if !a.eff(p, o.QueueID).staff() {
+		if !a.effT(p, o).staff() {
 			out = append(out, RelatedTicket{ID: fmt.Sprintf("hidden-%d", i+1), Hidden: true})
 			continue
 		}

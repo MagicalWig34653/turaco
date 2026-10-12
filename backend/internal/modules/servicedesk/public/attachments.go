@@ -30,7 +30,8 @@ func NewTicketAttachments(svc *application.Service) *TicketAttachments {
 // Access implements attachments.Owner.
 func (t *TicketAttachments) Access(ctx context.Context, p authorization.Principal, ticketID string) (attachments.Access, error) {
 	r, err := t.svc.AttachmentRights(ctx, application.Principal{
-		UserID: p.UserID, View: p.Has(permTicketsView), Manage: p.Has(permTicketsManage), QueuesManage: p.Has(application.PermQueuesManage),
+		UserID: p.UserID, View: p.Has(permTicketsView), Manage: p.Has(permTicketsManage),
+		ViewScope: p.ScopeOf(permTicketsView), ManageScope: p.ScopeOf(permTicketsManage), QueuesManage: p.Has(application.PermQueuesManage),
 		ChangesView: p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute"),
 	}, ticketID)
 	if errors.Is(err, application.ErrNotFound) {

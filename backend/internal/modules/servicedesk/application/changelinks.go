@@ -178,7 +178,7 @@ func (s *Service) LinkedChanges(ctx context.Context, p Principal, ticketID strin
 	if err != nil {
 		return nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, ErrNotFound
 	}
 	page, err := s.graph.Outgoing(ctx, s.graphDB, ticketNode(t.ID), []string{"RELATES_TO"}, "", MaxLinkedChanges+1)
@@ -242,7 +242,7 @@ func (s *Service) TicketsOfChange(ctx context.Context, p Principal, changeID str
 		if err != nil {
 			continue // a ticket that vanished is not listed
 		}
-		if !a.eff(p, t.QueueID).staff() {
+		if !a.effT(p, t).staff() {
 			continue
 		}
 		if err := s.shape(ctx, a, &t); err != nil {

@@ -28,6 +28,7 @@ func (TicketSearcher) Module() string { return "servicedesk" }
 
 func searchTicketPrincipal(p authorization.Principal) application.Principal {
 	return application.Principal{UserID: p.UserID, View: p.Has("tickets.view"), Manage: p.Has("tickets.manage"),
+		ViewScope: p.ScopeOf("tickets.view"), ManageScope: p.ScopeOf("tickets.manage"),
 		QueuesManage: p.Has(application.PermQueuesManage),
 		ChangesView:  p.Has("changes.view") || p.Has("changes.manage") || p.Has("changes.execute")}
 }

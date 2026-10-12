@@ -79,7 +79,7 @@ func (s *Service) MarkDuplicate(ctx context.Context, c Caller, p Principal, id s
 		if err != nil {
 			return err // unknown target: ErrNotFound
 		}
-		if !a.eff(p, target.QueueID).staff() {
+		if !a.effT(p, target).staff() {
 			return ErrNotFound
 		}
 		if target.Status == StatusCancelled || target.DuplicateOfID != nil {

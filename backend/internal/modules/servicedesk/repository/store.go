@@ -186,10 +186,20 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		if !validUUID(f.UserID) {
 			return empty, nil
 		}
-		if len(f.QueueIDs) > 0 {
-			// Own Tickets plus the Tickets of the Queues the caller views.
-			args = append(args, f.UserID, f.QueueIDs)
-			conds = append(conds, fmt.Sprintf("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid OR queue_id = ANY($%[2]d::text[]::uuid[]))", len(args)-1, len(args)))
+		if len(f.QueueIDs) > 0 || len(f.LocationIDs) > 0 {
+			// Own Tickets plus the Tickets of the Queues the caller views and of the Locations they view.
+			args = append(args, f.UserID)
+			own := len(args)
+			cond := fmt.Sprintf("reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid", own)
+			if len(f.QueueIDs) > 0 {
+				args = append(args, f.QueueIDs)
+				cond += fmt.Sprintf(" OR queue_id = ANY($%d::text[]::uuid[])", len(args))
+			}
+			if len(f.LocationIDs) > 0 {
+				args = append(args, f.LocationIDs)
+				cond += fmt.Sprintf(" OR affected_location_id = ANY($%d::text[]::uuid[])", len(args))
+			}
+			conds = append(conds, "("+cond+")")
 		} else {
 			add("(reporter_user_id = $%[1]d::uuid OR affected_user_id = $%[1]d::uuid)", f.UserID)
 		}
@@ -199,7 +209,12 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		if ids == nil {
 			ids = []string{}
 		}
-		add("queue_id = ANY($%d::text[]::uuid[])", ids)
+		if len(f.NarrowLocationIDs) > 0 {
+			args = append(args, ids, f.NarrowLocationIDs)
+			conds = append(conds, fmt.Sprintf("(queue_id = ANY($%d::text[]::uuid[]) OR affected_location_id = ANY($%d::text[]::uuid[]))", len(args)-1, len(args)))
+		} else {
+			add("queue_id = ANY($%d::text[]::uuid[])", ids)
+		}
 	}
 	if f.Status != "" {
 		add("status = $%d", f.Status)

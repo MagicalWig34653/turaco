@@ -136,7 +136,7 @@ func (s *Service) CallbackTasksForTicket(ctx context.Context, p Principal, id st
 	if err != nil {
 		return nil, err
 	}
-	if !a.eff(p, t.QueueID).staff() {
+	if !a.effT(p, t).staff() {
 		return nil, ErrNotFound
 	}
 	tasks, err := s.callbacks.ByContext(ctx, t.ID, 100)

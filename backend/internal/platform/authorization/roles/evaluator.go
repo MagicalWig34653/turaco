@@ -296,6 +296,17 @@ func (e *Evaluator) PermissionsIn(ctx context.Context, q querier, userID string)
 
 // Access returns the global set and the expanded scoped map of userID (Principal.Permissions and the Principal's scoped holdings, WithScopes).
 // The Location tree is read only when the User has scoped holdings of a scopable permission.
+// ScopesOf returns where the User holds the two permissions through Location-scoped assignments (the expanded
+// Location sets, empty when held globally or not at all). Callers outside the authorization code read scoped
+// holdings only through this method or Principal.ScopeOf.
+func (e *Evaluator) ScopesOf(ctx context.Context, userID, first, second string) (authorization.LocationScope, authorization.LocationScope, error) {
+	acc, err := e.Access(ctx, userID)
+	if err != nil {
+		return authorization.LocationScope{}, authorization.LocationScope{}, err
+	}
+	return acc.Scopes[first], acc.Scopes[second], nil
+}
+
 func (e *Evaluator) Access(ctx context.Context, userID string) (authorization.Access, error) {
 	grants, local, external, err := e.load(ctx, e.pool, userID)
 	if err != nil {

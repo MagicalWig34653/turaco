@@ -402,7 +402,7 @@ func (s *Service) work(ctx context.Context, tx pgx.Tx, p Principal, m membership
 	if err != nil {
 		return Ticket{}, access{}, p, err
 	}
-	eff := a.eff(p, cur.QueueID)
+	eff := a.effT(p, cur)
 	if !eff.staff() && !s.isOwner(cur, p) {
 		return Ticket{}, access{}, p, ErrNotFound
 	}
@@ -534,7 +534,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 
 // assigneeMaySee reports whether the User keeps access to Tickets of the Queue: through the global permissions or
 // a grant. Without a membership source (tests) every assignee passes.
-func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID string) (bool, error) {
+func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID string, loc *string) (bool, error) {
 	if s.members == nil || s.queues == nil {
 		return true, nil
 	}
@@ -546,6 +546,16 @@ func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID
 	_, manage := perms[permTicketsManage]
 	if view || manage {
 		return true, nil
+	}
+	// A Location-scoped tickets.view or tickets.manage of the assignee covers Tickets at that Location.
+	if sm, ok := s.members.(ScopedMemberships); ok && loc != nil {
+		sv, sw, err := sm.TicketScopes(ctx, userID)
+		if err != nil {
+			return false, fmt.Errorf("load scopes of assignee: %w", err)
+		}
+		if sv.Allows(*loc) || sw.Allows(*loc) {
+			return true, nil
+		}
 	}
 	m, err := s.memberships(ctx, userID)
 	if err != nil {
@@ -566,7 +576,7 @@ func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID
 // MaySeeQueue reports whether the User can view the Queue (global permissions or a grant). It serves the SLA
 // notification recipients: a notification must not reach anybody who could not open the Ticket.
 func (s *Service) MaySeeQueue(ctx context.Context, tx pgx.Tx, userID, queueID string) (bool, error) {
-	return s.assigneeMaySee(ctx, tx, userID, queueID)
+	return s.assigneeMaySee(ctx, tx, userID, queueID, nil)
 }
 
 // Assign sets the assignee and/or the routing Team (nil leaves a field, an empty string clears it). A new ticket
@@ -641,7 +651,7 @@ func (s *Service) AssignWithReason(ctx context.Context, c Caller, p Principal, i
 			next.QueueTeamID = strPtr(*queueTeamID)
 		}
 		if next.AssigneeID != nil && !samePtr(next.AssigneeID, cur.AssigneeID) {
-			ok, err := s.assigneeMaySee(ctx, tx, *next.AssigneeID, cur.QueueID)
+			ok, err := s.assigneeMaySee(ctx, tx, *next.AssigneeID, cur.QueueID, cur.AffectedLocationID)
 			if err != nil {
 				return err
 			}
@@ -680,7 +690,7 @@ func (s *Service) AssignWithReason(ctx context.Context, c Caller, p Principal, i
 
 // anyWork reports whether the caller works at least one Queue.
 func (a access) anyWork() bool {
-	if a.allWork {
+	if a.allWork || a.locWork.Any() {
 		return true
 	}
 	for _, r := range a.queues {
@@ -901,7 +911,7 @@ func (s *Service) addComment(ctx context.Context, c Caller, p Principal, id, bod
 		if g.expectedVersion != nil && cur.Version != *g.expectedVersion {
 			return ErrVersionConflict
 		}
-		mentioned, err = s.mentionable(ctx, tx, mentioned, p.UserID, cur.QueueID)
+		mentioned, err = s.mentionable(ctx, tx, mentioned, p.UserID, cur.QueueID, cur.AffectedLocationID)
 		if err != nil {
 			return err
 		}
@@ -972,7 +982,7 @@ func cleanMentions(ids []string, internal bool) ([]string, error) {
 }
 
 // mentionable keeps the mentioned people who are active and may view the Queue; the author is dropped.
-func (s *Service) mentionable(ctx context.Context, tx pgx.Tx, ids []string, authorID, queueID string) ([]string, error) {
+func (s *Service) mentionable(ctx context.Context, tx pgx.Tx, ids []string, authorID, queueID string, loc *string) ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -985,7 +995,7 @@ func (s *Service) mentionable(ctx context.Context, tx pgx.Tx, ids []string, auth
 		if id == authorID || !active[id] {
 			continue
 		}
-		ok, err := s.assigneeMaySee(ctx, tx, id, queueID)
+		ok, err := s.assigneeMaySee(ctx, tx, id, queueID, loc)
 		if err != nil {
 			return nil, err
 		}
@@ -1052,11 +1062,35 @@ func (s *Service) SetLocation(ctx context.Context, c Caller, p Principal, id str
 			out = cur
 			return nil
 		}
+		// Working the Ticket only through a Location-scoped tickets.manage: the new Location must stay in that scope
+		// (and the Location cannot be cleared), otherwise the caller could move the Ticket out of their reach.
+		if !a.canWork(cur.QueueID) && (loc == nil || !a.scopedWork(loc)) {
+			return ErrLocationOutOfScope
+		}
 		out, err = s.store.UpdateLocationTx(ctx, tx, cur.ID, loc)
 		if err != nil {
 			return err
 		}
-		return record(ctx, tx, c, "servicedesk.ticket.location_changed", &cur, &out, map[string]any{"fromLocationId": deref(cur.AffectedLocationID), "toLocationId": deref(out.AffectedLocationID)})
+		meta := map[string]any{"fromLocationId": deref(cur.AffectedLocationID), "toLocationId": deref(out.AffectedLocationID)}
+		// An assignee who can no longer view the Ticket at its new Location is cleared (told through the history).
+		if out.AssigneeID != nil {
+			keep, err := s.assigneeMaySee(ctx, tx, *out.AssigneeID, out.QueueID, out.AffectedLocationID)
+			if err != nil {
+				return err
+			}
+			if !keep {
+				next := out
+				next.AssigneeID = nil
+				if next.Status == StatusInProgress {
+					next.Status = StatusOpen
+				}
+				if out, err = s.store.UpdateTx(ctx, tx, next); err != nil {
+					return err
+				}
+				meta["assigneeCleared"] = true
+			}
+		}
+		return record(ctx, tx, c, "servicedesk.ticket.location_changed", &cur, &out, meta)
 	})
 	if err != nil {
 		return out, err
@@ -1222,7 +1256,7 @@ func (s *Service) MoveToQueue(ctx context.Context, c Caller, p Principal, id str
 		}
 		cleared := false
 		if cur.AssigneeID != nil {
-			keep, err := s.assigneeMaySee(ctx, tx, *cur.AssigneeID, target)
+			keep, err := s.assigneeMaySee(ctx, tx, *cur.AssigneeID, target, cur.AffectedLocationID)
 			if err != nil {
 				return err
 			}
@@ -1284,7 +1318,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	if err != nil {
 		return Detail{}, err
 	}
-	ep := a.eff(p, t.QueueID)
+	ep := a.effT(p, t)
 	if !ep.staff() && !s.isOwner(t, p) {
 		return Detail{}, ErrNotFound
 	}
@@ -1379,12 +1413,12 @@ func (s *Service) FindByReference(ctx context.Context, p Principal, reference st
 	if err != nil {
 		return RefMatch{}, err
 	}
-	if !a.eff(p, t.QueueID).staff() && !s.isOwner(t, p) {
+	if !a.effT(p, t).staff() && !s.isOwner(t, p) {
 		return RefMatch{}, ErrNotFound
 	}
 	// The number must be one the caller may know: a hit on a number issued from a Queue they cannot know would
 	// confirm that number (and the Queue behind it) to the owner of the Ticket. Same answer as an unknown number.
-	if !a.global() {
+	if !a.global() && !a.scopedView(t.AffectedLocationID) {
 		entries, err := s.queues.References(ctx, []string{id})
 		if err != nil {
 			return RefMatch{}, fmt.Errorf("load references: %w", err)
@@ -1420,24 +1454,24 @@ func (s *Service) List(ctx context.Context, p Principal, all bool, f Filter) (Re
 		return Result{}, err
 	}
 	if all {
-		if !a.anyView() {
+		if !a.anyViewT() {
 			return Result{}, ErrForbidden
 		}
 	}
-	f.UserID, f.QueueIDs = "", nil
+	f.UserID, f.QueueIDs, f.LocationIDs = "", nil, nil
 	switch {
 	case all && a.global():
 	case all:
-		f.UserID, f.QueueIDs = p.UserID, a.viewIDs()
+		f.UserID, f.QueueIDs, f.LocationIDs = p.UserID, a.viewIDs(), a.scopedLocations()
 	default:
 		f.UserID = p.UserID
 	}
-	if !a.anyView() {
+	if !a.anyViewT() {
 		// Routing is not visible to employees, so it cannot be probed through filters either.
 		f.QueueID, f.AssigneeID = "", ""
 	} else if !a.global() && (f.QueueID != "" || f.AssigneeID != "") {
-		// Routing is only visible for the Tickets of Queues the caller views.
-		f.Narrow, f.NarrowQueueIDs = true, a.viewIDs()
+		// Routing is only visible for the Tickets of Queues the caller views (and of the Locations they view).
+		f.Narrow, f.NarrowQueueIDs, f.NarrowLocationIDs = true, a.viewIDs(), a.scopedLocations()
 	}
 	f.Page = f.Page.Normalize()
 	res, err := s.store.List(ctx, f)

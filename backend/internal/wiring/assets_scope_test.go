@@ -9,11 +9,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	assetsapp "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/application"
 	assetspublic "github.com/MagicalWig34653/turaco/backend/internal/modules/assets/public"
-	orgapp "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/application"
 	orgrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/organization/repository"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
@@ -27,85 +24,15 @@ import (
 // assetsSubject drives the Asset module through its real application layer (the HTTP layer only adds RequireScoped
 // and the Principal conversion tested in the transport package) over a real Location tree.
 type assetsSubject struct {
-	pool    *pgxpool.Pool
+	locFixture
 	svc     *assetsapp.Service
-	org     *orgrepository.Repository
 	product string
-	pfx     string
 	seq     int
 	created []string
 }
 
-// mover is the organization repository with its access guards, as the API runs it.
-func (s *assetsSubject) mover(t *testing.T) *orgrepository.Repository {
-	t.Helper()
-	repo, err := wiring.Organization(s.pool, wiring.OrganizationConfig{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return repo
-}
-
-func (s *assetsSubject) caller() orgapp.Caller {
-	return orgapp.Caller{Actor: audit.CLIActor("scope-test"), CorrelationID: "corr-" + s.pfx, PlatformAdmin: true}
-}
-
 func (s *assetsSubject) acaller() assetsapp.Caller {
 	return assetsapp.Caller{Actor: audit.CLIActor("scope-test"), CorrelationID: "corr-" + s.pfx}
-}
-
-func (s *assetsSubject) Locations(t *testing.T) scopetest.Locations {
-	t.Helper()
-	ctx := context.Background()
-	mk := func(name string, parent *string) orgapp.Location {
-		in := orgapp.NewLocationInput{Kind: orgapp.LocationSite, Name: s.pfx + " " + name}
-		if parent != nil {
-			in.Kind, in.ParentID = orgapp.LocationArea, parent
-		}
-		l, err := s.org.CreateLocation(ctx, s.caller(), in)
-		if err != nil {
-			t.Fatalf("create location %s: %v", name, err)
-		}
-		return l
-	}
-	a := mk("Site A", nil)
-	a1 := mk("A1", &a.ID)
-	a2 := mk("A2", &a.ID)
-	b := mk("Site B", nil)
-	b1 := mk("B1", &b.ID)
-	if _, err := s.org.SetLocationActive(ctx, s.caller(), a2.ID, a2.Version, false, true); err != nil {
-		t.Fatalf("deactivate A2: %v", err)
-	}
-	return scopetest.Locations{SiteA: a.ID, AreaA1: a1.ID, AreaA2Inactive: a2.ID, SiteB: b.ID, AreaB1: b1.ID}
-}
-
-func (s *assetsSubject) Expand(t *testing.T, roots []string) []string {
-	t.Helper()
-	ids, err := s.org.LocationSubtreeIDs(context.Background(), roots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ids
-}
-
-func (s *assetsSubject) MoveLocation(t *testing.T, id, parentID string) {
-	t.Helper()
-	cur, err := s.org.GetLocation(context.Background(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.mover(t).MoveLocation(context.Background(), s.caller(), id, cur.Version, &parentID); err != nil {
-		t.Fatalf("move location: %v", err)
-	}
-}
-
-func (s *assetsSubject) User(t *testing.T, name string) string {
-	t.Helper()
-	var id string
-	if err := s.pool.QueryRow(context.Background(), `SELECT uuidv7()::text`).Scan(&id); err != nil {
-		t.Fatal(err)
-	}
-	return id
 }
 
 func (s *assetsSubject) Create(t *testing.T, locationID string) string {
@@ -256,7 +183,7 @@ func (s *assetsSubject) CreateAs(t *testing.T, p authorization.Principal, locati
 func TestAssetsLocationScope(t *testing.T) {
 	pool := dbtest.Pool(t)
 	ctx := context.Background()
-	s := &assetsSubject{pool: pool, svc: wiring.Assets(pool), org: orgrepository.New(pool), pfx: "SCP" + hex8()}
+	s := &assetsSubject{locFixture: locFixture{pool: pool, org: orgrepository.New(pool), pfx: "SCP" + hex8()}, svc: wiring.Assets(pool)}
 	if err := pool.QueryRow(ctx, `INSERT INTO products.products(name, serialized, stock_managed, asset_managed) VALUES ($1, true, false, true) RETURNING id::text`, s.pfx+" device").Scan(&s.product); err != nil {
 		t.Fatal(err)
 	}

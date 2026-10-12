@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
 // Ticket Queues (ADR-0033, docs/product/f13-workbench-views-design.md): a Queue is a desk (IT, HR, Facility) with
@@ -186,6 +187,13 @@ type Memberships interface {
 	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
 }
 
+// ScopedMemberships is implemented by a Memberships source that also knows the Location-scoped holdings of
+// tickets.view and tickets.manage (ADR-0040); the Service uses it for other people than the caller (assignees,
+// mentions, Time Tracking), and tests without scopes need not implement it.
+type ScopedMemberships interface {
+	TicketScopes(ctx context.Context, userID string) (view, work authorization.LocationScope, err error)
+}
+
 // WithMemberships sets the membership and permission source for Queue grants.
 func (s *Service) WithMemberships(m Memberships) *Service {
 	s.members = m
@@ -200,6 +208,67 @@ type access struct {
 	allView bool
 	allWork bool
 	queues  map[string]QueueAccessRow
+	// locView and locWork are the Locations where the caller views and works every Queue's Tickets through scoped
+	// tickets.view and tickets.manage (ADR-0040). They never apply to Queue-only questions (lists of Queues,
+	// aggregates), which stay Queue-based and therefore show a scoped-only caller nothing.
+	locView authorization.LocationScope
+	locWork authorization.LocationScope
+}
+
+func locOf(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+
+// scopedView reports that a scoped tickets.view or tickets.manage covers a Ticket at the Location.
+func (a access) scopedView(loc *string) bool {
+	id := locOf(loc)
+	return a.locView.Allows(id) || a.locWork.Allows(id)
+}
+
+// scopedWork reports that a scoped tickets.manage covers a Ticket at the Location.
+func (a access) scopedWork(loc *string) bool { return a.locWork.Allows(locOf(loc)) }
+
+// locAny reports that the caller has a scoped holding at all.
+func (a access) locAny() bool { return a.locView.Any() || a.locWork.Any() }
+
+// viewT, workT and disclosedT decide for one Ticket: the Queue-based paths plus the Location-scoped permissions.
+func (a access) viewT(t Ticket) bool {
+	return a.canView(t.QueueID) || a.scopedView(t.AffectedLocationID)
+}
+func (a access) workT(t Ticket) bool {
+	return a.canWork(t.QueueID) || a.scopedWork(t.AffectedLocationID)
+}
+func (a access) disclosedT(t Ticket) bool {
+	return a.disclosed(t.QueueID) || a.scopedView(t.AffectedLocationID)
+}
+
+// effT is eff for one Ticket (Queue grants and Location-scoped permissions).
+func (a access) effT(p Principal, t Ticket) Principal {
+	p.View, p.Manage = a.viewT(t), a.workT(t)
+	return p
+}
+
+// anyViewT reports that the caller may see Tickets beyond their own through a Queue grant or a scoped permission.
+func (a access) anyViewT() bool { return a.anyView() || a.locAny() }
+
+// scopedLocations is the union of the Locations of the scoped holdings (sorted, without duplicates).
+func (a access) scopedLocations() []string {
+	set := map[string]struct{}{}
+	for _, id := range a.locView.Locations {
+		set[id] = struct{}{}
+	}
+	for _, id := range a.locWork.Locations {
+		set[id] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (a access) canView(qid string) bool {
@@ -290,6 +359,16 @@ func (s *Service) memberships(ctx context.Context, userID string) (memberships, 
 
 func (s *Service) buildAccess(p Principal, rows []QueueAccessRow) access {
 	a := access{allView: p.View || p.Manage, allWork: p.Manage, queues: make(map[string]QueueAccessRow, len(rows))}
+	if !p.External {
+		// A scope only matters for the permission the caller does not hold globally (a global viewer can still work
+		// a Location through a scoped tickets.manage).
+		if !a.allView {
+			a.locView = p.ViewScope
+		}
+		if !a.allWork {
+			a.locWork = p.ManageScope
+		}
+	}
 	for _, r := range rows {
 		a.queues[r.Queue.ID] = r
 	}
@@ -343,12 +422,12 @@ func (s *Service) shape(ctx context.Context, a access, ts ...*Ticket) error {
 		if t == nil {
 			continue
 		}
-		if !a.canView(t.QueueID) {
+		if !a.viewT(*t) {
 			t.QueueTeamID = nil
 			t.DuplicateOfID = nil // the other ticket may be in a Queue this caller does not know
 		}
 		r, known := a.queues[t.QueueID]
-		if a.disclosed(t.QueueID) {
+		if a.disclosedT(*t) {
 			if known {
 				t.Queue = &QueueRef{ID: r.Queue.ID, Key: r.Queue.Key, Prefix: r.Queue.Prefix, Name: r.Queue.Name}
 			}
@@ -410,6 +489,11 @@ func (s *Service) principalOf(ctx context.Context, userID string) (Principal, er
 	}
 	_, p.View = perms[permTicketsView]
 	_, p.Manage = perms[permTicketsManage]
+	if sm, ok := s.members.(ScopedMemberships); ok && !p.View && !p.Manage {
+		if p.ViewScope, p.ManageScope, err = sm.TicketScopes(ctx, userID); err != nil {
+			return Principal{}, fmt.Errorf("load scopes: %w", err)
+		}
+	}
 	return p, nil
 }
 
@@ -1092,7 +1176,8 @@ func (s *Service) ReplaceGrants(ctx context.Context, c Caller, p Principal, id s
 type SidebarScope struct {
 	AnyView bool
 	Queues  []QueueRef
-	// Key digests the caller's Queue scope (global flags and the viewable Queue ids), for count cache keys.
+	// Key digests the caller's Queue and Location scope (global flags, the viewable Queue ids and the Locations of scoped
+	// holdings), for count cache keys.
 	Key string
 }
 
@@ -1105,9 +1190,13 @@ func (s *Service) SidebarScope(ctx context.Context, p Principal) (SidebarScope, 
 	if err != nil {
 		return SidebarScope{}, err
 	}
-	out := SidebarScope{AnyView: a.anyView()}
+	out := SidebarScope{AnyView: a.anyViewT()}
 	h := sha256.New()
 	fmt.Fprintf(h, "%t/%t", a.allView, a.allWork)
+	// Callers with the same Queues but different Location-scoped holdings must never share a cached count.
+	for _, id := range a.scopedLocations() {
+		fmt.Fprintf(h, "~%s", id)
+	}
 	for _, id := range a.viewIDs() {
 		fmt.Fprintf(h, "|%s", id)
 		if r := a.queues[id]; r.Queue.Status == QueueActive {

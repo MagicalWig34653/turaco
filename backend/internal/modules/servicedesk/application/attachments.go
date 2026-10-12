@@ -27,7 +27,7 @@ func (s *Service) AttachmentRights(ctx context.Context, p Principal, id string) 
 	if err != nil {
 		return AttachmentRights{}, err
 	}
-	ep := a.eff(p, t.QueueID)
+	ep := a.effT(p, t)
 	if !ep.staff() && !s.isOwner(t, p) {
 		return AttachmentRights{}, ErrNotFound
 	}
