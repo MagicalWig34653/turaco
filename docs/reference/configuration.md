@@ -44,8 +44,8 @@
 | `ENTRA_MAX_CLOCK_SKEW` | duration | false | false | `2m` | Tolerated clock difference when validating exp, nbf and iat of the ID token; at most 5m. |
 | `ENTRA_REDIRECT_URL` | string | false | false | `` | Callback URL exactly as registered in Entra, ending in `/api/v1/auth/entra/callback`. It must be https (http only for localhost in development) and is never derived from request headers. The reverse proxy must forward the path unchanged. |
 | `ENTRA_SESSION_MAX_AGE` | duration | false | false | `8h` | Absolute lifetime of an Entra session (1h to 24h; one shift by default). The administration setting `auth.session_absolute_timeout` can lower it. |
-| `ENTRA_STEP_UP_AUTH_CONTEXT` | string | false | false | `` | Entra Conditional Access authentication context (for example `c1`) accepted as MFA evidence in the ID token `acrs` claim and requested during step-up. |
-| `ENTRA_STEP_UP_MAX_AGE` | duration | false | false | `15m` | Maximum age of Entra MFA assurance for elevated admin actions (1m to 1h). Requires `auth_time` and `amr=mfa` or the configured authentication context in `acrs`. |
+| `ENTRA_STEP_UP_AUTH_CONTEXT` | string | false | false | `` | Entra Conditional Access authentication context (for example c1) accepted as MFA evidence in the ID token acrs claim and requested during step-up. |
+| `ENTRA_STEP_UP_MAX_AGE` | duration | false | false | `15m` | Maximum age of Entra MFA assurance for elevated admin actions (1m to 1h). Requires auth_time and amr=mfa or the configured authentication context in acrs. |
 | `ENTRA_TENANT_ID` | string | false | false | `` | Tenant (directory) GUID of the home Entra tenant. Required when ENTRA_TENANT_MODE=single. |
 | `ENTRA_TENANT_MODE` | string | false | false | `single` | `single` accepts exactly ENTRA_TENANT_ID; `multi_restricted` accepts the tenants listed in ENTRA_ALLOWED_TENANT_IDS (for a publisher-owned multi-tenant app registration). The Microsoft consumer tenant is always refused. |
 | `HTTP_ADDR` | string | false | false | `:8080` | HTTP listen address for turaco-api. |
