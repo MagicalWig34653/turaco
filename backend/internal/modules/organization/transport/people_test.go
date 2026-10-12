@@ -431,7 +431,7 @@ func TestLocationAndDepartmentEndpoints(t *testing.T) {
 	_, site2, _ := h.do("POST", "/api/v1/locations", fmt.Sprintf(`{"kind":"site","name":"%s Site2"}`, h.pfx))
 	dry := fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s","dryRun":true}`, site2["id"])
 	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", dry); code != 200 || body["dryRun"] != true ||
-		body["scopedAssignmentsAffected"] != float64(0) || body["administratorRequired"] != false || body["allowed"] != true {
+		body["administratorRequired"] != false || body["allowed"] != true || body["scopedAssignmentsAffected"] != nil {
 		t.Errorf("dry run: %d %v", code, body)
 	}
 	if code, body, _ := h.do("GET", "/api/v1/locations/"+area["id"].(string), ``); code != 200 || body["parentId"] != site["id"] || body["version"] != float64(1) {
@@ -459,7 +459,7 @@ func TestLocationAndDepartmentEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", dry); code != 200 ||
-		body["scopedAssignmentsAffected"] != float64(1) || body["administratorRequired"] != true || body["allowed"] != false {
+		body["administratorRequired"] != true || body["allowed"] != false || body["scopedAssignmentsAffected"] != nil {
 		t.Errorf("dry run with a scoped assignment: %d %v", code, body)
 	}
 	if code, body, _ := h.do("POST", "/api/v1/locations/"+area["id"].(string)+"/move", fmt.Sprintf(`{"expectedVersion":1,"parentId":"%s"}`, site2["id"])); code != 403 || errCodeOf(body) != "organization.location_move_requires_administrator" {

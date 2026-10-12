@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The binding gates of the F16 L-B security review (docs/product/f16-location-scoped-access-design.md), implemented
@@ -90,6 +91,52 @@ func TestScopedRootCapIsRefusedAtAssignment(t *testing.T) {
 	}
 	if out.Scoped[0].Roots[MaxScopedRoots-1].RootLocationID != r.scoped["tickets.view"][MaxScopedRoots-1] {
 		t.Fatal("Explain must list the roots expand keeps (the first ones in id order)")
+	}
+}
+
+// The cap check of one subject is serialized by a transaction advisory lock, so two concurrent assignments of
+// different roles at different Locations cannot both pass at one root below the cap. The test holds the lock and
+// shows that an assignment waits for it, then proceeds.
+func TestScopedRootCapCheckIsSerializedPerSubject(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	l := f.locations()
+	role := f.role("serial", "tickets.view")
+	u := f.user("Serialized")
+	other := f.user("Not serialized")
+
+	tx, err := f.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "roles.scoped_roots:"+SubjectUser+":"+strings.ToLower(u)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: u, ScopeLocationID: l.siteA})
+		done <- err
+	}()
+	// Another subject is not delayed.
+	if _, err := f.svc.AssignRole(ctx, f.cli, f.corr, AssignInput{RoleID: role.ID, SubjectType: SubjectUser, SubjectID: other, ScopeLocationID: l.siteA}); err != nil {
+		t.Fatalf("another subject: %v", err)
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("the assignment did not wait for the subject's cap lock: %v", err)
+	case <-time.After(700 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("assignment after the lock was released: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the assignment did not finish")
 	}
 }
 

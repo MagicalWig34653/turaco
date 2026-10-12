@@ -8074,7 +8074,7 @@ paths:
     post:
       operationId: moveLocation
       summary: Move an area below another Location.
-      description: "Requires `organization.locations.manage`. A site is a root and an area always has a parent. Cycles and a depth beyond four levels (site, area, sub-area, sub-sub-area) are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). Location move guard (ADR-0040): a move that changes what active Location-scoped role assignments cover (assignments at the moved Location or its descendants, or at an ancestor of the old or the new position that is not an ancestor of both) needs a platform administrator (403 organization.location_move_requires_administrator); the CLI is exempt. `dryRun: true` runs every check, changes nothing and answers a LocationMovePreview with the count and whether the caller may make the move. Audited (organization.location.moved with scopedAssignmentsAffected); a guarded move publishes ScopedLocationMoved and notifies the other platform administrators."
+      description: "Requires `organization.locations.manage`. A site is a root and an area always has a parent. Cycles and a depth beyond four levels (site, area, sub-area, sub-sub-area) are refused (409 organization.invalid_hierarchy). `expectedVersion` is required (409 organization.version_conflict when stale). Location move guard (ADR-0040): a move that changes what active Location-scoped role assignments cover (assignments at the moved Location or its descendants, or at an ancestor of the old or the new position that is not an ancestor of both) needs a platform administrator (403 organization.location_move_requires_administrator); the CLI is exempt. A move that touches more than 10000 Locations (the moved subtree plus the ancestors of the old and the new position) is refused (409 organization.location_move_too_large). `dryRun: true` runs every check, changes nothing and answers a LocationMovePreview; it takes only shared locks, so it never delays a scoped role assignment, and it shows the count of affected assignments to platform administrators and the CLI only. Audited (organization.location.moved with scopedAssignmentsAffected); a guarded move publishes ScopedLocationMoved and notifies the other platform administrators."
       security:
         - sessionAuth: []
       parameters:
@@ -18338,11 +18338,11 @@ components:
         dryRun: {type: boolean, default: false, description: "Run every check including the Location move guard and answer a LocationMovePreview; nothing changes and nothing is audited."}
     LocationMovePreview:
       type: object
-      required: [dryRun, scopedAssignmentsAffected, administratorRequired, allowed]
+      required: [dryRun, administratorRequired, allowed]
       properties:
         dryRun: {type: boolean, const: true}
-        scopedAssignmentsAffected: {type: integer, minimum: 0, description: "Active Location-scoped role assignments whose coverage the move changes."}
-        administratorRequired: {type: boolean, description: True when scopedAssignmentsAffected is not zero.}
+        scopedAssignmentsAffected: {type: integer, minimum: 0, description: "Active Location-scoped role assignments whose coverage the move changes. Present only for a platform administrator or the CLI; omitted for every other caller, who learns only administratorRequired and allowed."}
+        administratorRequired: {type: boolean, description: True when the move affects at least one active Location-scoped role assignment.}
         allowed: {type: boolean, description: Whether the caller may make the move (a platform administrator or the CLI when administratorRequired).}
     MoveRequest:
       type: object

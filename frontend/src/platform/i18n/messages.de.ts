@@ -5495,6 +5495,8 @@ export const de: Record<MessageKey, string> = {
     'Diese Verschiebung ist nicht möglich: Sie würde eine Schleife erzeugen oder die maximale Tiefe überschreiten.',
   'people.error.locationMoveRequiresAdministrator':
     'Diese Verschiebung ändert, welche Standorte standortbezogene Rollenzuweisungen abdecken. Nur eine Plattformadministration kann sie durchführen.',
+  'people.error.locationMoveTooLarge':
+    'Diese Verschiebung betrifft mehr als 10000 Standorte. Verschieben Sie kleinere Teile der Struktur.',
   'people.error.targetInactive': 'Das gewählte Ziel ist archiviert oder inaktiv.',
   'people.error.invalidState': 'Das ist im aktuellen Zustand des Eintrags nicht möglich.',
   'people.error.directoryUser':

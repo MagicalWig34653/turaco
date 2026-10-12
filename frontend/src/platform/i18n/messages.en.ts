@@ -5314,6 +5314,8 @@ export const en = {
     'That move is not possible: it would create a loop or exceed the maximum depth.',
   'people.error.locationMoveRequiresAdministrator':
     'This move changes which Locations Location-scoped role assignments cover. Only a platform administrator can make it.',
+  'people.error.locationMoveTooLarge':
+    'This move affects more than 10000 Locations. Move smaller parts of the tree.',
   'people.error.targetInactive': 'The chosen target is archived or inactive.',
   'people.error.invalidState': 'This is not possible in the current state of the record.',
   'people.error.directoryUser':

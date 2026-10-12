@@ -268,8 +268,13 @@ func (s *Service) AssignRole(ctx context.Context, actor audit.Actor, correlation
 // roots beyond the cap in id order, so without this refusal new assignments could silently be the ones cut. For a
 // User the count is over every active scoped assignment that reaches the User (directly and through Directory
 // Groups), which bounds the roots of each permission and role; for a Directory Group it is over the group's own
-// assignments. Re-assigning at a Location the subject already has adds nothing.
+// assignments. Re-assigning at a Location the subject already has adds nothing. A transaction advisory lock per
+// subject serializes the check, so two concurrent assignments at different Locations (different roles, so no role
+// lock in common) cannot both pass at 999 roots; the count is read after the lock under read committed.
 func (s *Service) requireScopedRootsBelowCap(ctx context.Context, tx pgx.Tx, subjectType, subjectID, locationID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "roles.scoped_roots:"+subjectType+":"+strings.ToLower(subjectID)); err != nil {
+		return fmt.Errorf("lock scoped roots: %w", err)
+	}
 	roots := map[string]struct{}{strings.ToLower(locationID): {}}
 	if subjectType == SubjectUser {
 		grants, _, _, err := s.eval.load(ctx, tx, subjectID)

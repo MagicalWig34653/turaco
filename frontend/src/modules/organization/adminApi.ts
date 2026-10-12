@@ -38,6 +38,7 @@ registerErrorMessages({
   'organization.invalid_hierarchy': 'people.error.invalidHierarchy',
   'organization.location_move_requires_administrator':
     'people.error.locationMoveRequiresAdministrator',
+  'organization.location_move_too_large': 'people.error.locationMoveTooLarge',
   'organization.target_inactive': 'people.error.targetInactive',
   'organization.invalid_state': 'people.error.invalidState',
   'organization.directory_user': 'people.error.directoryUser',

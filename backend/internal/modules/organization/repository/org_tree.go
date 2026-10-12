@@ -186,8 +186,9 @@ func (r *Repository) updateLocationTx(ctx context.Context, tx pgx.Tx, c applicat
 type locationMovePlan struct {
 	before application.Location
 	// noop: the Location already has the requested parent.
-	noop    bool
-	preview application.LocationMovePreview
+	noop     bool
+	preview  application.LocationMovePreview
+	affected int // scoped assignments the move affects (the audit value; the preview hides it from non-administrators)
 }
 
 // planLocationMove takes the tree lock, locks and validates the move and runs the Location move guard (ADR-0040, F16
@@ -198,16 +199,36 @@ type locationMovePlan struct {
 // holder of organization.locations.manage cannot pull another Site's area below a Site where someone (or they) hold
 // a scoped role. Scoped role assignments and revocations take the same tree lock in shared mode, so none is in flight
 // while the count runs. A move without guards fails closed.
-func (r *Repository) planLocationMove(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, parentID *string) (locationMovePlan, error) {
+//
+// A dry run (preview) must not block scoped assignments or revocations: it takes the tree lock in shared mode, which
+// they share, and reads the Location without a row lock. A concurrent move still excludes it, so the answer reflects
+// a consistent tree; it can only be stale by the time the real move runs, which re-checks.
+func (r *Repository) planLocationMove(ctx context.Context, tx pgx.Tx, c application.Caller, id string, version int, parentID *string, preview bool) (locationMovePlan, error) {
 	if r.guards == nil {
 		return locationMovePlan{}, application.ErrNoGuards
 	}
-	if err := lockTree(ctx, tx, treeLockLocations); err != nil {
-		return locationMovePlan{}, err
-	}
-	before, err := lockLocation(ctx, tx, id)
-	if err != nil {
-		return locationMovePlan{}, err
+	var before application.Location
+	var err error
+	if preview {
+		if err := lockTreeShared(ctx, tx, treeLockLocations); err != nil {
+			return locationMovePlan{}, err
+		}
+		u, ok := parseID(id)
+		if !ok {
+			return locationMovePlan{}, application.ErrNotFound
+		}
+		if before, err = scanLocation(tx.QueryRow(ctx, `SELECT `+locationColumns+` FROM organization.locations WHERE id = $1`, u)); errors.Is(err, pgx.ErrNoRows) {
+			return locationMovePlan{}, application.ErrNotFound
+		} else if err != nil {
+			return locationMovePlan{}, fmt.Errorf("read location: %w", err)
+		}
+	} else {
+		if err := lockTree(ctx, tx, treeLockLocations); err != nil {
+			return locationMovePlan{}, err
+		}
+		if before, err = lockLocation(ctx, tx, id); err != nil {
+			return locationMovePlan{}, err
+		}
 	}
 	plan := locationMovePlan{before: before, preview: application.LocationMovePreview{Allowed: true}}
 	if before.Version != version {
@@ -254,20 +275,26 @@ func (r *Repository) planLocationMove(ctx context.Context, tx pgx.Tx, c applicat
 	if err != nil {
 		return plan, err
 	}
+	if len(affected) > application.MaxMoveAffectedLocations {
+		return plan, application.ErrLocationMoveTooLarge
+	}
 	n, err := r.guards.ScopedAssignmentsAffectedBy(ctx, tx, affected)
 	if err != nil {
 		return plan, fmt.Errorf("count scoped role assignments: %w", err)
 	}
-	plan.preview.ScopedAssignmentsAffected = n
+	plan.affected = n
+	admin := true // the CLI (no User) is exempt
+	if c.Actor.UserID != "" {
+		if admin, err = r.guards.IsAdministrator(ctx, tx, c.Actor.UserID); err != nil {
+			return plan, fmt.Errorf("check administrator: %w", err)
+		}
+	}
 	if n > 0 {
 		plan.preview.AdministratorRequired = true
-		if c.Actor.UserID != "" {
-			admin, err := r.guards.IsAdministrator(ctx, tx, c.Actor.UserID)
-			if err != nil {
-				return plan, fmt.Errorf("check administrator: %w", err)
-			}
-			plan.preview.Allowed = admin
-		}
+		plan.preview.Allowed = admin
+	}
+	if admin {
+		plan.preview.ScopedAssignmentsAffected = &n
 	}
 	return plan, nil
 }
@@ -333,7 +360,7 @@ func ancestorsOrSelf(ctx context.Context, tx pgx.Tx, id *string) ([]string, erro
 func (r *Repository) MoveLocation(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.Location, error) {
 	var out application.Location
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID)
+		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID, false)
 		if err != nil {
 			return err
 		}
@@ -353,7 +380,7 @@ func (r *Repository) MoveLocation(ctx context.Context, c application.Caller, id 
 		if out, err = reloadLocation(ctx, tx, id); err != nil {
 			return fmt.Errorf("reload location: %w", err)
 		}
-		affected := plan.preview.ScopedAssignmentsAffected
+		affected := plan.affected
 		if err := r.record(ctx, tx, c, "organization.location.moved", "location", id,
 			map[string]any{"parentId": plan.before.ParentID}, map[string]any{"parentId": out.ParentID, "version": out.Version},
 			map[string]any{"scopedAssignmentsAffected": affected}); err != nil {
@@ -395,7 +422,7 @@ func (r *Repository) LocationNameTx(ctx context.Context, tx pgx.Tx, id string) (
 func (r *Repository) PreviewLocationMove(ctx context.Context, c application.Caller, id string, version int, parentID *string) (application.LocationMovePreview, error) {
 	var out application.LocationMovePreview
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID)
+		plan, err := r.planLocationMove(ctx, tx, c, id, version, parentID, true)
 		out = plan.preview
 		return err
 	})

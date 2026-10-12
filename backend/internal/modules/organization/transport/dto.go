@@ -112,7 +112,7 @@ type locationDTO struct {
 // locationMovePreviewDTO is the answer of POST /locations/{id}/move with dryRun true.
 type locationMovePreviewDTO struct {
 	DryRun                    bool `json:"dryRun"`
-	ScopedAssignmentsAffected int  `json:"scopedAssignmentsAffected"`
+	ScopedAssignmentsAffected *int `json:"scopedAssignmentsAffected,omitempty"`
 	AdministratorRequired     bool `json:"administratorRequired"`
 	Allowed                   bool `json:"allowed"`
 }

@@ -400,6 +400,13 @@ func (r *Repository) ApplyBatch(ctx context.Context, c application.Caller, id, h
 		if err != nil {
 			return err
 		}
+		// Lock order is always tree lock, then Location rows: row planners lock rows (updateLocationTx) before a
+		// later row may create a Location (tree lock), so a Location import takes the tree lock up front.
+		if b.Kind == application.ImportLocations {
+			if err := lockTree(ctx, tx, treeLockLocations); err != nil {
+				return err
+			}
+		}
 		bc := c
 		bc.CorrelationID = b.CorrelationID
 		var params map[string]any

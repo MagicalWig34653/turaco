@@ -127,6 +127,8 @@ func failPeople(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err
 		httpx.WriteError(w, http.StatusConflict, "organization.invalid_hierarchy", "The change would create a cycle or exceed the maximum depth.")
 	case errors.Is(err, application.ErrLocationMoveRequiresAdministrator):
 		httpx.WriteError(w, http.StatusForbidden, "organization.location_move_requires_administrator", "This move changes what Location-scoped role assignments cover; only a platform administrator can make it.")
+	case errors.Is(err, application.ErrLocationMoveTooLarge):
+		httpx.WriteError(w, http.StatusConflict, "organization.location_move_too_large", "The move affects more than 10000 Locations; move smaller parts of the tree.")
 	case errors.Is(err, application.ErrTargetInactive):
 		httpx.WriteError(w, http.StatusConflict, "organization.target_inactive", "The referenced record is not active.")
 	case errors.Is(err, application.ErrUserNotActive):

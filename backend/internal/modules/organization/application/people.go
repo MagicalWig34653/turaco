@@ -52,6 +52,9 @@ var (
 	// ErrLocationMoveRequiresAdministrator: the move changes which Locations active Location-scoped role assignments
 	// cover, so only a platform administrator or the CLI may make it (ADR-0040, F16 design L10).
 	ErrLocationMoveRequiresAdministrator = errors.New("organization: this Location move affects Location-scoped role assignments")
+	// ErrLocationMoveTooLarge: the move touches more than MaxMoveAffectedLocations Locations (the moved subtree plus
+	// the ancestors of the old and the new position), more than the move guard counts in one call.
+	ErrLocationMoveTooLarge = errors.New("organization: this Location move affects too many Locations")
 )
 
 // FieldDirectoryOwnedError names the directory-owned fields a request tried to change.
@@ -81,13 +84,20 @@ type AccessGuards interface {
 	ScopedAssignmentsAffectedBy(ctx context.Context, tx pgx.Tx, locationIDs []string) (int, error)
 }
 
+// MaxMoveAffectedLocations bounds the Locations one move may touch; it equals the limit of the role service's
+// ScopedAssignmentsAffectedBy, so a larger move is refused with ErrLocationMoveTooLarge instead of failing inside it.
+const MaxMoveAffectedLocations = 10000
+
 // LocationMovePreview is the dry run of a Location move (F16 design L10): how many active Location-scoped role
 // assignments the move affects, whether that makes it an administrator-only move, and whether the caller may make
 // it. The count covers assignments at the moved Location and its descendants and at the ancestors of the old or the
 // new position that are not ancestors of both (an assignment at a common ancestor covers the subtree before and
 // after the move).
+//
+// ScopedAssignmentsAffected is nil for a caller who is not a platform administrator (or the CLI): they learn only
+// AdministratorRequired and Allowed, never how many assignments exist.
 type LocationMovePreview struct {
-	ScopedAssignmentsAffected int
+	ScopedAssignmentsAffected *int
 	AdministratorRequired     bool
 	Allowed                   bool
 }

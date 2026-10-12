@@ -52,7 +52,7 @@ func (r *Repository) PreviewImport(ctx context.Context, c application.Caller, in
 	default:
 		return application.BatchPreview{}, fmt.Errorf("preview import: unknown kind %q", in.Kind)
 	}
-	res, err := r.runDry(ctx, rows, exec)
+	res, err := r.runDry(ctx, in.Kind == application.ImportLocations, rows, exec)
 	if err != nil {
 		return application.BatchPreview{}, finishBatch(err, "preview import")
 	}
@@ -62,12 +62,18 @@ func (r *Repository) PreviewImport(ctx context.Context, c application.Caller, in
 }
 
 // runDry executes the rows in a transaction that is always rolled back.
-func (r *Repository) runDry(ctx context.Context, rows []rowSpec, exec func(ctx context.Context, tx pgx.Tx, s rowSpec) (outcome, error)) ([]outcome, error) {
+// lockLocationTree takes the Location tree lock before any row is locked (lock order tree, then row).
+func (r *Repository) runDry(ctx context.Context, lockLocationTree bool, rows []rowSpec, exec func(ctx context.Context, tx pgx.Tx, s rowSpec) (outcome, error)) ([]outcome, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin dry run: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if lockLocationTree {
+		if err := lockTree(ctx, tx, treeLockLocations); err != nil {
+			return nil, err
+		}
+	}
 	return dryRun(ctx, tx, rows, exec)
 }
 
@@ -686,7 +692,7 @@ func (r *Repository) PreviewBulk(ctx context.Context, c application.Caller, in a
 	for i, uid := range ids {
 		rows[i] = rowSpec{no: i + 1, key: uid}
 	}
-	res, err := r.runDry(ctx, rows, func(ctx context.Context, tx pgx.Tx, s rowSpec) (outcome, error) {
+	res, err := r.runDry(ctx, false, rows, func(ctx context.Context, tx pgx.Tx, s rowSpec) (outcome, error) {
 		return r.previewBulkRow(ctx, tx, bc, in.Operation, params, s)
 	})
 	if err != nil {

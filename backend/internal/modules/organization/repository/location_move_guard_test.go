@@ -82,8 +82,12 @@ func TestLocationMoveGuard(t *testing.T) {
 	// Pulling Site B's area below Site A, where a scoped assignment exists, needs an administrator; the dry run says
 	// so first (the assignment at Site A gains B1, the one at B1a moves with it).
 	preview, err := f.repo.PreviewLocationMove(ctx, mgr, b1.ID, b1.Version, &siteA.ID)
-	if err != nil || preview != (application.LocationMovePreview{ScopedAssignmentsAffected: 2, AdministratorRequired: true, Allowed: false}) {
+	if err != nil || preview != (application.LocationMovePreview{AdministratorRequired: true, Allowed: false}) {
 		t.Fatalf("preview: %+v %v", preview, err)
+	}
+	// An administrator sees the count; a non-administrator never does.
+	if p, err := f.repo.PreviewLocationMove(ctx, f.caller(admin.ID), b1.ID, b1.Version, &siteA.ID); err != nil || p.ScopedAssignmentsAffected == nil || *p.ScopedAssignmentsAffected != 2 || !p.AdministratorRequired || !p.Allowed {
+		t.Fatalf("administrator preview: %+v %v", p, err)
 	}
 	if _, err := f.repo.MoveLocation(ctx, mgr, b1.ID, b1.Version, &siteA.ID); !errors.Is(err, application.ErrLocationMoveRequiresAdministrator) {
 		t.Fatalf("manager pulls another Site's area below a scoped Site: %v", err)
@@ -96,7 +100,7 @@ func TestLocationMoveGuard(t *testing.T) {
 		t.Fatalf("manager moves a subtree with a scoped assignment: %v", err)
 	}
 	// A move below a common ancestor changes nothing for the assignment there: allowed, and audited with zero.
-	if p, err := f.repo.PreviewLocationMove(ctx, mgr, a2.ID, a2.Version, &siteA.ID); err != nil || p.ScopedAssignmentsAffected != 0 || p.AdministratorRequired || !p.Allowed {
+	if p, err := f.repo.PreviewLocationMove(ctx, mgr, a2.ID, a2.Version, &siteA.ID); err != nil || p.ScopedAssignmentsAffected != nil || p.AdministratorRequired || !p.Allowed {
 		t.Fatalf("preview within the Site: %+v %v", p, err)
 	}
 	if _, err := f.repo.MoveLocation(ctx, mgr, a2.ID, a2.Version, &siteA.ID); err != nil {
