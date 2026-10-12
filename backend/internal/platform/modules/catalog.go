@@ -121,6 +121,7 @@ var externalAccess = map[string]externalDecl{
 	"notifications": allow("GET /api/v1/notifications", "GET /api/v1/notifications/unread-count", "POST /api/v1/notifications/read-all", "POST /api/v1/notifications/{id}/read"),
 	// A Ticket shared through ticket_participants: read it and add a public comment. Nothing else of Service Desk.
 	"sla":            denied,
+	"timetracking":   denied,
 	"servicedesk":    allow("GET /api/v1/tickets/{id}", "POST /api/v1/tickets/{id}/comments"),
 	"knowledge":      denied, // knowledge.view joins the ceiling when articles gain an external audience
 	"catalog":        denied,
@@ -156,6 +157,10 @@ func catalogModules() []Module {
 		{Key: "sla", Category: CategoryServiceMgmt, DefaultEnabled: false, Requires: []string{"servicedesk"}, RoutePrefixes: []string{"sla"},
 			// The sweep is a disposable tick; the notification consumer "sla.notify" is deferred while the switch is off.
 			DisposableJobs: []string{"sla.clock_sweep"}},
+		// Time Tracking (F17 T-A). The settings routes stay reachable while the module is off so the works-council
+		// co-determination basis (the precondition for enabling) can be recorded first. Retention always runs.
+		{Key: "timetracking", Category: CategoryServiceMgmt, DefaultEnabled: false, Requires: []string{"servicedesk"}, RoutePrefixes: []string{"time-tracking"},
+			OpenPaths: []string{"/api/v1/time-tracking/settings*"}, AlwaysRunJobs: []string{"timetracking.purge"}},
 		opt("knowledge", CategoryServiceMgmt, []string{"servicedesk"}, "knowledge-articles", "runbooks", "runbook-executions"),
 		opt("catalog", CategoryServiceMgmt, []string{"products"}, "catalog-items"),
 		opt("requests", CategoryServiceMgmt, []string{"catalog"}, "service-requests"),

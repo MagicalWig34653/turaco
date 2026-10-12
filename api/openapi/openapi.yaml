@@ -14882,6 +14882,113 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/settings:
+    get:
+      operationId: getTimeTrackingSettings
+      summary: Time Tracking settings (timetracking.admin).
+      description: "Needs `timetracking.admin`. Stays reachable while the `timetracking` module is off so the co-determination basis can be recorded before switching the module on."
+      security: [{sessionAuth: []}]
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/TimeTrackingSettings'}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    put:
+      operationId: updateTimeTrackingSettings
+      summary: Replace the Time Tracking settings.
+      description: >-
+        Needs `timetracking.admin`; `expectedVersion` required. Recording `codeterminationBasis` (`agreement` with the date of the agreement, or `not_applicable` when no works council exists) with
+        `codeterminationRecordedOn` is the precondition for switching the module on (module state `blocked`, reason `codetermination_not_recorded`, until then). A recorded basis can be changed but not
+        removed. Audited with all fields (`timetracking.settings.updated`).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TimeTrackingSettingsRequest'}}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/TimeTrackingSettings'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/TimeTrackingConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/entries:
+    get:
+      operationId: listTimeEntries
+      summary: Time entries of one Ticket (Ticket panel) or the caller's own time.
+      description: >-
+        Either `subjectType=ticket&subjectId=` or `mine=true&from=&to=`. 404 `platform.module_disabled` while the module is off.
+        Ticket panel: needs view access to the Ticket (otherwise 404). Everybody who may view it gets `totalMinutes`; `items` and `canLog` are filled only for callers with work access in the Ticket's
+        Queue and `timetracking.log` or `timetracking.manage`. When the setting `showEntryAuthors` is off only the caller's own entries are listed and the minutes of the others are summed in
+        `othersMinutes`. Own time: needs `timetracking.log` or `timetracking.manage`; own entries only, newest first, at most 1000, period at most 366 days; `reference` is the Ticket number while
+        the caller may still view the Ticket. `editable` tells whether the caller may change the entry (own and inside the edit window, or `timetracking.manage`). No-store.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: subjectType, in: query, required: false, schema: {type: string, enum: [ticket]}}
+        - {name: subjectId, in: query, required: false, schema: {type: string, format: uuid}}
+        - {name: mine, in: query, required: false, schema: {type: boolean}}
+        - {name: from, in: query, required: false, description: "With mine=true. Work date, inclusive.", schema: {type: string, format: date}}
+        - {name: to, in: query, required: false, description: "With mine=true. Work date, inclusive.", schema: {type: string, format: date}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntryList'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createTimeEntry
+      summary: Log time on a Ticket (manual entry).
+      description: >-
+        Needs `timetracking.log` and work access in the Ticket's Queue (global `tickets.manage` or a `work` grant). Any Ticket status. The work date may not be in the future (one day ahead of UTC is
+        accepted for time zones ahead of UTC) and not older than the edit window. A person's entries per work date add up to at most 24 hours. Logging for another person (`userId`, an active
+        internal User with work access) or outside the edit window needs `timetracking.manage` and a `reason` (3 to 300 characters). `note` is internal text of at most 500 characters. Audited
+        (`timetracking.entry.created`): own entries in the window with entry id and subject only, other cases also with owner, duration, work date and reason; the note is never audited.
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntryCreateRequest'}}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntry'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/TimeTrackingRule'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/entries/{id}:
+    put:
+      operationId: updateTimeEntry
+      summary: Correct a time entry (Ticket, work date, duration, note).
+      description: >-
+        Replaces the editable fields; `expectedVersion` required. Own entries while their work date (old and new) is inside the edit window; otherwise `timetracking.manage` with a `reason`. Entries of
+        other people are not found for callers without `timetracking.manage`. A corrected Ticket must again be workable by the entry's owner. Audited (`timetracking.entry.updated`) like creation.
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntryUpdateRequest'}}}}
+      responses:
+        '200': {description: OK, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntry'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/TimeTrackingConflict'}
+        '422': {$ref: '#/components/responses/TimeTrackingRule'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/entries/{id}/delete:
+    post:
+      operationId: deleteTimeEntry
+      summary: Delete a time entry (soft delete with a closed reason).
+      description: >-
+        `deleteReason` is one of `wrong_ticket`, `duplicate`, `wrong_duration`, `other`; `expectedVersion` required. Same authorization as a correction (own inside the edit window, else
+        `timetracking.manage` with a free-text `reason`). The entry disappears from every read and is purged by retention. Audited (`timetracking.entry.deleted`).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntryDeleteRequest'}}}}
+      responses:
+        '204': {description: Deleted}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/TimeTrackingConflict'}
+        '422': {$ref: '#/components/responses/TimeTrackingRule'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /presence/settings:
     get:
       operationId: getPresenceSettings
@@ -15243,7 +15350,7 @@ paths:
     get:
       operationId: getModulesStatus
       summary: Which modules are effectively on (any signed-in User).
-      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`, `/ai/mcp/clients*`, `/ai/mcp/users*` stay reachable while the module is off (their own admin permissions apply). The MCP routes `/mcp` and `/oauth/*` belong to the `ai` module."
+      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/time-tracking/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`, `/ai/mcp/clients*`, `/ai/mcp/users*` stay reachable while the module is off (their own admin permissions apply). The MCP routes `/mcp` and `/oauth/*` belong to the `ai` module."
       security:
         - sessionAuth: []
       responses:
@@ -15279,7 +15386,7 @@ paths:
     get:
       operationId: listModules
       summary: Module overview with state, dependencies and blocked reasons.
-      description: "Requires `modules.manage`. Reads the stored switches fresh (no cache). `state` is `enabled`, `disabled` (switch off) or `blocked` (switch on but a precondition of the module is unmet; it behaves as off). `blockedReason` is set whenever a precondition or a disabled required module prevents the module from being on, also while the switch is off: startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off (the module's own audited setting is off), dependency_disabled. `startupGates` names read-only environment variables. `version` is 0 until the switch was first changed. `no-store`."
+      description: "Requires `modules.manage`. Reads the stored switches fresh (no cache). `state` is `enabled`, `disabled` (switch off) or `blocked` (switch on but a precondition of the module is unmet; it behaves as off). `blockedReason` is set whenever a precondition or a disabled required module prevents the module from being on, also while the switch is off: startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off (the module's own audited setting is off), codetermination_not_recorded (Time Tracking: the works-council co-determination basis is not recorded), dependency_disabled. `startupGates` names read-only environment variables. `version` is 0 until the switch was first changed. `no-store`."
       security:
         - sessionAuth: []
       responses:
@@ -16708,6 +16815,24 @@ components:
             $ref: '#/components/schemas/Error'
     RemoteAccessConflict:
       description: "Policy refusal or state conflict. Codes: remoteaccess.version_conflict, remoteaccess.invalid_transition, remoteaccess.handle_used, remoteaccess.handle_active, remoteaccess.consent_recorded, remoteaccess.peer_taken, remoteaccess.no_eligible_approver and remoteaccess.<code> for each RemoteAccessRefusalCode."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TimeTrackingInvalid:
+      description: "Invalid input (timetracking.invalid_request)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TimeTrackingConflict:
+      description: "The record was changed by someone else (timetracking.version_conflict)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TimeTrackingRule:
+      description: "A rule refuses the entry (timetracking.outside_edit_window, timetracking.day_limit)."
       content:
         application/json:
           schema:
@@ -23479,6 +23604,92 @@ components:
         disabledAt: {type: [string, 'null'], format: date-time}
         version: {type: integer}
         updatedAt: {type: string, format: date-time}
+    TimeTrackingSettings:
+      type: object
+      required: [codeterminationBasis, codeterminationRecordedOn, dpiaRecordedOn, editWindowDays, retentionMonths, showEntryAuthors, minReportGroupSize, version, updatedAt]
+      properties:
+        codeterminationBasis: {type: string, nullable: true, enum: [agreement, not_applicable, null], description: "Null until recorded; recording it is the precondition for switching the module on."}
+        codeterminationRecordedOn: {type: string, format: date, nullable: true}
+        dpiaRecordedOn: {type: string, format: date, nullable: true, description: "Optional."}
+        editWindowDays: {type: integer, minimum: 1, maximum: 90}
+        retentionMonths: {type: integer, minimum: 3, maximum: 120}
+        showEntryAuthors: {type: boolean}
+        minReportGroupSize: {type: integer, minimum: 2, maximum: 20, description: "Used by the effort report of a later slice."}
+        version: {type: integer}
+        updatedAt: {type: string, format: date-time}
+    TimeTrackingSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [editWindowDays, retentionMonths, showEntryAuthors, minReportGroupSize, expectedVersion]
+      properties:
+        codeterminationBasis: {type: string, enum: [agreement, not_applicable], description: "Omit while not recorded. Needs codeterminationRecordedOn."}
+        codeterminationRecordedOn: {type: string, format: date}
+        dpiaRecordedOn: {type: string, format: date}
+        editWindowDays: {type: integer, minimum: 1, maximum: 90}
+        retentionMonths: {type: integer, minimum: 3, maximum: 120}
+        showEntryAuthors: {type: boolean}
+        minReportGroupSize: {type: integer, minimum: 2, maximum: 20}
+        expectedVersion: {type: integer, minimum: 1}
+    TimeEntry:
+      type: object
+      required: [id, subjectType, subjectId, own, editable, workDate, durationMinutes, source, note, createdAt, updatedAt, version]
+      properties:
+        id: {type: string, format: uuid}
+        subjectType: {type: string, enum: [ticket]}
+        subjectId: {type: string, format: uuid}
+        reference: {type: string, description: "Ticket number; only in the own-time list and only while the caller may view the Ticket."}
+        userId: {type: string, format: uuid, description: "Whose time; present for the caller's own entries and when authors are shown."}
+        userName: {type: string, description: "Present when authors are shown."}
+        own: {type: boolean}
+        editable: {type: boolean}
+        workDate: {type: string, format: date}
+        durationMinutes: {type: integer, minimum: 1, maximum: 1440}
+        source: {type: string, enum: [manual, timer]}
+        note: {type: string, nullable: true, description: "Internal text, at most 500 characters."}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        version: {type: integer}
+    TimeEntryList:
+      type: object
+      required: [items, totalMinutes, editWindowDays]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/TimeEntry'}}
+        totalMinutes: {type: integer}
+        othersMinutes: {type: integer, description: "Ticket panel with showEntryAuthors off: minutes of other people's entries that are not listed."}
+        canLog: {type: boolean, description: "Ticket panel: the caller may log time on this Ticket."}
+        showEntryAuthors: {type: boolean}
+        editWindowDays: {type: integer}
+    TimeEntryCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [subjectType, subjectId, workDate, durationMinutes]
+      properties:
+        subjectType: {type: string, enum: [ticket]}
+        subjectId: {type: string, format: uuid}
+        userId: {type: string, format: uuid, description: "Another person; needs timetracking.manage and reason."}
+        workDate: {type: string, format: date}
+        durationMinutes: {type: integer, minimum: 1, maximum: 1440}
+        note: {type: string, maxLength: 500}
+        reason: {type: string, minLength: 3, maxLength: 300, description: "Required for another person or a work date outside the edit window."}
+    TimeEntryUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [subjectId, workDate, durationMinutes, expectedVersion]
+      properties:
+        subjectId: {type: string, format: uuid}
+        workDate: {type: string, format: date}
+        durationMinutes: {type: integer, minimum: 1, maximum: 1440}
+        note: {type: string, maxLength: 500, description: "Empty clears the note."}
+        reason: {type: string, minLength: 3, maxLength: 300, description: "Required for another person's entry or outside the edit window."}
+        expectedVersion: {type: integer, minimum: 1}
+    TimeEntryDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [deleteReason, expectedVersion]
+      properties:
+        deleteReason: {type: string, enum: [wrong_ticket, duplicate, wrong_duration, other]}
+        reason: {type: string, minLength: 3, maxLength: 300}
+        expectedVersion: {type: integer, minimum: 1}
     PresenceSettingsRequest:
       type: object
       additionalProperties: false
@@ -23723,7 +23934,7 @@ components:
         enabled: {type: boolean, description: "Effective: state is enabled."}
         switchOn: {type: boolean, description: "Position of the switch itself."}
         state: {type: string, enum: [enabled, disabled, blocked]}
-        blockedReason: {type: string, nullable: true, enum: [startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off, dependency_disabled, null]}
+        blockedReason: {type: string, nullable: true, enum: [startup_gate_off, dpia_not_recorded, no_enabled_provider, no_providers_configured, runtime_setting_off, codetermination_not_recorded, dependency_disabled, null]}
         requires: {type: array, items: {type: string}}
         requiredBy: {type: array, items: {type: string}}
         startupGates: {type: array, items: {type: string}, description: "Read-only environment variables that gate the module at startup."}

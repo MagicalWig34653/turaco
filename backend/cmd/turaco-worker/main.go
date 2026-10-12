@@ -39,6 +39,7 @@ import (
 	servicesapp "github.com/MagicalWig34653/turaco/backend/internal/modules/services/application"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
+	timetrackingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/timetracking/application"
 	aiplatform "github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/attachments"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -300,6 +301,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			return registerDeploymentCorrelation(runner, pool, d.Categories, d.SMTP.Enabled())
 		}},
 		{"presence", func() error { return registerPresence(runner, pool, d.Presence) }},
+		{"time tracking retention", func() error { return registerTimeTrackingPurge(runner, pool) }},
 		{"organization import previews", func() error { return registerOrgImportPurge(runner, pool) }},
 		{"external access expiry", func() error { return registerExternalAccessExpiry(runner, pool, d.Categories, d.SMTP.Enabled()) }},
 		{"ai cleanup", func() error { return registerAI(runner, pool) }},
@@ -910,4 +912,14 @@ func registerAI(runner *jobs.Runner, pool *pgxpool.Pool) error {
 		return err
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: aiplatform.RetentionPurgeJobType, DedupeKey: aiplatform.RetentionPurgeJobType, Interval: aiplatform.RetentionPurgeInterval, MaxAttempts: 2})
+}
+
+// registerTimeTrackingPurge registers the daily Time Tracking retention job (F17 T-A). It is an always-run job: it
+// keeps removing entries past the retention while the module is switched off.
+func registerTimeTrackingPurge(runner *jobs.Runner, pool *pgxpool.Pool) error {
+	svc := wiring.TimeTracking(pool)
+	if err := runner.Register(timetrackingapp.PurgeJobType, timetrackingapp.PurgeJobTimeout, svc.HandlePurge); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: timetrackingapp.PurgeJobType, DedupeKey: timetrackingapp.PurgeJobType, Interval: timetrackingapp.PurgeInterval, MaxAttempts: 2})
 }

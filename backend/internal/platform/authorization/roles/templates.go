@@ -35,18 +35,18 @@ type Template struct {
 	AdministratorAssignOnly bool
 }
 
-var firstLevel = []string{"tickets.manage", "knowledge.view", "assets.view", "endpoints.view", "requests.view", "tasks.work", "remote_access.view", "views.share"}
+var firstLevel = []string{"tickets.manage", "knowledge.view", "assets.view", "endpoints.view", "requests.view", "tasks.work", "remote_access.view", "views.share", "timetracking.log"}
 
 var specialist = concat(firstLevel, "assets.manage", "knowledge.manage", "problems.manage", "tasks.manage", "changes.view", "infrastructure.view", "security.view")
 
 var templates = []Template{
-	{Key: "first-level-support", Version: 1, Name: "First-level support", Audience: "Service desk triage",
+	{Key: "first-level-support", Version: 2, Name: "First-level support", Audience: "Service desk triage",
 		Description: "Triage and work tickets; read knowledge, assets, devices and requests; work assigned tasks. No attended remote access (add the Remote support template for that).",
 		Permissions: firstLevel, RequiresModules: []string{"servicedesk"}},
-	{Key: "it-specialist", Version: 1, Name: "IT specialist", Audience: "Second level (WLAN, hospital information system, servers)",
+	{Key: "it-specialist", Version: 2, Name: "IT specialist", Audience: "Second level (WLAN, hospital information system, servers)",
 		Description: "First level plus asset and knowledge management, problems, task management, read access to changes, infrastructure and security.",
 		Permissions: specialist, RequiresModules: []string{"servicedesk"}},
-	{Key: "team-lead", Version: 1, Name: "Team or site lead", Audience: "Site IT lead",
+	{Key: "team-lead", Version: 2, Name: "Team or site lead", Audience: "Site IT lead",
 		Description:     "IT specialist plus briefing, major incidents, requests, Team management, team availability and change management (not change approval).",
 		Permissions:     concat(specialist, "briefing.manage", "majorincidents.manage", "requests.manage", "organization.teams.manage", "presence.view_availability", "changes.manage"),
 		RequiresModules: []string{"servicedesk"}},

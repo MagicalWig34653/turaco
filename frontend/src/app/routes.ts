@@ -6,6 +6,8 @@ export type RouteId =
   | 'modulesAdmin'
   | 'calendarsAdmin'
   | 'slaAdmin'
+  | 'timeTrackingAdmin'
+  | 'myTime'
   | 'aiAdmin'
   | 'aiConnections'
   | 'oauthAuthorize'
@@ -200,6 +202,13 @@ export const appRoutes: readonly AppRoute[] = [
     nav: 'admin',
   },
   {
+    id: 'timeTrackingAdmin',
+    pattern: '/admin/time-tracking',
+    titleKey: 'timetracking.settings',
+    requires: ['timetracking.admin'],
+    nav: 'admin',
+  },
+  {
     id: 'modulesAdmin',
     pattern: '/admin/modules',
     titleKey: 'modules.title',
@@ -247,6 +256,13 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'presence.admin',
     requires: ['presence.admin'],
     nav: 'admin',
+  },
+  {
+    id: 'myTime',
+    pattern: '/time-tracking/my-time',
+    titleKey: 'timetracking.my',
+    requiresAny: ['timetracking.log', 'timetracking.manage'],
+    nav: 'main',
   },
   { id: 'home', pattern: '/', titleKey: 'nav.home', nav: 'main' },
   { id: 'me', pattern: '/me', titleKey: 'nav.me', nav: 'main' },

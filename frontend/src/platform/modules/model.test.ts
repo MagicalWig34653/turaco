@@ -52,6 +52,8 @@ describe('module visibility', () => {
     expect(moduleForPath('/assets-other')).toBeUndefined();
     expect(moduleForPath('/admin/presence')).toBeUndefined();
     expect(moduleForPath('/admin/ai')).toBeUndefined();
+    expect(moduleForPath('/time-tracking/my-time')).toBe('timetracking');
+    expect(moduleForPath('/admin/time-tracking')).toBeUndefined();
   });
   it('gates permissionless routes, navigation and palette together', () => {
     const enabled = () => false;
@@ -104,6 +106,7 @@ describe('switch model', () => {
     expect(filterModules([module], '', '', 'enabled', () => '')).toEqual([]);
     expect(settingsPath('presence')).toBe('/admin/presence');
     expect(settingsPath('ai')).toBe('/admin/ai');
+    expect(settingsPath('timetracking')).toBe('/admin/time-tracking');
     expect(settingsPath('assets')).toBeUndefined();
   });
   it.each(['requires_disabled', 'required_by_enabled', 'blocked'])(

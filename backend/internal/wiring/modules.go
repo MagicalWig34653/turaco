@@ -7,16 +7,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	presenceapp "github.com/MagicalWig34653/turaco/backend/internal/modules/presence/application"
+	timetrackingapp "github.com/MagicalWig34653/turaco/backend/internal/modules/timetracking/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
 
 // Blocked reason codes of module preconditions (the UI translates "modules.blocked.<code>").
 const (
-	BlockedStartupGateOff       = "startup_gate_off"
-	BlockedDPIANotRecorded      = "dpia_not_recorded"
-	BlockedNoEnabledProvider    = "no_enabled_provider"
-	BlockedNoProvidersConfigure = "no_providers_configured"
+	BlockedStartupGateOff  = "startup_gate_off"
+	BlockedDPIANotRecorded = "dpia_not_recorded"
+	// BlockedCodeterminationNotRecorded: Time Tracking stays off until timetracking.admin records the works-council
+	// co-determination basis (F17 design 7.4).
+	BlockedCodeterminationNotRecorded = "codetermination_not_recorded"
+	BlockedNoEnabledProvider          = "no_enabled_provider"
+	BlockedNoProvidersConfigure       = "no_providers_configured"
 	// BlockedRuntimeSettingOff means the module's own audited runtime setting (presence.settings.enabled,
 	// ai.settings.enabled) is off: the module refuses use, so the switch must not claim it is on.
 	BlockedRuntimeSettingOff = "runtime_setting_off"
@@ -36,6 +40,7 @@ type ModuleGates struct {
 func Modules(pool *pgxpool.Pool, gates ModuleGates) *modules.Service {
 	presence := Presence(pool, presenceapp.Config{Enabled: gates.PresenceEnabled, RetentionDays: 30})
 	aiStore := ai.NewStore(pool)
+	timeTracking := TimeTracking(pool)
 	return modules.NewService(pool, modules.Options{Preconditions: map[string]modules.Precondition{
 		"presence": func(ctx context.Context) (string, error) {
 			if !gates.PresenceEnabled {
@@ -50,6 +55,16 @@ func Modules(pool *pgxpool.Pool, gates ModuleGates) *modules.Service {
 			}
 			if !st.Enabled {
 				return BlockedRuntimeSettingOff, nil
+			}
+			return "", nil
+		},
+		"timetracking": func(ctx context.Context) (string, error) {
+			st, err := timeTracking.Settings(ctx, timetrackingapp.Principal{Admin: true})
+			if err != nil {
+				return "", err
+			}
+			if !st.CodeterminationRecorded() {
+				return BlockedCodeterminationNotRecorded, nil
 			}
 			return "", nil
 		},

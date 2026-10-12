@@ -63,6 +63,7 @@ import (
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
+	timetrackingtransport "github.com/MagicalWig34653/turaco/backend/internal/modules/timetracking/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	aitransport "github.com/MagicalWig34653/turaco/backend/internal/platform/ai/transport"
 	attachmentstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/attachments/transport"
@@ -334,6 +335,7 @@ func main() {
 	knowledgetransport.Register(mux, wiring.Knowledge(pool), sessionAuth, logger)
 	knowledgetransport.RegisterRunbooks(mux, wiring.Runbooks(pool), sessionAuth, logger)
 	servicedesktransport.Register(mux, wiring.ServiceDesk(pool).WithSLA(func(ctx context.Context) (bool, error) { return moduleSvc.Enabled(ctx, "sla") }), sessionAuth, logger)
+	timetrackingtransport.Register(mux, wiring.TimeTracking(pool), sessionAuth, logger)
 	attachmentstransport.Register(mux, attachmentSvc, sessionAuth, logger)
 	servicedesktransport.RegisterExternal(mux, wiring.ExternalSync(pool, autotaskGateway, cfg.AutotaskSync), sessionAuth, logger)
 	servicedesktransport.RegisterProblems(mux, wiring.Problems(pool), sessionAuth, logger)

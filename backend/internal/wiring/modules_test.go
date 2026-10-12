@@ -144,3 +144,25 @@ type stubAuth struct{}
 func (stubAuth) Authenticate(r *http.Request) (authorization.Principal, bool, error) {
 	return authorization.Principal{UserID: r.Header.Get("X-User")}, r.Header.Get("X-User") != "", nil
 }
+
+// Time Tracking cannot be switched on before the works-council co-determination basis is recorded (F17 design 7.4).
+func TestTimeTrackingNeedsRecordedCodetermination(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `UPDATE timetracking.settings SET codetermination_basis=NULL, codetermination_recorded_on=NULL`)
+	})
+	svc := wiring.Modules(pool, wiring.ModuleGates{})
+	if _, err := pool.Exec(ctx, `UPDATE timetracking.settings SET codetermination_basis=NULL, codetermination_recorded_on=NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if got := blockedReason(t, svc, "timetracking"); got != wiring.BlockedCodeterminationNotRecorded {
+		t.Errorf("without a recorded basis: %q", got)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE timetracking.settings SET codetermination_basis='not_applicable', codetermination_recorded_on=current_date`); err != nil {
+		t.Fatal(err)
+	}
+	if got := blockedReason(t, svc, "timetracking"); got != "" {
+		t.Errorf("with a recorded basis: %q", got)
+	}
+}

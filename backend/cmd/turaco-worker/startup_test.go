@@ -46,6 +46,7 @@ var goldenJobTypes = []string{
 	"sla.clock_sweep",
 	"tasks.recurrence.generate",
 	"teams.channel_post",
+	"timetracking.purge",
 	"views.purge_archived",
 }
 

@@ -15,14 +15,14 @@ Permissions and roles (`modules.manage`, elevated; built-in administrator roles 
 | Category | Modules (key: requires) |
 |---|---|
 | core (always on) | platform, access, organization, audit, tasks, approvals, notifications |
-| service_management | servicedesk: assets; sla: servicedesk (default off); knowledge: servicedesk; catalog: products; requests: catalog |
+| service_management | servicedesk: assets; sla: servicedesk (default off); timetracking: servicedesk (default off); knowledge: servicedesk; catalog: products; requests: catalog |
 | assets_inventory | products; assets: products; procurement: products; inventory: assets, procurement, products |
 | endpoints_security | endpoints: assets, changes; security: endpoints, changes; remoteaccess: endpoints, assets, servicedesk |
 | infrastructure_operations | infrastructure: assets; services: assets, infrastructure; changes: assets, infrastructure, services; planning: changes, procurement, services |
 | workforce | presence (default off) |
 | insight | briefing; ai (default off) |
 
-Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. Policy and Queue data is retained while off. S-D adds the disposable job `sla.clock_sweep` and the deferred outbox consumer `sla.notify`; while the switch is off no warning or breach is recorded and existing clocks stay unchanged. S-E list and reporting surfaces follow the switch: the `sla_*` Ticket query fields, `slaSummary` on rows and detail, the overview SLA figures, the `At risk` System View, `/sla/report` and the AI tool fields are absent while it is off.
+Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` or `timetracking` is on is refused with `required_by_enabled`. The `timetracking` switch (F17 T-A) owns the route prefix `time-tracking`, is `blocked` with the reason `codetermination_not_recorded` until `timetracking.admin` has recorded the works-council co-determination basis, keeps `/api/v1/time-tracking/settings*` reachable while off, always runs the retention job `timetracking.purge`, and has no consumers. Entries are retained while off; the Ticket panel, My time and the settings-independent routes disappear. Policy and Queue data is retained while off. S-D adds the disposable job `sla.clock_sweep` and the deferred outbox consumer `sla.notify`; while the switch is off no warning or breach is recorded and existing clocks stay unchanged. S-E list and reporting surfaces follow the switch: the `sla_*` Ticket query fields, `slaSummary` on rows and detail, the overview SLA figures, the `At risk` System View, `/sla/report` and the AI tool fields are absent while it is off.
 
 ## State
 

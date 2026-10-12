@@ -45,6 +45,35 @@ describe('visibleNavItems', () => {
       ).toBe(false);
   });
 
+  it('shows My time to people who may log time and Time Tracking settings to its administrators', () => {
+    expect(ids([], 'main')).not.toContain('myTime');
+    expect(ids(['timetracking.log'], 'main')).toContain('myTime');
+    expect(ids(['timetracking.manage'], 'main')).toContain('myTime');
+    expect(ids([], 'admin')).not.toContain('timeTrackingAdmin');
+    expect(ids(['timetracking.admin'], 'admin')).toContain('timeTrackingAdmin');
+    const route = matchRoute(appRoutes, '/time-tracking/my-time')?.route;
+    expect(route?.id).toBe('myTime');
+    if (route)
+      expect(
+        canViewRoute(
+          createCan({ permissions: ['timetracking.log'] }),
+          route,
+          (key) => key !== 'timetracking',
+        ),
+      ).toBe(false);
+    // The settings stay reachable while the module is off so the co-determination basis can be recorded.
+    const settings = matchRoute(appRoutes, '/admin/time-tracking')?.route;
+    expect(settings?.id).toBe('timeTrackingAdmin');
+    if (settings)
+      expect(
+        canViewRoute(
+          createCan({ permissions: ['timetracking.admin'] }),
+          settings,
+          (key) => key !== 'timetracking',
+        ),
+      ).toBe(true);
+  });
+
   it('keeps Business Calendar administration behind calendars.manage', () => {
     expect(ids([], 'admin')).not.toContain('calendarsAdmin');
     expect(ids(['calendars.manage'], 'admin')).toContain('calendarsAdmin');

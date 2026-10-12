@@ -6644,6 +6644,83 @@ export const en = {
     'Security ticket: assess whether personal data is affected. If it is, consider a data protection task due within 72 hours of the report.',
   'tickets.securityTask': 'Create data protection due task',
   'tickets.securityTaskTitle': 'Data protection 72-hour assessment',
+  'modules.timetracking.name': 'Time Tracking',
+  'modules.timetracking.description':
+    'Effort logged on tickets. Personal data of employees: needs the recorded works council decision.',
+  'modules.blocked.codetermination_not_recorded':
+    'Record the works council co-determination basis in Time Tracking settings.',
+  'timetracking.eyebrow': 'Time Tracking',
+  'timetracking.title': 'Time',
+  'timetracking.total': 'Total on this ticket',
+  'timetracking.totalOnly':
+    'You can see the total only. Entries are visible to people who work this ticket.',
+  'timetracking.empty': 'No time logged on this ticket yet.',
+  'timetracking.log': 'Log time',
+  'timetracking.edit': 'Edit',
+  'timetracking.delete': 'Delete',
+  'timetracking.duration': 'Duration',
+  'timetracking.durationHint': 'For example 1:30, 1h30, 1.5h or 90 (minutes). At most 24 hours.',
+  'timetracking.workDate': 'Work date',
+  'timetracking.note': 'Note',
+  'timetracking.noteHint':
+    'Internal. Visible to people who work this ticket. At most 500 characters.',
+  'timetracking.reason': 'Reason',
+  'timetracking.reasonHint':
+    'Required for time of another person or outside the edit window. Recorded in the audit log.',
+  'timetracking.person': 'Person',
+  'timetracking.actions': 'Actions',
+  'timetracking.others': 'Not listed: {duration} logged by other people.',
+  'timetracking.problem.duration': 'Enter a duration between one minute and 24 hours.',
+  'timetracking.problem.date':
+    'Choose a date that is not in the future and not older than {days} days.',
+  'timetracking.problem.dayLimit': 'This would exceed 24 hours on that day.',
+  'timetracking.deleteReason': 'Why is it deleted?',
+  'timetracking.deleteReason.wrong_ticket': 'Logged on the wrong ticket',
+  'timetracking.deleteReason.duplicate': 'Duplicate',
+  'timetracking.deleteReason.wrong_duration': 'Wrong duration',
+  'timetracking.deleteReason.other': 'Other',
+  'timetracking.my': 'My time',
+  'timetracking.myIntro': 'Your own time entries of one week. Entries are logged on the ticket.',
+  'timetracking.myEmpty': 'No time logged this week.',
+  'timetracking.myEmptyHint': 'Open a ticket and choose Log time.',
+  'timetracking.prevWeek': 'Previous week',
+  'timetracking.nextWeek': 'Next week',
+  'timetracking.thisWeek': 'This week',
+  'timetracking.weekTotal': 'Total this week',
+  'timetracking.ticket': 'Ticket',
+  'timetracking.ticketHidden': 'No access',
+  'timetracking.settings': 'Time Tracking settings',
+  'timetracking.settingsIntro':
+    'Co-determination record, edit window, retention and visibility of authors.',
+  'timetracking.privacy':
+    'Time entries are personal data about employees and can be used to monitor performance. Turaco shows effort per ticket and never ranks or compares people.',
+  'timetracking.codetermination.missing':
+    'The works council decision is not recorded. Time Tracking cannot be switched on until it is.',
+  'timetracking.codetermination.recorded': 'Recorded: {basis}, {date}.',
+  'timetracking.codetermination': 'Works council co-determination',
+  'timetracking.codeterminationHint':
+    'Record the agreement with the works council, or that no works council exists. Required before the module can be switched on; it can be changed but not removed.',
+  'timetracking.codeterminationDate': 'Date of the agreement or of the confirmation',
+  'timetracking.basis.none': 'Not recorded',
+  'timetracking.basis.agreement': 'Agreement with the works council',
+  'timetracking.basis.not_applicable': 'No works council exists',
+  'timetracking.dpiaDate': 'Data protection impact assessment recorded on (optional)',
+  'timetracking.editWindow': 'Edit window (days)',
+  'timetracking.editWindowHint':
+    'People change and log their own time up to this many days back. Older changes need time management permission and a reason.',
+  'timetracking.retention': 'Retention (months)',
+  'timetracking.retentionHint': 'Entries are deleted when their work date is older than this.',
+  'timetracking.showAuthors': 'Show who logged time on a ticket',
+  'timetracking.showAuthorsHint':
+    'When off, people see only their own entries and the sum of the others.',
+  'timetracking.groupSize': 'Minimum people per report cell',
+  'timetracking.groupSizeHint': 'Used by the effort report of a later release.',
+  'timetracking.saved': 'Settings saved.',
+  'timetracking.error.conflict':
+    'Someone else changed this entry or setting. Reload and try again.',
+  'timetracking.error.outsideWindow':
+    'The work date is outside the edit window. Ask someone with time management permission.',
+  'timetracking.error.dayLimit': 'A person can log at most 24 hours per day.',
 } as const;
 
 export type MessageKey = keyof typeof en;

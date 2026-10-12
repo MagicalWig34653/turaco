@@ -96,6 +96,9 @@ Scope `global`: the permission takes effect only through a global role assignmen
 | `tasks.work` | normal | global | See and work (start, block, unblock, complete) tasks assigned to oneself or to one of one's Teams. |
 | `tickets.manage` | elevated | global | Work tickets: also reads all tickets and internal comments; assign, set priority, comment internally, resolve, close, reopen and cancel any ticket. |
 | `tickets.view` | normal | global | View all tickets and their internal comments. Every signed-in user can raise tickets and read their own. |
+| `timetracking.admin` | high | global | Administer Time Tracking: the recorded works-council co-determination basis (the precondition for switching the module on), the data protection impact assessment date, edit window, retention and author visibility. |
+| `timetracking.log` | normal | global | Log, edit and delete one's own time on Tickets the caller may work (work access in the Ticket's Queue) and read one's own time entries. |
+| `timetracking.manage` | elevated | global | Log and correct time entries for other people and outside the edit window, always with a recorded reason. |
 | `views.admin` | elevated | global | List every Saved View, unshare, archive, restore or take over any View (for example after its owner left). Does not allow running a View one has no share for, and never exposes data rows. Every change is audited. |
 | `views.pin_for_groups` | elevated | global | Create and delete Pin Rules that show a Saved View in the sidebar of the members of a Team or role. This is the only permission for pinning for groups; a rule shows a View only to members who may use it and grants no access. Every change is audited. |
 | `views.publish` | elevated | global | Share a Saved View with everyone (use level only). The View appears in every signed-in User's list of shared Views; each viewer still sees only the rows their own permissions allow. Every publication is audited. |

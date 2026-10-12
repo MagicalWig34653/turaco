@@ -6884,4 +6884,82 @@ export const de: Record<MessageKey, string> = {
     'Sicherheitsticket: Prüfen, ob personenbezogene Daten betroffen sind. Falls ja, eine Datenschutzaufgabe mit Frist innerhalb von 72 Stunden ab Meldung erwägen.',
   'tickets.securityTask': 'Datenschutzaufgabe mit Frist erstellen',
   'tickets.securityTaskTitle': 'Datenschutzprüfung innerhalb von 72 Stunden',
+  'modules.timetracking.name': 'Zeiterfassung',
+  'modules.timetracking.description':
+    'Aufwand, der auf Tickets erfasst wird. Personenbezogene Daten von Beschäftigten: braucht die dokumentierte Entscheidung zur Mitbestimmung.',
+  'modules.blocked.codetermination_not_recorded':
+    'Mitbestimmungsgrundlage in den Einstellungen der Zeiterfassung dokumentieren.',
+  'timetracking.eyebrow': 'Zeiterfassung',
+  'timetracking.title': 'Zeit',
+  'timetracking.total': 'Gesamt auf diesem Ticket',
+  'timetracking.totalOnly':
+    'Sie sehen nur die Summe. Einträge sehen Personen, die dieses Ticket bearbeiten.',
+  'timetracking.empty': 'Auf diesem Ticket ist noch keine Zeit erfasst.',
+  'timetracking.log': 'Zeit erfassen',
+  'timetracking.edit': 'Bearbeiten',
+  'timetracking.delete': 'Löschen',
+  'timetracking.duration': 'Dauer',
+  'timetracking.durationHint':
+    'Zum Beispiel 1:30, 1h30, 1,5h oder 90 (Minuten). Höchstens 24 Stunden.',
+  'timetracking.workDate': 'Arbeitstag',
+  'timetracking.note': 'Notiz',
+  'timetracking.noteHint':
+    'Intern. Sichtbar für Personen, die dieses Ticket bearbeiten. Höchstens 500 Zeichen.',
+  'timetracking.reason': 'Begründung',
+  'timetracking.reasonHint':
+    'Erforderlich für die Zeit einer anderen Person oder außerhalb des Bearbeitungsfensters. Wird im Audit-Protokoll festgehalten.',
+  'timetracking.person': 'Person',
+  'timetracking.actions': 'Aktionen',
+  'timetracking.others': 'Nicht aufgelistet: {duration} von anderen Personen erfasst.',
+  'timetracking.problem.duration': 'Geben Sie eine Dauer zwischen einer Minute und 24 Stunden ein.',
+  'timetracking.problem.date':
+    'Wählen Sie ein Datum, das nicht in der Zukunft und nicht älter als {days} Tage ist.',
+  'timetracking.problem.dayLimit': 'Das würde an diesem Tag 24 Stunden überschreiten.',
+  'timetracking.deleteReason': 'Warum wird gelöscht?',
+  'timetracking.deleteReason.wrong_ticket': 'Auf dem falschen Ticket erfasst',
+  'timetracking.deleteReason.duplicate': 'Doppelt erfasst',
+  'timetracking.deleteReason.wrong_duration': 'Falsche Dauer',
+  'timetracking.deleteReason.other': 'Sonstiges',
+  'timetracking.my': 'Meine Zeit',
+  'timetracking.myIntro': 'Ihre eigenen Zeiteinträge einer Woche. Die Erfassung erfolgt am Ticket.',
+  'timetracking.myEmpty': 'In dieser Woche ist keine Zeit erfasst.',
+  'timetracking.myEmptyHint': 'Öffnen Sie ein Ticket und wählen Sie „Zeit erfassen“.',
+  'timetracking.prevWeek': 'Vorherige Woche',
+  'timetracking.nextWeek': 'Nächste Woche',
+  'timetracking.thisWeek': 'Diese Woche',
+  'timetracking.weekTotal': 'Summe der Woche',
+  'timetracking.ticket': 'Ticket',
+  'timetracking.ticketHidden': 'Kein Zugriff',
+  'timetracking.settings': 'Einstellungen der Zeiterfassung',
+  'timetracking.settingsIntro':
+    'Mitbestimmungsnachweis, Bearbeitungsfenster, Aufbewahrung und Sichtbarkeit der Autoren.',
+  'timetracking.privacy':
+    'Zeiteinträge sind personenbezogene Daten von Beschäftigten und können zur Leistungskontrolle genutzt werden. Turaco zeigt Aufwand je Ticket und erstellt keine Rangfolgen oder Vergleiche von Personen.',
+  'timetracking.codetermination.missing':
+    'Die Entscheidung zur Mitbestimmung ist nicht dokumentiert. Die Zeiterfassung kann erst danach eingeschaltet werden.',
+  'timetracking.codetermination.recorded': 'Dokumentiert: {basis}, {date}.',
+  'timetracking.codetermination': 'Mitbestimmung des Betriebsrats',
+  'timetracking.codeterminationHint':
+    'Halten Sie die Vereinbarung mit dem Betriebsrat fest oder dass kein Betriebsrat besteht. Voraussetzung zum Einschalten des Moduls; änderbar, aber nicht entfernbar.',
+  'timetracking.codeterminationDate': 'Datum der Vereinbarung oder der Bestätigung',
+  'timetracking.basis.none': 'Nicht dokumentiert',
+  'timetracking.basis.agreement': 'Vereinbarung mit dem Betriebsrat',
+  'timetracking.basis.not_applicable': 'Es besteht kein Betriebsrat',
+  'timetracking.dpiaDate': 'Datenschutz-Folgenabschätzung dokumentiert am (optional)',
+  'timetracking.editWindow': 'Bearbeitungsfenster (Tage)',
+  'timetracking.editWindowHint':
+    'Personen erfassen und ändern ihre eigene Zeit bis so viele Tage zurück. Ältere Änderungen brauchen die Berechtigung zur Zeitverwaltung und eine Begründung.',
+  'timetracking.retention': 'Aufbewahrung (Monate)',
+  'timetracking.retentionHint': 'Einträge werden gelöscht, wenn ihr Arbeitstag älter ist.',
+  'timetracking.showAuthors': 'Anzeigen, wer Zeit auf einem Ticket erfasst hat',
+  'timetracking.showAuthorsHint':
+    'Ist die Option aus, sehen Personen nur ihre eigenen Einträge und die Summe der übrigen.',
+  'timetracking.groupSize': 'Mindestanzahl Personen je Berichtszelle',
+  'timetracking.groupSizeHint': 'Wird vom Aufwandsbericht einer späteren Version verwendet.',
+  'timetracking.saved': 'Einstellungen gespeichert.',
+  'timetracking.error.conflict':
+    'Jemand anderes hat diesen Eintrag oder diese Einstellung geändert. Neu laden und erneut versuchen.',
+  'timetracking.error.outsideWindow':
+    'Der Arbeitstag liegt außerhalb des Bearbeitungsfensters. Wenden Sie sich an jemanden mit Berechtigung zur Zeitverwaltung.',
+  'timetracking.error.dayLimit': 'Eine Person kann höchstens 24 Stunden pro Tag erfassen.',
 };

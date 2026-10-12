@@ -30,7 +30,7 @@ Target designs with implementation notes; [current status](product/current-statu
 - [F13 Workbench Views](product/f13-workbench-views-design.md)
 - [F14 Administration](product/f14-administration-design.md)
 - [F15 Microsoft integration (Entra sign-in, Teams; planned)](product/f15-microsoft-integration-design.md)
-- [F17 SLA deadlines and time tracking (planned)](product/f17-sla-time-tracking-design.md)
+- [F17 SLA deadlines and time tracking (SLA and manual time entries implemented; timer and effort report planned)](product/f17-sla-time-tracking-design.md)
 
 ## Architecture
 - [Constitution](architecture/constitution.md)

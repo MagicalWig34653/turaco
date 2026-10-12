@@ -30,7 +30,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
 | F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
 | F16 Location-scoped access | Planned (design only, [design](f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md)) | Everything: L-A to L-H |
-| F17 SLA and time tracking | S-A to S-E implemented: Business Calendars, SLA Policies, clocks, warnings and breaches, list fields, overview and minimal report ([design](f17-sla-time-tracking-design.md), [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md)) | T-A to T-C (time tracking) |
+| F17 SLA and time tracking | S-A to S-E and T-A implemented: Business Calendars, SLA Policies, clocks, warnings and breaches, list fields, overview and minimal report, time entries on Tickets ([design](f17-sla-time-tracking-design.md), [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md)) | T-B (timer), T-C (effort report) |
 
 The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
 
@@ -208,7 +208,7 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F17 — SLA deadlines and time tracking
 
-[ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Feature design: [F17 design](f17-sla-time-tracking-design.md). Both capabilities are optional module switches (`sla`, `timetracking`, default off). Slices: S-A Business Calendars, S-B SLA policies, S-C SLA clocks, S-D warnings and breaches, S-E list fields, overview and report; T-A time entries, T-B timer, T-C effort report. The S and T tracks are independent. S-A to S-E are implemented; time tracking is not. Open product questions are listed in the design.
+[ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Feature design: [F17 design](f17-sla-time-tracking-design.md). Both capabilities are optional module switches (`sla`, `timetracking`, default off). Slices: S-A Business Calendars, S-B SLA policies, S-C SLA clocks, S-D warnings and breaches, S-E list fields, overview and report; T-A time entries, T-B timer, T-C effort report. The S and T tracks are independent. S-A to S-E and T-A are implemented; the timer (T-B) and the effort report (T-C) are not. Open product questions are listed in the design.
 
 ## Later / optional
 

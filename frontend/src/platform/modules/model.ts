@@ -32,6 +32,7 @@ export type Module = {
     | 'no_providers_configured'
     | 'dependency_disabled'
     | 'runtime_setting_off'
+    | 'codetermination_not_recorded'
     | null;
   requires: string[];
   requiredBy: string[];
@@ -43,6 +44,7 @@ export type ModuleEnabled = (key: string) => boolean;
 const paths: Record<string, readonly string[]> = {
   servicedesk: ['/support', '/service-desk', '/incidents', '/problems'],
   sla: ['/admin/sla-policies', '/sla'],
+  timetracking: ['/time-tracking'],
   knowledge: ['/knowledge', '/runbooks'],
   catalog: ['/catalog', '/admin/catalog'],
   requests: ['/requests', '/admin/requests'],
@@ -107,5 +109,6 @@ export function filterModules(
   );
 }
 export function settingsPath(key: string): string | undefined {
+  if (key === 'timetracking') return '/admin/time-tracking';
   return key === 'presence' || key === 'ai' ? `/admin/${key}` : undefined;
 }

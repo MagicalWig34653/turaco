@@ -1,4 +1,5 @@
 import { useModules } from '../../platform/modules/ModulesProvider';
+import { TicketTimePanel } from '../timetracking/TicketTimePanel';
 import { AskTuraco } from '../ai/AiProvider';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -552,6 +553,9 @@ function TicketWorkspace({ id }: { id: string }) {
           </span>
         </span>
       </div>
+      {enabled('timetracking') && (can('timetracking.log') || can('timetracking.manage')) ? (
+        <TicketTimePanel ticketId={ticket.id} />
+      ) : null}
       {enabled('sla') && staffReader && !isOwner && ticket.sla ? (
         <Card title={t('sla.clock.title')}>
           <h2>{t('sla.clock.title')}</h2>
