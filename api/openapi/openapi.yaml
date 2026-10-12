@@ -15003,7 +15003,7 @@ paths:
     get:
       operationId: getModulesStatus
       summary: Which modules are effectively on (any signed-in User).
-      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*` stay reachable while the module is off (their own admin permissions apply)."
+      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`, `/ai/mcp/clients*` stay reachable while the module is off (their own admin permissions apply). The MCP routes `/mcp` and `/oauth/*` belong to the `ai` module."
       security:
         - sessionAuth: []
       responses:
@@ -15352,6 +15352,285 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/clients:
+    get:
+      operationId: listAiMcpClients
+      summary: Allowlisted OAuth clients of the Turaco MCP server.
+      description: "Needs `ai.settings.view` or `ai.settings.manage`. Mounted even when AI_ENABLED or AI_MCP_ENABLED is false and while the module is off, so clients can be prepared. `mounted` reports the startup gate; `issuer` and `resource` are set when mounted. Clients are public (no secret exists)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiMcpClientList'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createAiMcpClient
+      summary: Register an MCP client.
+      description: "Needs `ai.settings.manage`. The server generates `clientId`. 1 to 5 redirect URIs, compared by exact string later: `https`, or `http` on 127.0.0.1, [::1] or localhost with an explicit port; no fragment or user info. Without `allowedDataClasses` only `public_reference` is allowed. Audited (`ai.mcp_client.created`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiMcpClientRequest'}
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiMcpClient'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/clients/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: updateAiMcpClient
+      summary: Replace an MCP client's configuration.
+      description: "Needs `ai.settings.manage`; `expectedVersion` required. Disabling a client revokes all its grants in the same transaction. Audited with before and after (`ai.mcp_client.updated`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiMcpClientRequest'}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiMcpClient'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/authorize/preview:
+    post:
+      operationId: previewAiMcpAuthorization
+      summary: Validate an MCP authorization request for the consent page.
+      description: "Signed-in internal User with `ai.use`; needs AI_MCP_ENABLED, the `ai` module and `ai.settings.enabled` plus `mcpEnabled`. Body: the OAuth parameters of `/oauth/authorize` in camelCase. An unknown or disabled client or an unregistered redirect URI answers 400 `ai.mcp_invalid_client` (the page must not redirect); other request errors (`code_challenge_method` other than `S256`, wrong `resource`, `scope` other than `mcp:read`) answer 400 `ai.mcp_invalid_request` with `details.oauthError`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiMcpAuthorizeRequest'}
+      responses:
+        '200':
+          description: What the application would get.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiMcpAuthorizePreview'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/authorize:
+    post:
+      operationId: authorizeAiMcp
+      summary: Approve or deny an MCP authorization request.
+      description: "Same rules as the preview plus `decision` (`approve` or `deny`); same-origin guard. Approval creates a 60-second single-use authorization code and returns the redirect URL with `code`, `state` and `iss`; denial returns it with `error=access_denied`. Consent is not remembered. Audited (`ai.mcp.authorized`, `ai.mcp.authorization_denied`, via `mcp`)."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AiMcpAuthorizeRequest'
+                - type: object
+                  required: [decision]
+                  properties:
+                    decision: {type: string, enum: [approve, deny]}
+      responses:
+        '200':
+          description: Redirect target for the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirectUrl]
+                properties:
+                  redirectUrl: {type: string, format: uri}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/grants:
+    get:
+      operationId: listAiMcpGrants
+      summary: The signed-in User's active MCP grants.
+      description: "Any signed-in User sees only their own grants (at most 50)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/AiMcpGrant'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/grants/{id}/revoke:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: revokeAiMcpGrant
+      summary: End one of the caller's own MCP grants.
+      description: "Another User's grant answers 404. All tokens of the grant stop working at once. Audited (`ai.mcp.grant.revoked`, reason `user`)."
+      security:
+        - sessionAuth: []
+      responses:
+        '204': {description: Revoked.}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /oauth/token:
+    post:
+      operationId: oauthToken
+      summary: OAuth token endpoint of the Turaco MCP server (RFC 6749).
+      description: "Public clients only (`client_id`, no client authentication; an `Authorization` header answers 401 `invalid_client`). Form body only, parameters must not repeat; the query string is ignored. `authorization_code` needs `code`, `redirect_uri`, `code_verifier` (PKCE S256) and `resource` (must be the MCP resource). `refresh_token` rotates the refresh token; presenting a used one revokes the whole grant. Access tokens live 10 minutes; a grant at most 24 hours. Exempt from the same-origin guard (no cookie is read). 404 while MCP is closed."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id]
+              properties:
+                grant_type: {type: string, enum: [authorization_code, refresh_token]}
+                client_id: {type: string}
+                code: {type: string}
+                redirect_uri: {type: string}
+                code_verifier: {type: string, minLength: 43, maxLength: 128}
+                refresh_token: {type: string}
+                resource: {type: string, format: uri}
+      responses:
+        '200':
+          description: "Tokens (`Cache-Control: no-store`)."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthTokenResponse'}
+        '400':
+          description: "`invalid_request`, `invalid_grant`, `invalid_target`, `unsupported_grant_type`."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: "`invalid_client`."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+  /oauth/revoke:
+    post:
+      operationId: oauthRevoke
+      summary: OAuth token revocation (RFC 7009).
+      description: "Form body with `token` and `client_id`. An access or refresh token of this client ends its whole grant. Unknown tokens answer 200 as well. Exempt from the same-origin guard."
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token, client_id]
+              properties:
+                token: {type: string}
+                client_id: {type: string}
+                token_type_hint: {type: string}
+      responses:
+        '200': {description: Revoked or unknown.}
+        '401':
+          description: "`invalid_client`."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+  /mcp:
+    post:
+      operationId: mcpRequest
+      summary: Turaco MCP server (Streamable HTTP, JSON responses, stateless).
+      description: "One JSON-RPC 2.0 message per request (batches answer error -32600). Methods `initialize`, `ping`, `tools/list`, `tools/call`; notifications answer 202. Protocol versions `2025-06-18` and `2025-03-26` (`MCP-Protocol-Version` with another value answers 400). Tools are the same read-only AI Tools as the assistant, offered by the User's permissions and the client's allowed data classes; `tools/call` results are `content[0].text` with the result inside `<untrusted_data>` and `isError` for refusals. Each call counts against the AI request and token caps (`-32000` with `data.code` `ai.rate_limited` or `ai.budget_exceeded`). Audited with via `mcp` and `clientId`. Without a valid token: 401 with `WWW-Authenticate: Bearer resource_metadata=...`; a foreign `Origin` answers 403; `GET` and `DELETE` answer 405."
+      security:
+        - mcpBearer: ['mcp:read']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: {type: string, enum: ['2.0']}
+                id: {oneOf: [{type: string}, {type: integer}]}
+                method: {type: string}
+                params: {type: object}
+      responses:
+        '200':
+          description: JSON-RPC response.
+          content:
+            application/json:
+              schema: {type: object}
+        '202': {description: Notification accepted.}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '405': {description: Only POST is supported.}
+  /.well-known/oauth-protected-resource:
+    servers:
+      - url: /
+    get:
+      operationId: oauthProtectedResourceMetadata
+      summary: Protected resource metadata of the MCP endpoint (RFC 9728).
+      description: "Also served at `/.well-known/oauth-protected-resource/api/v1/mcp`. 404 while MCP is closed."
+      security: []
+      responses:
+        '200':
+          description: "`resource`, `authorization_servers`, `bearer_methods_supported`, `scopes_supported`."
+          content:
+            application/json:
+              schema: {type: object}
+        '404': {$ref: '#/components/responses/AINotFound'}
+  /.well-known/oauth-authorization-server:
+    servers:
+      - url: /
+    get:
+      operationId: oauthAuthorizationServerMetadata
+      summary: Authorization server metadata (RFC 8414).
+      description: "Issuer `EMAIL_BASE_URL`; authorization endpoint `/oauth/authorize` (web page), token and revocation endpoints under `/api/v1/oauth`; `code_challenge_methods_supported` is `S256` only; no registration endpoint. 404 while MCP is closed."
+      security: []
+      responses:
+        '200':
+          description: Metadata.
+          content:
+            application/json:
+              schema: {type: object}
+        '404': {$ref: '#/components/responses/AINotFound'}
   /attachments/config:
     get:
       operationId: getAttachmentsConfig
@@ -15486,6 +15765,16 @@ components:
       in: cookie
       name: turaco_session
       description: Opaque server-side session token in an HttpOnly, SameSite=Lax cookie. The token is accepted from the cookie only.
+    mcpBearer:
+      type: oauth2
+      description: "Turaco MCP server only (F12 A-D, ADR-0039): opaque access token from the authorization code flow with PKCE S256, audience-bound to `<EMAIL_BASE_URL>/api/v1/mcp`, 10 minutes. Sent as `Authorization: Bearer`; no other route accepts it."
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          tokenUrl: /api/v1/oauth/token
+          refreshUrl: /api/v1/oauth/token
+          scopes:
+            mcp:read: Read-only Turaco AI Tools as the signed-in User.
   parameters:
     LineId:
       name: lineId
@@ -23014,6 +23303,88 @@ components:
         installationTokensPerDay: {type: integer, minimum: 1000}
         maxOutputTokens: {type: integer, minimum: 64, maximum: 8192}
         maxToolIterations: {type: integer, minimum: 1, maximum: 10}
+        mcpEnabled: {type: boolean, description: "Runtime switch of the read-only Turaco MCP server (F12 A-D); also needs AI_MCP_ENABLED and `enabled`."}
+    AiMcpClientRequest:
+      type: object
+      required: [displayName, redirectUris]
+      additionalProperties: false
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 100}
+        redirectUris:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: {type: string, maxLength: 500}
+        allowedDataClasses:
+          type: array
+          items: {type: string, enum: [public_reference, business_record, personal_contact, device_context]}
+        enabled: {type: boolean}
+        expectedVersion: {type: integer}
+    AiMcpClient:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        clientId: {type: string, pattern: '^tmcp_[a-z2-7]{26}$'}
+        displayName: {type: string}
+        redirectUris: {type: array, items: {type: string}}
+        allowedDataClasses: {type: array, items: {type: string}}
+        enabled: {type: boolean}
+        activeGrants: {type: integer}
+        version: {type: integer}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    AiMcpClientList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/AiMcpClient'}}
+        mounted: {type: boolean}
+        issuer: {type: [string, 'null']}
+        resource: {type: [string, 'null']}
+    AiMcpAuthorizeRequest:
+      type: object
+      properties:
+        responseType: {type: string, enum: [code]}
+        clientId: {type: string}
+        redirectUri: {type: string}
+        codeChallenge: {type: string}
+        codeChallengeMethod: {type: string, enum: [S256]}
+        resource: {type: string}
+        scope: {type: string}
+        state: {type: string, maxLength: 500}
+    AiMcpAuthorizePreview:
+      type: object
+      properties:
+        clientName: {type: string}
+        clientId: {type: string}
+        redirectUri: {type: string}
+        tools: {type: array, items: {type: string}}
+        dataClasses: {type: array, items: {type: string}}
+        grantHours: {type: integer}
+        scope: {type: string}
+    AiMcpGrant:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        clientId: {type: string}
+        clientName: {type: string}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+    OAuthTokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, refresh_token, scope]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, enum: [Bearer]}
+        expires_in: {type: integer}
+        refresh_token: {type: string}
+        scope: {type: string}
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        error_description: {type: string}
     AiSettings:
       allOf:
         - $ref: '#/components/schemas/AiSettingsFields'

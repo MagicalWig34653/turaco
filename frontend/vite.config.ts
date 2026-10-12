@@ -12,6 +12,8 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:8080', changeOrigin: false },
       '/health': { target: 'http://localhost:8080', changeOrigin: false },
+      // OAuth metadata of the Turaco MCP server (F12 A-D).
+      '/.well-known/oauth-': { target: 'http://localhost:8080', changeOrigin: false },
     },
   },
 });

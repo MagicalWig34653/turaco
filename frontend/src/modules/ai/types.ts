@@ -47,8 +47,54 @@ export type SettingsFields = {
   installationTokensPerDay: number;
   maxOutputTokens: number;
   maxToolIterations: number;
+  mcpEnabled: boolean;
 };
 export type Settings = SettingsFields & { version: number };
+export type McpClientFields = {
+  displayName: string;
+  redirectUris: string[];
+  allowedDataClasses: DataClass[];
+  enabled: boolean;
+};
+export type McpClient = McpClientFields & {
+  id: string;
+  clientId: string;
+  activeGrants: number;
+  version: number;
+};
+export type McpClientList = {
+  items: McpClient[];
+  mounted: boolean;
+  issuer: string | null;
+  resource: string | null;
+};
+export type McpGrant = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  createdAt: string;
+  expiresAt: string;
+  lastUsedAt: string | null;
+};
+export type AuthorizeParams = {
+  responseType: string;
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  resource: string;
+  scope: string;
+  state: string;
+};
+export type AuthorizePreview = {
+  clientName: string;
+  clientId: string;
+  redirectUri: string;
+  tools: string[];
+  dataClasses: DataClass[];
+  grantHours: number;
+  scope: string;
+};
 export type ProviderFields = {
   kind: 'fake' | 'openai_compatible';
   displayName: string;

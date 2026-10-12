@@ -148,6 +148,9 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Data class** — closed egress classification (`public_reference`, `business_record`, `personal_contact`, `device_context`) of the fields an AI Tool returns; a provider receives a tool's result only if it is allowed every class of the tool's output fields. Secrets, Audit records, Workforce Presence details, raw provider payloads, file contents and Remote Access session data are not classes and are never sent.
 - **AI Conversation** — transient, server-held exchange between one User and the assistant (`ai.sessions`: transcript including tool calls and results, resource scope, 30 minutes idle); the browser holds only an opaque id. Not a business record and not retained unless the administrator enables transcript retention.
 - **Conversation resource scope** — the records the User named, opened as context or explicitly consented to in a conversation; a tool may read only these. Ids that appear only in tool output never extend it.
+- **Turaco MCP server** — the read-only Model Context Protocol endpoint (`/api/v1/mcp`) through which an allowlisted external AI application calls the same AI Tools as the assistant, as the signed-in User; not a second tool set.
+- **MCP client** — an administrator-allowlisted OAuth public client (an external AI application) with fixed redirect URIs and allowed data classes; it holds no secret.
+- **MCP grant** — one User's short-lived consent (at most 24 hours) for one MCP client; its access and refresh tokens are bound to it and end with it.
 - **AI Proposal** — short-lived proposal of an exact write operation that executes only after the requesting User confirms it; not an Approval and not a business record.
 - **Knowledge Article** — reusable written knowledge.
 - **Procedure** — documented sequence of work.

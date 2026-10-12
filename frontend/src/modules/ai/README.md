@@ -26,6 +26,14 @@ Provider/settings writes use closed payloads with the loaded expectedVersion.
 Provider kind is immutable on edit; credentials are represented by secret file
 references only. Conflict messages require a reload, never a blind overwrite.
 
+MCP (F12 A-D): the administration screen lists and edits the allowlisted MCP clients
+(public clients; redirect URIs entered one per line and sent unchanged for exact
+matching) and the "MCP server enabled" setting. `/oauth/authorize` is the consent page:
+it reads only the known OAuth query parameters, asks the server to validate them and
+leaves only through the redirect URL the approve/deny call returns; an unregistered
+client or redirect URI shows an error and never redirects. `/ai/connections` lists and
+disconnects the signed-in person's own grants. Both need `ai.use`.
+
 Validation: `npx tsc -b`, `npx eslint src`, `npx vitest run` in frontend; the
 model and rendering tests cover status gates, request allowlists, versions, errors
 and hostile output. `node src/modules/ai/check-missing-i18n.mjs` scans literal UI
