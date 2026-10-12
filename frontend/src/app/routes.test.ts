@@ -33,6 +33,11 @@ describe('external parties', () => {
 });
 
 describe('visibleNavItems', () => {
+  it('keeps Business Calendar administration behind calendars.manage', () => {
+    expect(ids([], 'admin')).not.toContain('calendarsAdmin');
+    expect(ids(['calendars.manage'], 'admin')).toContain('calendarsAdmin');
+    expect(matchRoute(appRoutes, '/admin/business-calendars')?.route.id).toBe('calendarsAdmin');
+  });
   it('always shows the main entries and hides admin entries without permission', () => {
     expect(ids([], 'main')).toEqual([
       'home',

@@ -16,6 +16,7 @@
 | `AssetReturned` | 1 | assets | An assigned asset was returned. Payload: assetId, status, operation, assigneeType, assigneeId (previous assignee). |
 | `AssetStatusChanged` | 1 | assets | An asset changed lifecycle status other than by assignment or return. Payload: assetId, status, operation. |
 | `BriefingItemPublished` | 1 | briefing | A manual IT Briefing item was published. Payload: itemId, severity. |
+| `BusinessCalendarChanged` | 1 | platform | A Business Calendar's working time changed. Payload: calendarId, version. |
 | `ChangeApproved` | 1 | changes | A Change was approved: by its approver, without approval when none was required, or on an emergency justification. Payload: changeId, emergency. |
 | `ChangeCompleted` | 1 | changes | A Change in progress was completed. Payload: changeId. |
 | `ChangeFailed` | 1 | changes | A Change in progress failed. Payload: changeId, reason, rollbackDone. |

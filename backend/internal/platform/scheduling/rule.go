@@ -1,5 +1,5 @@
-// Package scheduling holds the platform recurrence rule shared by Tasks
-// (Recurring Task Definitions) and Presence (recurring entries). It is pure:
+// Package scheduling holds pure recurrence and business-time calculations.
+// The recurrence rule is shared by Tasks and Presence. It is pure:
 // no database, no clock, no module imports.
 package scheduling
 

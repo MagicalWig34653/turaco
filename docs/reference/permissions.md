@@ -14,6 +14,7 @@ Scope `global`: the permission takes effect only through a global role assignmen
 | `assets.view` | normal | global | View assets and device context within authorized scope. |
 | `briefing.manage` | elevated | global | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |
 | `briefing.view` | normal | global | View published IT Briefing items. |
+| `calendars.manage` | elevated | global | Create and change Business Calendars and their full-day closures. |
 | `catalog.manage` | elevated | global | Create and change Catalog Items: form definitions, approval steps and fulfillment task templates; activate and deactivate them. |
 | `changes.approve` | high | global | Approve infrastructure/service changes according to policy. |
 | `changes.execute` | elevated | global | Run Changes: start, complete and fail them and add execution tasks. The owner of a Change may do the same for that Change without this permission. |

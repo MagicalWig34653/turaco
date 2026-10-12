@@ -2,6 +2,7 @@ import { ModulesProvider, useModules } from '../platform/modules/ModulesProvider
 import { ModuleDisabledView } from '../platform/modules/ModuleDisabledView';
 import { pathEnabled } from '../platform/modules/model';
 import { ModulesScreen } from '../platform/modules/ModulesScreen';
+import { CalendarScreen } from '../modules/calendars/CalendarScreen';
 import { AiProvider, useAi } from '../modules/ai/AiProvider';
 import { AdminScreen as AiAdminScreen } from '../modules/ai/AdminScreen';
 import {
@@ -165,6 +166,8 @@ import { ForbiddenView, NotFoundView } from './StatusViews';
 
 function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
   switch (id) {
+    case 'calendarsAdmin':
+      return <CalendarScreen />;
     case 'modulesAdmin':
       return <ModulesScreen />;
     case 'aiAdmin':

@@ -20,7 +20,7 @@ The core is a modular monolith. Each domain owns its model, application operatio
 - secrets/encryption abstractions;
 - tasks/My Work primitives, and the Work Item source contract (`platform/workitems`: a module contributes a source with `Items` and `Count` that authorizes every item; `GET /my-work/items` and `/my-work/counts` merge them with a composite keyset cursor and run a source only while its module is on);
 - the one CSV writer (`platform/csvsafe`: formula and control-character neutralization and a UTF-8 byte order mark; modules never format CSV cells themselves);
-- scheduling (`platform/scheduling`: the shared recurrence rule used by Tasks and Presence) and maintenance windows (a Maintenance Window is the window of a Change);
+- scheduling (`platform/scheduling`: the shared recurrence rule used by Tasks and Presence, plus Business Calendar storage and pure business-time arithmetic) and maintenance windows (a Maintenance Window is the window of a Change);
 - targeting/dynamic groups;
 - configuration and feature flags;
 - module registry ([ADR-0032](../decisions/ADR-0032-module-switches.md), `backend/internal/platform/modules`, schema table `platform.module_switches`): catalog of modules with core/optional, dependencies, route prefixes and startup gates; the runtime switch per optional module, the HTTP gate (404 `platform.module_disabled`) and the job gate. It imports no module; module preconditions are supplied by the composition root (`internal/wiring/modules.go`);

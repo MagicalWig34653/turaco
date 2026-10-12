@@ -4,6 +4,7 @@ import { canAll, type CanFn } from '../platform/session/permissions';
 
 export type RouteId =
   | 'modulesAdmin'
+  | 'calendarsAdmin'
   | 'aiAdmin'
   | 'aiConnections'
   | 'oauthAuthorize'
@@ -182,6 +183,13 @@ const taskViewPermissions = ['tasks.view', 'tasks.manage', 'tasks.work'] as cons
 
 // Static patterns must precede parameterised ones ("/admin/roles/new" before "/admin/roles/:id").
 export const appRoutes: readonly AppRoute[] = [
+  {
+    id: 'calendarsAdmin',
+    pattern: '/admin/business-calendars',
+    titleKey: 'calendars.title',
+    requires: ['calendars.manage'],
+    nav: 'admin',
+  },
   {
     id: 'modulesAdmin',
     pattern: '/admin/modules',
