@@ -12,6 +12,7 @@ type Definition struct {
 }
 
 var Registry = []Definition{
+	{Name: "BusinessCalendarChanged", Version: 1, Owner: "platform", Description: "A Business Calendar's working time changed. Payload: calendarId, version."},
 	{Name: "UserSynchronized", Version: 1, Owner: "organization", Description: "Directory sync created or changed a canonical user. Payload: userId, providerKey, created, changedFields (names only), statusChanged; see docs/integrations/ldap-ad-sync-design.md."},
 	{Name: "UserDeactivated", Version: 1, Owner: "organization", Description: "An administrator deactivated a User (sessions and open credential tokens were revoked; open Task assignments need review). Payload: userId, reasonCode."},
 	{Name: "AccessExpired", Version: 1, Owner: "organization", Description: "The end of access of an external account passed; the expiry job deactivated it and ended its sessions (open Task assignments need review). Payload: userId, externalPartyId."},

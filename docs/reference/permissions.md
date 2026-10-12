@@ -12,6 +12,7 @@
 | `assets.view` | normal | View assets and device context within authorized scope. |
 | `briefing.manage` | elevated | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |
 | `briefing.view` | normal | View published IT Briefing items. |
+| `calendars.manage` | elevated | Create and change Business Calendars and their full-day closures. |
 | `catalog.manage` | elevated | Create and change Catalog Items: form definitions, approval steps and fulfillment task templates; activate and deactivate them. |
 | `changes.approve` | high | Approve infrastructure/service changes according to policy. |
 | `changes.execute` | elevated | Run Changes: start, complete and fail them and add execution tasks. The owner of a Change may do the same for that Change without this permission. |

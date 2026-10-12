@@ -11,6 +11,7 @@ type Permission struct {
 
 var Registry = []Permission{
 	{Name: "platform.admin", Description: "Administer platform-wide configuration.", Risk: "high"},
+	{Name: "calendars.manage", Description: "Create and change Business Calendars and their full-day closures.", Risk: "elevated"},
 	{Name: "platform.roles.view", Description: "View roles, permissions and role assignments.", Risk: "normal"},
 	{Name: "platform.roles.manage", Description: "Create, change and delete roles and assign or revoke them; equivalent to administrator access.", Risk: "high"},
 	{Name: "modules.manage", Description: "See the module overview and switch optional modules on and off at runtime (ADR-0032). A switched-off module disappears from the API and UI and its background jobs pause; no data is deleted. Module preconditions such as privacy records or providers are never bypassed.", Risk: "elevated"},

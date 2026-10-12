@@ -6,6 +6,63 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /business-calendars:
+    get:
+      operationId: listBusinessCalendars
+      summary: List Business Calendars (calendars.manage).
+      security: [{sessionAuth: []}]
+      responses: {'200': {description: Calendar list, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/BusinessCalendar'}}}}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      operationId: createBusinessCalendar
+      summary: Create a Business Calendar (calendars.manage).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendarInput'}}}}
+      responses: {'201': {description: Created calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}}
+  /business-calendars/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: getBusinessCalendar
+      summary: Get a Business Calendar and closures (calendars.manage).
+      security: [{sessionAuth: []}]
+      responses: {'200': {description: Calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {description: Not found}}
+    patch:
+      operationId: updateBusinessCalendar
+      summary: Update a Business Calendar with expectedVersion (calendars.manage).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendarUpdate'}}}}
+      responses: {'200': {description: Updated calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /business-calendars/{id}/closures/{year}:
+    put:
+      operationId: replaceBusinessCalendarClosures
+      summary: Atomically replace a year's full-day closures with expectedVersion (calendars.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}, {name: year, in: path, required: true, schema: {type: integer}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedVersion, items], properties: {expectedVersion: {type: integer}, items: {type: array, items: {$ref: '#/components/schemas/BusinessCalendarClosure'}}}}}}}
+      responses: {'200': {description: Updated calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /business-calendars/{id}/copy-closures:
+    post:
+      operationId: copyBusinessCalendarClosures
+      summary: Copy fixed-date closures between years with expectedVersion (calendars.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedVersion, fromYear, toYear], properties: {expectedVersion: {type: integer}, fromYear: {type: integer}, toYear: {type: integer}}}}}}
+      responses: {'200': {description: Updated calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /business-calendars/{id}/archive:
+    post:
+      operationId: archiveBusinessCalendar
+      summary: Archive a Business Calendar with expectedVersion (calendars.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedVersion], properties: {expectedVersion: {type: integer}}}}}}
+      responses: {'200': {description: Archived calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /business-calendars/{id}/restore:
+    post:
+      operationId: restoreBusinessCalendar
+      summary: Restore a Business Calendar with expectedVersion (calendars.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedVersion], properties: {expectedVersion: {type: integer}}}}}}
+      responses: {'200': {description: Restored calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
   /meta:
     get:
       operationId: getMeta
@@ -16521,6 +16578,30 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    BusinessCalendarInterval:
+      type: object
+      required: [start, end]
+      properties: {start: {type: integer, minimum: 0, maximum: 1439}, end: {type: integer, minimum: 1, maximum: 1440}}
+    BusinessCalendarClosure:
+      type: object
+      required: [date, name]
+      properties: {date: {type: string, format: date}, name: {type: string, minLength: 1, maxLength: 80}}
+    BusinessCalendarInput:
+      type: object
+      required: [key, name, timezone, weeklyHours]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$'}
+        name: {type: string, minLength: 1, maxLength: 80}
+        timezone: {type: string, description: IANA time zone}
+        weeklyHours: {type: object, description: ISO weekday keys 1 to 7; sorted nonoverlapping local-minute intervals, additionalProperties: {type: array, items: {$ref: '#/components/schemas/BusinessCalendarInterval'}}}
+    BusinessCalendarUpdate:
+      allOf:
+        - {$ref: '#/components/schemas/BusinessCalendarInput'}
+        - {type: object, required: [expectedVersion], properties: {expectedVersion: {type: integer}}}
+    BusinessCalendar:
+      allOf:
+        - {$ref: '#/components/schemas/BusinessCalendarInput'}
+        - {type: object, required: [id, status, version, createdAt, updatedAt, closures], properties: {id: {type: string, format: uuid}, status: {type: string, enum: [active, archived]}, version: {type: integer}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time}, closures: {type: array, items: {$ref: '#/components/schemas/BusinessCalendarClosure'}}}}
     AttachmentConfig:
       type: object
       required: [enabled, maxBytes, allowedTypes]

@@ -143,7 +143,7 @@ var externalAccess = map[string]externalDecl{
 
 func catalogModules() []Module {
 	return []Module{
-		core("platform", "meta"),
+		core("platform", "meta", "business-calendars"),
 		core("access", "auth", "roles", "role-assignments", "role-templates", "permissions", "modules", "access"),
 		core("organization", "users", "teams", "locations", "departments", "directory-groups", "directory-sync-runs", "import-batches", "external-parties"),
 		core("audit", "audit-events"),

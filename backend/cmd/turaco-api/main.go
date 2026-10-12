@@ -69,6 +69,8 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles"
 	rolestransport "github.com/MagicalWig34653/turaco/backend/internal/platform/authorization/roles/transport"
+	scheduling "github.com/MagicalWig34653/turaco/backend/internal/platform/businesscalendars"
+	schedulingtransport "github.com/MagicalWig34653/turaco/backend/internal/platform/businesscalendars/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/health"
@@ -403,6 +405,7 @@ func main() {
 		os.Exit(1)
 	}
 	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
+	schedulingtransport.Register(mux, scheduling.NewCalendarStore(pool), sessionAuth, logger)
 	probeChecks := map[string]func(context.Context) error{}
 	smtpProbe, err := wiring.SMTPProbe(smtpCfg)
 	if err != nil {

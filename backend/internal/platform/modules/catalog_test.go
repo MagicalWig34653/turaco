@@ -108,7 +108,7 @@ func TestEveryRegisteredRouteFamilyIsInTheCatalog(t *testing.T) {
 		// registered owner, and a switched-off module's records answer not found.
 		"attachments": true,
 		// The platform search fans out to module Searchers that each respect the module switches themselves.
-		"search": true}
+		"search": true, "business-calendars": true}
 	routeRE := regexp.MustCompile(`"(?:GET|POST|PUT|PATCH|DELETE) (/api/v1/[^"{ ]*)`)
 	root := filepath.Join("..", "..")
 	seen := 0

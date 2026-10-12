@@ -2,6 +2,10 @@
 
 **Status:** Conceptual model; not a final SQL schema.
 
+## Business Calendars (F17 S-A)
+
+`platform.business_calendars` owns an immutable key, display name, IANA time zone, validated weekly hours (ISO weekdays, sorted half-open local-minute intervals), active or archived status, optimistic version and timestamps. `platform.business_calendar_closures` stores named full local dates keyed by calendar and date. There are no preloaded holiday lists. Pure scheduling functions measure elapsed working time across daylight-saving changes and reject intervals crossing midnight; callers split them across weekdays. Migration `000097` creates both tables. Calendar changes are audited, and working-time changes publish `BusinessCalendarChanged`.
+
 ## Principles
 
 Every persistent entity has an immutable internal UUIDv7. Human references (`INC-2026-...`, `AST-...`) are separate. Every entity has exactly one owning module. Cross-domain references do not create duplicate authoritative copies. Current state and historical snapshots/relationships are separate concerns.
