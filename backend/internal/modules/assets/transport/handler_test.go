@@ -20,13 +20,24 @@ import (
 )
 
 type fakeAuth struct {
-	user  string
-	perms map[string]struct{}
-	ok    bool
+	user   string
+	perms  map[string]struct{}
+	scopes map[string]authorization.LocationScope
+	ok     bool
 }
 
 func (f fakeAuth) Authenticate(*http.Request) (authorization.Principal, bool, error) {
-	return authorization.Principal{UserID: f.user, Permissions: f.perms}, f.ok, nil
+	return authorization.Principal{UserID: f.user, Permissions: f.perms}.WithScopes(f.scopes), f.ok, nil
+}
+
+// scopedAs is a caller who holds the permissions only at the given Locations.
+func scopedAs(user string, locations []string, perms ...string) fakeAuth {
+	f := as(user)
+	f.scopes = map[string]authorization.LocationScope{}
+	for _, p := range perms {
+		f.scopes[p] = authorization.LocationScope{Locations: locations}
+	}
+	return f
 }
 
 func as(user string, perms ...string) fakeAuth {
@@ -289,5 +300,71 @@ func TestTechnicalFactsAndQueryOverHTTP(t *testing.T) {
 	}
 	if rec := do(view, "PATCH", "/api/v1/assets/"+a.ID, `{"expectedVersion":2,"firmwareVersion":"wrong"}`); rec.Code != http.StatusForbidden {
 		t.Errorf("view-only update = %d", rec.Code)
+	}
+}
+
+// Location-scoped callers (ADR-0040, slice L-E) through the HTTP layer: routes admit them, lists and the lookup see
+// only their Locations, an out-of-scope asset answers like a missing one, and writes stay inside the scope.
+func TestLocationScopedCallersOverHTTP(t *testing.T) {
+	manage := serve(t, as(admin, "assets.manage", "assets.view"))
+	mk := func(serial, loc string) string {
+		t.Helper()
+		rec := do(manage, "POST", "/api/v1/assets", `{"productId":"`+product+`","serialNumber":"`+serial+`","locationId":"`+loc+`"}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d %s", serial, rec.Code, rec.Body)
+		}
+		var out struct {
+			ID      string `json:"id"`
+			Version int    `json:"version"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.ID
+	}
+	here, there := mk("SCOPE-HERE", site), mk("SCOPE-THERE", elsewhere)
+
+	lead := serve(t, scopedAs(stranger, []string{site}, "assets.view", "assets.manage"))
+	if rec := do(lead, "GET", "/api/v1/assets?q=SCOPE-", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), here) || strings.Contains(rec.Body.String(), there) {
+		t.Errorf("scoped list = %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(lead, "GET", "/api/v1/assets/lookup?code=scope-here", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), here) {
+		t.Errorf("scoped lookup in scope = %d %s", rec.Code, rec.Body)
+	}
+	missing := do(lead, "GET", "/api/v1/assets/lookup?code=SCOPE-NONEXISTENT", "")
+	outside := do(lead, "GET", "/api/v1/assets/lookup?code=SCOPE-THERE", "")
+	errCode := func(b string) string {
+		var e struct {
+			Error struct{ Code, Message string }
+		}
+		_ = json.Unmarshal([]byte(b), &e)
+		return e.Error.Code + "|" + e.Error.Message
+	}
+	if outside.Code != missing.Code || errCode(outside.Body.String()) != errCode(missing.Body.String()) {
+		t.Errorf("an out-of-scope code must answer like an unknown one: %d %s vs %d %s", outside.Code, outside.Body, missing.Code, missing.Body)
+	}
+	if rec := do(lead, "GET", "/api/v1/assets/"+there, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("out-of-scope detail = %d, want 404", rec.Code)
+	}
+	if rec := do(lead, "PATCH", "/api/v1/assets/"+there, `{"expectedVersion":1,"notes":"x"}`); rec.Code != http.StatusNotFound {
+		t.Errorf("out-of-scope change = %d, want 404", rec.Code)
+	}
+	if rec := do(lead, "PATCH", "/api/v1/assets/"+here, `{"expectedVersion":1,"locationId":"`+elsewhere+`"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("moving out of scope = %d, want 403", rec.Code)
+	}
+	if rec := do(lead, "POST", "/api/v1/assets", `{"productId":"`+product+`","serialNumber":"SCOPE-NEW","locationId":"`+elsewhere+`"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("creating out of scope = %d, want 403", rec.Code)
+	}
+	if rec := do(lead, "POST", "/api/v1/assets", `{"productId":"`+product+`","serialNumber":"SCOPE-NOLOC"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("creating without Location = %d, want 403", rec.Code)
+	}
+	if rec := do(lead, "POST", "/api/v1/assets/query", `{"limit":50}`); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), there) {
+		t.Errorf("scoped query = %d %s", rec.Code, rec.Body)
+	}
+	// View-only scope cannot write; an emptied scope and a plain user are refused at the door.
+	viewer := serve(t, scopedAs(stranger, []string{site}, "assets.view"))
+	if rec := do(viewer, "PATCH", "/api/v1/assets/"+here, `{"expectedVersion":1,"notes":"x"}`); rec.Code != http.StatusForbidden {
+		t.Errorf("view-only scope change = %d, want 403", rec.Code)
+	}
+	if rec := do(serve(t, scopedAs(stranger, nil, "assets.view", "assets.manage")), "GET", "/api/v1/assets", ""); rec.Code != http.StatusForbidden {
+		t.Errorf("emptied scope list = %d, want 403", rec.Code)
 	}
 }

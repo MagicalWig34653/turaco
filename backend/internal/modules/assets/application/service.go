@@ -128,7 +128,8 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	if err := c.validate(); err != nil {
 		return Asset{}, err
 	}
-	if !p.Manage {
+	// An asset needs a Location in the caller's manage scope; one without Location is for global holders only.
+	if !p.manages(in.LocationID) {
 		return Asset{}, ErrForbidden
 	}
 	if in.Status == "" {
@@ -252,7 +253,14 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 	if err := c.validate(); err != nil {
 		return Asset{}, err
 	}
-	if !p.Manage {
+	if !p.canManageAny() {
+		return Asset{}, ErrForbidden
+	}
+	// Moving an asset needs the manage scope at the target too; clearing the Location is for global holders only.
+	if in.ClearLocation && !p.Manage {
+		return Asset{}, ErrForbidden
+	}
+	if in.LocationID != nil && !p.manages(in.LocationID) {
 		return Asset{}, ErrForbidden
 	}
 	if in.LocationID != nil {
@@ -268,6 +276,9 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockTx(ctx, tx, id)
 		if err != nil {
+			return err
+		}
+		if err := p.authorizeChange(cur); err != nil {
 			return err
 		}
 		if cur.Version != expected {
@@ -410,7 +421,7 @@ func (s *Service) SetProvisioning(ctx context.Context, c Caller, p Principal, id
 	if err := c.validate(); err != nil {
 		return Asset{}, err
 	}
-	if !p.Manage {
+	if !p.canManageAny() {
 		return Asset{}, ErrForbidden
 	}
 	if !slices.Contains(ProvisioningStatuses, status) {
@@ -420,6 +431,9 @@ func (s *Service) SetProvisioning(ctx context.Context, c Caller, p Principal, id
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
 		cur, err := s.store.LockTx(ctx, tx, id)
 		if err != nil {
+			return err
+		}
+		if err := p.authorizeChange(cur); err != nil {
 			return err
 		}
 		if expected != nil && *expected != cur.Version {
@@ -464,7 +478,7 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 	if err := c.validate(); err != nil {
 		return Asset{}, err
 	}
-	if !p.Manage {
+	if !p.canManageAny() {
 		return Asset{}, ErrForbidden
 	}
 	r, ok := rules[op]
@@ -473,6 +487,13 @@ func (s *Service) Transition(ctx context.Context, c Caller, p Principal, id stri
 	}
 	var out Asset
 	err := s.store.InTx(ctx, func(tx pgx.Tx) error {
+		cur, err := s.store.LockTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if err := p.authorizeChange(cur); err != nil {
+			return err
+		}
 		a, err := s.TransitionInTx(ctx, tx, c, id, expected, op, params)
 		out = a
 		return err
@@ -600,6 +621,18 @@ func (s *Service) checkAssignee(ctx context.Context, a Assignee) error {
 	return nil
 }
 
+// authorizeChange decides whether the caller may change the locked asset: an asset outside every scope of the caller
+// does not exist for them (404, the same answer as a missing id), one they can read but not manage is forbidden.
+func (p Principal) authorizeChange(a Asset) error {
+	if !p.sees(a.LocationID) {
+		return ErrNotFound
+	}
+	if !p.manages(a.LocationID) {
+		return ErrForbidden
+	}
+	return nil
+}
+
 // ---- reads ----
 
 // Detail is an asset with its assignment history and the operations its
@@ -611,7 +644,70 @@ type Detail struct {
 	Names       map[string]string
 }
 
-func (p Principal) canView() bool { return p.View || p.Manage }
+// global reports that the caller holds assets.view or assets.manage everywhere.
+func (p Principal) global() bool { return p.View || p.Manage }
+
+// canView reports that the caller may read at least some assets through a permission.
+func (p Principal) canView() bool {
+	return p.global() || p.ViewScope.Any() || p.ManageScope.Any()
+}
+
+// canManageAny reports that the caller may change at least some assets.
+func (p Principal) canManageAny() bool { return p.Manage || p.ManageScope.Any() }
+
+func locationOf(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+
+// sees reports whether the caller's permissions cover an asset at the Location (nil: no Location, global only).
+func (p Principal) sees(loc *string) bool {
+	if p.global() {
+		return true
+	}
+	id := locationOf(loc)
+	return p.ViewScope.Allows(id) || p.ManageScope.Allows(id)
+}
+
+// manages reports whether the caller may change an asset at the Location.
+func (p Principal) manages(loc *string) bool {
+	return p.Manage || p.ManageScope.Allows(locationOf(loc))
+}
+
+// visibleLocations is the union of the Locations the scoped permissions cover (sorted, without duplicates).
+func (p Principal) visibleLocations() []string {
+	set := map[string]struct{}{}
+	for _, id := range p.ViewScope.Locations {
+		set[id] = struct{}{}
+	}
+	for _, id := range p.ManageScope.Locations {
+		set[id] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// restrict applies the caller's Location scope to a filter; a caller with a global holding is not restricted.
+func (p Principal) restrict(f Filter) Filter {
+	if !p.global() {
+		f.RestrictLocations, f.LocationIDs = true, p.visibleLocations()
+	}
+	return f
+}
+
+// scopeFragment is the row predicate of the caller's Location scope for the query engine ("" for global callers).
+func (p Principal) scopeFragment() query.Fragment {
+	if p.global() {
+		return query.Fragment{}
+	}
+	return query.Fragment{SQL: "a.location_id = ANY(?::text[]::uuid[])", Args: []any{p.visibleLocations()}}
+}
 
 // Get returns an asset the caller may see: any asset with assets.view, the
 // assets currently assigned to the caller otherwise (404 for all others). The
@@ -626,7 +722,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 	if err != nil {
 		return Detail{}, err
 	}
-	if !p.canView() {
+	if !p.sees(a.LocationID) {
 		mine := false
 		for _, as := range assignments {
 			if as.ReturnedAt == nil && as.AssigneeType == AssigneeUser && as.AssigneeID == p.UserID {
@@ -644,11 +740,11 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 		}
 		assignments = active
 	}
-	if !p.canView() {
+	if !p.sees(a.LocationID) {
 		a = holderView(a)
 	}
 	d := Detail{Asset: a, Assignments: assignments}
-	if p.Manage {
+	if p.manages(a.LocationID) {
 		d.Allowed = AllowedOperations(a.Status)
 	}
 	d.Names, err = s.names(ctx, a, assignments)
@@ -731,7 +827,7 @@ func (s *Service) List(ctx context.Context, p Principal, f Filter) (Result, erro
 	if f.Terms, err = s.searchTerms(ctx, f.Query, p.Hostnames); err != nil {
 		return Result{}, err
 	}
-	return s.store.List(ctx, f)
+	return s.store.List(ctx, p.restrict(f))
 }
 
 // WithDeviceSearch lets searches match the hostname of the linked endpoint device (for callers that may see it).
@@ -1005,5 +1101,8 @@ func (s *Service) Lookup(ctx context.Context, p Principal, code string) (Asset, 
 	if code == "" || utf8.RuneCountInString(code) > 200 {
 		return Asset{}, invalid("a code of 1-200 characters is required")
 	}
-	return s.store.Lookup(ctx, code)
+	if p.global() {
+		return s.store.Lookup(ctx, code, nil)
+	}
+	return s.store.Lookup(ctx, code, p.visibleLocations())
 }

@@ -33,7 +33,7 @@ func assetEnums(values ...string) []query.EnumValue {
 func AssetCatalog() *query.Catalog { return assetCatalog }
 
 type QueryStore interface {
-	QueryAssets(context.Context, *query.Plan) (query.Page[Asset], error)
+	QueryAssets(context.Context, *query.Plan, query.Fragment) (query.Page[Asset], error)
 }
 
 func (s *Service) WithQueryEngine(e *query.Engine) *Service { s.engine = e; return s }
@@ -57,5 +57,5 @@ func (s *Service) Query(ctx context.Context, p Principal, req query.Request) (qu
 	if err != nil {
 		return query.Page[Asset]{}, err
 	}
-	return qs.QueryAssets(ctx, plan)
+	return qs.QueryAssets(ctx, plan, p.scopeFragment())
 }

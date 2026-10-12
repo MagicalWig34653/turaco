@@ -11,8 +11,8 @@ import (
 
 var _ application.QueryStore = (*Repository)(nil)
 
-func (r *Repository) QueryAssets(ctx context.Context, plan *query.Plan) (query.Page[application.Asset], error) {
-	return query.Run(ctx, r.pool, plan, query.Select{Columns: prefixColumns("a.")}, func(rows pgx.Rows, extra []any) (application.Asset, error) {
+func (r *Repository) QueryAssets(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Asset], error) {
+	return query.Run(ctx, r.pool, plan, query.Select{Columns: prefixColumns("a."), Visibility: visibility}, func(rows pgx.Rows, extra []any) (application.Asset, error) {
 		var a application.Asset
 		err := rows.Scan(append([]any{&a.ID, &a.Reference, &a.ProductID, &a.SerialNumber, &a.AssetTag, &a.Status, &a.StatusReason, &a.ProvisioningStatus,
 			&a.OwnershipType, &a.SupplierID, &a.SourceType, &a.SourceID, &a.PurchasedAt, &a.WarrantyUntil, &a.FirmwareVersion, &a.FirmwareSource,

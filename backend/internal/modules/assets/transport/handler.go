@@ -48,8 +48,8 @@ var operations = map[string]string{
 func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
 	h := &handler{svc: svc, logger: logger}
 	authed := authorization.RequireAuthenticated(auth)
-	read := authorization.RequireAny(auth, permView, permManage)
-	write := authorization.Require(auth, permManage)
+	read := authorization.RequireScoped(auth, permView, permManage)
+	write := authorization.RequireScoped(auth, permManage)
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
@@ -103,7 +103,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), Hostnames: p.Has("endpoints.view")}
+	return application.Principal{UserID: p.UserID, View: p.Has(permView), Manage: p.Has(permManage), Hostnames: p.Has("endpoints.view"),
+		ViewScope: p.ScopeOf(permView), ManageScope: p.ScopeOf(permManage)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {

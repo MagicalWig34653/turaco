@@ -150,11 +150,15 @@ func (r *Repository) Get(ctx context.Context, id string) (application.Asset, err
 	return a, nil
 }
 
-func (r *Repository) Lookup(ctx context.Context, code string) (application.Asset, error) {
+func (r *Repository) Lookup(ctx context.Context, code string, locationIDs []string) (application.Asset, error) {
+	scope, args := "", []any{code}
+	if locationIDs != nil {
+		scope, args = " AND location_id = ANY($2::uuid[])", append(args, locationIDs)
+	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+columns+` FROM assets.assets
-		WHERE lower(asset_tag) = lower($1) OR lower(serial_number) = lower($1) OR reference = upper($1)
-		ORDER BY id LIMIT 3`, code)
+		WHERE (lower(asset_tag) = lower($1) OR lower(serial_number) = lower($1) OR reference = upper($1))`+scope+`
+		ORDER BY id LIMIT 3`, args...)
 	if err != nil {
 		return application.Asset{}, fmt.Errorf("lookup asset: %w", err)
 	}
@@ -277,6 +281,15 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		add("a.product_id = $%d::uuid", f.ProductID)
 	} else if f.ProductID != "" {
 		return application.Result{Items: []application.Asset{}}, nil
+	}
+	if f.RestrictLocations {
+		ids := make([]string, 0, len(f.LocationIDs))
+		for _, id := range f.LocationIDs {
+			if validUUID(id) {
+				ids = append(ids, id)
+			}
+		}
+		add("a.location_id = ANY($%d::uuid[])", ids)
 	}
 	if validUUID(f.LocationID) {
 		add("a.location_id = $%d::uuid", f.LocationID)

@@ -20,7 +20,8 @@ func (AssetSearcher) Type() string   { return "asset" }
 func (AssetSearcher) Module() string { return "assets" }
 
 func (s AssetSearcher) Search(ctx context.Context, p authorization.Principal, q string, limit int) ([]search.Hit, error) {
-	res, err := s.svc.List(ctx, application.Principal{UserID: p.UserID, View: p.Has("assets.view"), Manage: p.Has("assets.manage"), Hostnames: p.Has("endpoints.view")},
+	res, err := s.svc.List(ctx, application.Principal{UserID: p.UserID, View: p.Has("assets.view"), Manage: p.Has("assets.manage"), Hostnames: p.Has("endpoints.view"),
+		ViewScope: p.ScopeOf("assets.view"), ManageScope: p.ScopeOf("assets.manage")},
 		application.Filter{Query: q, Page: application.Page{Limit: limit}})
 	switch {
 	case errors.Is(err, application.ErrForbidden):

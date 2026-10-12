@@ -10,8 +10,8 @@ Scope `global`: the permission takes effect only through a global role assignmen
 | `ai.settings.view` | elevated | global | View the AI Provider configuration (never secrets), the data classes allowed per provider, caps and retention. |
 | `ai.usage.view` | elevated | global | View aggregated AI usage and estimated cost (counts only, no prompts). |
 | `ai.use` | normal | global | Use the Turaco assistant. It never grants more than the User already has: every tool call additionally needs the permission of the module it reads and is limited to the records the User named in the conversation. |
-| `assets.manage` | elevated | global | Create and update assets within authorized scope. |
-| `assets.view` | normal | global | View assets and device context within authorized scope. |
+| `assets.manage` | elevated | location | Create and update assets within authorized scope. May be held at a Location (and its sub-Locations) through a Location-scoped role assignment. |
+| `assets.view` | normal | location | View assets and device context within authorized scope. May be held at a Location (and its sub-Locations) through a Location-scoped role assignment. |
 | `briefing.manage` | elevated | global | Create, edit, publish and withdraw IT Briefing items and see drafts and withdrawn items. |
 | `briefing.view` | normal | global | View published IT Briefing items. |
 | `calendars.manage` | elevated | global | Create and change Business Calendars and their full-day closures. |

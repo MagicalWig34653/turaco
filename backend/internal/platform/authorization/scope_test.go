@@ -206,8 +206,11 @@ func TestRequireIgnoresScopedHoldings(t *testing.T) {
 // scopeAdoption is the adoption table of F16 design L3/L9: every scopable permission with the module test that runs
 // the authorization/scopetest harness for it, as "<file under backend/internal>:<TestName>" (for example
 // "modules/assets/application/scope_test.go:TestAssetsLocationScope"). An adoption slice adds its permissions here in
-// the same change that marks them scopable in the registry. No module has adopted scope yet, so the table is empty.
-var scopeAdoption = map[string]string{}
+// the same change that marks them scopable in the registry. Assets adopted scope in slice L-E.
+var scopeAdoption = map[string]string{
+	"assets.view":   "wiring/assets_scope_test.go:TestAssetsLocationScope",
+	"assets.manage": "wiring/assets_scope_test.go:TestAssetsLocationScope",
+}
 
 // scopePrerequisites are the tests of safeguards that must exist before any permission becomes scopable, as
 // "<file under backend/internal>:<TestName>". L-B security review gate 1: Location moves are guarded (slice L-C),

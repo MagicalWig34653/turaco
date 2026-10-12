@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
 // Asset lifecycle statuses (docs/domain/state-machines.md).
@@ -116,6 +117,10 @@ type Principal struct {
 	UserID string
 	View   bool
 	Manage bool
+	// ViewScope and ManageScope are where the caller holds assets.view and assets.manage through Location-scoped role
+	// assignments (ADR-0040). View and Manage keep meaning "held globally"; a scope never widens them.
+	ViewScope   authorization.LocationScope
+	ManageScope authorization.LocationScope
 	// Hostnames: the caller holds endpoints.view, so a search may match device hostnames.
 	Hostnames bool
 }
@@ -206,7 +211,11 @@ type Filter struct {
 	AssignedToUser string
 	// AssignedToLocation restricts to assets actively assigned to this Location (shared devices).
 	AssignedToLocation string
-	Page               Page
+	// RestrictLocations limits the rows to assets located in LocationIDs (Location-scoped callers); assets without a
+	// Location never match. LocationIDs is ignored unless RestrictLocations is set.
+	RestrictLocations bool
+	LocationIDs       []string
+	Page              Page
 }
 
 // SearchTerm is one word of a search text with the ids other modules matched for it.
@@ -245,7 +254,9 @@ type Store interface {
 	ByIDs(ctx context.Context, ids []string) ([]Asset, error)
 	// Lookup finds one asset by exact asset tag, serial number or reference (case-insensitive).
 	// A serial number shared by several products is ambiguous and reported as ErrConflict.
-	Lookup(ctx context.Context, code string) (Asset, error)
+	// Lookup resolves a code; locationIDs, when not nil, restricts the match to assets at those Locations (the
+	// ambiguity check then only sees visible assets, so a scoped caller learns nothing about other Locations).
+	Lookup(ctx context.Context, code string, locationIDs []string) (Asset, error)
 	// BySerial returns up to two assets with exactly this serial number (case-insensitive).
 	BySerial(ctx context.Context, serial string) ([]Asset, error)
 	List(ctx context.Context, f Filter) (Result, error)
