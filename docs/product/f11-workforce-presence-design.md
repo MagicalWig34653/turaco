@@ -179,3 +179,8 @@ Accepted:
 The authorized Change detail reads the assigned owner's availability over the remaining maintenance window through `presence/public.AvailabilityWindow`. It returns derived segments with source freshness, omits the hint for viewers outside Presence scope and when Presence is off, and never changes Submit or Schedule decisions. Past portions of a window are not queried. Changes have one assigned owner; there is no separate implementer list in the Change model.
 
 The computed IT Briefing feed asks `presence/public.TeamCoverage` for the viewer's current Teams and publishes a Team Coverage entry when today's coverage is below the configured minimum or configured on-site coverage is zero. It includes Team names and counts only; the public contract never returns member names. `presence.view_availability` is required, and module switches remove the source. Manual editorial items have no structured person reference; their free text is not parsed for names.
+
+## P-C decisions and preconditions (2026-10-12)
+
+Product decision: external sources are **Microsoft 365 (Graph)**, **manual entry** (built) and, if technically possible, **on-premises Exchange**; no HR import for now. The binding preconditions (what is read and never stored, least-privilege permissions, threat model, data protection review checklist, implementation order and open customer questions) are in [Presence external sources: threat model and review checklist](../security/presence-threat-models.md). Nothing of P-C is implemented.
+
