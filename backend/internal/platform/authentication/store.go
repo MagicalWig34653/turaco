@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const sessionColumns = `id::text, user_id::text, auth_method, created_at, last_seen_at, idle_expires_at, absolute_expires_at`
+const sessionColumns = `id::text, user_id::text, auth_method, created_at, last_seen_at, idle_expires_at, absolute_expires_at, entra_amr, entra_acrs, entra_auth_time, assurance_at`
 
 type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -17,7 +17,7 @@ type querier interface {
 
 func scanSession(row pgx.Row) (Session, error) {
 	var s Session
-	err := row.Scan(&s.ID, &s.UserID, &s.AuthMethod, &s.CreatedAt, &s.LastSeenAt, &s.IdleExpiresAt, &s.AbsoluteExpiresAt)
+	err := row.Scan(&s.ID, &s.UserID, &s.AuthMethod, &s.CreatedAt, &s.LastSeenAt, &s.IdleExpiresAt, &s.AbsoluteExpiresAt, &s.EntraAMR, &s.EntraACRs, &s.EntraAuthTime, &s.AssuranceAt)
 	return s, err
 }
 
@@ -45,7 +45,7 @@ func findByHash(ctx context.Context, q querier, tokenHash []byte) (sessionRow, e
 	err := q.QueryRow(ctx, `
 		SELECT `+sessionColumns+`, revoked_at IS NOT NULL
 		FROM platform.sessions WHERE token_hash = $1`, tokenHash).
-		Scan(&r.ID, &r.UserID, &r.AuthMethod, &r.CreatedAt, &r.LastSeenAt, &r.IdleExpiresAt, &r.AbsoluteExpiresAt, &r.Revoked)
+		Scan(&r.ID, &r.UserID, &r.AuthMethod, &r.CreatedAt, &r.LastSeenAt, &r.IdleExpiresAt, &r.AbsoluteExpiresAt, &r.EntraAMR, &r.EntraACRs, &r.EntraAuthTime, &r.AssuranceAt, &r.Revoked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return sessionRow{}, ErrInvalidSession
 	}

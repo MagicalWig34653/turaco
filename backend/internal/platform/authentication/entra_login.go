@@ -78,6 +78,9 @@ type VerifiedIdentity struct {
 	// acct = 0 and no foreign idp). Provisioning requires it, because the guest claims are optional and a guest
 	// token without them is indistinguishable from a member token.
 	MemberConfirmed bool
+	AMR             []string
+	ACRs            []string
+	AuthTime        *time.Time
 }
 
 // OIDCProvider is the identity provider side of the flow.
@@ -136,7 +139,29 @@ type EntraLoginDeps struct {
 	// SessionMaxAge caps the absolute lifetime of an Entra session (ENTRA_SESSION_MAX_AGE).
 	SessionMaxAge time.Duration
 	// SessionCap, when set, returns the administration setting; the smaller positive value wins.
-	SessionCap func(ctx context.Context) time.Duration
+	SessionCap        func(ctx context.Context) time.Duration
+	StepUpMaxAge      time.Duration
+	StepUpAuthContext string
+}
+
+// RecentEntraMFA requires both an MFA claim and a recent, independently reported authentication time.
+func RecentEntraMFA(amr, acrs []string, authTime *time.Time, contextValue string, maxAge time.Duration, now time.Time) bool {
+	if authTime == nil || maxAge <= 0 || authTime.After(now) || now.Sub(*authTime) > maxAge {
+		return false
+	}
+	for _, method := range amr {
+		if method == "mfa" {
+			return true
+		}
+	}
+	if contextValue != "" {
+		for _, value := range acrs {
+			if value == contextValue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (h *loginHandler) entraEnabled() bool {
@@ -201,7 +226,23 @@ func (h *loginHandler) entraStart(w http.ResponseWriter, r *http.Request) {
 	}
 	returnTo := safeReturnTo(r.URL.Query().Get("returnTo"))
 	shared := r.URL.Query().Get("shared") == "1"
-	ok, err := h.createOIDCTransaction(r.Context(), sha256Bytes(state), sha256Bytes(binding), nonce, verifier, returnTo, shared)
+	var stepSession Session
+	var stepHash []byte
+	stepUp := r.URL.Query().Get("stepUp") == "1"
+	if stepUp {
+		token, valid := tokenFromRequest(r, h.cfg.SecureCookie)
+		if !valid {
+			httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+			return
+		}
+		stepSession, err1 = h.sessions.Authenticate(r.Context(), token)
+		if err1 != nil || stepSession.AuthMethod != methodEntra {
+			httpx.WriteError(w, http.StatusUnauthorized, "platform.unauthenticated", "Authentication is required.")
+			return
+		}
+		stepHash = HashToken(token)
+	}
+	ok, err := h.createOIDCTransaction(r.Context(), sha256Bytes(state), sha256Bytes(binding), nonce, verifier, returnTo, shared, stepSession.ID, stepHash)
 	if err != nil {
 		writeInternal(h.logger, w, r, err)
 		return
@@ -216,7 +257,18 @@ func (h *loginHandler) entraStart(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, Secure: h.cfg.SecureCookie, SameSite: http.SameSiteLaxMode,
 	})
 	challenge := base64.RawURLEncoding.EncodeToString(sha256Bytes(verifier))
-	http.Redirect(w, r, h.entra.Provider.AuthorizeURL(state, nonce, challenge), http.StatusFound)
+	authorizeURL := h.entra.Provider.AuthorizeURL(state, nonce, challenge)
+	if stepUp {
+		if provider, ok := h.entra.Provider.(interface {
+			StepUpAuthorizeURL(string, string, string) string
+		}); ok {
+			authorizeURL = provider.StepUpAuthorizeURL(state, nonce, challenge)
+		} else {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "auth.method_unavailable", "Step-up is not available.")
+			return
+		}
+	}
+	http.Redirect(w, r, authorizeURL, http.StatusFound)
 }
 
 func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
@@ -250,31 +302,46 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie, cerr := r.Cookie(oidcBindingCookieName(h.cfg.SecureCookie))
 	if !found || cerr != nil || subtle.ConstantTimeCompare(sha256Bytes(cookie.Value), tx.bindingHash) != 1 {
-		h.entraFailure(w, r, a, "", "state_mismatch", entraFailedCode)
+		if found && tx.stepSessionID != "" {
+			h.entraStepFailure(w, r, a, tx.stepSessionID, "state_mismatch")
+		} else {
+			h.entraFailure(w, r, a, "", "state_mismatch", entraFailedCode)
+		}
 		return
 	}
+	fail := func(reason, code string) {
+		if tx.stepSessionID != "" {
+			h.entraStepFailure(w, r, a, tx.stepSessionID, reason)
+		} else {
+			h.entraFailure(w, r, a, "", reason, code)
+		}
+	}
 	if q.Get("error") != "" || code == "" || len(code) > 4096 {
-		h.entraFailure(w, r, a, "", "provider_error", entraFailedCode)
+		fail("provider_error", entraFailedCode)
 		return
 	}
 	ident, err := h.entra.Provider.Exchange(r.Context(), code, tx.verifier, tx.nonce)
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrOIDCTenantNotAllowed):
-		h.entraFailure(w, r, a, "", "tenant_not_allowed", entraFailedCode)
+		fail("tenant_not_allowed", entraFailedCode)
 		return
 	case errors.Is(err, ErrOIDCGuestRefused):
-		h.entraFailure(w, r, a, "", "guest_refused", entraFailedCode)
+		fail("guest_refused", entraFailedCode)
 		return
 	case errors.Is(err, ErrOIDCUnavailable):
-		h.entraFailure(w, r, a, "", "provider_unavailable", entraUnavailableCode)
+		fail("provider_unavailable", entraUnavailableCode)
 		return
 	default:
-		h.entraFailure(w, r, a, "", "invalid_token", entraFailedCode)
+		fail("invalid_token", entraFailedCode)
 		return
 	}
 	if ident.Guest {
-		h.entraFailure(w, r, a, "", "guest_refused", entraFailedCode)
+		fail("guest_refused", entraFailedCode)
+		return
+	}
+	if tx.stepSessionID != "" {
+		h.entraStepUp(w, r, a, tx, ident)
 		return
 	}
 	userID, linked, err := h.entra.Identities.FindEntraUser(r.Context(), ident.TenantID, ident.ObjectID)
@@ -313,6 +380,13 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 				return errEntraLinkGone
 			}
 		}
+		var assuranceAt *time.Time
+		if RecentEntraMFA(ident.AMR, ident.ACRs, ident.AuthTime, h.entra.StepUpAuthContext, h.entraStepUpMaxAge(), h.now()) {
+			assuranceAt = ident.AuthTime
+		}
+		if _, err := tx.Exec(ctx, `UPDATE platform.sessions SET entra_tenant_id=$2, entra_object_id=$3, entra_amr=$4, entra_acrs=$5, entra_auth_time=$6, assurance_at=$7 WHERE id=$1::uuid`, created.ID, ident.TenantID, ident.ObjectID, append([]string{}, ident.AMR...), append([]string{}, ident.ACRs...), ident.AuthTime, assuranceAt); err != nil {
+			return err
+		}
 		if tx2 := tx; txShared {
 			// The sign-in page said "shared computer": logging out ends the Entra session too.
 			_, err := tx2.Exec(ctx, `UPDATE platform.sessions SET shared_workstation = true WHERE id = $1::uuid`, created.ID)
@@ -345,6 +419,63 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	SetCookie(w, sessionToken, expires, h.cfg.SecureCookie)
 	http.Redirect(w, r, tx.returnTo, http.StatusFound)
+}
+
+func (h *loginHandler) entraStepUpMaxAge() time.Duration {
+	if h.entra.StepUpMaxAge > 0 {
+		return h.entra.StepUpMaxAge
+	}
+	return 15 * time.Minute
+}
+
+// entraStepUp updates only the session that initiated the transaction. The cookie is never exchanged for a new
+// principal and a changed, expired or revoked session cannot be upgraded.
+func (h *loginHandler) entraStepUp(w http.ResponseWriter, r *http.Request, a attempt, flow oidcTransaction, ident VerifiedIdentity) {
+	token, ok := tokenFromRequest(r, h.cfg.SecureCookie)
+	fresh := RecentEntraMFA(ident.AMR, ident.ACRs, ident.AuthTime, h.entra.StepUpAuthContext, h.entraStepUpMaxAge(), h.now()) && ident.AuthTime != nil && !ident.AuthTime.Before(flow.createdAt.Add(-30*time.Second))
+	if !ok || !fresh || subtle.ConstantTimeCompare(HashToken(token), flow.stepTokenHash) != 1 {
+		h.entraStepFailure(w, r, a, flow.stepSessionID, "assurance_missing")
+		return
+	}
+	ctx := r.Context()
+	var updated bool
+	err := pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
+		var userID string
+		err := tx.QueryRow(ctx, `UPDATE platform.sessions SET entra_amr=$3, entra_acrs=$4, entra_auth_time=$5, assurance_at=$5
+			WHERE id=$1::uuid AND token_hash=$2 AND auth_method='entra' AND entra_tenant_id=$6 AND entra_object_id=$7
+			AND (assurance_at IS NULL OR assurance_at <= $5)
+			AND revoked_at IS NULL AND idle_expires_at > now() AND absolute_expires_at > now()
+			RETURNING user_id::text`, flow.stepSessionID, flow.stepTokenHash, append([]string{}, ident.AMR...), append([]string{}, ident.ACRs...), ident.AuthTime, ident.TenantID, ident.ObjectID).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		updated = true
+		return audit.Record(ctx, tx, audit.Change{Action: "auth.entra.step_up_succeeded", TargetType: "session", TargetID: flow.stepSessionID,
+			Actor: audit.UserActor(userID), CorrelationID: httpx.RequestID(w), Metadata: map[string]any{"authTime": ident.AuthTime}})
+	})
+	if err != nil {
+		writeInternal(h.logger, w, r, err)
+		return
+	}
+	if !updated {
+		h.entraStepFailure(w, r, a, flow.stepSessionID, "session_changed")
+		return
+	}
+	http.Redirect(w, r, flow.returnTo, http.StatusFound)
+}
+
+func (h *loginHandler) entraStepFailure(w http.ResponseWriter, r *http.Request, a attempt, sessionID, reason string) {
+	ctx := context.WithoutCancel(r.Context())
+	if err := pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
+		return audit.Record(ctx, tx, audit.Change{Action: "auth.entra.step_up_failed", TargetType: "session", TargetID: sessionID,
+			Actor: audit.SystemActor("login"), CorrelationID: httpx.RequestID(w), Metadata: map[string]any{"reason": reason, "clientIp": a.ip}})
+	}); err != nil {
+		h.logger.ErrorContext(ctx, "audit step-up failure failed", "error", err)
+	}
+	http.Redirect(w, r, safeReturnTo("/login?error=entra_failed"), http.StatusFound)
 }
 
 // resolveUnlinkedEntra applies steps 2 and 3 of the identity resolution (ADR-0035 point 3) to an identity without a
@@ -409,16 +540,19 @@ func (h *loginHandler) entraFailure(w http.ResponseWriter, r *http.Request, a at
 }
 
 type oidcTransaction struct {
-	bindingHash []byte
-	nonce       string
-	verifier    string
-	returnTo    string
-	shared      bool
+	bindingHash   []byte
+	nonce         string
+	verifier      string
+	returnTo      string
+	shared        bool
+	stepSessionID string
+	stepTokenHash []byte
+	createdAt     time.Time
 }
 
 // createOIDCTransaction stores a new transaction after pruning expired ones. It returns false when too many are
 // pending (a flood), without storing anything.
-func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bindingHash []byte, nonce, verifier, returnTo string, shared bool) (bool, error) {
+func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bindingHash []byte, nonce, verifier, returnTo string, shared bool, stepSessionID string, stepTokenHash []byte) (bool, error) {
 	var stored bool
 	err := pgx.BeginFunc(ctx, h.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM platform.oidc_login_transactions WHERE created_at < now() - $1::interval`,
@@ -432,8 +566,8 @@ func (h *loginHandler) createOIDCTransaction(ctx context.Context, stateHash, bin
 		if pending >= maxPendingOIDCTransactions {
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO platform.oidc_login_transactions (state_hash, binding_hash, nonce, code_verifier, return_to, shared)
-			VALUES ($1, $2, $3, $4, $5, $6)`, stateHash, bindingHash, nonce, verifier, returnTo, shared); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO platform.oidc_login_transactions (state_hash, binding_hash, nonce, code_verifier, return_to, shared, step_up_session_id, step_up_token_hash)
+			VALUES ($1, $2, $3, $4, $5, $6, nullif($7,'')::uuid, $8)`, stateHash, bindingHash, nonce, verifier, returnTo, shared, stepSessionID, stepTokenHash); err != nil {
 			return err
 		}
 		stored = true
@@ -447,7 +581,7 @@ func (h *loginHandler) consumeOIDCTransaction(ctx context.Context, stateHash []b
 	var t oidcTransaction
 	var created time.Time
 	err := h.pool.QueryRow(ctx, `DELETE FROM platform.oidc_login_transactions WHERE state_hash = $1
-		RETURNING binding_hash, nonce, code_verifier, return_to, shared, created_at`, stateHash).Scan(&t.bindingHash, &t.nonce, &t.verifier, &t.returnTo, &t.shared, &created)
+		RETURNING binding_hash, nonce, code_verifier, return_to, shared, coalesce(step_up_session_id::text,''), step_up_token_hash, created_at`, stateHash).Scan(&t.bindingHash, &t.nonce, &t.verifier, &t.returnTo, &t.shared, &t.stepSessionID, &t.stepTokenHash, &created)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return oidcTransaction{}, false, nil
 	}
@@ -457,5 +591,6 @@ func (h *loginHandler) consumeOIDCTransaction(ctx context.Context, stateHash []b
 	if h.now().Sub(created) > oidcTransactionTTL {
 		return oidcTransaction{}, false, nil
 	}
+	t.createdAt = created
 	return t, true, nil
 }

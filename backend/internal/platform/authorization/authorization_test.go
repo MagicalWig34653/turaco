@@ -5,12 +5,46 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type fixed struct {
 	p   Principal
 	ok  bool
 	err error
+}
+
+func TestEntraStepUpOnlyForElevatedActions(t *testing.T) {
+	now := time.Now()
+	p := Principal{UserID: "u", EntraSession: true, EntraStepUpMaxAge: 15 * time.Minute, Permissions: map[string]struct{}{"platform.roles.manage": {}, "organization.users.manage": {}, "platform.admin": {}}}
+	for _, tc := range []struct {
+		method, permission string
+		want               int
+	}{
+		{http.MethodPost, "platform.roles.manage", http.StatusForbidden},
+		{http.MethodGet, "platform.roles.manage", http.StatusOK},
+		{http.MethodPost, "organization.users.manage", http.StatusOK},
+		{http.MethodPost, "platform.admin", http.StatusOK},
+	} {
+		h := Require(fixed{p: p, ok: true}, tc.permission)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(tc.method, "/roles", nil))
+		if rec.Code != tc.want {
+			t.Fatalf("%s %s: %d, want %d", tc.method, tc.permission, rec.Code, tc.want)
+		}
+	}
+	if !needsStepUp(httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings/auth.entra_provisioning", nil), p, []string{"platform.admin"}) {
+		t.Fatal("Entra provisioning policy change did not require step-up")
+	}
+	p.EntraAssuredAt = &now
+	if needsStepUp(httptest.NewRequest(http.MethodPost, "/roles", nil), p, []string{"platform.roles.manage"}) {
+		t.Fatal("fresh assurance rejected")
+	}
+	old := now.Add(-16 * time.Minute)
+	p.EntraAssuredAt = &old
+	if !needsStepUp(httptest.NewRequest(http.MethodPost, "/roles", nil), p, []string{"platform.roles.manage"}) {
+		t.Fatal("stale assurance accepted")
+	}
 }
 
 func (f fixed) Authenticate(*http.Request) (Principal, bool, error) { return f.p, f.ok, f.err }

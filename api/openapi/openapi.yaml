@@ -8643,11 +8643,17 @@ paths:
       description: "404 auth.method_unavailable when Entra sign-in is not configured. Creates a server-side login transaction (state, nonce, PKCE S256 verifier; only hashes of state and browser binding are stored, ten minutes, single use), sets the browser-binding cookie (`__Host-turaco_oidc` in secure deployments; HttpOnly, SameSite=Lax) and redirects (302) to the Entra authorization endpoint. `returnTo` must be a relative in-app path; anything else is replaced by `/`. 503 when too many sign-ins are pending."
       parameters:
         - {name: returnTo, in: query, required: false, schema: {type: string, maxLength: 512}, description: Relative path to open after sign-in.}
+        - {name: stepUp, in: query, required: false, schema: {type: string, enum: ['1']}, description: Bind a fresh Entra authentication to the current Entra session. Requires the session cookie; requests prompt=login and max_age=0.}
       responses:
         '302':
           description: Redirect to Microsoft.
         '404':
           description: Entra sign-in is not configured (auth.method_unavailable).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401':
+          description: Step-up requires a valid Entra session (platform.unauthenticated).
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -16091,7 +16097,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Forbidden:
-      description: Missing permission (platform.forbidden).
+      description: Missing permission (platform.forbidden). Elevated administrative mutations and audit CSV export by an Entra session can instead return auth.step_up_required with error.details.hintUrl pointing to the Entra step-up start endpoint.
       content:
         application/json:
           schema:

@@ -28,6 +28,17 @@ export function ApiErrorAlert({
       {error.requestId ? (
         <p className="alert-meta">{t('error.reference', { id: error.requestId })}</p>
       ) : null}
+      {error.code === 'auth.step_up_required' ? (
+        <Button
+          onClick={() => {
+            const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+            window.location.assign(`/api/v1/auth/entra/start?stepUp=1&returnTo=${encodeURIComponent(returnTo)}`);
+          }}
+          variant="secondary"
+        >
+          {t('auth.stepUp.confirm')}
+        </Button>
+      ) : null}
       {onRetry ? (
         <Button onClick={onRetry} variant="secondary">
           {t('action.retry')}

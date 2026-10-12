@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
@@ -60,6 +61,12 @@ type SessionAuthenticator struct {
 	// localEnabled mirrors AUTH_LOCAL_LOGIN_ENABLED: while it is off, sessions of local accounts are rejected even if
 	// they exist (the switch disables local accounts completely).
 	localEnabled bool
+	stepUpMaxAge time.Duration
+}
+
+func (a *SessionAuthenticator) WithEntraStepUp(maxAge time.Duration) *SessionAuthenticator {
+	a.stepUpMaxAge = maxAge
+	return a
 }
 
 // WithLocalLogin sets whether sessions created by local-account login are accepted.
@@ -120,7 +127,8 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	if err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
 	}
-	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID, External: state.External}, true, nil
+	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID, External: state.External,
+		EntraSession: s.AuthMethod == methodEntra, EntraAssuredAt: s.AssuranceAt, EntraStepUpMaxAge: a.stepUpMaxAge}, true, nil
 }
 
 type sessionKey struct{}

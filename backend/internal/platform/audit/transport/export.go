@@ -38,6 +38,10 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
 		return
 	}
+	if p.EntraSession && (p.EntraAssuredAt == nil || p.EntraStepUpMaxAge <= 0 || time.Since(*p.EntraAssuredAt) > p.EntraStepUpMaxAge || p.EntraAssuredAt.After(time.Now())) {
+		httpx.WriteErrorDetails(w, http.StatusForbidden, "auth.step_up_required", "Confirm with Microsoft before this action.", map[string]any{"hintUrl": "/api/v1/auth/entra/start?stepUp=1"})
+		return
+	}
 	q := r.URL.Query()
 	f, ok := h.filterFromQuery(w, q)
 	if !ok {

@@ -326,7 +326,7 @@ Cloud endpoint table (`global|usgov|china`), host allow-list per feature, `MICRO
 | E-A | Entra sign-in core: start/callback, transactions, validation, link-only, sessions, `GET /auth/methods`, UI button, audit, health | every validation rule tested against the Fake IdP; failures uniform and audited; Keycloak lab sign-in works; `make check` green; docs and configuration reference updated |
 | E-B | Linking: administrator link/unlink, hybrid source-anchor match, auto-provisioning policy, guest refusal | no link by email in any path (tests); collision refusal; ADR-0034 R5 rules hold; dominance tests |
 | E-C | Graph reconciliation and cloud-only Directory Group sync on the Graph read registration | disabled Entra user loses sessions within one interval (test with Fake); mass-removal safeguard; no high-risk via Entra groups (409) |
-| E-D | Assurance and step-up; evaluator rule; R10 text update in F14 | low-assurance Entra session has no high-risk permission; step-up issues a new session; local accounts unchanged |
+| E-D | Assurance and step-up for elevated admin actions (2026-10-12 product decision) | Entra session needs recent MFA for high-risk administrative mutations and audit export; step-up updates the initiating session; ordinary admin writes and other sign-in methods retain their rules |
 | E-E | `multi_restricted` tenants and guests as `external` Users (F14 A-G is implemented) | foreign tenant refused unless allowed; guest maps only to pre-created external User; ceiling applies |
 | T-A | `teams` module, channel routes, `teams_channel` deliveries, Workflows adapter | broadcastable-only routing; reference-only content test per category; 429 retry; module off creates nothing |
 | T-B | Teams app package, bot send, personal deliveries, preferences | deliveries only for linked, active, permitted recipients; cards contain no titles by default; deep links valid |
@@ -344,7 +344,7 @@ Built: `integrations/microsoft` (https only, per-client host allow-list, no redi
 
 Deviations from the plan, chosen on purpose: the ID token is validated by a small RS256 verifier in `integrations/entra` instead of the libraries approved in ADR-0035 (go-oidc, go-jose, x/oauth2): the endpoints are fixed paths of the allow-listed authority, so no discovery document is fetched and no new dependency enters the build; the libraries remain approved should the verifier need to grow.
 
-Not built yet: Graph reconciliation and cloud-only group sync (E-C), step-up and assurance (E-D), guests and `multi_restricted` guest handling (E-E). Verified only against a fake identity provider and unit tests; no real Entra tenant was available.
+Not built yet at E-A: Graph reconciliation and cloud-only group sync (E-C), step-up and assurance (E-D), guests and `multi_restricted` guest handling (E-E). Verified only against a fake identity provider and unit tests; no real Entra tenant was available.
 
 ### Slice E-B (2026-10-10)
 
@@ -354,7 +354,11 @@ Hybrid match: with `ENTRA_LINK_DIRECTORY_PROVIDER_KEY` the authorization and tok
 
 Provisioning: the runtime setting `auth.entra_provisioning` (`link_only` default, no longer `notYetActive`) is read per sign-in; `auto_employee` creates an employee (origin `directory`, active, no roles, no Team) for a first sign-in of a home-tenant member who is not a guest. Name and primary email come from the token and must pass the normal profile validation; a missing or invalid email refuses provisioning (the collision check needs it). A primary email that another User has (case-insensitive) refuses with `entra_not_linked`. Deviation: the "attention entry" for administrators is the audit trail (`auth.login.failed` reason `email_conflict` and `organization.user.provisioning_refused` on the existing User) rather than a new notification or dashboard concept; a health or attention surface can read these events later. A per-identity advisory lock and the unique indexes make concurrent first sign-ins converge on one User. Unlinking an inactive User's identity is allowed on purpose (only the link needs an active target).
 
-Not built: Graph reconciliation, step-up, guests, a bulk or CSV link.
+Not built at E-B: Graph reconciliation, step-up, guests, a bulk or CSV link.
+
+### Slice E-D (2026-10-12)
+
+The later product decision supersedes the broad evaluator rule and new-session wording in the original E-D plan and in the MFA section above. The server stores Entra `amr`, `acrs`, `auth_time` and assurance time per session. A high-risk-permission mutation or audit CSV export requires MFA evidence no older than `ENTRA_STEP_UP_MAX_AGE` (default 15 minutes). The API answers `403 auth.step_up_required` with a step-up URL hint; the web error alert offers the Entra confirmation and returns to the current page. Step-up binds state, browser and current session cookie, requires the same Entra identity and fresh authentication, and updates that session. Audit events are `auth.entra.step_up_succeeded|step_up_failed`. Migration `000095` adds session evidence and transaction binding. Directory, Kerberos, local and emergency sessions keep their existing rules. A live Entra Conditional Access tenant and PostgreSQL integration verification remain open.
 
 ## Decisions of the product owner (2026-10-10)
 
@@ -410,4 +414,3 @@ Decisions taken in the slice:
 - Per-destination admission (added after T-A): `ChannelSender` lets at most 20 posts per minute (`notifications.ChannelPostsPerMinute`) through to one destination. The count is read from `notification_deliveries` (sending or delivered in the last minute, ordered by claim time and id, so concurrent workers agree without a lock); a post over the limit is returned to `pending` with its attempt refunded and the job is deferred 30 seconds with the new `jobs.Deferred` (attempt refunded, like a module-off deferral). A waiting post still ends as `stale` after six hours, never as a failure. No migration.
 - Test send (added after T-A): `POST /api/v1/integrations/teams/destinations/{key}/test-send` (`integrations.teams.manage`; works while the module is off) posts one reference-only test card (category `teams.test`, reference `TURACO-TEST`, link to `/admin/teams-channels`, wording in the `EMAIL_DEFAULT_LOCALE`) through the same adapter and answers `{delivered, errorCode}`. At most 5 per destination in 10 minutes, counted from the audit events under an advisory lock (failed attempts count). Audited `notifications.teams.test_sent` (destination key, outcome, code). The admin screen has a "Test a destination" section.
 - Not built in T-A: per-user Teams preferences, `with_titles`, the personal channel and the bot (T-B onward). The Workflows request format and host names are from documentation and must be verified in a lab tenant before production use.
-

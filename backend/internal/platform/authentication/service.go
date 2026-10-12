@@ -59,6 +59,10 @@ type Session struct {
 	LastSeenAt        time.Time
 	IdleExpiresAt     time.Time
 	AbsoluteExpiresAt time.Time
+	EntraAMR          []string
+	EntraACRs         []string
+	EntraAuthTime     *time.Time
+	AssuranceAt       *time.Time
 }
 
 type Config struct {
