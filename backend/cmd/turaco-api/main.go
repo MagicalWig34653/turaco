@@ -337,13 +337,16 @@ func main() {
 	}
 	remoteaccesstransport.Register(mux, wiring.RemoteAccess(pool, providers, cfg.RemoteAccessApprovalOwnership), sessionAuth, logger)
 	presencetransport.Register(mux, wiring.Presence(pool, presenceapp.Config{Enabled: cfg.PresenceEnabled, RetentionDays: cfg.PresenceRetentionDays, StaleAfter: cfg.PresenceSourceStaleAfter}), sessionAuth, logger)
-	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Permissions: roles.NewEvaluator(pool, subjects).Permissions, Logger: logger, Modules: moduleSvc})
+	aiService, err := wiring.AI(pool, wiring.AIConfig{Enabled: cfg.AIEnabled, TenantID: cfg.TenantID, SecretDir: cfg.AISecretDir, Permissions: roles.NewEvaluator(pool, subjects).Permissions, Logger: logger, Modules: moduleSvc,
+		MCPEnabled: cfg.AIMCPEnabled, BaseURL: cfg.EmailBaseURL, Accounts: orgpublic.NewUserAccess(orgReader)})
 	if err != nil {
 		logger.Error("configure turaco ai", "error", err)
 		os.Exit(1)
 	}
 	// The tenant is resolved on the server (single-tenant default: the fixed installation data plane), never from the request.
-	aitransport.Register(mux, aiService, authorization.WithTenant(sessionAuth, cfg.TenantID), logger)
+	// The MCP server (F12 A-D) authenticates bearer tokens itself; its metadata documents follow the ai module switch.
+	aitransport.Register(mux, aiService, authorization.WithTenant(sessionAuth, cfg.TenantID), logger,
+		aitransport.WithModuleSwitch(func(ctx context.Context) (bool, error) { return moduleSvc.Enabled(ctx, "ai") }))
 	procurementtransport.Register(mux, wiring.Procurement(pool), sessionAuth, logger)
 	productstransport.Register(mux, productsapp.NewService(productsRepo), sessionAuth, logger)
 	catalogtransport.Register(mux, catalogapp.NewService(catalogrepository.New(pool), orgpublic.NewWorkDirectory(orgReader),
@@ -434,7 +437,8 @@ func main() {
 		Addr: cfg.HTTPAddr,
 		// Every unsafe request must be same-origin, whatever route it reaches. External accounts reach only the
 		// routes the module catalog allows them (ADR-0034), checked before any route runs.
-		Handler: httpx.Middleware(logger, authentication.RequireSameOrigin(
+		// The bearer-token and PKCE endpoints of the MCP server never read the session cookie and are exempt (F12 A-D M13).
+		Handler: httpx.Middleware(logger, authentication.RequireSameOriginExcept(aitransport.BearerPaths...)(
 			authentication.ConfineExternal(sessionAuth, moduleSvc.Index().ExternalAllowed, logger)(moduleSvc.Gate(sessionAuth, logger, mux)))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

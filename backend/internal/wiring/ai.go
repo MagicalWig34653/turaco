@@ -18,6 +18,7 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/providers/fake"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/providers/openaicompat"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/modules"
 )
@@ -32,6 +33,11 @@ type AIConfig struct {
 	Logger      *slog.Logger
 	// Modules, when set, makes the tools of a switched-off module answer "not found" at call time (ADR-0032).
 	Modules *modules.Service
+	// MCPEnabled is AI_MCP_ENABLED; BaseURL (EMAIL_BASE_URL) is the OAuth issuer of the MCP server (F12 A-D).
+	MCPEnabled bool
+	BaseURL    string
+	// Accounts is the session authenticator's account gate (active, external); the MCP server checks it per call.
+	Accounts authentication.AccountGate
 }
 
 // AIProviderFactory builds provider adapters. Credentials are read from the deployment secret file the provider's
@@ -95,6 +101,14 @@ func AI(pool *pgxpool.Pool, cfg AIConfig) (*ai.Service, error) {
 			return nil, err
 		}
 	}
+	var account func(ctx context.Context, userID string) (bool, bool, error)
+	if cfg.Accounts != nil {
+		account = func(ctx context.Context, userID string) (bool, bool, error) {
+			st, err := cfg.Accounts.Account(ctx, userID)
+			return st.Active, st.External, err
+		}
+	}
 	return ai.NewService(ai.NewStore(pool), reg, ai.Config{Enabled: cfg.Enabled, TenantID: cfg.TenantID,
-		Factory: AIProviderFactory(cfg.SecretDir), Permissions: cfg.Permissions, Logger: cfg.Logger}), nil
+		Factory: AIProviderFactory(cfg.SecretDir), Permissions: cfg.Permissions, Logger: cfg.Logger,
+		MCPEnabled: cfg.MCPEnabled, BaseURL: cfg.BaseURL, Account: account}), nil
 }

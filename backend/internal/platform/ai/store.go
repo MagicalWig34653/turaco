@@ -34,19 +34,21 @@ type Settings struct {
 	InstallationTokensPerDay int
 	MaxOutputTokens          int
 	MaxToolIterations        int
-	UpdatedBy                *string
-	UpdatedAt                time.Time
-	Version                  int
+	// MCPEnabled is the runtime switch of the Turaco MCP server (A-D); AI_MCP_ENABLED is its startup gate.
+	MCPEnabled bool
+	UpdatedBy  *string
+	UpdatedAt  time.Time
+	Version    int
 }
 
 const settingsCols = `enabled, retain_conversations, retention_days, user_requests_per_hour, user_requests_per_day,
-	user_tokens_per_day, installation_tokens_per_day, max_output_tokens, max_tool_iterations, updated_by::text, updated_at, version`
+	user_tokens_per_day, installation_tokens_per_day, max_output_tokens, max_tool_iterations, mcp_enabled, updated_by::text, updated_at, version`
 
 func scanSettings(row pgx.Row) (Settings, error) {
 	var st Settings
 	var days, iters int16
 	err := row.Scan(&st.Enabled, &st.RetainConversations, &days, &st.UserRequestsPerHour, &st.UserRequestsPerDay,
-		&st.UserTokensPerDay, &st.InstallationTokensPerDay, &st.MaxOutputTokens, &iters, &st.UpdatedBy, &st.UpdatedAt, &st.Version)
+		&st.UserTokensPerDay, &st.InstallationTokensPerDay, &st.MaxOutputTokens, &iters, &st.MCPEnabled, &st.UpdatedBy, &st.UpdatedAt, &st.Version)
 	st.RetentionDays, st.MaxToolIterations = int(days), int(iters)
 	return st, err
 }
@@ -70,10 +72,10 @@ func (s *Store) lockSettings(ctx context.Context, tx pgx.Tx) (Settings, error) {
 func (s *Store) updateSettings(ctx context.Context, tx pgx.Tx, in Settings, actor string) (Settings, error) {
 	st, err := scanSettings(tx.QueryRow(ctx, `UPDATE ai.settings SET enabled=$1, retain_conversations=$2, retention_days=$3,
 		user_requests_per_hour=$4, user_requests_per_day=$5, user_tokens_per_day=$6, installation_tokens_per_day=$7,
-		max_output_tokens=$8, max_tool_iterations=$9, updated_by=$10, updated_at=now(), version=version+1
+		max_output_tokens=$8, max_tool_iterations=$9, mcp_enabled=$11, updated_by=$10, updated_at=now(), version=version+1
 		WHERE singleton RETURNING `+settingsCols,
 		in.Enabled, in.RetainConversations, in.RetentionDays, in.UserRequestsPerHour, in.UserRequestsPerDay, in.UserTokensPerDay,
-		in.InstallationTokensPerDay, in.MaxOutputTokens, in.MaxToolIterations, actor))
+		in.InstallationTokensPerDay, in.MaxOutputTokens, in.MaxToolIterations, actor, in.MCPEnabled))
 	if err != nil {
 		return Settings{}, fmt.Errorf("update ai settings: %w", err)
 	}

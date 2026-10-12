@@ -59,6 +59,9 @@ type Config struct {
 	// AIEnabled is AI_ENABLED, the startup gate of Turaco AI (ADR-0029, F12): without it only GET /ai/status and the admin configuration routes are
 	// mounted and no provider is ever called. The runtime switch is the audited ai.settings.enabled.
 	AIEnabled bool
+	// AIMCPEnabled is AI_MCP_ENABLED, the startup gate of the read-only Turaco MCP server and its OAuth endpoints
+	// (F12 A-D, ADR-0039). It requires AI_ENABLED and EMAIL_BASE_URL (the OAuth issuer).
+	AIMCPEnabled bool
 	// AISecretDir is AI_SECRET_DIR: the directory of deployment secret files that AI Provider secret references name.
 	AISecretDir string
 	// TenantID is TENANT_ID, the fixed data plane id of this single-tenant installation (F12 A15).
@@ -222,6 +225,7 @@ var Registry = []Descriptor{
 	{Name: "PRESENCE_RETENTION_DAYS", Type: "int", Default: "30", Description: "Upper bound of the Workforce Presence retention: past entries are deleted this many days after they ended; 1 to 30, never longer. The runtime setting can only shorten it."},
 	{Name: "PRESENCE_SOURCE_STALE_AFTER", Type: "duration", Default: "24h", Description: "An externally sourced Workforce Presence signal older than this is shown as unknown instead of being trusted; at least 1m."},
 	{Name: "AI_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of Turaco AI (ADR-0029, F12): the assistant API, tools and provider calls. Off by default; when off only GET /api/v1/ai/status and the permission-protected configuration routes (settings, providers, usage) are mounted and no provider is called by users. Enabling also needs the audited runtime setting ai.settings.enabled and an enabled AI Provider. API and worker may differ (the worker only runs the cleanup jobs)."},
+	{Name: "AI_MCP_ENABLED", Type: "bool", Default: "false", Description: "Startup gate of the read-only Turaco MCP server (F12 A-D, ADR-0039): `POST /api/v1/mcp`, the OAuth endpoints `/api/v1/oauth/token|revoke`, the consent API and the metadata documents under `/.well-known/oauth-*`. Requires AI_ENABLED and EMAIL_BASE_URL (the OAuth issuer; the MCP resource is EMAIL_BASE_URL + `/api/v1/mcp`). At runtime MCP additionally needs the `ai` module switch and the audited settings `ai.settings.enabled` and `ai.settings.mcpEnabled`. The MCP client allowlist can be prepared while it is off."},
 	{Name: "AI_SECRET_DIR", Type: "string", Description: "Directory with deployment secret files (for example mounted Docker secrets). An AI Provider's `secretRef` names a file in it (`<dir>/<secretRef>`, one line, read when the provider is built, never stored in the database, logged or sent into prompts). Empty: providers without credentials only (a local Ollama)."},
 	{Name: "TENANT_ID", Type: "string", Default: "default", Description: "Fixed data plane (tenant) id of this installation (F12 A15, ADR-0007). It is attached to every authenticated principal on the server and written to AI audit entries and AI usage counters; it is never taken from request fields. 1 to 100 characters of letters, digits, `.`, `_` and `-`."},
 	{Name: "SOFTWARE_DEPLOY_WRITE", Type: "bool", Default: "false", Description: "Capability: allow Deployments to write ring assignments to the Management Provider (start, resume, promote, resolving targets, clearing after a cancel or kill switch). The worker job endpoints.deployment_tick runs every minute either way; with the capability off it only runs the kill-switch sweep (pause, halt, queue clearing). API and worker must use the same value. Off by default; enabling is audited (endpoints.deploy_write.enabled). The Graph write client is implemented from the vendor documentation and unverified against a live tenant; without the MICROSOFT_GRAPH_WRITE_* registration the writer is a placeholder whose writes fail permanently, so a ring halts with assignment_failed."},
@@ -324,6 +328,10 @@ func Load() (Config, error) {
 	}
 	cfg.AIEnabled = getenv("AI_ENABLED", "false") == "true"
 	cfg.AISecretDir = os.Getenv("AI_SECRET_DIR")
+	var mcpErr error
+	if cfg.AIMCPEnabled, mcpErr = getBool("AI_MCP_ENABLED", false); mcpErr != nil {
+		return Config{}, mcpErr
+	}
 	cfg.TenantID = getenv("TENANT_ID", "default")
 	if !tenantIDPattern.MatchString(cfg.TenantID) {
 		return Config{}, fmt.Errorf("TENANT_ID must be 1 to 100 characters of letters, digits, '.', '_' and '-'")
@@ -361,6 +369,9 @@ func Load() (Config, error) {
 	}
 	if cfg.EmailBaseURL, err = LoadEmailBaseURL(cfg.Environment); err != nil {
 		return Config{}, err
+	}
+	if cfg.AIMCPEnabled && (!cfg.AIEnabled || cfg.EmailBaseURL == "") {
+		return Config{}, fmt.Errorf("AI_MCP_ENABLED requires AI_ENABLED=true and EMAIL_BASE_URL (the OAuth issuer of the MCP server)")
 	}
 	if cfg.AuthLocalLoginEnabled && cfg.EmailBaseURL == "" {
 		return Config{}, fmt.Errorf("AUTH_LOCAL_LOGIN_ENABLED requires EMAIL_BASE_URL (invitation and reset links are built only from it)")

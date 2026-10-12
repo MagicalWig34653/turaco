@@ -58,6 +58,14 @@ type Config struct {
 	// snapshot taken at authentication (tests only).
 	Permissions func(ctx context.Context, userID string) (map[string]struct{}, error)
 	Logger      *slog.Logger
+	// MCPEnabled is AI_MCP_ENABLED, the startup gate of the Turaco MCP server (A-D). It needs Enabled and BaseURL.
+	MCPEnabled bool
+	// BaseURL is the externally reachable address of the web application (EMAIL_BASE_URL, no trailing slash). It is
+	// the OAuth issuer; the MCP resource is BaseURL + MCPPath.
+	BaseURL string
+	// Account reports whether a User's account is active and whether it is a restricted external account (the
+	// session authenticator's account gate). MCP refuses every token while it is nil (fail closed).
+	Account func(ctx context.Context, userID string) (active, external bool, err error)
 }
 
 // Service is the AI runtime and administration use cases.
@@ -433,9 +441,11 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 		newMsgs = append(newMsgs, Message{Role: "assistant", Content: strings.TrimSpace(resp.Content), ToolCalls: toolCalls})
 		for i, call := range toolCalls {
 			var out toolOutcome
+			ex := toolExec{via: "ai", targetType: "ai_session", targetID: se.ID, providerID: rec.ID, model: rec.Model, allows: rec.Allows,
+				scope: se.Scope, checkScope: true}
 			if i >= maxCallsPerIteration {
 				out = toolOutcome{content: errorContent("too_many_calls", "Too many tool calls at once."), outcome: "too_many_calls", toolName: safeToolName(call.Name)}
-				if err := s.auditTool(ctx, c, rec, se.ID, call.Name, nil, out, 0); err != nil {
+				if err := s.auditTool(ctx, c, ex, call.Name, nil, out, 0); err != nil {
 					return TurnResult{}, err
 				}
 			} else {
@@ -446,7 +456,7 @@ func (s *Service) Turn(ctx context.Context, c Caller, in TurnInput) (TurnResult,
 				if ferr != nil {
 					return TurnResult{}, ferr
 				}
-				if out, err = s.execTool(ctxWithClasses, fresh, rec, offered, &se, call); err != nil {
+				if out, err = s.execTool(ctxWithClasses, fresh, ex, offered, call); err != nil {
 					return TurnResult{}, err
 				}
 			}
@@ -588,9 +598,23 @@ func safeToolName(n string) string {
 	return "invalid"
 }
 
+// toolExec is the channel-specific context of one tool call: the assistant (via=ai, provider, conversation scope)
+// or the MCP server (via=mcp, client, no conversation scope; design M9). Everything else is the same code path.
+type toolExec struct {
+	via                  string
+	targetType, targetID string
+	providerID, model    string
+	clientID             string
+	// allows reports whether the destination (provider or MCP client) may receive a data class.
+	allows func(DataClass) bool
+	// scope is the conversation resource scope (A11); it is enforced only when checkScope is set.
+	scope      []ResourceRef
+	checkScope bool
+}
+
 // execTool authorizes and runs one model-requested tool call (A2, A3, A11, A13). Errors returned are internal
 // failures that abort the turn; every refusal is an outcome fed back to the model as a fixed-text error.
-func (s *Service) execTool(ctx context.Context, c Caller, rec ProviderRecord, offered map[string]registered, se *session, call ToolCall) (toolOutcome, error) {
+func (s *Service) execTool(ctx context.Context, c Caller, ex toolExec, offered map[string]registered, call ToolCall) (toolOutcome, error) {
 	started := s.now()
 	out := toolOutcome{toolName: safeToolName(call.Name)}
 	finish := func(o toolOutcome, args map[string]any, sch *schemaNode) (toolOutcome, error) {
@@ -599,7 +623,7 @@ func (s *Service) execTool(ctx context.Context, c Caller, rec ProviderRecord, of
 			audited = sch.auditInput(args)
 		}
 		o.toolName = out.toolName
-		return o, s.auditTool(ctx, c, rec, se.ID, call.Name, audited, o, s.now().Sub(started).Milliseconds())
+		return o, s.auditTool(ctx, c, ex, call.Name, audited, o, s.now().Sub(started).Milliseconds())
 	}
 	t, ok := offered[call.Name]
 	if !ok {
@@ -615,7 +639,7 @@ func (s *Service) execTool(ctx context.Context, c Caller, rec ProviderRecord, of
 	if t.tool.Target != nil {
 		ref := ResourceRef{Type: t.tool.Target.Type, ID: strings.ToLower(args[t.tool.Target.Arg].(string))}
 		out.target = &ref
-		if !inScope(se.Scope, ref) {
+		if ex.checkScope && !inScope(ex.scope, ref) {
 			o := toolOutcome{outcome: "scope_expansion", target: &ref,
 				content:  errorContent("ai.scope_expansion", "The user has not allowed access to this record in this conversation. Ask the user to confirm."),
 				scopeReq: &ScopeRequest{ResourceType: ref.Type, ResourceID: ref.ID, Tool: t.tool.Name}}
@@ -646,7 +670,7 @@ func (s *Service) execTool(ctx context.Context, c Caller, rec ProviderRecord, of
 		return finish(toolOutcome{outcome: code, target: out.target, content: errorContent(code, "The result cannot be shown.")}, args, t.schema)
 	}
 	for _, cl := range classes {
-		if !rec.Allows(cl) {
+		if ex.allows == nil || !ex.allows(cl) {
 			return finish(toolOutcome{outcome: "egress_violation", target: out.target, content: errorContent("egress_violation", "The result cannot be shown.")}, args, t.schema)
 		}
 	}
@@ -657,7 +681,7 @@ func (s *Service) execTool(ctx context.Context, c Caller, rec ProviderRecord, of
 	o := toolOutcome{outcome: "ok", target: out.target, items: items,
 		content: `<untrusted_data tool="` + t.tool.Name + `">` + string(data) + `</untrusted_data>`}
 	o.toolName = out.toolName
-	if err := s.auditTool(ctx, c, rec, se.ID, call.Name, t.schema.auditInput(args), withClasses(o, classes, counts), s.now().Sub(started).Milliseconds()); err != nil {
+	if err := s.auditTool(ctx, c, ex, call.Name, t.schema.auditInput(args), withClasses(o, classes, counts), s.now().Sub(started).Milliseconds()); err != nil {
 		return toolOutcome{}, err
 	}
 	return o, nil
@@ -681,13 +705,19 @@ func (s *Service) auditTurn(ctx context.Context, c Caller, action, sessionID str
 	return s.record(ctx, c, "ai", action, "ai_session", sessionID, meta)
 }
 
-func (s *Service) auditTool(ctx context.Context, c Caller, rec ProviderRecord, sessionID, tool string, input map[string]any, o toolOutcome, durationMs int64) error {
+func (s *Service) auditTool(ctx context.Context, c Caller, ex toolExec, tool string, input map[string]any, o toolOutcome, durationMs int64) error {
 	action := "ai.tool.called"
 	switch o.outcome {
 	case "unknown_tool", "permission_denied", "scope_expansion", "too_many_calls", "invalid_arguments":
 		action = "ai.tool.denied"
 	}
-	meta := map[string]any{"tool": safeToolName(tool), "providerId": rec.ID, "model": rec.Model, "outcome": o.outcome, "durationMs": durationMs}
+	meta := map[string]any{"tool": safeToolName(tool), "outcome": o.outcome, "durationMs": durationMs}
+	if ex.providerID != "" {
+		meta["providerId"], meta["model"] = ex.providerID, ex.model
+	}
+	if ex.clientID != "" {
+		meta["clientId"] = ex.clientID
+	}
 	if len(input) > 0 {
 		meta["input"] = input
 	}
@@ -700,5 +730,5 @@ func (s *Service) auditTool(ctx context.Context, c Caller, rec ProviderRecord, s
 	if len(o.counts) > 0 {
 		meta["counts"] = o.counts
 	}
-	return s.record(ctx, c, "ai", action, "ai_session", sessionID, meta)
+	return s.record(ctx, c, ex.via, action, ex.targetType, ex.targetID, meta)
 }
