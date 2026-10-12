@@ -4,6 +4,7 @@
 // DATABASE_URL; every change is audited with the actor {"actor":"cli"}.
 //
 //	turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
+//	turaco-admin admin setup-token [--ttl 30m]
 //	turaco-admin role list
 //	turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
 //	turaco-admin role revoke --assignment <uuid>
@@ -51,6 +52,7 @@ type env struct {
 
 const usage = `usage:
   turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
+  turaco-admin admin setup-token [--ttl 30m]
   turaco-admin role list
   turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
   turaco-admin role revoke --assignment <uuid>

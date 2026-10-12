@@ -79,6 +79,7 @@ import (
 	searchtransport "github.com/MagicalWig34653/turaco/backend/internal/platform/search/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/settings"
 	settingstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/settings/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/setup"
 	viewstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/views/transport"
 	workitemstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/workitems/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/wiring"
@@ -264,6 +265,10 @@ func main() {
 		}
 	}
 	authentication.RegisterLogin(mux, loginDeps, loginCfg)
+	(&setup.Handler{
+		Store: setup.NewStore(pool), Granter: wiring.NewFirstAdministrator(pool), Limiter: loginDeps.Throttle,
+		TrustedProxies: cfg.TrustedProxies, Logger: logger,
+	}).Register(mux)
 
 	// Manual directory sync requests need a configured provider; the worker
 	// performs the sync itself, the API only enqueues it.
