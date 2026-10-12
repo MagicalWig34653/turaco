@@ -61,7 +61,9 @@ func okWriteTool() Tool {
 	t.Name, t.Risk, t.Output, t.Handler = "tickets.demo_write", RiskWrite, nil, nil
 	t.Write = &WriteSpec{Effect: EffectInternal,
 		Prepare: func(context.Context, Caller, json.RawMessage) (Preparation, error) { return Preparation{}, nil },
-		Execute: func(context.Context, Caller, json.RawMessage, Execution) (ExecutionResult, error) { return ExecutionResult{}, nil }}
+		Execute: func(context.Context, Caller, json.RawMessage, Execution) (ExecutionResult, error) {
+			return ExecutionResult{}, nil
+		}}
 	return t
 }
 
