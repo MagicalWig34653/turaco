@@ -1,6 +1,14 @@
 import type { CanFn } from '../../platform/session/permissions';
 import type { MessageKey } from '../../platform/i18n/i18n';
-import type { ProviderFields, ResourceRef, ScopeRequest, SettingsFields, Status } from './types';
+import type {
+  AuthorizeParams,
+  McpClientFields,
+  ProviderFields,
+  ResourceRef,
+  ScopeRequest,
+  SettingsFields,
+  Status,
+} from './types';
 export function aiCan(status: Status | undefined, fallback: CanFn): CanFn {
   return (permission) => {
     if (!permission.startsWith('ai.')) return fallback(permission);
@@ -33,6 +41,8 @@ export const errorMessages: Record<string, MessageKey> = {
   'ai.conversation_too_large': 'ai.error.conversation_too_large',
   'ai.proposal_expired': 'ai.error.proposal_expired',
   'ai.proposal_stale': 'ai.error.proposal_stale',
+  'ai.mcp_invalid_client': 'ai.error.mcp_invalid_client',
+  'ai.mcp_invalid_request': 'ai.error.mcp_invalid_request',
 };
 export function messageBody(text: string, conversationId?: string, context?: ResourceRef) {
   return {
@@ -56,6 +66,7 @@ export function settingsBody(s: SettingsFields, expectedVersion: number) {
     installationTokensPerDay: s.installationTokensPerDay,
     maxOutputTokens: s.maxOutputTokens,
     maxToolIterations: s.maxToolIterations,
+    mcpEnabled: s.mcpEnabled,
     expectedVersion,
   };
 }
@@ -94,4 +105,42 @@ const outcomes: Record<string, MessageKey> = {
 };
 export function toolOutcomeKey(outcome: string): MessageKey {
   return outcomes[outcome] ?? 'ai.outcome.unknown';
+}
+
+/**
+ * Reads an OAuth authorization request (RFC 6749 section 4.1.1) from the consent page's query string. Only the known
+ * parameters are taken; the server validates every value and decides whether a redirect is allowed at all.
+ */
+export function authorizeParams(search: string): AuthorizeParams {
+  const q = new URLSearchParams(search);
+  const get = (key: string) => q.get(key) ?? '';
+  return {
+    responseType: get('response_type'),
+    clientId: get('client_id'),
+    redirectUri: get('redirect_uri'),
+    codeChallenge: get('code_challenge'),
+    codeChallengeMethod: get('code_challenge_method'),
+    resource: get('resource'),
+    scope: get('scope'),
+    state: get('state'),
+  };
+}
+export function authorizeBody(params: AuthorizeParams, decision?: 'approve' | 'deny') {
+  return { ...params, ...(decision ? { decision } : {}) };
+}
+/** Redirect URIs are entered one per line; blank lines are dropped, the rest is sent unchanged (exact match). */
+export function parseRedirectUris(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+}
+export function mcpClientBody(c: McpClientFields, expectedVersion?: number) {
+  return {
+    displayName: c.displayName,
+    redirectUris: c.redirectUris,
+    allowedDataClasses: c.allowedDataClasses,
+    enabled: c.enabled,
+    ...(expectedVersion === undefined ? {} : { expectedVersion }),
+  };
 }

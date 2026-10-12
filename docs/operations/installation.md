@@ -122,7 +122,7 @@ Email (optional): `SMTP_HOST`, `SMTP_FROM`, `SMTP_SECURITY` (`starttls` default 
 
 Microsoft Teams channel posts (optional): `TEAMS_CHANNEL_DESTINATIONS_FILE` (a secret file mapping destination keys to Workflows webhook URLs), read-only in the worker and the API; then switch on the module Microsoft Teams and add routes. See [Teams channel posts](../integrations/teams-email.md#teams-channel-posts-t-a).
 
-Optional module gates and flags such as `PRESENCE_ENABLED`, `AI_ENABLED`, `REMOTE_ACCESS_PROVIDERS`, `ADVISORY_SYNC` and `AUDIT_RETENTION_DAYS` are explained in the configuration reference and in [Getting started as an administrator](administrator-getting-started.md#3-modules). Settings that both processes read must have the same value on API and worker; the reference states which.
+Optional module gates and flags such as `PRESENCE_ENABLED`, `AI_ENABLED`, `AI_MCP_ENABLED`, `REMOTE_ACCESS_PROVIDERS`, `ADVISORY_SYNC` and `AUDIT_RETENTION_DAYS` are explained in the configuration reference and in [Getting started as an administrator](administrator-getting-started.md#3-modules). Settings that both processes read must have the same value on API and worker; the reference states which.
 
 Do not enable `INTUNE_SYNC`, `AUTOTASK_SYNC`, `SOFTWARE_PROVIDER_SYNC` or `SOFTWARE_DEPLOY_WRITE` expecting live integrations: the Intune Graph, Autotask REST and software provider clients are not implemented, and with the switch on runs report "not configured" or fail permanently ([current status](../product/current-status.md)).
 

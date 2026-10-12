@@ -8,6 +8,7 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { useAi } from './AiProvider';
 import { AiError } from './AiError';
 import { aiApi } from './api';
+import { McpClients } from './McpScreens';
 import {
   dataClasses,
   type Provider,
@@ -16,7 +17,7 @@ import {
   type SettingsFields,
 } from './types';
 const limits: {
-  key: Exclude<keyof SettingsFields, 'enabled' | 'retainConversations'>;
+  key: Exclude<keyof SettingsFields, 'enabled' | 'retainConversations' | 'mcpEnabled'>;
   min: number;
   max?: number;
 }[] = [
@@ -36,6 +37,7 @@ export function AdminScreen() {
     <div className="ai-admin">
       <PageHeader title={t('ai.admin')} />
       {can('ai.settings.view') && <Configuration />}
+      {can('ai.settings.view') && <McpClients editable={can('ai.settings.manage')} />}
       {can('ai.usage.view') && <Usage />}
     </div>
   );
@@ -180,7 +182,7 @@ function SettingsForm({
       <h2>{t('ai.settings')}</h2>
       <AiError error={error} />
       <fieldset disabled={!editable || busy}>
-        {(['enabled', 'retainConversations'] as const).map((key) => (
+        {(['enabled', 'retainConversations', 'mcpEnabled'] as const).map((key) => (
           <label key={key}>
             <span>{t(`ai.field.${key}`)}</span>
             <input

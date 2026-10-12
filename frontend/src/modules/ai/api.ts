@@ -1,7 +1,20 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages, registerErrorResolver } from '../../platform/api/errorMessages';
-import { errorMessages, messageBody, providerBody, settingsBody } from './model';
+import {
+  authorizeBody,
+  errorMessages,
+  mcpClientBody,
+  messageBody,
+  providerBody,
+  settingsBody,
+} from './model';
 import type {
+  AuthorizeParams,
+  AuthorizePreview,
+  McpClient,
+  McpClientFields,
+  McpClientList,
+  McpGrant,
   Provider,
   ProviderFields,
   ResourceRef,
@@ -40,4 +53,18 @@ export const aiApi = {
     ),
   usage: (signal?: AbortSignal) =>
     api.get<{ items: UsageRow[] }>('/ai/usage', { signal, query: { days: 30 } }),
+  mcpClients: (signal?: AbortSignal) => api.get<McpClientList>('/ai/mcp/clients', { signal }),
+  saveMcpClient: (c: McpClientFields, original?: McpClient) =>
+    original
+      ? api.put<McpClient>(
+          `/ai/mcp/clients/${encodeURIComponent(original.id)}`,
+          mcpClientBody(c, original.version),
+        )
+      : api.post<McpClient>('/ai/mcp/clients', mcpClientBody(c)),
+  mcpGrants: (signal?: AbortSignal) => api.get<{ items: McpGrant[] }>('/ai/mcp/grants', { signal }),
+  revokeMcpGrant: (id: string) => api.post<void>(`/ai/mcp/grants/${encodeURIComponent(id)}/revoke`),
+  previewAuthorize: (params: AuthorizeParams, signal?: AbortSignal) =>
+    api.post<AuthorizePreview>('/ai/mcp/authorize/preview', authorizeBody(params), { signal }),
+  authorize: (params: AuthorizeParams, decision: 'approve' | 'deny') =>
+    api.post<{ redirectUrl: string }>('/ai/mcp/authorize', authorizeBody(params, decision)),
 };

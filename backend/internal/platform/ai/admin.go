@@ -123,6 +123,7 @@ type SettingsInput struct {
 	InstallationTokensPerDay int
 	MaxOutputTokens          int
 	MaxToolIterations        int
+	MCPEnabled               bool
 }
 
 func between(v, lo, hi int) bool { return v >= lo && v <= hi }
@@ -165,7 +166,8 @@ func (s *Service) UpdateSettings(ctx context.Context, c Caller, in SettingsInput
 		}
 		next := Settings{Enabled: in.Enabled, RetainConversations: in.RetainConversations, RetentionDays: in.RetentionDays,
 			UserRequestsPerHour: in.UserRequestsPerHour, UserRequestsPerDay: in.UserRequestsPerDay, UserTokensPerDay: in.UserTokensPerDay,
-			InstallationTokensPerDay: in.InstallationTokensPerDay, MaxOutputTokens: in.MaxOutputTokens, MaxToolIterations: in.MaxToolIterations}
+			InstallationTokensPerDay: in.InstallationTokensPerDay, MaxOutputTokens: in.MaxOutputTokens, MaxToolIterations: in.MaxToolIterations,
+			MCPEnabled: in.MCPEnabled}
 		if out, err = s.store.updateSettings(ctx, tx, next, c.UserID); err != nil {
 			return err
 		}
@@ -180,7 +182,7 @@ func settingsAudit(st Settings) map[string]any {
 	return map[string]any{"enabled": st.Enabled, "retainConversations": st.RetainConversations, "retentionDays": st.RetentionDays,
 		"userRequestsPerHour": st.UserRequestsPerHour, "userRequestsPerDay": st.UserRequestsPerDay, "userTokensPerDay": st.UserTokensPerDay,
 		"installationTokensPerDay": st.InstallationTokensPerDay, "maxOutputTokens": st.MaxOutputTokens, "maxToolIterations": st.MaxToolIterations,
-		"version": st.Version}
+		"mcpEnabled": st.MCPEnabled, "version": st.Version}
 }
 
 // ---- providers ----
@@ -452,10 +454,12 @@ const (
 	usageKeepDays            = 35
 )
 
-// HandleSessionsExpire deletes expired conversation sessions.
+// HandleSessionsExpire deletes expired conversation sessions and expired MCP codes, tokens and ended grants.
 func (s *Service) HandleSessionsExpire(ctx context.Context, _ jobs.Job) error {
-	_, err := s.store.ExpireSessions(ctx)
-	return err
+	if _, err := s.store.ExpireSessions(ctx); err != nil {
+		return err
+	}
+	return s.store.PurgeMCP(ctx)
 }
 
 // HandleRetentionPurge deletes expired retained conversations and old usage rows and records one counts-only audit summary.

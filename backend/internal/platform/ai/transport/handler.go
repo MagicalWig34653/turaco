@@ -5,6 +5,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,13 +19,17 @@ import (
 const maxBody = 32 << 10
 
 type handler struct {
-	svc    *ai.Service
-	logger *slog.Logger
+	svc      *ai.Service
+	logger   *slog.Logger
+	moduleOn func(ctx context.Context) (bool, error)
 }
 
 // Register mounts the AI routes.
-func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authenticator, logger *slog.Logger) {
+func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authenticator, logger *slog.Logger, opts ...Option) {
 	h := &handler{svc: svc, logger: logger}
+	for _, o := range opts {
+		o(h)
+	}
 	signedIn := authorization.RequireAuthenticated(auth)
 	route := func(pattern string, fn http.HandlerFunc) { mux.Handle(pattern, httpx.NoStore(signedIn(fn))) }
 	route("GET /api/v1/ai/status", h.status)
@@ -37,6 +42,7 @@ func Register(mux *http.ServeMux, svc *ai.Service, auth authorization.Authentica
 	route("PUT /api/v1/ai/providers/{id}", h.updateProvider)
 	route("POST /api/v1/ai/providers/{id}/test", h.testProvider)
 	route("GET /api/v1/ai/usage", h.usage)
+	registerMCP(mux, h, signedIn)
 	if !svc.ModuleEnabled() {
 		return
 	}
@@ -232,6 +238,7 @@ type settingsDTO struct {
 	InstallationTokensPerDay int     `json:"installationTokensPerDay"`
 	MaxOutputTokens          int     `json:"maxOutputTokens"`
 	MaxToolIterations        int     `json:"maxToolIterations"`
+	MCPEnabled               bool    `json:"mcpEnabled"`
 	UpdatedBy                *string `json:"updatedBy"`
 	UpdatedAt                string  `json:"updatedAt"`
 	Version                  int     `json:"version"`
@@ -241,7 +248,7 @@ func toSettings(s ai.Settings) settingsDTO {
 	return settingsDTO{Enabled: s.Enabled, RetainConversations: s.RetainConversations, RetentionDays: s.RetentionDays,
 		UserRequestsPerHour: s.UserRequestsPerHour, UserRequestsPerDay: s.UserRequestsPerDay, UserTokensPerDay: s.UserTokensPerDay,
 		InstallationTokensPerDay: s.InstallationTokensPerDay, MaxOutputTokens: s.MaxOutputTokens, MaxToolIterations: s.MaxToolIterations,
-		UpdatedBy: s.UpdatedBy, UpdatedAt: s.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"), Version: s.Version}
+		MCPEnabled: s.MCPEnabled, UpdatedBy: s.UpdatedBy, UpdatedAt: s.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"), Version: s.Version}
 }
 
 func (h *handler) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +271,7 @@ func (h *handler) putSettings(w http.ResponseWriter, r *http.Request) {
 		InstallationTokensPerDay int  `json:"installationTokensPerDay"`
 		MaxOutputTokens          int  `json:"maxOutputTokens"`
 		MaxToolIterations        int  `json:"maxToolIterations"`
+		MCPEnabled               bool `json:"mcpEnabled"`
 		ExpectedVersion          *int `json:"expectedVersion"`
 	}
 	if !decode(w, r, &b) {
@@ -272,7 +280,7 @@ func (h *handler) putSettings(w http.ResponseWriter, r *http.Request) {
 	s, err := h.svc.UpdateSettings(r.Context(), caller(w, r), ai.SettingsInput{Enabled: b.Enabled, RetainConversations: b.RetainConversations,
 		RetentionDays: b.RetentionDays, UserRequestsPerHour: b.UserRequestsPerHour, UserRequestsPerDay: b.UserRequestsPerDay,
 		UserTokensPerDay: b.UserTokensPerDay, InstallationTokensPerDay: b.InstallationTokensPerDay, MaxOutputTokens: b.MaxOutputTokens,
-		MaxToolIterations: b.MaxToolIterations}, b.ExpectedVersion)
+		MaxToolIterations: b.MaxToolIterations, MCPEnabled: b.MCPEnabled}, b.ExpectedVersion)
 	if err != nil {
 		h.writeErr(w, r, err)
 		return

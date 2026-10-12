@@ -185,8 +185,9 @@ func catalogModules() []Module {
 			OpenPaths: []string{"/api/v1/integrations/teams/*"}, StartupGates: []string{"TEAMS_CHANNEL_DESTINATIONS_FILE"}},
 
 		opt("briefing", CategoryInsight, nil, "briefing", "briefing-items"),
-		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai"},
-			OpenPaths: []string{"/api/v1/ai/status", "/api/v1/ai/settings*", "/api/v1/ai/providers*", "/api/v1/ai/usage*"}, AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED"}},
+		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai", "mcp", "oauth"},
+			OpenPaths:     []string{"/api/v1/ai/status", "/api/v1/ai/settings*", "/api/v1/ai/providers*", "/api/v1/ai/usage*", "/api/v1/ai/mcp/clients*"},
+			AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED", "AI_MCP_ENABLED"}},
 	}
 }
 

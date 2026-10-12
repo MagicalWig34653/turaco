@@ -235,6 +235,45 @@ export const en = {
   'ai.error.proposal_expired': 'This proposal expired. Request a new one.',
   'ai.error.proposal_stale': 'The proposal target changed. Request a new proposal.',
   'ai.error.unknown': 'The AI request failed. Reload or try again later.',
+  'ai.error.mcp_invalid_client':
+    'This application is not registered or its return address does not match. Contact your administrator.',
+  'ai.error.mcp_invalid_request':
+    'The authorization request is not valid. Start the connection again from the application.',
+  'ai.field.mcpEnabled': 'MCP server enabled',
+  'ai.mcp.clients': 'MCP clients',
+  'ai.mcp.clientsIntro':
+    'External AI applications that may connect to the Turaco MCP server. Each person still signs in and approves access; tokens are short-lived.',
+  'ai.mcp.notMounted':
+    'The MCP server is not switched on in this installation (AI_MCP_ENABLED). Clients can be prepared.',
+  'ai.mcp.endpoint': 'MCP endpoint: {url}',
+  'ai.mcp.createClient': 'Register client',
+  'ai.mcp.editClient': 'MCP client',
+  'ai.mcp.clientId': 'Client ID',
+  'ai.mcp.redirectUris': 'Redirect URIs (one per line)',
+  'ai.mcp.redirectHint':
+    'Exact match. https, or http on 127.0.0.1, [::1] or localhost with a fixed port.',
+  'ai.mcp.activeGrants': 'Active connections',
+  'ai.mcp.consentTitle': 'Connect an AI application',
+  'ai.mcp.consentIntro': '{client} wants to use Turaco tools on your behalf.',
+  'ai.mcp.consentRedirect': 'After your decision you return to {uri}.',
+  'ai.mcp.consentTools': 'Tools it can call with your permissions',
+  'ai.mcp.consentClasses': 'Data the application may receive',
+  'ai.mcp.consentDuration':
+    'Access ends after {hours} hours at the latest. You can end it earlier under "Connected AI applications".',
+  'ai.mcp.consentWarning':
+    'Data from Turaco records is sent to this application and its AI model. Allow only applications you trust.',
+  'ai.mcp.noTools': 'No tools are available to you for this application.',
+  'ai.mcp.approve': 'Allow access',
+  'ai.mcp.deny': 'Deny',
+  'ai.mcp.redirecting': 'Returning to the application…',
+  'ai.mcp.framed': 'This page cannot be used inside another page. Open it directly.',
+  'ai.mcp.connections': 'Connected AI applications',
+  'ai.mcp.connectionsEmpty': 'No AI application is connected.',
+  'ai.mcp.connectedAt': 'Connected',
+  'ai.mcp.expiresAt': 'Expires',
+  'ai.mcp.lastUsedAt': 'Last used',
+  'ai.mcp.never': 'Never',
+  'ai.mcp.revoke': 'Disconnect',
 
   'presence.zoneUnknown':
     'The source did not return the original time zone. Check the dates and zone before saving; the browser zone is prefilled.',

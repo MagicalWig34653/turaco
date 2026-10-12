@@ -47,3 +47,27 @@ func TestRequireSameOrigin(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireSameOriginExceptOnlyExactPaths(t *testing.T) {
+	h := RequireSameOriginExcept("/api/v1/mcp", "/api/v1/oauth/token")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	for _, tt := range []struct {
+		target string
+		want   int
+	}{
+		{"http://app.example/api/v1/mcp", 200},
+		{"http://app.example/api/v1/oauth/token", 200},
+		{"http://app.example/api/v1/mcp/", 403},
+		{"http://app.example/api/v1/mcpx", 403},
+		{"http://app.example/api/v1/ai/mcp/authorize", 403},
+		{"http://app.example/api/v1/oauth%2Ftoken", 403},
+		{"http://app.example/api/v1/ai/settings", 403},
+	} {
+		req := httptest.NewRequest("POST", tt.target, nil)
+		req.Header.Set("Origin", "https://evil.example")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != tt.want {
+			t.Fatalf("%s: status = %d, want %d", tt.target, rec.Code, tt.want)
+		}
+	}
+}

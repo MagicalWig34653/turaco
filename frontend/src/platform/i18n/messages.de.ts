@@ -246,6 +246,46 @@ export const de: Record<MessageKey, string> = {
     'Das Ziel des Vorschlags wurde geändert. Fordern Sie einen neuen Vorschlag an.',
   'ai.error.unknown':
     'Die KI-Anfrage ist fehlgeschlagen. Laden Sie neu oder versuchen Sie es später erneut.',
+  'ai.error.mcp_invalid_client':
+    'Diese Anwendung ist nicht registriert oder ihre Rücksprungadresse stimmt nicht. Wenden Sie sich an Ihre Administration.',
+  'ai.error.mcp_invalid_request':
+    'Die Autorisierungsanfrage ist ungültig. Starten Sie die Verbindung in der Anwendung neu.',
+  'ai.field.mcpEnabled': 'MCP-Server aktiviert',
+  'ai.mcp.clients': 'MCP-Clients',
+  'ai.mcp.clientsIntro':
+    'Externe KI-Anwendungen, die sich mit dem Turaco-MCP-Server verbinden dürfen. Jede Person meldet sich trotzdem an und stimmt dem Zugriff zu; Tokens sind kurzlebig.',
+  'ai.mcp.notMounted':
+    'Der MCP-Server ist in dieser Installation nicht eingeschaltet (AI_MCP_ENABLED). Clients können vorbereitet werden.',
+  'ai.mcp.endpoint': 'MCP-Endpunkt: {url}',
+  'ai.mcp.createClient': 'Client registrieren',
+  'ai.mcp.editClient': 'MCP-Client',
+  'ai.mcp.clientId': 'Client-ID',
+  'ai.mcp.redirectUris': 'Rücksprungadressen (eine je Zeile)',
+  'ai.mcp.redirectHint':
+    'Exakter Vergleich. https, oder http auf 127.0.0.1, [::1] oder localhost mit festem Port.',
+  'ai.mcp.activeGrants': 'Aktive Verbindungen',
+  'ai.mcp.consentTitle': 'KI-Anwendung verbinden',
+  'ai.mcp.consentIntro': '{client} möchte Turaco-Werkzeuge in Ihrem Namen verwenden.',
+  'ai.mcp.consentRedirect': 'Nach Ihrer Entscheidung kehren Sie zu {uri} zurück.',
+  'ai.mcp.consentTools': 'Werkzeuge, die mit Ihren Berechtigungen aufgerufen werden können',
+  'ai.mcp.consentClasses': 'Daten, die die Anwendung erhalten darf',
+  'ai.mcp.consentDuration':
+    'Der Zugriff endet spätestens nach {hours} Stunden. Sie können ihn vorher unter „Verbundene KI-Anwendungen“ beenden.',
+  'ai.mcp.consentWarning':
+    'Daten aus Turaco-Datensätzen werden an diese Anwendung und ihr KI-Modell gesendet. Erlauben Sie nur Anwendungen, denen Sie vertrauen.',
+  'ai.mcp.noTools': 'Für diese Anwendung stehen Ihnen keine Werkzeuge zur Verfügung.',
+  'ai.mcp.approve': 'Zugriff erlauben',
+  'ai.mcp.deny': 'Ablehnen',
+  'ai.mcp.redirecting': 'Sie werden zur Anwendung zurückgeleitet …',
+  'ai.mcp.framed':
+    'Diese Seite kann nicht innerhalb einer anderen Seite verwendet werden. Öffnen Sie sie direkt.',
+  'ai.mcp.connections': 'Verbundene KI-Anwendungen',
+  'ai.mcp.connectionsEmpty': 'Keine KI-Anwendung ist verbunden.',
+  'ai.mcp.connectedAt': 'Verbunden',
+  'ai.mcp.expiresAt': 'Läuft ab',
+  'ai.mcp.lastUsedAt': 'Zuletzt verwendet',
+  'ai.mcp.never': 'Nie',
+  'ai.mcp.revoke': 'Trennen',
 
   'presence.zoneUnknown':
     'Die Quelle hat die ursprüngliche Zeitzone nicht geliefert. Prüfen Sie Datum und Zeitzone vor dem Speichern; die Browser-Zeitzone ist vorbelegt.',

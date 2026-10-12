@@ -5,6 +5,8 @@ import { canAll, type CanFn } from '../platform/session/permissions';
 export type RouteId =
   | 'modulesAdmin'
   | 'aiAdmin'
+  | 'aiConnections'
+  | 'oauthAuthorize'
   | 'presenceMine'
   | 'presenceTeam'
   | 'presenceAdmin'
@@ -193,6 +195,20 @@ export const appRoutes: readonly AppRoute[] = [
     titleKey: 'ai.admin',
     requires: ['ai.admin'],
     nav: 'admin',
+  },
+  {
+    id: 'aiConnections',
+    pattern: '/ai/connections',
+    titleKey: 'ai.mcp.connections',
+    requires: ['ai.use'],
+    nav: 'main',
+  },
+  {
+    // OAuth consent page of the Turaco MCP server (F12 A-D); the authorization endpoint in the server metadata.
+    id: 'oauthAuthorize',
+    pattern: '/oauth/authorize',
+    titleKey: 'ai.mcp.consentTitle',
+    requires: ['ai.use'],
   },
   {
     id: 'presenceMine',

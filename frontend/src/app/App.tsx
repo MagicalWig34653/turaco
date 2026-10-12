@@ -4,6 +4,10 @@ import { pathEnabled } from '../platform/modules/model';
 import { ModulesScreen } from '../platform/modules/ModulesScreen';
 import { AiProvider, useAi } from '../modules/ai/AiProvider';
 import { AdminScreen as AiAdminScreen } from '../modules/ai/AdminScreen';
+import {
+  ConnectionsScreen as AiConnectionsScreen,
+  ConsentScreen as OAuthConsentScreen,
+} from '../modules/ai/McpScreens';
 import { PresenceProvider } from '../modules/presence/PresenceProvider';
 import {
   MyPresenceScreen,
@@ -165,6 +169,10 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <ModulesScreen />;
     case 'aiAdmin':
       return <AiAdminScreen />;
+    case 'aiConnections':
+      return <AiConnectionsScreen />;
+    case 'oauthAuthorize':
+      return <OAuthConsentScreen />;
     case 'presenceMine':
       return <MyPresenceScreen />;
     case 'presenceTeam':

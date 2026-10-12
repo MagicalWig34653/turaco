@@ -28,6 +28,29 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadMCPGateNeedsAIAndBaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("AI_MCP_ENABLED", "")
+	t.Setenv("AI_ENABLED", "")
+	t.Setenv("EMAIL_BASE_URL", "")
+	if cfg, err := Load(); err != nil || cfg.AIMCPEnabled {
+		t.Fatalf("default: %+v %v", cfg.AIMCPEnabled, err)
+	}
+	t.Setenv("AI_MCP_ENABLED", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("AI_MCP_ENABLED without AI_ENABLED must fail")
+	}
+	t.Setenv("AI_ENABLED", "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("AI_MCP_ENABLED without EMAIL_BASE_URL must fail")
+	}
+	t.Setenv("EMAIL_BASE_URL", "https://turaco.example.org")
+	if cfg, err := Load(); err != nil || !cfg.AIMCPEnabled {
+		t.Fatalf("enabled: %v %v", cfg.AIMCPEnabled, err)
+	}
+}
+
 func TestLoadSessionDefaults(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	// Empty means unset for Load; isolates the test from a sourced .env.

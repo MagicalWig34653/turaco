@@ -73,6 +73,7 @@ const paths: Partial<Record<RouteId, string>> = {
   roleAssignments: 'M4 4h16v16H4zM8 9h8m-8 4h5m-5 4h4M15 15l2 2 3-4',
   directorySync: 'M4 10a8 8 0 0 1 14-4l2 2M20 5v4h-4M20 14a8 8 0 0 1-14 4l-2-2M4 19v-4h4',
   aiAdmin: 'M4 4h16v13H9l-5 4zM8 8h8m-8 4h5',
+  aiConnections: 'M7 7h4v4H7zM13 13h4v4h-4zM11 9h4v4M9 11v4h4',
   audit: 'M5 3h14v18H5zM8 8h8m-8 4h8m-8 4h5M16 15l2 2 3-4',
   setupAdmin: 'M5 4h14v16H5zM8 9l2 2 3-3m-5 8 2 2 3-3m3-6h2m-2 8h2',
   healthAdmin: 'M3 12h4l2-6 4 12 2-6h6',

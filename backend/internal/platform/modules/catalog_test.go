@@ -58,6 +58,8 @@ func TestForPathAndForJob(t *testing.T) {
 		"/api/v1/ai/status": "", "/api/v1/ai/status/": "", "/api/v1/presence/status": "",
 		"/api/v1/presence/settings": "", "/api/v1/presence/settings/purge": "", "/api/v1/presence/settingsx": "presence",
 		"/api/v1/ai/settings": "", "/api/v1/ai/providers": "", "/api/v1/ai/providers/1/test": "", "/api/v1/ai/usage": "", "/api/v1/ai/conversations/messages": "ai",
+		"/api/v1/mcp": "ai", "/api/v1/oauth/token": "ai", "/api/v1/oauth/revoke": "ai", "/api/v1/ai/mcp/authorize": "ai", "/api/v1/ai/mcp/grants": "ai",
+		"/api/v1/ai/mcp/clients": "", "/api/v1/ai/mcp/clients/1": "",
 		"/api/v1/tasks": "", "/api/v1/roles/1": "", "/api/v1/auth/login": "", "/api/v1/modules/status": "", "/api/v1/admin/modules": "",
 		"/health/live": "", "/api/v1": "", "/api/v1/unknown": "", "/api/v1/ticketsx": "",
 	}
