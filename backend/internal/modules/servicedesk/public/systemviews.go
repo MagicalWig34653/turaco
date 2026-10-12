@@ -41,9 +41,22 @@ func (v *SystemViews) SystemViews(ctx context.Context, c views.Caller) ([]views.
 		{Key: "system:tickets:unassigned", Resource: "tickets", Group: "tickets", NameKey: "views.system.unassigned_tickets", Position: 1, ScopeKey: scope.Key,
 			Definition: views.Definition{Filter: and(open, query.Cond("assignee", query.OpIsEmpty, nil))}},
 	}
+	// "At risk" (F17 S-E) exists only while the SLA switch is on. It lists open Tickets of the Queues the caller views
+	// whose warning is reached or whose target is missed, the most urgent resolution time first. Like every System
+	// View it is an ordinary filter run as the viewer; with the switch off the fields would be unreadable.
+	next := 2
+	if on, err := v.svc.SLAEnabled(ctx); err != nil {
+		return nil, err
+	} else if on {
+		f := and(open, query.Cond("sla_state", query.OpIn, []string{"at_risk", "breached"}))
+		f.Sort = []query.SortSpec{{Field: "sla_resolution_due_at", Dir: "asc", Nulls: "last"}, {Field: "created_at", Dir: "desc"}}
+		out = append(out, views.SystemView{Key: "system:tickets:at-risk", Resource: "tickets", Group: "tickets", NameKey: "views.system.at_risk_tickets",
+			Position: next, ScopeKey: scope.Key, Definition: views.Definition{Filter: f}})
+		next++
+	}
 	for i, q := range scope.Queues {
 		out = append(out, views.SystemView{Key: "system:tickets:queue:" + q.ID, Handle: "queue:" + q.ID, Resource: "tickets", Group: "tickets",
-			Name: q.Name, Ref: q.ID, Position: 2 + i, ScopeKey: scope.Key,
+			Name: q.Name, Ref: q.ID, Position: next + i, ScopeKey: scope.Key,
 			Definition: views.Definition{Filter: and(open, query.Cond("queue", query.OpEquals, q.ID))}})
 	}
 	return out, nil

@@ -33,6 +33,10 @@ type ticketSummary struct {
 	UpdatedAt         string          `json:"updatedAt"`
 	Messages          []ticketMessage `json:"messages"`
 	MessagesTruncated bool            `json:"messagesTruncated"`
+	// SLAState and ResolutionDueAt are set only for staff with view access in the Ticket's Queue while the sla switch
+	// is on (F17 S-E); a requester summarizing their own Ticket gets null.
+	SLAState        *string `json:"slaState"`
+	ResolutionDueAt *string `json:"resolutionDueAt"`
 }
 
 type ticketMessage struct {
@@ -155,6 +159,8 @@ func summarizeTool(svc *application.Service) ai.Tool {
 			{Path: "affectedUser", Class: ai.ClassPersonalContact, MaxLen: 100},
 			{Path: "assignee", Class: ai.ClassPersonalContact, MaxLen: 100},
 			{Path: "messagesTruncated", Class: ai.ClassBusinessRecord},
+			{Path: "slaState", Class: ai.ClassBusinessRecord, MaxLen: 20},
+			{Path: "resolutionDueAt", Class: ai.ClassBusinessRecord, MaxLen: 40},
 			{Path: "messages[].author", Class: ai.ClassPersonalContact, MaxLen: 100},
 			{Path: "messages[].internal", Class: ai.ClassBusinessRecord},
 			{Path: "messages[].body", Class: ai.ClassBusinessRecord, MaxLen: 2000},
@@ -184,6 +190,14 @@ func summarizeTool(svc *application.Service) ai.Tool {
 			if t.AssigneeID != nil {
 				if n, ok := d.Names[*t.AssigneeID]; ok {
 					out.Assignee = &n
+				}
+			}
+			if t.SLA != nil {
+				state := t.SLA.State
+				out.SLAState = &state
+				if t.SLA.ResolutionDueAt != nil {
+					due := t.SLA.ResolutionDueAt.UTC().Format(aiTimeLayout)
+					out.ResolutionDueAt = &due
 				}
 			}
 			comments := d.Comments

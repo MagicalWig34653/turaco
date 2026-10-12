@@ -22,7 +22,7 @@ Permissions and roles (`modules.manage`, elevated; built-in administrator roles 
 | workforce | presence (default off) |
 | insight | briefing; ai (default off) |
 
-Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. Policy and Queue data is retained while off. S-D adds the disposable job `sla.clock_sweep` and the deferred outbox consumer `sla.notify`; while the switch is off no warning or breach is recorded and existing clocks stay unchanged.
+Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. Policy and Queue data is retained while off. S-D adds the disposable job `sla.clock_sweep` and the deferred outbox consumer `sla.notify`; while the switch is off no warning or breach is recorded and existing clocks stay unchanged. S-E list and reporting surfaces follow the switch: the `sla_*` Ticket query fields, `slaSummary` on rows and detail, the overview SLA figures, the `At risk` System View, `/sla/report` and the AI tool fields are absent while it is off.
 
 ## State
 

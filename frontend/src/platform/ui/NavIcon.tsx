@@ -33,6 +33,7 @@ const paths: Partial<Record<RouteId, string>> = {
   ticketQueue: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM12 5v14',
   ticketQueues: 'M3 5h18v5a2 2 0 0 0 0 4v5H3v-5a2 2 0 0 0 0-4zM8 9h8M8 12h8M8 15h5',
   managerOverview: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  slaReport: 'M4 4v16h16M8 15l3-4 3 2 5-6M8 19v-1m4 1v-3m4 3v-2',
   slaAdmin: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
   calendarsAdmin: 'M4 6h16v14H4zM4 11h16M8 3v5m8-5v5M9 15h2m2 0h2',
   problems: 'M12 3a8 8 0 0 0-5 14v4h10v-4a8 8 0 0 0-5-14ZM9 21h6M12 7v5m0 3v1',

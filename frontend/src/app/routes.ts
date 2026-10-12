@@ -91,6 +91,7 @@ export type RouteId =
   | 'ticketQueue'
   | 'ticketQueues'
   | 'managerOverview'
+  | 'slaReport'
   | 'knowledge'
   | 'articleNew'
   | 'articleEdit'
@@ -703,6 +704,15 @@ export const appRoutes: readonly AppRoute[] = [
     id: 'managerOverview',
     pattern: '/service-desk/overview',
     titleKey: 'nav.managerOverview',
+    requiresAny: ['tickets.view', 'tickets.manage'],
+    nav: 'logistics',
+  },
+  // Minimal SLA report. Like the overview, the server also lets Queue-grant holders read it; the route follows the
+  // queue route. The path belongs to the sla module so the whole screen disappears with the switch.
+  {
+    id: 'slaReport',
+    pattern: '/sla/report',
+    titleKey: 'nav.slaReport',
     requiresAny: ['tickets.view', 'tickets.manage'],
     nav: 'logistics',
   },

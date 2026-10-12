@@ -1,3 +1,4 @@
+import { stateLink } from '../modules/sla/slaModel';
 import { emptyState, serialize, type Node } from '../platform/ui/query/filterModel';
 
 const openTicketStatuses = ['new', 'open', 'in_progress', 'waiting'];
@@ -37,6 +38,9 @@ export const ticketLinks = {
     ),
   assigneeOpen: (userId: string) =>
     listLink('/service-desk', and(openTickets, condition('assignee', 'equals', userId))),
+  // SLA numbers (only while the sla switch is on): open Tickets by the derived sla_state, never per assignee.
+  atRisk: (queueId?: string) => stateLink(['at_risk'], queueId),
+  breached: (queueId?: string) => stateLink(['breached'], queueId),
 };
 
 /** The same for Tasks; `dueBefore` is the time the overview was generated, so the list matches the count. */

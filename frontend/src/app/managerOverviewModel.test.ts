@@ -15,6 +15,16 @@ describe('manager overview links', () => {
     expect(link.query).toContain('is_empty');
   });
 
+  it('opens the ticket list for the SLA numbers by state, never by assignee', () => {
+    const atRisk = decode(ticketLinks.atRisk('q-1'));
+    expect(atRisk.path).toBe('/service-desk');
+    expect(atRisk.query).toContain('sla_state');
+    expect(atRisk.query).toContain('at_risk');
+    expect(atRisk.query).toContain('q-1');
+    expect(atRisk.query).not.toContain('assignee');
+    expect(decode(ticketLinks.breached()).query).toContain('breached');
+  });
+
   it('opens the task list for overdue and unowned tasks', () => {
     const overdue = decode(taskLinks.overdue('2026-10-11T10:00:00Z'));
     expect(overdue.path).toBe('/tasks');

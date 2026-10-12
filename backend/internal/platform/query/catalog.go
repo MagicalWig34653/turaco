@@ -576,7 +576,7 @@ func (c *Catalog) ColumnRefs() []ColumnRef {
 		f := c.fields[key]
 		for _, e := range []Expr{f.Column, f.SortColumn} {
 			for _, col := range e.cols {
-				out = append(out, ColumnRef{Field: f.Key, Schema: r.Schema, Table: r.Table, Column: col, Type: f.Type, Nullable: f.Nullable, Own: true})
+				out = append(out, ColumnRef{Field: f.Key, Schema: r.Schema, Table: r.Table, Column: col, Type: f.Type, Nullable: f.Nullable, Own: !e.derived})
 			}
 		}
 		if s := f.Sub; s != nil {

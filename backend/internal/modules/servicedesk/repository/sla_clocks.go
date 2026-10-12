@@ -146,6 +146,10 @@ func (r *Repository) persistClock(ctx context.Context, tx pgx.Tx, c clockRow, in
 	return err
 }
 
+// clockOutcomeSQL is the outcome of a finished clock c: met or breached when it completed, not_measured when it was
+// cancelled (including exempted), NULL while it is still measuring. The migration 000100 backfill uses the same rule.
+const clockOutcomeSQL = `CASE WHEN c.status='completed' AND c.breached_at IS NOT NULL THEN 'breached' WHEN c.status='completed' THEN 'met' WHEN c.status='cancelled' THEN 'not_measured' END`
+
 func (r *Repository) projectSLATx(ctx context.Context, tx pgx.Tx, ticketID string) error {
 	// The projection alone owns these columns. Ticket version and updated_at deliberately stay unchanged.
 	_, err := tx.Exec(ctx, `UPDATE servicedesk.tickets t SET
@@ -153,7 +157,10 @@ func (r *Repository) projectSLATx(ctx context.Context, tx pgx.Tx, ticketID strin
 		sla_resolution_due_at=(SELECT due_at FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id AND kind='resolution' AND status='running'),
 		sla_warn_at=(SELECT min(warn_at) FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id AND status='running'),
 		sla_breached_at=(SELECT min(breached_at) FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id),
-		sla_tracked=EXISTS(SELECT 1 FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id)
+		sla_tracked=EXISTS(SELECT 1 FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id),
+		sla_paused=EXISTS(SELECT 1 FROM servicedesk.ticket_sla_clocks WHERE ticket_id=t.id AND status='paused'),
+		sla_response_outcome=(SELECT `+clockOutcomeSQL+` FROM servicedesk.ticket_sla_clocks c WHERE c.ticket_id=t.id AND c.kind='first_response'),
+		sla_resolution_outcome=(SELECT `+clockOutcomeSQL+` FROM servicedesk.ticket_sla_clocks c WHERE c.ticket_id=t.id AND c.kind='resolution')
 		WHERE t.id=$1`, ticketID)
 	return err
 }

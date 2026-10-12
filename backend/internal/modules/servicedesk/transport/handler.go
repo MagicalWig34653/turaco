@@ -50,6 +50,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/tickets/{id}/assign", h.assign)
 	route("GET /api/v1/tickets/{id}/history", h.history)
 	route("POST /api/v1/sla/tickets/{id}/exempt", h.exemptSLA)
+	route("GET /api/v1/sla/report", h.slaReport)
 	route("POST /api/v1/tickets/{id}/duplicate", h.markDuplicate)
 	route("POST /api/v1/tickets/{id}/priority", h.priority)
 	route("POST /api/v1/tickets/{id}/location", h.location)
@@ -193,6 +194,15 @@ type ticketDTO struct {
 	Version         int            `json:"version"`
 	CreatedAt       string         `json:"createdAt"`
 	UpdatedAt       string         `json:"updatedAt"`
+	// SLASummary is the staff-only SLA state and due times of list and detail reads; absent for requesters and while
+	// the sla switch is off.
+	SLASummary *slaSummaryDTO `json:"slaSummary,omitempty"`
+}
+
+type slaSummaryDTO struct {
+	State           string  `json:"state"`
+	ResponseDueAt   *string `json:"responseDueAt"`
+	ResolutionDueAt *string `json:"resolutionDueAt"`
 }
 
 type queueRefDTO struct {
@@ -203,6 +213,14 @@ type queueRefDTO struct {
 }
 
 func toTicket(t application.Ticket) ticketDTO {
+	out := toTicketBase(t)
+	if t.SLA != nil {
+		out.SLASummary = &slaSummaryDTO{State: t.SLA.State, ResponseDueAt: tsPtr(t.SLA.ResponseDueAt), ResolutionDueAt: tsPtr(t.SLA.ResolutionDueAt)}
+	}
+	return out
+}
+
+func toTicketBase(t application.Ticket) ticketDTO {
 	var q *queueRefDTO
 	if t.Queue != nil {
 		q = &queueRefDTO{ID: t.Queue.ID, Key: t.Queue.Key, Prefix: t.Queue.Prefix, Name: t.Queue.Name}

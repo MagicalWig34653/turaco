@@ -14,7 +14,6 @@ import (
 
 	"github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
-	"github.com/MagicalWig34653/turaco/backend/internal/platform/query"
 )
 
 // Repository stores tickets and comments.
@@ -250,12 +249,6 @@ func (r *Repository) List(ctx context.Context, f application.Filter) (applicatio
 		res.NextCursor = res.Items[page.Limit-1].ID
 	}
 	return res, nil
-}
-
-// QueryTickets runs a compiled query plan (ADR-0033) in a read-only transaction.
-func (r *Repository) QueryTickets(ctx context.Context, plan *query.Plan, visibility query.Fragment) (query.Page[application.Ticket], error) {
-	return query.Run(ctx, r.pool, plan, query.Select{Columns: queryColumns, Visibility: visibility},
-		func(rows pgx.Rows, extra []any) (application.Ticket, error) { return scanWith(rows, extra...) })
 }
 
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {

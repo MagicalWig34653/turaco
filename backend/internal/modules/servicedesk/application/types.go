@@ -87,6 +87,17 @@ type Ticket struct {
 	AffectedLocationID *string
 	// DuplicateOfID is the ticket that carries the work when this one was marked as its duplicate.
 	DuplicateOfID *string
+	// SLA is the staff-only SLA summary of list and detail reads (nil for requesters, Queues the caller does not
+	// work in, and while the sla switch is off).
+	SLA *TicketSLA
+}
+
+// TicketSLA is the SLA summary of a Ticket as the list shows it: the derived state (see SLAStateSQL) and the due
+// times of the running clocks.
+type TicketSLA struct {
+	State           string
+	ResponseDueAt   *time.Time
+	ResolutionDueAt *time.Time
 }
 
 // Comment is a note on a ticket. MentionedUserIDs are the people an internal note mentions and who may view the

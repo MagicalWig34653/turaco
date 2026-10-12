@@ -1,4 +1,6 @@
 import { useAi } from '../ai/AiProvider';
+import { useModules } from '../../platform/modules/ModulesProvider';
+import { SlaDue } from '../sla/SlaDue';
 import { TableDate } from '../../platform/ui/TableDate';
 import { formatDateTime, formatDate } from '../../platform/format/format';
 import { FilterBar } from '../../platform/ui/FilterBar';
@@ -47,6 +49,7 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
   const { t, locale } = useI18n();
   const { can, session } = useSession();
   const ai = useAi();
+  const { enabled } = useModules();
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<string[]>();
@@ -260,6 +263,24 @@ export function TicketsScreen({ scope }: { scope: 'mine' | 'all' }) {
         key: 'requester',
         header: t('tickets.col.requester'),
         render: (ticket) => names[ticket.reporterId] || t('tickets.personUnknown'),
+      },
+    );
+  // SLA columns (F17 S-E): staff lists only, while the switch is on. The summary itself is absent for requesters.
+  if (scope === 'all' && enabled('sla'))
+    columns.splice(
+      columns.length - 1,
+      0,
+      {
+        key: 'slaResponseDue',
+        sortField: 'sla_response_due_at',
+        header: t('sla.col.responseDue'),
+        render: (ticket) => <SlaDue summary={ticket.slaSummary} field="responseDueAt" />,
+      },
+      {
+        key: 'slaResolutionDue',
+        sortField: 'sla_resolution_due_at',
+        header: t('sla.col.resolutionDue'),
+        render: (ticket) => <SlaDue summary={ticket.slaSummary} field="resolutionDueAt" />,
       },
     );
   const visibleColumns = visibleKeys

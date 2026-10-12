@@ -61,6 +61,8 @@ export type Ticket = {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** Staff only, and absent while the SLA module is off. */
+  slaSummary?: TicketSlaSummary;
 };
 
 export type TicketComment = {
@@ -137,6 +139,13 @@ export type TicketAbilities = {
   /** Whether a callback Task may be scheduled; absent on older servers. */
   scheduleCallback?: boolean;
   exemptSla?: boolean;
+};
+
+/** The staff-only SLA summary of list rows and the detail (absent for requesters and while the sla switch is off). */
+export type TicketSlaSummary = {
+  state: 'none' | 'on_track' | 'at_risk' | 'breached' | 'paused' | 'met';
+  responseDueAt: string | null;
+  resolutionDueAt: string | null;
 };
 
 export type TicketSLAClock = {

@@ -277,13 +277,25 @@ describe('support', () => {
     expect(ids(['tickets.view'], 'logistics')).toEqual([
       'ticketQueue',
       'managerOverview',
+      'slaReport',
       'problems',
     ]);
     expect(ids(['tickets.manage'], 'logistics')).toEqual([
       'ticketQueue',
       'managerOverview',
+      'slaReport',
       'problems',
     ]);
+  });
+
+  it('hides the SLA report with the sla switch and gives its nav icon a path of its own', () => {
+    const route = matchRoute(appRoutes, '/sla/report')?.route;
+    expect(route?.id).toBe('slaReport');
+    if (!route) return;
+    const staff = createCan({ permissions: ['tickets.view'] });
+    expect(canViewRoute(staff, route, () => true)).toBe(true);
+    expect(canViewRoute(staff, route, (key) => key !== 'sla')).toBe(false);
+    expect(canViewRoute(createCan({ permissions: [] }), route, () => true)).toBe(false);
   });
 
   it('keeps queue administration behind servicedesk.queues.manage', () => {

@@ -19,6 +19,8 @@ const (
 	permTicketsManage = "tickets.manage"
 	// permQueueScope is a synthetic subject permission: the caller views Tickets of at least one Queue through a grant.
 	permQueueScope = "servicedesk.queue_scope"
+	// permSLA is a synthetic subject permission: the SLA switch is on. The SLA fields are visible only with it.
+	permSLA = "servicedesk.sla"
 )
 
 // isStaff is the row-disclosure gate: employees see only their own tickets and
@@ -40,6 +42,33 @@ var textOps = []query.Op{query.OpEquals, query.OpNotEquals, query.OpContains, qu
 var nullableTextOps = append(append([]query.Op{}, textOps...), query.OpIsEmpty, query.OpIsNotEmpty)
 var enumOps = []query.Op{query.OpEquals, query.OpNotEquals, query.OpIn, query.OpNotIn}
 var timeOps = query.OperatorsOf(query.TypeDateTime)
+
+// slaVisible gates the SLA fields (ADR-0041): staff only, and only while the SLA switch is on. While it is off the
+// fields are absent from /tickets/fields and a Saved View that uses them degrades like one with an unreadable field.
+func slaVisible(s query.Subject) bool { return isStaff(s) && s.Has(permSLA) }
+
+var slaOutcomeValues = enumValues("met", "breached", "not_measured")
+
+var slaBreachedPred = query.AnyOf(query.ColNotNull(query.Col("t", "sla_breached_at")),
+	query.ColNotAfterNow(query.Col("t", "sla_response_due_at")), query.ColNotAfterNow(query.Col("t", "sla_resolution_due_at")))
+
+// slaStateExpr derives the SLA state of a Ticket from the clock projection (migrations 000099 and 000100):
+// breached when a clock recorded its breach or a running clock is past due (the sweep records the fact within a
+// minute), at_risk when a running clock reached its warning, on_track while a clock runs, paused, met when a clock was
+// completed in time, none otherwise (no policy, or every clock cancelled).
+var slaStateExpr = query.Case([]query.When{
+	{If: slaBreachedPred, Then: "breached"},
+	{If: query.ColNotAfterNow(query.Col("t", "sla_warn_at")), Then: "at_risk"},
+	{If: query.AnyOf(query.ColNotNull(query.Col("t", "sla_response_due_at")), query.ColNotNull(query.Col("t", "sla_resolution_due_at"))), Then: "on_track"},
+	{If: query.ColTrue(query.Col("t", "sla_paused")), Then: "paused"},
+	{If: query.AnyOf(query.ColEquals(query.Col("t", "sla_response_outcome"), "met"), query.ColEquals(query.Col("t", "sla_resolution_outcome"), "met")), Then: "met"},
+}, "none")
+
+// SLAStateSQL is the SQL of the derived slaState over the Ticket alias t (list and overview reads share it).
+func SLAStateSQL() string { return slaStateExpr.SQL() }
+
+// SLA states of the sla_state field.
+var SLAStates = []string{"none", "on_track", "at_risk", "breached", "paused", "met"}
 
 var ticketCatalog = query.MustCatalog(query.Resource{
 	Key: "tickets", Module: "servicedesk", Schema: "servicedesk", Table: "tickets", Alias: "t", IDColumn: "id",
@@ -99,6 +128,20 @@ var ticketCatalog = query.MustCatalog(query.Resource{
 			Filterable: true, Nullable: true},
 		{Key: "closed_at", Type: query.TypeDateTime, Column: query.Col("t", "closed_at"), Operators: timeOps,
 			Filterable: true, Nullable: true},
+		// SLA fields (ADR-0041). The due times are those of running clocks; sla_state is derived from the projection and
+		// replaces hour-based filters ("due within N hours" is expressed with the due time fields).
+		{Key: "sla_response_due_at", Type: query.TypeDateTime, Column: query.Col("t", "sla_response_due_at"), Operators: timeOps,
+			Filterable: true, Sortable: true, SortIndexed: true, Nullable: true, Index: query.IndexBtree, Gate: slaVisible, Redaction: query.RedactHidden},
+		{Key: "sla_resolution_due_at", Type: query.TypeDateTime, Column: query.Col("t", "sla_resolution_due_at"), Operators: timeOps,
+			Filterable: true, Sortable: true, SortIndexed: true, Nullable: true, Index: query.IndexBtree, Gate: slaVisible, Redaction: query.RedactHidden},
+		{Key: "sla_state", Type: query.TypeEnum, Column: slaStateExpr, Operators: enumOps, Filterable: true,
+			EnumValues: enumValues(SLAStates...), Gate: slaVisible, Redaction: query.RedactHidden},
+		{Key: "sla_breached", Type: query.TypeBoolean, Column: query.Flag(slaBreachedPred),
+			Operators: []query.Op{query.OpIsTrue, query.OpIsFalse}, Filterable: true, Gate: slaVisible, Redaction: query.RedactHidden},
+		{Key: "sla_response_outcome", Type: query.TypeEnum, Column: query.Col("t", "sla_response_outcome"), Operators: enumOps,
+			Filterable: true, Nullable: true, EnumValues: slaOutcomeValues, Gate: slaVisible, Redaction: query.RedactHidden},
+		{Key: "sla_resolution_outcome", Type: query.TypeEnum, Column: query.Col("t", "sla_resolution_outcome"), Operators: enumOps,
+			Filterable: true, Nullable: true, EnumValues: slaOutcomeValues, Gate: slaVisible, Redaction: query.RedactHidden},
 	},
 })
 
@@ -119,8 +162,8 @@ func (s *Service) WithQueryEngine(e *query.Engine) *Service {
 	return s
 }
 
-func (a access) subject(p Principal) query.Subject {
-	return query.Subject{UserID: p.UserID, Permissions: map[string]bool{permTicketsView: p.View, permTicketsManage: p.Manage, permQueueScope: a.anyView()}}
+func (a access) subject(p Principal, sla bool) query.Subject {
+	return query.Subject{UserID: p.UserID, Permissions: map[string]bool{permTicketsView: p.View, permTicketsManage: p.Manage, permQueueScope: a.anyView(), permSLA: sla && !p.External}}
 }
 
 // QueryFields returns the ticket catalog as the caller may use it.
@@ -132,7 +175,11 @@ func (s *Service) QueryFields(ctx context.Context, p Principal) (query.Info, err
 	if err != nil {
 		return query.Info{}, err
 	}
-	return ticketCatalog.Describe(a.subject(p)), nil
+	sla, err := s.slaOn(ctx)
+	if err != nil {
+		return query.Info{}, err
+	}
+	return ticketCatalog.Describe(a.subject(p, sla)), nil
 }
 
 // CompatNodes maps the pre-engine list parameters onto Filter conditions, so
@@ -184,7 +231,10 @@ func (s *Service) Query(ctx context.Context, p Principal, req query.Request, all
 	return s.QueryScoped(ctx, p, req, scope, compat, "")
 }
 
-var routingFields = []string{"queue", "routing_team", "assignee"}
+// routingFields are the fields whose value differs per row for a caller who sees only some Queues. The SLA fields
+// belong to them: the state of an own Ticket in a Queue the caller does not view stays undisclosed.
+var routingFields = []string{"queue", "routing_team", "assignee", "sla_response_due_at", "sla_resolution_due_at", "sla_state",
+	"sla_breached", "sla_response_outcome", "sla_resolution_outcome"}
 
 // QueryScoped is Query with a scope selector and an optional Queue restriction. The visibility predicate is built
 // here and ANDed outside the user's filter:
@@ -212,6 +262,11 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	if err != nil {
 		return query.Page[Ticket]{}, err
 	}
+	sla, err := s.slaOn(ctx)
+	if err != nil {
+		return query.Page[Ticket]{}, err
+	}
+	subj := a.subject(p, sla)
 	if scope == ScopeAuto {
 		scope = ScopeMine
 		if a.anyView() {
@@ -240,12 +295,12 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 		opts.SearchSkip = []string{"reference"}
 	}
 	if a.anyView() {
-		opts.SearchExtra, opts.RateLimited, err = s.personSearch(ctx, a.subject(p), req)
+		opts.SearchExtra, opts.RateLimited, err = s.personSearch(ctx, subj, req)
 		if err != nil {
 			return query.Page[Ticket]{}, err
 		}
 	}
-	plan, err := s.engine.Prepare(ticketCatalog, a.subject(p), req, name, opts)
+	plan, err := s.engine.Prepare(ticketCatalog, subj, req, name, opts)
 	if err != nil {
 		return query.Page[Ticket]{}, err
 	}
@@ -289,6 +344,7 @@ func (s *Service) QueryScoped(ctx context.Context, p Principal, req query.Reques
 	if err != nil {
 		return query.Page[Ticket]{}, fmt.Errorf("query tickets: %w", err)
 	}
+	s.withSLAVisibility(a, p, sla, ptrs(page.Items)...)
 	if err := s.shape(ctx, a, ptrs(page.Items)...); err != nil {
 		return query.Page[Ticket]{}, err
 	}

@@ -8,6 +8,7 @@ import { PageHeader } from '../platform/ui/PageHeader';
 import { Card, MetricCard, Skeleton } from '../platform/ui/Workspace';
 import { taskOverviewApi, type TaskOverviewOwner } from '../modules/tasks/overviewApi';
 import { ticketOverviewApi } from '../modules/tickets/overviewApi';
+import { relativeDue } from '../modules/sla/slaModel';
 import { ageInDays, taskLinks, ticketLinks } from './managerOverviewModel';
 import './manager-overview.css';
 
@@ -52,7 +53,7 @@ function TicketSection() {
         <>
           <div
             className="workspace-metrics dashboard-metrics"
-            style={{ '--metric-count': 3 } as never}
+            style={{ '--metric-count': data.slaEnabled ? 5 : 3 } as never}
           >
             <MetricCard
               label={t('managerOverview.tickets.open')}
@@ -74,6 +75,26 @@ function TicketSection() {
               to={ticketLinks.waiting()}
               caption={t('managerOverview.tickets.waitingCaption')}
             />
+            {data.slaEnabled ? (
+              <>
+                <MetricCard
+                  label={t('managerOverview.tickets.atRisk')}
+                  value={data.totals.atRisk ?? 0}
+                  to={ticketLinks.atRisk()}
+                  tone="warning"
+                  caption={t('managerOverview.tickets.atRiskCaption')}
+                  zeroCaption={t('managerOverview.tickets.atRiskZero')}
+                />
+                <MetricCard
+                  label={t('managerOverview.tickets.breached')}
+                  value={data.totals.breached ?? 0}
+                  to={ticketLinks.breached()}
+                  tone="danger"
+                  caption={t('managerOverview.tickets.breachedCaption')}
+                  zeroCaption={t('managerOverview.tickets.breachedZero')}
+                />
+              </>
+            ) : null}
           </div>
           <Card title={t('managerOverview.byQueue')}>
             <h3>{t('managerOverview.byQueue')}</h3>
@@ -87,6 +108,12 @@ function TicketSection() {
                     <th scope="col">{t('managerOverview.col.open')}</th>
                     <th scope="col">{t('managerOverview.col.unassigned')}</th>
                     <th scope="col">{t('managerOverview.col.waiting')}</th>
+                    {data.slaEnabled ? (
+                      <>
+                        <th scope="col">{t('managerOverview.col.atRisk')}</th>
+                        <th scope="col">{t('managerOverview.col.breached')}</th>
+                      </>
+                    ) : null}
                     <th scope="col">{t('managerOverview.col.oldest')}</th>
                   </tr>
                 </thead>
@@ -105,6 +132,16 @@ function TicketSection() {
                       <td>
                         <Link to={ticketLinks.queueWaiting(row.queue.id)}>{row.waiting}</Link>
                       </td>
+                      {data.slaEnabled ? (
+                        <>
+                          <td>
+                            <Link to={ticketLinks.atRisk(row.queue.id)}>{row.atRisk ?? 0}</Link>
+                          </td>
+                          <td>
+                            <Link to={ticketLinks.breached(row.queue.id)}>{row.breached ?? 0}</Link>
+                          </td>
+                        </>
+                      ) : null}
                       <td>{formatDate(locale, row.oldestOpenAt)}</td>
                     </tr>
                   ))}
@@ -147,6 +184,12 @@ function TicketSection() {
               <TicketRows items={data.oldestWaiting} date="updatedAt" now={data.generatedAt} />
             </Card>
           </div>
+          {data.slaEnabled ? (
+            <Card title={t('managerOverview.nextToBreach')}>
+              <h3>{t('managerOverview.nextToBreach')}</h3>
+              <NextToBreach items={data.nextToBreach ?? []} now={data.generatedAt} />
+            </Card>
+          ) : null}
         </>
       )}
     </section>
@@ -189,6 +232,41 @@ function TicketRows({
           </span>
         </li>
       ))}
+    </ul>
+  );
+}
+
+function NextToBreach({
+  items,
+  now,
+}: {
+  items: Array<{
+    id: string;
+    reference: string;
+    title: string;
+    queue: { name: string };
+    slaDueAt?: string;
+  }>;
+  now: string;
+}) {
+  const { t } = useI18n();
+  if (items.length === 0) return <p className="subtitle">{t('managerOverview.nothing')}</p>;
+  return (
+    <ul className="manager-items">
+      {items.map((item) => {
+        const due = relativeDue(item.slaDueAt, new Date(now));
+        return (
+          <li key={item.id}>
+            <Link to={`/support/${item.id}`}>
+              <strong>{item.reference}</strong> {item.title}
+            </Link>
+            <span>
+              {item.queue.name}
+              {due ? ` · ${t(`sla.relative.${due.unit}`, { count: due.count })}` : ''}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }

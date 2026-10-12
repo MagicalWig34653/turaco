@@ -14,6 +14,9 @@ type overviewQueueDTO struct {
 	Unassigned   int         `json:"unassigned"`
 	Waiting      int         `json:"waiting"`
 	OldestOpenAt *string     `json:"oldestOpenAt"`
+	// AtRisk and Breached are present only while the sla switch is on.
+	AtRisk   *int `json:"atRisk,omitempty"`
+	Breached *int `json:"breached,omitempty"`
 }
 
 type overviewAssigneeDTO struct {
@@ -32,6 +35,7 @@ type overviewTicketDTO struct {
 	Queue        queueRefDTO `json:"queue"`
 	AssigneeID   *string     `json:"assigneeId"`
 	AssigneeName string      `json:"assigneeName,omitempty"`
+	SLADueAt     *string     `json:"slaDueAt,omitempty"`
 	CreatedAt    string      `json:"createdAt"`
 	UpdatedAt    string      `json:"updatedAt"`
 }
@@ -41,7 +45,7 @@ func toOverviewTickets(in []application.OverviewTicketRow) []overviewTicketDTO {
 	for _, t := range in {
 		out = append(out, overviewTicketDTO{ID: t.ID, Reference: t.Reference, Title: t.Title, Priority: t.Priority, Status: t.Status,
 			Queue:      queueRefDTO{ID: t.Queue.ID, Key: t.Queue.Key, Prefix: t.Queue.Prefix, Name: t.Queue.Name},
-			AssigneeID: t.AssigneeID, AssigneeName: t.AssigneeName, CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)})
+			AssigneeID: t.AssigneeID, AssigneeName: t.AssigneeName, SLADueAt: tsPtr(t.SLADueAt), CreatedAt: ts(t.CreatedAt), UpdatedAt: ts(t.UpdatedAt)})
 	}
 	return out
 }
@@ -57,18 +61,29 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	for _, q := range o.Queues {
 		queues = append(queues, overviewQueueDTO{Queue: queueRefDTO{ID: q.Queue.ID, Key: q.Queue.Key, Prefix: q.Queue.Prefix, Name: q.Queue.Name},
 			Level: q.Level, Open: q.Open, Unassigned: q.Unassigned, Waiting: q.Waiting, OldestOpenAt: tsPtr(q.OldestOpenAt)})
+		if o.SLA {
+			atRisk, breached := q.AtRisk, q.Breached
+			queues[len(queues)-1].AtRisk, queues[len(queues)-1].Breached = &atRisk, &breached
+		}
 	}
 	assignees := make([]overviewAssigneeDTO, 0, len(o.Assignees))
 	for _, a := range o.Assignees {
 		assignees = append(assignees, overviewAssigneeDTO{UserID: a.UserID, Name: a.Name, Open: a.Open, Waiting: a.Waiting})
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{
+	totals := map[string]int{"open": o.Totals.Open, "unassigned": o.Totals.Unassigned, "waiting": o.Totals.Waiting}
+	body := map[string]any{
 		"generatedAt":        ts(o.GeneratedAt),
-		"totals":             map[string]int{"open": o.Totals.Open, "unassigned": o.Totals.Unassigned, "waiting": o.Totals.Waiting},
+		"totals":             totals,
 		"queues":             queues,
 		"assignees":          assignees,
 		"assigneesTruncated": o.AssigneesTruncated,
 		"oldestUnassigned":   toOverviewTickets(o.OldestUnassigned),
 		"oldestWaiting":      toOverviewTickets(o.OldestWaiting),
-	})
+		"slaEnabled":         o.SLA,
+	}
+	if o.SLA {
+		totals["atRisk"], totals["breached"] = o.Totals.AtRisk, o.Totals.Breached
+		body["nextToBreach"] = toOverviewTickets(o.NextToBreach)
+	}
+	httpx.JSON(w, http.StatusOK, body)
 }

@@ -1286,6 +1286,13 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (Detail, erro
 					return Detail{}, err
 				}
 			}
+			if ss, ok := s.store.(SLASummaryStore); ok {
+				sum, err := ss.SLASummary(ctx, t.ID)
+				if err != nil {
+					return Detail{}, err
+				}
+				d.Ticket.SLA = &sum
+			}
 		}
 	}
 	if d.Ticket.Aliases, err = s.aliasesFor(ctx, a, t); err != nil {

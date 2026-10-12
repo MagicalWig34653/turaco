@@ -82,11 +82,29 @@ type SLAStore interface {
 	SLAClocks(context.Context, string) ([]SLAClock, error)
 }
 
+// SLASummaryStore reads the derived SLA summary of one Ticket (the same expression as the sla_state list field).
+type SLASummaryStore interface {
+	SLASummary(ctx context.Context, ticketID string) (TicketSLA, error)
+}
+
+// withSLAVisibility keeps the SLA summary only on rows where the caller works as staff: they view the Ticket's Queue
+// and are neither its reporter nor its affected User (employees see goals, not ITIL fields). Everything else is cleared.
+func (s *Service) withSLAVisibility(a access, p Principal, on bool, ts ...*Ticket) {
+	for _, t := range ts {
+		if t != nil && (!on || p.External || !a.canView(t.QueueID) || s.isOwner(*t, p)) {
+			t.SLA = nil
+		}
+	}
+}
+
 // WithSLA enables clock integration. enabled is checked on every operation and read.
 func (s *Service) WithSLA(enabled func(context.Context) (bool, error)) *Service {
 	s.slaEnabled = enabled
 	return s
 }
+
+// SLAEnabled reports whether the SLA switch is on (public contract for System Views and the AI tools).
+func (s *Service) SLAEnabled(ctx context.Context) (bool, error) { return s.slaOn(ctx) }
 
 func (s *Service) slaOn(ctx context.Context) (bool, error) {
 	if s.slaEnabled == nil {

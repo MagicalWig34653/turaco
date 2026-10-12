@@ -31,6 +31,9 @@ type OverviewQuery struct {
 	QueueIDs      []string
 	AssigneeLimit int
 	OldestLimit   int
+	// SLA is true while the sla switch is on: the store then also counts at-risk and breached Tickets per Queue and
+	// lists the Tickets next to breach. There is deliberately no per-assignee SLA count (ADR-0041 D5).
+	SLA bool
 }
 
 // OverviewQueueCounts are the open Ticket counts of one Queue.
@@ -39,6 +42,9 @@ type OverviewQueueCounts struct {
 	Open       int
 	Unassigned int
 	Waiting    int
+	// AtRisk and Breached count open Tickets by sla_state (see SLAStateSQL); zero while the sla switch is off.
+	AtRisk   int
+	Breached int
 	// OldestOpenAt is the creation time of the oldest open Ticket, if any.
 	OldestOpenAt *time.Time
 }
@@ -61,6 +67,8 @@ type OverviewTicket struct {
 	AssigneeID *string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	// SLADueAt is the next due time still ahead (next-to-breach list only).
+	SLADueAt *time.Time
 }
 
 // OverviewData is what the store reads.
@@ -72,6 +80,8 @@ type OverviewData struct {
 	// least recently changed first.
 	OldestUnassigned []OverviewTicket
 	OldestWaiting    []OverviewTicket
+	// NextToBreach are open Tickets with the nearest future due time of a running clock (only while SLA is on).
+	NextToBreach []OverviewTicket
 }
 
 // OverviewStore is the persistence port of the manager overview. The repository implements it next to Store.
@@ -110,6 +120,9 @@ type Overview struct {
 	AssigneesTruncated bool
 	OldestUnassigned   []OverviewTicketRow
 	OldestWaiting      []OverviewTicketRow
+	// SLA is true while the sla switch is on; NextToBreach is then the Tickets that breach soonest.
+	SLA          bool
+	NextToBreach []OverviewTicketRow
 }
 
 // OverviewTotals sum the Queue rows.
@@ -117,6 +130,8 @@ type OverviewTotals struct {
 	Open       int
 	Unassigned int
 	Waiting    int
+	AtRisk     int
+	Breached   int
 }
 
 // TicketOverview returns the manager overview for the caller.
@@ -135,12 +150,16 @@ func (s *Service) TicketOverview(ctx context.Context, p Principal) (Overview, er
 	if !a.anyView() {
 		return Overview{}, ErrForbidden
 	}
+	sla, err := s.slaOn(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
 	data, err := os.TicketOverview(ctx, OverviewQuery{Global: a.global(), QueueIDs: a.viewIDs(),
-		AssigneeLimit: OverviewMaxAssignees, OldestLimit: OverviewMaxOldest})
+		AssigneeLimit: OverviewMaxAssignees, OldestLimit: OverviewMaxOldest, SLA: sla})
 	if err != nil {
 		return Overview{}, fmt.Errorf("ticket overview: %w", err)
 	}
-	out := Overview{GeneratedAt: time.Now().UTC(), AssigneesTruncated: data.AssigneesTruncated}
+	out := Overview{GeneratedAt: time.Now().UTC(), AssigneesTruncated: data.AssigneesTruncated, SLA: sla}
 	ref := func(id string) QueueRef {
 		r := a.queues[id].Queue
 		return QueueRef{ID: r.ID, Key: r.Key, Prefix: r.Prefix, Name: r.Name}
@@ -154,6 +173,8 @@ func (s *Service) TicketOverview(ctx context.Context, p Principal) (Overview, er
 		out.Totals.Open += c.Open
 		out.Totals.Unassigned += c.Unassigned
 		out.Totals.Waiting += c.Waiting
+		out.Totals.AtRisk += c.AtRisk
+		out.Totals.Breached += c.Breached
 	}
 	sort.SliceStable(out.Queues, func(i, j int) bool {
 		x, y := strings.ToLower(out.Queues[i].Queue.Name), strings.ToLower(out.Queues[j].Queue.Name)
@@ -166,7 +187,7 @@ func (s *Service) TicketOverview(ctx context.Context, p Principal) (Overview, er
 	for _, c := range data.Assignees {
 		ids = append(ids, c.UserID)
 	}
-	for _, list := range [][]OverviewTicket{data.OldestUnassigned, data.OldestWaiting} {
+	for _, list := range [][]OverviewTicket{data.OldestUnassigned, data.OldestWaiting, data.NextToBreach} {
 		for _, t := range list {
 			if t.AssigneeID != nil {
 				ids = append(ids, *t.AssigneeID)
@@ -197,5 +218,8 @@ func (s *Service) TicketOverview(ctx context.Context, p Principal) (Overview, er
 		return res
 	}
 	out.OldestUnassigned, out.OldestWaiting = rows(data.OldestUnassigned), rows(data.OldestWaiting)
+	if sla {
+		out.NextToBreach = rows(data.NextToBreach)
+	}
 	return out, nil
 }

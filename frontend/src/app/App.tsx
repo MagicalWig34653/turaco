@@ -4,6 +4,7 @@ import { pathEnabled } from '../platform/modules/model';
 import { ModulesScreen } from '../platform/modules/ModulesScreen';
 import { CalendarScreen } from '../modules/calendars/CalendarScreen';
 import { PoliciesScreen } from '../modules/sla/PoliciesScreen';
+import { SlaReportScreen } from '../modules/sla/ReportScreen';
 import { AiProvider, useAi } from '../modules/ai/AiProvider';
 import { AdminScreen as AiAdminScreen } from '../modules/ai/AdminScreen';
 import {
@@ -355,6 +356,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <QueuesAdminScreen />;
     case 'managerOverview':
       return <ManagerOverviewScreen />;
+    case 'slaReport':
+      return <SlaReportScreen />;
     case 'knowledge':
       return <ArticlesScreen />;
     case 'articleNew':

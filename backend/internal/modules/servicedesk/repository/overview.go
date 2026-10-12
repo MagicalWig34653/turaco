@@ -28,17 +28,23 @@ func (r *Repository) TicketOverview(ctx context.Context, q application.OverviewQ
 	queues := nonNil(q.QueueIDs)
 	scope := `($2::bool OR queue_id = ANY($1::text[]::uuid[]))`
 
+	// The SLA counts use the very expression of the sla_state list field, so each number equals its filtered list.
+	atRisk, breached := "0", "0"
+	if q.SLA {
+		state := application.SLAStateSQL()
+		atRisk, breached = "count(*) FILTER (WHERE "+state+" = 'at_risk')", "count(*) FILTER (WHERE "+state+" = 'breached')"
+	}
 	rows, err := tx.Query(ctx, `
 		SELECT queue_id::text, count(*), count(*) FILTER (WHERE assignee_user_id IS NULL),
-		       count(*) FILTER (WHERE status = 'waiting'), min(created_at)
-		FROM servicedesk.tickets WHERE `+overviewOpen+` AND `+scope+`
+		       count(*) FILTER (WHERE status = 'waiting'), min(created_at), `+atRisk+`, `+breached+`
+		FROM servicedesk.tickets t WHERE `+overviewOpen+` AND `+scope+`
 		GROUP BY queue_id ORDER BY queue_id`, queues, q.Global)
 	if err != nil {
 		return out, fmt.Errorf("overview queues: %w", err)
 	}
 	for rows.Next() {
 		var c application.OverviewQueueCounts
-		if err := rows.Scan(&c.QueueID, &c.Open, &c.Unassigned, &c.Waiting, &c.OldestOpenAt); err != nil {
+		if err := rows.Scan(&c.QueueID, &c.Open, &c.Unassigned, &c.Waiting, &c.OldestOpenAt, &c.AtRisk, &c.Breached); err != nil {
 			rows.Close()
 			return out, fmt.Errorf("overview queues: scan: %w", err)
 		}
@@ -97,6 +103,11 @@ func (r *Repository) TicketOverview(ctx context.Context, q application.OverviewQ
 	}
 	if out.OldestWaiting, err = oldest(`status = 'waiting'`, `updated_at`); err != nil {
 		return out, fmt.Errorf("overview oldest waiting: %w", err)
+	}
+	if q.SLA {
+		if out.NextToBreach, err = nextToBreach(ctx, tx, queues, q); err != nil {
+			return out, fmt.Errorf("overview next to breach: %w", err)
+		}
 	}
 	return out, nil
 }

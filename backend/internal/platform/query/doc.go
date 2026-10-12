@@ -5,7 +5,7 @@
 //
 // Trust model. Catalogs are trusted Go code. The client supplies only field
 // keys, operator names and values; field keys select a catalog-declared SQL
-// expression built from typed constructors (Col, Lower, Ordinal), operator
+// expression built from typed constructors (Col, Lower, Ordinal, Case over closed predicates), operator
 // names select fixed SQL fragments and every value is a bind parameter. There
 // is no way to pass raw SQL, column names, functions or ORDER BY text.
 //
