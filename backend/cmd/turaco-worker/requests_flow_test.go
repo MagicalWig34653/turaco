@@ -18,7 +18,7 @@ import (
 )
 
 var allTestEventTypes = []string{
-	"AssetAssigned", "PurchaseOrderApproved", "RunbookExecutionStarted", "RunbookExecutionCompleted", "MajorIncidentDeclared", "MajorIncidentUpdated", "TicketCreated", "TicketAssigned", "TicketResolved", "TicketCommentAdded", "TaskAssigned", "TaskCompleted", "TaskCancelled", "ApprovalRequested", "ApprovalDecided",
+	"AssetAssigned", "PurchaseOrderApproved", "RunbookExecutionStarted", "RunbookExecutionCompleted", "MajorIncidentDeclared", "MajorIncidentUpdated", "TicketCreated", "TicketAssigned", "TicketResolved", "TicketCommentAdded", "TicketSLAWarningReached", "TicketSLABreached", "TaskAssigned", "TaskCompleted", "TaskCancelled", "ApprovalRequested", "ApprovalDecided",
 	"ServiceRequestSubmitted", "ServiceRequestApproved", "ServiceRequestRejected", "ServiceRequestCompleted", "ServiceRequestCancelled",
 	"ServiceCreated", "ChangeSubmitted", "ChangeApproved", "ChangeRejected", "ChangeScheduled", "ChangeScheduledFanOut", "ChangeStarted", "ChangeCompleted", "ChangeFailed",
 	"InitiativeStatusChanged",

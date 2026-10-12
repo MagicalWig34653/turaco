@@ -76,6 +76,7 @@ func TestForPathAndForJob(t *testing.T) {
 		"services.vm_link_backfill": {"services", modules.JobDefer}, "security.match_all": {"security", modules.JobDrop},
 		"endpoints.software_package_sync": {"endpoints", modules.JobDrop}, "changes.reminders": {"changes", modules.JobDrop},
 		"remoteaccess.observe": {"remoteaccess", modules.JobDrop}, "security.deferred_event": {"security", modules.JobDefer},
+		"sla.clock_sweep": {"sla", modules.JobDrop}, "sla.other": {"sla", modules.JobDefer},
 		"endpoints.deployment_tick": {}, "remoteaccess.expire_sessions": {},
 		"presence.purge": {}, "ai.retention.purge": {}, "tasks.recurrence.generate": {}, "organization.directory_sync": {}, "nodot": {}, "x.y": {},
 	}
@@ -85,7 +86,7 @@ func TestForPathAndForJob(t *testing.T) {
 			t.Errorf("ForJob(%s) = %q, %v, %v; want %+v", typ, got, policy, ok, want)
 		}
 	}
-	for name, want := range map[string]string{"changes.approval": "changes", "knowledge.runbook-task-finished": "knowledge",
+	for name, want := range map[string]string{"sla.notify": "sla", "changes.approval": "changes", "knowledge.runbook-task-finished": "knowledge",
 		"tasks.notify-assigned": "", "approvals.notify-requested": "", "nodot": ""} {
 		if got, ok := ix.ForConsumer(name); got != want || ok != (want != "") {
 			t.Errorf("ForConsumer(%s) = %q, %v", name, got, ok)

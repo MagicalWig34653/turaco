@@ -8,7 +8,7 @@
 
 ## SLA Clocks (F17 S-C)
 
-Migration `000099` adds one `servicedesk.ticket_sla_clocks` row per Ticket and target kind, immutable `ticket_sla_clock_transitions`, and nullable due-date projections plus `sla_tracked` on `servicedesk.tickets`. Clocks start only when a Ticket is created while SLA is enabled and its Queue has the matching target; there is no backfill. Ticket operations maintain existing clocks even while the SLA switch is off. The projection is updated with the clocks without changing Ticket version or `updated_at`. Queue-scoped partial indexes support due-date reads; the warning and breach sweep, notification paths and list fields remain S-D/S-E work.
+Migration `000099` adds one `servicedesk.ticket_sla_clocks` row per Ticket and target kind, immutable `ticket_sla_clock_transitions`, and nullable due-date projections plus `sla_tracked` on `servicedesk.tickets`. Clocks start only when a Ticket is created while SLA is enabled and its Queue has the matching target; there is no backfill. Ticket operations maintain existing clocks even while the SLA switch is off. The projection is updated with the clocks without changing Ticket version or `updated_at`. Queue-scoped partial indexes support due-date reads; the warning and breach sweep (S-D, `sla.clock_sweep`) writes `warned_at`/`breached_at`, the transition operations `mark_warned`/`mark_breached` (cause `sweep`, no actor) and the projection without changing the Ticket version; list fields and reports remain S-E work.
 
 ## Business Calendars (F17 S-A)
 

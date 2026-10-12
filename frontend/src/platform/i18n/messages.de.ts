@@ -2215,6 +2215,11 @@ export const de: Record<MessageKey, string> = {
   'notifications.ticket.assigned': 'Ihnen wurde ein Ticket zugewiesen: {title}',
   'notifications.ticket.comment': 'Neue Antwort in einem Ticket: {title}',
   'notifications.ticket.resolved': 'Ihr Ticket wurde gelöst: {title}',
+  'notifications.ticket.sla_warning': 'Ein Ticket nähert sich seinem SLA-Ziel: {title}',
+  'notifications.ticket.sla_breached': 'Ein Ticket hat sein SLA-Ziel überschritten: {title}',
+  'notifications.category.ticket.sla_warning': 'Ein Ticket von mir nähert sich seinem SLA-Ziel',
+  'notifications.category.ticket.sla_breached':
+    'Ein Ticket von mir hat sein SLA-Ziel überschritten',
   'notifications.category.ticket.assigned': 'Mir wird ein Ticket zugewiesen',
   'notifications.category.ticket.comment': 'Es gibt eine Antwort auf mein Ticket',
   'notifications.category.ticket.resolved': 'Mein Ticket wird gelöst',

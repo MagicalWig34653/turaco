@@ -400,8 +400,10 @@ func TestJobGateDropsDisposableDefersDurableAndKeepsSafetyPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// presence and ai are off by default.
+	// presence, ai and sla are off by default.
 	cases := map[string]jobs.GateDecision{
+		"sla.clock_sweep": jobs.GateDrop, // sla is off by default: the disposable tick is completed without running
+
 		"security.advisory_sync": jobs.GateDrop, "security.match_all": jobs.GateDrop, "security.risk_review_reminders": jobs.GateDrop,
 		"security.match":                  jobs.GateDefer, // durable, enqueued by a user action
 		"security.deferred_event":         jobs.GateDefer,

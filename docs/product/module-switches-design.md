@@ -22,7 +22,7 @@ Permissions and roles (`modules.manage`, elevated; built-in administrator roles 
 | workforce | presence (default off) |
 | insight | briefing; ai (default off) |
 
-Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. No SLA clock, sweep or notification implementation exists in S-B; policy and Queue data is retained while off.
+Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. Policy and Queue data is retained while off. S-D adds the disposable job `sla.clock_sweep` and the deferred outbox consumer `sla.notify`; while the switch is off no warning or breach is recorded and existing clocks stay unchanged.
 
 ## State
 
@@ -36,7 +36,7 @@ Lifecycle: see [state machines](../domain/state-machines.md#module-switch).
 
 Each job type `<key>.*` has one policy in the catalog:
 - **always run** (`AlwaysRunJobs`): safety and retention paths: `presence.purge`, `ai.sessions.expire`, `ai.retention.purge`, `ai.proposals.expire`, `remoteaccess.expire_sessions`, `endpoints.deployment_tick`. The deployment tick runs only the kill-switch sweep (pause, halt, queue clearing) while Endpoints is off and starts no new rollout work.
-- **disposable** (`DisposableJobs`): recurring scheduled ticks (`endpoints.software_package_sync`, `endpoints.deployment_correlation`, `security.advisory_sync|match_all|risk_review_reminders`, `changes.reminders`, `remoteaccess.observe`): completed without running; the schedule enqueues the next one.
+- **disposable** (`DisposableJobs`): recurring scheduled ticks (`endpoints.software_package_sync`, `endpoints.deployment_correlation`, `security.advisory_sync|match_all|risk_review_reminders`, `changes.reminders`, `remoteaccess.observe`, `sla.clock_sweep`): completed without running; the schedule enqueues the next one.
 - **durable** (everything else, e.g. `security.match`, `servicedesk.external.push`, `services.vm_link_backfill`): kept pending (attempt refunded, offered again every minute) and run after the module is enabled. Nothing is lost.
 
 Outbox consumers named `<key>.*` of a disabled module do not run. The dispatcher hands the event, in its own transaction, to a durable job `<key>.deferred_event` for exactly that consumer (dedupe by event and consumer), so other consumers of the same event (for example the core task notification) are not blocked and the event is delivered after the module is enabled. Core consumers always run. `AlwaysRunConsumers` can exempt a safety or cleanup consumer; none exists yet. Briefing feed results are cached per principal and per set of active sources, so a switch is visible at once.
