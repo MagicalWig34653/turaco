@@ -8,7 +8,7 @@ Context: [security architecture](security-architecture.md), [LDAP/AD](../integra
 
 - **E1 Administrator bootstrap:** the first administrator is granted with the audited `turaco-admin` CLI run against the database. An optional local **emergency account** (break-glass) with an argon2id password hash exists for directory outages; it is disabled unless explicitly enabled, every use is audited and logged at error level.
 - **E2 Kerberos:** `turaco-api` validates SPNEGO/Negotiate tickets natively (gokrb5, ADR-0023) with a keytab deployment secret.
-- **E3 Roles:** custom roles (named permission sets) managed through the API, plus one immutable built-in `platform-administrator` role. Roles are assigned to Users and to Directory Groups. Scope is `global` only; scoped assignments arrive with the first scoped module.
+- **E3 Roles:** custom roles (named permission sets) managed through the API, plus one immutable built-in `platform-administrator` role. Roles are assigned to Users and to Directory Groups. Scope is `global` only; scoped assignments arrive with the first scoped module. Location-scoped assignments are designed in [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md) and the [F16 design](../product/f16-location-scoped-access-design.md) (not implemented).
 - **E4 UI:** F1 ships a login page (Kerberos attempt, password form, emergency login when enabled), logout, a current-user view and admin screens for roles, role assignments, directory sync runs and audit events (EN/DE).
 
 ## 1. Outcome
