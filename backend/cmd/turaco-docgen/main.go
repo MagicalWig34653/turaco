@@ -61,9 +61,9 @@ func renderPermissions() []byte {
 	items := append([]permissions.Permission(nil), permissions.Registry...)
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	var b strings.Builder
-	b.WriteString("# Permission Reference\n\n> Generated from code. Do not edit manually.\n\n| Permission | Risk | Description |\n|---|---|---|\n")
+	b.WriteString("# Permission Reference\n\n> Generated from code. Do not edit manually.\n\nScope `global`: the permission takes effect only through a global role assignment (a Location-scoped assignment leaves it inert). Scope `location`: it also takes effect through a Location-scoped assignment, within that Location and its sub-Locations (ADR-0040).\n\n| Permission | Risk | Scope | Description |\n|---|---|---|---|\n")
 	for _, p := range items {
-		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", p.Name, p.Risk, p.Description)
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", p.Name, p.Risk, p.EffectiveScope(), p.Description)
 	}
 	return []byte(b.String())
 }

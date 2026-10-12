@@ -24,15 +24,25 @@ const (
 	SubjectUser           = "user"
 	SubjectDirectoryGroup = "directory_group"
 	ScopeGlobal           = "global"
+	// ScopeLocation marks a Location-scoped assignment (ADR-0040): it applies at scope_location_id and below.
+	ScopeLocation = "location"
 
 	DefaultLimit = 50
 	MaxLimit     = 200
 )
 
+// LocationTree expands Locations to their current subtrees (ADR-0040). Implemented by organization/public.
+type LocationTree interface {
+	// SubtreeIDs returns the given Locations and all their descendants in the current tree, active or inactive,
+	// sorted and without duplicates. Unknown ids contribute nothing.
+	SubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error)
+}
+
 // GroupResolver returns the Directory Groups a User currently belongs to,
-// including groups reached through currently observed nesting. It is
-// implemented by organization/public; platform code must not import modules.
+// including groups reached through currently observed nesting, and expands the Location scopes of the User's
+// assignments. It is implemented by organization/public; platform code must not import modules.
 type GroupResolver interface {
+	LocationTree
 	GroupIDsOfUser(ctx context.Context, userID string) ([]string, error)
 	// IsExternalAccount reports whether the User is a restricted external account (account_kind external, ADR-0034).
 	// The kind never changes after creation. An unknown User is not external.

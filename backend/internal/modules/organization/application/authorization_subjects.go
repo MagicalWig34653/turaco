@@ -2,7 +2,10 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -33,6 +36,9 @@ type AuthorizationSubjectStore interface {
 	UsersByUsername(ctx context.Context, username string) ([]string, error)
 	// UserByEmail returns the User with the (case-insensitive) primary email.
 	UserByEmail(ctx context.Context, email string) (id string, found bool, err error)
+	// LocationSubtreeIDs returns the ids of the given Locations and all their descendants in the current Location
+	// tree (active or not), each once, ordered by id. Unknown ids contribute nothing.
+	LocationSubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error)
 }
 
 // AuthorizationSubjects serves the questions platform/authorization asks about
@@ -46,6 +52,34 @@ func NewAuthorizationSubjects(store AuthorizationSubjectStore) *AuthorizationSub
 }
 
 var subjectUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// maxSubtreeRoots bounds one SubtreeIDs call; the evaluator passes the distinct scoped roots of one User, which is a
+// handful in practice.
+const maxSubtreeRoots = 1000
+
+// SubtreeIDs expands Location ids to their current subtrees (ADR-0040): each root and all its descendants, active or
+// inactive, sorted and without duplicates. Malformed and unknown ids contribute nothing, so a scope on a Location
+// that does not exist covers nothing (fail closed).
+func (s *AuthorizationSubjects) SubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error) {
+	valid := make([]string, 0, len(rootIDs))
+	for _, id := range rootIDs {
+		if subjectUUID.MatchString(id) {
+			valid = append(valid, strings.ToLower(id))
+		}
+	}
+	if len(valid) == 0 {
+		return []string{}, nil
+	}
+	if len(valid) > maxSubtreeRoots {
+		return nil, fmt.Errorf("location subtree: %d roots exceed the limit of %d", len(valid), maxSubtreeRoots)
+	}
+	ids, err := s.store.LocationSubtreeIDs(ctx, valid)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(ids)
+	return slices.Compact(ids), nil
+}
 
 func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID string) ([]string, error) {
 	if !subjectUUID.MatchString(userID) {

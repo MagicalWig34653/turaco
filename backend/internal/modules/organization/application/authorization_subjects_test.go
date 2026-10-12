@@ -10,6 +10,8 @@ type fakeSubjectStore struct {
 	usernames map[string][]string
 	emails    map[string]string
 	exists    map[string]bool
+	// subtreeRoots are the roots of the last LocationSubtreeIDs call.
+	subtreeRoots []string
 }
 
 func (f *fakeSubjectStore) GroupIDsOfUser(context.Context, string) ([]string, error) {
@@ -18,6 +20,12 @@ func (f *fakeSubjectStore) GroupIDsOfUser(context.Context, string) ([]string, er
 }
 func (f *fakeSubjectStore) IsLocalOriginAccount(context.Context, string) (bool, error) {
 	return false, nil
+}
+
+func (f *fakeSubjectStore) LocationSubtreeIDs(_ context.Context, roots []string) ([]string, error) {
+	f.calls++
+	f.subtreeRoots = roots
+	return append([]string{"b", "a"}, roots...), nil
 }
 
 func (f *fakeSubjectStore) IsExternalAccount(context.Context, string) (bool, error) {
@@ -109,6 +117,32 @@ func TestFindUserResolution(t *testing.T) {
 		got, found, err := s.FindUser(context.Background(), tc.ref)
 		if err != nil || found != tc.found || got != tc.want {
 			t.Fatalf("FindUser(%q) = %q, %v, %v", tc.ref, got, found, err)
+		}
+	}
+}
+
+func TestSubtreeIDsFiltersMalformedRootsAndSortsResult(t *testing.T) {
+	store := &fakeSubjectStore{}
+	s := NewAuthorizationSubjects(store)
+	ids, err := s.SubtreeIDs(context.Background(), []string{"not-a-uuid", "", "x'; DROP TABLE y; --"})
+	if err != nil || len(ids) != 0 || store.calls != 0 {
+		t.Fatalf("malformed roots: ids=%v err=%v calls=%d", ids, err, store.calls)
+	}
+	root := "0196A000-0000-7000-8000-000000000001"
+	ids, err = s.SubtreeIDs(context.Background(), []string{root, "bad"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.subtreeRoots) != 1 || store.subtreeRoots[0] != "0196a000-0000-7000-8000-000000000001" {
+		t.Fatalf("roots passed to storage = %v", store.subtreeRoots)
+	}
+	want := []string{"0196a000-0000-7000-8000-000000000001", "a", "b"}
+	if len(ids) != len(want) {
+		t.Fatalf("ids = %v", ids)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("ids = %v, want %v", ids, want)
 		}
 	}
 }

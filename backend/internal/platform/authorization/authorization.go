@@ -19,8 +19,12 @@ import (
 
 // Principal is the authenticated caller with its effective permissions.
 type Principal struct {
-	UserID      string
+	UserID string
+	// Permissions are the permissions held globally. Has, HasAny, Require and RequireAny read only this set.
 	Permissions map[string]struct{}
+	// Scopes are scopable permissions held only through Location-scoped role assignments (ADR-0040), permission ->
+	// expanded Location set. Read them through ScopeOf; nil means none.
+	Scopes map[string]LocationScope
 	// TenantID is the data plane of the caller, resolved on the server (WithTenant), never from request fields.
 	TenantID string
 	// SessionID is the authentication session of the request (empty for other authenticators).
@@ -34,7 +38,8 @@ type Principal struct {
 	EntraStepUpMaxAge time.Duration
 }
 
-// Has reports whether the principal holds the named permission.
+// Has reports whether the principal holds the named permission globally. A permission held only at Locations is
+// not reported (ScopeOf).
 func (p Principal) Has(permission string) bool {
 	_, ok := p.Permissions[permission]
 	return ok

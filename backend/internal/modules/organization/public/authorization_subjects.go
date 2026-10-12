@@ -18,6 +18,7 @@ type AuthorizationSubjects struct {
 var (
 	_ roles.GroupResolver    = (*AuthorizationSubjects)(nil)
 	_ roles.SubjectDirectory = (*AuthorizationSubjects)(nil)
+	_ roles.LocationTree     = (*AuthorizationSubjects)(nil)
 )
 
 // NewAuthorizationSubjects wraps the application service; store is normally
@@ -30,6 +31,13 @@ func NewAuthorizationSubjects(store application.AuthorizationSubjectStore) *Auth
 // belongs to, directly or through observed nesting.
 func (s *AuthorizationSubjects) GroupIDsOfUser(ctx context.Context, userID string) ([]string, error) {
 	return s.svc.GroupIDsOfUser(ctx, userID)
+}
+
+// SubtreeIDs is the LocationTree contract (ADR-0040): the given Locations and all their descendants in the current
+// tree, active or inactive, sorted and without duplicates. Unknown ids contribute nothing. Consumers only see id
+// sets; how Organization stores or walks the tree is not part of the contract.
+func (s *AuthorizationSubjects) SubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error) {
+	return s.svc.SubtreeIDs(ctx, rootIDs)
 }
 
 // IsLocalOriginAccount reports whether the User is a local account by origin.
