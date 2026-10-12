@@ -251,7 +251,7 @@ export const en = {
   'ai.mcp.clientId': 'Client ID',
   'ai.mcp.redirectUris': 'Redirect URIs (one per line)',
   'ai.mcp.redirectHint':
-    'Exact match. https, or http on 127.0.0.1, [::1] or localhost with a fixed port.',
+    'Exact match. https, or http on 127.0.0.1 or [::1] with a fixed port.',
   'ai.mcp.activeGrants': 'Active connections',
   'ai.mcp.consentTitle': 'Connect an AI application',
   'ai.mcp.consentIntro': '{client} wants to use Turaco tools on your behalf.',

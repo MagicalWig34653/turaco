@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAsync } from '../../platform/api/useAsync';
 import { formatDateTime } from '../../platform/format/format';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -9,6 +9,7 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { AiError } from './AiError';
 import { aiApi } from './api';
+import { watchConsentApproval } from './consentDelay';
 import { authorizeParams, parseRedirectUris } from './model';
 import { dataClasses, type McpClient, type McpClientFields } from './types';
 
@@ -198,9 +199,11 @@ export function ConsentScreen() {
   const preview = useAsync((signal) => aiApi.previewAuthorize(params, signal), [params]);
   const [error, setError] = useState<unknown>();
   const [leaving, setLeaving] = useState(false);
+  const [approvalReady, setApprovalReady] = useState(false);
   const lock = useRef(false);
+  useEffect(() => watchConsentApproval(setApprovalReady), []);
   function decide(decision: 'approve' | 'deny') {
-    if (lock.current) return;
+    if (lock.current || (decision === 'approve' && !approvalReady)) return;
     lock.current = true;
     setError(undefined);
     void aiApi.authorize(params, decision).then(
@@ -248,7 +251,7 @@ export function ConsentScreen() {
           </ul>
           <p>{t('ai.mcp.consentWarning')}</p>
           <p>{t('ai.mcp.consentDuration', { hours: p.grantHours })}</p>
-          <Button onClick={() => decide('approve')}>{t('ai.mcp.approve')}</Button>
+          <Button disabled={!approvalReady} onClick={() => decide('approve')}>{t('ai.mcp.approve')}</Button>
           <Button onClick={() => decide('deny')}>{t('ai.mcp.deny')}</Button>
         </section>
       )}

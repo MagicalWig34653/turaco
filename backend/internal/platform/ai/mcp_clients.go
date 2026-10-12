@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/safetext"
 )
 
 // MCPClient is one allowlisted OAuth client of the Turaco MCP server (design M3). It is a public client: there is
@@ -62,13 +63,16 @@ func ValidateRedirectURI(raw string) error {
 	if u.User != nil {
 		return errors.New("redirect URI must not contain user information")
 	}
+	if strings.EqualFold(strings.TrimSuffix(u.Hostname(), "."), "localhost") {
+		return errors.New("redirect URI must use a numeric loopback address instead of localhost")
+	}
 	switch u.Scheme {
 	case "https":
 		return nil
 	case "http":
 		host := u.Hostname()
 		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		if ip == nil || (host != "127.0.0.1" && host != "::1") {
 			return errors.New("http redirect URIs are allowed for loopback addresses only")
 		}
 		if u.Port() == "" {
@@ -81,7 +85,7 @@ func ValidateRedirectURI(raw string) error {
 
 func (in MCPClientInput) normalize() (MCPClientInput, error) {
 	in.DisplayName = strings.TrimSpace(in.DisplayName)
-	if n := utf8.RuneCountInString(in.DisplayName); n < 1 || n > 100 || !utf8.ValidString(in.DisplayName) || strings.ContainsAny(in.DisplayName, "\x00\r\n\t") {
+	if n := utf8.RuneCountInString(in.DisplayName); n < 1 || n > 100 || !utf8.ValidString(in.DisplayName) || safetext.ContainsUnsafe(in.DisplayName, false) {
 		return in, invalid("displayName must be 1 to 100 characters")
 	}
 	if len(in.RedirectURIs) < 1 || len(in.RedirectURIs) > maxRedirectURIs {
@@ -122,6 +126,9 @@ func (in MCPClientInput) normalize() (MCPClientInput, error) {
 const mcpClientCols = `c.id::text, c.client_id, c.display_name, c.redirect_uris, c.allowed_data_classes, c.enabled, c.version,
 	c.created_at::text, c.updated_at::text,
 	(SELECT count(*) FROM ai.mcp_grants g WHERE g.client_ref = c.id AND g.revoked_at IS NULL AND g.expires_at > now())::int`
+
+const mcpClientHotCols = `c.id::text, c.client_id, c.display_name, c.redirect_uris, c.allowed_data_classes, c.enabled, c.version,
+	c.created_at::text, c.updated_at::text, 0::int`
 
 func scanMCPClient(row pgx.Row) (MCPClient, error) {
 	var c MCPClient

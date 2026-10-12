@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai/transport"
@@ -24,12 +25,74 @@ import (
 
 const base = "https://turaco.example.org"
 
+func TestBearerEndpointsThrottleBeforeCredentialChecks(t *testing.T) {
+	m := setupMCP(t)
+	m.limiter.deny.Store(true)
+	for _, path := range []string{"/api/v1/oauth/token", "/api/v1/oauth/revoke", "/api/v1/mcp"} {
+		w, _ := m.form(path, url.Values{})
+		if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+			t.Fatalf("%s: %d %q", path, w.Code, w.Body.String())
+		}
+	}
+	if got := m.limiter.calls.Load(); got != 3 {
+		t.Fatalf("throttle calls = %d", got)
+	}
+}
+
+func TestOuterBearerThrottleStopsRequestsBeforeModuleGate(t *testing.T) {
+	l := &bearerTestLimiter{}
+	l.deny.Store(true)
+	var reached atomic.Int64
+	h := transport.ThrottleBearerPaths(l, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	for _, path := range []string{"/api/v1/oauth/token", "/api/v1/oauth/revoke", "/api/v1/mcp"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", path, nil))
+		if w.Code != http.StatusTooManyRequests {
+			t.Fatalf("%s: %d", path, w.Code)
+		}
+	}
+	if reached.Load() != 0 {
+		t.Fatal("request reached database gate")
+	}
+}
+
+func TestAdministratorRouteRevokesUserGrants(t *testing.T) {
+	m := setupMCP(t)
+	user := newID()
+	access, _ := m.login(t, user)
+	path := "/api/v1/ai/mcp/users/" + user + "/revoke-grants"
+	if w, _ := sameOrigin(m.h, "POST", path, newID(), "ai.settings.view", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("view-only status: %d", w.Code)
+	}
+	w, out := sameOrigin(m.h, "POST", path, newID(), "ai.settings.manage", "")
+	if w.Code != http.StatusOK || out["revokedGrants"] != float64(1) {
+		t.Fatalf("revoke: %d %v", w.Code, out)
+	}
+	if w, _ := m.rpc(access, `{"jsonrpc":"2.0","id":1,"method":"ping"}`); w.Code != http.StatusUnauthorized {
+		t.Fatalf("token survived: %d", w.Code)
+	}
+}
+
 type mcpHTTP struct {
 	h        http.Handler
 	svc      *ai.Service
 	moduleOn atomic.Bool
 	client   ai.MCPClient
 	tenant   string
+	limiter  *bearerTestLimiter
+}
+
+type bearerTestLimiter struct {
+	deny  atomic.Bool
+	calls atomic.Int64
+}
+
+func (l *bearerTestLimiter) Reserve(context.Context, string, int) (bool, time.Duration, error) {
+	l.calls.Add(1)
+	return !l.deny.Load(), time.Second, nil
 }
 
 func setupMCP(t *testing.T) *mcpHTTP {
@@ -64,7 +127,7 @@ func setupMCP(t *testing.T) *mcpHTTP {
 		}}); err != nil {
 		t.Fatal(err)
 	}
-	m := &mcpHTTP{tenant: tenant}
+	m := &mcpHTTP{tenant: tenant, limiter: &bearerTestLimiter{}}
 	m.moduleOn.Store(true)
 	m.svc = ai.NewService(ai.NewStore(pool), reg, ai.Config{Enabled: true, TenantID: tenant, MCPEnabled: true, BaseURL: base,
 		Permissions: func(context.Context, string) (map[string]struct{}, error) {
@@ -75,11 +138,11 @@ func setupMCP(t *testing.T) *mcpHTTP {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	transport.Register(mux, m.svc, headerAuth{tenant: tenant, session: newID()}, logger,
 		transport.WithModuleSwitch(func(context.Context) (bool, error) { return m.moduleOn.Load(), nil }))
-	m.h = httpx.Middleware(logger, authentication.RequireSameOriginExcept(transport.BearerPaths...)(mux))
+	m.h = httpx.Middleware(logger, transport.ThrottleBearerPaths(m.limiter, nil)(authentication.RequireSameOriginExcept(transport.BearerPaths...)(mux)))
 	admin := map[string]struct{}{"ai.settings.manage": {}}
 	var err error
 	m.client, err = m.svc.CreateMCPClient(ctx, ai.Caller{UserID: newID(), TenantID: tenant, CorrelationID: "mcp-http-" + tenant, Permissions: admin},
-		ai.MCPClientInput{DisplayName: "Inspector", RedirectURIs: []string{"http://localhost:6274/oauth/callback"}, Enabled: true})
+		ai.MCPClientInput{DisplayName: "Inspector", RedirectURIs: []string{"http://127.0.0.1:6274/oauth/callback"}, Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}

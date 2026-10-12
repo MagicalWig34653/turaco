@@ -60,6 +60,7 @@ import (
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
 	tasksrepository "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/repository"
 	taskstransport "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/transport"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
 	aitransport "github.com/MagicalWig34653/turaco/backend/internal/platform/ai/transport"
 	attachmentstransport "github.com/MagicalWig34653/turaco/backend/internal/platform/attachments/transport"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
@@ -348,6 +349,7 @@ func main() {
 		logger.Error("configure turaco ai", "error", err)
 		os.Exit(1)
 	}
+	authentication.RegisterSessionRevocationHook(ai.RevokeMCPGrantsForSessionChange)
 	// The tenant is resolved on the server (single-tenant default: the fixed installation data plane), never from the request.
 	// The MCP server (F12 A-D) authenticates bearer tokens itself; its metadata documents follow the ai module switch.
 	aitransport.Register(mux, aiService, authorization.WithTenant(sessionAuth, cfg.TenantID), logger,
@@ -443,8 +445,9 @@ func main() {
 		// Every unsafe request must be same-origin, whatever route it reaches. External accounts reach only the
 		// routes the module catalog allows them (ADR-0034), checked before any route runs.
 		// The bearer-token and PKCE endpoints of the MCP server never read the session cookie and are exempt (F12 A-D M13).
-		Handler: httpx.Middleware(logger, authentication.RequireSameOriginExcept(aitransport.BearerPaths...)(
-			authentication.ConfineExternal(sessionAuth, moduleSvc.Index().ExternalAllowed, logger)(moduleSvc.Gate(sessionAuth, logger, mux)))),
+		Handler: httpx.Middleware(logger, aitransport.ThrottleBearerPaths(loginDeps.Throttle, cfg.TrustedProxies)(
+			authentication.RequireSameOriginExcept(aitransport.BearerPaths...)(
+				authentication.ConfineExternal(sessionAuth, moduleSvc.Index().ExternalAllowed, logger)(moduleSvc.Gate(sessionAuth, logger, mux))))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

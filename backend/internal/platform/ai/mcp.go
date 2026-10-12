@@ -67,13 +67,6 @@ func (s *Service) MCPCall(ctx context.Context, p MCPPrincipal, name string, args
 	}
 	offered := s.offeredTo(c, p.Client)
 	ex := toolExec{via: "mcp", targetType: "ai_mcp_grant", targetID: p.GrantID, clientID: p.ClientID, allows: p.Client.Allows}
-	if _, ok := offered[name]; !ok {
-		out := toolOutcome{outcome: "unknown_tool", toolName: safeToolName(name)}
-		if err := s.auditTool(ctx, c, ex, name, nil, out, 0); err != nil {
-			return MCPCallResult{}, err
-		}
-		return MCPCallResult{}, ErrMCPUnknownTool
-	}
 	if len(args) == 0 || string(args) == "null" {
 		args = json.RawMessage(`{}`)
 	}
@@ -90,6 +83,17 @@ func (s *Service) MCPCall(ctx context.Context, p MCPPrincipal, name string, args
 			}
 		}
 		return MCPCallResult{}, err
+	}
+	if _, ok := offered[name]; !ok {
+		out := toolOutcome{outcome: "unknown_tool", toolName: safeToolName(name)}
+		if err := s.auditTool(ctx, c, ex, name, nil, out, 0); err != nil {
+			_, _ = s.store.Settle(ctx, resv, 0, 0, 0)
+			return MCPCallResult{}, err
+		}
+		if _, err := s.store.Settle(ctx, resv, 0, 0, 0); err != nil {
+			return MCPCallResult{}, err
+		}
+		return MCPCallResult{}, ErrMCPUnknownTool
 	}
 	out, err := s.execTool(WithAllowedClasses(ctx, p.Client.AllowedDataClasses), c, ex, offered, ToolCall{ID: "mcp", Name: name, Arguments: args})
 	if err != nil {

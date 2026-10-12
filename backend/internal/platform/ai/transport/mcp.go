@@ -8,12 +8,15 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 )
@@ -38,6 +41,36 @@ const (
 
 // Option configures Register.
 type Option func(*handler)
+
+// BearerLimiter reserves an attempt before parsing or checking a bearer credential.
+type BearerLimiter interface {
+	Reserve(context.Context, string, int) (bool, time.Duration, error)
+}
+
+// ThrottleBearerPaths runs outside the module and cookie gates in the API server.
+// This keeps anonymous floods from reaching their database checks first.
+func ThrottleBearerPaths(l BearerLimiter, proxies []netip.Prefix) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != ai.MCPPath && r.URL.Path != "/api/v1/oauth/token" && r.URL.Path != "/api/v1/oauth/revoke" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			key := "mcp:" + authentication.ClientKey(authentication.ClientIP(r, proxies))
+			ok, retry, err := l.Reserve(r.Context(), key, 120)
+			if err != nil {
+				httpx.WriteError(w, http.StatusInternalServerError, "platform.internal_error", "An internal error occurred.")
+				return
+			}
+			if !ok {
+				w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds())+1)))
+				httpx.WriteError(w, http.StatusTooManyRequests, "ai.rate_limited", "Too many requests. Try again later.")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // WithModuleSwitch makes the MCP, OAuth and metadata routes answer 404 while the ai module switch is off. The
 // module gate already covers /api/v1; the metadata documents live outside it.
@@ -65,6 +98,7 @@ func registerMCP(mux *http.ServeMux, h *handler, signedIn func(http.Handler) htt
 	route("GET /api/v1/ai/mcp/clients", h.listClients)
 	route("POST /api/v1/ai/mcp/clients", h.createClient)
 	route("PUT /api/v1/ai/mcp/clients/{id}", h.updateClient)
+	route("POST /api/v1/ai/mcp/users/{id}/revoke-grants", h.revokeUserGrants)
 	if !h.svc.MCPMounted() {
 		return
 	}
@@ -335,6 +369,15 @@ func (h *handler) revokeGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *handler) revokeUserGrants(w http.ResponseWriter, r *http.Request) {
+	count, err := h.svc.RevokeUserMCPGrants(r.Context(), caller(w, r), r.PathValue("id"))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]int{"revokedGrants": count})
 }
 
 // ---- client administration ----

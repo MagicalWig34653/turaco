@@ -11,8 +11,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 )
 
 const mcpBase = "https://turaco.example.org"
@@ -683,6 +688,100 @@ func TestMCPClientAdministration(t *testing.T) {
 	if n := m.count(`SELECT count(*) FROM platform.audit_events WHERE action='ai.mcp_client.created' AND target_id=$1`, cl.ID); n != 1 {
 		t.Fatalf("client audit = %d", n)
 	}
+	for _, name := range []string{"Bad\u202Ename", "Bad\u2066name", "Bad\u200Bname"} {
+		if _, err := m.mcp.CreateMCPClient(ctx, m.admin, ai.MCPClientInput{DisplayName: name, RedirectURIs: cl.RedirectURIs}); err == nil {
+			t.Fatalf("unsafe display name %q accepted", name)
+		}
+	}
+}
+
+func TestMCPUnknownToolFloodCountsAgainstCaps(t *testing.T) {
+	m := newMCPEnv(t)
+	ctx := context.Background()
+	user := m.staff()
+	p := m.principal(t, m.tokens(t, user, m.client).AccessToken)
+	if _, err := m.pool.Exec(ctx, `UPDATE ai.settings SET user_requests_per_hour=2`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := m.mcp.MCPCall(ctx, p, "missing.tool", json.RawMessage(`{}`)); !errors.Is(err, ai.ErrMCPUnknownTool) {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	if _, err := m.mcp.MCPCall(ctx, p, "missing.tool", json.RawMessage(`{}`)); !errors.Is(err, ai.ErrRateLimited) {
+		t.Fatalf("flood: %v", err)
+	}
+	if n := m.count(`SELECT count(*) FROM platform.audit_events WHERE action='ai.tool.denied' AND actor_id=$1::uuid`, user.UserID); n != 2 {
+		t.Fatalf("denials = %d", n)
+	}
+}
+
+func TestMCPSessionRevocationEndsGrantsEvenAfterReactivation(t *testing.T) {
+	for _, reason := range []string{"local_password_set", "user_deactivated"} {
+		t.Run(reason, func(t *testing.T) {
+			m := newMCPEnv(t)
+			ctx := context.Background()
+			user := m.staff()
+			tok := m.tokens(t, user, m.client)
+			unregister := authentication.RegisterSessionRevocationHook(ai.RevokeMCPGrantsForSessionChange)
+			defer unregister()
+			if err := pgx.BeginFunc(ctx, m.pool, func(tx pgx.Tx) error {
+				_, err := authentication.RevokeUserSessions(ctx, tx, user.UserID, reason, audit.SystemActor("test"), "credential-test", time.Now())
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			// Account access is restored (or never lost for a password change), but consent remains ended.
+			m.accounts.Store(user.UserID, [2]bool{true, false})
+			if _, err := m.mcp.AuthenticateMCP(ctx, tok.AccessToken, "reactivated"); !errors.Is(err, ai.ErrMCPInvalidToken) {
+				t.Fatalf("reactivated grant: %v", err)
+			}
+			if n := m.count(`SELECT count(*) FROM ai.mcp_tokens WHERE grant_id IN (SELECT id FROM ai.mcp_grants WHERE user_id=$1::uuid)`, user.UserID); n != 0 {
+				t.Fatalf("tokens remain: %d", n)
+			}
+		})
+	}
+}
+
+func TestMCPAdministratorRevokesUsersGrants(t *testing.T) {
+	m := newMCPEnv(t)
+	ctx := context.Background()
+	user := m.staff()
+	tok := m.tokens(t, user, m.client)
+	if _, err := m.mcp.RevokeUserMCPGrants(ctx, m.caller("ai.settings.view"), user.UserID); !errors.Is(err, ai.ErrForbidden) {
+		t.Fatalf("view-only: %v", err)
+	}
+	if n, err := m.mcp.RevokeUserMCPGrants(ctx, m.admin, user.UserID); err != nil || n != 1 {
+		t.Fatalf("revoked %d: %v", n, err)
+	}
+	if _, err := m.mcp.AuthenticateMCP(ctx, tok.AccessToken, "admin-revoke"); !errors.Is(err, ai.ErrMCPInvalidToken) {
+		t.Fatalf("token: %v", err)
+	}
+	if n := m.count(`SELECT count(*) FROM platform.audit_events WHERE action='ai.mcp.grant.revoked' AND actor_id=$1::uuid AND metadata->>'userId'=$2`, m.admin.UserID, user.UserID); n != 1 {
+		t.Fatalf("audit = %d", n)
+	}
+}
+
+func TestMCPCodeRedemptionWaitsForClientDisable(t *testing.T) {
+	m := newMCPEnv(t)
+	ctx := context.Background()
+	user := m.staff()
+	code, verifier := m.code(t, user, m.client)
+	tx, err := m.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE ai.mcp_clients SET enabled=false WHERE id=$1`, m.client.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	_, err = m.mcp.Token(deadline, ai.TokenRequest{GrantType: "authorization_code", Code: code, RedirectURI: m.client.RedirectURIs[0],
+		ClientID: m.client.ClientID, CodeVerifier: verifier, Resource: mcpBase + ai.MCPPath})
+	if err == nil || !errors.Is(deadline.Err(), context.DeadlineExceeded) {
+		t.Fatalf("redemption did not wait for client row: %v", err)
+	}
 }
 
 func TestValidateRedirectURI(t *testing.T) {
@@ -692,7 +791,9 @@ func TestValidateRedirectURI(t *testing.T) {
 		"https://app.example/cb?x=1":               true,
 		"http://127.0.0.1:33418/callback":          true,
 		"http://[::1]:8080/cb":                     true,
-		"http://localhost:6274/oauth/callback":     true,
+		"http://localhost:6274/oauth/callback":     false,
+		"https://localhost/callback":               false,
+		"http://LOCALHOST.:6274/callback":          false,
 		"http://localhost/cb":                      false,
 		"http://example.org:80/cb":                 false,
 		"http://10.0.0.1:80/cb":                    false,
@@ -708,5 +809,17 @@ func TestValidateRedirectURI(t *testing.T) {
 		if got := ai.ValidateRedirectURI(uri) == nil; got != ok {
 			t.Errorf("%q: valid=%v, want %v", uri, got, ok)
 		}
+	}
+}
+
+func TestMCPLegacyLocalhostClientCannotUseExistingGrant(t *testing.T) {
+	m := newMCPEnv(t)
+	ctx := context.Background()
+	tok := m.tokens(t, m.staff(), m.client)
+	if _, err := m.pool.Exec(ctx, `UPDATE ai.mcp_clients SET redirect_uris=$2 WHERE id=$1`, m.client.ID, []string{"http://localhost:33418/callback"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.mcp.AuthenticateMCP(ctx, tok.AccessToken, "legacy-client"); !errors.Is(err, ai.ErrMCPInvalidToken) {
+		t.Fatalf("legacy token: %v", err)
 	}
 }

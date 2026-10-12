@@ -32,6 +32,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/ai"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authentication"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/config"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/database"
 )
@@ -91,6 +93,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer pool.Close()
+	unregisterMCP := authentication.RegisterSessionRevocationHook(ai.RevokeMCPGrantsForSessionChange)
+	defer unregisterMCP()
 
 	e := env{pool: pool, cfg: cfg, stdin: stdin, stdout: stdout, logger: logger, actor: cliActor()}
 	group, command, rest := args[0], args[1], args[2:]

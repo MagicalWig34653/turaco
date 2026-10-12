@@ -15074,7 +15074,7 @@ paths:
     get:
       operationId: getModulesStatus
       summary: Which modules are effectively on (any signed-in User).
-      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`, `/ai/mcp/clients*` stay reachable while the module is off (their own admin permissions apply). The MCP routes `/mcp` and `/oauth/*` belong to the `ai` module."
+      description: "Any signed-in User; only module keys and whether each is effectively on (switch on and no unmet precondition), so the UI can hide navigation. Core modules are listed as enabled. `no-store`. Requests to the routes of a module that is off answer 404 `platform.module_disabled` (anonymous callers still get 401). Status probes `/ai/status` and `/presence/status` and the configuration routes `/presence/settings*`, `/ai/settings*`, `/ai/providers*`, `/ai/usage*`, `/ai/mcp/clients*`, `/ai/mcp/users*` stay reachable while the module is off (their own admin permissions apply). The MCP routes `/mcp` and `/oauth/*` belong to the `ai` module."
       security:
         - sessionAuth: []
       responses:
@@ -15577,6 +15577,30 @@ paths:
         '204': {description: Revoked.}
         '404': {$ref: '#/components/responses/AINotFound'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/mcp/users/{id}/revoke-grants:
+    parameters:
+      - {name: id, in: path, required: true, description: User ID, schema: {type: string, format: uuid}}
+    post:
+      operationId: revokeUserAiMcpGrants
+      summary: Revoke all MCP grants of one User.
+      description: "Requires `ai.settings.manage`. Ends active grants, deletes pending codes and tokens, and audits each grant revocation. Available while MCP is off."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Number of grants revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revokedGrants]
+                properties:
+                  revokedGrants: {type: integer, minimum: 0}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/AINotFound'}
         '500': {$ref: '#/components/responses/InternalError'}
   /oauth/token:
     post:

@@ -89,6 +89,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	authentication.RegisterSessionRevocationHook(aiplatform.RevokeMCPGrantsForSessionChange)
 
 	ldapCfg, err := config.LoadLDAP(cfg.Environment)
 	if err != nil {

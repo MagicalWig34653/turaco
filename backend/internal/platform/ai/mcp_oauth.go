@@ -142,9 +142,16 @@ func (s *Service) activeClient(ctx context.Context, clientID string) (MCPClient,
 	if !clientIDRE.MatchString(clientID) {
 		return MCPClient{}, ErrNotFound
 	}
-	cl, err := scanMCPClient(s.store.pool.QueryRow(ctx, `SELECT `+mcpClientCols+` FROM ai.mcp_clients c WHERE c.client_id=$1 AND c.enabled`, clientID))
+	cl, err := scanMCPClient(s.store.pool.QueryRow(ctx, `SELECT `+mcpClientHotCols+` FROM ai.mcp_clients c WHERE c.client_id=$1 AND c.enabled`, clientID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MCPClient{}, ErrNotFound
+	}
+	if err == nil {
+		for _, uri := range cl.RedirectURIs {
+			if ValidateRedirectURI(uri) != nil {
+				return MCPClient{}, ErrNotFound
+			}
+		}
 	}
 	return cl, err
 }
@@ -400,6 +407,15 @@ func (s *Service) redeemCode(ctx context.Context, cl MCPClient, req TokenRequest
 	var out TokenResponse
 	var replayedGrant *string
 	err := s.store.inTxKeep(ctx, func(tx pgx.Tx) error {
+		// A disable takes FOR UPDATE on this row before bulk revocation. Hold the
+		// share lock through grant creation so the two operations serialize.
+		var enabled bool
+		if err := tx.QueryRow(ctx, `SELECT enabled FROM ai.mcp_clients WHERE id=$1 FOR SHARE`, cl.ID).Scan(&enabled); err != nil || !enabled {
+			if errors.Is(err, pgx.ErrNoRows) || !enabled {
+				return oauthErr("invalid_client", "unknown or disabled client")
+			}
+			return err
+		}
 		var clientRef, tenant, user, redirect, challenge, resource string
 		var expires time.Time
 		// Single use: the first redemption consumes the code whatever its outcome.
@@ -686,6 +702,54 @@ func (s *Service) RevokeMCPGrant(ctx context.Context, c Caller, id string) error
 		}
 		return s.auditGrant(ctx, tx, "ai.mcp.grant.revoked", id, c.UserID, c.TenantID, c.CorrelationID, map[string]any{"reason": "user"})
 	})
+}
+
+// RevokeUserMCPGrants ends every active grant of one User, including its tokens.
+func (s *Service) RevokeUserMCPGrants(ctx context.Context, c Caller, userID string) (int, error) {
+	if err := s.requireAdmin(c, true); err != nil {
+		return 0, err
+	}
+	if !uuidRE.MatchString(userID) {
+		return 0, ErrNotFound
+	}
+	count := 0
+	err := s.store.inTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `UPDATE ai.mcp_grants SET revoked_at=now(), revoked_reason='administrator'
+			WHERE user_id=$1 AND tenant_id=$2 AND revoked_at IS NULL RETURNING id::text`, userID, c.TenantID)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM ai.mcp_codes WHERE user_id=$1 AND tenant_id=$2`, userID, c.TenantID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM ai.mcp_tokens WHERE grant_id IN
+			(SELECT id FROM ai.mcp_grants WHERE user_id=$1 AND tenant_id=$2 AND revoked_at IS NOT NULL)`, userID, c.TenantID); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if err := audit.Record(ctx, tx, audit.Change{Action: "ai.mcp.grant.revoked", TargetType: "ai_mcp_grant", TargetID: id,
+				Actor: audit.UserActor(c.UserID), CorrelationID: c.CorrelationID, TenantID: c.TenantID,
+				Metadata: map[string]any{"reason": "administrator", "userId": userID}}); err != nil {
+				return err
+			}
+		}
+		count = len(ids)
+		return nil
+	})
+	return count, err
 }
 
 // PurgeMCP deletes expired codes and tokens and grants that ended more than a day ago (run by ai.sessions.expire).

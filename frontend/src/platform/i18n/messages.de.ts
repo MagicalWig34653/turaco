@@ -262,7 +262,7 @@ export const de: Record<MessageKey, string> = {
   'ai.mcp.clientId': 'Client-ID',
   'ai.mcp.redirectUris': 'Rücksprungadressen (eine je Zeile)',
   'ai.mcp.redirectHint':
-    'Exakter Vergleich. https, oder http auf 127.0.0.1, [::1] oder localhost mit festem Port.',
+    'Exakter Vergleich. https, oder http auf 127.0.0.1 oder [::1] mit festem Port.',
   'ai.mcp.activeGrants': 'Aktive Verbindungen',
   'ai.mcp.consentTitle': 'KI-Anwendung verbinden',
   'ai.mcp.consentIntro': '{client} möchte Turaco-Werkzeuge in Ihrem Namen verwenden.',

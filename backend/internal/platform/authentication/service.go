@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,28 @@ var ErrInvalidSession = errors.New("authentication: invalid session")
 const defaultTouchInterval = time.Minute
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// SessionRevocationHook joins credential and account-status revocation in the caller's transaction.
+type SessionRevocationHook func(context.Context, pgx.Tx, string, string, audit.Actor, string, time.Time) error
+
+var revocationHooks struct {
+	sync.RWMutex
+	items map[uint64]SessionRevocationHook
+	next  uint64
+}
+
+// RegisterSessionRevocationHook is called during application composition, before requests are served.
+func RegisterSessionRevocationHook(h SessionRevocationHook) (unregister func()) {
+	revocationHooks.Lock()
+	if revocationHooks.items == nil {
+		revocationHooks.items = make(map[uint64]SessionRevocationHook)
+	}
+	revocationHooks.next++
+	id := revocationHooks.next
+	revocationHooks.items[id] = h
+	revocationHooks.Unlock()
+	return func() { revocationHooks.Lock(); delete(revocationHooks.items, id); revocationHooks.Unlock() }
+}
 
 type Session struct {
 	ID                string
@@ -290,6 +313,17 @@ func RevokeUserSessions(ctx context.Context, tx pgx.Tx, userID, reason string, a
 		if err := recordSessionAudit(ctx, tx, "auth.session.revoked", r.id, actor, correlationID, now,
 			map[string]any{"userId": userID, "authMethod": r.method, "reason": reason}); err != nil {
 			return 0, err
+		}
+	}
+	revocationHooks.RLock()
+	hooks := make([]SessionRevocationHook, 0, len(revocationHooks.items))
+	for _, hook := range revocationHooks.items {
+		hooks = append(hooks, hook)
+	}
+	revocationHooks.RUnlock()
+	for _, hook := range hooks {
+		if err := hook(ctx, tx, userID, reason, actor, correlationID, now); err != nil {
+			return 0, fmt.Errorf("revoke user sessions: hook: %w", err)
 		}
 	}
 	return len(sessions), nil
