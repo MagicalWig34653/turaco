@@ -194,6 +194,7 @@ func TestEntraSuccessCreatesSessionAndRedirectsToReturnTo(t *testing.T) {
 func TestEntraStepUpKeepsSessionAndRejectsStaleOrChangedCookie(t *testing.T) {
 	p := &fakeOIDC{identity: VerifiedIdentity{TenantID: entraTenant, ObjectID: entraObject}}
 	f := newEntraFixture(t, p)
+	f.now = time.Now // step-up freshness compares the ID token's auth_time with the handler clock
 	state, _, binding := f.startEntra("/")
 	login := f.callback(state, "login", binding)
 	token := login.cookieToken(false)

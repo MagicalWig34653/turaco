@@ -91,6 +91,7 @@ func (l *fakeLocker) LockActiveUser(ctx context.Context, tx pgx.Tx, userID strin
 
 type loginFixture struct {
 	t        *testing.T
+	now      func() time.Time // optional handler clock; nil keeps the frozen 1970 clock
 	pool     *pgxpool.Pool
 	handler  http.Handler
 	svc      *Service
@@ -166,7 +167,12 @@ func newLoginFixture(t *testing.T, opts ...fixtureOption) *loginFixture {
 	f.svc = NewService(pool, Config{IdleTimeout: 30 * time.Minute, AbsoluteTimeout: 8 * time.Hour}, nil)
 	f.deps = LoginDeps{
 		Pool: pool, Sessions: f.svc, Throttle: NewThrottle(pool, f.throttle, nil), Logger: logger,
-		Now:   func() time.Time { return time.Unix(1_000_000, 0) }, // frozen: every failure "took" 0 ms
+		Now: func() time.Time { // frozen: every failure "took" 0 ms, unless a test sets f.now
+			if f.now != nil {
+				return f.now()
+			}
+			return time.Unix(1_000_000, 0)
+		},
 		Sleep: func(_ context.Context, d time.Duration) { f.mu.Lock(); f.sleeps = append(f.sleeps, d); f.mu.Unlock() },
 	}
 	if f.withPass {

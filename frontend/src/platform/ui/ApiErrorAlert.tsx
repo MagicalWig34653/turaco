@@ -32,7 +32,9 @@ export function ApiErrorAlert({
         <Button
           onClick={() => {
             const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-            window.location.assign(`/api/v1/auth/entra/start?stepUp=1&returnTo=${encodeURIComponent(returnTo)}`);
+            window.location.assign(
+              `/api/v1/auth/entra/start?stepUp=1&returnTo=${encodeURIComponent(returnTo)}`,
+            );
           }}
           variant="secondary"
         >

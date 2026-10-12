@@ -1029,7 +1029,8 @@ export const de: Record<MessageKey, string> = {
     'Dies ist ein gemeinsam genutzter Computer (beim Abmelden auch bei Microsoft abmelden)',
   'login.entra.failed':
     'Die Anmeldung mit Microsoft ist fehlgeschlagen. Versuchen Sie es erneut oder wenden Sie sich an Ihre Administration.',
-  'auth.stepUp.required': 'Bestätigen Sie Ihre Identität mit Microsoft, um diese Aktion abzuschließen.',
+  'auth.stepUp.required':
+    'Bestätigen Sie Ihre Identität mit Microsoft, um diese Aktion abzuschließen.',
   'auth.stepUp.confirm': 'Mit Microsoft bestätigen',
   'login.entra.notLinked':
     'Ihr Microsoft-Konto ist noch keinem Turaco-Konto zugeordnet. Bitten Sie Ihre Administration, es zu verknüpfen.',
