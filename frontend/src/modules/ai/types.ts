@@ -28,7 +28,8 @@ export type Status = {
   usage: UsageCounters | null;
 };
 export type ScopeRequest = { resourceType: string; resourceId: string; tool: string };
-export type ProposalState = 'proposed' | 'confirmed' | 'executed' | 'failed' | 'dismissed' | 'expired';
+export type ProposalState =
+  'proposed' | 'confirmed' | 'executed' | 'failed' | 'dismissed' | 'expired';
 /** An AI Proposal (F12 A-C). parameters are the exact values the confirmation is bound to (null once purged). */
 export type Proposal = {
   id: string;
