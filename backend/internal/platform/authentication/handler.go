@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 )
 
@@ -44,6 +45,9 @@ type sessionResponse struct {
 	AuthMethod  string   `json:"authMethod"`
 	ExpiresAt   string   `json:"expiresAt"`
 	Permissions []string `json:"permissions"`
+	// ScopedPermissions are the permissions held only at Locations (ADR-0040): permission -> expanded Location ids.
+	// Always present (empty object when there are none) so the frontend can gate navigation on either field.
+	ScopedPermissions map[string][]string `json:"scopedPermissions"`
 	// External marks a restricted external account: the UI shows only its Tasks and shared Tickets (ADR-0034).
 	External    bool   `json:"external,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
@@ -86,11 +90,12 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(perms)
 	resp := sessionResponse{
-		UserID:      s.UserID,
-		AuthMethod:  s.AuthMethod,
-		ExpiresAt:   expires.UTC().Format(time.RFC3339),
-		Permissions: perms,
-		External:    p.External,
+		UserID:            s.UserID,
+		AuthMethod:        s.AuthMethod,
+		ExpiresAt:         expires.UTC().Format(time.RFC3339),
+		Permissions:       perms,
+		ScopedPermissions: scopedPermissions(p),
+		External:          p.External,
 	}
 	if h.names != nil {
 		// A name lookup failure must not break the session: the UI falls back
@@ -103,6 +108,17 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// scopedPermissions lists the non-empty scoped holdings of the principal.
+func scopedPermissions(p authorization.Principal) map[string][]string {
+	out := map[string][]string{}
+	for name := range p.Scopes {
+		if s := p.ScopeOf(name); !s.Global && len(s.Locations) > 0 {
+			out[name] = s.Locations
+		}
+	}
+	return out
 }
 
 func (h *handler) logout(w http.ResponseWriter, r *http.Request) {

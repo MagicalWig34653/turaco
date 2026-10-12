@@ -34,6 +34,26 @@ func (r *Repository) GroupIDsOfUser(ctx context.Context, userID string) ([]strin
 	return collectStrings(rows, "group ids of user")
 }
 
+// LocationSubtreeIDs walks the Location tree downwards from the roots. The tree is at most four levels deep (trigger
+// locations_guard_tree); the depth bound of eight also terminates the walk on corrupt data with a cycle, and nodes
+// beyond it are left out (fail closed).
+func (r *Repository) LocationSubtreeIDs(ctx context.Context, rootIDs []string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH RECURSIVE t(id, depth) AS (
+			SELECT l.id, 1 FROM organization.locations l WHERE l.id = ANY($1::text[]::uuid[])
+			UNION
+			SELECT c.id, t.depth + 1
+			FROM organization.locations c
+			JOIN t ON c.parent_location_id = t.id
+			WHERE t.depth < 8
+		)
+		SELECT DISTINCT id::text FROM t ORDER BY 1`, rootIDs)
+	if err != nil {
+		return nil, fmt.Errorf("location subtree ids: %w", err)
+	}
+	return collectStrings(rows, "location subtree ids")
+}
+
 // GroupMemberUserIDs expands the groups over currently observed nesting to child groups and returns the
 // currently observed members, ordered by id.
 func (r *Repository) GroupMemberUserIDs(ctx context.Context, groupIDs []string, limit int) ([]string, error) {

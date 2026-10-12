@@ -28,6 +28,39 @@ type fakeDirectory struct {
 	external map[string]bool
 	// localOrigin marks Users whose origin is local (no credential needed).
 	localOrigin map[string]bool
+	// parent is the Location tree: Location id -> parent id ("" for a Site). Only ids in it are Locations.
+	parent map[string]string
+	// subtreeCalls counts SubtreeIDs calls; subtreeErr makes them fail.
+	subtreeCalls int
+	subtreeErr   error
+}
+
+// SubtreeIDs walks the in-memory tree like organization/public does: each known root and its descendants, depth
+// bounded so a corrupt (cyclic) parent map terminates.
+func (f *fakeDirectory) SubtreeIDs(_ context.Context, roots []string) ([]string, error) {
+	f.subtreeCalls++
+	if f.subtreeErr != nil {
+		return nil, f.subtreeErr
+	}
+	want := map[string]bool{}
+	for _, r := range roots {
+		if _, ok := f.parent[r]; ok {
+			want[r] = true
+		}
+	}
+	out := []string{}
+	for id := range f.parent {
+		cur := id
+		for depth := 0; depth < 8 && cur != ""; depth++ {
+			if want[cur] {
+				out = append(out, id)
+				break
+			}
+			cur = f.parent[cur]
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (f *fakeDirectory) UserExists(_ context.Context, id string) (bool, error) {
@@ -106,7 +139,7 @@ func newFixture(t *testing.T) *fixture {
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	f := &fixture{t: t, pool: pool, pfx: "zt-" + hex.EncodeToString(b)}
-	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}, external: map[string]bool{}, localOrigin: map[string]bool{}}
+	f.dir = &fakeDirectory{users: map[string]string{}, groups: map[string]string{}, inactive: map[string]bool{}, groupsOf: map[string][]string{}, external: map[string]bool{}, localOrigin: map[string]bool{}, parent: map[string]string{}}
 	f.svc = NewService(pool, f.dir)
 	f.cli = audit.CLIActor("tester")
 	f.corr = f.pfx + "-c"

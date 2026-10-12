@@ -7,6 +7,41 @@ type Permission struct {
 	// Needs lists companion permissions the permission is documented to be useless without (the role editor warns
 	// when they are missing). It is registry data, not parsed from the description.
 	Needs []string
+	// Scope is ScopeGlobal (the zero value counts as global) or ScopeLocation (ADR-0040). Only a scopable permission
+	// takes effect through a Location-scoped role assignment; it becomes scopable in the same change in which its
+	// owning module enforces the scope everywhere the permission is used. A high-risk permission is never scopable.
+	Scope string
+}
+
+// Permission scopes (ADR-0040).
+const (
+	ScopeGlobal   = "global"
+	ScopeLocation = "location"
+)
+
+// ScopeOf returns the scope of a permission: ScopeLocation for a registered scopable permission, ScopeGlobal for
+// every other registered permission and "" for an unknown name.
+func ScopeOf(name string) string {
+	for _, p := range Registry {
+		if p.Name == name {
+			if p.Scope == ScopeLocation {
+				return ScopeLocation
+			}
+			return ScopeGlobal
+		}
+	}
+	return ""
+}
+
+// Scopable reports whether the named permission is registered with ScopeLocation.
+func Scopable(name string) bool { return ScopeOf(name) == ScopeLocation }
+
+// EffectiveScope is the documented scope of the permission (ScopeGlobal when the field is empty).
+func (p Permission) EffectiveScope() string {
+	if p.Scope == ScopeLocation {
+		return ScopeLocation
+	}
+	return ScopeGlobal
 }
 
 var Registry = []Permission{

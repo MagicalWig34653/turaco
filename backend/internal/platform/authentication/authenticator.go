@@ -42,6 +42,12 @@ type PermissionLoader interface {
 	Permissions(ctx context.Context, userID string) (map[string]struct{}, error)
 }
 
+// AccessLoader is the richer PermissionLoader: it also returns the Location-scoped holdings (ADR-0040). A
+// PermissionLoader that implements it fills Principal.Scopes; otherwise the Principal has no scoped holdings.
+type AccessLoader interface {
+	Access(ctx context.Context, userID string) (authorization.Access, error)
+}
+
 // NoPermissions grants nothing. Production wiring uses
 // authorization.RolePermissions; NoPermissions is for tests and tools that
 // need authenticated sessions without any permission.
@@ -123,11 +129,15 @@ func (a *SessionAuthenticator) Resolve(r *http.Request) (Session, authorization.
 	if !state.Active {
 		return Session{}, authorization.Principal{}, false, nil
 	}
-	perms, err := a.permissions.Permissions(r.Context(), s.UserID)
-	if err != nil {
+	var access authorization.Access
+	if loader, ok := a.permissions.(AccessLoader); ok {
+		if access, err = loader.Access(r.Context(), s.UserID); err != nil {
+			return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
+		}
+	} else if access.Permissions, err = a.permissions.Permissions(r.Context(), s.UserID); err != nil {
 		return Session{}, authorization.Principal{}, false, fmt.Errorf("load permissions: %w", err)
 	}
-	return s, authorization.Principal{UserID: s.UserID, Permissions: perms, SessionID: s.ID, External: state.External,
+	return s, authorization.Principal{UserID: s.UserID, Permissions: access.Permissions, Scopes: access.Scopes, SessionID: s.ID, External: state.External,
 		EntraSession: s.AuthMethod == methodEntra, EntraAssuredAt: s.AssuranceAt, EntraStepUpMaxAge: a.stepUpMaxAge}, true, nil
 }
 
