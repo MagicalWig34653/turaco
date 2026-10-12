@@ -13,6 +13,7 @@ const byCode: Record<string, MessageKey> = {
   'platform.csrf_rejected': 'error.csrf',
   'platform.internal_error': 'error.internal',
   'auth.temporarily_unavailable': 'login.error.temporarilyUnavailable',
+  'auth.step_up_required': 'auth.stepUp.required',
   'query.invalid_filter': 'query.error.invalid_filter',
   'query.too_complex': 'query.error.too_complex',
   'query.field_unavailable': 'query.error.field_unavailable',

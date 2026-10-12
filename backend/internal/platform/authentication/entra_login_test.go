@@ -32,6 +32,10 @@ func (p *fakeOIDC) AuthorizeURL(state, nonce, challenge string) string {
 	return "https://login.example.test/authorize?state=" + url.QueryEscape(state) + "&nonce=" + url.QueryEscape(nonce) + "&code_challenge=" + url.QueryEscape(challenge)
 }
 
+func (p *fakeOIDC) StepUpAuthorizeURL(state, nonce, challenge string) string {
+	return p.AuthorizeURL(state, nonce, challenge) + "&prompt=login&max_age=0"
+}
+
 func (p *fakeOIDC) Exchange(_ context.Context, code, verifier, nonce string) (VerifiedIdentity, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -184,6 +188,61 @@ func TestEntraSuccessCreatesSessionAndRedirectsToReturnTo(t *testing.T) {
 	}
 	if !cleared {
 		t.Error("binding cookie not cleared")
+	}
+}
+
+func TestEntraStepUpKeepsSessionAndRejectsStaleOrChangedCookie(t *testing.T) {
+	p := &fakeOIDC{identity: VerifiedIdentity{TenantID: entraTenant, ObjectID: entraObject}}
+	f := newEntraFixture(t, p)
+	state, _, binding := f.startEntra("/")
+	login := f.callback(state, "login", binding)
+	token := login.cookieToken(false)
+	if token == "" {
+		t.Fatal("missing initial session")
+	}
+	start := func(cookie string) (string, *http.Cookie) {
+		rec := f.get("/api/v1/auth/entra/start?stepUp=1&returnTo=%2Fadmin%2Frole-assignments", func(r *http.Request) { r.AddCookie(&http.Cookie{Name: CookieName(false), Value: cookie}) })
+		if rec.Code != http.StatusFound {
+			t.Fatalf("step-up start: %d %s", rec.Code, rec.Body.String())
+		}
+		u, _ := url.Parse(rec.Header().Get("Location"))
+		if u.Query().Get("prompt") != "login" || u.Query().Get("max_age") != "0" {
+			t.Fatalf("step-up parameters: %s", u)
+		}
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == oidcBindingCookieName(false) {
+				return u.Query().Get("state"), c
+			}
+		}
+		t.Fatal("missing browser binding")
+		return "", nil
+	}
+	complete := func(state string, binding *http.Cookie, cookie string) loginResponse {
+		return f.get("/api/v1/auth/entra/callback?state="+url.QueryEscape(state)+"&code=step", func(r *http.Request) {
+			r.AddCookie(binding)
+			r.AddCookie(&http.Cookie{Name: CookieName(false), Value: cookie})
+		})
+	}
+	old := time.Now().Add(-20 * time.Minute)
+	p.identity.AMR, p.identity.AuthTime = []string{"mfa"}, &old
+	s, b := start(token)
+	if rec := complete(s, b, token); loginErrorCode(rec) != "entra_failed" {
+		t.Fatalf("old auth_time accepted: %s", rec.Header().Get("Location"))
+	}
+	now := time.Now().UTC()
+	p.identity.AuthTime = &now
+	s, b = start(token)
+	if rec := complete(s, b, "invalid-token"); loginErrorCode(rec) != "entra_failed" {
+		t.Fatal("changed cookie accepted")
+	}
+	s, b = start(token)
+	rec := complete(s, b, token)
+	if rec.Header().Get("Location") != "/admin/role-assignments" || rec.cookieToken(false) != "" || f.sessionCount() != 1 {
+		t.Fatalf("step-up replaced session: %s", rec.Header().Get("Location"))
+	}
+	var assurance time.Time
+	if err := f.pool.QueryRow(context.Background(), `SELECT assurance_at FROM platform.sessions WHERE token_hash=$1`, HashToken(token)).Scan(&assurance); err != nil || assurance.Before(now.Add(-time.Second)) {
+		t.Fatalf("assurance: %v %v", assurance, err)
 	}
 }
 

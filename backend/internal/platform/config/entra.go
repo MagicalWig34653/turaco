@@ -39,7 +39,9 @@ type EntraConfig struct {
 	// MaxClockSkew is the tolerance for exp, nbf and iat.
 	MaxClockSkew time.Duration
 	// SessionMaxAge caps the absolute lifetime of an Entra session (the administration setting auth.session_absolute_timeout may lower it).
-	SessionMaxAge time.Duration
+	SessionMaxAge     time.Duration
+	StepUpMaxAge      time.Duration
+	StepUpAuthContext string
 	// HTTPProxy and CAFile are the shared Microsoft client options (MICROSOFT_HTTP_PROXY, MICROSOFT_CA_FILE).
 	HTTPProxy string
 	CAFile    string
@@ -152,6 +154,13 @@ func LoadEntra() (EntraConfig, error) {
 	}
 	if c.SessionMaxAge < time.Hour || c.SessionMaxAge > 24*time.Hour {
 		return EntraConfig{}, fmt.Errorf("ENTRA_SESSION_MAX_AGE must be between 1h and 24h")
+	}
+	c.StepUpAuthContext = strings.TrimSpace(os.Getenv("ENTRA_STEP_UP_AUTH_CONTEXT"))
+	if c.StepUpMaxAge, err = getDuration("ENTRA_STEP_UP_MAX_AGE", 15*time.Minute); err != nil {
+		return EntraConfig{}, err
+	}
+	if c.StepUpMaxAge < time.Minute || c.StepUpMaxAge > time.Hour {
+		return EntraConfig{}, fmt.Errorf("ENTRA_STEP_UP_MAX_AGE must be between 1m and 1h")
 	}
 	if c.HTTPProxy != "" {
 		u, perr := url.Parse(c.HTTPProxy)

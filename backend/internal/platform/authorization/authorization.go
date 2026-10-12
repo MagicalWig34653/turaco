@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/httpx"
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/permissions"
@@ -27,6 +28,10 @@ type Principal struct {
 	// External marks a restricted external account (ADR-0034 point 4): the HTTP allow-list applies, grants through
 	// Team subjects do not, and the permission ceiling already limited Permissions.
 	External bool
+	// EntraSession and EntraAssuredAt are request-scoped facts from the server-side session.
+	EntraSession      bool
+	EntraAssuredAt    *time.Time
+	EntraStepUpMaxAge time.Duration
 }
 
 // Has reports whether the principal holds the named permission.
@@ -126,9 +131,49 @@ func RequireAny(auth Authenticator, permissions ...string) func(http.Handler) ht
 				httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
 				return
 			}
+			if needsStepUp(r, principal, permissions) {
+				httpx.WriteErrorDetails(w, http.StatusForbidden, "auth.step_up_required", "Confirm with Microsoft before this action.", map[string]any{"hintUrl": "/api/v1/auth/entra/start?stepUp=1"})
+				return
+			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
 		})
 	}
+}
+
+func needsStepUp(r *http.Request, p Principal, required []string) bool {
+	if !p.EntraSession {
+		return false
+	}
+	// Elevated actions are mutations authorized by a high-risk permission, plus the read-only audit export.
+	if r.Method == http.MethodGet && r.URL.Path != "/api/v1/audit-events/export.csv" {
+		return false
+	}
+	if r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		return false
+	}
+	for _, name := range required {
+		if !p.Has(name) {
+			continue
+		}
+		if name == "platform.admin" {
+			// The platform administrator permission also guards ordinary settings and setup writes.
+			// Entra provisioning policy changes the identity provider's behavior and is elevated.
+			if r.URL.Path != "/api/v1/admin/settings/auth.entra_provisioning" {
+				continue
+			}
+			return !freshEntraAssurance(p)
+		}
+		for _, permission := range permissions.Registry {
+			if permission.Name == name && permission.Risk == "high" {
+				return !freshEntraAssurance(p)
+			}
+		}
+	}
+	return false
+}
+
+func freshEntraAssurance(p Principal) bool {
+	return p.EntraAssuredAt != nil && p.EntraStepUpMaxAge > 0 && !p.EntraAssuredAt.After(time.Now()) && time.Since(*p.EntraAssuredAt) <= p.EntraStepUpMaxAge
 }
 
 func registered(name string) bool {

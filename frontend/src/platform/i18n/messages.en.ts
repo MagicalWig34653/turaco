@@ -990,6 +990,8 @@ export const en = {
   'login.entra.button': 'Sign in with Microsoft Entra',
   'login.entra.shared': 'This is a shared computer (sign out of Microsoft as well when I log out)',
   'login.entra.failed': 'Sign-in with Microsoft failed. Try again or contact your administrator.',
+  'auth.stepUp.required': 'Confirm your identity with Microsoft to complete this action.',
+  'auth.stepUp.confirm': 'Confirm with Microsoft',
   'login.entra.notLinked':
     'Your Microsoft account is not linked to a Turaco account yet. Ask your administrator to link it.',
   'login.entra.unavailable':
@@ -6229,7 +6231,7 @@ export const en = {
   'setup.progress': '{done} of {total} steps settled',
   'setup.complete': 'All steps are settled.',
   'setup.item.administrators': 'Administrators',
-  'setup.item.administrators.hint': 'At least two active administrators, so nobody is locked out.',
+  'setup.item.administrators.hint': 'At least two active administrators, so nobody is locked out. With Entra-only sign-in, verify that an administrator can complete MFA confirmation for elevated actions.',
   'setup.item.directory': 'Directory',
   'setup.item.directory.hint':
     'Directory synchronization is configured and succeeded, or skipped for local-only installations.',

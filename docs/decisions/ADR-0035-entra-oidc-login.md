@@ -1,6 +1,6 @@
 # ADR-0035: Microsoft Entra ID Sign-in Through OpenID Connect for Every Deployment Variant
 
-- Status: Accepted (2026-10-10, product owner decisions in the design). Implemented in slices (E-A and E-B built, the rest planned per the slice list); [current status](../product/current-status.md) is authoritative. Design and threat model: [F15 Microsoft integration, Entra login](../product/f15-microsoft-integration-design.md#entra-login).
+- Status: Accepted (2026-10-10, product owner decisions in the design). Implemented in slices (E-A, E-B and E-D built, the rest planned per the slice list); [current status](../product/current-status.md) is authoritative. Design and threat model: [F15 Microsoft integration, Entra login](../product/f15-microsoft-integration-design.md#entra-login).
 
 ## Context
 
@@ -42,3 +42,9 @@ Slice E-A validates the ID token with a small RS256 verifier in `integrations/en
 ## Implementation note, slice E-B (2026-10-10)
 
 Administrator linking, the hybrid source-anchor match and automatic provisioning follow point 3 unchanged. Two clarifications: automatic provisioning is controlled by the runtime setting `auth.entra_provisioning` (administration settings), not by an environment variable, and the delegated `User.Read` scope is requested only when `ENTRA_LINK_DIRECTORY_PROVIDER_KEY` is configured; the Graph token is used once in memory and discarded (point 6). The refusal of a provisioning attempt because of an email collision leaves its trace in the audit log instead of a separate attention concept.
+
+## E-D addendum (2026-10-12)
+
+The product owner narrowed point 5: recent MFA is required for **elevated administrative actions**, not for all administrator writes or all uses of high-risk permissions. Turaco gates mutations whose route requires a high-risk permission and the audit CSV export. Ordinary administrator writes retain their existing authorization. A low-assurance Entra session keeps its granted permissions but receives `403 auth.step_up_required` for a gated action. Directory, Kerberos, local and emergency sessions keep their existing rules.
+
+Step-up uses the existing Entra authorization-code flow with `prompt=login`, `max_age=0` and the configured authentication context claim. The callback requires the initiating session token, one-use state, browser binding, nonce, the same tenant and object identity, an MFA claim (`amr=mfa` or configured `acrs`) and `auth_time` no earlier than 30 seconds before step-up began. It updates assurance on that **same session**, without replacing the cookie. This supersedes the new-session wording in point 5. Assurance expires after `ENTRA_STEP_UP_MAX_AGE` (15 minutes by default, 1 minute to 1 hour). A concurrent callback cannot replace newer assurance with older evidence. Success and failure are audited without tokens or claims.

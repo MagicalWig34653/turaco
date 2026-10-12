@@ -1029,6 +1029,8 @@ export const de: Record<MessageKey, string> = {
     'Dies ist ein gemeinsam genutzter Computer (beim Abmelden auch bei Microsoft abmelden)',
   'login.entra.failed':
     'Die Anmeldung mit Microsoft ist fehlgeschlagen. Versuchen Sie es erneut oder wenden Sie sich an Ihre Administration.',
+  'auth.stepUp.required': 'Bestätigen Sie Ihre Identität mit Microsoft, um diese Aktion abzuschließen.',
+  'auth.stepUp.confirm': 'Mit Microsoft bestätigen',
   'login.entra.notLinked':
     'Ihr Microsoft-Konto ist noch keinem Turaco-Konto zugeordnet. Bitten Sie Ihre Administration, es zu verknüpfen.',
   'login.entra.unavailable':
@@ -6456,7 +6458,7 @@ export const de: Record<MessageKey, string> = {
   'setup.complete': 'Alle Schritte sind erledigt.',
   'setup.item.administrators': 'Administratoren',
   'setup.item.administrators.hint':
-    'Mindestens zwei aktive Administratoren, damit niemand ausgesperrt wird.',
+    'Mindestens zwei aktive Administratoren, damit niemand ausgesperrt wird. Bei ausschließlicher Entra-Anmeldung prüfen, ob ein Administrator die MFA-Bestätigung für erhöhte Aktionen abschließen kann.',
   'setup.item.directory': 'Verzeichnis',
   'setup.item.directory.hint':
     'Die Verzeichnissynchronisation ist eingerichtet und erfolgreich, oder bei rein lokalen Installationen übersprungen.',

@@ -103,6 +103,20 @@ func (p *Provider) AuthorizeURL(state, nonce, codeChallenge string) string {
 	return p.endpoint("/oauth2/v2.0/authorize") + "?" + q.Encode()
 }
 
+// StepUpAuthorizeURL requests a fresh authentication and the configured Conditional Access context.
+func (p *Provider) StepUpAuthorizeURL(state, nonce, challenge string) string {
+	u, _ := url.Parse(p.AuthorizeURL(state, nonce, challenge))
+	q := u.Query()
+	q.Set("prompt", "login")
+	q.Set("max_age", "0")
+	if p.cfg.StepUpAuthContext != "" {
+		claim, _ := json.Marshal(map[string]any{"id_token": map[string]any{"acrs": map[string]any{"essential": true, "value": p.cfg.StepUpAuthContext}}})
+		q.Set("claims", string(claim))
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // Exchange implements authentication.OIDCProvider.
 func (p *Provider) Exchange(ctx context.Context, code, verifier, nonce string) (authentication.VerifiedIdentity, error) {
 	tokenURL := p.endpoint("/oauth2/v2.0/token")
@@ -214,6 +228,9 @@ type claims struct {
 	Username string          `json:"preferred_username"`
 	Acct     *float64        `json:"acct"`
 	Idp      string          `json:"idp"`
+	AMR      []string        `json:"amr"`
+	ACRs     []string        `json:"acrs"`
+	AuthTime *float64        `json:"auth_time"`
 }
 
 func (p *Provider) validate(ctx context.Context, raw, nonce string) (authentication.VerifiedIdentity, error) {
@@ -286,7 +303,12 @@ func (p *Provider) checkClaims(c claims, nonce string) (authentication.VerifiedI
 		email = c.Username
 	}
 	member := c.Acct != nil && *c.Acct == 0 && (c.Idp == "" || c.Idp == c.Issuer)
-	return authentication.VerifiedIdentity{TenantID: tid, ObjectID: oid, Guest: guest, MemberConfirmed: member, DisplayName: c.Name, Email: email}, nil
+	var authTime *time.Time
+	if c.AuthTime != nil && *c.AuthTime > 0 && *c.AuthTime <= float64(now.Add(skew).Unix()) {
+		t := time.Unix(int64(*c.AuthTime), 0).UTC()
+		authTime = &t
+	}
+	return authentication.VerifiedIdentity{TenantID: tid, ObjectID: oid, Guest: guest, MemberConfirmed: member, DisplayName: c.Name, Email: email, AMR: c.AMR, ACRs: c.ACRs, AuthTime: authTime}, nil
 }
 
 func allowed(list []string, tid string) bool {

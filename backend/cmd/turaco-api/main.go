@@ -171,6 +171,7 @@ func main() {
 		os.Exit(1)
 	}
 	entraCfg, err := config.LoadEntra()
+	sessionAuth.WithEntraStepUp(entraCfg.StepUpMaxAge)
 	if err != nil {
 		logger.Error("load entra sign-in configuration", "error", err)
 		os.Exit(1)
@@ -252,11 +253,13 @@ func main() {
 			os.Exit(1)
 		}
 		loginDeps.Entra = &authentication.EntraLoginDeps{
-			Provider:      entra.New(entraCfg, entraClient, entraCredential, nil),
-			Identities:    orgpublic.NewEntraIdentities(orgReader),
-			SessionMaxAge: entraCfg.SessionMaxAge,
-			HomeTenantID:  entraCfg.TenantID,
-			Provisioner:   entraSignIn,
+			Provider:          entra.New(entraCfg, entraClient, entraCredential, nil),
+			Identities:        orgpublic.NewEntraIdentities(orgReader),
+			SessionMaxAge:     entraCfg.SessionMaxAge,
+			StepUpMaxAge:      entraCfg.StepUpMaxAge,
+			StepUpAuthContext: entraCfg.StepUpAuthContext,
+			HomeTenantID:      entraCfg.TenantID,
+			Provisioner:       entraSignIn,
 			Provisioning: func(ctx context.Context) string {
 				return adminSettings.Enum(ctx, settings.KeyAuthEntraProvisioning)
 			},

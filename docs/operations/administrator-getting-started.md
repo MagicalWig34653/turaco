@@ -1,5 +1,7 @@
 # Getting started as an administrator
 
+When signed in through Entra, role changes, audit CSV export and other elevated administrative actions can ask you to **Confirm with Microsoft**. The confirmation returns to the same page and refreshes MFA assurance on your current session for 15 minutes by default (`ENTRA_STEP_UP_MAX_AGE`). If confirmation keeps failing, ask the operator to check the Entra Conditional Access authentication context (`ENTRA_STEP_UP_AUTH_CONTEXT`) and whether ID tokens include `auth_time` with `acrs` or `amr=mfa`. Directory, Kerberos and emergency sign-ins retain their existing access rules.
+
 This page walks a new administrator through the first hour with a running Turaco installation: first sign-in, modules, people, roles, Ticket Queues, Views and Boards. It describes only what exists in the repository today. [Current status](../product/current-status.md) is authoritative; steps that are not possible yet are marked **Gap**. Install first: [Installation](installation.md). TLS, directory and Kerberos setup are in [Deployment](deployment.md), [LDAP/AD](../integrations/ldap-ad.md) and [Backup and Restore](backup-restore.md). Every environment variable is listed in the generated [configuration reference](../reference/configuration.md); this page names only the ones that change what an administrator sees.
 
 ## 1. Before you start

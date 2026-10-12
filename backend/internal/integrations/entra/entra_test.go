@@ -199,6 +199,11 @@ func TestAuthorizeURL(t *testing.T) {
 	if u, _ := url.Parse(pm.AuthorizeURL("a", "b", "c")); !strings.Contains(u.Path, "/organizations/") {
 		t.Fatalf("multi tenant authority: %s", u.Path)
 	}
+	p.cfg.StepUpAuthContext = "c1"
+	step, _ := url.Parse(p.StepUpAuthorizeURL("st", "no", "ch"))
+	if step.Query().Get("prompt") != "login" || step.Query().Get("max_age") != "0" || !strings.Contains(step.Query().Get("claims"), `"value":"c1"`) {
+		t.Fatalf("step-up request: %s", step)
+	}
 }
 
 func TestValidationRefusals(t *testing.T) {
