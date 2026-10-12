@@ -1,6 +1,6 @@
 # F17 SLA Deadlines and Time Tracking — Feature Design
 
-**Status:** S-A Business Calendars implemented; S-B through S-E and T-A through T-C remain design only. [Current status](current-status.md) is authoritative for what exists. Decision record: [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Related: [F5 design](f5-service-desk-design.md) (Tickets, waiting reasons), [F13 design](f13-workbench-views-design.md) (Queues, query engine, My Work sources, manager overview), [module switches](module-switches-design.md) and [ADR-0032](../decisions/ADR-0032-module-switches.md), [F11 design](f11-workforce-presence-design.md) (privacy and works-council pattern), [state machines](../domain/state-machines.md#sla-clock-planned-f16), [glossary](../domain/glossary.md#service-management).
+**Status:** S-A Business Calendars and S-B SLA Policies implemented; S-C through S-E and T-A through T-C remain design only. [Current status](current-status.md) is authoritative for what exists. Decision record: [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Related: [F5 design](f5-service-desk-design.md) (Tickets, waiting reasons), [F13 design](f13-workbench-views-design.md) (Queues, query engine, My Work sources, manager overview), [module switches](module-switches-design.md) and [ADR-0032](../decisions/ADR-0032-module-switches.md), [F11 design](f11-workforce-presence-design.md) (privacy and works-council pattern), [state machines](../domain/state-machines.md#sla-clock-planned-f16), [glossary](../domain/glossary.md#service-management).
 
 ## Product decisions already taken
 
@@ -190,13 +190,14 @@ Time entries are personal data about employees and are technically suitable for 
 | Permission | Risk | Meaning |
 |---|---|---|
 | `calendars.manage` | elevated | Create and change Business Calendars and their closures. |
+| `sla.view` | normal | Read SLA Policies, Targets and Queue assignments (S-B administration). |
 | `sla.manage` | elevated | Create and change SLA Policies and Targets, assign them to Queues, exempt a Ticket from its SLA. |
 | `timetracking.log` | normal | Log, edit and delete own time on Tickets the caller may work; use the personal timer; read own entries. |
 | `timetracking.manage` | elevated | Log and correct time for other people and outside the edit window, with a reason. |
 | `timetracking.report` | normal | Read aggregated effort for viewable Queues (no per-person breakdown). |
 | `timetracking.admin` | high | Settings: co-determination record, DPIA date, edit window, retention, author visibility, minimum report group size. |
 
-Reading SLA data needs no new permission (Queue view access). Role templates: agent templates get `timetracking.log`; lead templates `timetracking.report`; administrators all. The generated [permissions reference](../reference/permissions.md) is updated when they are implemented.
+S-B policy administration reads use `sla.view` or `sla.manage`; writes require `sla.manage`. Future Ticket SLA data uses Queue view access. Role templates: agent templates get `timetracking.log`; lead templates `timetracking.report`; administrators all. The generated [permissions reference](../reference/permissions.md) is updated when they are implemented.
 
 ### 7.6 Events and audit (time tracking)
 

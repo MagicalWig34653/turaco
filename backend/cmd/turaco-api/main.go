@@ -55,6 +55,8 @@ import (
 	securityapp "github.com/MagicalWig34653/turaco/backend/internal/modules/security/application"
 	securitytransport "github.com/MagicalWig34653/turaco/backend/internal/modules/security/transport"
 	servicedeskapp "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/application"
+	sladomain "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/public"
+	slatransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/sla"
 	servicedesktransport "github.com/MagicalWig34653/turaco/backend/internal/modules/servicedesk/transport"
 	servicestransport "github.com/MagicalWig34653/turaco/backend/internal/modules/services/transport"
 	tasksapp "github.com/MagicalWig34653/turaco/backend/internal/modules/tasks/application"
@@ -405,7 +407,8 @@ func main() {
 		os.Exit(1)
 	}
 	settingstransport.Register(mux, adminSettings, sessionAuth, logger)
-	schedulingtransport.Register(mux, scheduling.NewCalendarStore(pool), sessionAuth, logger)
+	schedulingtransport.Register(mux, scheduling.NewCalendarStore(pool).WithUsage(sladomain.CalendarUsage{}), sessionAuth, logger)
+	slatransport.Register(mux, slatransport.New(pool), sessionAuth, logger)
 	probeChecks := map[string]func(context.Context) error{}
 	smtpProbe, err := wiring.SMTPProbe(smtpCfg)
 	if err != nil {

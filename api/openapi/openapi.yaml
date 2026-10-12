@@ -6,10 +6,73 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /sla/policies:
+    get:
+      operationId: listSLAPolicies
+      summary: List SLA Policies (sla.view or sla.manage; 404 while SLA is off).
+      security: [{sessionAuth: []}]
+      responses: {'200': {description: Policy list}, '403': {$ref: '#/components/responses/Forbidden'}}
+    post:
+      operationId: createSLAPolicy
+      summary: Create an SLA Policy (sla.manage).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicyInput'}}}}
+      responses: {'201': {description: Created policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Key taken}}
+  /sla/policies/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: getSLAPolicy
+      summary: Get a policy and its targets (sla.view or sla.manage).
+      security: [{sessionAuth: []}]
+      responses: {'200': {description: Policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {description: Not found}}
+    patch:
+      operationId: updateSLAPolicy
+      summary: Update policy settings using expectedVersion (sla.manage).
+      security: [{sessionAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicyUpdate'}}}}
+      responses: {'200': {description: Updated policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /sla/policies/{id}/targets:
+    put:
+      operationId: replaceSLATargets
+      summary: Atomically replace all priority and clock-kind targets using expectedVersion (sla.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedVersion, targets], properties: {expectedVersion: {type: integer}, targets: {type: array, maxItems: 8, items: {$ref: '#/components/schemas/SLATarget'}}}}}}}
+      responses: {'200': {description: Updated policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /sla/policies/{id}/archive:
+    post:
+      operationId: archiveSLAPolicy
+      summary: Archive an unassigned SLA Policy (sla.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SLAVersion'}}}}
+      responses: {'200': {description: Archived policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict or assigned queue}}
+  /sla/policies/{id}/restore:
+    post:
+      operationId: restoreSLAPolicy
+      summary: Restore an SLA Policy (sla.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SLAVersion'}}}}
+      responses: {'200': {description: Restored policy, content: {application/json: {schema: {$ref: '#/components/schemas/SLAPolicy'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
+  /sla/queues:
+    get:
+      operationId: listSLAQueues
+      summary: List Ticket Queue policy assignments (sla.view or sla.manage).
+      security: [{sessionAuth: []}]
+      responses: {'200': {description: Queue list}, '403': {$ref: '#/components/responses/Forbidden'}}
+  /sla/queues/{id}/policy:
+    put:
+      operationId: setSLAQueuePolicy
+      summary: Assign or unassign a policy using expectedQueueVersion (sla.manage).
+      security: [{sessionAuth: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [policyId, expectedQueueVersion], properties: {policyId: {type: [string, 'null'], format: uuid}, expectedQueueVersion: {type: integer}}}}}}
+      responses: {'200': {description: Updated queue, content: {application/json: {schema: {$ref: '#/components/schemas/SLAQueue'}}}}, '400': {$ref: '#/components/responses/InvalidRequest'}, '403': {$ref: '#/components/responses/Forbidden'}, '409': {description: Version conflict}}
   /business-calendars:
     get:
       operationId: listBusinessCalendars
-      summary: List Business Calendars (calendars.manage).
+      summary: List Business Calendars (calendars.manage, sla.view or sla.manage).
       security: [{sessionAuth: []}]
       responses: {'200': {description: Calendar list, content: {application/json: {schema: {type: object, required: [items], properties: {items: {type: array, items: {$ref: '#/components/schemas/BusinessCalendar'}}}}}}}, '403': {$ref: '#/components/responses/Forbidden'}}
     post:
@@ -22,7 +85,7 @@ paths:
     parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
     get:
       operationId: getBusinessCalendar
-      summary: Get a Business Calendar and closures (calendars.manage).
+      summary: Get a Business Calendar and closures (calendars.manage, sla.view or sla.manage).
       security: [{sessionAuth: []}]
       responses: {'200': {description: Calendar, content: {application/json: {schema: {$ref: '#/components/schemas/BusinessCalendar'}}}}, '403': {$ref: '#/components/responses/Forbidden'}, '404': {description: Not found}}
     patch:
@@ -16677,6 +16740,47 @@ components:
         name: {type: string, minLength: 1, maxLength: 80}
         timezone: {type: string, description: IANA time zone}
         weeklyHours: {type: object, description: ISO weekday keys 1 to 7; sorted nonoverlapping local-minute intervals, additionalProperties: {type: array, items: {$ref: '#/components/schemas/BusinessCalendarInterval'}}}
+    SLAVersion:
+      type: object
+      required: [expectedVersion]
+      properties: {expectedVersion: {type: integer}}
+    SLATarget:
+      type: object
+      required: [priority, kind, targetMinutes, timeBasis]
+      properties:
+        priority: {type: string, enum: [low, normal, high, urgent]}
+        kind: {type: string, enum: [first_response, resolution]}
+        targetMinutes: {type: integer, minimum: 1, maximum: 129600}
+        timeBasis: {type: string, enum: [business, continuous]}
+    SLAPolicyInput:
+      type: object
+      required: [key, name]
+      properties:
+        key: {type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$'}
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 2000}
+        calendarId: {type: [string, 'null'], format: uuid}
+        pauseWaitingReasons: {type: array, uniqueItems: true, items: {type: string, enum: [customer, vendor, external_service, scheduled_change, hardware]}, default: [customer]}
+        warningPercent: {type: integer, minimum: 50, maximum: 95, default: 80}
+        escalationTask: {type: boolean, default: false}
+    SLAPolicyUpdate:
+      allOf:
+        - {$ref: '#/components/schemas/SLAPolicyInput'}
+        - {$ref: '#/components/schemas/SLAVersion'}
+    SLAPolicy:
+      allOf:
+        - {$ref: '#/components/schemas/SLAPolicyInput'}
+        - {type: object, required: [id, status, version, createdAt, updatedAt, targets], properties: {id: {type: string, format: uuid}, status: {type: string, enum: [active, archived]}, version: {type: integer}, createdAt: {type: string, format: date-time}, updatedAt: {type: string, format: date-time}, targets: {type: array, items: {$ref: '#/components/schemas/SLATarget'}}}}
+    SLAQueue:
+      type: object
+      required: [id, key, name, status, version, policyId]
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, archived]}
+        version: {type: integer}
+        policyId: {type: [string, 'null'], format: uuid}
     BusinessCalendarUpdate:
       allOf:
         - {$ref: '#/components/schemas/BusinessCalendarInput'}

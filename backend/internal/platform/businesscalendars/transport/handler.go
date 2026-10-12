@@ -20,8 +20,8 @@ type handler struct {
 
 func Register(mux *http.ServeMux, store *scheduling.CalendarStore, auth authorization.Authenticator, logger *slog.Logger) {
 	h := &handler{store, logger}
-	mux.Handle("GET /api/v1/business-calendars", httpx.NoStore(authorization.Require(auth, "calendars.manage")(http.HandlerFunc(h.list))))
-	mux.Handle("GET /api/v1/business-calendars/{id}", httpx.NoStore(authorization.Require(auth, "calendars.manage")(http.HandlerFunc(h.get))))
+	mux.Handle("GET /api/v1/business-calendars", httpx.NoStore(authorization.RequireAny(auth, "calendars.manage", "sla.manage", "sla.view")(http.HandlerFunc(h.list))))
+	mux.Handle("GET /api/v1/business-calendars/{id}", httpx.NoStore(authorization.RequireAny(auth, "calendars.manage", "sla.manage", "sla.view")(http.HandlerFunc(h.get))))
 	mux.Handle("POST /api/v1/business-calendars", httpx.NoStore(authorization.Require(auth, "calendars.manage")(http.HandlerFunc(h.create))))
 	mux.Handle("PATCH /api/v1/business-calendars/{id}", httpx.NoStore(authorization.Require(auth, "calendars.manage")(http.HandlerFunc(h.update))))
 	mux.Handle("PUT /api/v1/business-calendars/{id}/closures/{year}", httpx.NoStore(authorization.Require(auth, "calendars.manage")(http.HandlerFunc(h.closures))))
@@ -146,6 +146,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, 409, "calendars.version_conflict", "The calendar changed; reload and try again.")
 	case errors.Is(err, scheduling.ErrCalendarKeyTaken):
 		httpx.WriteError(w, 409, "calendars.key_taken", "The calendar key already exists.")
+	case errors.Is(err, scheduling.ErrCalendarInUse):
+		httpx.WriteError(w, 409, "calendars.in_use", "An active SLA policy uses this calendar.")
 	case errors.Is(err, scheduling.ErrCalendarInvalid):
 		httpx.WriteError(w, 400, "calendars.invalid_request", "The calendar is invalid.")
 	default:

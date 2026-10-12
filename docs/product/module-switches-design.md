@@ -15,14 +15,14 @@ Permissions and roles (`modules.manage`, elevated; built-in administrator roles 
 | Category | Modules (key: requires) |
 |---|---|
 | core (always on) | platform, access, organization, audit, tasks, approvals, notifications |
-| service_management | servicedesk: assets; knowledge: servicedesk; catalog: products; requests: catalog |
+| service_management | servicedesk: assets; sla: servicedesk (default off); knowledge: servicedesk; catalog: products; requests: catalog |
 | assets_inventory | products; assets: products; procurement: products; inventory: assets, procurement, products |
 | endpoints_security | endpoints: assets, changes; security: endpoints, changes; remoteaccess: endpoints, assets, servicedesk |
 | infrastructure_operations | infrastructure: assets; services: assets, infrastructure; changes: assets, infrastructure, services; planning: changes, procurement, services |
 | workforce | presence (default off) |
 | insight | briefing; ai (default off) |
 
-Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`.
+Route prefixes, retention jobs and startup gates are in `backend/internal/platform/modules/catalog.go`. The `sla` switch requires `servicedesk`, starts off, and gates all `/api/v1/sla/*` routes (including Queue policy assignment); the Business Calendar API stays in core. Disabling `servicedesk` while `sla` is on is refused with `required_by_enabled`. No SLA clock, sweep or notification implementation exists in S-B; policy and Queue data is retained while off.
 
 ## State
 

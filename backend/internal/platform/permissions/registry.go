@@ -46,6 +46,8 @@ func (p Permission) EffectiveScope() string {
 
 var Registry = []Permission{
 	{Name: "platform.admin", Description: "Administer platform-wide configuration.", Risk: "high"},
+	{Name: "sla.view", Description: "Read SLA Policies, Targets and Queue assignments.", Risk: "normal"},
+	{Name: "sla.manage", Description: "Create and change SLA Policies and Targets and assign policies to Ticket Queues.", Risk: "elevated"},
 	{Name: "calendars.manage", Description: "Create and change Business Calendars and their full-day closures.", Risk: "elevated"},
 	{Name: "platform.roles.view", Description: "View roles, permissions and role assignments.", Risk: "normal"},
 	{Name: "platform.roles.manage", Description: "Create, change and delete roles and assign or revoke them; equivalent to administrator access.", Risk: "high"},
