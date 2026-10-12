@@ -69,7 +69,9 @@ func newHandler(t *testing.T, g *fakeGranter) (*Handler, *Store, http.Handler) {
 	h := &Handler{Store: st, Granter: g, Limiter: &countingLimiter{count: map[string]int{}}, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	mux := http.NewServeMux()
 	h.Register(mux)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, `UPDATE platform.setup_tokens SET used_at = now() WHERE used_at IS NULL`) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `UPDATE platform.setup_tokens SET used_at = now() WHERE used_at IS NULL`)
+	})
 	return h, st, mux
 }
 
