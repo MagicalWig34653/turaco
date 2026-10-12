@@ -6,7 +6,8 @@ import { Dialog } from '../../platform/ui/Dialog';
 import { useI18n } from '../../platform/i18n/I18nProvider';
 import { aiApi } from './api';
 import { consentBody, toolOutcomeKey } from './model';
-import type { ResourceRef, ScopeRequest, Status, Turn, UsageCounters } from './types';
+import { ProposalCard } from './ProposalCard';
+import type { Proposal, ResourceRef, ScopeRequest, Status, Turn, UsageCounters } from './types';
 
 /** Intentionally text only: no Markdown, HTML, links or remote resource loading. */
 export function InertAnswer({ text }: { text: string }) {
@@ -48,6 +49,8 @@ export function AssistantPanel({
   const [id, setId] = useState<string>();
   const [turns, setTurns] = useState<{ question: string; turn: Turn }[]>([]);
   const [requests, setRequests] = useState<ScopeRequest[]>([]);
+  // Latest known state of each proposal shown in this conversation, by id.
+  const [proposals, setProposals] = useState<Record<string, Proposal>>({});
   const [retry, setRetry] = useState(false);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
@@ -117,6 +120,7 @@ export function AssistantPanel({
       setId(undefined);
       setTurns([]);
       setRequests([]);
+      setProposals({});
       setRetry(false);
       setRestart(false);
       setText('');
@@ -187,6 +191,13 @@ export function AssistantPanel({
                   </li>
                 ))}
               </ul>
+              {(turn.proposals ?? []).map((p) => (
+                <ProposalCard
+                  key={p.id}
+                  proposal={proposals[p.id] ?? p}
+                  onChange={(next) => setProposals((old) => ({ ...old, [next.id]: next }))}
+                />
+              ))}
               <small>{t('ai.tokens', { input: turn.tokens.in, output: turn.tokens.out })}</small>
             </article>
           ))}

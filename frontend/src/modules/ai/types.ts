@@ -28,12 +28,33 @@ export type Status = {
   usage: UsageCounters | null;
 };
 export type ScopeRequest = { resourceType: string; resourceId: string; tool: string };
+export type ProposalState = 'proposed' | 'confirmed' | 'executed' | 'failed' | 'dismissed' | 'expired';
+/** An AI Proposal (F12 A-C). parameters are the exact values the confirmation is bound to (null once purged). */
+export type Proposal = {
+  id: string;
+  tool: string;
+  effect: 'internal' | '';
+  parameters: Record<string, unknown> | null;
+  parametersHash: string;
+  target: { type: string; id: string };
+  targetVersion: number;
+  targetLabel: string;
+  state: ProposalState;
+  createdAt: string;
+  expiresAt: string;
+  confirmedAt: string | null;
+  endedAt: string | null;
+  attempt: number;
+  outcomeCode: string | null;
+  result: { type: string; id: string } | null;
+};
 export type Turn = {
   conversationId: string;
   answer: string;
   stopReason: 'answer' | 'empty' | 'iteration_limit' | 'malformed_tool_calls';
   toolsUsed: { tool: string; target: ResourceRef | null; itemCount: number; outcome: string }[];
   scopeRequests: ScopeRequest[];
+  proposals: Proposal[];
   tokens: { in: number; out: number };
   usage: UsageCounters;
 };

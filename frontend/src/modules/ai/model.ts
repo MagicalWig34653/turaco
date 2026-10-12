@@ -3,6 +3,7 @@ import type { MessageKey } from '../../platform/i18n/i18n';
 import type {
   AuthorizeParams,
   McpClientFields,
+  Proposal,
   ProviderFields,
   ResourceRef,
   ScopeRequest,
@@ -41,6 +42,10 @@ export const errorMessages: Record<string, MessageKey> = {
   'ai.conversation_too_large': 'ai.error.conversation_too_large',
   'ai.proposal_expired': 'ai.error.proposal_expired',
   'ai.proposal_stale': 'ai.error.proposal_stale',
+  'ai.proposal_hash_mismatch': 'ai.error.proposal_hash_mismatch',
+  'ai.proposal_not_pending': 'ai.error.proposal_not_pending',
+  'ai.proposal_in_progress': 'ai.error.proposal_in_progress',
+  'ai.execution_unknown': 'ai.error.execution_unknown',
   'ai.mcp_invalid_client': 'ai.error.mcp_invalid_client',
   'ai.mcp_invalid_request': 'ai.error.mcp_invalid_request',
 };
@@ -91,6 +96,8 @@ export function providerBody(p: ProviderFields, expectedVersion?: number) {
 
 const outcomes: Record<string, MessageKey> = {
   ok: 'ai.outcome.ok',
+  proposed: 'ai.outcome.proposed',
+  proposal_limit: 'ai.outcome.proposal_limit',
   not_found: 'ai.outcome.not_found',
   forbidden: 'ai.outcome.forbidden',
   invalid_arguments: 'ai.outcome.invalid_arguments',
@@ -143,4 +150,63 @@ export function mcpClientBody(c: McpClientFields, expectedVersion?: number) {
     enabled: c.enabled,
     ...(expectedVersion === undefined ? {} : { expectedVersion }),
   };
+}
+
+/** The confirmation body: only the hash of the parameters the User was shown (the server holds the parameters). */
+export function confirmBody(p: Proposal) {
+  return { parametersHash: p.parametersHash };
+}
+const paramLabels: Record<string, MessageKey> = {
+  ticketId: 'ai.param.ticketId',
+  body: 'ai.param.body',
+};
+/**
+ * The exact parameters of a proposal for the confirm dialog: every key, sorted, with its complete value as text.
+ * Nothing is truncated, summarized or interpreted (no Markdown or links).
+ */
+export function proposalParams(
+  p: Proposal,
+): { key: string; label: MessageKey | null; value: string }[] {
+  if (!p.parameters) return [];
+  return Object.keys(p.parameters)
+    .sort()
+    .map((key) => {
+      const v = p.parameters?.[key];
+      return {
+        key,
+        label: paramLabels[key] ?? null,
+        value: typeof v === 'string' ? v : JSON.stringify(v),
+      };
+    });
+}
+/** Whole seconds until the confirmation deadline (0 when it passed). */
+export function remainingSeconds(expiresAt: string, now: number): number {
+  const ms = Date.parse(expiresAt) - now;
+  return Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0;
+}
+/**
+ * Confirm is offered while the proposal awaits confirmation and, for a confirmed proposal whose execution outcome
+ * is not known, as a retry (the server allows it after the lease and never applies it twice).
+ */
+export function canConfirm(p: Proposal, now: number): boolean {
+  if (p.parameters === null) return false;
+  if (p.state === 'confirmed') return true;
+  return p.state === 'proposed' && remainingSeconds(p.expiresAt, now) > 0;
+}
+const proposalOutcomes: Record<string, MessageKey> = {
+  ok: 'ai.proposalOutcome.ok',
+  'ai.proposal_stale': 'ai.proposalOutcome.stale',
+  permission_denied: 'ai.proposalOutcome.permission_denied',
+  forbidden: 'ai.proposalOutcome.permission_denied',
+  not_found: 'ai.proposalOutcome.not_found',
+  rejected: 'ai.proposalOutcome.rejected',
+  parameters_tampered: 'ai.proposalOutcome.parameters_tampered',
+  tool_unavailable: 'ai.proposalOutcome.tool_unavailable',
+  'ai.execution_unknown': 'ai.proposalOutcome.execution_unknown',
+  dismissed: 'ai.proposalOutcome.dismissed',
+  expired: 'ai.proposalOutcome.expired',
+};
+export function proposalOutcomeKey(code: string | null): MessageKey | null {
+  if (!code) return null;
+  return proposalOutcomes[code] ?? 'ai.proposalOutcome.unknown';
 }
