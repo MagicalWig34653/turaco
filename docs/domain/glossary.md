@@ -182,7 +182,7 @@ Source code, APIs, DB schemas, events and technical documentation use these Engl
 - **Event** — business fact that happened; past-tense name.
 - **Audit Event** — immutable security/compliance record of action/state transition.
 - **Role** — named set of permissions; custom, or the built-in immutable `platform-administrator` holding all permissions. Not a Team and not an Assignment of work.
-- **Role Assignment** — grant of a Role to a User or a Directory Group within a scope (currently only `global`); revoked assignments are kept as history.
+- **Role Assignment** — grant of a Role to a User or a Directory Group within a scope (currently only `global`; a Location scope that applies to a Location and its sub-Locations is designed in [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md), not implemented); revoked assignments are kept as history.
 - **Emergency Account** — local break-glass login for a dedicated User when directory login is unavailable; disabled by default and managed only by the operator CLI.
 
 ## Canonical distinctions

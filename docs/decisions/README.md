@@ -43,3 +43,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0037](ADR-0037-file-storage-and-attachments.md) | File Storage, Envelope Encryption, Virus Scanning and Attachments | Accepted; implemented (backend, no UI yet) |
 | [ADR-0038](ADR-0038-playwright-end-to-end-tests.md) | Playwright for End-to-End Smoke Tests | Accepted; implemented |
 | [ADR-0039](ADR-0039-mcp-oauth-authorization-server.md) | Turaco as OAuth Authorization Server for the Turaco MCP Resource Only | Accepted; implemented (F12 A-D) |
+| [ADR-0040](ADR-0040-location-scoped-role-assignments.md) | Location-Scoped Role Assignments | Accepted (direction); not implemented ([F16 design](../product/f16-location-scoped-access-design.md)) |

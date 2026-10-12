@@ -29,6 +29,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties (done 2026-10-11, security review open) |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
 | F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
+| F16 Location-scoped access | Planned (design only, [design](f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md)) | Everything: L-A to L-H |
 
 The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
 
