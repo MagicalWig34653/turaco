@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { isApiError } from '../../platform/api/client';
+import { api, isApiError } from '../../platform/api/client';
 import { endpoints } from '../../platform/api/endpoints';
 import { useAsync } from '../../platform/api/useAsync';
 import { useI18n } from '../../platform/i18n/I18nProvider';
@@ -45,6 +45,11 @@ export function LoginScreen() {
   const { t, locale, setLocale } = useI18n();
   const { state, refresh } = useSession();
   const methods = useAsync((signal) => endpoints.authMethods(signal), []);
+  const setup = useAsync(
+    (signal) =>
+      api.get<{ available: boolean }>('/setup/status', { signal, skipUnauthorizedHandler: true }),
+    [],
+  );
   const [kerberos, setKerberos] = useState<'idle' | 'trying' | 'done'>('idle');
   const kerberosTried = useRef(false);
   const [mode, setMode] = useState<Mode>('password');
@@ -220,6 +225,11 @@ export function LoginScreen() {
           ) : (
             <Alert kind="warning">{t('login.noMethods')}</Alert>
           )
+        ) : null}
+        {setup.data?.available ? (
+          <p className="login-switch">
+            <a href="/setup">{t('firstAdmin.link')}</a>
+          </p>
         ) : null}
       </main>
     </div>

@@ -276,10 +276,11 @@ With this block set `HTTP_TRUSTED_PROXIES=127.0.0.1/32` on the API. The Vite dev
 
 ## 9. First sign-in and first-run setup
 
-A fresh installation has no administrator, and no web wizard creates one. The first platform administrator is created on the command line with `turaco-admin admin create-first` (below), which uses `DATABASE_URL` and the configuration from its environment. Its subcommands (from `backend/cmd/turaco-admin/main.go`):
+A fresh installation has no administrator. Run `turaco-admin admin setup-token` on the server, then open the public `/setup` page and enter the token and an existing directory user (username, email or UUID). The token expires after 30 minutes by default, is single use and replaces any earlier setup token. The page may also link an Entra identity when both tenant and object GUIDs are supplied. After creation, sign in separately. The CLI alternative is `turaco-admin admin create-first` (below). Both commands use `DATABASE_URL` and the configuration from their environment. The operator CLI includes these commands (from `backend/cmd/turaco-admin/main.go`):
 
 ```text
 turaco-admin admin create-first --user <username|email|uuid> [--tenant <guid> --object <guid>] [--force]
+turaco-admin admin setup-token [--ttl 30m]
 turaco-admin role list
 turaco-admin role grant  --role <key> (--user <username|email|uuid> | --group <uuid>)
 turaco-admin role revoke --assignment <uuid>
@@ -382,7 +383,7 @@ Compatibility of old binaries with a newer schema during a rolling upgrade is **
 ## 15. Known limits
 
 - **No packaged installer or release artifacts** are documented in the repository; install is from source or locally built images. Published GHCR image names and tags are **not verified**.
-- **No first-administrator wizard in the web UI.** The first administrator comes from `turaco-admin admin create-first`, which needs a synced directory user (optionally with an Entra identity link) or, with `role grant`, the emergency account. `make dev-setup` and the dev admin are development tooling ([current status](../product/current-status.md)) and must not be used in production. Without a directory the only administrator is the break-glass account, because local accounts cannot be platform administrators ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)). No MFA exists.
+- **First administrator:** `/setup` requires an operator-issued setup token and an existing directory user (optionally linked to Entra). `turaco-admin admin create-first` remains available, including `--force` for recovery; with no directory or Entra, use the break-glass account. `make dev-setup` and the dev admin are development tooling ([current status](../product/current-status.md)) and must not be used in production. Local accounts cannot be platform administrators ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)). No MFA exists.
 - **One `DATABASE_URL` and one database role** for migrations, API and worker.
 - **The API does not serve the frontend or terminate TLS.**
 - **The single-host trial is not highly available:** the compose file runs one instance of each service and a test double for object storage.
