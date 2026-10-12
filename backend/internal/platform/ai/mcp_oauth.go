@@ -198,7 +198,8 @@ func (s *Service) checkAuthorize(ctx context.Context, req AuthorizeRequest) (MCP
 }
 
 func (s *Service) offeredTo(c Caller, cl MCPClient) map[string]registered {
-	return s.reg.Offered(c, ProviderRecord{AllowedDataClasses: cl.AllowedDataClasses})
+	// Read tools only: a write tool via MCP would need its proposal confirmed inside Turaco (ADR-0029 decision 7).
+	return s.reg.OfferedRead(c, ProviderRecord{AllowedDataClasses: cl.AllowedDataClasses})
 }
 
 // PreviewAuthorization validates an authorization request for the consent screen of the signed-in User.

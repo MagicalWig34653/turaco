@@ -35,7 +35,7 @@ Lifecycle: see [state machines](../domain/state-machines.md#module-switch).
 ## Jobs and outbox consumers while a module is off (review outcomes)
 
 Each job type `<key>.*` has one policy in the catalog:
-- **always run** (`AlwaysRunJobs`): safety and retention paths: `presence.purge`, `ai.sessions.expire`, `ai.retention.purge`, `remoteaccess.expire_sessions`, `endpoints.deployment_tick`. The deployment tick runs only the kill-switch sweep (pause, halt, queue clearing) while Endpoints is off and starts no new rollout work.
+- **always run** (`AlwaysRunJobs`): safety and retention paths: `presence.purge`, `ai.sessions.expire`, `ai.retention.purge`, `ai.proposals.expire`, `remoteaccess.expire_sessions`, `endpoints.deployment_tick`. The deployment tick runs only the kill-switch sweep (pause, halt, queue clearing) while Endpoints is off and starts no new rollout work.
 - **disposable** (`DisposableJobs`): recurring scheduled ticks (`endpoints.software_package_sync`, `endpoints.deployment_correlation`, `security.advisory_sync|match_all|risk_review_reminders`, `changes.reminders`, `remoteaccess.observe`): completed without running; the schedule enqueues the next one.
 - **durable** (everything else, e.g. `security.match`, `servicedesk.external.push`, `services.vm_link_backfill`): kept pending (attempt refunded, offered again every minute) and run after the module is enabled. Nothing is lost.
 

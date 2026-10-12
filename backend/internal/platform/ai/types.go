@@ -35,7 +35,8 @@ var DataClasses = []DataClass{ClassPublicReference, ClassBusinessRecord, ClassPe
 // Valid reports whether c is a known class.
 func (c DataClass) Valid() bool { return slices.Contains(DataClasses, c) }
 
-// Risk is a tool's risk class (A2). Only read tools exist in A-A.
+// Risk is a tool's risk class (A2). Read tools run within a conversation; write tools only create an AI Proposal
+// that the User confirms (A-C); high_impact operations are never executed by AI and cannot be registered.
 type Risk string
 
 const (
@@ -76,8 +77,55 @@ type Tool struct {
 	Target *Target
 	// Handler runs with the caller built from the HTTP session. It must return ErrToolNotFound,
 	// ErrToolForbidden or ErrToolInvalid for the matching module outcomes; any other error is an internal failure.
+	// Read tools only.
 	Handler func(ctx context.Context, caller Caller, input json.RawMessage) (any, error)
+	// Write is the two-phase contract of a write tool (A-C). Write tools have no Handler and no Output: the model
+	// learns only that a proposal awaits the User's confirmation.
+	Write *WriteSpec
 }
+
+// WriteEffect is who can see the result of a write tool. Only EffectInternal exists: writes that send data outside
+// Turaco (requester-visible comments, email) need the full-content dialog review first (design open decision 7).
+type WriteEffect string
+
+// EffectInternal: the result is visible to Turaco staff only and nothing leaves Turaco.
+const EffectInternal WriteEffect = "internal"
+
+// WriteSpec is a write tool's contract with the module that owns the operation.
+type WriteSpec struct {
+	Effect WriteEffect
+	// Prepare runs as the requesting User when the model calls the tool. It changes nothing: it checks that the User
+	// may perform the operation on the target now and returns the target's current version and a display label.
+	Prepare func(ctx context.Context, caller Caller, input json.RawMessage) (Preparation, error)
+	// Execute performs the operation through the module's public contract as the confirming User. It must be
+	// idempotent per x.IdempotencyKey (a repeated call returns the first result without a second effect) and must
+	// fail with ErrToolStale when the target no longer has x.TargetVersion. The context carries the audit marker
+	// (via=ai, proposal id), so the module's own audit entries are marked AI-assisted.
+	Execute func(ctx context.Context, caller Caller, input json.RawMessage, x Execution) (ExecutionResult, error)
+}
+
+// Preparation is the target of a proposal as Prepare saw it.
+type Preparation struct {
+	TargetVersion int
+	// TargetLabel is shown to the creating User in the confirm dialog (for example the Ticket reference and title);
+	// it is never sent to the model.
+	TargetLabel string
+}
+
+// Execution identifies one execution of a confirmed proposal.
+type Execution struct {
+	ProposalID     string
+	IdempotencyKey string
+	TargetVersion  int
+}
+
+// ExecutionResult names the record the operation created or changed.
+type ExecutionResult struct {
+	Result ResourceRef
+}
+
+// ErrToolStale is returned by Execute when the target changed since the proposal was made.
+var ErrToolStale = errors.New("ai: tool target changed")
 
 // Classes returns the distinct data classes of the tool's output fields.
 func (t Tool) Classes() []DataClass {
@@ -230,6 +278,14 @@ var (
 	ErrProviderChanged     = errors.New("ai: provider changed")
 	ErrTurnInProgress      = errors.New("ai: turn in progress")
 	ErrContextTooLarge     = errors.New("ai: conversation too large")
+	// Proposal outcomes of Confirm and Dismiss.
+	ErrProposalExpired      = errors.New("ai: proposal expired")
+	ErrProposalHashMismatch = errors.New("ai: proposal parameters hash mismatch")
+	ErrProposalNotPending   = errors.New("ai: proposal is not awaiting confirmation")
+	ErrProposalInProgress   = errors.New("ai: proposal execution in progress")
+	// ErrExecutionUnknown: the module call did not report an outcome; the proposal stays confirmed and the User may
+	// confirm again once the lease expired (the call is idempotent), at most three attempts.
+	ErrExecutionUnknown = errors.New("ai: proposal execution outcome unknown")
 )
 
 // InvalidInputError is a client-correctable validation failure.

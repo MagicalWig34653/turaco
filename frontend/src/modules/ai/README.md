@@ -34,6 +34,12 @@ leaves only through the redirect URL the approve/deny call returns; an unregiste
 client or redirect URI shows an error and never redirects. `/ai/connections` lists and
 disconnects the signed-in person's own grants. Both need `ai.use`.
 
+AI Proposals (F12 A-C): a turn may return `proposals`; each is shown inside the panel by
+`ProposalCard` as the confirm dialog: operation, visibility (effect), target label, id and
+version, every parameter complete as inert text, the remaining time, a Confirm that sends
+only `parametersHash` and a Dismiss. There is no "confirm all". After Confirm the card
+shows the server's real outcome; on a proposal conflict error it reloads the proposal.
+
 Validation: `npx tsc -b`, `npx eslint src`, `npx vitest run` in frontend; the
 model and rendering tests cover status gates, request allowlists, versions, errors
 and hostile output. `node src/modules/ai/check-missing-i18n.mjs` scans literal UI

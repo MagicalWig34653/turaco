@@ -187,7 +187,7 @@ func catalogModules() []Module {
 		opt("briefing", CategoryInsight, nil, "briefing", "briefing-items"),
 		{Key: "ai", Category: CategoryInsight, DefaultEnabled: false, RoutePrefixes: []string{"ai", "mcp", "oauth"},
 			OpenPaths:     []string{"/api/v1/ai/status", "/api/v1/ai/settings*", "/api/v1/ai/providers*", "/api/v1/ai/usage*", "/api/v1/ai/mcp/clients*", "/api/v1/ai/mcp/users*"},
-			AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge"}, StartupGates: []string{"AI_ENABLED", "AI_MCP_ENABLED"}},
+			AlwaysRunJobs: []string{"ai.sessions.expire", "ai.retention.purge", "ai.proposals.expire"}, StartupGates: []string{"AI_ENABLED", "AI_MCP_ENABLED"}},
 	}
 }
 

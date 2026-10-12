@@ -10,9 +10,12 @@ import (
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/permissions"
 )
 
-// The first read tools (F12 A-A) are fixed here: a new tool, a changed risk class or a new data class must be a
-// reviewed change of this test, which also scans every field path against the prohibited-path list (A13).
-func TestRegisteredAIToolsAreReadOnlyAndFieldSafe(t *testing.T) {
+// The registered tools and their risk classes are fixed here: a new tool, a changed risk class or a new data class
+// must be a reviewed change of this test, which also scans every field path against the prohibited-path list (A13).
+// The only write tool (F12 A-C) has an internal effect only and returns nothing to the model.
+func TestRegisteredAIToolsAreReviewedAndFieldSafe(t *testing.T) {
+	risks := map[string]ai.Risk{"devices.context_summary": ai.RiskRead, "knowledge.search": ai.RiskRead, "tickets.summarize": ai.RiskRead,
+		"tickets.draft_internal_note": ai.RiskWrite}
 	svc, err := AI(nil, AIConfig{Enabled: true, TenantID: "t"})
 	if err != nil {
 		t.Fatalf("a tool fails the registry self-check: %v", err)
@@ -20,8 +23,11 @@ func TestRegisteredAIToolsAreReadOnlyAndFieldSafe(t *testing.T) {
 	var names []string
 	for _, tool := range svc.Registry().Tools() {
 		names = append(names, tool.Name)
-		if tool.Risk != ai.RiskRead {
-			t.Errorf("%s: risk %s", tool.Name, tool.Risk)
+		if tool.Risk != risks[tool.Name] {
+			t.Errorf("%s: risk %s, want %s", tool.Name, tool.Risk, risks[tool.Name])
+		}
+		if tool.Risk == ai.RiskWrite && (tool.Write == nil || tool.Write.Effect != ai.EffectInternal || len(tool.Output) != 0 || tool.Handler != nil) {
+			t.Errorf("%s: a write tool must be internal-only, without output and handler", tool.Name)
 		}
 		known := false
 		for _, p := range permissions.Registry {
@@ -54,7 +60,7 @@ func TestRegisteredAIToolsAreReadOnlyAndFieldSafe(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"devices.context_summary", "knowledge.search", "tickets.summarize"}
+	want := []string{"devices.context_summary", "knowledge.search", "tickets.draft_internal_note", "tickets.summarize"}
 	if !reflect.DeepEqual(names, want) {
 		t.Errorf("registered tools = %v, want %v", names, want)
 	}

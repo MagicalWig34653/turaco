@@ -136,3 +136,112 @@ func TestTicketSummarizeToolIsUserDelegatedAndRedactsByModuleRules(t *testing.T)
 		t.Log("handler ignored the extra field")
 	}
 }
+
+// The first write tool (F12 A-C): Prepare changes nothing and follows the module's rules; Execute adds the internal
+// note as the confirming User exactly once per idempotency key, only on the version the proposal saw, and the
+// module's own audit entry carries the AI-assisted marker from the context.
+func TestDraftInternalNoteToolIsIdempotentVersionBoundAndMarked(t *testing.T) {
+	pool := dbtest.Pool(t)
+	ctx := context.Background()
+	newID := func() string {
+		var id string
+		if err := pool.QueryRow(ctx, `SELECT uuidv7()::text`).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	alice, bob, agent := newID(), newID(), newID()
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	corr := "ai-note-" + hex.EncodeToString(b)
+	svc := application.NewService(repository.New(pool), dir{names: map[string]string{}}, noDevices{})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.audit_events WHERE correlation_id = $1`, corr)
+		_, _ = pool.Exec(ctx, `DELETE FROM platform.outbox_events WHERE correlation_id = $1`, corr)
+		_, _ = pool.Exec(ctx, `DELETE FROM servicedesk.tickets WHERE reporter_user_id = $1::uuid`, alice)
+	})
+	tk, err := svc.Create(ctx, application.Caller{Actor: audit.UserActor(alice), CorrelationID: corr}, application.Principal{UserID: alice},
+		application.CreateInput{Title: "VPN drops", Description: "Every hour"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tool ai.Tool
+	for _, tl := range public.AITools(svc) {
+		if tl.Name == "tickets.draft_internal_note" {
+			tool = tl
+		}
+	}
+	if tool.Risk != ai.RiskWrite || tool.Write == nil || tool.Write.Effect != ai.EffectInternal || tool.Permission != "tickets.manage" {
+		t.Fatalf("tool: %+v", tool)
+	}
+	caller := func(u string, perms ...string) ai.Caller {
+		m := map[string]struct{}{}
+		for _, p := range perms {
+			m[p] = struct{}{}
+		}
+		return ai.Caller{UserID: u, TenantID: "t", CorrelationID: corr, Permissions: m}
+	}
+	staff := caller(agent, "tickets.view", "tickets.manage")
+	input := json.RawMessage(`{"ticketId":"` + tk.ID + `","body":"Checked the tunnel logs; MTU issue."}`)
+
+	prep, err := tool.Write.Prepare(ctx, staff, input)
+	if err != nil || prep.TargetVersion != tk.Version || !strings.Contains(prep.TargetLabel, "VPN drops") {
+		t.Fatalf("prepare: %+v %v", prep, err)
+	}
+	// The module decides: the reporter cannot write internal notes, a stranger cannot even see the Ticket.
+	if _, err := tool.Write.Prepare(ctx, caller(alice), input); !errors.Is(err, ai.ErrToolForbidden) {
+		t.Fatalf("reporter prepare: %v", err)
+	}
+	if _, err := tool.Write.Prepare(ctx, caller(bob), input); !errors.Is(err, ai.ErrToolNotFound) {
+		t.Fatalf("stranger prepare: %v", err)
+	}
+	countNotes := func() int {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM servicedesk.ticket_comments WHERE ticket_id=$1::uuid AND internal`, tk.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if countNotes() != 0 {
+		t.Fatal("prepare wrote a note")
+	}
+
+	proposal := newID()
+	actx := audit.WithAssist(ctx, audit.Assist{Via: "ai", TenantID: "t", ProposalID: proposal})
+	x := ai.Execution{ProposalID: proposal, IdempotencyKey: proposal, TargetVersion: prep.TargetVersion}
+	res, err := tool.Write.Execute(actx, staff, input, x)
+	if err != nil || res.Result.Type != "ticket_comment" {
+		t.Fatalf("execute: %+v %v", res, err)
+	}
+	again, err := tool.Write.Execute(actx, staff, input, x)
+	if err != nil || again.Result.ID != res.Result.ID || countNotes() != 1 {
+		t.Fatalf("idempotent replay: %+v %v notes=%d", again, err, countNotes())
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events WHERE correlation_id=$1 AND action='servicedesk.ticket.comment_added'
+		AND via='ai' AND tenant_id='t' AND ai_proposal_id=$2::uuid AND actor_id=$3::uuid AND metadata->>'internal'='true'`, corr, proposal, agent).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("module audit with the AI marker: %d %v", n, err)
+	}
+	// Another author cannot reuse the key to read or claim the note.
+	other := caller(newID(), "tickets.view", "tickets.manage")
+	if _, err := tool.Write.Execute(actx, other, input, x); err == nil {
+		t.Fatal("another user replayed someone else's idempotency key")
+	}
+
+	// The Ticket changed after the proposal: stale, never rebased.
+	if _, err := svc.SetPriority(ctx, application.Caller{Actor: audit.UserActor(agent), CorrelationID: corr},
+		application.Principal{UserID: agent, View: true, Manage: true}, tk.ID, nil, "high"); err != nil {
+		t.Fatal(err)
+	}
+	fresh := newID()
+	if _, err := tool.Write.Execute(ctx, staff, input, ai.Execution{ProposalID: fresh, IdempotencyKey: fresh, TargetVersion: prep.TargetVersion}); !errors.Is(err, ai.ErrToolStale) {
+		t.Fatalf("stale version: %v", err)
+	}
+	// Permission lost: the module refuses.
+	if _, err := tool.Write.Execute(ctx, caller(agent, "tickets.view"), input, ai.Execution{ProposalID: fresh, IdempotencyKey: fresh, TargetVersion: prep.TargetVersion + 1}); !errors.Is(err, ai.ErrToolForbidden) {
+		t.Fatalf("without tickets.manage: %v", err)
+	}
+	if countNotes() != 1 {
+		t.Fatalf("notes after refused executions: %d", countNotes())
+	}
+}

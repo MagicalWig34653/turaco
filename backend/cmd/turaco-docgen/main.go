@@ -107,7 +107,7 @@ func renderAITools() []byte {
 		os.Exit(1)
 	}
 	var b strings.Builder
-	b.WriteString("# AI Tool Reference\n\n> Generated from code. Do not edit manually.\n\nData classes are derived from each tool's output fields (F12 A13); a provider is offered a tool only if it is allowed every class listed. Output fields are the closed allowlist the egress filter enforces.\n\n| Tool | Permission | Risk | Data classes | Reads one record | Output fields |\n|---|---|---|---|---|---|\n")
+	b.WriteString("# AI Tool Reference\n\n> Generated from code. Do not edit manually.\n\nData classes are derived from each tool's output fields (F12 A13); a provider is offered a tool only if it is allowed every class listed. Output fields are the closed allowlist the egress filter enforces. A `write` tool returns no record data to the model: it only creates an AI Proposal that the User confirms in Turaco (F12 A-C); its effect says who can see the result. `high_impact` operations are never registrable.\n\n| Tool | Permission | Risk | Data classes | Target record | Output fields |\n|---|---|---|---|---|---|\n")
 	for _, t := range svc.Registry().Tools() {
 		classes := make([]string, 0)
 		for _, c := range t.Classes() {
@@ -120,6 +120,9 @@ func renderAITools() []byte {
 		target := "no"
 		if t.Target != nil {
 			target = "yes (`" + t.Target.Type + "`, needs the User to have named it)"
+		}
+		if t.Write != nil {
+			fields = append(fields, "none (proposal only, effect `"+string(t.Write.Effect)+"`)")
 		}
 		fmt.Fprintf(&b, "| `%s` | `%s` | %s | %s | %s | %s |\n", t.Name, t.Permission, t.Risk, strings.Join(classes, ", "), target, strings.Join(fields, ", "))
 	}

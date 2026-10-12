@@ -862,8 +862,8 @@ func registerExternalSync(runner *jobs.Runner, d *events.Dispatcher, pool *pgxpo
 	return runner.Register(servicedeskapp.PushJobType, servicedeskapp.PushJobTimeout, sync.HandlePush)
 }
 
-// registerAI registers the Turaco AI cleanup jobs: expired conversation sessions every five minutes and retained
-// conversations and old usage counters daily. They run whether or not AI is enabled, so data is always removed on time.
+// registerAI registers the Turaco AI cleanup jobs: expired conversation sessions every five minutes, AI Proposal
+// expiry every minute and retained conversations and old usage counters daily. They run whether or not AI is enabled, so data is always removed on time.
 func registerAI(runner *jobs.Runner, pool *pgxpool.Pool) error {
 	svc, err := wiring.AI(pool, wiring.AIConfig{})
 	if err != nil {
@@ -876,6 +876,12 @@ func registerAI(runner *jobs.Runner, pool *pgxpool.Pool) error {
 		return err
 	}
 	if err := runner.AddSchedule(jobs.Schedule{JobType: aiplatform.SessionsExpireJobType, DedupeKey: aiplatform.SessionsExpireJobType, Interval: aiplatform.SessionsExpireInterval, MaxAttempts: 2}); err != nil {
+		return err
+	}
+	if err := runner.Register(aiplatform.ProposalsExpireJobType, aiplatform.ProposalsExpireJobTimeout, svc.HandleProposalsExpire); err != nil {
+		return err
+	}
+	if err := runner.AddSchedule(jobs.Schedule{JobType: aiplatform.ProposalsExpireJobType, DedupeKey: aiplatform.ProposalsExpireJobType, Interval: aiplatform.ProposalsExpireInterval, MaxAttempts: 2}); err != nil {
 		return err
 	}
 	return runner.AddSchedule(jobs.Schedule{JobType: aiplatform.RetentionPurgeJobType, DedupeKey: aiplatform.RetentionPurgeJobType, Interval: aiplatform.RetentionPurgeInterval, MaxAttempts: 2})

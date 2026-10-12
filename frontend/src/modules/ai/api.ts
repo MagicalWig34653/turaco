@@ -4,6 +4,7 @@ import {
   authorizeBody,
   errorMessages,
   mcpClientBody,
+  confirmBody,
   messageBody,
   providerBody,
   settingsBody,
@@ -15,6 +16,7 @@ import type {
   McpClientFields,
   McpClientList,
   McpGrant,
+  Proposal,
   Provider,
   ProviderFields,
   ResourceRef,
@@ -37,6 +39,12 @@ export const aiApi = {
       '/ai/conversations/transcript',
       { conversationId },
     ),
+  proposals: (signal?: AbortSignal) => api.get<{ items: Proposal[] }>('/ai/proposals', { signal }),
+  proposal: (id: string) => api.get<Proposal>(`/ai/proposals/${encodeURIComponent(id)}`),
+  confirmProposal: (p: Proposal) =>
+    api.post<Proposal>(`/ai/proposals/${encodeURIComponent(p.id)}/confirm`, confirmBody(p)),
+  dismissProposal: (id: string) =>
+    api.post<Proposal>(`/ai/proposals/${encodeURIComponent(id)}/dismiss`),
   settings: (signal?: AbortSignal) => api.get<Settings>('/ai/settings', { signal }),
   saveSettings: (s: Settings) => api.put<Settings>('/ai/settings', settingsBody(s, s.version)),
   providers: (signal?: AbortSignal) => api.get<{ items: Provider[] }>('/ai/providers', { signal }),

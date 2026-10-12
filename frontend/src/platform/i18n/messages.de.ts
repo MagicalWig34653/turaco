@@ -131,6 +131,48 @@ export const de: Record<MessageKey, string> = {
   'ai.outcome.egress_violation': 'Datenrichtlinie hat dieses Ergebnis blockiert',
   'ai.outcome.result_too_large': 'Ergebnis zu groß',
   'ai.outcome.unknown': 'Unbekanntes Ergebnis',
+  'ai.outcome.proposed': 'Vorgeschlagen, wartet auf Ihre Bestätigung',
+  'ai.outcome.proposal_limit': 'Limit für Vorschläge erreicht',
+  'ai.param.ticketId': 'Ticket-ID',
+  'ai.param.body': 'Notiztext',
+  'ai.proposal.title': 'Vorgeschlagene Änderung: vor dem Bestätigen prüfen',
+  'ai.proposal.tool': 'Vorgang',
+  'ai.proposal.effect': 'Sichtbarkeit',
+  'ai.effect.internal':
+    'Intern: nur für Mitarbeitende sichtbar; nichts wird an die meldende Person oder außerhalb von Turaco gesendet.',
+  'ai.effect.unknown': 'Unbekannt',
+  'ai.proposal.target': 'Ziel',
+  'ai.proposal.version': 'Version {version}',
+  'ai.proposal.parameters': 'Genauer Inhalt',
+  'ai.proposal.purged': 'Der Inhalt wurde entfernt.',
+  'ai.proposal.state': 'Status',
+  'ai.proposal.timeLeft': 'Verbleibende Zeit',
+  'ai.proposal.remaining': '{minutes} Min. {seconds} Sek. zum Bestätigen',
+  'ai.proposal.outcome': 'Ergebnis',
+  'ai.proposal.notice':
+    'Mit der Bestätigung wird genau dies einmal in Ihrem Namen ausgeführt. Das ist keine Genehmigung.',
+  'ai.proposal.confirm': 'Bestätigen und ausführen',
+  'ai.proposal.dismiss': 'Verwerfen',
+  'ai.proposalState.proposed': 'Wartet auf Bestätigung',
+  'ai.proposalState.confirmed': 'Wird ausgeführt',
+  'ai.proposalState.executed': 'Ausgeführt',
+  'ai.proposalState.failed': 'Fehlgeschlagen',
+  'ai.proposalState.dismissed': 'Verworfen',
+  'ai.proposalState.expired': 'Abgelaufen',
+  'ai.proposalOutcome.ok': 'Die Änderung wurde vorgenommen.',
+  'ai.proposalOutcome.stale':
+    'Nicht ausgeführt: Der Datensatz wurde nach dem Vorschlag geändert. Fragen Sie erneut.',
+  'ai.proposalOutcome.permission_denied': 'Nicht ausgeführt: Sie sind dazu nicht mehr berechtigt.',
+  'ai.proposalOutcome.not_found': 'Nicht ausgeführt: Der Datensatz ist nicht mehr verfügbar.',
+  'ai.proposalOutcome.rejected': 'Nicht ausgeführt: Die Änderung wurde nicht angenommen.',
+  'ai.proposalOutcome.parameters_tampered':
+    'Nicht ausgeführt: Der gespeicherte Inhalt entspricht nicht mehr dem, was Sie bestätigt haben.',
+  'ai.proposalOutcome.tool_unavailable':
+    'Nicht ausgeführt: Dieser Vorgang ist nicht mehr verfügbar.',
+  'ai.proposalOutcome.execution_unknown': 'Das Ergebnis konnte nicht ermittelt werden.',
+  'ai.proposalOutcome.dismissed': 'Verworfen.',
+  'ai.proposalOutcome.expired': 'Ohne Bestätigung abgelaufen.',
+  'ai.proposalOutcome.unknown': 'Unbekanntes Ergebnis.',
 
   'ai.ask': 'Turaco fragen',
   'ai.assistant': 'Turaco-Assistent',
@@ -244,6 +286,13 @@ export const de: Record<MessageKey, string> = {
   'ai.error.proposal_expired': 'Dieser Vorschlag ist abgelaufen. Fordern Sie einen neuen an.',
   'ai.error.proposal_stale':
     'Das Ziel des Vorschlags wurde geändert. Fordern Sie einen neuen Vorschlag an.',
+  'ai.error.proposal_hash_mismatch':
+    'Der Vorschlag weicht von der Anzeige ab. Prüfen Sie ihn erneut.',
+  'ai.error.proposal_not_pending': 'Dieser Vorschlag wartet nicht mehr auf eine Bestätigung.',
+  'ai.error.proposal_in_progress':
+    'Dieser Vorschlag wird gerade ausgeführt. Prüfen Sie es gleich erneut.',
+  'ai.error.execution_unknown':
+    'Das Ergebnis ist noch nicht bekannt. Prüfen Sie es gleich erneut; eine erneute Bestätigung wendet es nie doppelt an.',
   'ai.error.unknown':
     'Die KI-Anfrage ist fehlgeschlagen. Laden Sie neu oder versuchen Sie es später erneut.',
   'ai.error.mcp_invalid_client':

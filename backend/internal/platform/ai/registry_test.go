@@ -56,6 +56,61 @@ func TestRegistrySelfCheckRejects(t *testing.T) {
 	}
 }
 
+func okWriteTool() Tool {
+	t := okTool()
+	t.Name, t.Risk, t.Output, t.Handler = "tickets.demo_write", RiskWrite, nil, nil
+	t.Write = &WriteSpec{Effect: EffectInternal,
+		Prepare: func(context.Context, Caller, json.RawMessage) (Preparation, error) { return Preparation{}, nil },
+		Execute: func(context.Context, Caller, json.RawMessage, Execution) (ExecutionResult, error) {
+			return ExecutionResult{}, nil
+		}}
+	return t
+}
+
+// Write tools only create proposals; high_impact operations are never registrable (ADR-0029 decision 4).
+func TestRegistryWriteAndHighImpactRules(t *testing.T) {
+	mut := map[string]func(*Tool){
+		"write with handler": func(t *Tool) {
+			t.Handler = func(context.Context, Caller, json.RawMessage) (any, error) { return nil, nil }
+		},
+		"write without contract": func(t *Tool) { t.Write = nil },
+		"write without execute":  func(t *Tool) { w := *t.Write; w.Execute = nil; t.Write = &w },
+		"write without prepare":  func(t *Tool) { w := *t.Write; w.Prepare = nil; t.Write = &w },
+		"outbound effect":        func(t *Tool) { w := *t.Write; w.Effect = "outbound"; t.Write = &w },
+		"write without target":   func(t *Tool) { t.Target = nil },
+		"write with output":      func(t *Tool) { t.Output = []Field{{Path: "title", Class: ClassBusinessRecord}} },
+		"high impact":            func(t *Tool) { t.Risk = RiskHighImpact },
+		"high impact no handler": func(t *Tool) { t.Risk, t.Write = RiskHighImpact, nil },
+	}
+	for name, m := range mut {
+		tool := okWriteTool()
+		m(&tool)
+		if err := NewRegistry().Register(tool); err == nil {
+			t.Errorf("%s: tool was accepted", name)
+		}
+	}
+	read := okTool()
+	read.Write = okWriteTool().Write
+	if err := NewRegistry().Register(read); err == nil {
+		t.Error("read tool with a write contract accepted")
+	}
+	r := NewRegistry()
+	if err := r.RegisterAll(okTool(), okWriteTool()); err != nil {
+		t.Fatalf("valid tools rejected: %v", err)
+	}
+	c := Caller{Permissions: map[string]struct{}{"tickets.view": {}}}
+	p := ProviderRecord{AllowedDataClasses: DataClasses}
+	if _, ok := r.Offered(c, p)["tickets.demo_write"]; !ok {
+		t.Error("write tool not offered to the assistant")
+	}
+	if _, ok := r.OfferedRead(c, p)["tickets.demo_write"]; ok {
+		t.Error("write tool offered on the read-only (MCP) path")
+	}
+	if _, ok := r.OfferedRead(c, p)["tickets.demo"]; !ok {
+		t.Error("read tool missing on the read-only path")
+	}
+}
+
 func TestOfferedFiltersByPermissionAndProviderClasses(t *testing.T) {
 	r := NewRegistry()
 	if err := r.Register(okTool()); err != nil { // needs business_record and personal_contact

@@ -260,10 +260,11 @@ func (r *Repository) QueryTickets(ctx context.Context, plan *query.Plan, visibil
 
 func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c application.Comment) (application.Comment, error) {
 	err := tx.QueryRow(ctx, `
-		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal, mentioned_user_ids)
-		SELECT $1::uuid, $2::uuid, $3, $4, $6::text[]::uuid[]
+		INSERT INTO servicedesk.ticket_comments(ticket_id, author_user_id, body, internal, mentioned_user_ids, idempotency_key)
+		SELECT $1::uuid, $2::uuid, $3, $4, $6::text[]::uuid[], $7::uuid
 		WHERE (SELECT count(*) FROM servicedesk.ticket_comments WHERE ticket_id = $1::uuid) < $5
-		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal, application.MaxComments, nonNil(c.MentionedUserIDs)).Scan(&c.ID, &c.CreatedAt)
+		RETURNING id::text, created_at`, c.TicketID, c.AuthorID, c.Body, c.Internal, application.MaxComments, nonNil(c.MentionedUserIDs),
+		nilIfEmpty(c.IdempotencyKey)).Scan(&c.ID, &c.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return application.Comment{}, application.ErrCommentLimit
 	}
@@ -271,6 +272,21 @@ func (r *Repository) InsertCommentTx(ctx context.Context, tx pgx.Tx, c applicati
 		return application.Comment{}, fmt.Errorf("insert comment: %w", err)
 	}
 	return c, nil
+}
+
+// CommentByKeyTx returns the comment created with an idempotency key, or ok=false.
+func (r *Repository) CommentByKeyTx(ctx context.Context, tx pgx.Tx, key string) (application.Comment, bool, error) {
+	var c application.Comment
+	err := tx.QueryRow(ctx, `SELECT id::text, ticket_id::text, author_user_id::text, body, internal, created_at, mentioned_user_ids::text[],
+		idempotency_key::text FROM servicedesk.ticket_comments WHERE idempotency_key = $1::uuid`, key).
+		Scan(&c.ID, &c.TicketID, &c.AuthorID, &c.Body, &c.Internal, &c.CreatedAt, &c.MentionedUserIDs, &c.IdempotencyKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Comment{}, false, nil
+	}
+	if err != nil {
+		return application.Comment{}, false, fmt.Errorf("comment by idempotency key: %w", err)
+	}
+	return c, true, nil
 }
 
 func (r *Repository) Comments(ctx context.Context, ticketID string, includeInternal bool) ([]application.Comment, error) {

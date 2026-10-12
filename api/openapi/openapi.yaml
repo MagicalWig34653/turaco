@@ -15285,6 +15285,89 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /ai/proposals:
+    get:
+      operationId: listAiProposals
+      summary: The caller's open AI Proposals and those that ended within the last day.
+      description: "Needs `ai.use`. Only the creating User's proposals (another User's are never listed). Newest first, at most 50. Mounted only with `AI_ENABLED`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProposalList'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/proposals/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      operationId: getAiProposal
+      summary: One of the caller's AI Proposals with its exact parameters.
+      description: "Needs `ai.use`. Another User's proposal is 404 `ai.not_found`."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProposal'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/proposals/{id}/confirm:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: confirmAiProposal
+      summary: Confirm an AI Proposal with the hash of the parameters shown and execute it as the caller.
+      description: "Needs `ai.use` (permissions are reloaded, an active internal account is required). Only the creating User, only while `proposed` and unexpired (15 minutes), only with the stored `parametersHash`; the transition is one conditional update, so a confirmation is single-use. The operation then runs through the module's own public operation as the caller, after re-checking the tool permission, the stored parameters against the hash and the target version; the module's audit entries carry `via=ai` and the proposal id. The response is the real outcome: `executed` with `result`, or `failed` with `outcomeCode` (`ai.proposal_stale` when the target changed, `permission_denied`, `forbidden`, `not_found`, `rejected`, `parameters_tampered`, `tool_unavailable`). A confirmed proposal whose attempt left no outcome can be confirmed again after its 60-second lease (idempotent, at most 3 attempts). Errors: `ai.proposal_hash_mismatch`, `ai.proposal_expired`, `ai.proposal_not_pending`, `ai.proposal_in_progress` (409), `ai.execution_unknown` (503), `ai.not_found` (404). Audited (`ai.proposal.confirmed|retried|executed|failed|denied`); events `AIProposalConfirmed`, `AIProposalExecuted`, `AIProposalFailed`."
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AiProposalConfirmRequest'}
+      responses:
+        '200':
+          description: The proposal after execution (executed or failed).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProposal'}
+        '400': {$ref: '#/components/responses/AIInvalid'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '503': {$ref: '#/components/responses/AIUnavailable'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /ai/proposals/{id}/dismiss:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: dismissAiProposal
+      summary: Dismiss an AI Proposal; it can never run and its parameters are removed.
+      description: "Needs `ai.use`. Only the creating User, only while `proposed` and unexpired. Errors: `ai.proposal_expired`, `ai.proposal_not_pending`, `ai.proposal_in_progress` (409), `ai.not_found` (404). Audited (`ai.proposal.dismissed`)."
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: The dismissed proposal.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AiProposal'}
+        '404': {$ref: '#/components/responses/AINotFound'}
+        '409': {$ref: '#/components/responses/AIConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /ai/settings:
     get:
       operationId: getAiSettings
@@ -16503,7 +16586,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     AIConflict:
-      description: "Conflict or unprocessable (ai.version_conflict, ai.provider_changed, ai.turn_in_progress, ai.conversation_too_large)."
+      description: "Conflict or unprocessable (ai.version_conflict, ai.provider_changed, ai.turn_in_progress, ai.conversation_too_large, ai.proposal_expired, ai.proposal_hash_mismatch, ai.proposal_not_pending, ai.proposal_in_progress)."
       content:
         application/json:
           schema:
@@ -16515,7 +16598,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     AIUnavailable:
-      description: "The AI provider is not available (ai.provider_unavailable)."
+      description: "The AI provider is not available (ai.provider_unavailable), or the outcome of a proposal execution is not known yet (ai.execution_unknown)."
       content:
         application/json:
           schema:
@@ -23367,7 +23450,11 @@ components:
               tool: {type: string}
               target: {oneOf: [{$ref: '#/components/schemas/AiResourceRef'}, {type: 'null'}]}
               itemCount: {type: integer}
-              outcome: {type: string, enum: [ok, not_found, forbidden, invalid_arguments, unknown_tool, permission_denied, scope_expansion, too_many_calls, tool_error, egress_violation, result_too_large]}
+              outcome: {type: string, enum: [ok, proposed, proposal_limit, not_found, forbidden, invalid_arguments, unknown_tool, permission_denied, scope_expansion, too_many_calls, tool_error, egress_violation, result_too_large]}
+        proposals:
+          type: array
+          description: "AI Proposals this turn created (write tools). Nothing has been executed; show each in the confirm dialog."
+          items: {$ref: '#/components/schemas/AiProposal'}
         scopeRequests:
           type: array
           items:
@@ -23382,6 +23469,47 @@ components:
             in: {type: integer}
             out: {type: integer}
         usage: {$ref: '#/components/schemas/AiUsageCounters'}
+    AiProposal:
+      type: object
+      description: "An AI Proposal (F12 A-C) as its creating User sees it. Confirmation is bound to parametersHash; it is not an Approval."
+      required: [id, tool, effect, parameters, parametersHash, target, targetVersion, targetLabel, state, createdAt, expiresAt, attempt]
+      properties:
+        id: {type: string, format: uuid}
+        tool: {type: string, description: "Write tool name, for example tickets.draft_internal_note."}
+        effect: {type: string, enum: [internal, ''], description: "Who can see the result; internal = Turaco staff only, nothing leaves Turaco. Empty if the tool is no longer registered."}
+        parameters: {description: "The exact parameters that will be used, as stored (an object); null once purged (expired, dismissed, or one day after the end).", oneOf: [{type: object, additionalProperties: true}, {type: 'null'}]}
+        parametersHash: {type: string, pattern: '^[0-9a-f]{64}$', description: "SHA-256 over tool, target, target version and canonical parameters. Send it back to confirm."}
+        target: {$ref: '#/components/schemas/AiResourceRef'}
+        targetVersion: {type: integer, description: "Version of the target record the proposal was made for; a changed record fails the execution with ai.proposal_stale."}
+        targetLabel: {type: string, description: "Display label of the target (for example the Ticket reference and title); never sent to the model."}
+        state: {type: string, enum: [proposed, confirmed, executed, failed, dismissed, expired]}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time, description: "Confirmation deadline (15 minutes after creation)."}
+        confirmedAt: {type: [string, 'null'], format: date-time}
+        endedAt: {type: [string, 'null'], format: date-time}
+        attempt: {type: integer, minimum: 0, maximum: 3}
+        outcomeCode: {type: [string, 'null'], description: "ok, ai.proposal_stale, permission_denied, forbidden, not_found, rejected, parameters_tampered, tool_unavailable, ai.execution_unknown, dismissed or expired."}
+        result:
+          description: "The record the execution created."
+          oneOf:
+            - type: object
+              required: [type, id]
+              properties:
+                type: {type: string, enum: [ticket_comment]}
+                id: {type: string, format: uuid}
+            - {type: 'null'}
+    AiProposalList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AiProposal'}
+    AiProposalConfirmRequest:
+      type: object
+      required: [parametersHash]
+      additionalProperties: false
+      properties:
+        parametersHash: {type: string, pattern: '^[0-9a-f]{64}$'}
     AiTranscript:
       type: object
       properties:

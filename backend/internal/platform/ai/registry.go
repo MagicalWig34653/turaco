@@ -50,14 +50,32 @@ func (r *Registry) Register(t Tool) error {
 	if t.Description == "" || len(t.Description) > 600 {
 		return fmt.Errorf("ai tool %s: description is required (at most 600 characters)", t.Name)
 	}
-	if t.Handler == nil {
-		return fmt.Errorf("ai tool %s: handler is required", t.Name)
-	}
 	switch t.Risk {
 	case RiskRead:
-	case RiskWrite, RiskHighImpact:
-		// Write tools only create a Proposal (A-C); high_impact tools may never execute. Neither exists in A-A.
-		return fmt.Errorf("ai tool %s: risk %q is not available (only read tools in this release)", t.Name, t.Risk)
+		if t.Handler == nil || t.Write != nil {
+			return fmt.Errorf("ai tool %s: a read tool needs a handler and no write contract", t.Name)
+		}
+		if len(t.Output) == 0 {
+			return fmt.Errorf("ai tool %s: output fields are required", t.Name)
+		}
+	case RiskWrite:
+		// A write tool only creates an AI Proposal; nothing runs before the User confirms it (ADR-0029 decision 4).
+		if t.Handler != nil || t.Write == nil || t.Write.Prepare == nil || t.Write.Execute == nil {
+			return fmt.Errorf("ai tool %s: a write tool needs Prepare and Execute and no handler", t.Name)
+		}
+		if t.Write.Effect != EffectInternal {
+			return fmt.Errorf("ai tool %s: write effect %q is not available (only internal effects in this release)", t.Name, t.Write.Effect)
+		}
+		if t.Target == nil {
+			return fmt.Errorf("ai tool %s: a write tool needs a target record (proposals bind to its version)", t.Name)
+		}
+		if len(t.Output) != 0 {
+			return fmt.Errorf("ai tool %s: a write tool returns no data to the model", t.Name)
+		}
+	case RiskHighImpact:
+		// high_impact operations (deployments, remote access, wipe, role or permission changes, risk acceptance,
+		// integration configuration) are never executed by AI, not even after confirmation (ADR-0029 decision 4).
+		return fmt.Errorf("ai tool %s: high_impact operations are never executed by AI; prepare a draft in the existing workflow instead", t.Name)
 	default:
 		return fmt.Errorf("ai tool %s: unknown risk %q", t.Name, t.Risk)
 	}
@@ -67,9 +85,6 @@ func (r *Registry) Register(t Tool) error {
 	sch, err := compileSchema(t.InputSchema)
 	if err != nil {
 		return fmt.Errorf("ai tool %s: %w", t.Name, err)
-	}
-	if len(t.Output) == 0 {
-		return fmt.Errorf("ai tool %s: output fields are required", t.Name)
 	}
 	allow := outputAllowlist{}
 	for _, f := range t.Output {
@@ -144,6 +159,13 @@ func (r *Registry) Tools() []Tool {
 	return out
 }
 
+func (r *Registry) get(name string) (registered, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tools[name]
+	return t, ok
+}
+
 // TargetTypes returns the resource types tools can read (the types a conversation scope may hold).
 func (r *Registry) TargetTypes() []string {
 	r.mu.RLock()
@@ -162,11 +184,21 @@ func (r *Registry) TargetTypes() []string {
 // is allowed every data class the tool's output fields declare. The set is computed on the server from the
 // session's permissions; the model cannot widen it.
 func (r *Registry) Offered(c Caller, p ProviderRecord) map[string]registered {
+	return r.offered(c, p, false)
+}
+
+// OfferedRead is Offered without write tools: the Turaco MCP server stays read-only until writes can be confirmed
+// out-of-band inside Turaco (ADR-0029 decision 7).
+func (r *Registry) OfferedRead(c Caller, p ProviderRecord) map[string]registered {
+	return r.offered(c, p, true)
+}
+
+func (r *Registry) offered(c Caller, p ProviderRecord, readOnly bool) map[string]registered {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := map[string]registered{}
 	for name, t := range r.tools {
-		if !c.Has(t.tool.Permission) {
+		if !c.Has(t.tool.Permission) || (readOnly && t.tool.Risk != RiskRead) {
 			continue
 		}
 		eligible := true
