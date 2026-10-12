@@ -62,7 +62,9 @@ func (f *fakeDirectory) GroupIDsOfUser(context.Context, string) ([]string, error
 func (f *fakeDirectory) IsExternalAccount(context.Context, string) (bool, error) { return false, nil }
 
 // SubtreeIDs knows no Locations: a scope on any id covers nothing.
-func (f *fakeDirectory) SubtreeIDs(context.Context, []string) ([]string, error) { return []string{}, nil }
+func (f *fakeDirectory) SubtreeIDs(context.Context, []string) ([]string, error) {
+	return []string{}, nil
+}
 func (f *fakeDirectory) IsLocalOriginAccount(context.Context, string) (bool, error) {
 	return false, nil
 }

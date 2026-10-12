@@ -17678,7 +17678,7 @@ components:
     AuthSession:
       type: object
       additionalProperties: false
-      required: [userId, authMethod, expiresAt, permissions]
+      required: [userId, authMethod, expiresAt, permissions, scopedPermissions]
       properties:
         userId: {type: string}
         authMethod: {type: string, description: "ldap, kerberos or emergency."}
@@ -17689,7 +17689,13 @@ components:
         permissions:
           type: array
           items: {type: string}
-          description: Sorted effective permission names.
+          description: Sorted names of the permissions held globally.
+        scopedPermissions:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string, format: uuid}
+          description: "Permissions held only through Location-scoped role assignments (ADR-0040): permission name to the sorted ids of the Locations where it applies (each scoped Location and its current sub-Locations). Never contains a permission listed in permissions. Empty object when there are none; no permission is scopable before a module adopts Location scope."
         external: {type: boolean, description: "True for a restricted external account: the UI shows only its Tasks and the Tickets shared with it (ADR-0034)."}
         displayName:
           type: string

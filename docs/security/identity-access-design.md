@@ -8,7 +8,7 @@ Context: [security architecture](security-architecture.md), [LDAP/AD](../integra
 
 - **E1 Administrator bootstrap:** the first administrator is granted with the audited `turaco-admin` CLI run against the database. An optional local **emergency account** (break-glass) with an argon2id password hash exists for directory outages; it is disabled unless explicitly enabled, every use is audited and logged at error level.
 - **E2 Kerberos:** `turaco-api` validates SPNEGO/Negotiate tickets natively (gokrb5, ADR-0023) with a keytab deployment secret.
-- **E3 Roles:** custom roles (named permission sets) managed through the API, plus one immutable built-in `platform-administrator` role. Roles are assigned to Users and to Directory Groups. Scope is `global` only; scoped assignments arrive with the first scoped module. Location-scoped assignments are designed in [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md) and the [F16 design](../product/f16-location-scoped-access-design.md) (not implemented).
+- **E3 Roles:** custom roles (named permission sets) managed through the API, plus one immutable built-in `platform-administrator` role. Roles are assigned to Users and to Directory Groups. Scope is `global` or `location` ([ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md), [F16 design](../product/f16-location-scoped-access-design.md)). F16 slice L-A added the data model and the evaluation of Location-scoped assignments; no permission is scopable yet and no operation creates a scoped assignment, so every effective permission is still global.
 - **E4 UI:** F1 ships a login page (Kerberos attempt, password form, emergency login when enabled), logout, a current-user view and admin screens for roles, role assignments, directory sync runs and audit events (EN/DE).
 
 ## 1. Outcome
@@ -22,7 +22,7 @@ User, External Identity, Directory Group (incl. nesting), session service (`plat
 ## 3. New concepts
 
 - **Role** — a named set of registered permissions; custom or the built-in `platform-administrator` (all permissions, immutable). Platform-owned (`platform/authorization`), because authorization is a platform service (module-boundaries).
-- **Role Assignment** — Role → User or Directory Group, scope `global`; history kept (revoked, never deleted).
+- **Role Assignment** — Role → User or Directory Group, scope `global` or `location` (F16, ADR-0040); history kept (revoked, never deleted).
 - **Local Credential** — password hash for an emergency account's User; platform-owned (`platform/authentication`). Not a second identity model: the account is an ordinary Organization User without a directory identity.
 - **Login throttle** — per-identifier and per-client counters protecting the directory against brute force and AD lockout.
 
@@ -48,12 +48,15 @@ Glossary additions: Role, Role Assignment, Emergency Account.
 - `platform.roles(id uuid pk, key text CHECK ^[a-z0-9][a-z0-9-]{1,62}$, name text, description text, built_in bool, created_at, updated_at, deleted_at)`; partial unique index on `key` among non-deleted roles; the built-in role can never be deleted; seed `platform-administrator` (built_in).
 - `platform.role_permissions(role_id → roles, permission text, PK(role_id, permission))`; never rows for the built-in role.
 - `platform.role_assignments(id uuid pk, role_id → roles, subject_type CHECK in ('user','directory_group'), subject_id uuid, scope text CHECK = 'global', created_at, created_by jsonb, revoked_at, revoked_by jsonb)`; partial unique `(role_id, subject_type, subject_id, scope) WHERE revoked_at IS NULL`; index `(subject_type, subject_id) WHERE revoked_at IS NULL`.
+- Migration `000096_role_assignment_location_scope` (F16 L-A): `scope CHECK IN ('global','location')`, `scope_location_id uuid` (set exactly for `location`, no foreign key into `organization`), unique `(role_id, subject_type, subject_id, scope_location_id) NULLS NOT DISTINCT WHERE revoked_at IS NULL` (replaces the index above), index on `scope_location_id` for active scoped rows, trigger `role_assignments_admin_global` (SQLSTATE `ACC02`: the built-in administrator role is never scoped).
 
 **Evaluation** (`authorization.PermissionLoader` used by `SessionAuthenticator`, per request, no cache):
 1. Groups of the User = currently observed Directory Group memberships of non-deleted groups, expanded transitively over currently observed nesting edges (cycle-safe recursive CTE) — `organization/public.AuthorizationSubjects.GroupIDsOfUser`.
 2. Active assignments for the User and for those groups.
 3. `platform-administrator` → every registered permission; other roles → their stored permissions ∩ registry (unknown stored permissions are ignored).
 Permissions therefore change immediately when roles, assignments or directory memberships change.
+
+**Location scope (F16 L-A, ADR-0040):** global assignments yield `Principal.Permissions` exactly as before. A Location-scoped assignment yields only its *scopable* permissions (registry `Scope: location`), as `Principal.Scopes` (permission → expanded Location ids: the scoped Location and its current sub-Locations, read per request through `organization/public` `SubtreeIDs`); its global-only permissions are *inert* and reported by `Explain`. `Has`, `Require`, `RequireAny`, `Permissions`, `RoleIDs` and the assignment guards read global assignments only; `ScopeOf`, `RequireScoped`, `Access` and `RoleGrants` are the scope-aware reads. See the [F16 design](../product/f16-location-scoped-access-design.md) L4.
 
 **Operations** (all in one transaction with their audit entry; `platform.roles.manage` unless noted):
 - `CreateRole(key, name, description, permissions)`; `UpdateRole(name, description)`; `SetRolePermissions(permissions)` (full replacement, validated against the registry); `DeleteRole` only when it has no active assignments — a soft delete that keeps the role and its revoked assignments as history and frees the key. The built-in role cannot be changed or deleted. Each operation locks the role row in its own statement before reading it, so concurrent assignment and deletion serialize correctly.

@@ -17,7 +17,9 @@ type accessPerms struct{ access authorization.Access }
 func (a accessPerms) Permissions(context.Context, string) (map[string]struct{}, error) {
 	return a.access.Permissions, nil
 }
-func (a accessPerms) Access(context.Context, string) (authorization.Access, error) { return a.access, nil }
+func (a accessPerms) Access(context.Context, string) (authorization.Access, error) {
+	return a.access, nil
+}
 
 func TestSessionCarriesScopedPermissionsSeparately(t *testing.T) {
 	fs := &fakeSessions{sessions: map[string]Session{"tok-secret": testSession()}}

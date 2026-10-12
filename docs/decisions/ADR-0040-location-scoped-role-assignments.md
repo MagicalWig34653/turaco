@@ -1,6 +1,6 @@
 # ADR-0040: Location-Scoped Role Assignments
 
-- Status: Accepted (2026-10-12) as product direction; evaluator and guard details pending the security review of slice L-A. Not implemented; see [current status](../product/current-status.md).
+- Status: Accepted (2026-10-12) as product direction. Slice L-A (data model, evaluator, `RequireScoped`, harness) is implemented and awaits its security review; guard details follow in L-B. No permission is scopable yet; see [current status](../product/current-status.md).
 - Related: [F16 design](../product/f16-location-scoped-access-design.md), [identity and access design](../security/identity-access-design.md) (E3: scope `global` only "until the first scoped module"), [F14 design](../product/f14-administration-design.md) sections 2.3 to 2.5 (guards), [F13 design](../product/f13-workbench-views-design.md) (Queue grants, row-specific disclosure), [ADR-0033](ADR-0033-workbench-views-query-engine.md), [ADR-0034](ADR-0034-local-accounts-and-external-parties.md).
 
 ## Context
@@ -36,3 +36,14 @@ Constraints: `platform/authorization` must not import modules; modules must not 
 - Each module that wants Site scoping must adopt it explicitly (registry flag, predicate, adversarial tests); until then its permissions are global-only. Wave 1 is Tickets and Assets, then Tasks.
 - `platform.audit.view`, role administration, configuration and catalog permissions stay global-only.
 - The effective-permissions read, the holders read, `/me` and the frontend permission gates must show and use scope.
+
+## Implementation notes (slice L-A)
+
+Details settled while implementing the evaluator and model; the [F16 design](../product/f16-location-scoped-access-design.md) section "Slice L-A as implemented" has the full list.
+
+- Migration `000096` (not `000094` as first planned). The built-in administrator role is refused a Location scope by trigger (SQLSTATE `ACC02`).
+- The Location tree contract is `roles.LocationTree.SubtreeIDs`, embedded in `roles.GroupResolver` and implemented by `organization/public.AuthorizationSubjects`, so every evaluator has it by construction. It is called once per distinct set of scoped roots and only when scoped holdings exist.
+- Every pre-scope read stays global-only, beyond `Has`: `Evaluator.Permissions`, `RoleIDs` (role-subject Queue grants), the guards' holdings and the AI/MCP callers. A scoped role is therefore invisible to code that has not adopted scope, including Service Desk's Queue grants until L-D moves them to `RoleGrants`.
+- Scoped assignments of external accounts and of the built-in administrator role, an unknown scope value, and a Location that does not exist yield nothing effective (fail closed).
+- `LocationScope.SQL` uses the query engine's `?` placeholders and `?::text[]::uuid[]`.
+- The open questions of the F16 design take their stated defaults until decided otherwise.

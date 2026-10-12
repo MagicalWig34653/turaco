@@ -1,6 +1,6 @@
 # F16 Location-Scoped Access — Feature Design
 
-**Status:** Design (2026-10-12). Nothing in this document is implemented; [current status](current-status.md) is authoritative. Decision record: [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md).
+**Status:** Design (2026-10-12). Slice L-A (evaluator and model) is implemented; every other slice is planned. No permission is scopable and no operation creates a scoped assignment yet, so behaviour is unchanged. [Current status](current-status.md) is authoritative. Decision record: [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md).
 
 **Product owner decision (fixed input):** rights are scoped to Sites through Role Assignments with a Location scope; a role applies only within a Location and its sub-Locations (the Location tree).
 
@@ -17,13 +17,13 @@
 
 ### L1 Data model
 
-Forward migration (next free number at implementation, currently `000094`):
+Forward migration `000096_role_assignment_location_scope` (implemented in L-A):
 
 - `ALTER TABLE platform.role_assignments` drop the `scope = 'global'` check; add `CHECK (scope IN ('global', 'location'))`.
 - Add `scope_location_id uuid NULL` with `CHECK ((scope = 'location') = (scope_location_id IS NOT NULL))`. No foreign key into `organization` (cross-module, same rule as `queue_teams.team_id`); the role service validates the Location through `organization/public` (exists and active) inside the assignment transaction.
 - Replace `role_assignments_active_unique` by a unique index on `(role_id, subject_type, subject_id, scope_location_id) NULLS NOT DISTINCT WHERE revoked_at IS NULL`. The same role may be assigned to one subject at several Locations and globally; effective rights are the union.
 - Add `role_assignments_scope_location_idx ON (scope_location_id) WHERE revoked_at IS NULL AND scope_location_id IS NOT NULL` (holders at a Location, Location move check).
-- Extend the trigger pattern of `role_assignments_admin_no_expiry`: the built-in administrator role is never location-scoped (defence in depth for the service check).
+- Extend the trigger pattern of `role_assignments_admin_no_expiry`: the built-in administrator role is never location-scoped (defence in depth for the service check). Implemented as trigger `role_assignments_admin_global`, SQLSTATE `ACC02`.
 - Existing rows remain `scope = 'global'`, `scope_location_id IS NULL`. No data rewrite.
 
 `platform.role_assignments` remains the only grant table. No scope column is added to roles, Queue grants, View shares or pin rules.
@@ -174,6 +174,21 @@ Re-parenting a Location changes who can see what. Organization's `MoveLocation` 
 - **Migration test:** existing assignments keep identical effective permissions before and after.
 - **Playwright smoke:** create a scoped assignment, sign in as the site lead, see only the Site's Tickets.
 
+## Slice L-A as implemented
+
+- **Registry and reference:** `permissions.Permission.Scope` (`global` when empty, `location`), `permissions.Scopable`, Scope column in the generated [permission reference](../reference/permissions.md). Every permission is `global`. The adoption table (`scopeAdoption` in `platform/authorization/scope_test.go`) is empty; the registry test fails for a scopable permission without an adoption entry or with high risk.
+- **Location tree contract:** `roles.LocationTree.SubtreeIDs`, implemented by `organization/public.AuthorizationSubjects` over a recursive CTE in Organization's repository (depth bound eight, so corrupt cyclic data terminates and nodes beyond the bound are left out). `roles.GroupResolver` embeds `LocationTree`, so no evaluator can be built without it. Unknown and malformed ids contribute nothing; inactive Locations are included (L2).
+- **Evaluator:** one query loads global and scoped assignments; `reduce` splits them as in L4. The tree is read only when the User has a scoped holding of a scopable permission, once per distinct set of scoped roots (one call for a User with one Site, however many roles or permissions). A tree error fails the request. Scoped assignments of an external account and of the built-in administrator role yield only inert entries. `Evaluator.Access` returns `authorization.Access{Permissions, Scopes}`; `Permissions`, `PermissionsIn`, `RoleIDs` and the guards' holdings read global assignments only, so Service Desk's role-subject Queue grants and every guard ignore scoped holdings until L-B and L-D adopt them. `RoleGrants` returns `[]RoleScope{RoleID, Global, Locations}`; `AccessOf` for Service Desk's `Memberships` is left to L-D.
+- **Principal:** `Principal.Scopes`, `ScopeOf`, `HasAnywhere`; `LocationScope{Global, Locations}` with `Allows`, `Any` and `SQL(column)` producing `TRUE`, `FALSE` or `<column> = ANY(?::text[]::uuid[])` (the query engine's `?` convention; the column must be a plain or alias-qualified identifier, otherwise it panics). A `Global` flag inside `Scopes` is ignored: only `Permissions` grants globally.
+- **Middleware:** `RequireScoped(auth, perms...)` panics at construction for an unregistered or non-scopable permission and admits a caller who holds one of them globally or at a non-empty Location set.
+- **Session:** `SessionAuthenticator` uses `AccessLoader` (implemented by the evaluator) to fill `Principal.Scopes`; `GET /api/v1/auth/session` (the `/me` of this design) returns `scopedPermissions` (always an object). AI and MCP callers keep the global set only (fail closed until their tools adopt scope).
+- **Explain:** `Explanation.Scoped` (`Name`, `Roots{RootLocationID, GrantedBy}`, expanded `Locations`), `Explanation.Inert` (`AssignmentID`, `Permissions`) and `RoleGrant.Scope`/`ScopeLocationID`. The effective-permissions HTTP response is unchanged until L-B.
+- **Harness:** `platform/authorization/scopetest` (`Run`, `Subject`, optional `Mover`, `Surface`): list, count, detail, extra surfaces, oracle (more data at Site B or without Location changes nothing), mutations, Location moves; its own tests prove it catches each class of leak with an in-memory module.
+
+## Adopted defaults for the open questions
+
+Until the product owner decides otherwise, the defaults stated in the open questions below apply and later slices implement them: 1 inert permissions allowed with a warning; 2 unlocated objects invisible to scoped-only holders; 3 scoped `tickets.view` holders know all active Queues; 4 no hand-over operation; 5 no delegated access administration; 6 remote access stays global-only; 7 no site-scoped audit reading; 8 Task Location is a snapshot; 9 wave-2 Location sources are decided per adoption slice; 10 Ticket Location only from `affected_location_id`; 11 `organization.users.manage` stays global-only; 12 Location moves affecting scoped assignments need a platform administrator; 13 separation-of-duties warnings over the union; 14 assignments on deactivated Locations stay effective and are flagged (L-A includes inactive Locations in the expanded set).
+
 ## Reused concepts
 
 Role Assignment, Role, Role Template, the evaluator and its guards, Location tree and `organization/public`, Queue grants, query engine `Visibility`, Saved Views, My Work, `platform/search`, notifications, audit, `Explain`.
@@ -188,7 +203,7 @@ Each slice is one implementer; the order is a dependency chain with at most thre
 
 | Slice | Content | Files (ownership) | Depends on |
 | --- | --- | --- | --- |
-| **L-A Evaluator and model** | Migration (L1), `Permission.Scope` registry field (all `global`), docgen Scope column, `LocationTree.SubtreeIDs` in `organization/public`, evaluator load and reduce (L4), `Principal.Scopes`, `LocationScope`, `RequireScoped`, `RoleGrants`, `/me` `scopedPermissions`, Explain, `authorization/scopetest` harness, glossary. No scopable permission yet, so no behaviour change. | `platform/authorization/**`, `platform/permissions`, `organization/public` (new contract), migration | — |
+| **L-A Evaluator and model** (implemented) | Migration (L1), `Permission.Scope` registry field (all `global`), docgen Scope column, `LocationTree.SubtreeIDs` in `organization/public`, evaluator load and reduce (L4), `Principal.Scopes`, `LocationScope`, `RequireScoped`, `RoleGrants`, `/me` `scopedPermissions`, Explain, `authorization/scopetest` harness, glossary. No scopable permission yet, so no behaviour change. | `platform/authorization/**`, `platform/permissions`, `organization/public` (new contract), migration | — |
 | **L-B Assignment operations and guards** | `AssignRole` with scope, guards (L5), data rules and trigger, audit (L12), holders by Location, list filters, effective-permissions API, OpenAPI, error codes | `platform/authorization/roles/**` (service, guards, access, transport), `docs/reference` | L-A |
 | **L-C Location move guard** | `ScopedAssignmentsAffectedBy` contract, `MoveLocation` guard, dry run, audit, administrator notification | `modules/organization/**`, one read in `roles` | L-A (parallel to L-B; the `roles` read file is owned by L-C) |
 | **L-D Service Desk adoption** | `tickets.view`/`tickets.manage` scopable; L6 composition in `access`, predicates, detail and mutations, assignee and Location rules, overview, search provider, My Work source, notification fan-out, harness run | `modules/servicedesk/**`, registry line | L-B |
