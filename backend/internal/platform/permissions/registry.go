@@ -51,6 +51,7 @@ var Registry = []Permission{
 	{Name: "calendars.manage", Description: "Create and change Business Calendars and their full-day closures.", Risk: "elevated"},
 	{Name: "timetracking.log", Description: "Log, edit and delete one's own time on Tickets the caller may work (work access in the Ticket's Queue) and read one's own time entries.", Risk: "normal"},
 	{Name: "timetracking.manage", Description: "Log and correct time entries for other people and outside the edit window, always with a recorded reason.", Risk: "elevated"},
+	{Name: "timetracking.report", Description: "Read the aggregated effort report: time per Queue, month or Ticket within the Queues the caller may view. There is no per-person breakdown, and groups with fewer people than the configured minimum are suppressed.", Risk: "elevated"},
 	{Name: "timetracking.admin", Description: "Administer Time Tracking: the recorded works-council co-determination basis (the precondition for switching the module on), the data protection impact assessment date, edit window, retention and author visibility.", Risk: "high"},
 	{Name: "platform.roles.view", Description: "View roles, permissions and role assignments.", Risk: "normal"},
 	{Name: "platform.roles.manage", Description: "Create, change and delete roles and assign or revoke them; equivalent to administrator access.", Risk: "high"},

@@ -14989,6 +14989,47 @@ paths:
         '409': {$ref: '#/components/responses/TimeTrackingConflict'}
         '422': {$ref: '#/components/responses/TimeTrackingRule'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/summary:
+    get:
+      operationId: getTimeTrackingSummary
+      summary: Aggregated effort per Queue, month or Ticket.
+      description: >-
+        Needs `timetracking.report`. Limited to the Queues the caller may view. There is deliberately no grouping or filter by person (`groupBy=user` answers 400). Queue and month groups with fewer distinct contributors than `minGroupSize` are `suppressed` and carry no figures; per-Ticket groups are exempt and only name Tickets the caller may view. The period is at most 366 days; at most 200 groups, `truncated` says more existed.
+      security: [{sessionAuth: []}]
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+        - {name: groupBy, in: query, required: true, schema: {type: string, enum: [queue, month, ticket]}}
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [from, to, groupBy, minGroupSize, groups, truncated]
+                properties:
+                  from: {type: string, format: date}
+                  to: {type: string, format: date}
+                  groupBy: {type: string, enum: [queue, month, ticket]}
+                  minGroupSize: {type: integer}
+                  truncated: {type: boolean}
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, suppressed]
+                      properties:
+                        key: {type: string, description: "Queue id, YYYY-MM or Ticket id."}
+                        label: {type: string, description: "Ticket reference for ticket groups."}
+                        suppressed: {type: boolean}
+                        minutes: {type: integer}
+                        entries: {type: integer}
+                        contributors: {type: integer}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /time-tracking/timer:
     get:
       operationId: getTimeTrackingTimer

@@ -52,6 +52,22 @@ func (f *fakeTickets) Access(_ context.Context, user string, ids []string) (map[
 	return out, nil
 }
 
+var _ = application.Tickets(&fakeTickets{})
+
+func (f *fakeTickets) ViewQueues(_ context.Context, user string) (bool, []string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seen := map[string]bool{}
+	var ids []string
+	for _, a := range f.access[user] {
+		if a.CanView && !seen[a.QueueID] {
+			seen[a.QueueID] = true
+			ids = append(ids, a.QueueID)
+		}
+	}
+	return false, ids, nil
+}
+
 type fakeDir struct{ employees map[string]string }
 
 func (d fakeDir) ActiveEmployees(_ context.Context, ids []string) (map[string]bool, error) {
@@ -147,7 +163,7 @@ func TestCreateOwnEntryAndAuditMinimisation(t *testing.T) {
 	if err := e.pool.QueryRow(ctx, `SELECT metadata::text, COALESCE(after_data::text, '') FROM platform.audit_events WHERE action = 'timetracking.entry.created' AND target_id = $1`, en.ID).Scan(&meta, &after); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(meta+after, "checked cabling") || strings.Contains(meta+after, "90") || strings.Contains(meta, "reason") {
+	if strings.Contains(meta+after, "checked cabling") || strings.Contains(meta+after, "durationMinutes") || strings.Contains(meta, "reason") {
 		t.Errorf("own entry audit carries content: meta=%s after=%s", meta, after)
 	}
 	if !strings.Contains(meta, e.ticket) {

@@ -34,3 +34,7 @@ func (t timeTickets) Access(ctx context.Context, userID string, ticketIDs []stri
 	}
 	return out, nil
 }
+
+func (t timeTickets) ViewQueues(ctx context.Context, userID string) (bool, []string, error) {
+	return t.TimeAccess.ViewQueues(ctx, userID)
+}

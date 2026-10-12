@@ -60,3 +60,21 @@ export type RunningTimer = {
   startedAt: string;
   note: string | null;
 };
+
+export type EffortGroup = {
+  key: string;
+  label?: string;
+  suppressed: boolean;
+  minutes?: number;
+  entries?: number;
+  contributors?: number;
+};
+
+export type EffortReport = {
+  from: string;
+  to: string;
+  groupBy: 'queue' | 'month' | 'ticket';
+  minGroupSize: number;
+  groups: EffortGroup[];
+  truncated: boolean;
+};

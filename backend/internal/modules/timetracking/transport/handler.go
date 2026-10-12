@@ -35,6 +35,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/time-tracking/entries", h.create)
 	route("PUT /api/v1/time-tracking/entries/{id}", h.update)
 	route("POST /api/v1/time-tracking/entries/{id}/delete", h.delete)
+	route("GET /api/v1/time-tracking/summary", h.summary)
 	route("GET /api/v1/time-tracking/timer", h.timerGet)
 	route("POST /api/v1/time-tracking/timer", h.timerStart)
 	route("POST /api/v1/time-tracking/timer/stop", h.timerStop)
@@ -66,7 +67,7 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 
 func principal(r *http.Request) application.Principal {
 	p, _ := authorization.PrincipalFrom(r.Context())
-	return application.Principal{UserID: p.UserID, Log: p.Has(application.PermLog), Manage: p.Has(application.PermManage), Admin: p.Has(application.PermAdmin)}
+	return application.Principal{UserID: p.UserID, Log: p.Has(application.PermLog), Manage: p.Has(application.PermManage), Admin: p.Has(application.PermAdmin), Report: p.Has(application.PermReport)}
 }
 
 func caller(w http.ResponseWriter, r *http.Request) application.Caller {
@@ -335,4 +336,27 @@ func (h *handler) timerDiscard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// summary is the aggregated effort report (no per-person grouping exists).
+func (h *handler) summary(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	res, err := h.svc.Report(r.Context(), principal(r), q.Get("from"), q.Get("to"), q.Get("groupBy"))
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	groups := make([]map[string]any, 0, len(res.Groups))
+	for _, g := range res.Groups {
+		item := map[string]any{"key": g.Key, "suppressed": g.Suppressed}
+		if g.Label != "" {
+			item["label"] = g.Label
+		}
+		if !g.Suppressed {
+			item["minutes"], item["entries"], item["contributors"] = g.Minutes, g.Entries, g.Contributors
+		}
+		groups = append(groups, item)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"from": res.From, "to": res.To, "groupBy": res.GroupBy,
+		"minGroupSize": res.MinGroupSize, "groups": groups, "truncated": res.Truncated})
 }

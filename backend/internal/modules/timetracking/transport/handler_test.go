@@ -59,6 +59,10 @@ func (t tickets) Access(_ context.Context, _ string, ids []string) (map[string]a
 	return out, nil
 }
 
+func (t tickets) ViewQueues(context.Context, string) (bool, []string, error) {
+	return false, []string{t.queue}, nil
+}
+
 type dir struct{}
 
 func (dir) ActiveEmployees(_ context.Context, ids []string) (map[string]bool, error) {
@@ -238,5 +242,25 @@ func TestPermissionsAndSettingsRoutes(t *testing.T) {
 	}
 	if _, err := pool.Exec(context.Background(), `UPDATE timetracking.settings SET codetermination_basis=NULL, codetermination_recorded_on=NULL, version=1`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSummaryRouteNeedsReportPermissionAndRejectsPersonGrouping(t *testing.T) {
+	user := newID()
+	mux := serve(t, newID(), as(user, "timetracking.log"))
+	if rec := do(mux, "GET", "/api/v1/time-tracking/summary?from=2026-01-01&to=2026-01-31&groupBy=queue", nil); rec.Code != http.StatusForbidden {
+		t.Fatalf("without report permission: %d", rec.Code)
+	}
+	mux = serve(t, newID(), as(user, "timetracking.report"))
+	for _, g := range []string{"user", "assignee", "person", ""} {
+		if rec := do(mux, "GET", "/api/v1/time-tracking/summary?from=2026-01-01&to=2026-01-31&groupBy="+g, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("groupBy=%q: %d", g, rec.Code)
+		}
+	}
+	if rec := do(mux, "GET", "/api/v1/time-tracking/summary?from=2024-01-01&to=2026-01-31&groupBy=queue", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("period over 366 days: %d", rec.Code)
+	}
+	if rec := do(mux, "GET", "/api/v1/time-tracking/summary?from=2026-01-01&to=2026-01-31&groupBy=month", nil); rec.Code != http.StatusOK {
+		t.Errorf("valid: %d", rec.Code)
 	}
 }

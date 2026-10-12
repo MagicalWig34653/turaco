@@ -6664,6 +6664,19 @@ export const en = {
   'timetracking.timer.staleHint':
     'The timer has run for more than 12 hours. Enter the time to log, for example 1:30.',
   'timetracking.error.timerRunning': 'A timer is already running. Stop or discard it first.',
+  'timetracking.report.title': 'Effort report',
+  'timetracking.report.intro':
+    'Time logged per queue, month or ticket within the queues you may view. There is no breakdown by person.',
+  'timetracking.report.filters': 'Filters',
+  'timetracking.report.note':
+    'Groups with fewer than the configured number of contributors are not shown, so a figure can never describe one person.',
+  'timetracking.report.empty': 'No time logged in this period.',
+  'timetracking.report.entries': 'Entries',
+  'timetracking.report.truncated': 'Only the first 200 groups are shown.',
+  'timetracking.report.suppressed': 'Fewer than {count} people: not shown',
+  'timetracking.report.groupBy.queue': 'Queue',
+  'timetracking.report.groupBy.month': 'Month',
+  'timetracking.report.groupBy.ticket': 'Ticket',
   'timetracking.log': 'Log time',
   'timetracking.edit': 'Edit',
   'timetracking.delete': 'Delete',

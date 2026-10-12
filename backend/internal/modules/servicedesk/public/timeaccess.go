@@ -20,3 +20,8 @@ func NewTimeAccess(svc *application.Service) *TimeAccess { return &TimeAccess{sv
 func (t *TimeAccess) Tickets(ctx context.Context, userID string, ticketIDs []string) (map[string]TimeAccessInfo, error) {
 	return t.svc.TimeAccess(ctx, userID, ticketIDs)
 }
+
+// ViewQueues returns whether the User may view all Queues (global) or else the Queue ids they may view.
+func (t *TimeAccess) ViewQueues(ctx context.Context, userID string) (bool, []string, error) {
+	return t.svc.ViewQueues(ctx, userID)
+}

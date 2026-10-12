@@ -5,6 +5,7 @@ import { ModulesScreen } from '../platform/modules/ModulesScreen';
 import { CalendarScreen } from '../modules/calendars/CalendarScreen';
 import { PoliciesScreen } from '../modules/sla/PoliciesScreen';
 import { SlaReportScreen } from '../modules/sla/ReportScreen';
+import { EffortReportScreen } from '../modules/timetracking/EffortReportScreen';
 import { MyTimeScreen } from '../modules/timetracking/MyTimeScreen';
 import { TimeTrackingSettingsScreen } from '../modules/timetracking/SettingsScreen';
 import { AiProvider, useAi } from '../modules/ai/AiProvider';
@@ -178,6 +179,8 @@ function renderScreen(id: RouteId, params: Record<string, string>): ReactNode {
       return <TimeTrackingSettingsScreen />;
     case 'myTime':
       return <MyTimeScreen />;
+    case 'effortReport':
+      return <EffortReportScreen />;
     case 'modulesAdmin':
       return <ModulesScreen />;
     case 'aiAdmin':

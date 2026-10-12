@@ -52,3 +52,23 @@ func (s *Service) TimeAccess(ctx context.Context, userID string, ticketIDs []str
 	}
 	return out, nil
 }
+
+// ViewQueues returns the Queues whose Tickets the User may view (F17 T-C report scope): all of them (global) or a list
+// of Queue ids. External accounts and users without Queue view access get an empty list and global false.
+func (s *Service) ViewQueues(ctx context.Context, userID string) (global bool, queueIDs []string, err error) {
+	if userID == "" {
+		return false, nil, nil
+	}
+	p, err := s.principalOf(ctx, userID)
+	if err != nil {
+		return false, nil, err
+	}
+	a, err := s.resolve(ctx, p)
+	if err != nil {
+		return false, nil, err
+	}
+	if a.global() {
+		return true, nil, nil
+	}
+	return false, a.viewIDs(), nil
+}

@@ -274,3 +274,42 @@ func (r *Repository) DeleteTimer(ctx context.Context, userID string) error {
 	}
 	return nil
 }
+
+// ---- Report ----------------------------------------------------------------------------------------------
+
+func (r *Repository) Summary(ctx context.Context, from, to, groupBy string, queueIDs []string) ([]application.SummaryRow, error) {
+	var key string
+	switch groupBy {
+	case application.GroupQueue:
+		key = "queue_id::text"
+	case application.GroupMonth:
+		key = "to_char(work_date, 'YYYY-MM')"
+	case application.GroupTicket:
+		key = "subject_id::text"
+	default:
+		return nil, fmt.Errorf("summary: unsupported grouping %q", groupBy)
+	}
+	args := []any{from, to}
+	scope := ""
+	if queueIDs != nil {
+		args = append(args, queueIDs)
+		scope = " AND queue_id = ANY($3::uuid[])"
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+key+` AS k, sum(duration_minutes)::int, count(*)::int, count(DISTINCT user_id)::int
+		FROM timetracking.time_entries
+		WHERE deleted_at IS NULL AND work_date BETWEEN $1::date AND $2::date`+scope+`
+		GROUP BY k ORDER BY sum(duration_minutes) DESC, k LIMIT 1000`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("time summary: %w", err)
+	}
+	defer rows.Close()
+	var out []application.SummaryRow
+	for rows.Next() {
+		var row application.SummaryRow
+		if err := rows.Scan(&row.Key, &row.Minutes, &row.Entries, &row.Contributors); err != nil {
+			return nil, fmt.Errorf("scan time summary: %w", err)
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}

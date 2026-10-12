@@ -8,6 +8,7 @@ export type RouteId =
   | 'slaAdmin'
   | 'timeTrackingAdmin'
   | 'myTime'
+  | 'effortReport'
   | 'aiAdmin'
   | 'aiConnections'
   | 'oauthAuthorize'
@@ -262,6 +263,13 @@ export const appRoutes: readonly AppRoute[] = [
     pattern: '/time-tracking/my-time',
     titleKey: 'timetracking.my',
     requiresAny: ['timetracking.log', 'timetracking.manage'],
+    nav: 'main',
+  },
+  {
+    id: 'effortReport',
+    pattern: '/time-tracking/report',
+    titleKey: 'timetracking.report.title',
+    requires: ['timetracking.report'],
     nav: 'main',
   },
   { id: 'home', pattern: '/', titleKey: 'nav.home', nav: 'main' },

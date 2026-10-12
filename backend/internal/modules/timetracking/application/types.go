@@ -22,6 +22,7 @@ const (
 	PermLog    = "timetracking.log"
 	PermManage = "timetracking.manage"
 	PermAdmin  = "timetracking.admin"
+	PermReport = "timetracking.report"
 )
 
 // Subjects, sources, delete reasons and co-determination bases.
@@ -62,6 +63,7 @@ type Principal struct {
 	Log    bool
 	Manage bool
 	Admin  bool
+	Report bool
 }
 
 // Caller identifies the actor of a mutation for the audit trail.
@@ -126,6 +128,8 @@ type TicketAccess struct {
 // Tickets is the Service Desk port: access of a User to Tickets and the Queue of each.
 type Tickets interface {
 	Access(ctx context.Context, userID string, ticketIDs []string) (map[string]TicketAccess, error)
+	// ViewQueues answers the Queues the User may view: all (global) or a list of Queue ids (report scope).
+	ViewQueues(ctx context.Context, userID string) (global bool, queueIDs []string, err error)
 }
 
 // Directory is the Organization port.
@@ -154,6 +158,8 @@ type Store interface {
 	ListMine(ctx context.Context, userID, from, to string, limit int) ([]Entry, error)
 	PurgeTx(ctx context.Context, tx pgx.Tx, workDateBefore string, deletedBefore, timersBefore time.Time) (PurgeCounts, error)
 	NewID(ctx context.Context, tx pgx.Tx) (string, error)
+	// Summary aggregates non-deleted entries by group; queueIDs nil means every Queue.
+	Summary(ctx context.Context, from, to, groupBy string, queueIDs []string) ([]SummaryRow, error)
 	// StartTimer inserts the person's timer; ErrTimerRunning when one exists.
 	StartTimer(ctx context.Context, t Timer) (Timer, error)
 	GetTimer(ctx context.Context, userID string) (Timer, error)
@@ -189,4 +195,42 @@ func (e *InvalidInputError) Error() string { return e.Message }
 
 func invalid(format string, args ...any) error {
 	return &InvalidInputError{Message: fmt.Sprintf(format, args...)}
+}
+
+// Report group-bys (no per-person grouping exists).
+const (
+	GroupQueue  = "queue"
+	GroupMonth  = "month"
+	GroupTicket = "ticket"
+
+	MaxReportDays = 366
+	MaxReportRows = 200
+)
+
+// SummaryRow is one aggregated group from the store.
+type SummaryRow struct {
+	Key          string
+	Minutes      int
+	Entries      int
+	Contributors int
+}
+
+// SummaryGroup is one group of the effort report. Suppressed groups carry no figures: fewer distinct people than the
+// minimum group size contributed, so the number could describe one person.
+type SummaryGroup struct {
+	Key          string
+	Label        string
+	Minutes      int
+	Entries      int
+	Contributors int
+	Suppressed   bool
+}
+
+// Summary is the effort report.
+type Summary struct {
+	From, To     string
+	GroupBy      string
+	MinGroupSize int
+	Groups       []SummaryGroup
+	Truncated    bool
 }

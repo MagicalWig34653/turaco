@@ -6905,6 +6905,19 @@ export const de: Record<MessageKey, string> = {
     'Der Timer läuft seit mehr als 12 Stunden. Geben Sie die zu erfassende Zeit ein, zum Beispiel 1:30.',
   'timetracking.error.timerRunning':
     'Es läuft bereits ein Timer. Beenden oder verwerfen Sie ihn zuerst.',
+  'timetracking.report.title': 'Aufwandsbericht',
+  'timetracking.report.intro':
+    'Erfasste Zeit je Queue, Monat oder Ticket in den Queues, die Sie sehen dürfen. Es gibt keine Aufschlüsselung nach Personen.',
+  'timetracking.report.filters': 'Filter',
+  'timetracking.report.note':
+    'Gruppen mit weniger als der eingestellten Zahl an Beteiligten werden nicht angezeigt, sodass keine Zahl eine einzelne Person beschreiben kann.',
+  'timetracking.report.empty': 'In diesem Zeitraum wurde keine Zeit erfasst.',
+  'timetracking.report.entries': 'Einträge',
+  'timetracking.report.truncated': 'Es werden nur die ersten 200 Gruppen angezeigt.',
+  'timetracking.report.suppressed': 'Weniger als {count} Personen: nicht angezeigt',
+  'timetracking.report.groupBy.queue': 'Queue',
+  'timetracking.report.groupBy.month': 'Monat',
+  'timetracking.report.groupBy.ticket': 'Ticket',
   'timetracking.log': 'Zeit erfassen',
   'timetracking.edit': 'Bearbeiten',
   'timetracking.delete': 'Löschen',

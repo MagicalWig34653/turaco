@@ -2,6 +2,7 @@ import { api } from '../../platform/api/client';
 import { registerErrorMessages } from '../../platform/api/errorMessages';
 import type {
   DeleteReason,
+  EffortReport,
   RunningTimer,
   TimeEntry,
   TimeEntryList,
@@ -61,6 +62,11 @@ export const timeTrackingApi = {
   stopTimer: (durationMinutes?: number) =>
     api.post<TimeEntry>(`${base}/timer/stop`, durationMinutes ? { durationMinutes } : {}),
   discardTimer: () => api.delete<void>(`${base}/timer`),
+  /** GET /time-tracking/summary: aggregated effort (no per-person grouping exists). */
+  report: (
+    query: { from: string; to: string; groupBy: 'queue' | 'month' | 'ticket' },
+    signal?: AbortSignal,
+  ) => api.get<EffortReport>(`${base}/summary`, { query, signal }),
   settings: (signal?: AbortSignal) => api.get<TimeTrackingSettings>(`${base}/settings`, { signal }),
   saveSettings: (body: TimeTrackingSettingsRequest) =>
     api.put<TimeTrackingSettings>(`${base}/settings`, body),
