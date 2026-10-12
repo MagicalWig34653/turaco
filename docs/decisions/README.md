@@ -42,3 +42,4 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0036](ADR-0036-microsoft-teams-integration.md) | Microsoft Teams as a Notification and Interaction Channel | Accepted; not implemented |
 | [ADR-0037](ADR-0037-file-storage-and-attachments.md) | File Storage, Envelope Encryption, Virus Scanning and Attachments | Accepted; implemented (backend, no UI yet) |
 | [ADR-0038](ADR-0038-playwright-end-to-end-tests.md) | Playwright for End-to-End Smoke Tests | Accepted; implemented |
+| [ADR-0039](ADR-0039-mcp-oauth-authorization-server.md) | Turaco as OAuth Authorization Server for the Turaco MCP Resource Only | Accepted; implemented (F12 A-D) |
