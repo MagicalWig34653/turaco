@@ -217,6 +217,13 @@ func TestDraftInternalNoteToolIsIdempotentVersionBoundAndMarked(t *testing.T) {
 	if err != nil || again.Result.ID != res.Result.ID || countNotes() != 1 {
 		t.Fatalf("idempotent replay: %+v %v notes=%d", again, err, countNotes())
 	}
+	replayed, found, err := tool.Write.Replay(ctx, caller(agent), input, x)
+	if err != nil || !found || replayed.Result.ID != res.Result.ID || countNotes() != 1 {
+		t.Fatalf("read-only replay after permission loss: %+v %v %v", replayed, found, err)
+	}
+	if _, found, err := tool.Write.Replay(ctx, caller(bob), input, x); err != nil || found {
+		t.Fatalf("foreign replay disclosed a note: %v %v", found, err)
+	}
 	var n int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM platform.audit_events WHERE correlation_id=$1 AND action='servicedesk.ticket.comment_added'
 		AND via='ai' AND tenant_id='t' AND ai_proposal_id=$2::uuid AND actor_id=$3::uuid AND metadata->>'internal'='true'`, corr, proposal, agent).Scan(&n); err != nil || n != 1 {

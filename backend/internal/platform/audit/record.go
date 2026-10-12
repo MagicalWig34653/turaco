@@ -101,6 +101,9 @@ func Record(ctx context.Context, tx pgx.Tx, e Change) error {
 	if e.ProposalID != "" && e.Via == "" {
 		return errors.New("audit: a proposal id needs via")
 	}
+	if e.ProposalID != "" && !uuidPattern.MatchString(e.ProposalID) {
+		return errors.New("audit: proposal id must be a UUID")
+	}
 	meta := map[string]any{}
 	for k, v := range e.Metadata {
 		meta[k] = v

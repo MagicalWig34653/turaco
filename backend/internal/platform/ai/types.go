@@ -97,6 +97,9 @@ type WriteSpec struct {
 	// Prepare runs as the requesting User when the model calls the tool. It changes nothing: it checks that the User
 	// may perform the operation on the target now and returns the target's current version and a display label.
 	Prepare func(ctx context.Context, caller Caller, input json.RawMessage) (Preparation, error)
+	// Replay checks whether a prior attempt committed its effect. It is read-only and runs before current
+	// permission and target checks, so permission loss or a changed target cannot hide a committed outcome.
+	Replay func(ctx context.Context, caller Caller, input json.RawMessage, x Execution) (ExecutionResult, bool, error)
 	// Execute performs the operation through the module's public contract as the confirming User. It must be
 	// idempotent per x.IdempotencyKey (a repeated call returns the first result without a second effect) and must
 	// fail with ErrToolStale when the target no longer has x.TargetVersion. The context carries the audit marker

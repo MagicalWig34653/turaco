@@ -238,6 +238,7 @@ type Store interface {
 	InsertCommentTx(ctx context.Context, tx pgx.Tx, c Comment) (Comment, error)
 	// CommentByKeyTx returns the comment an idempotent operation created with key, or ok=false.
 	CommentByKeyTx(ctx context.Context, tx pgx.Tx, key string) (c Comment, ok bool, err error)
+	CommentByKey(ctx context.Context, key string) (c Comment, ok bool, err error)
 	Comments(ctx context.Context, ticketID string, includeInternal bool) ([]Comment, error)
 }
 

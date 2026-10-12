@@ -136,11 +136,13 @@ func (s *Store) claimProposal(ctx context.Context, tx pgx.Tx, c Caller, id, hash
 
 // reclaimProposal takes over a confirmed proposal whose lease expired without an outcome (the earlier execution
 // crashed or timed out), at most maxAttempts times in total. The module call is idempotent per proposal id.
-func (s *Store) reclaimProposal(ctx context.Context, tx pgx.Tx, c Caller, id, hash string, lease time.Duration, maxAttempts int) (proposalRow, string, bool, error) {
+func (s *Store) reclaimProposal(ctx context.Context, tx pgx.Tx, c Caller, id, hash string, lease, unknownAfter time.Duration, maxAttempts int) (proposalRow, string, bool, error) {
 	p, err := scanProposal(tx.QueryRow(ctx, `UPDATE ai.proposals SET claim_token=uuidv7(), lease_expires_at = now() + $5::interval,
 		attempt=attempt+1, version=version+1
-		WHERE id=$1 AND user_id=$2 AND tenant_id=$3 AND parameters_hash=$4 AND state='confirmed' AND lease_expires_at <= now() AND attempt < $6
-		RETURNING `+proposalCols, id, c.UserID, c.TenantID, hash, fmt.Sprintf("%d seconds", int(lease.Seconds())), maxAttempts))
+		WHERE id=$1 AND user_id=$2 AND tenant_id=$3 AND parameters_hash=$4 AND state='confirmed'
+		AND lease_expires_at <= now() AND lease_expires_at > now() - $7::interval AND attempt < $6
+		RETURNING `+proposalCols, id, c.UserID, c.TenantID, hash, fmt.Sprintf("%d seconds", int(lease.Seconds())), maxAttempts,
+		fmt.Sprintf("%d seconds", int(unknownAfter.Seconds()))))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return proposalRow{}, "", false, nil
 	}
@@ -198,7 +200,7 @@ type proposalSweep struct {
 
 // sweepProposals expires unconfirmed proposals past their TTL (removing their parameters), fails confirmed ones
 // whose execution outcome stayed unknown, removes the parameters of proposals that ended more than keep ago and
-// deletes rows that ended more than deleteAfter ago (the audit keeps ids and the hash).
+// deletes rows that ended more than deleteAfter ago (the audit keeps ids and a hash prefix).
 func (s *Store) sweepProposals(ctx context.Context, tx pgx.Tx, unknownAfter, keep, deleteAfter time.Duration, maxAttempts int) (proposalSweep, error) {
 	var out proposalSweep
 	collect := func(rows pgx.Rows) ([]proposalRow, error) {

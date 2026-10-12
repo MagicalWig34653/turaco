@@ -15,6 +15,13 @@ const reloadOn = [
   'ai.execution_unknown',
 ];
 
+// Make format and control characters explicit in the exact parameter display. React still escapes the text.
+function visibleParameter(value: string): string {
+  return value.replace(/[\p{Cf}\p{Cc}\p{Zl}\p{Zp}]/gu, (char) =>
+    `<U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`,
+  );
+}
+
 /**
  * The confirm dialog of one AI Proposal inside the assistant panel (F12 A-C): the operation, who can see the
  * result, the target record with its version, the complete exact parameters as inert text, the time left, and a
@@ -83,7 +90,7 @@ export function ProposalCard({
             <div key={p.key}>
               <dt>{p.label ? t(p.label) : p.key}</dt>
               <dd>
-                <pre className="ai-text">{p.value}</pre>
+                <pre className="ai-text">{visibleParameter(p.value)}</pre>
               </dd>
             </div>
           ))}

@@ -35,7 +35,7 @@ const (
 	// proposalUnknownAfter: a confirmed proposal whose lease expired this long ago fails with ai.execution_unknown.
 	proposalUnknownAfter = 15 * time.Minute
 	// proposalKeep is how long the parameters of an ended proposal stay readable for its User; proposalDeleteAfter
-	// is when the row goes (the audit keeps ids and the hash).
+	// is when the row goes (the audit keeps ids and a hash prefix).
 	proposalKeep        = 24 * time.Hour
 	proposalDeleteAfter = 30 * 24 * time.Hour
 	// Caps: open proposals per User and proposals per turn.
@@ -76,6 +76,8 @@ type Proposal struct {
 }
 
 var hashRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func auditHash(hash string) string { return hash[:12] }
 
 // proposalHash binds a confirmation to the exact content: tool, target, target version and canonical parameters.
 func proposalHash(tool string, target ResourceRef, version int, params json.RawMessage) (string, error) {
@@ -187,7 +189,7 @@ func (s *Service) propose(ctx context.Context, c Caller, ex toolExec, t register
 			return err
 		}
 		meta := map[string]any{"tool": t.tool.Name, "target": map[string]any{"type": ref.Type, "id": ref.ID}, "targetVersion": prep.TargetVersion,
-			"parametersHash": hash, "input": t.schema.auditInput(args), "providerId": ex.providerID, "model": ex.model}
+			"parametersHash": auditHash(hash), "input": t.schema.auditInput(args), "providerId": ex.providerID, "model": ex.model}
 		if row.SessionRef != nil {
 			meta["sessionId"] = *row.SessionRef
 		}
@@ -231,35 +233,47 @@ func (s *Service) proposalGate(ctx context.Context, c Caller) (Caller, error) {
 	return fresh, nil
 }
 
+// visibleProposal withholds sensitive content when the current tool permission has been lost.
+func (s *Service) visibleProposal(p proposalRow, c Caller) Proposal {
+	out := s.toProposal(p)
+	if t, ok := s.reg.get(p.ToolName); !ok || !c.Has(t.tool.Permission) {
+		out.TargetLabel = ""
+		out.Parameters = nil
+	}
+	return out
+}
+
 // Proposals lists the caller's open proposals and those that ended within the last day.
 func (s *Service) Proposals(ctx context.Context, c Caller) ([]Proposal, error) {
-	if _, err := s.gate(ctx, c); err != nil {
+	fresh, err := s.proposalGate(ctx, c)
+	if err != nil {
 		return nil, err
 	}
-	rows, err := s.store.listProposals(ctx, c, maxListedProposals)
+	rows, err := s.store.listProposals(ctx, fresh, maxListedProposals)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Proposal, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, s.toProposal(r))
+		out = append(out, s.visibleProposal(r, fresh))
 	}
 	return out, nil
 }
 
 // GetProposal returns one of the caller's proposals; another User's proposal is not found.
 func (s *Service) GetProposal(ctx context.Context, c Caller, id string) (Proposal, error) {
-	if _, err := s.gate(ctx, c); err != nil {
+	fresh, err := s.proposalGate(ctx, c)
+	if err != nil {
 		return Proposal{}, err
 	}
 	if !uuidRE.MatchString(id) {
 		return Proposal{}, ErrNotFound
 	}
-	p, err := s.store.findProposal(ctx, c, strings.ToLower(id))
+	p, err := s.store.findProposal(ctx, fresh, strings.ToLower(id))
 	if err != nil {
 		return Proposal{}, err
 	}
-	return s.toProposal(p), nil
+	return s.visibleProposal(p, fresh), nil
 }
 
 // DismissProposal is proposed -> dismissed by the creating User.
@@ -344,7 +358,7 @@ func (s *Service) ConfirmProposal(ctx context.Context, c Caller, id, hash string
 			return err
 		}
 		if !ok {
-			if claimed, token, ok, err = s.store.reclaimProposal(ctx, tx, fresh, id, hash, proposalLease, maxProposalAttempts); err != nil || !ok {
+			if claimed, token, ok, err = s.store.reclaimProposal(ctx, tx, fresh, id, hash, proposalLease, proposalUnknownAfter, maxProposalAttempts); err != nil || !ok {
 				return err
 			}
 			retry = true
@@ -355,7 +369,7 @@ func (s *Service) ConfirmProposal(ctx context.Context, c Caller, id, hash string
 		}
 		if err := audit.Record(ctx, tx, audit.Change{Action: action, TargetType: "ai_proposal", TargetID: id, Actor: audit.UserActor(fresh.UserID),
 			CorrelationID: fresh.CorrelationID, Via: "ai", TenantID: fresh.TenantID, ProposalID: id,
-			Metadata: map[string]any{"tool": claimed.ToolName, "parametersHash": claimed.ParametersHash, "attempt": claimed.Attempt,
+			Metadata: map[string]any{"tool": claimed.ToolName, "parametersHash": auditHash(claimed.ParametersHash), "attempt": claimed.Attempt,
 				"target": map[string]any{"type": claimed.TargetType, "id": claimed.TargetID}, "targetVersion": claimed.TargetVersion}}); err != nil {
 			return err
 		}
@@ -384,11 +398,7 @@ func (s *Service) executeProposal(ctx context.Context, c Caller, p proposalRow, 
 	if !ok || t.tool.Risk != RiskWrite || t.tool.Write == nil {
 		return fail("tool_unavailable")
 	}
-	// Re-checks immediately before the module call: the tool permission now (not at proposal time) and the
-	// integrity of the stored parameters against the hash the User confirmed.
-	if !c.Has(t.tool.Permission) {
-		return fail("permission_denied")
-	}
+	// Check integrity before replay; a committed effect can be recognized even after permission or target changes.
 	if p.Parameters == nil {
 		return fail("parameters_tampered")
 	}
@@ -398,6 +408,22 @@ func (s *Service) executeProposal(ctx context.Context, c Caller, p proposalRow, 
 	}
 	if _, err := t.schema.validate(p.Parameters); err != nil {
 		return fail("parameters_tampered")
+	}
+	if p.Attempt > 1 && t.tool.Write.Replay != nil {
+		res, found, err := t.tool.Write.Replay(ctx, c, p.Parameters, Execution{ProposalID: p.ID, IdempotencyKey: p.ID, TargetVersion: p.TargetVersion})
+		if err != nil {
+			s.cfg.Logger.Error("ai proposal replay lookup failed", "proposal_id", p.ID, "error", err)
+			return Proposal{}, ErrExecutionUnknown
+		}
+		if found {
+			if !targetRE.MatchString(res.Result.Type) || !uuidRE.MatchString(res.Result.ID) {
+				return Proposal{}, ErrExecutionUnknown
+			}
+			return s.endProposal(ctx, c, p, token, ProposalExecuted, "ok", &ResourceRef{Type: res.Result.Type, ID: strings.ToLower(res.Result.ID)})
+		}
+	}
+	if !c.Has(t.tool.Permission) {
+		return fail("permission_denied")
 	}
 	actx := audit.WithAssist(ctx, audit.Assist{Via: "ai", TenantID: c.TenantID, ProposalID: p.ID})
 	hctx, cancel := context.WithTimeout(actx, toolCallTimeout)
@@ -435,7 +461,7 @@ func (s *Service) endProposal(ctx context.Context, c Caller, p proposalRow, toke
 		if out, ok, err = s.store.finishProposal(ctx, tx, p.ID, token, state, outcome, result); err != nil || !ok {
 			return err
 		}
-		meta := map[string]any{"tool": p.ToolName, "outcome": outcome, "attempt": p.Attempt, "parametersHash": p.ParametersHash,
+		meta := map[string]any{"tool": p.ToolName, "outcome": outcome, "attempt": p.Attempt, "parametersHash": auditHash(p.ParametersHash),
 			"target": map[string]any{"type": p.TargetType, "id": p.TargetID}, "targetVersion": p.TargetVersion}
 		payload := map[string]any{"proposalId": p.ID, "tool": p.ToolName}
 		event, action := "AIProposalFailed", "ai.proposal.failed"
