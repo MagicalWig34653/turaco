@@ -251,7 +251,9 @@ export function ConsentScreen() {
           </ul>
           <p>{t('ai.mcp.consentWarning')}</p>
           <p>{t('ai.mcp.consentDuration', { hours: p.grantHours })}</p>
-          <Button disabled={!approvalReady} onClick={() => decide('approve')}>{t('ai.mcp.approve')}</Button>
+          <Button disabled={!approvalReady} onClick={() => decide('approve')}>
+            {t('ai.mcp.approve')}
+          </Button>
           <Button onClick={() => decide('deny')}>{t('ai.mcp.deny')}</Button>
         </section>
       )}

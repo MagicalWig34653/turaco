@@ -16,10 +16,7 @@ it('requires 1.5 seconds of continuous visible and focused time', () => {
     hasFocus: () => focused,
     addEventListener: pageEvents.addEventListener.bind(pageEvents),
     removeEventListener: pageEvents.removeEventListener.bind(pageEvents),
-  } as Pick<
-    Document,
-    'visibilityState' | 'hasFocus' | 'addEventListener' | 'removeEventListener'
-  >;
+  } as Pick<Document, 'visibilityState' | 'hasFocus' | 'addEventListener' | 'removeEventListener'>;
   const browser = {
     addEventListener: browserEvents.addEventListener.bind(browserEvents),
     removeEventListener: browserEvents.removeEventListener.bind(browserEvents),
