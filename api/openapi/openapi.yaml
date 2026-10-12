@@ -843,7 +843,7 @@ paths:
     get:
       operationId: getUserEffectivePermissions
       summary: Explain the effective permissions of a User.
-      description: "Requires `platform.roles.view` and `organization.users.view_details`. Roles in force with their source (direct or directory group), per permission the assignments that grant it, separation-of-duties warnings and the ceilings applied. The same evaluation the authorizer uses."
+      description: "Requires `platform.roles.view` and `organization.users.view_details`. Roles in force with their source (direct or directory group) and scope, per permission held everywhere (`permissions`, scope global) the assignments that grant it, per permission held only at Locations (`scopedPermissions`, ADR-0040) the scoped roots with their assignments and the expanded Location set, per scoped assignment the global-only permissions it reaches without effect (`inertPermissions`), separation-of-duties warnings (over global and scoped holdings) and the ceilings applied. The same evaluation the authorizer uses."
       security:
         - sessionAuth: []
       parameters:
@@ -9220,11 +9220,12 @@ paths:
     get:
       operationId: listPermissionHolders
       summary: Who holds a permission.
-      description: "Requires `platform.roles.view` and `organization.users.view_details`. Active assignments (direct and Directory Groups) whose role grants the permission, newest first."
+      description: "Requires `platform.roles.view` and `organization.users.view_details`. Active assignments (direct and Directory Groups) whose role grants the permission, newest first: global assignments, and Location-scoped ones when the permission is scopable (otherwise it is inert there). With `locationId`, only holders whose scope covers that Location: global holders and scoped assignments at the Location or one of its ancestors (400 authorization.invalid_request for an id that is not a Location)."
       security:
         - sessionAuth: []
       parameters:
         - {name: permission, in: query, required: true, schema: {type: string}}
+        - {name: locationId, in: query, schema: {type: string}}
         - {$ref: '#/components/parameters/Limit'}
         - {$ref: '#/components/parameters/Cursor'}
       responses:
@@ -9368,7 +9369,7 @@ paths:
     get:
       operationId: listRoleMembers
       summary: Effective members of a role.
-      description: "Requires `platform.roles.view`. Users assigned directly plus the members of assigned Directory Groups, at most 500 (`capped`)."
+      description: "Requires `platform.roles.view`. Users assigned directly plus the members of assigned Directory Groups, at most 500 (`capped`). `scope` is global when any assignment path gives the role everywhere; otherwise location with the scoped root Locations in `scopeLocationIds`."
       security:
         - sessionAuth: []
       parameters:
@@ -9394,6 +9395,8 @@ paths:
         - {name: roleId, in: query, schema: {type: string}}
         - {name: subjectType, in: query, schema: {type: string, enum: [user, directory_group]}}
         - {name: subjectId, in: query, schema: {type: string}}
+        - {name: scope, in: query, schema: {type: string, enum: [global, location]}}
+        - {name: scopeLocationId, in: query, description: Exact scope Location (no subtree)., schema: {type: string}}
         - {name: includeRevoked, in: query, schema: {type: boolean}}
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -9409,8 +9412,8 @@ paths:
         '500': {$ref: '#/components/responses/InternalError'}
     post:
       operationId: assignRole
-      summary: Assign a role to a User or Directory Group (global scope).
-      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment. Guards: nobody assigns to themselves or to a Directory Group they belong to (409 access.self_assignment, administrators included; the CLI is exempt); a non-administrator assigns only roles they hold (403 access.role_not_held) and never high-risk ones; the built-in administrator role takes no expiry (409 access.admin_no_expiry); a role with a high-risk permission is assigned for at most 366 days and never to a local account (409 access.local_account_high_risk); new separation-of-duties conflicts need `acknowledgedRules` and `reason`. Audited (authorization.role.assigned)."
+      summary: Assign a role to a User or Directory Group, globally or at a Location.
+      description: "Requires `platform.roles.manage`. The subject must exist (Directory Group not deleted); 409 authorization.duplicate_assignment for an existing active assignment at the same scope (the same role may be held globally and at several Locations). `scopeLocationId` makes the assignment Location-scoped (ADR-0040): it applies at that Location and its sub-Locations. Guards: nobody assigns to themselves or to a Directory Group they belong to (409 access.self_assignment, administrators included; the CLI is exempt); a non-administrator assigns only roles they hold globally or, for a scoped assignment, at the Location or an ancestor (403 access.role_not_held), only permissions they cover at that scope (global-only permissions held globally; 403 access.grant_exceeds_holder) and never high-risk ones; the built-in administrator role takes no expiry (409 access.admin_no_expiry) and no scope (409 access.admin_scope_global); external accounts receive no scoped assignment (409 access.external_scope_unsupported); the scope Location must exist and be active (422 access.scope_location_invalid); a role with a high-risk permission is assigned for at most 366 days and never to a local account (409 access.local_account_high_risk); new separation-of-duties conflicts (over global and scoped holdings) need `acknowledgedRules` and `reason`. Audited (authorization.role.assigned with scope and scopeLocationId)."
       security:
         - sessionAuth: []
       requestBody:
@@ -9429,12 +9432,17 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/AuthorizationNotFound'}
         '409': {$ref: '#/components/responses/AuthorizationConflict'}
+        '422':
+          description: The scope Location does not exist or is inactive (access.scope_location_invalid).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '500': {$ref: '#/components/responses/InternalError'}
   /role-assignments/{id}/revoke:
     post:
       operationId: revokeRoleAssignment
       summary: Revoke a role assignment.
-      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Nobody revokes their own assignments (409 access.self_assignment) and a non-administrator needs every permission of the role (403 access.grant_exceeds_holder). Audited (authorization.role.assignment_revoked)."
+      description: "Requires `platform.roles.manage`. Idempotent for already revoked assignments (200, no new audit). Revoking the last active platform-administrator assignment of a User is refused (409 authorization.last_administrator). Nobody revokes their own assignments (409 access.self_assignment) and a non-administrator needs every permission of the role at the assignment's scope (globally, or for a scoped assignment globally or at its Location or an ancestor; 403 access.grant_exceeds_holder). Audited (authorization.role.assignment_revoked with the scope)."
       security:
         - sessionAuth: []
       parameters:
@@ -16565,7 +16573,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     AuthorizationConflict:
-      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator, authorization.version_conflict, access.self_assignment, access.admin_no_expiry, access.local_account_high_risk, access.sod_acknowledgement_required with details.rules). Refusals of the escalation guards are 403 (access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held).
+      description: Conflict (authorization.duplicate_key, authorization.built_in_role, authorization.role_in_use, authorization.duplicate_assignment, authorization.last_administrator, authorization.version_conflict, access.self_assignment, access.admin_no_expiry, access.admin_scope_global, access.external_ceiling, access.external_scope_unsupported, access.local_account_high_risk, access.sod_acknowledgement_required with details.rules). Refusals of the escalation guards are 403 (access.grant_exceeds_holder, access.high_risk_requires_administrator, access.role_not_held).
       content:
         application/json:
           schema:
@@ -18349,14 +18357,14 @@ components:
     EffectivePermissions:
       type: object
       additionalProperties: false
-      required: [userId, roles, permissions, warnings, ceilings, localAccount, excluded]
+      required: [userId, roles, permissions, scopedPermissions, warnings, ceilings, localAccount, excluded]
       properties:
         userId: {type: string}
         roles:
           type: array
           items:
             type: object
-            required: [roleId, roleKey, roleName, builtInAdmin, assignmentId, source]
+            required: [roleId, roleKey, roleName, builtInAdmin, assignmentId, source, scope]
             properties:
               roleId: {type: string}
               roleKey: {type: string}
@@ -18365,17 +18373,47 @@ components:
               assignmentId: {type: string}
               source: {type: string, enum: [direct, directory_group]}
               groupId: {type: string}
+              scope: {type: string, enum: [global, location]}
+              scopeLocationId: {type: string, description: Root Location of a scoped assignment.}
+              scopeLocationName: {type: string, description: Name of the scope Location; only for a scoped item and a caller with `organization.view`.}
+              scopeLocationPath: {type: array, items: {type: string}, description: Names from the Site down to the scope Location; same condition.}
+              scopeLocationActive: {type: boolean, description: False for a deactivated scope Location (the assignment stays effective); same condition.}
+              inertPermissions: {type: array, items: {type: string}, description: Global-only permissions this scoped assignment reaches without effect.}
               expiresAt: {type: string, format: date-time}
         permissions:
           type: array
           items:
             type: object
-            required: [name, risk, module, grantedBy]
+            required: [name, risk, module, scope, grantedBy]
             properties:
               name: {type: string}
               risk: {type: string}
               module: {type: string}
+              scope: {type: string, enum: [global]}
               grantedBy: {type: array, items: {type: string}, description: Assignment ids of `roles`.}
+        scopedPermissions:
+          type: array
+          description: Scopable permissions held only at Locations (not in `permissions`).
+          items:
+            type: object
+            required: [name, risk, module, scope, roots, locations]
+            properties:
+              name: {type: string}
+              risk: {type: string}
+              module: {type: string}
+              scope: {type: string, enum: [location]}
+              roots:
+                type: array
+                items:
+                  type: object
+                  required: [rootLocationId, grantedBy]
+                  properties:
+                    rootLocationId: {type: string}
+                    scopeLocationName: {type: string, description: Name of the scope Location; only for a scoped item and a caller with `organization.view`.}
+                    scopeLocationPath: {type: array, items: {type: string}, description: Names from the Site down to the scope Location; same condition.}
+                    scopeLocationActive: {type: boolean, description: False for a deactivated scope Location (the assignment stays effective); same condition.}
+                    grantedBy: {type: array, items: {type: string}, description: Assignment ids of `roles`.}
+              locations: {type: array, items: {type: string}, description: Expanded set (the roots and their current descendants).}
         warnings: {type: array, items: {type: string}, description: Violated separation-of-duties rule keys.}
         ceilings: {type: array, items: {type: string}}
         localAccount: {type: boolean}
@@ -18389,7 +18427,7 @@ components:
           type: array
           items:
             type: object
-            required: [assignmentId, roleId, roleKey, roleName, builtInAdmin, subjectType, subjectId, subjectDisplayName]
+            required: [assignmentId, roleId, roleKey, roleName, builtInAdmin, subjectType, subjectId, subjectDisplayName, scope]
             properties:
               assignmentId: {type: string}
               roleId: {type: string}
@@ -18399,6 +18437,11 @@ components:
               subjectType: {type: string, enum: [user, directory_group]}
               subjectId: {type: string}
               subjectDisplayName: {type: string}
+              scope: {type: string, enum: [global, location]}
+              scopeLocationId: {type: string}
+              scopeLocationName: {type: string, description: Name of the scope Location; only for a scoped item and a caller with `organization.view`.}
+              scopeLocationPath: {type: array, items: {type: string}, description: Names from the Site down to the scope Location; same condition.}
+              scopeLocationActive: {type: boolean, description: False for a deactivated scope Location (the assignment stays effective); same condition.}
               expiresAt: {type: string, format: date-time}
         nextCursor: {type: string}
     RoleMemberList:
@@ -18410,11 +18453,13 @@ components:
           type: array
           items:
             type: object
-            required: [userId, displayName, source]
+            required: [userId, displayName, source, scope, scopeLocationIds]
             properties:
               userId: {type: string}
               displayName: {type: string}
               source: {type: string, enum: [direct, directory_group]}
+              scope: {type: string, enum: [global, location]}
+              scopeLocationIds: {type: array, items: {type: string}}
         capped: {type: boolean}
         limit: {type: integer}
     User:
@@ -22418,7 +22463,11 @@ components:
         subjectType: {type: string, enum: [user, directory_group]}
         subjectId: {type: string}
         subjectDisplayName: {type: string, description: Current display name of the User or Directory Group; empty if unknown.}
-        scope: {type: string, enum: [global]}
+        scope: {type: string, enum: [global, location]}
+        scopeLocationId: {type: string, description: Root Location of a scoped assignment; it applies there and at every sub-Location.}
+        scopeLocationName: {type: string, description: Name of the scope Location; only for a scoped item and a caller with `organization.view`.}
+        scopeLocationPath: {type: array, items: {type: string}, description: Names from the Site down to the scope Location; same condition.}
+        scopeLocationActive: {type: boolean, description: False for a deactivated scope Location (the assignment stays effective); same condition.}
         createdAt: {type: string, format: date-time}
         createdBy: {type: string, description: User id of the creator; omitted for CLI-created assignments.}
         revokedAt: {type: string, format: date-time}
@@ -22442,6 +22491,7 @@ components:
         subjectType: {type: string, enum: [user, directory_group]}
         subjectId: {type: string}
         expiresAt: {type: string, format: date-time}
+        scopeLocationId: {type: string, description: Location scope (ADR-0040); absent or empty means all Locations.}
         acknowledgedRules: {type: array, items: {type: string}}
         reason: {type: string, maxLength: 500}
     AuditEvent:
