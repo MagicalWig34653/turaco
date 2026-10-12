@@ -153,7 +153,9 @@ func catalogModules() []Module {
 		core("notifications", "notifications"),
 
 		opt("servicedesk", CategoryServiceMgmt, []string{"assets"}, "tickets", "major-incidents", "problems", "service-desk"),
-		{Key: "sla", Category: CategoryServiceMgmt, DefaultEnabled: false, Requires: []string{"servicedesk"}, RoutePrefixes: []string{"sla"}},
+		{Key: "sla", Category: CategoryServiceMgmt, DefaultEnabled: false, Requires: []string{"servicedesk"}, RoutePrefixes: []string{"sla"},
+			// The sweep is a disposable tick; the notification consumer "sla.notify" is deferred while the switch is off.
+			DisposableJobs: []string{"sla.clock_sweep"}},
 		opt("knowledge", CategoryServiceMgmt, []string{"servicedesk"}, "knowledge-articles", "runbooks", "runbook-executions"),
 		opt("catalog", CategoryServiceMgmt, []string{"products"}, "catalog-items"),
 		opt("requests", CategoryServiceMgmt, []string{"catalog"}, "service-requests"),

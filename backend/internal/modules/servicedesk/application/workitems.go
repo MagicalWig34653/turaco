@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // My Work contribution (ADR-0033 V8): the open Tickets that wait for the caller. Two lists share one
@@ -35,7 +36,11 @@ type WorkQuery struct {
 	// After* is the keyset position (sort rank, ticket id); AfterID empty starts at the beginning.
 	AfterRank int
 	AfterID   string
-	Limit     int
+	// AfterDue is the due time of the cursor row (nil: that row had none). SLA orders the list by the earliest running
+	// clock's due time (nulls last) before the rank; it is set only while the sla switch is on.
+	AfterDue *time.Time
+	SLA      bool
+	Limit    int
 }
 
 // WorkRow is a Ticket with its shared sort rank (priority, waiting Tickets after active ones).
@@ -43,6 +48,8 @@ type WorkRow struct {
 	Ticket Ticket
 	Rank   int
 	Cursor string
+	// DueAt is the earliest running SLA clock's due time; nil while the sla switch is off or no clock runs.
+	DueAt *time.Time
 }
 
 // WorkStore is the persistence port of the My Work contribution.
@@ -54,10 +61,15 @@ type WorkStore interface {
 type workCursor struct {
 	Rank int    `json:"r"`
 	ID   string `json:"i"`
+	Due  string `json:"d,omitempty"`
 }
 
-func encodeWorkCursor(rank int, id string) string {
-	raw, _ := json.Marshal(workCursor{Rank: rank, ID: id})
+func encodeWorkCursor(rank int, id string, due *time.Time) string {
+	c := workCursor{Rank: rank, ID: id}
+	if due != nil {
+		c.Due = due.UTC().Format(time.RFC3339Nano)
+	}
+	raw, _ := json.Marshal(c)
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
@@ -71,6 +83,11 @@ func decodeWorkCursor(s string) (workCursor, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil || c.Rank < 0 || c.Rank > 7 || !uuidPattern.MatchString(c.ID) {
 		return workCursor{}, ErrInvalidCursor
+	}
+	if c.Due != "" {
+		if _, err := time.Parse(time.RFC3339Nano, c.Due); err != nil {
+			return workCursor{}, ErrInvalidCursor
+		}
 	}
 	return c, nil
 }
@@ -101,6 +118,13 @@ func (s *Service) workQuery(ctx context.Context, p Principal, src WorkSource) (W
 		return WorkQuery{}, access{}, err
 	}
 	q := WorkQuery{Source: src, UserID: p.UserID, Global: a.global(), QueueIDs: a.viewIDs()}
+	if !p.External {
+		on, err := s.slaOn(ctx)
+		if err != nil {
+			return WorkQuery{}, access{}, fmt.Errorf("check sla switch: %w", err)
+		}
+		q.SLA = on
+	}
 	if src == WorkTeam {
 		m, err := s.memberships(ctx, p.UserID)
 		if err != nil {
@@ -130,6 +154,10 @@ func (s *Service) MyWorkTickets(ctx context.Context, p Principal, src WorkSource
 			return nil, err
 		}
 		q.AfterRank, q.AfterID = c.Rank, strings.ToLower(c.ID)
+		if c.Due != "" {
+			d, _ := time.Parse(time.RFC3339Nano, c.Due)
+			q.AfterDue = &d
+		}
 	}
 	q.Limit = min(max(limit, 1), MaxLimit)
 	rows, err := ws.WorkTickets(ctx, q)
@@ -137,7 +165,7 @@ func (s *Service) MyWorkTickets(ctx context.Context, p Principal, src WorkSource
 		return nil, fmt.Errorf("list work tickets: %w", err)
 	}
 	for i := range rows {
-		rows[i].Cursor = encodeWorkCursor(rows[i].Rank, rows[i].Ticket.ID)
+		rows[i].Cursor = encodeWorkCursor(rows[i].Rank, rows[i].Ticket.ID, rows[i].DueAt)
 	}
 	ts := make([]*Ticket, len(rows))
 	for i := range rows {

@@ -54,6 +54,7 @@ func (w *TicketWorkItems) Items(ctx context.Context, p authorization.Principal, 
 		if t.WaitingReason != nil {
 			it.WaitingReason = *t.WaitingReason
 		}
+		it.DueAt = r.DueAt
 		out = append(out, workitems.Entry{Item: it, Rank: r.Rank, Cursor: r.Cursor})
 	}
 	return out, nil

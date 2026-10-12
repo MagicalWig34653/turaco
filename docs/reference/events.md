@@ -88,6 +88,8 @@
 | `TicketCreated` | 1 | service-desk | A ticket was created. Payload: ticketId, reporterId, affectedUserId, queueId. |
 | `TicketQueueChanged` | 1 | service-desk | A ticket was moved to another queue and got a new reference; the old one stays as an alias. Payload: ticketId, fromQueueId, toQueueId, oldReference, newReference. |
 | `TicketResolved` | 1 | service-desk | A ticket was resolved. Payload: ticketId, reporterId, affectedUserId. |
+| `TicketSLABreached` | 1 | service-desk | A running SLA clock of a ticket passed its due time. Recorded by the sla.clock_sweep job. Payload: ticketId, queueId, clockKind (first_response, resolution), dueAt, assigneeId (nullable); no title. |
+| `TicketSLAWarningReached` | 1 | service-desk | A running SLA clock of a ticket reached its warning point. Recorded by the sla.clock_sweep job. Payload: ticketId, queueId, clockKind (first_response, resolution), dueAt, assigneeId (nullable); no title. |
 | `TicketStatusChanged` | 1 | service-desk | A ticket was reopened, closed or cancelled. Payload: ticketId, operation. |
 | `UserDeactivated` | 1 | organization | An administrator deactivated a User (sessions and open credential tokens were revoked; open Task assignments need review). Payload: userId, reasonCode. |
 | `UserDeparted` | 1 | organization | An administrator marked a User as departed. Payload: userId, reasonCode. |

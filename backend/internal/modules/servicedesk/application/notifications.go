@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -30,6 +31,8 @@ func NotificationCategories() []notifications.Category {
 		cat("ticket.mention", "You were mentioned on ticket: %s", "You were mentioned in an internal note on a ticket:", "Du wurdest im Ticket erwähnt: %s", "Du wurdest in einer internen Notiz zu einem Ticket erwähnt:"),
 		majorCategory(),
 		cat("ticket.resolved", "Ticket resolved: %s", "Your ticket was resolved:", "Ticket gelöst: %s", "Dein Ticket wurde gelöst:"),
+		cat("ticket.sla_warning", "SLA warning on ticket: %s", "A ticket is close to its SLA target:", "SLA-Warnung zum Ticket: %s", "Ein Ticket nähert sich seinem SLA-Ziel:"),
+		cat("ticket.sla_breached", "SLA breached on ticket: %s", "A ticket missed its SLA target:", "SLA überschritten bei Ticket: %s", "Ein Ticket hat sein SLA-Ziel überschritten:"),
 	}
 }
 
@@ -46,6 +49,9 @@ type Consumers struct {
 	notifier Notifier
 	// references resolves the number a recipient may know (Service.ReferenceFor); nil keeps the current number.
 	references func(ctx context.Context, userID string, t Ticket) (string, error)
+	// slaRecipients and now serve the SLA consumers (WithSLA).
+	slaRecipients SLARecipients
+	now           func() time.Time
 }
 
 // WithReferences sets the per-recipient display number resolver. A notification must not name a Queue number the

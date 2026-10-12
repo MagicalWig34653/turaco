@@ -33,6 +33,14 @@ export function registerModuleNotifications(): void {
       textKey: 'notifications.ticket.resolved',
       labelKey: 'notifications.category.ticket.resolved',
     },
+    'ticket.sla_warning': {
+      textKey: 'notifications.ticket.sla_warning',
+      labelKey: 'notifications.category.ticket.sla_warning',
+    },
+    'ticket.sla_breached': {
+      textKey: 'notifications.ticket.sla_breached',
+      labelKey: 'notifications.category.ticket.sla_breached',
+    },
     'majorincident.update': {
       textKey: 'notifications.majorincident.update',
       labelKey: 'notifications.category.majorincident.update',

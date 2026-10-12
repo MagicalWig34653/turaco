@@ -544,6 +544,12 @@ func (s *Service) assigneeMaySee(ctx context.Context, tx pgx.Tx, userID, queueID
 	return false, nil
 }
 
+// MaySeeQueue reports whether the User can view the Queue (global permissions or a grant). It serves the SLA
+// notification recipients: a notification must not reach anybody who could not open the Ticket.
+func (s *Service) MaySeeQueue(ctx context.Context, tx pgx.Tx, userID, queueID string) (bool, error) {
+	return s.assigneeMaySee(ctx, tx, userID, queueID)
+}
+
 // Assign sets the assignee and/or the routing Team (nil leaves a field, an empty string clears it). A new ticket
 // that gets an assignee becomes open. Requires work access in the Ticket's Queue (tickets.manage or a work grant);
 // the assignee must be able to view the Queue. The routing Team is a hint of who handles the Ticket, not a Queue:

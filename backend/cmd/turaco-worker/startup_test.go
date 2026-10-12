@@ -43,6 +43,7 @@ var goldenJobTypes = []string{
 	"security.risk_review_reminders",
 	"servicedesk.external.push",
 	"services.vm_link_backfill",
+	"sla.clock_sweep",
 	"tasks.recurrence.generate",
 	"teams.channel_post",
 	"views.purge_archived",

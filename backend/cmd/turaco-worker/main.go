@@ -278,6 +278,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 		{"change reminders", func() error {
 			return registerChangeReminders(runner, pool, d.Categories, d.SMTP.Enabled(), d.Logger)
 		}},
+		{"sla clock sweep", func() error { return registerSLASweep(runner, pool, d.Modules, d.Logger) }},
 		{"security matching", func() error { return registerSecurityMatching(runner, pool) }},
 		{"security risk reminders", func() error {
 			return registerSecurityRiskReminders(runner, pool, d.Categories, d.SMTP.Enabled())
@@ -395,7 +396,7 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		return err
 	}
 	sdStore := servicedeskrepository.New(pool)
-	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier).WithReferences(wiring.ServiceDesk(pool).ReferenceFor)
+	sdConsumers := servicedeskapp.NewConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier).WithReferences(wiring.ServiceDesk(pool).ReferenceFor).WithSLA(wiring.SLARecipients(pool), nil)
 	majorConsumers := servicedeskapp.NewMajorConsumers(sdStore, orgpublic.NewWorkDirectory(orgrepository.New(pool)), notifier)
 	if channels != nil {
 		majorConsumers = majorConsumers.WithChannelPosts(notifier)
@@ -412,6 +413,8 @@ func registerConsumersWith(d *events.Dispatcher, pool *pgxpool.Pool, categories 
 		{"TicketAssigned", "servicedesk.notify-assigned", sdConsumers.OnTicketAssigned},
 		{"TicketResolved", "servicedesk.notify-resolved", sdConsumers.OnTicketResolved},
 		{"TicketCommentAdded", "servicedesk.notify-comment", sdConsumers.OnCommentAdded},
+		{"TicketSLAWarningReached", "sla.notify", sdConsumers.OnTicketSLAWarning},
+		{"TicketSLABreached", "sla.notify", sdConsumers.OnTicketSLABreached},
 		{"AccessExpired", "organization.notify-access-expired", partyConsumers.OnAccessExpired},
 		{"ExternalAccessExtended", "organization.notify-access-extended", partyConsumers.OnAccessExtended},
 		{"ExternalPartySponsorChanged", "organization.notify-sponsor-changed", partyConsumers.OnSponsorChanged},
@@ -580,6 +583,25 @@ func registerChangeReminders(runner *jobs.Runner, pool *pgxpool.Pool, categories
 	return runner.AddSchedule(jobs.Schedule{
 		JobType: changesapp.ReminderJobType, DedupeKey: changesapp.ReminderJobType, Interval: changesapp.ReminderInterval, MaxAttempts: 3,
 	})
+}
+
+// registerSLASweep registers the per-minute job that records SLA warnings and breaches of running clocks (F17 S-D)
+// and schedules it. The job is a disposable tick: while the sla switch is off the runner completes it without
+// running, and the handler itself does nothing, so existing clocks stay untouched. The facts are idempotent, and the
+// schedule's dedupe key keeps several workers from enqueueing it twice.
+func registerSLASweep(runner *jobs.Runner, pool *pgxpool.Pool, mods *modules.Service, logger *slog.Logger) error {
+	enabled := func(ctx context.Context) (bool, error) {
+		if mods == nil {
+			return false, nil
+		}
+		return mods.Enabled(ctx, "sla")
+	}
+	sweeper := wiring.SLASweeper(pool, enabled).WithLogger(logger)
+	if err := runner.Register(servicedeskapp.SLASweepJobType, servicedeskapp.SLASweepJobTimeout, sweeper.HandleSweep); err != nil {
+		return err
+	}
+	return runner.AddSchedule(jobs.Schedule{JobType: servicedeskapp.SLASweepJobType, DedupeKey: servicedeskapp.SLASweepJobType,
+		Interval: servicedeskapp.SLASweepInterval, MaxAttempts: 1})
 }
 
 // registerSoftwarePackageSync registers the Software Package synchronization job; it is scheduled only when
