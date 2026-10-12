@@ -2,6 +2,7 @@ import { api } from '../../platform/api/client';
 import { registerErrorMessages } from '../../platform/api/errorMessages';
 import type {
   DeleteReason,
+  RunningTimer,
   TimeEntry,
   TimeEntryList,
   TimeTrackingSettings,
@@ -15,6 +16,7 @@ registerErrorMessages({
   'timetracking.version_conflict': 'timetracking.error.conflict',
   'timetracking.outside_edit_window': 'timetracking.error.outsideWindow',
   'timetracking.day_limit': 'timetracking.error.dayLimit',
+  'timetracking.timer_running': 'timetracking.error.timerRunning',
 });
 
 const base = '/time-tracking';
@@ -47,6 +49,18 @@ export const timeTrackingApi = {
       expectedVersion,
       ...(reason ? { reason } : {}),
     }),
+  /** GET /time-tracking/timer: the caller's own running timer or null. */
+  timer: (signal?: AbortSignal) =>
+    api.get<{ timer: RunningTimer | null }>(`${base}/timer`, { signal }),
+  startTimer: (ticketId: string, note?: string) =>
+    api.post<RunningTimer>(`${base}/timer`, {
+      subjectType: 'ticket',
+      subjectId: ticketId,
+      ...(note ? { note } : {}),
+    }),
+  stopTimer: (durationMinutes?: number) =>
+    api.post<TimeEntry>(`${base}/timer/stop`, durationMinutes ? { durationMinutes } : {}),
+  discardTimer: () => api.delete<void>(`${base}/timer`),
   settings: (signal?: AbortSignal) => api.get<TimeTrackingSettings>(`${base}/settings`, { signal }),
   saveSettings: (body: TimeTrackingSettingsRequest) =>
     api.put<TimeTrackingSettings>(`${base}/settings`, body),

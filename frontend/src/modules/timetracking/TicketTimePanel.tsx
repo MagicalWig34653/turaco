@@ -9,6 +9,7 @@ import { Table } from '../../platform/ui/Table';
 import { Card, Skeleton } from '../../platform/ui/Workspace';
 import { timeTrackingApi } from './api';
 import { DeleteDialog, EntryDialog } from './EntryDialogs';
+import { TimerControl } from './TimerControl';
 import { dayTotals, formatDuration } from './timeModel';
 import type { TimeEntry } from './types';
 import './timetracking.css';
@@ -61,6 +62,7 @@ export function TicketTimePanel({ ticketId }: { ticketId: string }) {
           </Button>
         ) : null}
       </div>
+      {data.canLog ? <TimerControl ticketId={ticketId} onLogged={loaded.reload} /> : null}
       {!data.canLog ? <p className="field-hint">{t('timetracking.totalOnly')}</p> : null}
       {data.canLog && data.items.length === 0 && !data.othersMinutes ? (
         <p>{t('timetracking.empty')}</p>

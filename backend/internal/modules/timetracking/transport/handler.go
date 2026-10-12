@@ -35,6 +35,10 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("POST /api/v1/time-tracking/entries", h.create)
 	route("PUT /api/v1/time-tracking/entries/{id}", h.update)
 	route("POST /api/v1/time-tracking/entries/{id}/delete", h.delete)
+	route("GET /api/v1/time-tracking/timer", h.timerGet)
+	route("POST /api/v1/time-tracking/timer", h.timerStart)
+	route("POST /api/v1/time-tracking/timer/stop", h.timerStop)
+	route("DELETE /api/v1/time-tracking/timer", h.timerDiscard)
 }
 
 func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
@@ -44,6 +48,8 @@ func (h *handler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "timetracking.invalid_request", inv.Message)
 	case errors.Is(err, application.ErrOutsideEditWindow):
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "timetracking.outside_edit_window", "The work date is outside the edit window; ask someone with time management permission.")
+	case errors.Is(err, application.ErrTimerRunning):
+		httpx.WriteError(w, http.StatusConflict, "timetracking.timer_running", "A timer is already running; stop or discard it first.")
 	case errors.Is(err, application.ErrDayLimit):
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "timetracking.day_limit", "A person can log at most 24 hours per work date.")
 	case errors.Is(err, application.ErrNotFound):
@@ -261,6 +267,70 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 	err := h.svc.Delete(r.Context(), caller(w, r), principal(r), r.PathValue("id"), application.DeleteInput{DeleteReason: in.DeleteReason, Reason: in.Reason}, in.ExpectedVersion)
 	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type timerDTO struct {
+	SubjectType string  `json:"subjectType"`
+	SubjectID   string  `json:"subjectId"`
+	StartedAt   string  `json:"startedAt"`
+	Note        *string `json:"note"`
+}
+
+func toTimer(t application.Timer) timerDTO {
+	return timerDTO{SubjectType: t.SubjectType, SubjectID: t.SubjectID, StartedAt: ts(t.StartedAt), Note: t.Note}
+}
+
+// timerGet answers 200 with {"timer": null} when none runs, so the Ticket panel needs no error handling.
+func (h *handler) timerGet(w http.ResponseWriter, r *http.Request) {
+	t, err := h.svc.CurrentTimer(r.Context(), principal(r))
+	switch {
+	case errors.Is(err, application.ErrNotFound):
+		httpx.JSON(w, http.StatusOK, map[string]any{"timer": nil})
+	case err != nil:
+		h.writeErr(w, r, err)
+	default:
+		httpx.JSON(w, http.StatusOK, map[string]any{"timer": toTimer(t)})
+	}
+}
+
+func (h *handler) timerStart(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		SubjectType string `json:"subjectType"`
+		SubjectID   string `json:"subjectId"`
+		Note        string `json:"note"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	t, err := h.svc.StartTimer(r.Context(), principal(r), in.SubjectType, in.SubjectID, in.Note)
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, toTimer(t))
+}
+
+func (h *handler) timerStop(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		DurationMinutes int `json:"durationMinutes"`
+	}
+	if r.ContentLength != 0 && !decode(w, r, &in) {
+		return
+	}
+	e, err := h.svc.StopTimer(r.Context(), caller(w, r), principal(r), in.DurationMinutes)
+	if err != nil {
+		h.writeErr(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, single(e, principal(r).UserID))
+}
+
+func (h *handler) timerDiscard(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DiscardTimer(r.Context(), principal(r)); err != nil {
 		h.writeErr(w, r, err)
 		return
 	}

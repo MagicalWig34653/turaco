@@ -6655,6 +6655,15 @@ export const en = {
   'timetracking.totalOnly':
     'You can see the total only. Entries are visible to people who work this ticket.',
   'timetracking.empty': 'No time logged on this ticket yet.',
+  'timetracking.timer.start': 'Start timer',
+  'timetracking.timer.stop': 'Stop and log',
+  'timetracking.timer.discard': 'Discard',
+  'timetracking.timer.running': 'Timer running on this ticket:',
+  'timetracking.timer.otherTicket': 'Your timer is running on another ticket:',
+  'timetracking.timer.staleDuration': 'Duration to log',
+  'timetracking.timer.staleHint':
+    'The timer has run for more than 12 hours. Enter the time to log, for example 1:30.',
+  'timetracking.error.timerRunning': 'A timer is already running. Stop or discard it first.',
   'timetracking.log': 'Log time',
   'timetracking.edit': 'Edit',
   'timetracking.delete': 'Delete',

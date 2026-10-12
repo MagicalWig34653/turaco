@@ -214,3 +214,63 @@ func (r *Repository) NewID(ctx context.Context, tx pgx.Tx) (string, error) {
 	}
 	return id, nil
 }
+
+// ---- Timers ----------------------------------------------------------------------------------------------
+
+func (r *Repository) StartTimer(ctx context.Context, t application.Timer) (application.Timer, error) {
+	var out application.Timer
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO timetracking.timers (user_id, subject_type, subject_id, note) VALUES ($1::uuid, $2, $3::uuid, $4)
+		ON CONFLICT (user_id) DO NOTHING
+		RETURNING user_id::text, subject_type, subject_id::text, started_at, note`,
+		t.UserID, t.SubjectType, t.SubjectID, t.Note).Scan(&out.UserID, &out.SubjectType, &out.SubjectID, &out.StartedAt, &out.Note)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Timer{}, application.ErrTimerRunning
+	}
+	if err != nil {
+		return application.Timer{}, fmt.Errorf("start timer: %w", err)
+	}
+	return out, nil
+}
+
+const timerCols = `user_id::text, subject_type, subject_id::text, started_at, note`
+
+func (r *Repository) GetTimer(ctx context.Context, userID string) (application.Timer, error) {
+	var t application.Timer
+	err := r.pool.QueryRow(ctx, `SELECT `+timerCols+` FROM timetracking.timers WHERE user_id = $1::uuid`, userID).
+		Scan(&t.UserID, &t.SubjectType, &t.SubjectID, &t.StartedAt, &t.Note)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Timer{}, application.ErrNotFound
+	}
+	if err != nil {
+		return application.Timer{}, fmt.Errorf("get timer: %w", err)
+	}
+	return t, nil
+}
+
+func (r *Repository) LockTimerTx(ctx context.Context, tx pgx.Tx, userID string) (application.Timer, error) {
+	var t application.Timer
+	err := tx.QueryRow(ctx, `SELECT `+timerCols+` FROM timetracking.timers WHERE user_id = $1::uuid FOR UPDATE`, userID).
+		Scan(&t.UserID, &t.SubjectType, &t.SubjectID, &t.StartedAt, &t.Note)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Timer{}, application.ErrNotFound
+	}
+	if err != nil {
+		return application.Timer{}, fmt.Errorf("lock timer: %w", err)
+	}
+	return t, nil
+}
+
+func (r *Repository) DeleteTimerTx(ctx context.Context, tx pgx.Tx, userID string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM timetracking.timers WHERE user_id = $1::uuid`, userID); err != nil {
+		return fmt.Errorf("delete timer: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteTimer(ctx context.Context, userID string) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM timetracking.timers WHERE user_id = $1::uuid`, userID); err != nil {
+		return fmt.Errorf("delete timer: %w", err)
+	}
+	return nil
+}

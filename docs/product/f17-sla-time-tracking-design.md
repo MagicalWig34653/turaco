@@ -182,7 +182,7 @@ Implemented in S-D (no migration; the sweep, transition and projection columns o
 
 ## 7. Time Tracking (module `timetracking`, slices T-A to T-C)
 
-**Implemented (T-A):** migration `000101`, the module with settings, manual entries (create, correct, delete), the Ticket panel, My time, audit and the daily `timetracking.purge`. The timer (T-B), the effort report and the `timetracking.report` permission (T-C) are not implemented; `timers` exists as an empty table. Differences from the text below that the implementation settled:
+**Implemented (T-A):** migration `000101`, the module with settings, manual entries (create, correct, delete), the Ticket panel, My time, audit and the daily `timetracking.purge`. The effort report and the `timetracking.report` permission (T-C) are not implemented; `timers` exists as an empty table. Differences from the text below that the implementation settled:
 
 - A work date up to one day after today (UTC) is accepted so that people in time zones ahead of UTC can log on their own current day; later dates are refused.
 - The audit action `timetracking.purge.completed` (counts only, system actor) is written when a retention run removed something, like Presence.
@@ -310,3 +310,6 @@ Glossary entries (added as planned with this design), state machines (planned se
 - **O12 External accounts.** May vendor accounts (Ticket participants) log time on Tickets shared with them?
 - **O13 Per-person reports.** Is there any installation that needs them (for example for internal cost allocation)? If yes, a separate design with a recorded agreement and its own permission is required; nothing in v1 prepares it.
 - **O14 Calendar per Queue vs per policy.** Proposed: per policy (a Queue served by two locations with different hours would need two Queues or two policies).
+
+**Implemented (T-B, 2026-10-12, no migration):** `GET|POST|DELETE /time-tracking/timer` and `POST /time-tracking/timer/stop` over the existing `timetracking.timers` table. One timer per person; start needs work access to the Ticket; stop rounds the elapsed time up to the minute (at least one), needs an explicit duration for a timer older than 12 hours (1 to 1440 minutes) and creates a `timer` entry through the same path as a manual entry (work date = stop date in UTC, 24-hour rule, audit) while removing the timer in the same transaction, so concurrent stops log once. Timers are not audited, readable only by their owner and purged after 30 days. The Ticket panel shows the timer control for people who may log time. Not implemented: the effort report (T-C).
+

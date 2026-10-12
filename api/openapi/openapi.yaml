@@ -14989,6 +14989,75 @@ paths:
         '409': {$ref: '#/components/responses/TimeTrackingConflict'}
         '422': {$ref: '#/components/responses/TimeTrackingRule'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/timer:
+    get:
+      operationId: getTimeTrackingTimer
+      summary: The caller's own running timer.
+      description: >-
+        Personal state: only the caller's own timer is ever returned. Answers `{timer: null}` when none runs. Needs `timetracking.log` or `timetracking.manage`.
+      security: [{sessionAuth: []}]
+      responses:
+        '200': {description: "OK. `timer` is null when none runs.", content: {application/json: {schema: {type: object, required: [timer], properties: {timer: {nullable: true, allOf: [{$ref: '#/components/schemas/TimeTrackingTimer'}]}}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: startTimeTrackingTimer
+      summary: Start the caller's personal timer on a Ticket.
+      description: >-
+        The caller needs work access to the Ticket. At most one timer runs per person; a second start answers 409 `timetracking.timer_running`. Timers are not audited and visible to nobody else.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectType, subjectId]
+              properties:
+                subjectType: {type: string, enum: [ticket]}
+                subjectId: {type: string, format: uuid}
+                note: {type: string, maxLength: 500}
+      responses:
+        '201': {description: Started., content: {application/json: {schema: {$ref: '#/components/schemas/TimeTrackingTimer'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/TimeTrackingConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: discardTimeTrackingTimer
+      summary: Discard the caller's timer without logging anything.
+      security: [{sessionAuth: []}]
+      responses:
+        '204': {description: Discarded (also when no timer ran).}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /time-tracking/timer/stop:
+    post:
+      operationId: stopTimeTrackingTimer
+      summary: Stop the timer and log it as a timer entry.
+      description: >-
+        The duration is the elapsed time rounded up to the minute (at least one); a timer older than 12 hours needs an explicit `durationMinutes` (1 to 1440). The work date is the stop date (UTC). The entry follows every rule of a manual entry (work access, 24-hour limit, audit `timetracking.entry.created`) and the timer is removed in the same transaction, so concurrent or repeated stops log once.
+      security: [{sessionAuth: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationMinutes: {type: integer, minimum: 1, maximum: 1440}
+      responses:
+        '201': {description: Logged., content: {application/json: {schema: {$ref: '#/components/schemas/TimeEntry'}}}}
+        '400': {$ref: '#/components/responses/TimeTrackingInvalid'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/TimeTrackingRule'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /presence/settings:
     get:
       operationId: getPresenceSettings
@@ -23682,6 +23751,14 @@ components:
         note: {type: string, maxLength: 500, description: "Empty clears the note."}
         reason: {type: string, minLength: 3, maxLength: 300, description: "Required for another person's entry or outside the edit window."}
         expectedVersion: {type: integer, minimum: 1}
+    TimeTrackingTimer:
+      type: object
+      required: [subjectType, subjectId, startedAt, note]
+      properties:
+        subjectType: {type: string, enum: [ticket]}
+        subjectId: {type: string, format: uuid}
+        startedAt: {type: string, format: date-time}
+        note: {type: string, nullable: true}
     TimeEntryDeleteRequest:
       type: object
       additionalProperties: false

@@ -234,6 +234,11 @@ type NewEntry struct {
 	DurationMinutes int
 	Note            string
 	Reason          string
+
+	// Set only by Stop: the entry is a timer entry and the running timer is removed in the same transaction.
+	source    string
+	startedAt *time.Time
+	inTx      func(ctx context.Context, tx pgx.Tx) error
 }
 
 // accessFor loads the access of one User to one Ticket.
@@ -367,10 +372,19 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in NewEntry
 			return err
 		}
 		var err error
+		source := SourceManual
+		if in.source != "" {
+			source = in.source
+		}
 		out, err = s.store.InsertEntryTx(ctx, tx, Entry{SubjectType: SubjectTicket, SubjectID: ticketID, QueueID: acc.QueueID, UserID: owner,
-			WorkDate: in.WorkDate, DurationMinutes: in.DurationMinutes, Source: SourceManual, Note: note, CreatedBy: p.UserID})
+			WorkDate: in.WorkDate, DurationMinutes: in.DurationMinutes, StartedAt: in.startedAt, Source: source, Note: note, CreatedBy: p.UserID})
 		if err != nil {
 			return err
+		}
+		if in.inTx != nil {
+			if err := in.inTx(ctx, tx); err != nil {
+				return err
+			}
 		}
 		var after map[string]any
 		meta := map[string]any{"subjectType": SubjectTicket, "subjectId": ticketID}

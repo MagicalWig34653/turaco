@@ -6895,6 +6895,16 @@ export const de: Record<MessageKey, string> = {
   'timetracking.totalOnly':
     'Sie sehen nur die Summe. Einträge sehen Personen, die dieses Ticket bearbeiten.',
   'timetracking.empty': 'Auf diesem Ticket ist noch keine Zeit erfasst.',
+  'timetracking.timer.start': 'Timer starten',
+  'timetracking.timer.stop': 'Stoppen und erfassen',
+  'timetracking.timer.discard': 'Verwerfen',
+  'timetracking.timer.running': 'Timer läuft auf diesem Ticket:',
+  'timetracking.timer.otherTicket': 'Ihr Timer läuft auf einem anderen Ticket:',
+  'timetracking.timer.staleDuration': 'Zu erfassende Dauer',
+  'timetracking.timer.staleHint':
+    'Der Timer läuft seit mehr als 12 Stunden. Geben Sie die zu erfassende Zeit ein, zum Beispiel 1:30.',
+  'timetracking.error.timerRunning':
+    'Es läuft bereits ein Timer. Beenden oder verwerfen Sie ihn zuerst.',
   'timetracking.log': 'Zeit erfassen',
   'timetracking.edit': 'Bearbeiten',
   'timetracking.delete': 'Löschen',

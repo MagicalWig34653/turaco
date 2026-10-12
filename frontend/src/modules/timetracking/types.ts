@@ -52,3 +52,11 @@ export type TimeTrackingSettingsRequest = {
 
 export const deleteReasons = ['wrong_ticket', 'duplicate', 'wrong_duration', 'other'] as const;
 export type DeleteReason = (typeof deleteReasons)[number];
+
+/** The signed-in person's running timer (personal state). */
+export type RunningTimer = {
+  subjectType: 'ticket';
+  subjectId: string;
+  startedAt: string;
+  note: string | null;
+};

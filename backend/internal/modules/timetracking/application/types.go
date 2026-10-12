@@ -154,6 +154,22 @@ type Store interface {
 	ListMine(ctx context.Context, userID, from, to string, limit int) ([]Entry, error)
 	PurgeTx(ctx context.Context, tx pgx.Tx, workDateBefore string, deletedBefore, timersBefore time.Time) (PurgeCounts, error)
 	NewID(ctx context.Context, tx pgx.Tx) (string, error)
+	// StartTimer inserts the person's timer; ErrTimerRunning when one exists.
+	StartTimer(ctx context.Context, t Timer) (Timer, error)
+	GetTimer(ctx context.Context, userID string) (Timer, error)
+	// LockTimerTx returns the person's timer FOR UPDATE (ErrNotFound when none).
+	LockTimerTx(ctx context.Context, tx pgx.Tx, userID string) (Timer, error)
+	DeleteTimerTx(ctx context.Context, tx pgx.Tx, userID string) error
+	DeleteTimer(ctx context.Context, userID string) error
+}
+
+// Timer is a person's single running stopwatch on a Ticket. It is personal state: not audited and visible to nobody else.
+type Timer struct {
+	UserID      string
+	SubjectType string
+	SubjectID   string
+	StartedAt   time.Time
+	Note        *string
 }
 
 // Errors.
@@ -163,6 +179,7 @@ var (
 	ErrVersionConflict   = errors.New("timetracking: version conflict")
 	ErrOutsideEditWindow = errors.New("timetracking: work date outside the edit window")
 	ErrDayLimit          = errors.New("timetracking: more than 24 hours on one work date")
+	ErrTimerRunning      = errors.New("timetracking: a timer is already running")
 )
 
 // InvalidInputError is a rejected input with a message safe to show.
