@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -101,4 +102,22 @@ func (r *Repository) UnlinkExternalIdentity(ctx context.Context, actor audit.Act
 			Metadata: map[string]any{"providerKey": providerKey, "via": via},
 		})
 	})
+}
+
+// EntraIdentityOf returns the enabled Entra identity link of an active internal User (tenant id and object id), if
+// any. A User with several tenants' links gets the oldest one. External accounts and inactive Users have none.
+func (r *Repository) EntraIdentityOf(ctx context.Context, userID string) (tenantID, objectID string, found bool, err error) {
+	var provider string
+	err = r.pool.QueryRow(ctx, `
+		SELECT i.provider_key, i.external_subject
+		FROM organization.external_identities i JOIN organization.users u ON u.id = i.user_id
+		WHERE i.user_id = $1::uuid AND i.enabled AND i.provider_key LIKE 'entra:%' AND u.status = 'active'
+		ORDER BY i.created_at, i.id LIMIT 1`, userID).Scan(&provider, &objectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("find entra identity of user: %w", err)
+	}
+	return strings.TrimPrefix(provider, "entra:"), objectID, true, nil
 }

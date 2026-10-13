@@ -45,7 +45,7 @@ var goldenJobTypes = []string{
 	"services.vm_link_backfill",
 	"sla.clock_sweep",
 	"tasks.recurrence.generate",
-	"teams.channel_post",
+	"teams.channel_post", "teams.personal_send",
 	"timetracking.purge",
 	"views.purge_archived",
 }

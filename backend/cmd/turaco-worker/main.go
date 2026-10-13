@@ -176,6 +176,7 @@ func main() {
 		os.Exit(1)
 	}
 	channelOptions := wiring.TeamsChannelOptions(teamsSender, moduleSvc)
+	channelOptions.Personal = wiring.TeamsPersonalOptions(wiring.TeamsPersonalSender(), moduleSvc, orgpublic.NewTeamsIdentities(orgrepository.New(pool)))
 	if err := registerConsumers(dispatcher, pool, categories, smtpCfg.Enabled(), &channelOptions); err != nil {
 		logger.Error("register outbox consumers", "error", err)
 		os.Exit(1)
@@ -239,6 +240,8 @@ type jobDeps struct {
 	// Teams is the Teams channel adapter (teams.NotConfigured without TEAMS_CHANNEL_DESTINATIONS_FILE); nil is the
 	// same as not configured. The send job is registered either way and cancels posts while the module is off.
 	Teams teams.Sender
+	// TeamsPersonal is the personal card adapter (teams.NotConfigured until the Bot Connector adapter exists).
+	TeamsPersonal teams.PersonalSender
 }
 
 // registerJobsFn is what main calls; the startup smoke test calls the same variable, so main cannot stop registering
@@ -274,6 +277,7 @@ func registerJobs(runner *jobs.Runner, dispatcher *events.Dispatcher, pool *pgxp
 			return nil
 		}},
 		{"teams channel posts", func() error { return registerTeamsChannel(runner, pool, d) }},
+		{"teams personal cards", func() error { return registerTeamsPersonal(runner, pool, d) }},
 		{"recurring tasks", func() error { return registerRecurrence(runner, pool) }},
 		{"service link backfill", func() error { return registerServicesBackfill(runner, pool) }},
 		{"change reminders", func() error {
@@ -372,6 +376,19 @@ func registerTeamsChannel(runner *jobs.Runner, pool *pgxpool.Pool, d jobDeps) er
 	}
 	h := notifications.NewChannelSender(pool, wiring.TeamsChannelPoster{Sender: sender}, d.Categories, d.SMTP.BaseURL, d.SMTP.DefaultLocale)
 	return runner.Register(notifications.ChannelPostJobType, notifications.ChannelPostJobTimeout, h.Handle)
+}
+
+// registerTeamsPersonal registers the job that sends personal Teams cards (ADR-0036 T-B). The adapter is
+// teams.NotConfigured until the Bot Connector adapter exists; the job is registered either way so a delivery that
+// exists is never left without a handler.
+func registerTeamsPersonal(runner *jobs.Runner, pool *pgxpool.Pool, d jobDeps) error {
+	sender := d.TeamsPersonal
+	if sender == nil {
+		sender = teams.NotConfigured{}
+	}
+	h := notifications.NewTeamsPersonalSender(pool, wiring.TeamsPersonalPoster{Sender: sender}, orgpublic.NewTeamsIdentities(orgrepository.New(pool)),
+		d.Categories, d.SMTP.BaseURL, d.SMTP.DefaultLocale)
+	return runner.Register(notifications.TeamsPersonalJobType, notifications.TeamsPersonalJobTimeout, h.Handle)
 }
 
 // registerConsumersWith registers the outbox consumers; perms decides which

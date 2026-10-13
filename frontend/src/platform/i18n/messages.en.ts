@@ -6734,6 +6734,7 @@ export const en = {
     'This move changes what {count} Location-scoped role assignment(s) cover. Administrators are notified.',
   'locations.move.scopedBlocked':
     'This move changes what Location-scoped role assignments cover. Only a platform administrator may move this Location.',
+  'notifications.prefs.teams': '{category}: personal card in Microsoft Teams',
   'timetracking.log': 'Log time',
   'timetracking.edit': 'Edit',
   'timetracking.delete': 'Delete',

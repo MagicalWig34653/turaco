@@ -14,11 +14,12 @@ export function PreferencesPanel() {
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const toggle = async (category: string, enabled: boolean) => {
-    setSaving(category);
+  const toggle = async (category: string, channel: 'email' | 'teams', enabled: boolean) => {
+    setSaving(`${category}/${channel}`);
     setError(undefined);
     try {
-      await notificationsApi.setEmailPreference(category, enabled);
+      if (channel === 'teams') await notificationsApi.setTeamsPreference(category, enabled);
+      else await notificationsApi.setEmailPreference(category, enabled);
       prefs.reload();
     } catch (cause) {
       setError(asApiError(cause));
@@ -35,11 +36,15 @@ export function PreferencesPanel() {
       {error ? <ApiErrorAlert error={error} /> : null}
       {(prefs.data?.items ?? []).map((pref) => (
         <Checkbox
-          key={pref.category}
-          label={categoryLabel(t, pref.category)}
+          key={`${pref.category}/${pref.channel}`}
+          label={
+            pref.channel === 'teams'
+              ? t('notifications.prefs.teams', { category: categoryLabel(t, pref.category) })
+              : categoryLabel(t, pref.category)
+          }
           checked={pref.enabled}
           disabled={saving !== null}
-          onChange={(event) => void toggle(pref.category, event.target.checked)}
+          onChange={(event) => void toggle(pref.category, pref.channel, event.target.checked)}
         />
       ))}
     </section>

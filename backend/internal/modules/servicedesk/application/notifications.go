@@ -26,7 +26,8 @@ func NotificationCategories() []notifications.Category {
 		}
 	}
 	return []notifications.Category{
-		cat("ticket.assigned", "Ticket assigned: %s", "A ticket was assigned to you:", "Ticket zugewiesen: %s", "Dir wurde ein Ticket zugewiesen:"),
+		withTeamsCard(cat("ticket.assigned", "Ticket assigned: %s", "A ticket was assigned to you:", "Ticket zugewiesen: %s", "Dir wurde ein Ticket zugewiesen:"),
+			notifications.CardKindAssigned, "A ticket was assigned to you", "Dir wurde ein Ticket zugewiesen", "Open in Turaco", "In Turaco öffnen"),
 		cat("ticket.comment", "New reply on ticket: %s", "There is a new reply on a ticket:", "Neue Antwort im Ticket: %s", "Es gibt eine neue Antwort in einem Ticket:"),
 		cat("ticket.mention", "You were mentioned on ticket: %s", "You were mentioned in an internal note on a ticket:", "Du wurdest im Ticket erwähnt: %s", "Du wurdest in einer internen Notiz zu einem Ticket erwähnt:"),
 		majorCategory(),
@@ -34,6 +35,16 @@ func NotificationCategories() []notifications.Category {
 		cat("ticket.sla_warning", "SLA warning on ticket: %s", "A ticket is close to its SLA target:", "SLA-Warnung zum Ticket: %s", "Ein Ticket nähert sich seinem SLA-Ziel:"),
 		cat("ticket.sla_breached", "SLA breached on ticket: %s", "A ticket missed its SLA target:", "SLA überschritten bei Ticket: %s", "Ein Ticket hat sein SLA-Ziel überschritten:"),
 	}
+}
+
+// withTeamsCard lets a category reach its recipient as a personal Microsoft Teams card: generic wording and the
+// reference number only (ADR-0036).
+func withTeamsCard(c notifications.Category, kind, enHeadline, deHeadline, enAction, deAction string) notifications.Category {
+	c.TeamsCard = &notifications.TeamsCard{Kind: kind, Texts: map[string]notifications.ChannelText{
+		"en": {Headline: enHeadline, Action: enAction},
+		"de": {Headline: deHeadline, Action: deAction},
+	}}
+	return c
 }
 
 // Notifier creates notifications inside the consumer's transaction.
@@ -207,6 +218,11 @@ func majorCategory() notifications.Category {
 			"en": {Subject: "Incident update: %s", Intro: "There is news on an incident you follow:", Action: "Open incident"},
 			"de": {Subject: "Störungsmeldung aktualisiert: %s", Intro: "Es gibt Neuigkeiten zu einer Störung, der du folgst:", Action: "Störung öffnen"},
 		},
+		// A follower may also get a personal Teams card.
+		TeamsCard: &notifications.TeamsCard{Kind: notifications.CardKindIncidentUpdate, Texts: map[string]notifications.ChannelText{
+			"en": {Headline: "There is news on an incident you follow", Action: "Open in Turaco"},
+			"de": {Headline: "Es gibt Neuigkeiten zu einer Störung, der du folgst", Action: "In Turaco öffnen"},
+		}},
 		// Incident progress may be posted to a Teams channel: generic wording and the reference number only.
 		Broadcast: &notifications.Broadcast{Texts: map[string]map[string]notifications.ChannelText{
 			notifications.PostKindDeclared: {

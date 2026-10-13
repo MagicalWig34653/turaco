@@ -87,6 +87,8 @@ type Service struct {
 	categories *Registry
 	email      bool
 	channel    ChannelOptions
+	// teamsPersonal enables personal Teams cards (turaco-worker); nil means off.
+	teamsPersonal *TeamsPersonalOptions
 }
 
 // NewService creates a Service without the email channel (turaco-api).
@@ -164,6 +166,9 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, in Intent) (bool, error
 		if err := scheduleEmail(ctx, tx, notificationID, in.RecipientUserID, in.Category); err != nil {
 			return false, err
 		}
+	}
+	if err := s.scheduleTeamsPersonal(ctx, tx, notificationID, in.RecipientUserID, in.Category); err != nil {
+		return false, err
 	}
 	return true, nil
 }

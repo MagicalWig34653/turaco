@@ -20,6 +20,12 @@ func NotificationCategories() []notifications.Category {
 			"en": {Subject: "Approval requested: %s", Intro: "Your approval is requested:", Action: "Open approval"},
 			"de": {Subject: "Genehmigung angefragt: %s", Intro: "Deine Genehmigung wird angefragt:", Action: "Genehmigung öffnen"},
 		},
+		// Personal Teams card: generic wording and the reference number only (ADR-0036 T-B). High-impact approvals
+		// stay open-in-Turaco; this card has no buttons.
+		TeamsCard: &notifications.TeamsCard{Kind: notifications.CardKindApprovalRequested, Texts: map[string]notifications.ChannelText{
+			"en": {Headline: "Your approval is requested", Action: "Open in Turaco"},
+			"de": {Headline: "Deine Genehmigung wird angefragt", Action: "In Turaco öffnen"},
+		}},
 	}}
 }
 

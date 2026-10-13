@@ -6977,6 +6977,7 @@ export const de: Record<MessageKey, string> = {
     'Diese Verschiebung ändert, was {count} standortbezogene Rollenzuweisung(en) abdecken. Administratoren werden benachrichtigt.',
   'locations.move.scopedBlocked':
     'Diese Verschiebung ändert, was standortbezogene Rollenzuweisungen abdecken. Nur ein Plattform-Administrator darf diesen Standort verschieben.',
+  'notifications.prefs.teams': '{category}: persönliche Karte in Microsoft Teams',
   'timetracking.log': 'Zeit erfassen',
   'timetracking.edit': 'Bearbeiten',
   'timetracking.delete': 'Löschen',

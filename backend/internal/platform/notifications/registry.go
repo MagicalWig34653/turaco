@@ -32,6 +32,22 @@ type Category struct {
 	// Broadcast, when set, marks the category as broadcastable: the owning module allows its events to be posted
 	// to a channel (a Teams Channel Route) in addition to notifying Users. Personal categories never set it.
 	Broadcast *Broadcast
+	// TeamsCard, when set, lets the category reach a User as a personal Microsoft Teams card (ADR-0036 T-B): generic
+	// wording, the reference number and a link, never record content.
+	TeamsCard *TeamsCard
+}
+
+// Personal card kinds a TeamsCard can describe.
+const (
+	CardKindAssigned          = "assigned"
+	CardKindApprovalRequested = "approval_requested"
+	CardKindIncidentUpdate    = "incident_update"
+)
+
+// TeamsCard holds the personal card wording per locale; "en" and "de" are required.
+type TeamsCard struct {
+	Kind  string
+	Texts map[string]ChannelText
 }
 
 // Channel post kinds a Broadcast can describe.
@@ -118,6 +134,22 @@ func NewRegistry(categories ...Category) (*Registry, error) {
 				}
 			}
 		}
+		if c.TeamsCard != nil {
+			if c.LinkType == "" {
+				return nil, fmt.Errorf("notification category %q: a Teams card needs a link", c.Name)
+			}
+			switch c.TeamsCard.Kind {
+			case CardKindAssigned, CardKindApprovalRequested, CardKindIncidentUpdate:
+			default:
+				return nil, fmt.Errorf("notification category %q: unknown Teams card kind %q", c.Name, c.TeamsCard.Kind)
+			}
+			for _, locale := range requiredLocales {
+				t, ok := c.TeamsCard.Texts[locale]
+				if !ok || strings.TrimSpace(t.Headline) == "" || strings.TrimSpace(t.Action) == "" {
+					return nil, fmt.Errorf("notification category %q: complete %s Teams card text is required", c.Name, locale)
+				}
+			}
+		}
 		r.byName[c.Name] = c
 		r.names = append(r.names, c.Name)
 	}
@@ -177,4 +209,15 @@ func (r *Registry) linkPath(linkType, linkID string) string {
 		return ""
 	}
 	return strings.Replace(path, "{id}", linkID, 1)
+}
+
+// TeamsCardCategories returns the names of the categories that can reach a User as a personal Teams card, sorted.
+func (r *Registry) TeamsCardCategories() []string {
+	var out []string
+	for _, n := range r.names {
+		if r.byName[n].TeamsCard != nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }

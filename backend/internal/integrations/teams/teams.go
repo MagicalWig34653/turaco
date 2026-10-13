@@ -25,6 +25,13 @@ const (
 	KindScheduled = "scheduled"
 )
 
+// Card kinds of personal cards (T-B).
+const (
+	KindAssigned          = "assigned"
+	KindApprovalRequested = "approval_requested"
+	KindIncidentUpdate    = "incident_update"
+)
+
 var (
 	// ErrNotConfigured is returned by the NotConfigured adapter: no destination is configured.
 	ErrNotConfigured = errors.New("teams: not configured")
@@ -32,6 +39,8 @@ var (
 	ErrUnknownDestination = errors.New("teams: unknown destination")
 	// ErrInvalidCard means the card violates the reference-only rules.
 	ErrInvalidCard = errors.New("teams: invalid card")
+	// ErrRecipientUnreachable means the Teams app is not installed for the recipient or Teams does not know them.
+	ErrRecipientUnreachable = errors.New("teams: recipient unreachable")
 )
 
 // TransientError marks a failure worth retrying: a network error, a 5xx answer or rate limiting (429). RetryAfter
@@ -65,6 +74,8 @@ func ErrorCode(err error) string {
 		return "unknown_destination"
 	case errors.Is(err, ErrInvalidCard):
 		return "invalid_card"
+	case errors.Is(err, ErrRecipientUnreachable):
+		return "recipient_unreachable"
 	case errors.As(err, &t):
 		return t.Code
 	case errors.As(err, &p):
@@ -104,7 +115,7 @@ func ValidReference(s string) bool { return referencePattern.MatchString(s) }
 // Validate checks the card; a card that fails is never sent.
 func (c Card) Validate() error {
 	switch c.Kind {
-	case KindDeclared, KindUpdated, KindScheduled:
+	case KindDeclared, KindUpdated, KindScheduled, KindAssigned, KindApprovalRequested, KindIncidentUpdate:
 	default:
 		return fmt.Errorf("%w: unknown kind", ErrInvalidCard)
 	}
@@ -135,4 +146,13 @@ type Sender interface {
 	// PostToChannel posts the card to the destination. Errors are ErrUnknownDestination, ErrInvalidCard,
 	// *TransientError or *PermanentError (or ErrNotConfigured).
 	PostToChannel(ctx context.Context, destinationKey string, card Card) error
+}
+
+// PersonalSender is the port of personal cards (T-B): a card to one person identified by their Entra tenant and
+// object id (the Entra identity link of Turaco). Implementations: Fake (tests) and NotConfigured; the real Bot
+// Connector adapter is not built yet (it needs a registered bot and an installed Teams app, see ADR-0036).
+type PersonalSender interface {
+	// SendPersonal sends the card. Errors are ErrInvalidCard, ErrRecipientUnreachable, *TransientError,
+	// *PermanentError or ErrNotConfigured.
+	SendPersonal(ctx context.Context, tenantID, objectID string, card Card) error
 }

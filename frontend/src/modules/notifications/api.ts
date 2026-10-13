@@ -1,7 +1,13 @@
 import { api } from '../../platform/api/client';
 import { registerErrorMessages } from '../../platform/api/errorMessages';
 import type { Page } from '../../platform/api/types';
-import type { AppNotification, EmailPreference, UnreadCount } from './types';
+import type {
+  AppNotification,
+  EmailPreference,
+  NotificationPreference,
+  TeamsPreference,
+  UnreadCount,
+} from './types';
 
 type Signal = AbortSignal | undefined;
 const enc = encodeURIComponent;
@@ -20,9 +26,11 @@ export const notificationsApi = {
     }),
   unreadCount: (signal?: Signal) => api.get<UnreadCount>('/notifications/unread-count', { signal }),
   preferences: (signal?: Signal) =>
-    api.get<{ items: EmailPreference[] }>('/notifications/preferences', { signal }),
+    api.get<{ items: NotificationPreference[] }>('/notifications/preferences', { signal }),
   setEmailPreference: (category: string, enabled: boolean) =>
     api.put<EmailPreference>(`/notifications/preferences/${enc(category)}/email`, { enabled }),
+  setTeamsPreference: (category: string, enabled: boolean) =>
+    api.put<TeamsPreference>(`/notifications/preferences/${enc(category)}/teams`, { enabled }),
   markRead: (id: string) => api.post<void>(`/notifications/${enc(id)}/read`),
   markAllRead: () => api.post<{ marked: number }>('/notifications/read-all'),
 };

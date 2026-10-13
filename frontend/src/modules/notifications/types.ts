@@ -13,3 +13,6 @@ export type AppNotification = {
 export type UnreadCount = { count: number; max: number };
 
 export type EmailPreference = { category: string; channel: 'email'; enabled: boolean };
+/** The personal Microsoft Teams card of a category (only categories that carry one are listed). */
+export type TeamsPreference = { category: string; channel: 'teams'; enabled: boolean };
+export type NotificationPreference = EmailPreference | TeamsPreference;

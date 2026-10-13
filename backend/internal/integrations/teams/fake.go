@@ -21,6 +21,9 @@ type Fake struct {
 	keys   map[string]bool
 	posted []Posted
 	fail   []error
+	// personal records personal cards; unreachable lists object ids that cannot receive them.
+	personal    []PersonalSent
+	unreachable map[string]bool
 }
 
 // NewFake creates a Fake that knows the destination keys.
@@ -91,3 +94,53 @@ func (NotConfigured) DestinationKeys() []string { return nil }
 
 // PostToChannel implements Sender.
 func (NotConfigured) PostToChannel(context.Context, string, Card) error { return ErrNotConfigured }
+
+// SendPersonal implements PersonalSender.
+func (NotConfigured) SendPersonal(context.Context, string, string, Card) error {
+	return ErrNotConfigured
+}
+
+// PersonalSent is one personal card the Fake accepted.
+type PersonalSent struct {
+	TenantID, ObjectID string
+	Card               Card
+}
+
+// SendPersonal implements PersonalSender with the same validation as a real adapter. A recipient registered with
+// Unreachable gets ErrRecipientUnreachable; FailNext errors are consumed first, like for channel posts.
+func (f *Fake) SendPersonal(_ context.Context, tenantID, objectID string, card Card) error {
+	if err := card.Validate(); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.fail) > 0 {
+		err := f.fail[0]
+		f.fail = f.fail[1:]
+		return err
+	}
+	if f.unreachable[objectID] {
+		return ErrRecipientUnreachable
+	}
+	f.personal = append(f.personal, PersonalSent{TenantID: tenantID, ObjectID: objectID, Card: card})
+	return nil
+}
+
+// Unreachable marks object ids whose personal cards fail with ErrRecipientUnreachable.
+func (f *Fake) Unreachable(objectIDs ...string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.unreachable == nil {
+		f.unreachable = map[string]bool{}
+	}
+	for _, id := range objectIDs {
+		f.unreachable[id] = true
+	}
+}
+
+// Personal returns a copy of the recorded personal cards.
+func (f *Fake) Personal() []PersonalSent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]PersonalSent(nil), f.personal...)
+}

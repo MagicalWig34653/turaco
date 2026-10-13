@@ -148,6 +148,18 @@ func (e *EmailSender) Handle(ctx context.Context, job jobs.Job) error {
 	return e.finish(ctx, d, "delivered", "")
 }
 
+func (e *EmailSender) claim(ctx context.Context, id string) (delivery, Notification, string, error) {
+	return claimDelivery(ctx, e.pool, id, emailMaxAttempts)
+}
+
+func (e *EmailSender) finish(ctx context.Context, d delivery, status, reason string) error {
+	return finishDelivery(ctx, e.pool, d, status, reason)
+}
+
+func (e *EmailSender) release(ctx context.Context, d delivery, cause error, permanent bool) error {
+	return releaseDelivery(ctx, e.pool, d, cause, permanent, emailMaxAttempts)
+}
+
 var errNothingToDo = errors.New("notifications: delivery is not open")
 
 type delivery struct {
@@ -155,15 +167,15 @@ type delivery struct {
 	attempts int
 }
 
-// claim moves an open delivery to sending and returns it with its notification.
-func (e *EmailSender) claim(ctx context.Context, id string) (delivery, Notification, string, error) {
+// claimDelivery moves an open delivery to sending and returns it with its notification.
+func claimDelivery(ctx context.Context, pool *pgxpool.Pool, id string, maxAttempts int) (delivery, Notification, string, error) {
 	var (
 		d      delivery
 		n      Notification
 		userID string
 		raw    []byte
 	)
-	err := e.pool.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		WITH claimed AS (
 			UPDATE platform.notification_deliveries
 			SET status = 'sending', attempts = attempts + 1, updated_at = now()
@@ -182,7 +194,7 @@ func (e *EmailSender) claim(ctx context.Context, id string) (delivery, Notificat
 	}
 	if err := json.Unmarshal(raw, &n.Params); err != nil {
 		cause := fmt.Errorf("email delivery params: %w", err)
-		_ = e.release(ctx, delivery{id: d.id, attempts: d.attempts}, cause, true)
+		_ = releaseDelivery(ctx, pool, delivery{id: d.id, attempts: d.attempts}, cause, true, maxAttempts)
 		return delivery{}, Notification{}, "", jobs.Permanent(cause)
 	}
 	return d, n, userID, nil
@@ -199,16 +211,16 @@ func (e *EmailSender) emailEnabled(ctx context.Context, userID, category string)
 	return !optedOut, nil
 }
 
-// finish stores a terminal status. It uses a fresh context so a job that is
+// finishDelivery stores a terminal status. It uses a fresh context so a job that is
 // being shut down still records what the relay accepted.
-func (e *EmailSender) finish(ctx context.Context, d delivery, status, reason string) error {
+func finishDelivery(ctx context.Context, pool *pgxpool.Pool, d delivery, status, reason string) error {
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	var lastError *string
 	if reason != "" {
 		lastError = &reason
 	}
-	_, err := e.pool.Exec(fctx, `
+	_, err := pool.Exec(fctx, `
 		UPDATE platform.notification_deliveries
 		SET status = $2, last_error = $3, updated_at = now(),
 		    delivered_at = CASE WHEN $2 = 'delivered' THEN now() ELSE NULL END
@@ -219,23 +231,23 @@ func (e *EmailSender) finish(ctx context.Context, d delivery, status, reason str
 	return nil
 }
 
-// release records a failed attempt. A permanent failure (or the last allowed
+// releaseDelivery records a failed attempt. A permanent failure (or the last allowed
 // attempt) ends the delivery as failed; otherwise it returns to pending and
 // the job is retried by the runner with back-off.
-func (e *EmailSender) release(ctx context.Context, d delivery, cause error, permanent bool) error {
+func releaseDelivery(ctx context.Context, pool *pgxpool.Pool, d delivery, cause error, permanent bool, maxAttempts int) error {
 	// An attempt interrupted by shutdown is not a failure: the runner refunds
 	// the job attempt, so the delivery attempt is refunded too and the
 	// delivery stays open for the next worker.
 	if ctx.Err() != nil && !permanent {
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		_, _ = e.pool.Exec(fctx, `
+		_, _ = pool.Exec(fctx, `
 			UPDATE platform.notification_deliveries
 			SET status = 'pending', attempts = greatest(attempts - 1, 0), updated_at = now()
 			WHERE id = $1::uuid AND status = 'sending'`, d.id)
 		return ctx.Err()
 	}
-	terminal := permanent || d.attempts >= emailMaxAttempts
+	terminal := permanent || d.attempts >= maxAttempts
 	status := "pending"
 	if terminal {
 		status = "failed"
@@ -243,7 +255,7 @@ func (e *EmailSender) release(ctx context.Context, d delivery, cause error, perm
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	msg := truncate(cause.Error(), 1000)
-	if _, err := e.pool.Exec(fctx, `
+	if _, err := pool.Exec(fctx, `
 		UPDATE platform.notification_deliveries SET status = $2, last_error = $3, updated_at = now()
 		WHERE id = $1::uuid`, d.id, status, msg); err != nil {
 		return fmt.Errorf("record email failure: %w", err)

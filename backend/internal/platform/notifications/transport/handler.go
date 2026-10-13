@@ -4,6 +4,7 @@
 package transport
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,7 @@ func Register(mux *http.ServeMux, svc *notifications.Service, auth authorization
 	route("GET /api/v1/notifications/unread-count", h.unreadCount)
 	route("GET /api/v1/notifications/preferences", h.preferences)
 	route("PUT /api/v1/notifications/preferences/{category}/email", h.setEmailPreference)
+	route("PUT /api/v1/notifications/preferences/{category}/teams", h.setTeamsPreference)
 	route("POST /api/v1/notifications/read-all", h.readAll)
 	route("POST /api/v1/notifications/{id}/read", h.read)
 }
@@ -161,6 +163,14 @@ func (h *handler) preferences(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) setEmailPreference(w http.ResponseWriter, r *http.Request) {
+	h.setPreference(w, r, notifications.ChannelEmail, h.svc.SetEmailPreference)
+}
+
+func (h *handler) setTeamsPreference(w http.ResponseWriter, r *http.Request) {
+	h.setPreference(w, r, notifications.ChannelTeamsPersonal, h.svc.SetTeamsPreference)
+}
+
+func (h *handler) setPreference(w http.ResponseWriter, r *http.Request, channel string, set func(ctx context.Context, userID, category string, enabled bool) error) {
 	var body struct {
 		Enabled *bool `json:"enabled"`
 	}
@@ -168,9 +178,9 @@ func (h *handler) setEmailPreference(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "notifications.invalid_request", "The request body is not valid JSON for this operation.")
 		return
 	}
-	if err := h.svc.SetEmailPreference(r.Context(), userID(r), r.PathValue("category"), *body.Enabled); err != nil {
+	if err := set(r.Context(), userID(r), r.PathValue("category"), *body.Enabled); err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, preferenceDTO{Category: r.PathValue("category"), Channel: notifications.ChannelEmail, Enabled: *body.Enabled})
+	httpx.JSON(w, http.StatusOK, preferenceDTO{Category: r.PathValue("category"), Channel: channel, Enabled: *body.Enabled})
 }

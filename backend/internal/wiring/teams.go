@@ -41,6 +41,22 @@ func TeamsChannelOptions(sender teams.Sender, mods *modules.Service) notificatio
 	}
 }
 
+// TeamsPersonalSender returns the personal card adapter. The real Bot Connector adapter is not built (it needs a
+// registered bot and an installed Teams app, ADR-0036), so this is teams.NotConfigured and personal cards stay off.
+func TeamsPersonalSender() teams.PersonalSender { return teams.NotConfigured{} }
+
+// TeamsPersonalOptions enables personal Teams cards while the Teams module is on and the adapter is configured; it
+// returns nil (cards off) for the NotConfigured adapter, so no delivery is created that could never be sent.
+func TeamsPersonalOptions(sender teams.PersonalSender, mods *modules.Service, identity notifications.TeamsIdentityResolver) *notifications.TeamsPersonalOptions {
+	if _, none := sender.(teams.NotConfigured); none || sender == nil {
+		return nil
+	}
+	return &notifications.TeamsPersonalOptions{
+		Enabled:  func(ctx context.Context) (bool, error) { return mods.Enabled(ctx, TeamsModuleKey) },
+		Identity: identity,
+	}
+}
+
 // TeamsChannelPoster adapts a Teams Sender to the Notification service's channel port and translates the adapter's
 // error classes, so the platform never sees integration types.
 type TeamsChannelPoster struct{ Sender teams.Sender }
@@ -62,3 +78,25 @@ func (p TeamsChannelPoster) PostToChannel(ctx context.Context, destinationKey st
 }
 
 var _ notifications.ChannelPoster = TeamsChannelPoster{}
+
+// TeamsPersonalPoster adapts a Teams PersonalSender to the Notification service's personal card port.
+type TeamsPersonalPoster struct{ Sender teams.PersonalSender }
+
+// SendPersonal implements notifications.PersonalPoster.
+func (p TeamsPersonalPoster) SendPersonal(ctx context.Context, tenantID, objectID string, c notifications.PersonalCard) error {
+	err := p.Sender.SendPersonal(ctx, tenantID, objectID, teams.Card{Kind: c.Kind, Category: c.Category, Reference: c.Reference,
+		Headline: c.Headline, Action: c.Action, LinkURL: c.LinkURL, Locale: c.Locale})
+	if err == nil {
+		return nil
+	}
+	var transient *teams.TransientError
+	switch {
+	case errors.As(err, &transient):
+		return &notifications.TransientChannelError{Code: transient.Code, RetryAfter: transient.RetryAfter}
+	case errors.Is(err, teams.ErrRecipientUnreachable):
+		return notifications.ErrRecipientUnreachable
+	}
+	return &notifications.PermanentChannelError{Code: teams.ErrorCode(err)}
+}
+
+var _ notifications.PersonalPoster = TeamsPersonalPoster{}

@@ -8023,6 +8023,46 @@ paths:
                     items: {$ref: '#/components/schemas/NotificationPreference'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /notifications/preferences/{category}/teams:
+    put:
+      operationId: setNotificationTeamsPreference
+      summary: Enable or disable the personal Teams card for a category.
+      description: "Any signed-in user; only the caller's own preference, and only for categories that carry a personal card (others answer 404 `notifications.unknown_category`). The card is on unless the user opted out; it is sent only while the Teams module is on and the user has a linked Entra identity."
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: The stored preference.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationPreference'}
+        '400':
+          description: Invalid body (notifications.invalid_request).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: Unknown category (notifications.unknown_category).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /notifications/preferences/{category}/email:
     put:
       operationId: setNotificationEmailPreference
@@ -22596,7 +22636,7 @@ components:
       required: [category, channel, enabled]
       properties:
         category: {type: string}
-        channel: {type: string, enum: [email]}
+        channel: {type: string, enum: [email, teams], description: "`teams` is the personal Microsoft Teams card; it is listed only for categories that carry one (ticket.assigned, approval.requested, majorincident.update)."}
         enabled: {type: boolean}
     NotificationList:
       type: object

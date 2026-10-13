@@ -60,6 +60,8 @@ type ChannelOptions struct {
 	Poster  ChannelPoster
 	BaseURL string
 	Locale  string
+	// Personal enables personal Teams cards (turaco-worker); nil leaves them off.
+	Personal *TeamsPersonalOptions
 }
 
 // WithChannelPosts returns a Service that creates channel post deliveries (turaco-worker) and validates routes
@@ -67,6 +69,7 @@ type ChannelOptions struct {
 func (s *Service) WithChannelPosts(o ChannelOptions) *Service {
 	cp := *s
 	cp.channel = o
+	cp.teamsPersonal = o.Personal
 	return &cp
 }
 

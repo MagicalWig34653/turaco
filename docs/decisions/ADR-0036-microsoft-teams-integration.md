@@ -1,6 +1,6 @@
 # ADR-0036: Microsoft Teams as a Notification and Interaction Channel
 
-- Status: Accepted (2026-10-10, product owner decisions in the design). Phase T-A (channel posts) is implemented; T-B to T-E are not. [Current status](../product/current-status.md) is authoritative. Design, phases and threat model: [F15 Microsoft integration, Microsoft Teams](../product/f15-microsoft-integration-design.md#microsoft-teams).
+- Status: Accepted (2026-10-10, product owner decisions in the design). Phase T-A (channel posts) is implemented; T-B (personal cards) is implemented up to the adapter port with a Fake (the Bot Connector adapter is not built); T-C to T-E are not. [Current status](../product/current-status.md) is authoritative. Design, phases and threat model: [F15 Microsoft integration, Microsoft Teams](../product/f15-microsoft-integration-design.md#microsoft-teams).
 
 ## Context
 
