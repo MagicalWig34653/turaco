@@ -316,6 +316,7 @@ func (s *Service) List(ctx context.Context, p Principal, f ListFilter) (Result[T
 			return Result[TaskView]{Items: []TaskView{}}, nil
 		}
 		m := a.mine()
+		m.NoOwn = !p.Work // assigned tasks are seen only with tasks.work
 		if !f.Mine {
 			m.LocationIDs = a.scopedLocations()
 		}

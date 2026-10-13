@@ -450,14 +450,20 @@ func (r *Repository) List(ctx context.Context, q application.ListQuery) (applica
 		add(`lower(title) LIKE lower(?) || '%'`, prefixPattern(q.TitlePrefix))
 	}
 	if q.Mine != nil {
-		args = append(args, q.Mine.UserID, q.Mine.TeamIDs)
-		cond := fmt.Sprintf(`assigned_user_id = $%d::uuid OR assigned_team_id = ANY($%d::text[]::uuid[])`, len(args)-1, len(args))
+		var parts []string
+		if !q.Mine.NoOwn {
+			args = append(args, q.Mine.UserID, q.Mine.TeamIDs)
+			parts = append(parts, fmt.Sprintf(`assigned_user_id = $%d::uuid OR assigned_team_id = ANY($%d::text[]::uuid[])`, len(args)-1, len(args)))
+		}
 		if len(q.Mine.LocationIDs) > 0 {
 			// Location-scoped tasks.view or tasks.manage also covers the tasks at the caller's Locations.
 			args = append(args, q.Mine.LocationIDs)
-			cond += fmt.Sprintf(` OR location_id = ANY($%d::text[]::uuid[])`, len(args))
+			parts = append(parts, fmt.Sprintf(`location_id = ANY($%d::text[]::uuid[])`, len(args)))
 		}
-		conds = append(conds, "("+cond+")")
+		if len(parts) == 0 {
+			parts = append(parts, "FALSE")
+		}
+		conds = append(conds, "("+strings.Join(parts, " OR ")+")")
 	}
 	if page.Cursor != "" {
 		c, err := decodeCursor(page.Cursor)

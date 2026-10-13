@@ -489,7 +489,7 @@ func (s *Service) principalOf(ctx context.Context, userID string) (Principal, er
 	}
 	_, p.View = perms[permTicketsView]
 	_, p.Manage = perms[permTicketsManage]
-	if sm, ok := s.members.(ScopedMemberships); ok && !p.View && !p.Manage {
+	if sm, ok := s.members.(ScopedMemberships); ok && (!p.View || !p.Manage) {
 		if p.ViewScope, p.ManageScope, err = sm.TicketScopes(ctx, userID); err != nil {
 			return Principal{}, fmt.Errorf("load scopes: %w", err)
 		}

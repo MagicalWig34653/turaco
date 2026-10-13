@@ -27,6 +27,8 @@ func and(nodes ...query.Node) *query.Filter {
 // SystemViews implements views.SystemProvider.
 func (v *SystemViews) SystemViews(ctx context.Context, c views.Caller) ([]views.SystemView, error) {
 	p := application.Principal{UserID: c.UserID, View: c.Has("tickets.view"), Manage: c.Has("tickets.manage"), QueuesManage: c.Has(application.PermQueuesManage)}
+	// Callers with only a Location-scoped holding get no System Views (the views package passes no scopes); the cache
+	// key of the sidebar counts is per user, so nothing is shared between callers.
 	scope, err := v.svc.SidebarScope(ctx, p)
 	if err != nil {
 		return nil, err

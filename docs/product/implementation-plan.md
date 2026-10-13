@@ -29,7 +29,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F14 Administration | A-A to A-G done (people, roles, health and setup checklist, audit UX, External Parties with sponsor page, CSV import and bulk edit, first-administrator setup page) | Directory connection probe, global search records |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
 | F15 Microsoft integration | M-0, E-A, E-B, E-D (Entra sign-in, step-up) and T-A (Teams channel posts) done; T-B pipeline against a Fake | E-C, E-E, the T-B Bot Connector adapter, T-C to T-E |
-| F16 Location-scoped access | L-A to L-G implemented: scoped role assignments, evaluator and guards, Location move guard, Assets, Tickets and Tasks scopable, access UI part 1 ([design](f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md), [operator guide](../operations/location-scoped-access.md)) | Security reviews of L-D and L-G, effective-permissions scope view and "who has rights here" (L-F rest), hospital seed with scoped site leads and load test persona (L-H), wave-2 modules |
+| F16 Location-scoped access | L-A to L-G implemented: scoped role assignments, evaluator and guards, Location move guard, Assets, Tickets and Tasks scopable, access UI part 1 ([design](f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md), [operator guide](../operations/location-scoped-access.md)) | Effective-permissions scope view and "who has rights here" (L-F rest), hospital seed with scoped site leads and load test persona (L-H), wave-2 modules |
 | F17 SLA and time tracking | S-A to S-E and T-A to T-C implemented: Business Calendars, SLA Policies, clocks, warnings and breaches, list fields, overview and minimal report, time entries on Tickets with timer and effort report ([design](f17-sla-time-tracking-design.md), [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md)) | Security and privacy review of Time Tracking; per-Service or per-Location SLA variants and Service Requests (open questions of the design) |
 
 The UI design pass (themes, shell, workbench screens) ran between F8 and F9; visual design beyond functional UI is postponed.
@@ -208,7 +208,7 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 ## F16 — Location-scoped access
 
-[ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md). Feature design: [F16 design](f16-location-scoped-access-design.md); operator guide: [Location-scoped access](../operations/location-scoped-access.md). Slices: L-A evaluator and model, L-B assignment operations and guards, L-C Location move guard, L-D Tickets, L-E Assets, L-F access UI (part 1 built), L-G Tasks, L-H seed, load test and guide. L-A to L-E and L-G are implemented; the independent security reviews of L-D and L-G, the rest of L-F and L-H are open.
+[ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md). Feature design: [F16 design](f16-location-scoped-access-design.md); operator guide: [Location-scoped access](../operations/location-scoped-access.md). Slices: L-A evaluator and model, L-B assignment operations and guards, L-C Location move guard, L-D Tickets, L-E Assets, L-F access UI (part 1 built), L-G Tasks, L-H seed, load test and guide. L-A to L-E and L-G are implemented; the rest of L-F and L-H are open; the independent security reviews are done.
 
 ## F17 — SLA deadlines and time tracking
 

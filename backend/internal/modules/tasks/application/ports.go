@@ -64,6 +64,8 @@ type Mine struct {
 	// LocationIDs, when set, widens the restriction to the tasks at these Locations (Location-scoped tasks.view
 	// and tasks.manage).
 	LocationIDs []string
+	// NoOwn drops the assigned-to-me predicate (the caller lacks tasks.work); only LocationIDs remain.
+	NoOwn bool
 }
 
 // Store is the persistence port of tasks.

@@ -89,8 +89,15 @@ func (a access) visibility(mine bool) (query.Fragment, string) {
 	if mine || !(a.p.ViewAll || a.p.Manage) {
 		m := a.mine()
 		own := query.Fragment{SQL: "t.assigned_user_id = ?::uuid OR t.assigned_team_id = ANY(?::text[]::uuid[])", Args: []any{m.UserID, m.TeamIDs}}
+		// Assigned tasks are seen only with tasks.work (as canSee decides); without it the own predicate matches nothing.
+		if !a.p.Work {
+			own = query.Fragment{SQL: "FALSE"}
+		}
 		if !mine && a.scoped() {
 			// Location-scoped tasks.view and tasks.manage: the tasks at the caller's Locations as well (ADR-0040).
+			if !a.p.Work {
+				return query.Fragment{SQL: "t.location_id = ANY(?::text[]::uuid[])", Args: []any{a.scopedLocations()}}, "locations"
+			}
 			return query.Fragment{SQL: "(" + own.SQL + ") OR t.location_id = ANY(?::text[]::uuid[])", Args: append(own.Args, a.scopedLocations())}, "mine+locations"
 		}
 		return own, "mine"
