@@ -71,7 +71,7 @@ func runCmd(args []string) int {
 		arrivals    = fs.String("arrivals", "poisson", "arrival process: poisson or uniform")
 		seed        = fs.Int64("seed", time.Now().UnixNano(), "random seed (printed in the report)")
 		users       = fs.Int("users", 0, "number of simulated users (0 = all 32; taken round-robin over the persona classes)")
-		classes     = fs.String("classes", "", "only these persona classes: employee,firstlevel,technician,lead,viewer,admin,vendor")
+		classes     = fs.String("classes", "", "only these persona classes: employee,firstlevel,technician,lead,viewer,admin,sitetech,vendor")
 		weightsSpec = fs.String("weights", "", "arrival share per class, e.g. employee=60,technician=20 (defaults: employee=50 firstlevel=14 technician=20 lead=8 viewer=3 admin=3 vendor=2)")
 		simPass     = fs.String("password", simPassword, "password of the simulation logins")
 		admPass     = fs.String("admin-password", adminPassword, "password of devadmin")

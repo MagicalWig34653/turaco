@@ -6,12 +6,23 @@ if (!reducedMotion.matches && "IntersectionObserver" in window) {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
         entry.target.classList.remove("reveal-pending");
+        entry.target.classList.add("is-revealed");
         observer.unobserve(entry.target);
       }
     },
     { threshold: 0.08 },
   );
   document.querySelectorAll(".reveal").forEach((element) => {
+    element
+      .querySelectorAll(
+        ".feature-card, .screen-card, .principles-grid > article",
+      )
+      .forEach((item, index) =>
+        item.style.setProperty(
+          "--reveal-delay",
+          `${Math.min(index, 7) * 55}ms`,
+        ),
+      );
     element.classList.add("reveal-pending");
     observer.observe(element);
   });
@@ -20,6 +31,9 @@ if (!reducedMotion.matches && "IntersectionObserver" in window) {
       document
         .querySelectorAll(".reveal-pending")
         .forEach((element) => element.classList.remove("reveal-pending"));
+      document
+        .querySelectorAll(".is-revealed")
+        .forEach((element) => element.classList.remove("is-revealed"));
       observer.disconnect();
     }
   });

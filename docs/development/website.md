@@ -4,7 +4,7 @@ The public website introduces Turaco and renders this repository's documentation
 
 ## Structure
 
-- `site/index.html`: landing page with fictional product illustrations.
+- `site/index.html`: landing page with fictional product illustrations and a screenshot gallery.
 - `site/assets/`: shared styles, browser scripts and SVG favicon.
 - `site/build/`: static generator, pure-function tests and local HTTP server.
 - `site/package.json` and `site/package-lock.json`: isolated, pinned development dependency.
@@ -24,6 +24,10 @@ The server prints its URL. Alternatively, `make site-build` installs dependencie
 
 `npm test` uses `node:test` to verify title extraction, navigation, search indexing and Markdown link rewriting. `npm run build` also validates internal links and fails with diagnostics when a target is missing. Run `make docs-check` after editing source documentation. The website is deliberately excluded from `make check`; its pull-request workflow runs the independent website checks.
 
+## Screenshots
+
+`site/assets/screens/*.png` are real captures of the web UI (1440x900, light theme). With the API and Vite dev server running against a development database seeded with `demo seed-hospital`, regenerate them from the repository root with `node tools/screenshots/capture.mjs` (optional output directory argument; `TURACO_URL`, `TURACO_USER` and `TURACO_PASSWORD` override the defaults). The time-tracking report is not captured because the module is disabled by default. Check every image for secrets and non-simulation personal data before committing.
+
 ## Content and publication review
 
 Use [current implementation status](../product/current-status.md), the [implementation plan](../product/implementation-plan.md) and repository implementation as the evidence for claims. A backend slice does not imply a finished frontend or live integration. Intune and advisory ingestion use fake/import adapters; Autotask has no live REST client. Mark planned capabilities explicitly. Do not invent customers, pricing, downloads, testimonials or performance numbers.
@@ -42,9 +46,11 @@ Use system fonts and local assets. No external fonts, CDN resources, trackers or
 
 `site/assets/theme.js` runs in the head before content paints on both landing and generated documentation pages. The native, labeled select offers Light, Dark, Cyberpunk and Auto; `turaco-site-theme` stores the preference with guarded reads/writes. Auto responds to live system color-scheme changes. Storage failures leave the current page usable.
 
-`site/assets/cyberpunk.css` is scoped to Cyberpunk and uses the app's canvas, cyan, magenta and yellow palette. The hero reuses the SVG icon in a decorative neon wordmark above a perspective grid and static scanlines. Solid reading surfaces and bright focus outlines preserve contrast. Decorations are absolute so switching themes does not change content geometry.
+`site/assets/cyberpunk.css` is scoped to Cyberpunk and uses the app's canvas, cyan, magenta and yellow palette. The hero reuses the SVG icon in a decorative neon wordmark above a perspective grid and slow scanline sweep. Solid reading surfaces and bright focus outlines preserve contrast. Decorations are absolute so switching themes does not change content geometry.
 
-Performance budget: two continuous decorative animations (grid transform/opacity and a small border tracer) plus one short wordmark displacement on entry. Glow and shadows stay static; no animated filters, shadows or full-viewport backdrop filters. The mesh and preview frame contain paint. Reduced motion cancels animations; hidden tabs pause them. Keep future effects within this budget.
+Cyberpunk motion uses slow grid and scanline movement, a short wordmark/title displacement once per long cycle, a terminal cursor, subtle button glow opacity, and hover-only card borders. The title briefly animates its small text shadow; other effects use transform and opacity. The mesh and preview frame contain paint. Reduced motion cancels animations and transitions; hidden tabs pause them. All themes use a short, staggered section reveal when motion is allowed.
+
+The gallery references ten 1440 × 900 PNG files in `site/assets/screens/`. A separate screenshot capture process supplies them. The builder copies files in nested asset directories and tolerates missing images only for those ten named gallery paths; other missing links remain errors. Until the capture process supplies a file, its gallery thumbnail and full-size link cannot display that image.
 
 After changes, run the site tests and build/link check. With cached Playwright Chromium, review landing and documentation screenshots at 390 and 1440 px for all four choices (Auto with both system schemes). Verify keyboard selection, persistence across navigation/reload, blocked storage, system changes, reduced motion, overflow, text contrast and stable content bounds. Browser tooling is local verification only, not a new site dependency.
 

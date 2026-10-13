@@ -16,10 +16,11 @@ const (
 	ClassViewer     = "viewer"     // infrastructure engineers: tickets.view only
 	ClassAdmin      = "admin"      // administrator and security analysts (audit log, users)
 	ClassVendor     = "vendor"     // vendor-restricted: tasks only
+	ClassSiteTech   = "sitetech"   // site technicians: tickets, assets and tasks scoped to their own Site (ADR-0040)
 )
 
 // classOrder is the order in which --users picks personas (round-robin over classes).
-var classOrder = []string{ClassEmployee, ClassTechnician, ClassFirstLevel, ClassLead, ClassAdmin, ClassViewer, ClassVendor}
+var classOrder = []string{ClassEmployee, ClassTechnician, ClassFirstLevel, ClassLead, ClassAdmin, ClassViewer, ClassSiteTech, ClassVendor}
 
 // defaultWeights is the share of arrivals per class.
 var defaultWeights = map[string]float64{
@@ -29,6 +30,7 @@ var defaultWeights = map[string]float64{
 	ClassLead:       8,
 	ClassViewer:     3,
 	ClassAdmin:      3,
+	ClassSiteTech:   6,
 	ClassVendor:     2,
 }
 
@@ -57,6 +59,7 @@ func Roster(adminPass string) []Persona {
 	r = append(r, mk(ClassViewer, "uwe.pohl", "mirja.engel")...)
 	r = append(r, mk(ClassAdmin, "ines.falk", "deniz.arslan")...)
 	r = append(r, Persona{Login: adminLogin, Class: ClassAdmin, Password: adminPass})
+	r = append(r, mk(ClassSiteTech, "tim.scholz", "nora.kuhn")...)
 	r = append(r, mk(ClassVendor, "vendor.mueller", "vendor.schmidt")...)
 	return r
 }

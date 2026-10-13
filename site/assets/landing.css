@@ -1009,6 +1009,87 @@
   opacity: 0;
   transform: translateY(24px);
 }
+/* Card and section spacing is shared by the light and dark themes. */
+.screens-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.screen-card {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px #0000000b;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.screen-card:hover,
+.screen-card:focus-within {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow);
+}
+.screen-card a {
+  display: block;
+  overflow: hidden;
+  background: var(--soft);
+}
+.screen-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 8 / 5;
+  object-fit: cover;
+  transition: transform 0.35s ease;
+}
+.screen-card:hover img,
+.screen-card:focus-within img {
+  transform: scale(1.015);
+}
+.screen-card figcaption {
+  padding: 14px 18px;
+  font-size: 13px;
+  font-weight: 650;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reveal.is-revealed
+    > :is(
+      .section-heading,
+      .feature-grid,
+      .screens-grid,
+      .principles-grid,
+      .architecture-copy,
+      .architecture-visual,
+      .roadmap-grid,
+      .terminal
+    ) {
+    animation: section-settle 0.55s backwards;
+  }
+  .reveal.is-revealed
+    :is(.feature-card, .screen-card, .principles-grid > article) {
+    animation: section-settle 0.55s backwards;
+    animation-delay: var(--reveal-delay, 0ms);
+  }
+}
+@keyframes section-settle {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 700px) {
+  .screens-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
 .landing a:focus-visible,
 .landing select:focus-visible {
   outline: 3px solid var(--accent);
@@ -1413,7 +1494,8 @@
     gap: 13px;
     font-size: 12px;
   }
-  .landing-header nav a:nth-child(2) {
+  .landing-header nav a:nth-child(2),
+  .landing-header nav a:nth-child(4) {
     display: none;
   }
   .theme-control select {
@@ -1750,6 +1832,10 @@
   .reveal-pending {
     opacity: 1;
     transform: none;
+  }
+  .screen-card,
+  .screen-card img {
+    transform: none !important;
   }
   .mock-app {
     transform: none;

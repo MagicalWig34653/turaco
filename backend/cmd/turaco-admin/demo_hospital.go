@@ -123,6 +123,21 @@ func (h *hospitalSeeder) findOrgRow(ctx context.Context, table, code string) (st
 	return id, err == nil, err
 }
 
+// reparentArea repairs an area created by an earlier seed version (a flat Site without a parent): it becomes an
+// area below its Site, so Location-scoped roles at the Site cover it. The move operation cannot turn a Site into an
+// area, so this development-only repair writes the two columns directly.
+func (h *hospitalSeeder) reparentArea(ctx context.Context, id, site string) error {
+	tag, err := h.e.pool.Exec(ctx, `UPDATE organization.locations SET kind = 'area', parent_location_id = $2, version = version + 1, updated_at = now()
+		WHERE id = $1 AND (kind <> 'area' OR parent_location_id IS DISTINCT FROM $2::uuid)`, id, site)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() > 0 {
+		h.count("repaired areas")
+	}
+	return nil
+}
+
 func (h *hospitalSeeder) organization(ctx context.Context) error {
 	repo, err := h.seedRepo()
 	if err != nil {
@@ -159,6 +174,8 @@ func (h *hospitalSeeder) organization(ctx context.Context) error {
 			}
 			id = l.ID
 			h.count("locations")
+		} else if err := h.reparentArea(ctx, id, h.locations[a.Site]); err != nil {
+			return fmt.Errorf("area %s: %w", a.Key, err)
 		}
 		h.locations[a.Key] = id
 	}

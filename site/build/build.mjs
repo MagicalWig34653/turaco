@@ -32,6 +32,7 @@ const publicSecurity = new Set([
   "agent-boundaries.md",
   "encryption.md",
   "identity-access-design.md",
+  "presence-threat-models.md",
   "remote-access-threat-models.md",
   "security-architecture.md",
   "supply-chain.md",
@@ -127,15 +128,28 @@ outputs.set(
   "index.html",
   await readFile(path.join(site, "index.html"), "utf8"),
 );
-for (const name of await readdir(path.join(site, "assets")))
-  outputs.set(
-    `assets/${name}`,
-    /\.(png|ico|jpe?g|webp|woff2?)$/i.test(name)
-      ? await readFile(path.join(site, "assets", name))
-      : await readFile(path.join(site, "assets", name), "utf8"),
-  );
+for (const name of await walk("site/assets")) {
+  if (path.basename(name).startsWith(".")) continue;
+  const outputName = name.slice("site/".length);
+  outputs.set(outputName, await readFile(path.join(root, name)));
+}
 outputs.set(".nojekyll", "");
-const failures = checkLinks(outputs);
+// The screenshot capture process supplies these files separately. Keep other
+// missing assets as build errors, including unexpected files in this folder.
+const optionalScreens = new Set(
+  [
+    "dashboard",
+    "service-desk",
+    "ticket",
+    "assets",
+    "my-work",
+    "changes",
+    "infrastructure",
+    "security",
+    "knowledge",
+  ].map((name) => `assets/screens/${name}.png`),
+);
+const failures = checkLinks(outputs, optionalScreens);
 if (failures.length)
   throw new Error(`Broken internal links:\n${failures.join("\n")}`);
 const dist = path.join(site, "dist");

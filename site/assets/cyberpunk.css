@@ -1,5 +1,4 @@
-/* App palette with static lighting. At most three animated decorations;
-   transform/opacity only. Content metrics stay identical across themes. */
+/* App palette with restrained neon motion. Content metrics stay fixed. */
 .cyber-wordmark {
   display: none;
 }
@@ -49,6 +48,14 @@ html[data-theme="cyberpunk"] .hero-mesh::after {
   mask-image: linear-gradient(transparent, #000 55%, transparent);
   opacity: 0.6;
 }
+html[data-theme="cyberpunk"] .hero-mesh::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(transparent 48%, #00f0ff22 50%, transparent 52%);
+  opacity: 0;
+}
 html[data-theme="cyberpunk"] .cyber-wordmark {
   display: flex;
   position: absolute;
@@ -73,12 +80,22 @@ html[data-theme="cyberpunk"] .cyber-wordmark span {
   color: var(--cyber-pink);
   text-shadow: none;
 }
+html[data-theme="cyberpunk"] .cyber-wordmark span::after {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 0.9em;
+  margin-left: 4px;
+  vertical-align: -0.1em;
+  background: var(--cyber-pink);
+}
 html[data-theme="cyberpunk"] :is(.hero h1, .prose h1) {
   text-shadow:
     -2px 0 #ff2bd699,
     2px 0 #00f0ff99;
 }
 html[data-theme="cyberpunk"] .hero h1 em {
+  display: inline-block;
   text-shadow: 0 0 24px #00f0ff44;
 }
 html[data-theme="cyberpunk"] .eyebrow {
@@ -135,10 +152,57 @@ html[data-theme="cyberpunk"] .mock-app::after {
   );
   pointer-events: none;
 }
+html[data-theme="cyberpunk"] :is(.feature-card, .screen-card) {
+  border-color: #00f0ff80;
+  border-radius: 3px;
+  position: relative;
+  background: var(--surface);
+  box-shadow:
+    inset 0 1px #00f0ff33,
+    0 0 20px #00f0ff12;
+}
+html[data-theme="cyberpunk"] :is(.feature-card, .screen-card)::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: -1px -1px auto;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--cyber-pink),
+    var(--accent),
+    transparent
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s ease;
+}
+html[data-theme="cyberpunk"]
+  :is(.feature-card, .screen-card):is(:hover, :focus-within)::before {
+  transform: scaleX(1);
+}
+html[data-theme="cyberpunk"] .screen-card figcaption {
+  color: var(--text);
+  border-top: 1px solid #00f0ff66;
+}
 html[data-theme="cyberpunk"] .button {
   border-radius: 3px;
   transition: transform 0.2s;
   box-shadow: 0 0 20px #00f0ff33;
+  position: relative;
+  isolation: isolate;
+}
+html[data-theme="cyberpunk"] .button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  pointer-events: none;
+  border: 1px solid #00f0ff66;
+  box-shadow: 0 0 20px #00f0ff66;
+  opacity: 0;
 }
 html[data-theme="cyberpunk"]
   :is(.mock-sidebar .selected, .sidebar a[aria-current]) {
@@ -173,14 +237,29 @@ html[data-theme="cyberpunk"] .prose {
   background: var(--bg);
 }
 @media (prefers-reduced-motion: no-preference) {
+  html[data-theme="cyberpunk"] .hero-mesh::before {
+    animation: cyber-scan 12s linear infinite;
+  }
   html[data-theme="cyberpunk"] .hero-mesh::after {
-    animation: cyber-horizon 10s ease-in-out infinite alternate;
+    animation: cyber-horizon 12s ease-in-out infinite alternate;
   }
   html[data-theme="cyberpunk"] .mock-app::after {
     animation: cyber-edge 6s ease-in-out infinite alternate;
   }
   html[data-theme="cyberpunk"] .cyber-wordmark {
-    animation: cyber-glitch 1.2s ease-out 1;
+    animation: cyber-glitch 9s linear infinite;
+  }
+  html[data-theme="cyberpunk"] .cyber-wordmark span::after {
+    animation: cyber-cursor 1.6s step-end infinite;
+  }
+  html[data-theme="cyberpunk"] .hero h1 em {
+    animation: cyber-title 11s linear infinite;
+  }
+  html[data-theme="cyberpunk"] .button::after {
+    animation: cyber-pulse 5s ease-in-out infinite;
+  }
+  html[data-theme="cyberpunk"] :is(.feature-card, .screen-card):hover {
+    animation: cyber-card-hover 0.3s ease-out 1;
   }
 }
 @keyframes cyber-horizon {
@@ -194,16 +273,78 @@ html[data-theme="cyberpunk"] .prose {
     transform: translateX(185%);
   }
 }
-/* One gentle displacement on entry, no flashing or animated shadows. */
-@keyframes cyber-glitch {
+@keyframes cyber-scan {
   0% {
-    transform: translateX(-3px) skewX(-5deg);
+    opacity: 0;
+    transform: translateY(-100%);
   }
-  35% {
-    transform: translateX(2px);
+  8%,
+  62% {
+    opacity: 0.6;
   }
+  70%,
+  100% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+@keyframes cyber-cursor {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cyber-pulse {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+/* Each glitch is one brief displacement per long cycle; the text stays legible. */
+@keyframes cyber-glitch {
+  0%,
+  90%,
+  95%,
   100% {
     transform: none;
+  }
+  92% {
+    transform: translateX(-3px) skewX(-2deg);
+  }
+  94% {
+    transform: translateX(2px);
+  }
+}
+@keyframes cyber-title {
+  0%,
+  91%,
+  96%,
+  100% {
+    transform: none;
+    text-shadow: 0 0 24px #00f0ff44;
+  }
+  93% {
+    transform: translateX(2px);
+    text-shadow:
+      -3px 0 #ff2bd6,
+      3px 0 #00f0ff,
+      0 0 24px #00f0ff88;
+  }
+}
+@keyframes cyber-card-hover {
+  0%,
+  100% {
+    transform: translateY(-5px);
+  }
+  45% {
+    transform: translate(2px, -5px);
   }
 }
 html[data-visibility="hidden"] *,

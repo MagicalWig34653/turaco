@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -48,6 +49,9 @@ type Env struct {
 	staleSkips      atomic.Int64
 	probes          atomic.Int64
 	leaks           atomic.Int64
+
+	scopeOnce sync.Once
+	scopes    map[string]map[string]bool // site technician login -> Location ids of the Site
 }
 
 // OpDef is one operation in a persona class's mix.
@@ -131,6 +135,14 @@ func Ops() map[string][]OpDef {
 			{"sidebar", 10, opSidebar},
 			{"briefing.feed", 10, opBriefing},
 		},
+		ClassSiteTech: {
+			{"tickets.query", 30, opQuery},
+			{"tickets.list_all", 15, opListAll},
+			{"tickets.open_scoped", 30, opOpenScoped},
+			{"assets.list", 10, opAssets},
+			{"mywork.counts", 8, opMyWorkCounts},
+			{"views.counts", 7, opViewCounts},
+		},
 		ClassVendor: {
 			{"tickets.list_own", 30, opListOwn},
 			{"mywork.items", 30, opMyWorkItems},
@@ -142,7 +154,7 @@ func Ops() map[string][]OpDef {
 }
 
 // ExpectsDenied lists operations whose 403/404 answers are the expected result.
-var ExpectsDenied = map[string]bool{"tickets.probe_foreign": true, "tickets.write_denied": true, "tickets.abilities": true}
+var ExpectsDenied = map[string]bool{"tickets.probe_foreign": true, "tickets.write_denied": true, "tickets.abilities": true, "tickets.open_scoped": true}
 
 func esc(s string) string { return url.QueryEscape(s) }
 
@@ -546,4 +558,91 @@ func opProbeForeign(ctx context.Context, e *Env, jc *JobCtx, s *Session, rng *ra
 		e.leaks.Add(1)
 		e.Trk.Violate("authorization_leak", "%s read ticket %s reported by %s", s.P.Login, ent.Ref, ent.Reporter)
 	}
+}
+
+// siteRoots maps a site technician to the name of the Site its scoped role is assigned at (hospital seed; the
+// Location code is not shown to callers without Location administration).
+var siteRoots = map[string]string{"tim.scholz": "Universitätsklinikum Nord (Hauptcampus)", "nora.kuhn": "Klinik Süd"}
+
+type locationRow struct {
+	ID       string  `json:"id"`
+	ParentID *string `json:"parentId"`
+	Name     string  `json:"name"`
+}
+
+// siteScope returns the ids of the persona's Site and all its sub-Locations (loaded once per run).
+func (e *Env) siteScope(ctx context.Context, jc *JobCtx, s *Session, login string) map[string]bool {
+	e.scopeOnce.Do(func() {
+		var out struct {
+			Items []locationRow `json:"items"`
+		}
+		if r := e.Client.Call(ctx, jc, s, "locations.list", http.MethodGet, "/locations?limit=500", nil, &out); !r.OK() {
+			return
+		}
+		e.scopes = map[string]map[string]bool{}
+		for l, name := range siteRoots {
+			in := map[string]bool{}
+			for _, it := range out.Items {
+				if it.ParentID == nil && it.Name == name {
+					in[it.ID] = true
+				}
+			}
+			for changed := true; changed; {
+				changed = false
+				for _, it := range out.Items {
+					if it.ParentID != nil && in[*it.ParentID] && !in[it.ID] {
+						in[it.ID], changed = true, true
+					}
+				}
+			}
+			e.scopes[l] = in
+		}
+	})
+	return e.scopes[login]
+}
+
+// opOpenScoped opens a ticket as a Location-scoped holder. A 404 is the expected answer for a ticket outside the
+// Site; a successful answer must show an affected Location inside the Site, otherwise it is an authorization leak.
+func opOpenScoped(ctx context.Context, e *Env, jc *JobCtx, s *Session, rng *rand.Rand) {
+	ref := ""
+	id := ""
+	if rng.Intn(2) == 0 {
+		// A ticket the scoped list shows: opening it must succeed and lie inside the Site.
+		var page queryPage
+		if r := e.Client.Call(ctx, jc, s, "tickets.list_scoped", http.MethodGet, "/tickets?scope=all&open=true&limit=25", nil, &page); r.OK() && len(page.Items) > 0 {
+			it := page.Items[rng.Intn(len(page.Items))]
+			id, ref = it.ID, it.Reference
+		}
+	}
+	if id == "" {
+		// A random ticket of the run: 404 outside the Site is the expected answer.
+		ent := e.Pool.Pick(rng, e.Cfg.HotTickets, e.Cfg.HotProb)
+		if ent == nil {
+			opListAll(ctx, e, jc, s, rng)
+			return
+		}
+		id, ref = ent.ID, ent.Ref
+	}
+	var t struct {
+		ticketDTO
+		AffectedLocationID *string `json:"affectedLocationId"`
+	}
+	if r := e.Client.Call(ctx, jc, s, "tickets.open_scoped", http.MethodGet, "/tickets/"+id, nil, &t); !r.OK() {
+		return
+	}
+	scope := e.siteScope(ctx, jc, s, s.P.Login)
+	if scope == nil {
+		return // locations could not be loaded: no verdict
+	}
+	e.probes.Add(1)
+	if t.AffectedLocationID == nil || !scope[*t.AffectedLocationID] {
+		e.leaks.Add(1)
+		e.Trk.Violate("authorization_leak", "%s (Site-scoped) read ticket %s outside its Site", s.P.Login, ref)
+		return
+	}
+	e.Trk.Observe(t.ID, t.Version)
+}
+
+func opAssets(ctx context.Context, e *Env, jc *JobCtx, s *Session, rng *rand.Rand) {
+	e.Client.Call(ctx, jc, s, "assets.list", http.MethodGet, "/assets?limit=25", nil, nil)
 }

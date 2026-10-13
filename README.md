@@ -46,6 +46,23 @@
 
 Roadmap F0 to F14 are implemented with documented gaps, as are the first slices of Microsoft integration (F15: Entra sign-in with step-up, Teams channel posts), Location-scoped access for Assets, Tickets and Tasks (F16) and SLA deadlines and time tracking (F17, both optional modules). Nothing here is production-ready. Implemented with fake provider adapters: software lifecycle and patching (F9) and attended remote access with HopToDesk, RustDesk and AnyDesk launch connectors (F10). Workforce presence (F11, opt-in, privacy-first) is implemented for manual entries; Microsoft 365 and HR sources are planned. Turaco AI (F12) is implemented as a read-only, user-delegated assistant (fake and local Ollama-compatible providers); user-confirmed writes (AI Proposals, first tool: an internal ticket note draft) and a read-only MCP server (OAuth with PKCE, default off) are implemented. The Microsoft Graph (Intune read and assignment write) and Autotask REST clients are implemented per the vendor documentation and unverified against live services. Planned, not built: external presence sources, the Teams bot adapter behind the personal cards, Graph reconciliation for Entra and non-local AI providers; their ports have fakes and imports. A hospital-IT simulation dataset (`turaco-admin demo seed-hospital`) and a load generator support usability and load tests as development tooling.
 
+## Screenshots
+
+Captured from a development instance with the German [hospital simulation](docs/development/simulation-hospital.md) data (fictional people, emergency-account login).
+
+<table>
+  <tr>
+    <td><img src="site/assets/screens/dashboard.png" alt="Turaco overview with briefing, major incidents and work counters" width="420"></td>
+    <td><img src="site/assets/screens/service-desk.png" alt="Service desk ticket queue with filters and priorities" width="420"></td>
+  </tr>
+  <tr>
+    <td><img src="site/assets/screens/ticket.png" alt="Ticket detail with conversation history and ticket actions" width="420"></td>
+    <td><img src="site/assets/screens/changes.png" alt="Change workspace with status, risk and maintenance windows" width="420"></td>
+  </tr>
+</table>
+
+More views (My Work, assets, infrastructure, security overview, knowledge) are in `site/assets/screens/`; `tools/screenshots/capture.mjs` regenerates them.
+
 ## Principles
 
 - **Modular monolith.** Modules own their data; cross-module access goes through public contracts and events, enforced by `make archcheck`.

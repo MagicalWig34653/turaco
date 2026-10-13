@@ -19,8 +19,7 @@ var simSites = []simSite{
 	{"zentrale", "Verwaltung / Zentrale"},
 }
 
-// simAreas are Locations below a site. Locations are flat in Organization (no parent), so the site is
-// part of the external key and the name.
+// simAreas are Locations below a site; the Site is also part of the name.
 type simArea struct{ Key, Site, Name string }
 
 var simAreas = []simArea{

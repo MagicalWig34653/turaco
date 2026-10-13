@@ -54,7 +54,7 @@ Profiles (`--profile`, or `--stages` for a custom list; `--rate-scale` multiplie
 
 ## Workload
 
-Personas follow the simulation: 32 logins in 7 classes. `--users N` takes the first N round-robin over the classes (0 = all 32), `--classes` restricts the classes, `--weights employee=60,technician=20,...` sets each class's share of arrivals (defaults: employee 50, firstlevel 14, technician 20, lead 8, viewer 3, admin 3, vendor 2). Sessions are kept; a 401 triggers a re-login and one retry (recorded as class `reauth`); sessions are also renewed after 55 minutes.
+Personas follow the simulation: 34 logins in 8 classes. `--users N` takes the first N round-robin over the classes (0 = all 34), `--classes` restricts the classes, `--weights employee=60,technician=20,...` sets each class's share of arrivals (defaults: employee 50, firstlevel 14, technician 20, lead 8, viewer 3, admin 3, sitetech 6, vendor 2). Sessions are kept; a 401 triggers a re-login and one retry (recorded as class `reauth`); sessions are also renewed after 55 minutes.
 
 | Class | Logins | Operations |
 |---|---|---|
@@ -63,6 +63,7 @@ Personas follow the simulation: 32 logins in 7 classes. `--users N` takes the fi
 | lead | three site leads | briefing feed, sidebar, view and queue counts, my-work, a few queries, opens, assigns, comments |
 | viewer | `uwe.pohl`, `mirja.engel` (infrastructure engineers: read access, plus work access in their own Queue through a Queue grant) | query, open, list, counts, and a comment probe: the probe first reads the ticket and its `abilities`; a comment is expected to be denied only where `abilities.comment` (or `abilities.internalComment`) is false, so the team that works its own Queue is not a leak |
 | admin | `devadmin`, `ines.falk`, `deniz.arslan` | user list, audit search, queries, counts, sidebar, briefing |
+| sitetech | `tim.scholz`, `nora.kuhn`: Location-scoped site technicians (ADR-0040) | ticket query and list, open a ticket (404 outside the Site is the expected answer; a successful answer must show an affected Location inside the Site, otherwise an authorization leak), asset list, my-work, view counts |
 | vendor | two `vendor-restricted` users | list own tickets, my-work, a probe that reads somebody else's ticket (must be denied), knowledge |
 
 `403`/`404` answers on operations other than the two denial probes are reported as a note, because they usually mean the persona lacks the permission for that operation in this build.
@@ -86,7 +87,7 @@ Staff write operations are read-modify-write like a real client: `GET` the ticke
 | no 5xx, no timeouts or connection errors | recorded outcomes |
 | no ticket reference issued twice among created tickets | API answers |
 | no lost updates: two successful conditional writes never return the same new version; the version never goes down | API answers |
-| no authorization leak: denial probes (foreign ticket read by a vendor, write by a read-only role) never succeed | API answers |
+| no authorization leak: denial probes (foreign ticket read by a vendor, write by a read-only role, ticket outside the Site read by a Site-scoped technician) never succeed | API answers |
 | created tickets resolve through `GET /tickets/by-reference` (also after a queue move: the old number is an alias) | API (sample of 100) |
 | queue and view counts equal list counts of the query engine, per Queue and for "unassigned" (after `--settle`, default 16 s, because System View counts are cached for 15 s; capped or unavailable counts are skipped) | API, and SQL with `--pg-url` |
 | final ticket versions are not below any observed version, no acknowledged ticket is missing | SQL with `--pg-url`, otherwise a sample of 200 via API |
@@ -135,3 +136,7 @@ Or pass `--cleanup` with `--pg-url` to `run`. Cleanup runs in one transaction: i
 - It drives the API only; browser rendering and the frontend are not measured.
 - Employees pick up routing through the default intake Queue; Queue creation and grants are not exercised.
 - The invariants verify what the API and database show after the run; they do not prove the absence of races.
+
+## Scoped persona run (2026-10-13)
+
+`--profile ramp --rate-scale 0.1` against a development API with the hospital seed (including the `sitetech` class): stages up to 400 operations/s held without dropped arrivals, 5xx or timeouts (p99 at most 22 ms in the hold stages; the 429s of the top stage come from the per-principal query limit). 459 denial probes of the Site-scoped technicians found no authorization leak. The hospital seed repairs flat legacy areas of older development databases (it makes them areas below their Site); without that repair, Site-scoped technicians see no tickets.

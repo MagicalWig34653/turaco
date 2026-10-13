@@ -56,6 +56,16 @@ test("relative markdown links retain queries and anchors at arbitrary depth", ()
     "https://example.com/a.md",
   );
 });
+test("legacy Teams design fragment resolves to its published heading", () => {
+  assert.equal(
+    rewriteLink(
+      "../product/f15-microsoft-integration-design.md#teams",
+      "docs/integrations/teams-email.md",
+      new Set(["docs/product/f15-microsoft-integration-design.md"]),
+    ),
+    "../product/f15-microsoft-integration-design.html#microsoft-teams",
+  );
+});
 test("source links remain in repository; missing/private/unsafe links fail", () => {
   assert.match(
     rewriteLink(
@@ -163,5 +173,21 @@ test("link checker rejects root-relative assets that break project Pages", () =>
       ]),
     )[0],
     /root-relative/,
+  );
+});
+
+test("link checker allows only explicitly optional screenshot assets", () => {
+  const output = new Map([
+    [
+      "index.html",
+      '<a href="assets/screens/dashboard.png"><img src="assets/screens/dashboard.png"></a><img src="assets/screens/unexpected.png"><img src="assets/missing.png">',
+    ],
+  ]);
+  assert.deepEqual(
+    checkLinks(output, new Set(["assets/screens/dashboard.png"])),
+    [
+      "index.html: assets/screens/unexpected.png (missing assets/screens/unexpected.png)",
+      "index.html: assets/missing.png (missing assets/missing.png)",
+    ],
   );
 });

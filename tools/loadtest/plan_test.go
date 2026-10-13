@@ -162,20 +162,20 @@ func TestPoissonArrivalsMatchExpectation(t *testing.T) {
 
 func TestSelectPersonas(t *testing.T) {
 	r := Roster("x")
-	if len(r) != 32 {
-		t.Fatalf("roster has %d personas, want 32 (31 simulation logins + devadmin)", len(r))
+	if len(r) != 34 {
+		t.Fatalf("roster has %d personas, want 34 (33 simulation logins + devadmin)", len(r))
 	}
 	all := SelectPersonas(r, nil, 0)
-	if len(all) != 32 {
+	if len(all) != 34 {
 		t.Fatalf("all: %d", len(all))
 	}
-	few := SelectPersonas(r, nil, 7)
+	few := SelectPersonas(r, nil, 8)
 	seen := map[string]bool{}
 	for _, p := range few {
 		seen[p.Class] = true
 	}
-	if len(few) != 7 || len(seen) != 7 {
-		t.Fatalf("7 users should cover 7 classes: %d users, %d classes", len(few), len(seen))
+	if len(few) != 8 || len(seen) != 8 {
+		t.Fatalf("8 users should cover 8 classes: %d users, %d classes", len(few), len(seen))
 	}
 	onlyStaff := SelectPersonas(r, map[string]bool{ClassTechnician: true, ClassLead: true}, 0)
 	if len(onlyStaff) != 9 {

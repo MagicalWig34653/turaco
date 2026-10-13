@@ -92,12 +92,19 @@ export function rewriteLink(href, source, published, exists = () => false) {
   );
   if (resolved.startsWith("../"))
     throw new Error(`Link escapes repository: ${href}`);
+  // A source-document fragment predates the current heading. Keep its public
+  // link working while the source document is outside this site's edit scope.
+  const fragment =
+    resolved === "docs/product/f15-microsoft-integration-design.md" &&
+    suffix === "#teams"
+      ? "#microsoft-teams"
+      : suffix;
   if (published.has(resolved))
     return (
       path.posix.relative(
         path.posix.dirname(outputPath(source)),
         outputPath(resolved),
-      ) + suffix
+      ) + fragment
     );
   if (resolved.startsWith("docs/") && /\.md$/i.test(resolved))
     throw new Error(`Unpublished or missing document: ${resolved}`);
@@ -145,7 +152,7 @@ export function searchEntry(page) {
     text: plainText(page.html, false).replace(/\s+/g, " ").trim(),
   };
 }
-export function checkLinks(outputs) {
+export function checkLinks(outputs, optionalAssets = new Set()) {
   const failures = [];
   for (const [file, html] of outputs) {
     if (!file.endsWith(".html")) continue;
@@ -160,7 +167,7 @@ export function checkLinks(outputs) {
       }
       const url = new URL(href, `https://local.invalid/${file}`);
       const target = decodeURIComponent(url.pathname.slice(1));
-      if (!outputs.has(target)) {
+      if (!outputs.has(target) && !optionalAssets.has(target)) {
         failures.push(`${file}: ${href} (missing ${target})`);
         continue;
       }

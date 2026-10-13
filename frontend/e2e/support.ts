@@ -5,6 +5,10 @@ export type MockOptions = {
   /** Credentials accepted by POST /api/v1/auth/login. */
   validLogin?: { identifier: string; password: string };
   permissions?: string[];
+  /** Keys of the optional modules reported as enabled. */
+  modules?: string[];
+  /** Permissions held only at Locations (permission -> root Location ids), ADR-0040. */
+  scopedPermissions?: Record<string, string[]>;
 };
 
 export type MockState = { signedIn: boolean; requests: string[] };
@@ -41,6 +45,7 @@ export async function mockApi(page: Page, options: MockOptions = {}): Promise<Mo
             authMethod: 'password',
             expiresAt: '2099-01-01T00:00:00Z',
             permissions: options.permissions ?? [],
+            scopedPermissions: options.scopedPermissions ?? {},
             displayName: 'Ada Admin',
             locale: 'en',
           });
@@ -54,6 +59,10 @@ export async function mockApi(page: Page, options: MockOptions = {}): Promise<Mo
             error: { code: 'platform.invalid_credentials', message: 'invalid' },
           });
         }
+        case 'GET /modules/status':
+          return json(route, 200, {
+            items: (options.modules ?? []).map((key) => ({ key, enabled: true })),
+          });
         case 'GET /ai/status':
           return json(route, 200, {
             enabled: false,
