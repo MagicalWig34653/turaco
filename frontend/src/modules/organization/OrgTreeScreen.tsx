@@ -618,11 +618,19 @@ function MoveDialog({
   const ROOT = '__root';
   const [target, setTarget] = useState(KEEP);
   const parentFor = (value: string) => (value === ROOT ? null : value);
+  // A move can change who is covered by Location-scoped roles: ask the server first (dry run, ADR-0040).
+  const preview = useAsync(
+    async () =>
+      kind === 'locations' && target !== KEEP
+        ? peopleAdminApi.previewLocationMove(node.item.id, node.item.version, parentFor(target))
+        : null,
+    [kind, target, node.item.id, node.item.version],
+  );
   return (
     <GuardedActionDialog
       title={t('tree.move.title', { name: node.item.name })}
       confirmLabel={t('tree.action.move')}
-      disabled={target === KEEP}
+      disabled={target === KEEP || preview.data?.allowed === false}
       run={async () => {
         if (kind === 'locations')
           await peopleAdminApi.moveLocation(node.item.id, node.item.version, parentFor(target));
@@ -650,6 +658,15 @@ function MoveDialog({
       />
       {kind === 'locations' ? (
         <p className="field-hint">{t('locations.move.depthHint', { count: LOCATION_MAX_DEPTH })}</p>
+      ) : null}
+      {preview.data?.administratorRequired ? (
+        <Alert kind="warning">
+          {preview.data.allowed
+            ? t('locations.move.scopedAffected', {
+                count: preview.data.scopedAssignmentsAffected ?? 0,
+              })
+            : t('locations.move.scopedBlocked')}
+        </Alert>
       ) : null}
     </GuardedActionDialog>
   );

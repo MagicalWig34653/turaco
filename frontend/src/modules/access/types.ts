@@ -84,7 +84,13 @@ export type RoleAssignment = {
   subjectType: SubjectType;
   subjectId: string;
   subjectDisplayName: string;
-  scope: 'global';
+  scope: 'global' | 'location';
+  /** Set for scope 'location' (the role applies at that Location and below). */
+  scopeLocationId?: string;
+  /** Name and path need organization.view. */
+  scopeLocationName?: string;
+  scopeLocationPath?: string;
+  scopeLocationActive?: boolean;
   createdAt: string;
   createdBy?: string;
   revokedAt?: string;
@@ -96,6 +102,8 @@ export type RoleAssignmentCreate = {
   subjectType: SubjectType;
   subjectId: string;
   expiresAt?: string;
+  /** Apply the role only at this Location and its sub-Locations (not for the administrator role). */
+  scopeLocationId?: string;
   acknowledgedRules?: string[];
   reason?: string;
 };

@@ -15,8 +15,8 @@ export type AuthSession = {
   /** Permissions held globally. */
   permissions: string[];
   /**
-   * Permissions held only at Locations (ADR-0040): permission -> Location ids. Not used for gating yet
-   * (hasPermissionAnywhere arrives with F16 slice L-F).
+   * Permissions held only at Locations (ADR-0040): permission -> Location ids. `can()` treats them as held anywhere
+   * (screens show up, the server limits the content to the Locations in scope).
    */
   scopedPermissions?: Record<string, string[]>;
   /** The user's own display name; presentation only, absent when unknown. */

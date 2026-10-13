@@ -6963,6 +6963,20 @@ export const de: Record<MessageKey, string> = {
   'routing.testDefault': 'Keine Regel trifft zu. Das Ticket geht in die Eingangs-Queue {queue}.',
   'routing.edit': 'Bearbeiten',
   'routing.delete': 'Löschen',
+  'assign.scope': 'Gilt',
+  'assign.scope.global': 'Überall',
+  'assign.scope.location': 'Nur an einem Standort (und darunter)',
+  'assign.scope.hint':
+    'Die Rolle wirkt dann nur für Objekte an diesem Standort und darunter. Nicht standortbezogene Rechte bleiben unwirksam.',
+  'assign.scope.chosen': 'Standort: {name}',
+  'assignments.col.scope': 'Gilt',
+  'assignments.scope.global': 'Überall',
+  'assignments.scope.at': 'An {name}',
+  'assignments.scope.unknown': 'einem Standort',
+  'locations.move.scopedAffected':
+    'Diese Verschiebung ändert, was {count} standortbezogene Rollenzuweisung(en) abdecken. Administratoren werden benachrichtigt.',
+  'locations.move.scopedBlocked':
+    'Diese Verschiebung ändert, was standortbezogene Rollenzuweisungen abdecken. Nur ein Plattform-Administrator darf diesen Standort verschieben.',
   'timetracking.log': 'Zeit erfassen',
   'timetracking.edit': 'Bearbeiten',
   'timetracking.delete': 'Löschen',

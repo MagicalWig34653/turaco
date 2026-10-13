@@ -6720,6 +6720,20 @@ export const en = {
   'routing.testDefault': 'No rule matches. The ticket goes to the intake queue {queue}.',
   'routing.edit': 'Edit',
   'routing.delete': 'Delete',
+  'assign.scope': 'Applies',
+  'assign.scope.global': 'Everywhere',
+  'assign.scope.location': 'Only at a Location (and its sub-Locations)',
+  'assign.scope.hint':
+    'The role then takes effect only for objects at this Location and below. Permissions that are not location-based stay inactive.',
+  'assign.scope.chosen': 'Location: {name}',
+  'assignments.col.scope': 'Applies',
+  'assignments.scope.global': 'Everywhere',
+  'assignments.scope.at': 'At {name}',
+  'assignments.scope.unknown': 'a Location',
+  'locations.move.scopedAffected':
+    'This move changes what {count} Location-scoped role assignment(s) cover. Administrators are notified.',
+  'locations.move.scopedBlocked':
+    'This move changes what Location-scoped role assignments cover. Only a platform administrator may move this Location.',
   'timetracking.log': 'Log time',
   'timetracking.edit': 'Edit',
   'timetracking.delete': 'Delete',

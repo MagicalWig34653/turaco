@@ -6,6 +6,7 @@ import { Select, TextField } from '../../platform/ui/Field';
 import { GuardedActionDialog } from '../../platform/ui/GuardedActionDialog';
 import { endOfDayIso, riskCounts, validateExpiry } from './accessModel';
 import { accessApi } from './api';
+import { LocationPicker } from '../deployments/components';
 import { SubjectPicker, type Subject } from './SubjectPicker';
 import type { Role, SubjectType } from './types';
 import { useActor } from './useActor';
@@ -33,6 +34,8 @@ export function AssignDialog({ roles, initialRoleId, fixedSubject, onClose, onAs
   const [subjectType, setSubjectType] = useState<SubjectType>('user');
   const [subject, setSubject] = useState<Subject | null>(fixedSubject ?? null);
   const [expiry, setExpiry] = useState('');
+  const [scopeKind, setScopeKind] = useState<'global' | 'location'>('global');
+  const [scopeLocation, setScopeLocation] = useState<{ id: string; label: string } | null>(null);
 
   const role = roles.find((candidate) => candidate.id === roleId);
   const byName = new Map(
@@ -41,12 +44,15 @@ export function AssignDialog({ roles, initialRoleId, fixedSubject, onClose, onAs
   const counts = riskCounts(role?.permissions ?? [], byName);
   const problem = role ? validateExpiry(expiry, role, byName, Date.now()) : null;
   const isAdminRole = role?.key === 'platform-administrator';
+  // The administrator role is always global; Directory Group subjects take no Location scope.
+  const canScope = !isAdminRole && subjectType === 'user';
+  const scoped = canScope && scopeKind === 'location';
 
   return (
     <GuardedActionDialog
       title={t('assign.title')}
       confirmLabel={t('assign.submit')}
-      disabled={!subject || !roleId || problem !== null}
+      disabled={!subject || !roleId || problem !== null || (scoped && !scopeLocation)}
       run={async (extras) => {
         if (!subject) return;
         const expiresAt = expiry ? endOfDayIso(expiry) : undefined;
@@ -55,6 +61,7 @@ export function AssignDialog({ roles, initialRoleId, fixedSubject, onClose, onAs
           subjectType,
           subjectId: subject.id,
           ...(expiresAt ? { expiresAt } : {}),
+          ...(scoped && scopeLocation ? { scopeLocationId: scopeLocation.id } : {}),
           ...(extras.acknowledgedRules ? { acknowledgedRules: extras.acknowledgedRules } : {}),
           ...(extras.reason ? { reason: extras.reason } : {}),
         });
@@ -110,6 +117,30 @@ export function AssignDialog({ roles, initialRoleId, fixedSubject, onClose, onAs
           />
         </>
       )}
+      {canScope ? (
+        <>
+          <Select
+            label={t('assign.scope')}
+            value={scopeKind}
+            onChange={(event) => setScopeKind(event.target.value as 'global' | 'location')}
+            options={[
+              { value: 'global', label: t('assign.scope.global') },
+              { value: 'location', label: t('assign.scope.location') },
+            ]}
+          />
+          {scopeKind === 'location' ? (
+            <>
+              <p className="field-hint">{t('assign.scope.hint')}</p>
+              <LocationPicker
+                onPick={(item) => setScopeLocation({ id: item.id, label: item.label })}
+              />
+              {scopeLocation ? (
+                <p>{t('assign.scope.chosen', { name: scopeLocation.label })}</p>
+              ) : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
       <TextField
         label={t('assign.expiry')}
         hint={

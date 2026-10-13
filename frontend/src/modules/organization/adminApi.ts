@@ -164,6 +164,13 @@ export const peopleAdminApi = {
   ) => api.patch<LocationNode>(`/locations/${enc(id)}`, body),
   moveLocation: (id: string, expectedVersion: number, parentId: string | null) =>
     api.post<LocationNode>(`/locations/${enc(id)}/move`, { expectedVersion, parentId }),
+  /** Dry run: whether the move changes what Location-scoped role assignments cover (count for administrators). */
+  previewLocationMove: (id: string, expectedVersion: number, parentId: string | null) =>
+    api.post<LocationMovePreview>(`/locations/${enc(id)}/move`, {
+      expectedVersion,
+      parentId,
+      dryRun: true,
+    }),
   setLocationActive: (
     id: string,
     active: boolean,
@@ -287,4 +294,12 @@ export const peopleAdminApi = {
     }
     return out;
   },
+};
+
+export type LocationMovePreview = {
+  dryRun: boolean;
+  administratorRequired: boolean;
+  allowed: boolean;
+  /** Only administrators receive the number of affected scoped assignments. */
+  scopedAssignmentsAffected?: number;
 };

@@ -75,6 +75,16 @@ export function RoleAssignmentsScreen() {
   const columns: Column<RoleAssignment>[] = [
     { key: 'role', header: t('assignments.col.role'), render: (a) => <code>{a.roleKey}</code> },
     {
+      key: 'scope',
+      header: t('assignments.col.scope'),
+      render: (a) =>
+        a.scope === 'location'
+          ? t('assignments.scope.at', {
+              name: a.scopeLocationName ?? t('assignments.scope.unknown'),
+            })
+          : t('assignments.scope.global'),
+    },
+    {
       key: 'subject',
       header: t('assignments.col.subject'),
       render: (a) => a.subjectDisplayName || <code>{a.subjectId}</code>,
