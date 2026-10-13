@@ -78,6 +78,7 @@ Target designs with implementation notes; [current status](product/current-statu
 - [Installation](operations/installation.md)
 - [Getting started as an administrator](operations/administrator-getting-started.md)
 - [Deployment](operations/deployment.md)
+- [Location-scoped access](operations/location-scoped-access.md)
 - [Backup and Restore](operations/backup-restore.md)
 - [Release](operations/release.md)
 - [Colima on Apple Silicon](operations/local-colima.md)
