@@ -1,6 +1,6 @@
 # ADR-0040: Location-Scoped Role Assignments
 
-- Status: Accepted (2026-10-12) as product direction. Slices L-A (data model, evaluator, `RequireScoped`, harness), L-B (assignment operations, scope-aware guards, API) and L-C (Location move guard and the L-B security review gates) are implemented; L-C awaits its security review. No permission is scopable yet; see [current status](../product/current-status.md).
+- Status: Accepted (2026-10-12) as product direction. Slices L-A (data model, evaluator, `RequireScoped`, harness), L-B (assignment operations, scope-aware guards, API), L-C (Location move guard and the L-B review gates), L-D (Tickets), L-E (Assets, reviewed), L-G (Tasks) and L-F part 1 (access UI) are implemented; L-D and L-G await their independent security review. `assets.view`, `assets.manage`, `tickets.view`, `tickets.manage`, `tasks.view` and `tasks.manage` are scopable; see [current status](../product/current-status.md).
 - Related: [F16 design](../product/f16-location-scoped-access-design.md), [identity and access design](../security/identity-access-design.md) (E3: scope `global` only "until the first scoped module"), [F14 design](../product/f14-administration-design.md) sections 2.3 to 2.5 (guards), [F13 design](../product/f13-workbench-views-design.md) (Queue grants, row-specific disclosure), [ADR-0033](ADR-0033-workbench-views-query-engine.md), [ADR-0034](ADR-0034-local-accounts-and-external-parties.md).
 
 ## Context
