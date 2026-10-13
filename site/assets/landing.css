@@ -1927,3 +1927,15 @@
   width: 26px;
   height: 26px;
 }
+
+/* Screenshots follow the site theme (light, dark, cyberpunk). */
+.screen-card .screen-img {
+  display: none;
+}
+:root:not([data-theme="dark"]):not([data-theme="cyberpunk"])
+  .screen-card
+  .screen-light,
+:root[data-theme="dark"] .screen-card .screen-dark,
+:root[data-theme="cyberpunk"] .screen-card .screen-cyberpunk {
+  display: block;
+}

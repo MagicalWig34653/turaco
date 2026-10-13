@@ -26,7 +26,7 @@ The server prints its URL. Alternatively, `make site-build` installs dependencie
 
 ## Screenshots
 
-`site/assets/screens/*.png` are real captures of the web UI (1440x900, light theme). With the API and Vite dev server running against a development database seeded with `demo seed-hospital`, regenerate them from the repository root with `node tools/screenshots/capture.mjs` (optional output directory argument; `TURACO_URL`, `TURACO_USER` and `TURACO_PASSWORD` override the defaults). The time-tracking report is not captured because the module is disabled by default. Check every image for secrets and non-simulation personal data before committing.
+`site/assets/screens/*.png` are real captures of the web UI (1440x900): six key pages (dashboard, service desk, ticket, assets, My Work, changes) in each product theme under `site/assets/screens/{turaco,dark,cyberpunk}/`. The landing gallery shows the set that matches the visitor's site theme. With the API and Vite dev server running against a development database seeded with `demo seed-hospital`, regenerate them from the repository root with `node tools/screenshots/capture.mjs` (optional output directory argument; `TURACO_URL`, `TURACO_USER` and `TURACO_PASSWORD` override the defaults). Check every image for secrets and non-simulation personal data before committing.
 
 ## Content and publication review
 
@@ -50,7 +50,7 @@ Use system fonts and local assets. No external fonts, CDN resources, trackers or
 
 Cyberpunk motion uses slow grid and scanline movement, a short wordmark/title displacement once per long cycle, a terminal cursor, subtle button glow opacity, and hover-only card borders. The title briefly animates its small text shadow; other effects use transform and opacity. The mesh and preview frame contain paint. Reduced motion cancels animations and transitions; hidden tabs pause them. All themes use a short, staggered section reveal when motion is allowed.
 
-The gallery references ten 1440 × 900 PNG files in `site/assets/screens/`. A separate screenshot capture process supplies them. The builder copies files in nested asset directories and tolerates missing images only for those ten named gallery paths; other missing links remain errors. Until the capture process supplies a file, its gallery thumbnail and full-size link cannot display that image.
+The gallery references 18 PNG files (six pages in three themes) in `site/assets/screens/<theme>/`. The builder copies nested asset directories and tolerates missing images only for those named paths; other missing links remain errors.
 
 After changes, run the site tests and build/link check. With cached Playwright Chromium, review landing and documentation screenshots at 390 and 1440 px for all four choices (Auto with both system schemes). Verify keyboard selection, persistence across navigation/reload, blocked storage, system changes, reduced motion, overflow, text contrast and stable content bounds. Browser tooling is local verification only, not a new site dependency.
 

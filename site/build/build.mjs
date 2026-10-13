@@ -137,17 +137,11 @@ outputs.set(".nojekyll", "");
 // The screenshot capture process supplies these files separately. Keep other
 // missing assets as build errors, including unexpected files in this folder.
 const optionalScreens = new Set(
-  [
-    "dashboard",
-    "service-desk",
-    "ticket",
-    "assets",
-    "my-work",
-    "changes",
-    "infrastructure",
-    "security",
-    "knowledge",
-  ].map((name) => `assets/screens/${name}.png`),
+  ["turaco", "dark", "cyberpunk"].flatMap((theme) =>
+    ["dashboard", "service-desk", "ticket", "assets", "my-work", "changes"].map(
+      (name) => `assets/screens/${theme}/${name}.png`,
+    ),
+  ),
 );
 const failures = checkLinks(outputs, optionalScreens);
 if (failures.length)

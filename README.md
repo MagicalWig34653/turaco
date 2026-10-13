@@ -50,18 +50,22 @@ Roadmap F0 to F14 are implemented with documented gaps, as are the first slices 
 
 Captured from a development instance with the German [hospital simulation](docs/development/simulation-hospital.md) data (fictional people, emergency-account login).
 
+Three themes, light (Turaco), Dark and Cyberpunk; the table shows a different page in each, all six pages exist in all three themes under `site/assets/screens/<theme>/`.
+
 <table>
   <tr>
-    <td><img src="site/assets/screens/dashboard.png" alt="Turaco overview with briefing, major incidents and work counters" width="420"></td>
-    <td><img src="site/assets/screens/service-desk.png" alt="Service desk ticket queue with filters and priorities" width="420"></td>
+    <td><img src="site/assets/screens/turaco/dashboard.png" alt="Overview with briefing, major incidents and work counters (turaco theme)" width="280"></td>
+    <td><img src="site/assets/screens/dark/dashboard.png" alt="Overview with briefing, major incidents and work counters (dark theme)" width="280"></td>
+    <td><img src="site/assets/screens/cyberpunk/dashboard.png" alt="Overview with briefing, major incidents and work counters (cyberpunk theme)" width="280"></td>
   </tr>
   <tr>
-    <td><img src="site/assets/screens/ticket.png" alt="Ticket detail with conversation history and ticket actions" width="420"></td>
-    <td><img src="site/assets/screens/changes.png" alt="Change workspace with status, risk and maintenance windows" width="420"></td>
+    <td><img src="site/assets/screens/turaco/service-desk.png" alt="Service desk ticket queue with filters and priorities (turaco theme)" width="280"></td>
+    <td><img src="site/assets/screens/dark/service-desk.png" alt="Service desk ticket queue with filters and priorities (dark theme)" width="280"></td>
+    <td><img src="site/assets/screens/cyberpunk/service-desk.png" alt="Service desk ticket queue with filters and priorities (cyberpunk theme)" width="280"></td>
   </tr>
 </table>
 
-More views (My Work, assets, infrastructure, security overview, knowledge) are in `site/assets/screens/`; `tools/screenshots/capture.mjs` regenerates them.
+More pages (ticket, assets, My Work, changes) are in the same folders; `tools/screenshots/capture.mjs` regenerates all of them.
 
 ## Principles
 
