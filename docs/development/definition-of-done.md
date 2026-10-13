@@ -74,6 +74,8 @@ Explicitly decide impact on:
 
 ## Final validation
 
+Keep the public website current: when a change adds, completes or removes a user-visible capability or changes a phase status, update `site/index.html` (phase cards and the phase count in the roadmap, feature texts) together with `docs/product/current-status.md`, and run `cd site && npm test && npm run build`. Screenshots are regenerated with `tools/screenshots/capture.mjs` when a key page changes noticeably.
+
 Run:
 
 ```bash

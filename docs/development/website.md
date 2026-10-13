@@ -30,6 +30,8 @@ The server prints its URL. Alternatively, `make site-build` installs dependencie
 
 ## Content and publication review
 
+The site is part of the definition of done: roadmap cards, the phase count and feature texts change in the same commit as the capability they describe ([definition of done](definition-of-done.md)).
+
 Use [current implementation status](../product/current-status.md), the [implementation plan](../product/implementation-plan.md) and repository implementation as the evidence for claims. A backend slice does not imply a finished frontend or live integration. Intune and advisory ingestion use fake/import adapters; Autotask has no live REST client. Mark planned capabilities explicitly. Do not invent customers, pricing, downloads, testimonials or performance numbers.
 
 Every product illustration uses fictional data and must be labeled. Keep the visible notice **Project preview — name and branding not final**; see [name clearance](../product/name-clearance.md). The repository currently has no `LICENSE` file: state that fact rather than inventing license terms. Revisit the footer when an explicit license is added.
