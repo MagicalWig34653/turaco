@@ -24,7 +24,7 @@ var _ application.EscalationTasks = (*EscalationTasks)(nil)
 func (x *EscalationTasks) CreateInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID string, in application.EscalationTaskInput) (string, error) {
 	due, team := in.DueAt, in.AssignedTeamID
 	id, err := x.c.CreateInTx(ctx, tx, taskspublic.Caller{Actor: actor, CorrelationID: correlationID}, taskspublic.CreateInput{
-		Title: in.Title, DueAt: &due, AssignedTeamID: &team, ContextType: application.TaskContextType, ContextID: in.TicketID,
+		Title: in.Title, DueAt: &due, AssignedTeamID: &team, ContextType: application.TaskContextType, ContextID: in.TicketID, LocationID: in.LocationID,
 	})
 	if errors.Is(err, taskspublic.ErrAssigneeInvalid) {
 		return "", application.ErrAssigneeInvalid

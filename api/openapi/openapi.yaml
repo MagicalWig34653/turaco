@@ -1687,6 +1687,40 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '500': {$ref: '#/components/responses/InternalError'}
+  /tasks/{id}/location:
+    post:
+      operationId: setTaskLocation
+      summary: Place a task at a Location (or clear it).
+      description: >-
+        Requires `tasks.manage` covering the task's current Location and the new one (a Location-scoped manager cannot move a
+        task out of their scope or clear its Location: 403 `access.location_out_of_scope`). Version guarded, audited
+        (tasks.task.location_changed). Later Location changes of the context record do not move the task.
+      security:
+        - sessionAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedVersion]
+              properties:
+                expectedVersion: {type: integer}
+                locationId: {type: [string, "null"], format: uuid}
+      responses:
+        '200':
+          description: The task.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Task'}
+        '400': {$ref: '#/components/responses/TasksInvalid'}
+        '404': {$ref: '#/components/responses/TasksNotFound'}
+        '409': {$ref: '#/components/responses/TasksConflict'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /tasks/{id}/unassign:
     post:
       operationId: unassignTask
@@ -19014,7 +19048,7 @@ components:
     Task:
       type: object
       additionalProperties: false
-      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, resultNote, resultNoteForRequester, version, createdAt, updatedAt]
+      required: [id, title, description, status, statusReason, priority, assignedUserId, assignedUserName, assignedTeamId, assignedTeamName, contextType, contextId, dueAt, completedAt, createdByUserId, completedByUserId, recurrenceDefinitionId, resultNote, resultNoteForRequester, locationId, version, createdAt, updatedAt]
       properties:
         id: {type: string, format: uuid}
         title: {type: string}
@@ -19034,6 +19068,7 @@ components:
         completedByUserId: {type: [string, "null"], format: uuid, description: "For a caller whose only permission is `tasks.work`: set only when the caller completed the task."}
         resultNote: {type: [string, "null"], description: "The closing comment given with `complete`; null otherwise and after a reopen."}
         resultNoteForRequester: {type: boolean, description: "True when the completer marked the note for the requester of the request."}
+        locationId: {type: [string, "null"], format: uuid, description: "The Location the task is placed at for Location-scoped access (ADR-0040); null means none (visible to global holders and assignees only)."}
         recurrenceDefinitionId: {type: [string, "null"], format: uuid, description: "Set on tasks generated from a recurring task definition (which may have been deleted since)."}
         version: {type: integer, minimum: 1, description: "Increases with every change; send it as expectedVersion for optimistic concurrency."}
         createdAt: {type: string, format: date-time}
@@ -22368,6 +22403,7 @@ components:
         dueAt: {type: [string, "null"], format: date-time}
         assignedUserId: {type: [string, "null"], format: uuid}
         assignedTeamId: {type: [string, "null"], format: uuid}
+        locationId: {type: [string, "null"], format: uuid, description: "Place the task at an active Location. A Location-scoped `tasks.manage` must name a Location inside its scope."}
     TaskUpdate:
       type: object
       additionalProperties: false

@@ -34,6 +34,8 @@ type CreateInput struct {
 	// ContextType names the kind of record ("service_request"), ContextID is its id.
 	ContextType string
 	ContextID   string
+	// LocationID places the task at the Location of its context record (nil: none) for Location-scoped access.
+	LocationID *string
 }
 
 // Task is the read view other modules get.
@@ -194,6 +196,7 @@ func (c *Creator) CreateInTx(ctx context.Context, tx pgx.Tx, caller Caller, in C
 	if err != nil {
 		return "", err
 	}
+	n.LocationID = in.LocationID
 	if err := application.CheckAssignees(ctx, c.dir, in.AssignedUserID, in.AssignedTeamID); err != nil {
 		return "", err
 	}

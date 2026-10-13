@@ -37,6 +37,8 @@ type NewTask struct {
 	// example a service request); both or neither.
 	ContextType *string
 	ContextID   *string
+	// LocationID is the Location of the task for Location-scoped access (nil: none).
+	LocationID *string
 }
 
 // ListQuery selects tasks in the shared task order: due date (tasks without
@@ -59,6 +61,9 @@ type ListQuery struct {
 type Mine struct {
 	UserID  string
 	TeamIDs []string
+	// LocationIDs, when set, widens the restriction to the tasks at these Locations (Location-scoped tasks.view
+	// and tasks.manage).
+	LocationIDs []string
 }
 
 // Store is the persistence port of tasks.

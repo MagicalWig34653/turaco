@@ -212,6 +212,8 @@ var scopeAdoption = map[string]string{
 	"assets.manage":  "wiring/assets_scope_test.go:TestAssetsLocationScope",
 	"tickets.view":   "wiring/servicedesk_scope_test.go:TestServiceDeskLocationScope",
 	"tickets.manage": "wiring/servicedesk_scope_test.go:TestServiceDeskLocationScope",
+	"tasks.view":     "wiring/tasks_scope_test.go:TestTasksLocationScope",
+	"tasks.manage":   "wiring/tasks_scope_test.go:TestTasksLocationScope",
 }
 
 // scopePrerequisites are the tests of safeguards that must exist before any permission becomes scopable, as

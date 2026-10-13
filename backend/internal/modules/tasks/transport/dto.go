@@ -33,6 +33,7 @@ type taskDTO struct {
 	RecurrenceDefinitionID *string `json:"recurrenceDefinitionId"`
 	ResultNote             *string `json:"resultNote"`
 	ResultNoteForRequester bool    `json:"resultNoteForRequester"`
+	LocationID             *string `json:"locationId"`
 	Version                int     `json:"version"`
 	CreatedAt              string  `json:"createdAt"`
 	UpdatedAt              string  `json:"updatedAt"`
@@ -54,7 +55,7 @@ func toTask(v application.TaskView) taskDTO {
 		Priority: v.Priority, AssignedUserID: v.AssignedUserID, AssignedUserName: v.AssignedUserName,
 		AssignedTeamID: v.AssignedTeamID, AssignedTeamName: v.AssignedTeamName,
 		ContextType: v.ContextType, ContextID: v.ContextID, DueAt: tsPtr(v.DueAt), CompletedAt: tsPtr(v.CompletedAt),
-		CreatedByUserID: v.CreatedByUserID, CompletedByUserID: v.CompletedByUserID, RecurrenceDefinitionID: v.RecurrenceDefinitionID, ResultNote: v.ResultNote, ResultNoteForRequester: v.ResultNoteForRequester,
+		CreatedByUserID: v.CreatedByUserID, CompletedByUserID: v.CompletedByUserID, RecurrenceDefinitionID: v.RecurrenceDefinitionID, ResultNote: v.ResultNote, ResultNoteForRequester: v.ResultNoteForRequester, LocationID: v.LocationID,
 		Version: v.Version, CreatedAt: ts(v.CreatedAt), UpdatedAt: ts(v.UpdatedAt),
 	}
 }

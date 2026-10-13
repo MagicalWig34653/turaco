@@ -88,7 +88,12 @@ func (s *Service) WithQueryEngine(e *query.Engine) *Service {
 func (a access) visibility(mine bool) (query.Fragment, string) {
 	if mine || !(a.p.ViewAll || a.p.Manage) {
 		m := a.mine()
-		return query.Fragment{SQL: "t.assigned_user_id = ?::uuid OR t.assigned_team_id = ANY(?::text[]::uuid[])", Args: []any{m.UserID, m.TeamIDs}}, "mine"
+		own := query.Fragment{SQL: "t.assigned_user_id = ?::uuid OR t.assigned_team_id = ANY(?::text[]::uuid[])", Args: []any{m.UserID, m.TeamIDs}}
+		if !mine && a.scoped() {
+			// Location-scoped tasks.view and tasks.manage: the tasks at the caller's Locations as well (ADR-0040).
+			return query.Fragment{SQL: "(" + own.SQL + ") OR t.location_id = ANY(?::text[]::uuid[])", Args: append(own.Args, a.scopedLocations())}, "mine+locations"
+		}
+		return own, "mine"
 	}
 	return query.Fragment{}, "all"
 }
@@ -96,12 +101,12 @@ func (a access) visibility(mine bool) (query.Fragment, string) {
 func (a access) subject() query.Subject {
 	teams := a.mine().TeamIDs
 	return query.Subject{UserID: a.p.UserID, TeamIDs: teams, Permissions: map[string]bool{
-		permTasksView: a.p.ViewAll, permTasksManage: a.p.Manage, permTasksWork: a.p.Work}}
+		permTasksView: a.p.ViewAll || a.p.ViewScope.Any(), permTasksManage: a.p.Manage || a.p.ManageScope.Any(), permTasksWork: a.p.Work}}
 }
 
 // QueryFields returns the task catalog as the caller may use it.
 func (s *Service) QueryFields(ctx context.Context, p Principal) (query.Info, error) {
-	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work) {
+	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work || p.ViewScope.Any() || p.ManageScope.Any()) {
 		return query.Info{}, ErrForbidden
 	}
 	a, err := s.access(ctx, p)
@@ -142,7 +147,7 @@ func (s *Service) CompatNodes(f ListFilter) []query.Node {
 // the caller or one of the caller's Teams (tasks.work); nothing without any of
 // them. The visibility predicate is built here and ANDed outside the filter.
 func (s *Service) Query(ctx context.Context, p Principal, req query.Request, mine bool, compat []query.Node) (query.Page[TaskView], error) {
-	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work) {
+	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work || p.ViewScope.Any() || p.ManageScope.Any()) {
 		return query.Page[TaskView]{}, ErrForbidden
 	}
 	a, err := s.access(ctx, p)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MagicalWig34653/turaco/backend/internal/platform/audit"
+	"github.com/MagicalWig34653/turaco/backend/internal/platform/authorization"
 )
 
 // Task statuses.
@@ -73,6 +74,8 @@ type Task struct {
 	// ResultNoteForRequester marks the note as meant for the person who asked for the work (the request's requester
 	// sees it); otherwise it stays internal. False when there is no note.
 	ResultNoteForRequester bool
+	// LocationID is the Location of the task for Location-scoped access (ADR-0040); nil means none.
+	LocationID *string
 	// Version starts at 1 and increases with every change.
 	Version   int
 	CreatedAt time.Time
@@ -105,6 +108,11 @@ type Principal struct {
 	RecurrenceManage bool
 	// BoardsManageTeam (tasks.boards.manage_team) creates and edits Team-owned Task Boards.
 	BoardsManageTeam bool
+	// ViewScope and ManageScope are where the caller holds tasks.view and tasks.manage through Location-scoped role
+	// assignments (ADR-0040): tasks at those Locations are seen (and, for manage, changed). ViewAll and Manage keep
+	// meaning "held globally".
+	ViewScope   authorization.LocationScope
+	ManageScope authorization.LocationScope
 }
 
 // Caller identifies who performs a mutation and the request it belongs to.
@@ -132,6 +140,8 @@ var (
 	ErrVersionConflict = errors.New("tasks: version conflict")
 	// ErrAssigneeInvalid means an assigned User or Team does not exist or is not active.
 	ErrAssigneeInvalid = errors.New("tasks: assignee is not an active user or team")
+	// ErrLocationOutOfScope means a Location-scoped manager tried to move a task out of their scope or to no Location.
+	ErrLocationOutOfScope = errors.New("tasks: the location is outside the caller's scope")
 	// ErrInvalidCursor is returned for a malformed pagination cursor.
 	ErrInvalidCursor = errors.New("tasks: invalid cursor")
 )

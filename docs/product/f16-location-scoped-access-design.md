@@ -317,3 +317,13 @@ Nothing is exploitable today (no permission is scopable). These latent findings 
 - **Not scope-aware (fail closed, a scoped-only caller sees nothing there):** role Queue grants held through a scoped role assignment (inert: `RoleIDs` is global-only), Problems and Major Incident ticket lists and links (`ViewScope`/`CanViewTicket`/`VisibleTickets` stay Queue-based), the manager overview, the SLA report, My Work ticket sources, System Views for the sidebar, AI and MCP ticket tools, notification fan-out by permission and the Queue picker (Queue metadata is Queue-grant based). The web UI hides Ticket screens from callers who hold the permission only at a Location (L-F).
 - **Creation.** Intake is unchanged; a scoped-only staff member cannot choose staff-only fields at creation (no Queue work), and the affected Location of a new Ticket is still the affected person's primary Location.
 
+## Slice L-G as implemented (2026-10-13)
+
+`tasks.view` and `tasks.manage` are scopable (adoption entry `wiring/tasks_scope_test.go:TestTasksLocationScope`). Migration `000103` adds `platform.tasks.location_id` (nullable, partial index).
+
+- **Model.** `Task.LocationID`; `CreateInput.LocationID` (a Location-scoped manager must name a Location inside the scope; without a Location only the global holding creates); explicit `SetLocation` (`POST /tasks/{id}/location`, version guarded, audited `tasks.task.location_changed`): the caller must manage both the current and the new Location, a scoped manager cannot clear the Location (403 `access.location_out_of_scope`).
+- **Access.** `canSee`: global `tasks.view`/`tasks.manage`, a scoped view or manage covering the task's Location, or `tasks.work` on an assigned task. `canWork`/manager-only operations (assign, unassign, edit, cancel, reopen, location) use `manages(task)`: global manage or a scoped manage covering the Location. A task without Location is for global holders and its assignees only.
+- **Lists.** The task query engine (list, Saved Views, boards cards) ORs `location_id = ANY(scope)` into the "mine" visibility; the legacy list does the same (`Mine.LocationIDs`). Routes admit holders at a Location (`globalOrScoped`).
+- **Context creators.** Ticket callback Tasks and SLA escalation Tasks are placed at the Ticket's affected Location at creation (`tasks/public` `CreateInput.LocationID`). Other creators (requests, Changes, recurrence) place no Location and later Location changes of the context record do not move a task (open question 8), so such tasks stay global-holder only.
+- **Not scope-aware (fail closed):** the tasks overview, My Work (assigned tasks only, unchanged), board administration routes, Recurring Task Definitions, notification fan-out by permission.
+

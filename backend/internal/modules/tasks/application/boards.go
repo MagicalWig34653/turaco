@@ -258,7 +258,7 @@ type loaded struct {
 }
 
 func (b *Boards) canUseTasks(p Principal) error {
-	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work) {
+	if p.UserID == "" || !(p.ViewAll || p.Manage || p.Work || p.ViewScope.Any() || p.ManageScope.Any()) {
 		return ErrForbidden
 	}
 	return nil

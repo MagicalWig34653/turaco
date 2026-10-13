@@ -21,7 +21,7 @@ func NewCallbackTasks(c *taskspublic.Creator) *CallbackTasks { return &CallbackT
 func (x *CallbackTasks) CreateInTx(ctx context.Context, tx pgx.Tx, actor audit.Actor, correlationID string, in application.CallbackTaskInput) (string, error) {
 	due, assignee := in.DueAt, in.AssignedUserID
 	id, err := x.c.CreateInTx(ctx, tx, taskspublic.Caller{Actor: actor, CorrelationID: correlationID}, taskspublic.CreateInput{
-		Title: in.Title, DueAt: &due, AssignedUserID: &assignee, ContextType: application.TaskContextType, ContextID: in.TicketID,
+		Title: in.Title, DueAt: &due, AssignedUserID: &assignee, ContextType: application.TaskContextType, ContextID: in.TicketID, LocationID: in.LocationID,
 	})
 	var inv *taskspublic.InvalidInputError
 	switch {

@@ -68,12 +68,49 @@ func (a access) assignedToCaller(t Task) bool {
 	return false
 }
 
+func locOf(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
+}
+
+// manages reports whether the caller may change the task as a manager: tasks.manage everywhere, or a Location-scoped
+// tasks.manage covering the task's Location (a task without Location needs the global holding).
+func (a access) manages(t Task) bool {
+	return a.p.Manage || a.p.ManageScope.Allows(locOf(t.LocationID))
+}
+
+// scoped reports whether the caller holds tasks.view or tasks.manage at some Location.
+func (a access) scoped() bool { return a.p.ViewScope.Any() || a.p.ManageScope.Any() }
+
+// scopedLocations is the union of the Locations of the scoped holdings (sorted, without duplicates).
+func (a access) scopedLocations() []string {
+	set := map[string]struct{}{}
+	for _, id := range a.p.ViewScope.Locations {
+		set[id] = struct{}{}
+	}
+	for _, id := range a.p.ManageScope.Locations {
+		set[id] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (a access) canSee(t Task) bool {
-	return a.p.ViewAll || a.p.Manage || (a.p.Work && a.assignedToCaller(t))
+	if a.p.ViewAll || a.p.Manage || (a.p.Work && a.assignedToCaller(t)) {
+		return true
+	}
+	loc := locOf(t.LocationID)
+	return a.p.ViewScope.Allows(loc) || a.p.ManageScope.Allows(loc)
 }
 
 func (a access) canWork(t Task) bool {
-	return a.p.Manage || (a.p.Work && a.assignedToCaller(t))
+	return a.manages(t) || (a.p.Work && a.assignedToCaller(t))
 }
 
 // ---- validation ----
@@ -275,10 +312,13 @@ func (s *Service) List(ctx context.Context, p Principal, f ListFilter) (Result[T
 		AssignedTeamID: f.AssignedTeamID, Overdue: f.Overdue, TitlePrefix: f.TitlePrefix, Page: f.Page.Normalize(),
 	}
 	if f.Mine || !(p.ViewAll || p.Manage) {
-		if !p.Work && !p.ViewAll && !p.Manage {
+		if !p.Work && !p.ViewAll && !p.Manage && !a.scoped() {
 			return Result[TaskView]{Items: []TaskView{}}, nil
 		}
 		m := a.mine()
+		if !f.Mine {
+			m.LocationIDs = a.scopedLocations()
+		}
 		q.Mine = &m
 	}
 	return s.list(ctx, q)

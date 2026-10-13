@@ -45,6 +45,8 @@ type SLASweepResult struct {
 	// EscalationTask and DefaultTeamID are set for a breach only.
 	EscalationTask bool
 	DefaultTeamID  *string
+	// LocationID is the Ticket's affected Location (set with the escalation Task).
+	LocationID *string
 }
 
 // SLASweepStore is the persistence port of the sweep. SweepSLAClockTx locks Ticket then clock with SKIP LOCKED and
@@ -61,6 +63,7 @@ type EscalationTaskInput struct {
 	Title          string
 	DueAt          time.Time
 	AssignedTeamID string
+	LocationID     *string
 }
 
 // EscalationTasks is the Tasks public contract as the sweep uses it (servicedesk/public adapter).
@@ -195,7 +198,7 @@ func (w *SLASweeper) escalate(ctx context.Context, tx pgx.Tx, res SLASweepResult
 		return nil
 	}
 	_, err := w.tasks.CreateInTx(ctx, tx, audit.SystemActor(SLASystemActor), correlationID, EscalationTaskInput{
-		TicketID: res.TicketID, Title: "SLA breached: " + res.Reference, DueAt: now, AssignedTeamID: *res.DefaultTeamID,
+		TicketID: res.TicketID, Title: "SLA breached: " + res.Reference, DueAt: now, AssignedTeamID: *res.DefaultTeamID, LocationID: res.LocationID,
 	})
 	if errors.Is(err, ErrAssigneeInvalid) {
 		return nil // the default Team is inactive: the notification still reaches the assignee or nobody

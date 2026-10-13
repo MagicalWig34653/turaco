@@ -90,8 +90,9 @@ func (r *Repository) SweepSLAClockTx(ctx context.Context, tx pgx.Tx, ref applica
 			ref.TicketID, ref.Kind, *c.BreachedAt); err != nil {
 			return res, fmt.Errorf("record sla breach transition: %w", err)
 		}
-		if err := tx.QueryRow(ctx, `SELECT p.escalation_task, q.default_team_id::text FROM servicedesk.sla_policies p, servicedesk.queues q WHERE p.id=$1::uuid AND q.id=$2::uuid`,
-			c.PolicyID, res.QueueID).Scan(&res.EscalationTask, &res.DefaultTeamID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT p.escalation_task, q.default_team_id::text, (SELECT affected_location_id::text FROM servicedesk.tickets WHERE id=$3::uuid)
+			FROM servicedesk.sla_policies p, servicedesk.queues q WHERE p.id=$1::uuid AND q.id=$2::uuid`,
+			c.PolicyID, res.QueueID, ref.TicketID).Scan(&res.EscalationTask, &res.DefaultTeamID, &res.LocationID); err != nil {
 			return res, fmt.Errorf("load escalation setting: %w", err)
 		}
 	}

@@ -24,6 +24,8 @@ type CreateInput struct {
 	DueAt          *time.Time
 	AssignedUserID *string
 	AssignedTeamID *string
+	// LocationID places the task at a Location for Location-scoped access (nil: none).
+	LocationID *string
 }
 
 // Create creates an open task. Requires tasks.manage.
@@ -31,8 +33,14 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	if err := c.validate(); err != nil {
 		return TaskView{}, err
 	}
-	if !p.Manage {
+	// A task at a Location needs tasks.manage covering that Location; one without Location needs the global holding.
+	if !p.Manage && !p.ManageScope.Allows(locOf(in.LocationID)) {
 		return TaskView{}, ErrForbidden
+	}
+	if in.LocationID != nil {
+		if err := s.checkLocation(ctx, *in.LocationID); err != nil {
+			return TaskView{}, err
+		}
 	}
 	title, err := cleanTitle(in.Title)
 	if err != nil {
@@ -59,7 +67,7 @@ func (s *Service) Create(ctx context.Context, c Caller, p Principal, in CreateIn
 	}
 	t, err := s.store.Insert(ctx, c, NewTask{
 		Title: title, Description: desc, Priority: priority, DueAt: utc(in.DueAt),
-		AssignedUserID: in.AssignedUserID, AssignedTeamID: in.AssignedTeamID, CreatedBy: createdBy,
+		AssignedUserID: in.AssignedUserID, AssignedTeamID: in.AssignedTeamID, CreatedBy: createdBy, LocationID: in.LocationID,
 	})
 	if err != nil {
 		return TaskView{}, err
@@ -146,6 +154,71 @@ func (s *Service) UpdateDetails(ctx context.Context, c Caller, p Principal, id s
 			return Change{NoChange: true, Next: cur}, nil
 		}
 		return Change{Next: next, Action: "tasks.task.details_updated", Metadata: map[string]any{"changedFields": changed}}, nil
+	})
+	if err != nil {
+		return TaskView{}, err
+	}
+	return s.viewOne(ctx, t)
+}
+
+// LocationDirectory is the optional Organization port that checks Locations; a Directory that implements it makes
+// SetLocation and Create verify that a Location exists and is active.
+type LocationDirectory interface {
+	ActiveLocations(ctx context.Context, ids []string) (map[string]bool, error)
+}
+
+func (s *Service) checkLocation(ctx context.Context, id string) error {
+	if len(id) != 36 {
+		return invalid("locationId must be a Location id")
+	}
+	ld, ok := s.dir.(LocationDirectory)
+	if !ok {
+		return invalid("locations are not available")
+	}
+	active, err := ld.ActiveLocations(ctx, []string{id})
+	if err != nil {
+		return fmt.Errorf("check location: %w", err)
+	}
+	if !active[id] {
+		return invalid("the location does not exist or is not active")
+	}
+	return nil
+}
+
+// SetLocation sets (or, with nil, clears) the Location of a task. Requires tasks.manage covering the task's current
+// Location and the new one; clearing the Location needs the global tasks.manage. Version guarded and audited.
+func (s *Service) SetLocation(ctx context.Context, c Caller, p Principal, id string, expected *int, locationID *string) (TaskView, error) {
+	if err := c.validate(); err != nil {
+		return TaskView{}, err
+	}
+	var loc *string
+	if locationID != nil {
+		l := strings.ToLower(strings.TrimSpace(*locationID))
+		if err := s.checkLocation(ctx, l); err != nil {
+			return TaskView{}, err
+		}
+		loc = &l
+	}
+	a, err := s.access(ctx, p)
+	if err != nil {
+		return TaskView{}, err
+	}
+	t, err := s.store.Change(ctx, c, id, func(cur Task) (Change, error) {
+		if err := authorizeChange(a, cur, expected, true); err != nil {
+			return Change{}, err
+		}
+		if equalStrPtr(loc, cur.LocationID) {
+			return Change{NoChange: true, Next: cur}, nil
+		}
+		// The new Location must stay inside the caller's manage scope, and the Location cannot be cleared by a scoped
+		// manager: otherwise the task would leave their reach.
+		if !p.Manage && !p.ManageScope.Allows(locOf(loc)) {
+			return Change{}, ErrLocationOutOfScope
+		}
+		next := cur
+		next.LocationID = loc
+		return Change{Next: next, Action: "tasks.task.location_changed",
+			Metadata: map[string]any{"fromLocationId": locOf(cur.LocationID), "toLocationId": locOf(loc)}}, nil
 	})
 	if err != nil {
 		return TaskView{}, err
@@ -330,7 +403,7 @@ func authorizeChange(a access, cur Task, expected *int, managerOnly bool) error 
 	if !a.canSee(cur) {
 		return ErrNotFound
 	}
-	if managerOnly && !a.p.Manage {
+	if managerOnly && !a.manages(cur) {
 		return ErrForbidden
 	}
 	if !managerOnly && !a.canWork(cur) {

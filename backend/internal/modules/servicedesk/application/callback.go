@@ -26,6 +26,8 @@ type CallbackTaskInput struct {
 	Title          string
 	DueAt          time.Time
 	AssignedUserID string
+	// LocationID is the Ticket's affected Location; the Task is placed there (Location-scoped access).
+	LocationID *string
 }
 
 // CallbackTasks is the Tasks public contract as the Service Desk uses it (servicedesk/public adapter). It creates
@@ -98,7 +100,7 @@ func (s *Service) ScheduleCallback(ctx context.Context, c Caller, p Principal, i
 			title = "Callback " + cur.Reference
 		}
 		taskID, err := s.callbacks.CreateInTx(ctx, tx, c.Actor, c.CorrelationID, CallbackTaskInput{
-			TicketID: cur.ID, Title: title, DueAt: dueAt, AssignedUserID: assigneeID})
+			TicketID: cur.ID, Title: title, DueAt: dueAt, AssignedUserID: assigneeID, LocationID: cur.AffectedLocationID})
 		if err != nil {
 			return err
 		}

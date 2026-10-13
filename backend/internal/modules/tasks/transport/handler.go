@@ -39,8 +39,12 @@ type handler struct {
 // the service decides per task what the caller may see and do.
 func Register(mux *http.ServeMux, svc *application.Service, auth authorization.Authenticator, logger *slog.Logger) {
 	h := &handler{svc: svc, logger: logger}
-	anyTask := authorization.RequireAny(auth, application.TaskPermissions...)
-	manage := authorization.Require(auth, permManage)
+	// Routes of the scope-aware operations admit a caller who holds the permission globally or at a Location
+	// (ADR-0040); the service then limits every read and write to the Locations in scope.
+	anyTask := globalOrScoped(auth, authorization.RequireAny(auth, application.TaskPermissions...), authorization.RequireScoped(auth, permView, permManage),
+		func(p authorization.Principal) bool { return p.Has(permView) || p.Has(permManage) || p.Has(permWork) })
+	manage := globalOrScoped(auth, authorization.Require(auth, permManage), authorization.RequireScoped(auth, permManage),
+		func(p authorization.Principal) bool { return p.Has(permManage) })
 	route := func(pattern string, mw func(http.Handler) http.Handler, fn http.HandlerFunc) {
 		mux.Handle(pattern, httpx.NoStore(mw(fn)))
 	}
@@ -53,6 +57,7 @@ func Register(mux *http.ServeMux, svc *application.Service, auth authorization.A
 	route("PATCH /api/v1/tasks/{id}", manage, h.update)
 	route("POST /api/v1/tasks/{id}/assign", manage, h.assign)
 	route("POST /api/v1/tasks/{id}/unassign", manage, h.unassign)
+	route("POST /api/v1/tasks/{id}/location", manage, h.setLocation)
 	route("POST /api/v1/tasks/{id}/cancel", manage, h.transition(application.OpCancel))
 	route("POST /api/v1/tasks/{id}/reopen", manage, h.transition(application.OpReopen))
 	for _, op := range []application.Operation{application.OpStart, application.OpBlock, application.OpUnblock, application.OpComplete} {
@@ -76,6 +81,8 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		httpx.WriteError(w, http.StatusNotFound, "tasks.not_found", "The requested resource was not found.")
 	case errors.Is(err, application.ErrForbidden):
 		httpx.WriteError(w, http.StatusForbidden, "platform.forbidden", "You do not have permission to perform this action.")
+	case errors.Is(err, application.ErrLocationOutOfScope):
+		httpx.WriteError(w, http.StatusForbidden, "access.location_out_of_scope", "The location is outside the area you may manage.")
 	case errors.Is(err, application.ErrVersionConflict):
 		httpx.WriteError(w, http.StatusConflict, "tasks.version_conflict", "The task was changed by someone else; reload and try again.")
 	case errors.Is(err, application.ErrAssigneeInvalid):
@@ -93,6 +100,7 @@ func principal(r *http.Request) application.Principal {
 	return application.Principal{
 		UserID: p.UserID, ViewAll: p.Has(permView), Manage: p.Has(permManage), Work: p.Has(permWork),
 		RecurrenceManage: p.Has(permRecurrence), BoardsManageTeam: p.Has(permBoardsTeam),
+		ViewScope: p.ScopeOf(permView), ManageScope: p.ScopeOf(permManage),
 	}
 }
 
@@ -229,6 +237,7 @@ type createBody struct {
 	DueAt          *time.Time `json:"dueAt"`
 	AssignedUserID *string    `json:"assignedUserId"`
 	AssignedTeamID *string    `json:"assignedTeamId"`
+	LocationID     *string    `json:"locationId"`
 }
 
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +247,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := h.svc.Create(r.Context(), caller(w, r), principal(r), application.CreateInput{
 		Title: b.Title, Description: b.Description, Priority: b.Priority, DueAt: b.DueAt,
-		AssignedUserID: b.AssignedUserID, AssignedTeamID: b.AssignedTeamID,
+		AssignedUserID: b.AssignedUserID, AssignedTeamID: b.AssignedTeamID, LocationID: b.LocationID,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -371,4 +380,37 @@ func parsePositiveInt(s string) (int, error) {
 		return 0, errors.New("not a positive integer")
 	}
 	return n, nil
+}
+
+// globalOrScoped admits a caller by the global middleware when they hold the permission globally and otherwise by the
+// scoped one, so a holder at a Location reaches the same handlers.
+func globalOrScoped(auth authorization.Authenticator, global, scoped func(http.Handler) http.Handler, heldGlobally func(authorization.Principal) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		g, s := global(next), scoped(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if p, ok, err := auth.Authenticate(r); err == nil && ok && heldGlobally(p) {
+				g.ServeHTTP(w, r)
+				return
+			}
+			s.ServeHTTP(w, r)
+		})
+	}
+}
+
+type locationBody struct {
+	ExpectedVersion *int    `json:"expectedVersion"`
+	LocationID      *string `json:"locationId"`
+}
+
+func (h *handler) setLocation(w http.ResponseWriter, r *http.Request) {
+	var b locationBody
+	if !decode(w, r, &b) {
+		return
+	}
+	v, err := h.svc.SetLocation(r.Context(), caller(w, r), principal(r), r.PathValue("id"), b.ExpectedVersion, b.LocationID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, toTask(v))
 }
