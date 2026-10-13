@@ -554,3 +554,17 @@ func TestPurgeRetention(t *testing.T) {
 		t.Errorf("purge audit = %s (%v)", meta, err)
 	}
 }
+
+func TestOwnEntryNeedsCurrentWorkAccess(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	en := e.create(e.alice, e.entry(e.alice, 60, e.day(-1)))
+	e.tickets.grant(e.alice.UserID, e.ticket, application.TicketAccess{Reference: "T-1", QueueID: e.queue, CanView: true})
+	change := application.EntryChange{SubjectID: e.ticket, WorkDate: e.day(-1), DurationMinutes: 30}
+	if _, err := e.svc.Update(ctx, e.caller(e.alice), e.alice, en.ID, change, version(1)); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("update without work access: %v", err)
+	}
+	if err := e.svc.Delete(ctx, e.caller(e.alice), e.alice, en.ID, application.DeleteInput{DeleteReason: "other"}, version(1)); !errors.Is(err, application.ErrForbidden) {
+		t.Errorf("delete without work access: %v", err)
+	}
+}

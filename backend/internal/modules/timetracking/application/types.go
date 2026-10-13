@@ -209,7 +209,9 @@ const (
 
 // SummaryRow is one aggregated group from the store.
 type SummaryRow struct {
-	Key          string
+	Key string
+	// Month (YYYY-MM) is the calendar month of the cell; empty for per-Ticket rows.
+	Month        string
 	Minutes      int
 	Entries      int
 	Contributors int
@@ -224,6 +226,8 @@ type SummaryGroup struct {
 	Entries      int
 	Contributors int
 	Suppressed   bool
+	// Partial says that months with fewer contributors than the minimum were left out of the figures.
+	Partial bool
 }
 
 // Summary is the effort report.

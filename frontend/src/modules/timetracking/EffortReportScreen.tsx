@@ -100,7 +100,10 @@ export function EffortReportScreen() {
                     </td>
                   ) : (
                     <>
-                      <td>{formatDuration(group.minutes ?? 0)}</td>
+                      <td>
+                        {formatDuration(group.minutes ?? 0)}
+                        {group.partial ? ` ${t('timetracking.report.partial')}` : ''}
+                      </td>
                       <td>{group.entries ?? 0}</td>
                     </>
                   )}

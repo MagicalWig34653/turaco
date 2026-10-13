@@ -30,9 +30,15 @@ func (s *Service) Report(ctx context.Context, p Principal, from, to, groupBy str
 	if t.Before(f) {
 		return Summary{}, invalid("to must not be before from")
 	}
+	// The report always covers whole calendar months and aggregates (key, month) cells that have enough
+	// contributors, so overlapping reports cannot be subtracted to isolate one person's time. The effective period is
+	// returned.
+	f = time.Date(f.Year(), f.Month(), 1, 0, 0, 0, 0, time.UTC)
+	t = time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 	if t.Sub(f) > MaxReportDays*24*time.Hour {
 		return Summary{}, invalid("the period spans at most %d days", MaxReportDays)
 	}
+	from, to = f.Format("2006-01-02"), t.Format("2006-01-02")
 	st, err := s.store.GetSettings(ctx)
 	if err != nil {
 		return Summary{}, err
@@ -63,19 +69,37 @@ func (s *Service) Report(ctx context.Context, p Principal, from, to, groupBy str
 			return Summary{}, err
 		}
 	}
+	// Cells (key, month) with enough contributors are summed; the others are left out of the figures. Per-Ticket
+	// rows are not suppressed.
+	groups := map[string]*SummaryGroup{}
+	var order []string
 	for _, r := range rows {
-		g := SummaryGroup{Key: r.Key}
-		if groupBy == GroupTicket {
-			a := refs[r.Key]
-			if !a.Found || !a.CanView {
-				continue // never reveal a Ticket the caller cannot view
+		g, ok := groups[r.Key]
+		if !ok {
+			g = &SummaryGroup{Key: r.Key, Suppressed: groupBy != GroupTicket}
+			if groupBy == GroupTicket {
+				a := refs[r.Key]
+				if !a.Found || !a.CanView {
+					continue // never reveal a Ticket the caller cannot view
+				}
+				g.Label = a.Reference
 			}
-			g.Label = a.Reference
+			groups[r.Key] = g
+			order = append(order, r.Key)
 		}
 		if groupBy != GroupTicket && r.Contributors < st.MinReportGroupSize {
-			g.Suppressed = true
-		} else {
-			g.Minutes, g.Entries, g.Contributors = r.Minutes, r.Entries, r.Contributors
+			g.Partial = true
+			continue
+		}
+		g.Suppressed = false
+		g.Minutes += r.Minutes
+		g.Entries += r.Entries
+		g.Contributors = max(g.Contributors, r.Contributors)
+	}
+	for _, key := range order {
+		g := *groups[key]
+		if g.Suppressed {
+			g.Partial = false
 		}
 		out.Groups = append(out.Groups, g)
 	}

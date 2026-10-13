@@ -6914,6 +6914,7 @@ export const de: Record<MessageKey, string> = {
   'timetracking.report.empty': 'In diesem Zeitraum wurde keine Zeit erfasst.',
   'timetracking.report.entries': 'Einträge',
   'timetracking.report.truncated': 'Es werden nur die ersten 200 Gruppen angezeigt.',
+  'timetracking.report.partial': '(Monate mit zu wenigen Personen ausgelassen)',
   'timetracking.report.suppressed': 'Weniger als {count} Personen: nicht angezeigt',
   'timetracking.report.groupBy.queue': 'Queue',
   'timetracking.report.groupBy.month': 'Monat',

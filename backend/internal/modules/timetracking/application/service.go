@@ -480,8 +480,9 @@ func (s *Service) Update(ctx context.Context, c Caller, p Principal, id string, 
 			}
 		}
 		next := cur
-		if cur.UserID != p.UserID {
-			// Somebody else's entry: the actor must see the Ticket it is on (and the new one).
+		if cur.UserID != p.UserID || !p.Manage {
+			// Somebody else's entry: the actor must see the Ticket it is on (and the new one). Own entries need
+			// current work access to the Ticket unless the actor manages time entries.
 			if _, err := s.authorizeTicket(ctx, p, cur.UserID, cur.SubjectID); err != nil {
 				return err
 			}
@@ -560,10 +561,10 @@ func (s *Service) Delete(ctx context.Context, c Caller, p Principal, id string, 
 			if reason, err = cleanReason(in.Reason); err != nil {
 				return err
 			}
-			if cur.UserID != p.UserID {
-				if _, err := s.authorizeTicket(ctx, p, cur.UserID, cur.SubjectID); err != nil {
-					return err
-				}
+		}
+		if cur.UserID != p.UserID || !p.Manage {
+			if _, err := s.authorizeTicket(ctx, p, cur.UserID, cur.SubjectID); err != nil {
+				return err
 			}
 		}
 		if err := s.store.SoftDeleteTx(ctx, tx, cur.ID, p.UserID, in.DeleteReason); err != nil {

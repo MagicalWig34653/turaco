@@ -65,6 +65,7 @@ export type EffortGroup = {
   key: string;
   label?: string;
   suppressed: boolean;
+  partial?: boolean;
   minutes?: number;
   entries?: number;
   contributors?: number;

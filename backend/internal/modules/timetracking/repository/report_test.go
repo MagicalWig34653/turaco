@@ -83,3 +83,25 @@ func TestReportScopeAndPermission(t *testing.T) {
 		t.Fatalf("long period: %v", err)
 	}
 }
+
+func TestReportCoversWholeMonthsSoPeriodsCannotBeDifferenced(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.log(e.alice, e.ticket, 60)
+	lead := e.reporter(e.lead)
+	day := e.day(0)
+	a, err := e.svc.Report(ctx, lead, day, day, "queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.svc.Report(ctx, lead, day[:8]+"01", day, "queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.From != day[:8]+"01" || a.From != b.From || a.To != b.To {
+		t.Fatalf("periods are not normalized to whole months: %+v %+v", a, b)
+	}
+	if len(a.Groups) != 1 || !a.Groups[0].Suppressed || len(b.Groups) != 1 || !b.Groups[0].Suppressed {
+		t.Fatalf("single-contributor month must stay suppressed: %+v %+v", a.Groups, b.Groups)
+	}
+}

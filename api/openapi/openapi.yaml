@@ -15172,7 +15172,7 @@ paths:
       operationId: getTimeTrackingSummary
       summary: Aggregated effort per Queue, month or Ticket.
       description: >-
-        Needs `timetracking.report`. Limited to the Queues the caller may view. There is deliberately no grouping or filter by person (`groupBy=user` answers 400). Queue and month groups with fewer distinct contributors than `minGroupSize` are `suppressed` and carry no figures; per-Ticket groups are exempt and only name Tickets the caller may view. The period is at most 366 days; at most 200 groups, `truncated` says more existed.
+        Needs `timetracking.report`. Limited to the Queues the caller may view. There is deliberately no grouping or filter by person (`groupBy=user` answers 400). The period is widened to whole calendar months and the effective `from`/`to` are returned. Figures are summed over (group, month) cells that have at least `minGroupSize` distinct contributors, so overlapping reports cannot be subtracted to isolate a person; a group without any such cell is `suppressed` and carries no figures, and `partial` says that some months were left out of its figures. Per-Ticket groups are exempt (they are visible on the Ticket anyway) and only name Tickets the caller may view. The period is at most 366 days; at most 200 groups, `truncated` says more existed.
       security: [{sessionAuth: []}]
       parameters:
         - {name: from, in: query, required: true, schema: {type: string, format: date}}
@@ -15201,6 +15201,7 @@ paths:
                         key: {type: string, description: "Queue id, YYYY-MM or Ticket id."}
                         label: {type: string, description: "Ticket reference for ticket groups."}
                         suppressed: {type: boolean}
+                        partial: {type: boolean, description: "Months with too few contributors are left out of the figures."}
                         minutes: {type: integer}
                         entries: {type: integer}
                         contributors: {type: integer}

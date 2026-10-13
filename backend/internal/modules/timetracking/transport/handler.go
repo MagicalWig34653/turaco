@@ -348,7 +348,7 @@ func (h *handler) summary(w http.ResponseWriter, r *http.Request) {
 	}
 	groups := make([]map[string]any, 0, len(res.Groups))
 	for _, g := range res.Groups {
-		item := map[string]any{"key": g.Key, "suppressed": g.Suppressed}
+		item := map[string]any{"key": g.Key, "suppressed": g.Suppressed, "partial": g.Partial}
 		if g.Label != "" {
 			item["label"] = g.Label
 		}

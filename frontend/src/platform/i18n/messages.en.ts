@@ -6673,6 +6673,7 @@ export const en = {
   'timetracking.report.empty': 'No time logged in this period.',
   'timetracking.report.entries': 'Entries',
   'timetracking.report.truncated': 'Only the first 200 groups are shown.',
+  'timetracking.report.partial': '(months with too few people left out)',
   'timetracking.report.suppressed': 'Fewer than {count} people: not shown',
   'timetracking.report.groupBy.queue': 'Queue',
   'timetracking.report.groupBy.month': 'Month',
