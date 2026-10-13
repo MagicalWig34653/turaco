@@ -7046,4 +7046,21 @@ export const de: Record<MessageKey, string> = {
   'timetracking.error.outsideWindow':
     'Der Arbeitstag liegt außerhalb des Bearbeitungsfensters. Wenden Sie sich an jemanden mit Berechtigung zur Zeitverwaltung.',
   'timetracking.error.dayLimit': 'Eine Person kann höchstens 24 Stunden pro Tag erfassen.',
+  'effective.inert.title': 'Berechtigungen ohne Wirkung',
+  'effective.inert.hint':
+    'Diese Berechtigungen können nur überall gehalten werden. Eine auf einen Standort begrenzte Rollenzuweisung mit ihnen gewährt keinen Zugriff.',
+  'effective.inert.item': '{role} an {location}:',
+  'effective.location.at': 'Angezeigt wird, was an {name} gilt.',
+  'effective.location.clear': 'Alle Standorte anzeigen',
+  'effective.location.hint':
+    'Überall gehaltene Berechtigungen gelten immer. Auf Standorte begrenzte Berechtigungen erscheinen nur, wenn sie diesen Standort abdecken.',
+  'effective.scoped': 'Berechtigungen an Standorten ({count})',
+  'effective.scoped.title': 'Auf Standorte begrenzte Berechtigungen',
+  'effective.scoped.empty': 'Keine auf Standorte begrenzte Berechtigung passt.',
+  'effective.col.locations': 'Standorte und gewährende Rollen',
+  'effective.scoped.root': '{location} (und Unterstandorte), gewährt durch {roles}',
+  'locations.holders.title': 'Wer hat hier Rechte',
+  'locations.holders.intro':
+    'Personen und Verzeichnisgruppen, deren Zugriff diesen Standort abdeckt: Inhaber für überall sowie Inhaber an diesem Standort oder einem übergeordneten Standort.',
+  'locations.holders.empty': 'Hier hat niemand diese Berechtigung.',
 };

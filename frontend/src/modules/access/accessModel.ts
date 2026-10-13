@@ -5,6 +5,8 @@ import type {
   PermissionGroupKind,
   PermissionRisk,
   Role,
+  ScopedPermission,
+  ScopedRoot,
   SodRule,
   TemplateUse,
 } from './types';
@@ -240,3 +242,52 @@ export function filterEffective(effective: EffectivePermissions, filter: Effecti
         permission.module.includes(needle)),
   );
 }
+
+/** Permissions a scoped assignment reaches without effect, grouped by the assignment. */
+export type InertEntry = { role: EffectiveRole; permissions: string[] };
+
+export function inertEntries(effective: EffectivePermissions): InertEntry[] {
+  return effective.roles
+    .filter((role) => (role.inertPermissions ?? []).length > 0)
+    .map((role) => ({ role, permissions: [...(role.inertPermissions ?? [])].sort() }));
+}
+
+/** "Site / Area" from a path of names; empty when the caller may not see Location names. */
+export function locationPathText(path: readonly string[] | undefined, name?: string): string {
+  if (path && path.length > 0) return path.join(' / ');
+  return name ?? '';
+}
+
+/** Roles granting a scoped root, resolved from the assignment ids. */
+export function rootGrants(effective: EffectivePermissions, root: ScopedRoot): EffectiveRole[] {
+  const byAssignment = new Map(effective.roles.map((role) => [role.assignmentId, role]));
+  return root.grantedBy.flatMap((id) => {
+    const role = byAssignment.get(id);
+    return role ? [role] : [];
+  });
+}
+
+export type ScopedFilter = EffectiveFilter & { locationId: string };
+
+/**
+ * Scopable permissions held only at Locations, narrowed by text, risk and an optional Location.
+ * With a Location only permissions whose expanded set contains it remain. Global permissions apply at
+ * every Location and are filtered separately by `filterEffective`.
+ */
+export function filterScoped(
+  effective: EffectivePermissions,
+  filter: ScopedFilter,
+): ScopedPermission[] {
+  const needle = filter.search.trim().toLocaleLowerCase();
+  return (effective.scopedPermissions ?? []).filter(
+    (permission) =>
+      (!filter.risk || permission.risk === filter.risk) &&
+      (!filter.locationId || permission.locations.includes(filter.locationId)) &&
+      (!needle ||
+        permission.name.toLocaleLowerCase().includes(needle) ||
+        permission.module.includes(needle)),
+  );
+}
+
+/** Scopable permissions offered as the permission choice of "Who has rights here". */
+export const SCOPABLE_HOLDER_PERMISSIONS = ['tickets.view', 'assets.view', 'tasks.view'] as const;

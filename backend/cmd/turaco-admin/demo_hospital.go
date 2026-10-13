@@ -338,6 +338,20 @@ func (h *hospitalSeeder) rolesAndAssignments(ctx context.Context) error {
 		}
 		h.count("role assignments")
 	}
+	for _, p := range simPeople {
+		if p.ScopedRole == "" {
+			continue
+		}
+		_, err := svc.AssignRole(ctx, actor, hospitalCorrelation, roles.AssignInput{RoleID: h.roleIDs[p.ScopedRole], SubjectType: roles.SubjectUser,
+			SubjectID: h.users[p.Login], ScopeLocationID: h.locations[p.Site], Acknowledgement: ack})
+		if errors.Is(err, roles.ErrDuplicateAssignment) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("assign scoped %s to %s: %w", p.ScopedRole, p.Login, err)
+		}
+		h.count("scoped role assignments")
+	}
 	return nil
 }
 

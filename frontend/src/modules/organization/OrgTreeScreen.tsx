@@ -12,6 +12,7 @@ import { Checkbox, Select, TextArea, TextField } from '../../platform/ui/Field';
 import { GuardedActionDialog } from '../../platform/ui/GuardedActionDialog';
 import { PageHeader } from '../../platform/ui/PageHeader';
 import { peopleAdminApi } from './adminApi';
+import { LocationHolders } from './LocationHolders';
 import {
   LOCATION_MAX_DEPTH,
   buildTree,
@@ -54,6 +55,8 @@ export function OrgTreeScreen({ kind }: { kind: TreeKind }) {
   const canManage = can(
     kind === 'locations' ? 'organization.locations.manage' : 'organization.departments.manage',
   );
+  const canSeeHolders =
+    kind === 'locations' && can('platform.roles.view') && can('organization.users.view_details');
   const menu = useContextMenu();
   const data = useAsync(
     (signal): Promise<OrgNode[]> =>
@@ -405,6 +408,7 @@ export function OrgTreeScreen({ kind }: { kind: TreeKind }) {
                     ))}
                 </div>
               ) : null}
+              {canSeeHolders ? <LocationHolders locationId={selected.item.id} /> : null}
             </>
           ) : (
             <p className="empty">{t('tree.detail.empty')}</p>

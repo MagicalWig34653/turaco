@@ -79,7 +79,7 @@ Asset serial numbers are `SIM-<part>-<nnn>` (for example `SIM-WS-100-001`), tags
 
 ## Roles
 
-The seed creates these roles through the audited role service (visible under Administration > Roles) and assigns them to users directly. Permissions are global (there is no site scope). The built-in "employee" baseline needs no role: every signed-in user can raise tickets and read their own, read published employee articles and see their own assets.
+The seed creates these roles through the audited role service (visible under Administration > Roles) and assigns them to users directly. Permissions are global, except the two site technician roles: the scoped role is assigned at the technician's own Site (Location-scoped access, [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md)). The built-in "employee" baseline needs no role: every signed-in user can raise tickets and read their own, read published employee articles and see their own assets.
 
 | Role key | Intended for | Key permissions |
 |---|---|---|
@@ -88,6 +88,8 @@ The seed creates these roles through the audited role service (visible under Adm
 | `it-site-lead` | Standort-IT-Leiter | specialist plus `briefing.manage`, `majorincidents.manage`, `changes.manage`/`approve`, `requests.manage`, `organization.teams.manage`, presence availability/entries of the team |
 | `security-analyst` | Security | `security.manage`, `security.accept_risk`, read tickets (`tickets.view` globally; work only on the Security desk through the Team's Queue work grant), audit log, directory groups |
 | `infrastructure-engineer` | Infrastruktur | `infrastructure.manage`, `changes.manage`/`execute`, `services.manage`, `assets.manage`; tickets read-only (`tickets.view` globally; work only on the Infrastruktur desk through the Team's Queue work grant). No `majorincidents.manage` |
+| `site-technician-base` | Site technicians (2, outside the five teams) | global part: read knowledge and directory, briefing, own presence |
+| `site-technician-scoped` | Site technicians | `tickets.manage`, `assets.view`, `tasks.work` **assigned with a Location scope** at the technician's own Site, so they see only tickets, assets and tasks located there (load-test and review persona for F16) |
 | `vendor-restricted` | KIS vendor | only `tasks.work` (tasks assigned to the vendor team or the person) plus the employee baseline |
 
 ## Personas and logins
@@ -101,6 +103,8 @@ All passwords are `turaco-sim-password`.
 | `christian.hoffmann` | Christian Hoffmann | Nord | Standort-IT-Leitung, `it-site-lead` | IT lead Nord, hosts the 08:00 stand-up |
 | `silke.brandl` | Silke Brandl | Süd | Standort-IT-Leitung, `it-site-lead` | IT lead Süd |
 | `martin.kessler` | Martin Kessler | Zentrale | Standort-IT-Leitung, `it-site-lead` | IT lead Zentrale |
+| `tim.scholz` | Tim Scholz | Nord | `site-technician-base` globally, `site-technician-scoped` at Nord | site technician Nord, sees only Nord tickets, assets and tasks |
+| `nora.kuhn` | Nora Kuhn | Süd | `site-technician-base` globally, `site-technician-scoped` at Süd | site technician Süd |
 | `lena.bauer` | Lena Bauer | Nord | First Level Support (Teamleitung), `first-level-support` | first-level triage |
 | `murat.demir` | Murat Demir | Süd | First Level Support, `first-level-support` | first level Süd |
 | `oliver.stein` | Oliver Stein | Nord | Telefonie & WLAN (Teamleitung), `it-specialist` | WLAN technician |

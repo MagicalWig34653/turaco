@@ -6802,6 +6802,23 @@ export const en = {
   'timetracking.error.outsideWindow':
     'The work date is outside the edit window. Ask someone with time management permission.',
   'timetracking.error.dayLimit': 'A person can log at most 24 hours per day.',
+  'effective.inert.title': 'Permissions without effect',
+  'effective.inert.hint':
+    'These permissions can only be held everywhere. A Location-scoped role assignment that includes them gives no access.',
+  'effective.inert.item': '{role} at {location}:',
+  'effective.location.at': 'Showing what applies at {name}.',
+  'effective.location.clear': 'Show all Locations',
+  'effective.location.hint':
+    'Permissions held everywhere always apply. Location-scoped permissions are listed only if they cover this Location.',
+  'effective.scoped': 'Permissions at Locations ({count})',
+  'effective.scoped.title': 'Location-scoped permissions',
+  'effective.scoped.empty': 'No Location-scoped permission matches.',
+  'effective.col.locations': 'Locations and granting roles',
+  'effective.scoped.root': '{location} (and sub-Locations), granted by {roles}',
+  'locations.holders.title': 'Who has rights here',
+  'locations.holders.intro':
+    'People and directory groups whose access covers this Location: holders everywhere and holders at this Location or a Location above it.',
+  'locations.holders.empty': 'Nobody holds this permission here.',
 } as const;
 
 export type MessageKey = keyof typeof en;

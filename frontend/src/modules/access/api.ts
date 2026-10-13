@@ -69,6 +69,9 @@ export const accessApi = {
 
   effectivePermissions: (userId: string, signal?: Signal) =>
     api.get<EffectivePermissions>(`/users/${enc(userId)}/effective-permissions`, { signal }),
-  holders: (permission: string, cursor?: string, signal?: Signal) =>
-    api.get<Page<Holder>>('/access/holders', { signal, query: { permission, limit: 50, cursor } }),
+  holders: (permission: string, cursor?: string, signal?: Signal, locationId?: string) =>
+    api.get<Page<Holder>>('/access/holders', {
+      signal,
+      query: { permission, locationId, limit: 50, cursor },
+    }),
 };

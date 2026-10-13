@@ -5,12 +5,16 @@ import {
   expiryState,
   filterEffective,
   filterPermissions,
+  filterScoped,
   grantReasons,
   grantability,
   groupByModule,
+  inertEntries,
+  locationPathText,
   missingNeeds,
   moduleOf,
   proposeRoleKey,
+  rootGrants,
   riskCounts,
   sodConflicts,
   validateExpiry,
@@ -147,6 +151,7 @@ describe('effective permissions', () => {
         builtInAdmin: false,
         assignmentId: 'as1',
         source: 'direct',
+        scope: 'global',
       },
       {
         roleId: 'r2',
@@ -156,11 +161,40 @@ describe('effective permissions', () => {
         assignmentId: 'as2',
         source: 'directory_group',
         groupId: 'g',
+        scope: 'global',
+      },
+      {
+        roleId: 'r3',
+        roleKey: 'c',
+        roleName: 'C',
+        builtInAdmin: false,
+        assignmentId: 'as3',
+        source: 'direct',
+        scope: 'location',
+        scopeLocationId: 'siteA',
+        scopeLocationPath: ['Site A'],
+        inertPermissions: ['tickets.manage', 'audit.view'],
       },
     ],
     permissions: [
       { name: 'tickets.view', risk: 'normal', module: 'servicedesk', grantedBy: ['as1', 'as2'] },
       { name: 'tickets.manage', risk: 'elevated', module: 'servicedesk', grantedBy: ['as2'] },
+    ],
+    scopedPermissions: [
+      {
+        name: 'assets.view',
+        risk: 'normal',
+        module: 'assets',
+        roots: [{ rootLocationId: 'siteA', scopeLocationPath: ['Site A'], grantedBy: ['as3'] }],
+        locations: ['siteA', 'areaA1'],
+      },
+      {
+        name: 'tasks.view',
+        risk: 'normal',
+        module: 'tasks',
+        roots: [{ rootLocationId: 'siteB', grantedBy: ['as3', 'missing'] }],
+        locations: ['siteB'],
+      },
     ],
     warnings: [],
     ceilings: [],
@@ -175,5 +209,29 @@ describe('effective permissions', () => {
   it('filters by text and risk', () => {
     expect(filterEffective(effective, { search: 'manage', risk: '' })).toHaveLength(1);
     expect(filterEffective(effective, { search: '', risk: 'normal' })).toHaveLength(1);
+  });
+
+  it('narrows scoped permissions to a Location and its descendants', () => {
+    const base = { search: '', risk: '' as const };
+    expect(filterScoped(effective, { ...base, locationId: '' })).toHaveLength(2);
+    expect(filterScoped(effective, { ...base, locationId: 'areaA1' }).map((p) => p.name)).toEqual([
+      'assets.view',
+    ]);
+    expect(filterScoped(effective, { ...base, locationId: 'elsewhere' })).toEqual([]);
+    expect(filterScoped(effective, { search: 'tasks', risk: '', locationId: '' })).toHaveLength(1);
+  });
+  it('resolves the roles granting a root and ignores unknown assignments', () => {
+    const root = effective.scopedPermissions[1]!.roots[0]!;
+    expect(rootGrants(effective, root).map((r) => r.roleKey)).toEqual(['c']);
+  });
+  it('lists inert permissions per assignment', () => {
+    const entries = inertEntries(effective);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.permissions).toEqual(['audit.view', 'tickets.manage']);
+  });
+  it('builds a Location path text', () => {
+    expect(locationPathText(['Site A', 'Hall'])).toBe('Site A / Hall');
+    expect(locationPathText(undefined, 'Hall')).toBe('Hall');
+    expect(locationPathText([])).toBe('');
   });
 });

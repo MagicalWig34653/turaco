@@ -530,7 +530,7 @@ func TestPurgeRetention(t *testing.T) {
 	}
 	for _, q := range []string{
 		`UPDATE timetracking.time_entries SET work_date = (date '2026-10-12' - interval '4 months')::date WHERE id = '` + old.ID + `'`,
-		`UPDATE timetracking.time_entries SET deleted_at = now() - interval '31 days' WHERE id = '` + deleted.ID + `'`,
+		`UPDATE timetracking.time_entries SET deleted_at = now() - interval '45 days' WHERE id = '` + deleted.ID + `'`,
 		`INSERT INTO timetracking.timers (user_id, subject_type, subject_id, started_at) VALUES ('` + newID() + `', 'ticket', '` + e.ticket + `', now() - interval '40 days')`,
 		`INSERT INTO timetracking.timers (user_id, subject_type, subject_id) VALUES ('` + newID() + `', 'ticket', '` + e.ticket + `')`,
 	} {

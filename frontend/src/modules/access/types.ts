@@ -89,7 +89,7 @@ export type RoleAssignment = {
   scopeLocationId?: string;
   /** Name and path need organization.view. */
   scopeLocationName?: string;
-  scopeLocationPath?: string;
+  scopeLocationPath?: string[];
   scopeLocationActive?: boolean;
   createdAt: string;
   createdBy?: string;
@@ -123,6 +123,14 @@ export type EffectiveRole = {
   assignmentId: string;
   source: 'direct' | 'directory_group';
   groupId?: string;
+  scope: 'global' | 'location';
+  scopeLocationId?: string;
+  /** Name, path (Site down to the Location) and active flag need organization.view. */
+  scopeLocationName?: string;
+  scopeLocationPath?: string[];
+  scopeLocationActive?: boolean;
+  /** Global-only permissions a scoped assignment reaches without effect. */
+  inertPermissions?: string[];
   expiresAt?: string;
 };
 export type EffectivePermission = {
@@ -132,10 +140,28 @@ export type EffectivePermission = {
   /** Assignment ids (see `EffectiveRole.assignmentId`) that grant the permission. */
   grantedBy: string[];
 };
+export type ScopedRoot = {
+  rootLocationId: string;
+  scopeLocationName?: string;
+  scopeLocationPath?: string[];
+  scopeLocationActive?: boolean;
+  /** Assignment ids (see `EffectiveRole.assignmentId`). */
+  grantedBy: string[];
+};
+/** A scopable permission held only at Locations. */
+export type ScopedPermission = {
+  name: string;
+  risk: string;
+  module: string;
+  roots: ScopedRoot[];
+  /** Expanded set: the roots and their current descendants. */
+  locations: string[];
+};
 export type EffectivePermissions = {
   userId: string;
   roles: EffectiveRole[];
   permissions: EffectivePermission[];
+  scopedPermissions: ScopedPermission[];
   /** Separation-of-duties rule keys that apply to the combination. */
   warnings: string[];
   ceilings: string[];
@@ -152,6 +178,11 @@ export type Holder = {
   subjectType: SubjectType;
   subjectId: string;
   subjectDisplayName: string;
+  scope: 'global' | 'location';
+  scopeLocationId?: string;
+  scopeLocationName?: string;
+  scopeLocationPath?: string[];
+  scopeLocationActive?: boolean;
   expiresAt?: string;
 };
 

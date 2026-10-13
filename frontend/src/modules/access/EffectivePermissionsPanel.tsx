@@ -7,7 +7,15 @@ import { useSession } from '../../platform/session/SessionProvider';
 import { Alert, Badge } from '../../platform/ui/Alert';
 import { ApiErrorAlert } from '../../platform/ui/ApiErrorAlert';
 import { Select, TextField } from '../../platform/ui/Field';
-import { filterEffective, grantReasons } from './accessModel';
+import { LocationPicker } from '../deployments/components';
+import {
+  filterEffective,
+  filterScoped,
+  grantReasons,
+  inertEntries,
+  locationPathText,
+  rootGrants,
+} from './accessModel';
 import { accessApi } from './api';
 import { RiskBadge, useModuleName } from './PermissionPicker';
 import { ExpiryCell } from './RoleAssignmentsScreen';
@@ -28,11 +36,17 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
   const [search, setSearch] = useState('');
   const [risk, setRisk] = useState<PermissionRisk | ''>('');
   const [open, setOpen] = useState<string>('');
+  const [location, setLocation] = useState<{ id: string; label: string } | null>(null);
   const data = effective.data;
   const rows = useMemo(
     () => (data ? filterEffective(data, { search, risk }) : []),
     [data, search, risk],
   );
+  const scopedRows = useMemo(
+    () => (data ? filterScoped(data, { search, risk, locationId: location?.id ?? '' }) : []),
+    [data, search, risk, location],
+  );
+  const inert = useMemo(() => (data ? inertEntries(data) : []), [data]);
 
   if (!allowed) return <Alert kind="info">{t('effective.noPermission')}</Alert>;
   if (effective.loading && !data) return <p role="status">{t('state.loading')}</p>;
@@ -96,6 +110,15 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
               {role.builtInAdmin ? (
                 <Badge tone="danger">{t('effective.builtInAdmin')}</Badge>
               ) : null}{' '}
+              {role.scope === 'location' ? (
+                <Badge tone="neutral">
+                  {t('assignments.scope.at', {
+                    name:
+                      locationPathText(role.scopeLocationPath, role.scopeLocationName) ||
+                      t('assignments.scope.unknown'),
+                  })}
+                </Badge>
+              ) : null}{' '}
               <span className="adm-sub">
                 {t('assignments.col.expires')}: <ExpiryCell expiresAt={role.expiresAt} />
               </span>
@@ -103,6 +126,30 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
           ))}
         </ul>
       )}
+
+      {inert.length > 0 ? (
+        <Alert kind="info">
+          <p>
+            <strong>{t('effective.inert.title')}</strong>
+          </p>
+          <p>{t('effective.inert.hint')}</p>
+          <ul>
+            {inert.map((entry) => (
+              <li key={entry.role.assignmentId}>
+                {t('effective.inert.item', {
+                  role: entry.role.roleName,
+                  location:
+                    locationPathText(entry.role.scopeLocationPath, entry.role.scopeLocationName) ||
+                    t('assignments.scope.unknown'),
+                })}{' '}
+                {entry.permissions.map((name) => (
+                  <code key={name}>{name} </code>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      ) : null}
 
       <h3>{t('effective.permissions', { count: data.permissions.length })}</h3>
       <div className="adm-picker-bar">
@@ -125,6 +172,18 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
           ]}
         />
       </div>
+      <div className="adm-picker-bar">
+        <LocationPicker onPick={(item) => setLocation({ id: item.id, label: item.label })} />
+        {location ? (
+          <p>
+            {t('effective.location.at', { name: location.label })}{' '}
+            <button type="button" className="btn-link" onClick={() => setLocation(null)}>
+              {t('effective.location.clear')}
+            </button>
+          </p>
+        ) : null}
+      </div>
+      {location ? <p className="field-hint">{t('effective.location.hint')}</p> : null}
       {rows.length === 0 ? (
         <p className="empty">{t('effective.permissions.empty')}</p>
       ) : (
@@ -135,6 +194,7 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
               <th scope="col">{t('effective.col.permission')}</th>
               <th scope="col">{t('effective.col.module')}</th>
               <th scope="col">{t('effective.col.risk')}</th>
+              <th scope="col">{t('assignments.col.scope')}</th>
               <th scope="col">{t('effective.col.why')}</th>
             </tr>
           </thead>
@@ -151,6 +211,7 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
                   <td>
                     <RiskBadge risk={permission.risk as PermissionRisk} />
                   </td>
+                  <td>{t('assignments.scope.global')}</td>
                   <td>
                     <button
                       type="button"
@@ -180,6 +241,59 @@ export function EffectivePermissionsPanel({ userId }: { userId: string }) {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      )}
+
+      <h3>{t('effective.scoped', { count: scopedRows.length })}</h3>
+      {scopedRows.length === 0 ? (
+        <p className="empty">{t('effective.scoped.empty')}</p>
+      ) : (
+        <table className="table adm-effective-table">
+          <caption className="visually-hidden">{t('effective.scoped.title')}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t('effective.col.permission')}</th>
+              <th scope="col">{t('effective.col.module')}</th>
+              <th scope="col">{t('effective.col.risk')}</th>
+              <th scope="col">{t('effective.col.locations')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scopedRows.map((permission) => (
+              <tr key={permission.name}>
+                <td>
+                  <code>{permission.name}</code>
+                </td>
+                <td>{moduleName(permission.module)}</td>
+                <td>
+                  <RiskBadge risk={permission.risk as PermissionRisk} />
+                </td>
+                <td>
+                  <ul className="adm-why">
+                    {permission.roots.map((root) => (
+                      <li key={root.rootLocationId}>
+                        {t('effective.scoped.root', {
+                          location:
+                            locationPathText(root.scopeLocationPath, root.scopeLocationName) ||
+                            t('assignments.scope.unknown'),
+                          roles:
+                            rootGrants(data, root)
+                              .map((role) => role.roleName)
+                              .join(', ') || t('effective.why.unknown'),
+                        })}
+                        {root.scopeLocationActive === false ? (
+                          <>
+                            {' '}
+                            <Badge tone="warning">{t('tree.archived')}</Badge>
+                          </>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

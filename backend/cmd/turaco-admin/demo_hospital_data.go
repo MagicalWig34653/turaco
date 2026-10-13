@@ -78,6 +78,10 @@ const (
 	roleSecurity   = "security-analyst"
 	roleInfra      = "infrastructure-engineer"
 	roleVendor     = "vendor-restricted"
+	// The site technician is split in two roles because only tickets.*, assets.* and tasks.* can be scoped to a
+	// Location (ADR-0040): the base role is global, the scoped role is assigned at the technician's own site.
+	roleSiteTechBase   = "site-technician-base"
+	roleSiteTechScoped = "site-technician-scoped"
 )
 
 type simRole struct {
@@ -86,6 +90,10 @@ type simRole struct {
 }
 
 var simRoles = []simRole{
+	{roleSiteTechBase, "Site technician (base)", "Simulation: global part of the site technician: knowledge, directory and briefing reading. Tickets, assets and tasks come from the scoped role.",
+		[]string{"knowledge.view", "organization.view", "briefing.view", "presence.manage_own", "views.share"}},
+	{roleSiteTechScoped, "Site technician (own site)", "Simulation: tickets, assets and tasks of the own site only; assigned with a Location scope (ADR-0040).",
+		[]string{"tickets.manage", "assets.view", "tasks.work"}},
 	{roleFirstLevel, "First-level support", "Simulation: triage and work tickets, read knowledge, assets and devices; no changes to assets or knowledge.",
 		[]string{"tickets.manage", "knowledge.view", "assets.view", "organization.view", "tasks.work", "briefing.view", "endpoints.view",
 			"remote_access.view", "remote_access.start_attended", "runbooks.execute", "requests.view", "services.view", "presence.manage_own", "views.share"}},
@@ -151,6 +159,7 @@ type simPerson struct {
 	Site, Area, Dept             string
 	Manager                      string
 	Role                         string
+	ScopedRole                   string // assigned only at the person's Site (Location-scoped, ADR-0040)
 	Teams                        []simMembership
 	Persona                      string
 }
@@ -177,6 +186,11 @@ func (p simPerson) email() string {
 }
 
 var simPeople = []simPerson{
+	// Site technicians: base role globally, tickets/assets/tasks only at the own Site (Location-scoped).
+	{Login: "tim.scholz", Given: "Tim", Family: "Scholz", Site: "nord", Area: "nord-serverraum", Dept: "it", Manager: "christian.hoffmann", Role: roleSiteTechBase, ScopedRole: roleSiteTechScoped,
+		Persona: "Site technician Nord (sees only Nord tickets, assets and tasks)"},
+	{Login: "nora.kuhn", Given: "Nora", Family: "Kuhn", Site: "sued", Area: "sued-technik", Dept: "it", Manager: "silke.brandl", Role: roleSiteTechBase, ScopedRole: roleSiteTechScoped,
+		Persona: "Site technician Sued (sees only Sued tickets, assets and tasks)"},
 	// Standort-IT-Leiter (one per site).
 	{Login: "christian.hoffmann", Given: "Christian", Family: "Hoffmann", Site: "nord", Area: "nord-serverraum", Dept: "it", Role: roleSiteLead,
 		Teams: []simMembership{{teamLeads, "Standort-IT-Leiter Nord"}}, Persona: "IT lead Nord (08:00 stand-up host)"},
