@@ -1939,3 +1939,178 @@
 :root[data-theme="cyberpunk"] .screen-card .screen-cyberpunk {
   display: block;
 }
+
+/* Sections 06 and 07: subtle motion. All of it is disabled by prefers-reduced-motion (see the reduce block). */
+@media (prefers-reduced-motion: no-preference) {
+  .architecture-section .diagram-lines {
+    animation: diagram-flow 2.4s linear infinite;
+  }
+  .architecture-section.is-revealed :is(.diagram-box, .diagram-container) {
+    animation: diagram-in 0.6s backwards;
+  }
+  .architecture-section.is-revealed .diagram-container {
+    animation-delay: 0.15s;
+  }
+  .architecture-section.is-revealed .diagram-module {
+    animation: diagram-in 0.5s backwards;
+    animation-delay: 0.35s;
+  }
+  .architecture-section.is-revealed .stack-chips span {
+    animation: section-settle 0.5s backwards;
+  }
+  .architecture-section .stack-chips span {
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .architecture-section .stack-chips span:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+  }
+  .roadmap-grid > li {
+    transition:
+      transform 0.25s ease,
+      border-color 0.25s ease,
+      box-shadow 0.25s ease;
+  }
+  .roadmap-grid > li:hover {
+    transform: translateY(-3px);
+  }
+  .reveal.is-revealed .roadmap-grid > li {
+    animation: section-settle 0.5s backwards;
+    animation-delay: calc(var(--i, 0) * 45ms + 120ms);
+  }
+  .roadmap-legend .progress-dot {
+    animation: dot-pulse 2.2s ease-in-out infinite;
+  }
+  .roadmap-grid .in-progress {
+    animation: dot-pulse 2.6s ease-in-out infinite;
+  }
+}
+@keyframes diagram-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+@keyframes diagram-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes dot-pulse {
+  50% {
+    opacity: 0.6;
+  }
+}
+.roadmap-grid > li:nth-child(1) {
+  --i: 0;
+}
+.roadmap-grid > li:nth-child(2) {
+  --i: 1;
+}
+.roadmap-grid > li:nth-child(3) {
+  --i: 2;
+}
+.roadmap-grid > li:nth-child(4) {
+  --i: 3;
+}
+.roadmap-grid > li:nth-child(5) {
+  --i: 4;
+}
+.roadmap-grid > li:nth-child(6) {
+  --i: 5;
+}
+.roadmap-grid > li:nth-child(7) {
+  --i: 6;
+}
+.roadmap-grid > li:nth-child(8) {
+  --i: 7;
+}
+.roadmap-grid > li:nth-child(9) {
+  --i: 8;
+}
+.roadmap-grid > li:nth-child(10) {
+  --i: 9;
+}
+.roadmap-grid > li:nth-child(11) {
+  --i: 10;
+}
+.roadmap-grid > li:nth-child(12) {
+  --i: 11;
+}
+.roadmap-grid > li:nth-child(13) {
+  --i: 12;
+}
+.roadmap-grid > li:nth-child(14) {
+  --i: 13;
+}
+.roadmap-grid > li:nth-child(15) {
+  --i: 14;
+}
+.roadmap-grid > li:nth-child(16) {
+  --i: 15;
+}
+.roadmap-grid > li:nth-child(17) {
+  --i: 16;
+}
+.roadmap-grid > li:nth-child(18) {
+  --i: 17;
+}
+.roadmap-grid > li:nth-child(19) {
+  --i: 18;
+}
+.roadmap-grid > li:nth-child(20) {
+  --i: 19;
+}
+.roadmap-grid > li:nth-child(21) {
+  --i: 20;
+}
+.roadmap-grid > li:nth-child(22) {
+  --i: 21;
+}
+.roadmap-grid > li:nth-child(23) {
+  --i: 22;
+}
+.roadmap-grid > li:nth-child(24) {
+  --i: 23;
+}
+.roadmap-grid > li:nth-child(25) {
+  --i: 24;
+}
+.roadmap-grid > li:nth-child(26) {
+  --i: 25;
+}
+.roadmap-grid > li:nth-child(27) {
+  --i: 26;
+}
+.roadmap-grid > li:nth-child(28) {
+  --i: 27;
+}
+.roadmap-grid > li:nth-child(29) {
+  --i: 28;
+}
+.roadmap-grid > li:nth-child(30) {
+  --i: 29;
+}
+.stack-chips span:nth-child(n) {
+  animation-delay: calc(var(--c, 0) * 70ms + 200ms);
+}
+.stack-chips span:nth-child(1) {
+  --c: 0;
+}
+.stack-chips span:nth-child(2) {
+  --c: 1;
+}
+.stack-chips span:nth-child(3) {
+  --c: 2;
+}
+.stack-chips span:nth-child(4) {
+  --c: 3;
+}
+.stack-chips span:nth-child(5) {
+  --c: 4;
+}
+.stack-chips span:nth-child(6) {
+  --c: 5;
+}

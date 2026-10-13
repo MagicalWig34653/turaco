@@ -376,3 +376,50 @@ html[data-visibility="hidden"] *::after {
     background: white;
   }
 }
+
+/* Cyberpunk: no hard cut at the sides of the hero. The mesh spans the viewport; the page clips the overflow. */
+html[data-theme="cyberpunk"] .landing {
+  overflow-x: clip;
+}
+html[data-theme="cyberpunk"] .hero-mesh {
+  inset: 0 auto 0 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  contain: none;
+}
+html[data-theme="cyberpunk"] .hero-mesh::after {
+  inset-inline: 0;
+}
+html[data-theme="cyberpunk"] .cyber-wordmark {
+  left: calc(50% - min(1240px, 100vw - 96px) / 2 + 24px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme="cyberpunk"] .architecture-section .diagram-lines {
+    stroke: var(--cyber-pink);
+    filter: drop-shadow(0 0 3px #ff2bd6aa);
+  }
+  html[data-theme="cyberpunk"] .architecture-section .diagram-container {
+    animation: cyber-box-glow 4s ease-in-out infinite;
+  }
+  html[data-theme="cyberpunk"] .roadmap-grid .done .phase-id b {
+    text-shadow: 0 0 8px #00f0ff88;
+  }
+  html[data-theme="cyberpunk"] .roadmap-grid .in-progress .phase-id b {
+    animation: cyber-text-pulse 2.4s ease-in-out infinite;
+  }
+  html[data-theme="cyberpunk"] .roadmap-grid > li:hover {
+    border-color: var(--cyber-pink);
+    box-shadow: 0 0 18px #ff2bd633;
+  }
+}
+@keyframes cyber-box-glow {
+  50% {
+    stroke-opacity: 1;
+    filter: drop-shadow(0 0 5px #00f0ff88);
+  }
+}
+@keyframes cyber-text-pulse {
+  50% {
+    text-shadow: 0 0 10px #fcee0a99;
+  }
+}
