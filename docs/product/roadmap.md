@@ -28,7 +28,7 @@
 
 ## Phase 3 — Service Desk & Knowledge
 - employee incident creation with user/device detection
-- ticket queues/SLA concepts
+- ticket queues, routing rules and SLA deadlines (F17)
 - known incidents/major incidents
 - knowledge articles/known errors/runbooks
 - Autotask integration
@@ -57,9 +57,14 @@ Revised 2026-10-03: Turaco integrates specialist providers instead of building a
 - People and access administration: local accounts, role templates, effective permissions ([ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md)); health, setup checklist, audit UX and External Parties follow
 - runtime module switches ([ADR-0032](../decisions/ADR-0032-module-switches.md))
 
-## Phase 8 — Microsoft integration (planned)
+## Phase 8 — Microsoft integration (partly implemented)
 - Microsoft Entra ID sign-in (OpenID Connect) for SaaS and on-prem installations alike, next to LDAP/AD, Kerberos and local accounts ([ADR-0035](../decisions/ADR-0035-entra-oidc-login.md))
 - Microsoft Teams as a notification and interaction channel: channel posts, personal cards, approval actions, meeting links ([ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md)); design: [F15](f15-microsoft-integration-design.md)
+
+## Phase 9 — Access scope, SLA and time tracking
+- Location-scoped role assignments for Assets, Tickets and Tasks ([ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md))
+- optional SLA deadlines with Business Calendars and optional time tracking with a works-council precondition ([ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md))
+- Turaco AI writes through confirmed AI Proposals and a read-only MCP server ([ADR-0039](../decisions/ADR-0039-mcp-oauth-authorization-server.md))
 
 ## Later / optional
 - Endpoint Agent inventory and typed operations

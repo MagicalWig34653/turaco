@@ -1,6 +1,6 @@
 # F16 Location-Scoped Access — Feature Design
 
-**Status:** Design (2026-10-12). Slices L-A (evaluator and model), L-B (assignment operations and guards) and L-C (Location move guard, with the gates of the L-B security review) are implemented; every other slice is planned. Scoped assignments can be created, but no permission is scopable yet, so they grant nothing effective and behaviour is unchanged. [Current status](current-status.md) is authoritative. Decision record: [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md).
+**Status:** Implemented for Assets, Tickets and Tasks (2026-10-13). Slices L-A (evaluator and model), L-B (assignment operations and guards), L-C (Location move guard), L-D (Tickets), L-E (Assets), L-G (Tasks) and L-F part 1 (access UI) are implemented; the independent security reviews of L-D and L-G, the rest of L-F and L-H (seed, load test) are open. `assets.*`, `tickets.*` and `tasks.*` are scopable; every other permission stays global. [Current status](current-status.md) is authoritative. Decision record: [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md).
 
 **Product owner decision (fixed input):** rights are scoped to Sites through Role Assignments with a Location scope; a role applies only within a Location and its sub-Locations (the Location tree).
 

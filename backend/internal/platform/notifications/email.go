@@ -149,7 +149,7 @@ func (e *EmailSender) Handle(ctx context.Context, job jobs.Job) error {
 }
 
 func (e *EmailSender) claim(ctx context.Context, id string) (delivery, Notification, string, error) {
-	return claimDelivery(ctx, e.pool, id, emailMaxAttempts)
+	return claimDelivery(ctx, e.pool, id, ChannelEmail, emailMaxAttempts)
 }
 
 func (e *EmailSender) finish(ctx context.Context, d delivery, status, reason string) error {
@@ -168,7 +168,7 @@ type delivery struct {
 }
 
 // claimDelivery moves an open delivery to sending and returns it with its notification.
-func claimDelivery(ctx context.Context, pool *pgxpool.Pool, id string, maxAttempts int) (delivery, Notification, string, error) {
+func claimDelivery(ctx context.Context, pool *pgxpool.Pool, id, channel string, maxAttempts int) (delivery, Notification, string, error) {
 	var (
 		d      delivery
 		n      Notification
@@ -179,12 +179,12 @@ func claimDelivery(ctx context.Context, pool *pgxpool.Pool, id string, maxAttemp
 		WITH claimed AS (
 			UPDATE platform.notification_deliveries
 			SET status = 'sending', attempts = attempts + 1, updated_at = now()
-			WHERE id = $1::uuid AND status IN ('pending', 'sending')
+			WHERE id = $1::uuid AND channel = $2 AND status IN ('pending', 'sending')
 			RETURNING id, notification_id, attempts
 		)
 		SELECT c.id::text, c.attempts, n.id::text, n.category, n.params, n.link_type, n.link_id::text,
 		       n.created_at, n.read_at, n.recipient_user_id::text
-		FROM claimed c JOIN platform.notifications n ON n.id = c.notification_id`, id).Scan(
+		FROM claimed c JOIN platform.notifications n ON n.id = c.notification_id`, id, channel).Scan(
 		&d.id, &d.attempts, &n.ID, &n.Category, &raw, &n.LinkType, &n.LinkID, &n.CreatedAt, &n.ReadAt, &userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return delivery{}, Notification{}, "", errNothingToDo

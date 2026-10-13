@@ -112,6 +112,7 @@ func (r *Repository) EntraIdentityOf(ctx context.Context, userID string) (tenant
 		SELECT i.provider_key, i.external_subject
 		FROM organization.external_identities i JOIN organization.users u ON u.id = i.user_id
 		WHERE i.user_id = $1::uuid AND i.enabled AND i.provider_key LIKE 'entra:%' AND u.status = 'active'
+		  AND u.account_kind = 'employee' AND (u.access_expires_at IS NULL OR u.access_expires_at > now())
 		ORDER BY i.created_at, i.id LIMIT 1`, userID).Scan(&provider, &objectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", false, nil

@@ -29,8 +29,9 @@ Target designs with implementation notes; [current status](product/current-statu
 - [F12 Turaco AI](product/f12-turaco-ai-design.md)
 - [F13 Workbench Views](product/f13-workbench-views-design.md)
 - [F14 Administration](product/f14-administration-design.md)
-- [F15 Microsoft integration (Entra sign-in, Teams; planned)](product/f15-microsoft-integration-design.md)
-- [F17 SLA deadlines and time tracking (SLA and manual time entries implemented; timer and effort report planned)](product/f17-sla-time-tracking-design.md)
+- [F15 Microsoft integration (Entra sign-in and Teams channel posts implemented; the rest planned)](product/f15-microsoft-integration-design.md)
+- [F16 Location-scoped access (Assets, Tickets and Tasks implemented)](product/f16-location-scoped-access-design.md)
+- [F17 SLA deadlines and time tracking (implemented: SLA, time entries, timer and effort report)](product/f17-sla-time-tracking-design.md)
 
 ## Architecture
 - [Constitution](architecture/constitution.md)

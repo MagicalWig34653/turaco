@@ -294,3 +294,40 @@ func TestTeamsCardRegistryValidation(t *testing.T) {
 		t.Error("a Teams card without a link was accepted")
 	}
 }
+
+func TestPersonalCardOlderThanADayIsCancelledAndChannelIsChecked(t *testing.T) {
+	f := newPersonalFixture(t)
+	f.notify(f.category, "TKT-5 · x", "old1")
+	ds := f.deliveries()
+	if _, err := f.pool.Exec(context.Background(), `UPDATE platform.notifications SET created_at = now() - interval '25 hours' WHERE recipient_user_id = $1::uuid`, f.user); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.run(ds[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.deliveries()[0]; got.Status != "cancelled" || got.LastError == nil || *got.LastError != "no_longer_current" || len(f.poster.sent) != 0 {
+		t.Errorf("stale card: %+v sent %d", got, len(f.poster.sent))
+	}
+	// The email job type cannot claim a Teams delivery (and the reverse).
+	f.notify(f.category, "TKT-6 · x", "old2")
+	ds = f.deliveries()
+	mailer := &noMail{}
+	es := notifications.NewEmailSender(f.pool, mailer, noContacts{}, f.reg, "https://turaco.example.org", "en")
+	_ = es.Handle(context.Background(), jobs.Job{Payload: []byte(`{"deliveryId":"` + ds[len(ds)-1].ID + `"}`)})
+	if mailer.sent != 0 {
+		t.Errorf("the email sender sent a Teams delivery")
+	}
+	if got := f.deliveries(); got[len(got)-1].Status != "pending" {
+		t.Errorf("Teams delivery status after an email job: %s", got[len(got)-1].Status)
+	}
+}
+
+type noMail struct{ sent int }
+
+func (m *noMail) Send(context.Context, notifications.EmailMessage) error { m.sent++; return nil }
+
+type noContacts struct{}
+
+func (noContacts) EmailContact(context.Context, string) (string, string, bool, error) {
+	return "a@example.test", "A", true, nil
+}

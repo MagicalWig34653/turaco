@@ -31,6 +31,18 @@ const TeamsPersonalJobTimeout = 2 * time.Minute
 
 const teamsPersonalMaxAttempts = 5
 
+// teamsPersonalMaxAge is how old a notification may be when its card is sent; older ones are cancelled.
+const teamsPersonalMaxAge = 24 * time.Hour
+
+// codedError stores as its text only a short machine code (the underlying cause is kept for the job log).
+type codedError struct {
+	code string
+	err  error
+}
+
+func (e *codedError) Error() string { return e.code }
+func (e *codedError) Unwrap() error { return e.err }
+
 // PersonalCard is one personal Teams card as the port sees it. There is no field for record content.
 type PersonalCard struct {
 	Kind      string
@@ -160,15 +172,20 @@ func (t *TeamsPersonalSender) Handle(ctx context.Context, job jobs.Job) error {
 	if err := json.Unmarshal(job.Payload, &p); err != nil || !validUUID(p.DeliveryID) {
 		return jobs.Permanent(errors.New("teams personal job: invalid payload"))
 	}
-	d, n, userID, err := claimDelivery(ctx, t.pool, p.DeliveryID, teamsPersonalMaxAttempts)
+	d, n, userID, err := claimDelivery(ctx, t.pool, p.DeliveryID, ChannelTeamsPersonal, teamsPersonalMaxAttempts)
 	if errors.Is(err, errNothingToDo) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	// Only the machine code is stored; the cause stays in the returned error for the job log.
 	fail := func(code string, cause error, permanent bool) error {
-		return releaseDelivery(ctx, t.pool, d, fmt.Errorf("%s: %w", code, cause), permanent, teamsPersonalMaxAttempts)
+		return releaseDelivery(ctx, t.pool, d, &codedError{code: code, err: cause}, permanent, teamsPersonalMaxAttempts)
+	}
+	// A card that waited (module switched off) for longer than this is no longer news.
+	if time.Since(n.CreatedAt) > teamsPersonalMaxAge {
+		return finishDelivery(ctx, t.pool, d, "cancelled", "no_longer_current")
 	}
 	cat, ok := t.cats.Lookup(n.Category)
 	if !ok || cat.TeamsCard == nil {

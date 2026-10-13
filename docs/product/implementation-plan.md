@@ -6,7 +6,7 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 
 **Plan revision 2026-10-03 (after F6 slice 1):** F9 and F10 were re-scoped to integrate specialist providers instead of building a patch engine and a remote-desktop transport ([ADR-0026](../decisions/ADR-0026-remote-access-providers.md), [ADR-0027](../decisions/ADR-0027-software-management-providers.md)); F11 Workforce Presence ([ADR-0028](../decisions/ADR-0028-workforce-presence.md)) and F12 Turaco AI ([ADR-0029](../decisions/ADR-0029-turaco-ai.md)) were added; Endpoint Agent management moved to "Later / optional". F0–F8 are unchanged. Earlier sessions planned F9 as "Endpoint Management" (Endpoint Agent command transport and a native WinGet provider) and F10 as a Turaco-built "Remote Support" subsystem; that plan is superseded. The F-number order is not a commitment; F9–F12 sequencing is an open product decision.
 
-## Delivery status (2026-10-10)
+## Delivery status (2026-10-13)
 
 [Current status](current-status.md) is authoritative; this table only orders the phases. "Fake" means the internal side is complete behind a domain port and runs against a fake or placeholder adapter because no real vendor client exists.
 
@@ -17,18 +17,18 @@ The rule for every step is: implement a vertical slice with tests/docs instead o
 | F2 Work Foundation | Done | Email bounce handling, digests, per-recipient language |
 | F3 Products, Catalog, Requests | Done (backend, OpenAPI, UI) | |
 | F4 Inventory, Procurement, Assets | Done (backend, OpenAPI, UI) | |
-| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client verified against a live database (implemented per documentation, unverified), webhook, routing rules, SLA (designed in F16) |
+| F5 Service Desk and Knowledge | Done (tickets, Major Incidents, Problems, Runbooks, Autotask internal side) | Autotask REST client verified against a live database (implemented per documentation, unverified), webhook |
 | F6 Endpoint Intelligence | Done against the fake provider (devices, management model, assignment intelligence, UI) | Microsoft Graph client verified against a live tenant (implemented per documentation, unverified), `assignment_stale` |
 | F7 Infrastructure and Change | Done (F7a to F7d, OpenAPI, UI) | Runbook link, native IPAM (ADR-0030: integrate) |
 | F8 Security and IT Briefing | Done (advisories, findings, remediation, feed, UI) | MSRC feed |
 | F9 Software Lifecycle | G1 to G4 done (backend, OpenAPI, UI) against fake adapters | Real IntuneGet client; Graph write client verified against a live tenant (implemented per documentation, unverified) |
 | F10 Remote Access | R-A and R-B done (attended, launch-link connectors) | Provider API connectors, unattended access, R-C threat models and lab test |
-| F11 Workforce Presence | P-A and the P-B UI done (manual entries, availability hints) | Change window and Briefing integration, coverage notifications, external sources (P-C) |
-| F12 Turaco AI | A-A (read-only backend) and A-B (UI) done | AI Proposals and write tools (A-C), MCP server (A-D), non-local providers |
-| F13 Workbench Views | Q-A to Q-D done (query engine, Saved Views, Queues, System Views, My Work sources, Boards; backend and UI) | Q-E catalogs of further resources, routing rules, archived-View restore screen |
-| F14 Administration | A-A, A-A2, A-B (backend) and A-D, A-E (UI) done | A-C/A-F health, setup checklist, audit UX, search; CSV import and bulk edit; A-G External Parties (done 2026-10-11, security review open) |
+| F11 Workforce Presence | P-A and the P-B UI done (manual entries, availability hints in Change windows and the Briefing) | Coverage notifications, external sources (P-C: threat model and review checklist written, no code) |
+| F12 Turaco AI | A-A to A-D done (read-only backend, UI, AI Proposals with the first write tool, read-only MCP server) | Non-local providers, further write tools |
+| F13 Workbench Views | Q-A to Q-D done (query engine, Saved Views, Queues, System Views, My Work sources, Boards; backend and UI) | Q-E catalogs of further resources, archived-View restore screen |
+| F14 Administration | A-A to A-G done (people, roles, health and setup checklist, audit UX, External Parties with sponsor page, CSV import and bulk edit, first-administrator setup page) | Directory connection probe, global search records |
 | Module switches (ADR-0032) | Done (backend and `/admin/modules`) | |
-| F15 Microsoft integration | Planned (design only) | Everything: M-0, E-A to E-E (Entra sign-in), T-A to T-E (Teams) |
+| F15 Microsoft integration | M-0, E-A, E-B, E-D (Entra sign-in, step-up) and T-A (Teams channel posts) done; T-B pipeline against a Fake | E-C, E-E, the T-B Bot Connector adapter, T-C to T-E |
 | F16 Location-scoped access | L-A to L-G implemented: scoped role assignments, evaluator and guards, Location move guard, Assets, Tickets and Tasks scopable, access UI part 1 ([design](f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md), [operator guide](../operations/location-scoped-access.md)) | Security reviews of L-D and L-G, effective-permissions scope view and "who has rights here" (L-F rest), hospital seed with scoped site leads and load test persona (L-H), wave-2 modules |
 | F17 SLA and time tracking | S-A to S-E and T-A to T-C implemented: Business Calendars, SLA Policies, clocks, warnings and breaches, list fields, overview and minimal report, time entries on Tickets with timer and effort report ([design](f17-sla-time-tracking-design.md), [ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md)) | Security and privacy review of Time Tracking; per-Service or per-Location SLA variants and Service Requests (open questions of the design) |
 
@@ -202,13 +202,17 @@ Prerequisites: F6 slices 2–4, a real Intune tenant and Graph client, platform 
 
 [ADR-0034](../decisions/ADR-0034-local-accounts-and-external-parties.md). Feature design: [F14 design](f14-administration-design.md). Slices: A-A People and Locations backend (with A-A2 local accounts), A-B roles and effective permissions backend, A-C platform health, setup checklist, audit and search backend, A-D People UI, A-E roles UI, A-F health, audit and search UI, A-G External Parties. A-A, A-A2, A-B, A-D and A-E are implemented; A-C, A-F and A-G are open. Operator walkthrough: [Getting started as an administrator](../operations/administrator-getting-started.md).
 
-## F15 — Microsoft integration (planned)
+## F15 — Microsoft integration (partial)
 
-[ADR-0035](../decisions/ADR-0035-entra-oidc-login.md) (Entra sign-in for every deployment variant) and [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md) (Teams), both Proposed. Feature design: [F15 design](f15-microsoft-integration-design.md). Slices: M-0 shared Microsoft HTTP client and credentials; E-A sign-in core, E-B identity linking, E-C Graph reconciliation and cloud-only group sync, E-D MFA assurance and step-up, E-E restricted multi-tenant and guests (after F14 A-G); T-A channel posts, T-B personal cards, T-C approval actions, T-D meeting and channel links, T-E Microsoft 365 presence (F11 P-C). Nothing is implemented; the open product decisions are listed in the design.
+[ADR-0035](../decisions/ADR-0035-entra-oidc-login.md) (Entra sign-in for every deployment variant) and [ADR-0036](../decisions/ADR-0036-microsoft-teams-integration.md) (Teams), both Accepted. Feature design: [F15 design](f15-microsoft-integration-design.md). Slices: M-0 shared Microsoft HTTP client and credentials; E-A sign-in core, E-B identity linking, E-C Graph reconciliation and cloud-only group sync, E-D MFA assurance and step-up, E-E restricted multi-tenant and guests (after F14 A-G); T-A channel posts, T-B personal cards, T-C approval actions, T-D meeting and channel links, T-E Microsoft 365 presence (F11 P-C). Implemented: M-0, E-A, E-B, E-D and T-A, and the T-B pipeline against a Fake; the rest is open (see [current status](current-status.md)). The open product decisions are listed in the design.
+
+## F16 — Location-scoped access
+
+[ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md). Feature design: [F16 design](f16-location-scoped-access-design.md); operator guide: [Location-scoped access](../operations/location-scoped-access.md). Slices: L-A evaluator and model, L-B assignment operations and guards, L-C Location move guard, L-D Tickets, L-E Assets, L-F access UI (part 1 built), L-G Tasks, L-H seed, load test and guide. L-A to L-E and L-G are implemented; the independent security reviews of L-D and L-G, the rest of L-F and L-H are open.
 
 ## F17 — SLA deadlines and time tracking
 
-[ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Proposed). Feature design: [F17 design](f17-sla-time-tracking-design.md). Both capabilities are optional module switches (`sla`, `timetracking`, default off). Slices: S-A Business Calendars, S-B SLA policies, S-C SLA clocks, S-D warnings and breaches, S-E list fields, overview and report; T-A time entries, T-B timer, T-C effort report. The S and T tracks are independent. S-A to S-E and T-A are implemented; the timer (T-B) and the effort report (T-C) are not. Open product questions are listed in the design.
+[ADR-0041](../decisions/ADR-0041-sla-clocks-time-tracking-business-calendars.md) (Accepted). Feature design: [F17 design](f17-sla-time-tracking-design.md). Both capabilities are optional module switches (`sla`, `timetracking`, default off). Slices: S-A Business Calendars, S-B SLA policies, S-C SLA clocks, S-D warnings and breaches, S-E list fields, overview and report; T-A time entries, T-B timer, T-C effort report. The S and T tracks are independent. All slices (S-A to S-E, T-A to T-C) are implemented. Open product questions are listed in the design.
 
 ## Later / optional
 

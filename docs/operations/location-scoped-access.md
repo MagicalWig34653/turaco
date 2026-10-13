@@ -1,6 +1,6 @@
 # Location-scoped access (operator guide)
 
-Status: usable for Assets and Tickets (F16 slices L-A to L-E, L-F part 1). Design and decisions: [F16 design](../product/f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md). Everything not listed under "What is scoped" ignores scope and behaves as before.
+Status: usable for Assets, Tickets and Tasks (F16 slices L-A to L-E, L-G and L-F part 1). Design and decisions: [F16 design](../product/f16-location-scoped-access-design.md), [ADR-0040](../decisions/ADR-0040-location-scoped-role-assignments.md). Everything not listed under "What is scoped" ignores scope and behaves as before.
 
 ## What it does
 
@@ -12,8 +12,9 @@ A role assignment can be limited to a **Location** (a Site or an area; it covers
 | --- | --- | --- |
 | `assets.view`, `assets.manage` | the Asset's Location | Asset list, query and counts, lookup, detail, global search, create, update, lifecycle and moves |
 | `tickets.view`, `tickets.manage` | the Ticket's affected Location | Ticket detail and every single-Ticket operation, ticket query and counts, saved views, search, attachments |
+| `tasks.view`, `tasks.manage` | the Task's Location (set at creation or with "set location"; callback and SLA escalation Tasks take the Ticket's affected Location) | Task detail, list, saved views, board cards and the manager operations |
 
-Not scoped (a holder who has these only at a Location gets nothing from them): Queue grants through scoped roles, Problems and Major Incident ticket lists, the manager overview, the SLA report, My Work ticket sources, system views in the sidebar, AI and MCP ticket tools, Tasks, every other permission. Permissions that are not location-based inside a scoped role stay inactive; the effective-permissions view lists them as inert.
+Not scoped (a holder who has these only at a Location gets nothing from them): Queue grants through scoped roles, Problems and Major Incident ticket lists, the manager overview, the SLA report, My Work ticket sources, system views in the sidebar, AI and MCP ticket tools, the tasks overview and board administration, every other permission. Permissions that are not location-based inside a scoped role stay inactive; the effective-permissions view lists them as inert.
 
 ## How to use it
 

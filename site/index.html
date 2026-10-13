@@ -398,8 +398,8 @@
             Intune, software management and remote access run against fake
             provider adapters; advisories come from the NVD and CISA KEV feeds
             or manual import. Planned, not built: the live Microsoft Graph and
-            Autotask REST clients, an MCP server, AI writes and external
-            presence sources.
+            Autotask REST clients, the Teams bot adapter, Entra directory
+            reconciliation and external presence sources.
             <a href="docs/product/current-status.html"
               >Read the full implementation status.</a
             >
@@ -472,7 +472,8 @@
             <p>
               Each queue is a desk with its own numbering, such as IT-1042, and
               per-queue access. Moving a ticket issues a new number and keeps
-              the old one as an alias. Routing rules are planned.
+              the old one as an alias. Routing rules pick the queue of new
+              tickets.
             </p>
             <a href="docs/product/f13-workbench-views-design.html"
               >Queues and numbering <span aria-hidden="true">↗</span></a
@@ -580,12 +581,12 @@
           <article class="feature-card">
             <svg class="feature-icon" aria-hidden="true">
               <use href="#i-lock" /></svg
-            ><span class="card-status">In progress</span>
+            ><span class="card-status">Implemented</span>
             <h3>External vendor accounts</h3>
             <p>
               Restricted accounts for vendors and partners, kept apart from
-              employees and limited to explicit teams. The creation flow is not
-              finished.
+              employees and limited to explicit teams, with a sponsor who renews
+              their access.
             </p>
             <a
               href="docs/decisions/ADR-0034-local-accounts-and-external-parties.html"
@@ -622,9 +623,10 @@
         <aside class="honesty-note">
           <span aria-hidden="true">↳</span>
           <p>
-            <strong>Still moving.</strong> The administration UI is new.
-            Integration and system health pages, audit usability and CSV import
-            are planned. For usability tests, a
+            <strong>Still moving.</strong> The administration UI is young.
+            Health pages, audit usability, CSV import and a first-administrator
+            setup page exist; a directory connection probe is still missing. For
+            usability tests, a
             <a href="docs/development/simulation-hospital.html"
               >hospital-IT simulation dataset</a
             >
@@ -932,8 +934,8 @@
             <h3>Turaco AI</h3>
             <p>
               Typed tools acting as the requesting user. Read-only assistant
-              with fake and local providers. AI writes and an MCP server are
-              planned.
+              with fake and local providers. User-confirmed writes (AI
+              Proposals) and a read-only MCP server are in.
             </p>
           </li>
           <li class="done">
@@ -941,25 +943,47 @@
             <h3>Workbench: views, queues and boards</h3>
             <p>
               Query engine, saved and shared views, pins, ticket queues with own
-              numbering and task boards. Boards UI is early; routing rules are
-              planned.
+              numbering, routing rules and task boards. Boards UI is early.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F14 <b>Implemented</b></span>
+            <h3>Administration: people, roles, health</h3>
+            <p>
+              People, teams, locations, role templates, local accounts, external
+              accounts, health pages, audit usability and CSV import.
             </p>
           </li>
           <li class="in-progress">
-            <span class="phase-id">F14 <b>In progress</b></span>
-            <h3>Administration: people, roles, health</h3>
+            <span class="phase-id">F15 <b>In progress</b></span>
+            <h3>Microsoft integration</h3>
             <p>
-              People, teams, locations, role templates and local accounts are
-              in. External accounts, health pages and audit usability remain.
+              Entra sign-in with step-up and Teams channel posts are in.
+              Directory reconciliation and a live Teams bot are not.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F16 <b>Implemented</b></span>
+            <h3>Location-scoped access</h3>
+            <p>
+              Roles can apply to a site and below for assets, tickets and tasks.
+            </p>
+          </li>
+          <li class="done">
+            <span class="phase-id">F17 <b>Implemented</b></span>
+            <h3>SLA deadlines and time tracking</h3>
+            <p>
+              Optional SLA clocks with business calendars and optional time
+              tracking with a works-council precondition.
             </p>
           </li>
           <li class="planned roadmap-planned">
             <span class="phase-id">NEXT <b>Planned</b></span>
             <h3>Not built yet</h3>
             <p>
-              Live Microsoft Graph and Autotask REST clients, an MCP server, AI
-              writes, external presence sources, ticket routing rules and the
-              OSV and MSRC advisory feeds.
+              Live Microsoft Graph and Autotask REST clients, the Teams bot
+              adapter, Entra directory reconciliation, external presence sources
+              and non-local AI providers.
             </p>
           </li>
         </ol>

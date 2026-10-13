@@ -69,7 +69,9 @@ type ChannelOptions struct {
 func (s *Service) WithChannelPosts(o ChannelOptions) *Service {
 	cp := *s
 	cp.channel = o
-	cp.teamsPersonal = o.Personal
+	if o.Personal != nil {
+		cp.teamsPersonal = o.Personal // never switch off cards enabled by WithTeamsPersonal
+	}
 	return &cp
 }
 
