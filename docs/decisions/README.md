@@ -43,5 +43,5 @@ ADRs are immutable decision history. If a decision changes, add a new ADR that s
 | [ADR-0037](ADR-0037-file-storage-and-attachments.md) | File Storage, Envelope Encryption, Virus Scanning and Attachments | Accepted; implemented (backend, no UI yet) |
 | [ADR-0038](ADR-0038-playwright-end-to-end-tests.md) | Playwright for End-to-End Smoke Tests | Accepted; implemented |
 | [ADR-0039](ADR-0039-mcp-oauth-authorization-server.md) | Turaco as OAuth Authorization Server for the Turaco MCP Resource Only | Accepted; implemented (F12 A-D) |
-| [ADR-0040](ADR-0040-location-scoped-role-assignments.md) | Location-Scoped Role Assignments | Accepted (direction); slices L-A and L-B implemented, Assets, Tickets and Tasks scopable (L-A to L-G) ([F16 design](../product/f16-location-scoped-access-design.md)) |
+| [ADR-0040](ADR-0040-location-scoped-role-assignments.md) | Location-Scoped Role Assignments | Accepted; implemented for Assets, Tickets and Tasks (slices L-A to L-G) ([F16 design](../product/f16-location-scoped-access-design.md)) |
 | [ADR-0041](ADR-0041-sla-clocks-time-tracking-business-calendars.md) | SLA Clocks Belong to the Service Desk, Time Tracking Is Its Own Module, Business Calendars Are a Platform Concept | Proposed; implemented (S-A to S-E, T-A to T-C) ([F17 design](../product/f17-sla-time-tracking-design.md)) |
