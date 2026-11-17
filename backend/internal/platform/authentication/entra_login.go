@@ -413,11 +413,8 @@ func (h *loginHandler) entraCallback(w http.ResponseWriter, r *http.Request) {
 	if err := h.throttle.Refund(ctx, a.ipKey); err != nil {
 		h.logger.ErrorContext(ctx, "refund login throttle failed", "request_id", httpx.RequestID(w), "error", err)
 	}
-	expires := sess.IdleExpiresAt
-	if sess.AbsoluteExpiresAt.Before(expires) {
-		expires = sess.AbsoluteExpiresAt
-	}
-	SetCookie(w, sessionToken, expires, h.cfg.SecureCookie)
+	// Idle expiry slides on authenticated requests and is enforced by the session service.
+	SetCookie(w, sessionToken, sess.AbsoluteExpiresAt, h.cfg.SecureCookie)
 	http.Redirect(w, r, tx.returnTo, http.StatusFound)
 }
 
