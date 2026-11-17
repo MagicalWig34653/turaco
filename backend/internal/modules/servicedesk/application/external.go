@@ -134,9 +134,20 @@ func (s *ExternalSync) HandlePush(ctx context.Context, job jobs.Job) error {
 	if !validUUID(p.TicketID) {
 		return jobs.Permanent(errors.New("push job without a valid ticket id"))
 	}
+	// Serialize independent workers before reading either snapshot and keep the lock through
+	// the remote write and its bookkeeping. Local changes do not take this lock.
+	return s.store.InTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('servicedesk.external.push:' || $1, 0))`, strings.ToLower(p.TicketID)); err != nil {
+			return fmt.Errorf("lock external ticket push: %w", err)
+		}
+		return s.push(ctx, p.TicketID)
+	})
+}
+
+func (s *ExternalSync) push(ctx context.Context, ticketID string) error {
 	// The reference (and its version) is read before the ticket: a change in between leaves the
 	// reference at a newer version, so the push is recognised as stale and repeated.
-	ref, err := externalrefs.ForEntity(ctx, s.q, ExternalSystem, ExternalEntity, p.TicketID)
+	ref, err := externalrefs.ForEntity(ctx, s.q, ExternalSystem, ExternalEntity, ticketID)
 	if errors.Is(err, externalrefs.ErrNotFound) {
 		return nil
 	}
@@ -146,7 +157,7 @@ func (s *ExternalSync) HandlePush(ctx context.Context, job jobs.Job) error {
 	if ref.SyncState == "synced" {
 		return nil // a job for a newer version already pushed this state
 	}
-	t, err := s.store.Get(ctx, p.TicketID)
+	t, err := s.store.Get(ctx, ticketID)
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}

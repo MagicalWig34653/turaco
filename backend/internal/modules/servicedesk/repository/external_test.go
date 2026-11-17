@@ -3,6 +3,7 @@ package repository_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -162,5 +163,155 @@ func TestExternalSyncPushStateRetryAndInbound(t *testing.T) {
 	}
 	if _, err := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", "00000000-0000-7000-8000-000000000001"); !errors.Is(err, externalrefs.ErrNotFound) {
 		t.Errorf("unknown mapping: %v", err)
+	}
+}
+
+// A paused old push must prevent another worker from pushing the same ticket.
+type blockingTicketGateway struct {
+	mu      sync.Mutex
+	calls   int
+	last    application.TicketPayload
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *blockingTicketGateway) Push(ctx context.Context, p application.TicketPayload, _ string) (string, error) {
+	g.mu.Lock()
+	g.calls++
+	first := g.calls == 1
+	g.mu.Unlock()
+	g.entered <- struct{}{}
+	if first {
+		select {
+		case <-g.release:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	g.mu.Lock()
+	g.last = p
+	g.mu.Unlock()
+	return "external-serialized", nil
+}
+
+func externalSyncFixture(t *testing.T, gateway application.TicketGateway) (*env, *application.ExternalSync, application.Ticket, jobs.Job) {
+	t.Helper()
+	e := newEnv(t)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = e.pool.Exec(ctx, `DELETE FROM platform.external_references WHERE entity_type = 'ticket' AND entity_id IN (SELECT id FROM servicedesk.tickets WHERE reporter_user_id = $1::uuid)`, e.alice)
+		_, _ = e.pool.Exec(ctx, `DELETE FROM platform.jobs WHERE job_type = $1 AND payload->>'ticketId' IN (SELECT id::text FROM servicedesk.tickets WHERE reporter_user_id = $2::uuid)`, application.PushJobType, e.alice)
+	})
+	tk := e.raise()
+	worker := application.NewExternalSync(e.svc, repository.New(e.pool), e.pool, gateway, true)
+	if err := worker.Retry(ctx, e.c(e.agent), e.staff(), tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	return e, worker, tk, jobs.Job{Payload: []byte(`{"ticketId":"` + tk.ID + `"}`)}
+}
+
+func TestExternalSyncSerializesPushesPerTicket(t *testing.T) {
+	gateway := &blockingTicketGateway{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	e, first, tk, job := externalSyncFixture(t, gateway)
+	// Separate service instances model independent workers; no process-local mutex can satisfy this test.
+	second := application.NewExternalSync(e.svc, repository.New(e.pool), e.pool, gateway, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var release sync.Once
+	unblock := func() { release.Do(func() { close(gateway.release) }) }
+	a, b := make(chan error, 1), make(chan error, 1)
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() { defer workers.Done(); a <- first.HandlePush(ctx, job) }()
+	defer func() { unblock(); cancel(); workers.Wait() }()
+	select {
+	case <-gateway.entered:
+	case <-ctx.Done():
+		t.Fatal("first push did not start")
+	}
+	if _, err := e.svc.Transition(ctx, e.c(e.agent), e.staff(), tk.ID, nil, application.OpResolve, application.Params{Reason: "fixed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Retry(ctx, e.c(e.agent), e.staff(), tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	workers.Add(1)
+	go func() { defer workers.Done(); b <- second.HandlePush(ctx, job) }()
+	// Observe PostgreSQL contention rather than relying on a scheduling delay.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	waiting := false
+	for !waiting {
+		select {
+		case <-gateway.entered:
+			t.Fatal("second worker pushed while the old push was still running")
+		case <-ctx.Done():
+			t.Fatal("second worker did not wait on the ticket lock")
+		case <-ticker.C:
+			err := e.pool.QueryRow(ctx, `SELECT EXISTS (
+    SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+     AND classid = ((hashtextextended('servicedesk.external.push:' || $1, 0) >> 32) & 4294967295)::oid
+     AND objid = (hashtextextended('servicedesk.external.push:' || $1, 0) & 4294967295)::oid
+   )`, tk.ID).Scan(&waiting)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	unblock()
+	// The waiting worker must reread and push the current state after the stale push.
+	errA, errB := <-a, <-b
+	if !errors.Is(errA, externalrefs.ErrStale) || errB != nil {
+		t.Fatalf("push results: old=%v new=%v", errA, errB)
+	}
+	gateway.mu.Lock()
+	last, calls := gateway.last, gateway.calls
+	gateway.mu.Unlock()
+	if last.Status != "resolved" || calls != 2 {
+		t.Fatalf("last payload=%+v calls=%d", last, calls)
+	}
+	ref, err := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", tk.ID)
+	if err != nil || ref.SyncState != "synced" {
+		t.Fatalf("reference=%+v error=%v", ref, err)
+	}
+}
+
+func TestExternalSyncStaleSuccessRequiresCurrentPush(t *testing.T) {
+	fake := autotask.NewFake()
+	e, worker, tk, job := externalSyncFixture(t, gw{fake})
+	ctx := context.Background()
+	old, err := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Transition(ctx, e.c(e.agent), e.staff(), tk.ID, nil, application.OpResolve, application.Params{Reason: "fixed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.Retry(ctx, e.c(e.agent), e.staff(), tk.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.HandlePush(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	current, err := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", tk.ID)
+	if err != nil || current.ExternalID == nil {
+		t.Fatalf("reference=%+v error=%v", current, err)
+	}
+	// Reproduce an already executed stale push after a newer success (for example an old worker during rollout).
+	if _, err := (gw{fake}).Push(ctx, application.TicketPayload{Reference: tk.Reference, Title: tk.Title, Status: tk.Status, Priority: tk.Priority}, *current.ExternalID); err != nil {
+		t.Fatal(err)
+	}
+	if err := externalrefs.MarkSynced(ctx, e.pool, old.ID, *current.ExternalID, old.Version); !errors.Is(err, externalrefs.ErrStale) {
+		t.Fatalf("stale success: %v", err)
+	}
+	pending, err := externalrefs.ForEntity(ctx, e.pool, "autotask", "ticket", tk.ID)
+	if err != nil || pending.SyncState != "pending" {
+		t.Errorf("stale success must request repair: %+v %v", pending, err)
+	}
+	if err := worker.HandlePush(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.Tickets[*current.ExternalID].Status; got != "resolved" {
+		t.Fatalf("retry left external status %q", got)
 	}
 }

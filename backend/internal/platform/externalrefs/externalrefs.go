@@ -103,6 +103,8 @@ var ErrExternalIDTaken = errors.New("externalrefs: the external id is already ma
 // MarkSynced records a successful push of the state seen at expectedVersion; externalID is set
 // once and never changed afterwards. When the mapping was marked pending again in the meantime
 // (a newer local change) ErrStale is returned and the external id is still recorded.
+// A stale success always restores pending, even after another push marked the reference synced:
+// the remote write may have overwritten that newer state and must be repaired by a retry.
 func MarkSynced(ctx context.Context, q Querier, id, externalID string, expectedVersion int) error {
 	externalID = strings.TrimSpace(externalID)
 	if externalID == "" || utf8.RuneCountInString(externalID) > 200 {
@@ -114,7 +116,7 @@ func MarkSynced(ctx context.Context, q Querier, id, externalID string, expectedV
 		WITH old AS (SELECT id, version FROM platform.external_references WHERE id = $1::uuid FOR UPDATE)
 		UPDATE platform.external_references r
 		SET external_id = coalesce(r.external_id, $2),
-		    sync_state = CASE WHEN old.version = $3 THEN 'synced' ELSE r.sync_state END,
+		    sync_state = CASE WHEN old.version = $3 THEN 'synced' ELSE 'pending' END,
 		    last_error = CASE WHEN old.version = $3 THEN NULL ELSE r.last_error END,
 		    last_synced_at = now(), attempts = CASE WHEN old.version = $3 THEN 0 ELSE r.attempts END,
 		    version = CASE WHEN old.version = $3 THEN r.version + 1 ELSE r.version END, updated_at = now()
