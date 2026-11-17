@@ -192,6 +192,8 @@ type RankTx interface {
 	Predecessor(ctx context.Context, rank string) (string, bool, error)
 	// Put stores the rank of a task and, when columnID is not empty, its column placement.
 	Put(ctx context.Context, taskID, rank, columnID string) error
+	// ClearPlacement removes the column placement without changing the rank.
+	ClearPlacement(ctx context.Context, taskID string) error
 	// Count returns the number of ranked cards of the Board.
 	Count(ctx context.Context) (int, error)
 	// PruneTerminal deletes the ranks of completed and cancelled tasks and returns how many.
@@ -219,8 +221,6 @@ type BoardStore interface {
 	QueryBoardCards(ctx context.Context, plan *query.Plan, vis query.Fragment, place *CardPlacement) (query.Page[Card], error)
 	// WithRankLock runs fn in a transaction that holds the Board's rank lock, so rank writes are serialized.
 	WithRankLock(ctx context.Context, boardID string, fn func(tx RankTx) error) error
-	// ClearPlacement removes the column placement (not the rank) of one card.
-	ClearPlacement(ctx context.Context, boardID, taskID string) error
 	// BoardsOfViews maps View ids to the id of the active Board that uses them.
 	BoardsOfViews(ctx context.Context, viewIDs []string) (map[string]string, error)
 }

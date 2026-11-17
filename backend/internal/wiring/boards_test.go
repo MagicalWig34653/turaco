@@ -1064,3 +1064,41 @@ func TestBoardLoadTakesOneRateLimitToken(t *testing.T) {
 		t.Fatalf("another principal was limited: %d %s", r.code, r.body)
 	}
 }
+
+// Resetting a same-status placement changes the shared board just like explicit ranking.
+func TestBoardClearPlacementRequiresEdit(t *testing.T) {
+	f := newBoardFixture(t, nil)
+	owner, reader := f.user(), f.user()
+	b := f.create(owner, map[string]any{"columns": []map[string]any{
+		{"title": "First", "mapsTo": "open"}, {"title": "Second", "mapsTo": "open"},
+	}})
+	tk := f.task(owner, "placed", "")
+	base := "/api/v1/tasks/boards/" + b.ID
+	second := b.col(t, "Second")
+	if r := f.do(owner, manage, "PUT", base+"/ranks", map[string]any{"taskId": tk.ID, "columnId": second.ID, "top": true}); r.code != http.StatusOK {
+		t.Fatalf("place: %d %s", r.code, r.body)
+	}
+	vc := views.Caller{UserID: owner, Permissions: map[string]struct{}{"tasks.manage": {}, views.PermShare: {}}, CorrelationID: "board-clear-share", Header: cookieFor(owner, "tasks.manage")}
+	info, err := f.views.Get(context.Background(), vc, b.ViewID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.views.SetShares(context.Background(), vc, b.ViewID, info.Version, []views.ShareInput{{SubjectType: "user", SubjectID: reader, Level: "use"}}); err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"taskId": tk.ID, "columnId": b.col(t, "First").ID, "expectedVersion": tk.Version}
+	if r := f.do(reader, viewer, "POST", base+"/moves", body); r.code != http.StatusForbidden {
+		t.Errorf("reader reset: %d %s", r.code, r.body)
+	}
+	got := f.cards(owner, manage, b.ID)
+	if got[second.ID].Count != 1 || got[b.col(t, "First").ID].Count != 0 {
+		t.Fatal("reader changed the shared placement")
+	}
+	if r := f.do(owner, manage, "POST", base+"/moves", body); r.code != http.StatusOK {
+		t.Fatalf("owner reset: %d %s", r.code, r.body)
+	}
+	got = f.cards(owner, manage, b.ID)
+	if got[second.ID].Count != 0 || got[b.col(t, "First").ID].Count != 1 {
+		t.Fatal("owner did not clear the placement")
+	}
+}

@@ -347,12 +347,9 @@ func (r *Repository) QueryBoardCards(ctx context.Context, plan *query.Plan, vis 
 	})
 }
 
-func (r *Repository) ClearPlacement(ctx context.Context, boardID, taskID string) error {
-	if !validUUID(boardID) || !validUUID(taskID) {
-		return nil
-	}
-	if _, err := r.pool.Exec(ctx, `UPDATE tasks.board_card_ranks SET column_id = NULL, updated_at = now()
-		WHERE board_id = $1::uuid AND task_id = $2::uuid AND column_id IS NOT NULL`, boardID, taskID); err != nil {
+func (t *rankTx) ClearPlacement(ctx context.Context, taskID string) error {
+	if _, err := t.tx.Exec(ctx, `UPDATE tasks.board_card_ranks SET column_id = NULL, updated_at = now()
+		WHERE board_id = $1::uuid AND task_id = $2::uuid AND column_id IS NOT NULL`, t.boardID, taskID); err != nil {
 		return fmt.Errorf("clear placement: %w", err)
 	}
 	return nil

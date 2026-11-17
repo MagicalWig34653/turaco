@@ -200,7 +200,7 @@ type MoveInput struct {
 	// Reason is required for the moves that block, cancel or reopen a task (as for the Task operations).
 	Reason string
 	// AfterTaskID places the card below that card of the target column; AtTop places it first. Without either the
-	// card is not placed explicitly (it joins the unranked cards), which needs no edit access to the Board.
+	// card is not placed explicitly. Resetting a same-status placement needs Board edit access.
 	AfterTaskID string
 	AtTop       bool
 }
@@ -265,7 +265,7 @@ func (b *Boards) Move(ctx context.Context, c Caller, vc views.Caller, p Principa
 	}
 	first, _ := ld.firstColumnOf(col.MapsTo)
 	place := in.AfterTaskID != "" || in.AtTop || first.ID != col.ID
-	if place && !ld.CanEdit {
+	if (place || cur.Status == col.MapsTo) && !ld.CanEdit {
 		return MoveResult{}, ErrForbidden
 	}
 	atTop := in.AtTop || (in.AfterTaskID == "" && place)
@@ -275,17 +275,14 @@ func (b *Boards) Move(ctx context.Context, c Caller, vc views.Caller, p Principa
 		if *in.ExpectedVersion != cur.Version {
 			return MoveResult{}, ErrVersionConflict
 		}
-		if !place {
-			// Dropped on the first column of its status: an earlier placement in another column of the status ends.
-			_ = b.store.ClearPlacement(ctx, boardID, in.TaskID)
-			v, err := b.svc.viewOne(ctx, cur)
-			return MoveResult{Task: v}, err
-		}
 		rank, err := b.place(ctx, vc, p, a, boardID, in.TaskID, col.ID, in.AfterTaskID, atTop)
 		if err != nil {
 			return MoveResult{}, err
 		}
 		v, err := b.svc.viewOne(ctx, cur)
+		if !place {
+			return MoveResult{Task: v}, err
+		}
 		return MoveResult{Task: v, Placed: true, Rank: &rank}, err
 	}
 	op, ok := moveOperation(cur.Status, col.MapsTo)
@@ -309,7 +306,7 @@ func (b *Boards) Move(ctx context.Context, c Caller, vc views.Caller, p Principa
 		return res, nil
 	}
 	// The old placement refers to the previous status; drop it so the card joins the first column of its status.
-	_ = b.store.ClearPlacement(ctx, boardID, in.TaskID)
+	_, _ = b.place(ctx, vc, p, a, boardID, in.TaskID, col.ID, "", false)
 	return res, nil
 }
 
@@ -383,6 +380,10 @@ func (b *Boards) place(ctx context.Context, vc views.Caller, p Principal, a acce
 			}
 			if cur.Status != col.MapsTo {
 				return invalid("the card's status does not match the column; move the card instead")
+			}
+			if !atTop && afterID == "" {
+				// Clearing a placement uses the same edit check and rank transaction as setting one.
+				return tx.ClearPlacement(ctx, taskID)
 			}
 			r, rebalance, err := b.computeRank(ctx, tx, q, col, taskID, afterID, atTop)
 			if err != nil {
